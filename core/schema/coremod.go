@@ -20,7 +20,7 @@ import (
 type CoreMod struct {
 	Dag *dagql.Server
 
-	cachedTypedefs   []*core.TypeDef
+	cachedTypedefs   dagql.ObjectResultArray[*core.TypeDef]
 	cachedTypedefsMu sync.Mutex
 }
 
@@ -93,7 +93,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		modType = &core.PrimitiveType{Def: typeDef}
 
 	case core.TypeDefKindList:
-		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.Value.ElementTypeDef, checkDirectDeps)
+		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.Value.Self().ElementTypeDef.Self(), checkDirectDeps)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
 		}
@@ -101,12 +101,12 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 		modType = &core.ListType{
-			Elem:       typeDef.AsList.Value.ElementTypeDef,
+			Elem:       typeDef.AsList.Value.Self().ElementTypeDef,
 			Underlying: underlyingType,
 		}
 
 	case core.TypeDefKindScalar:
-		_, ok := m.Dag.ScalarType(typeDef.AsScalar.Value.Name)
+		_, ok := m.Dag.ScalarType(typeDef.AsScalar.Value.Self().Name)
 		if !ok {
 			return nil, false, nil
 		}
@@ -117,19 +117,19 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, err
 		}
 		for _, def := range defs {
-			if def.Kind == core.TypeDefKindScalar && def.AsScalar.Value.Name == typeDef.AsScalar.Value.Name {
-				resolvedDef = def
+			if def.Self().Kind == core.TypeDefKindScalar && def.Self().AsScalar.Value.Self().Name == typeDef.AsScalar.Value.Self().Name {
+				resolvedDef = def.Self()
 				break
 			}
 		}
 		if resolvedDef == nil {
-			return nil, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Name)
+			return nil, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Self().Name)
 		}
 
-		modType = &CoreModScalar{coreMod: m, name: resolvedDef.AsScalar.Value.Name}
+		modType = &CoreModScalar{coreMod: m, name: resolvedDef.AsScalar.Value.Self().Name}
 
 	case core.TypeDefKindObject:
-		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Name)
+		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Self().Name)
 		if !ok {
 			return nil, false, nil
 		}
@@ -140,19 +140,19 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, err
 		}
 		for _, def := range defs {
-			if def.Kind == core.TypeDefKindObject && def.AsObject.Value.Name == typeDef.AsObject.Value.Name {
-				resolvedDef = def
+			if def.Self().Kind == core.TypeDefKindObject && def.Self().AsObject.Value.Self().Name == typeDef.AsObject.Value.Self().Name {
+				resolvedDef = def.Self()
 				break
 			}
 		}
 		if resolvedDef == nil {
-			return nil, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Name)
+			return nil, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Self().Name)
 		}
 
-		modType = &CoreModObject{coreMod: m, name: resolvedDef.AsObject.Value.Name}
+		modType = &CoreModObject{coreMod: m, name: resolvedDef.AsObject.Value.Self().Name}
 
 	case core.TypeDefKindEnum:
-		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Name)
+		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Self().Name)
 		if !ok {
 			return nil, false, nil
 		}
@@ -163,16 +163,16 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, err
 		}
 		for _, def := range defs {
-			if def.Kind == core.TypeDefKindEnum && def.AsEnum.Value.Name == typeDef.AsEnum.Value.Name {
-				resolvedDef = def
+			if def.Self().Kind == core.TypeDefKindEnum && def.Self().AsEnum.Value.Self().Name == typeDef.AsEnum.Value.Self().Name {
+				resolvedDef = def.Self()
 				break
 			}
 		}
 		if resolvedDef == nil {
-			return nil, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Name)
+			return nil, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Self().Name)
 		}
 
-		modType = &CoreModEnum{coreMod: m, typeDef: resolvedDef.AsEnum.Value}
+		modType = &CoreModEnum{coreMod: m, typeDef: resolvedDef.AsEnum.Value.Self()}
 
 	case core.TypeDefKindInterface:
 		// core does not yet define any interfaces
@@ -183,8 +183,20 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	}
 
 	if typeDef.Optional {
+		innerDef, err := modType.TypeDef(ctx)
+		if err != nil {
+			return nil, false, fmt.Errorf("resolve core nullable inner typedef: %w", err)
+		}
+		if innerDef.Self().Optional {
+			if err := m.Dag.Select(ctx, innerDef, &innerDef, dagql.Selector{
+				Field: "withOptional",
+				Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(false)}},
+			}); err != nil {
+				return nil, false, fmt.Errorf("clear optional on core nullable inner typedef: %w", err)
+			}
+		}
 		modType = &core.NullableType{
-			InnerDef: modType.TypeDef().WithOptional(false),
+			InnerDef: innerDef,
 			Inner:    modType,
 		}
 	}
@@ -192,7 +204,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	return modType, true, nil
 }
 
-func (m *CoreMod) typedefs(ctx context.Context) ([]*core.TypeDef, error) {
+func (m *CoreMod) typedefs(ctx context.Context) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	m.cachedTypedefsMu.Lock()
 	defer m.cachedTypedefsMu.Unlock()
 
@@ -206,7 +218,7 @@ func (m *CoreMod) typedefs(ctx context.Context) ([]*core.TypeDef, error) {
 	return m.cachedTypedefs, nil
 }
 
-func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.TypeDef, error) {
+func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	initialSchema := m.Dag.Schema()
 
 	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
@@ -233,7 +245,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 		schema.Directives = append(schema.Directives, dd)
 	}
 
-	typeDefs := make([]*core.TypeDef, 0, len(schema.Types))
+	typeDefs := make(dagql.ObjectResultArray[*core.TypeDef], 0, len(schema.Types))
 	for _, introspectionType := range schema.Types {
 		if _, has := initialSchema.Types[introspectionType.Name]; !has {
 			// we're only interested in types added by core
@@ -242,9 +254,15 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 
 		switch introspectionType.Kind {
 		case introspection.TypeKindObject:
-			typeDef := &core.ObjectTypeDef{
-				Name:        introspectionType.Name,
-				Description: introspectionType.Description,
+			var obj dagql.ObjectResult[*core.ObjectTypeDef]
+			if err := dag.Select(ctx, dag.Root(), &obj, dagql.Selector{
+				Field: "__objectTypeDef",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(introspectionType.Name)},
+					{Name: "description", Value: dagql.String(introspectionType.Description)},
+				},
+			}); err != nil {
+				return nil, err
 			}
 
 			isIdable := false
@@ -254,113 +272,231 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 					continue
 				}
 
-				fn := &core.Function{
-					Name:        introspectionField.Name,
-					Description: introspectionField.Description,
-					Deprecated:  introspectionField.DeprecationReason,
-				}
-
-				rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
+				rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert return type: %w", err)
 				}
 				if !ok {
 					continue
 				}
-				fn.ReturnType = rtType
+				rtTypeID, err := core.ResultIDInput(rtType)
+				if err != nil {
+					return nil, err
+				}
+				var fn dagql.ObjectResult[*core.Function]
+				if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
+					Field: "function",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(introspectionField.Name)},
+						{Name: "returnType", Value: rtTypeID},
+					},
+				}); err != nil {
+					return nil, err
+				}
+				if introspectionField.Description != "" {
+					if err := dag.Select(ctx, fn, &fn, dagql.Selector{
+						Field: "withDescription",
+						Args:  []dagql.NamedInput{{Name: "description", Value: dagql.String(introspectionField.Description)}},
+					}); err != nil {
+						return nil, err
+					}
+				}
+				if introspectionField.DeprecationReason != nil {
+					if err := dag.Select(ctx, fn, &fn, dagql.Selector{
+						Field: "withDeprecated",
+						Args:  []dagql.NamedInput{{Name: "reason", Value: core.OptString(introspectionField.DeprecationReason)}},
+					}); err != nil {
+						return nil, err
+					}
+				}
 
 				for _, introspectionArg := range introspectionField.Args {
-					fnArg := &core.FunctionArg{
-						Name:        introspectionArg.Name,
-						Description: introspectionArg.Description,
-						Deprecated:  introspectionArg.DeprecationReason,
-					}
-
-					if introspectionArg.DefaultValue != nil {
-						fnArg.DefaultValue = core.JSON(*introspectionArg.DefaultValue)
-					}
-
-					argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
+					argType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionArg.TypeRef, false, true)
 					if err != nil {
 						return nil, fmt.Errorf("failed to convert argument type: %w", err)
 					}
 					if !ok {
 						continue
 					}
-					fnArg.TypeDef = argType
-
-					fn.Args = append(fn.Args, fnArg)
+					argTypeID, err := core.ResultIDInput(argType)
+					if err != nil {
+						return nil, err
+					}
+					var defaultValue core.JSON
+					if introspectionArg.DefaultValue != nil {
+						defaultValue = core.JSON(*introspectionArg.DefaultValue)
+					}
+					var fnArg dagql.ObjectResult[*core.FunctionArg]
+					if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{
+						Field: "__functionArg",
+						Args: []dagql.NamedInput{
+							{Name: "name", Value: dagql.String(introspectionArg.Name)},
+							{Name: "typeDef", Value: argTypeID},
+							{Name: "description", Value: dagql.String(introspectionArg.Description)},
+							{Name: "defaultValue", Value: defaultValue},
+							{Name: "deprecated", Value: core.OptString(introspectionArg.DeprecationReason)},
+						},
+					}); err != nil {
+						return nil, err
+					}
+					fnArgID, err := core.ResultIDInput(fnArg)
+					if err != nil {
+						return nil, err
+					}
+					if err := dag.Select(ctx, fn, &fn, dagql.Selector{
+						Field: "__withArg",
+						Args:  []dagql.NamedInput{{Name: "arg", Value: fnArgID}},
+					}); err != nil {
+						return nil, err
+					}
 				}
 
-				typeDef.Functions = append(typeDef.Functions, fn)
+				fnID, err := core.ResultIDInput(fn)
+				if err != nil {
+					return nil, err
+				}
+				if err := dag.Select(ctx, obj, &obj, dagql.Selector{
+					Field: "__withFunction",
+					Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+				}); err != nil {
+					return nil, err
+				}
 			}
 
-			if !isIdable && typeDef.Name != "Query" {
+			if !isIdable && introspectionType.Name != "Query" {
 				continue
 			}
-
-			typeDefs = append(typeDefs, &core.TypeDef{
-				Kind:     core.TypeDefKindObject,
-				AsObject: dagql.NonNull(typeDef),
+			objID, err := core.ResultIDInput(obj)
+			if err != nil {
+				return nil, err
+			}
+			typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "__withObjectTypeDef",
+				Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
 			})
+			if err != nil {
+				return nil, err
+			}
+			typeDefs = append(typeDefs, typeDef)
 
 		case introspection.TypeKindInputObject:
-			typeDef := &core.InputTypeDef{
-				Name: introspectionType.Name,
+			var input dagql.ObjectResult[*core.InputTypeDef]
+			if err := dag.Select(ctx, dag.Root(), &input, dagql.Selector{
+				Field: "__inputTypeDef",
+				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
+			}); err != nil {
+				return nil, err
 			}
 
 			for _, introspectionField := range introspectionType.InputFields {
-				field := &core.FieldTypeDef{
-					Name:        introspectionField.Name,
-					Description: introspectionField.Description,
-					Deprecated:  introspectionField.DeprecationReason,
-				}
-				fieldType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
+				fieldType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert return type: %w", err)
 				}
 				if !ok {
 					continue
 				}
-				field.TypeDef = fieldType
-				typeDef.Fields = append(typeDef.Fields, field)
+				fieldTypeID, err := core.ResultIDInput(fieldType)
+				if err != nil {
+					return nil, err
+				}
+				var field dagql.ObjectResult[*core.FieldTypeDef]
+				if err := dag.Select(ctx, dag.Root(), &field, dagql.Selector{
+					Field: "__fieldTypeDef",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(introspectionField.Name)},
+						{Name: "typeDef", Value: fieldTypeID},
+						{Name: "description", Value: dagql.String(introspectionField.Description)},
+						{Name: "deprecated", Value: core.OptString(introspectionField.DeprecationReason)},
+					},
+				}); err != nil {
+					return nil, err
+				}
+				fieldID, err := core.ResultIDInput(field)
+				if err != nil {
+					return nil, err
+				}
+				if err := dag.Select(ctx, input, &input, dagql.Selector{
+					Field: "__withField",
+					Args:  []dagql.NamedInput{{Name: "field", Value: fieldID}},
+				}); err != nil {
+					return nil, err
+				}
 			}
-
-			typeDefs = append(typeDefs, &core.TypeDef{
-				Kind:    core.TypeDefKindInput,
-				AsInput: dagql.NonNull(typeDef),
+			inputID, err := core.ResultIDInput(input)
+			if err != nil {
+				return nil, err
+			}
+			typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "__withInputTypeDef",
+				Args:  []dagql.NamedInput{{Name: "inputTypeDef", Value: inputID}},
 			})
+			if err != nil {
+				return nil, err
+			}
+			typeDefs = append(typeDefs, typeDef)
 
 		case introspection.TypeKindScalar:
-			typedef := &core.ScalarTypeDef{
-				Name:        introspectionType.Name,
-				Description: introspectionType.Description,
-			}
-
-			typeDefs = append(typeDefs, &core.TypeDef{
-				Kind:     core.TypeDefKindScalar,
-				AsScalar: dagql.NonNull(typedef),
+			typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withScalar",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(introspectionType.Name)},
+					{Name: "description", Value: dagql.String(introspectionType.Description)},
+				},
 			})
+			if err != nil {
+				return nil, err
+			}
+			typeDefs = append(typeDefs, typeDef)
 
 		case introspection.TypeKindEnum:
-			typedef := &core.EnumTypeDef{
-				Name:        introspectionType.Name,
-				Description: introspectionType.Description,
+			var enum dagql.ObjectResult[*core.EnumTypeDef]
+			if err := dag.Select(ctx, dag.Root(), &enum, dagql.Selector{
+				Field: "__enumTypeDef",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(introspectionType.Name)},
+					{Name: "description", Value: dagql.String(introspectionType.Description)},
+				},
+			}); err != nil {
+				return nil, err
 			}
 
 			for _, value := range introspectionType.EnumValues {
-				typedef.Members = append(typedef.Members, &core.EnumMemberTypeDef{
-					Name:        value.Name,
-					Value:       value.Directives.EnumValue(),
-					Description: value.Description,
-					Deprecated:  value.DeprecationReason,
-				})
+				var member dagql.ObjectResult[*core.EnumMemberTypeDef]
+				if err := dag.Select(ctx, dag.Root(), &member, dagql.Selector{
+					Field: "__enumMemberTypeDef",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(value.Name)},
+						{Name: "value", Value: dagql.String(value.Directives.EnumValue())},
+						{Name: "description", Value: dagql.String(value.Description)},
+						{Name: "deprecated", Value: core.OptString(value.DeprecationReason)},
+					},
+				}); err != nil {
+					return nil, err
+				}
+				memberID, err := core.ResultIDInput(member)
+				if err != nil {
+					return nil, err
+				}
+				if err := dag.Select(ctx, enum, &enum, dagql.Selector{
+					Field: "__withMember",
+					Args:  []dagql.NamedInput{{Name: "member", Value: memberID}},
+				}); err != nil {
+					return nil, err
+				}
 			}
-
-			typeDefs = append(typeDefs, &core.TypeDef{
-				Kind:   core.TypeDefKindEnum,
-				AsEnum: dagql.NonNull(typedef),
+			enumID, err := core.ResultIDInput(enum)
+			if err != nil {
+				return nil, err
+			}
+			typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "__withEnumTypeDef",
+				Args:  []dagql.NamedInput{{Name: "enumTypeDef", Value: enumID}},
 			})
+			if err != nil {
+				return nil, err
+			}
+			typeDefs = append(typeDefs, typeDef)
 
 		default:
 			continue
@@ -414,13 +550,13 @@ func (obj *CoreModScalar) SourceMod() core.Mod {
 	return obj.coreMod
 }
 
-func (obj *CoreModScalar) TypeDef() *core.TypeDef {
-	return &core.TypeDef{
-		Kind: core.TypeDefKindScalar,
-		AsScalar: dagql.NonNull(&core.ScalarTypeDef{
-			Name: obj.name,
-		}),
-	}
+func (obj *CoreModScalar) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
+	return core.SelectTypeDefWithServer(ctx, obj.coreMod.Dag, dagql.Selector{
+		Field: "withScalar",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(obj.name)},
+		},
+	})
 }
 
 // CoreModObject represents objects from core (Container, Directory, etc.)
@@ -518,15 +654,15 @@ func (obj *CoreModObject) SourceMod() core.Mod {
 	return obj.coreMod
 }
 
-func (obj *CoreModObject) TypeDef() *core.TypeDef {
+func (obj *CoreModObject) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
 	// TODO: to support matching core types against interfaces, we will need to actually fill
 	// this out with the functions rather than just name
-	return &core.TypeDef{
-		Kind: core.TypeDefKindObject,
-		AsObject: dagql.NonNull(&core.ObjectTypeDef{
-			Name: obj.name,
-		}),
-	}
+	return core.SelectTypeDefWithServer(ctx, obj.coreMod.Dag, dagql.Selector{
+		Field: "withObject",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(obj.name)},
+		},
+	})
 }
 
 type CoreModEnum struct {
@@ -575,97 +711,167 @@ func (enum *CoreModEnum) SourceMod() core.Mod {
 	return enum.coreMod
 }
 
-func (enum *CoreModEnum) TypeDef() *core.TypeDef {
-	return &core.TypeDef{
-		Kind:   core.TypeDefKindEnum,
-		AsEnum: dagql.NonNull(enum.typeDef),
+func (enum *CoreModEnum) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
+	var sourceMap dagql.Optional[dagql.ID[*core.SourceMap]]
+	var err error
+	if enum.typeDef.SourceMap.Valid {
+		sourceMap, err = core.OptionalResultIDInput(enum.typeDef.SourceMap.Value)
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, err
+		}
 	}
+	return core.SelectTypeDefWithServer(ctx, enum.coreMod.Dag, dagql.Selector{
+		Field: "withEnum",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(enum.typeDef.OriginalName)},
+			{Name: "description", Value: dagql.String(enum.typeDef.Description)},
+			{Name: "sourceMap", Value: sourceMap},
+			{Name: "sourceModuleName", Value: core.OptSourceModuleName(enum.typeDef.SourceModuleName)},
+		},
+	})
 }
 
-func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*core.TypeDef, bool, error) {
+func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspectionType *introspection.TypeRef, nonNull, isInput bool) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+	maybeOptional := func(inst dagql.ObjectResult[*core.TypeDef]) (dagql.ObjectResult[*core.TypeDef], error) {
+		if nonNull {
+			return inst, nil
+		}
+		if err := dag.Select(ctx, inst, &inst, dagql.Selector{
+			Field: "withOptional",
+			Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+		}); err != nil {
+			return inst, fmt.Errorf("make typedef optional: %w", err)
+		}
+		return inst, nil
+	}
+
 	switch introspectionType.Kind {
 	case introspection.TypeKindNonNull:
-		return introspectionRefToTypeDef(introspectionType.OfType, true, isInput)
+		return introspectionRefToTypeDef(ctx, dag, introspectionType.OfType, true, isInput)
 
 	case introspection.TypeKindScalar:
 		if isInput && strings.HasSuffix(introspectionType.Name, "ID") {
-			// convert ID inputs to the actual object
-			objName := strings.TrimSuffix(introspectionType.Name, "ID")
-			return &core.TypeDef{
-				Kind:     core.TypeDefKindObject,
-				Optional: !nonNull,
-				AsObject: dagql.NonNull(&core.ObjectTypeDef{
-					Name: objName,
-				}),
-			}, true, nil
+			inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withObject",
+				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(strings.TrimSuffix(introspectionType.Name, "ID"))}},
+			})
+			if err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, false, err
+			}
+			inst, err = maybeOptional(inst)
+			return inst, true, err
 		}
 
-		typeDef := &core.TypeDef{
-			Optional: !nonNull,
-		}
+		var (
+			inst dagql.ObjectResult[*core.TypeDef]
+			err  error
+		)
 		switch introspectionType.Name {
 		case string(introspection.ScalarString):
-			typeDef.Kind = core.TypeDefKindString
+			inst, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindString}},
+			})
 		case string(introspection.ScalarInt):
-			typeDef.Kind = core.TypeDefKindInteger
+			inst, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindInteger}},
+			})
 		case string(introspection.ScalarFloat):
-			typeDef.Kind = core.TypeDefKindFloat
+			inst, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindFloat}},
+			})
 		case string(introspection.ScalarBoolean):
-			typeDef.Kind = core.TypeDefKindBoolean
+			inst, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindBoolean}},
+			})
 		case string(introspection.ScalarVoid):
-			typeDef.Kind = core.TypeDefKindVoid
+			inst, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindVoid}},
+			})
 		default:
-			// assume that all core scalars are strings
-			typeDef.Kind = core.TypeDefKindScalar
-			typeDef.AsScalar = dagql.NonNull(core.NewScalarTypeDef(introspectionType.Name, ""))
+			inst, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withScalar",
+				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
+			})
 		}
-
-		return typeDef, true, nil
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(inst)
+		return inst, true, err
 
 	case introspection.TypeKindEnum:
-		return &core.TypeDef{
-			Kind:     core.TypeDefKindEnum,
-			Optional: !nonNull,
-			AsEnum: dagql.NonNull(&core.EnumTypeDef{
-				Name: introspectionType.Name,
-			}),
-		}, true, nil
+		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "withEnum",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
+		})
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(inst)
+		return inst, true, err
 
 	case introspection.TypeKindList:
-		elementTypeDef, ok, err := introspectionRefToTypeDef(introspectionType.OfType, false, isInput)
+		elementTypeDef, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionType.OfType, false, isInput)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to convert list element type: %w", err)
+			return dagql.ObjectResult[*core.TypeDef]{}, false, fmt.Errorf("failed to convert list element type: %w", err)
 		}
 		if !ok {
-			return nil, false, nil
+			return dagql.ObjectResult[*core.TypeDef]{}, false, nil
 		}
-		return &core.TypeDef{
-			Kind:     core.TypeDefKindList,
-			Optional: !nonNull,
-			AsList: dagql.NonNull(&core.ListTypeDef{
-				ElementTypeDef: elementTypeDef,
-			}),
-		}, true, nil
+		elementTypeDefID, err := core.ResultIDInput(elementTypeDef)
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "withListOf",
+			Args:  []dagql.NamedInput{{Name: "elementType", Value: elementTypeDefID}},
+		})
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(inst)
+		return inst, true, err
 
 	case introspection.TypeKindObject:
-		return &core.TypeDef{
-			Kind:     core.TypeDefKindObject,
-			Optional: !nonNull,
-			AsObject: dagql.NonNull(&core.ObjectTypeDef{
-				Name: introspectionType.Name,
-			}),
-		}, true, nil
+		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "withObject",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
+		})
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(inst)
+		return inst, true, err
 
 	case introspection.TypeKindInputObject:
-		return &core.TypeDef{
-			Kind:     core.TypeDefKindInput,
-			Optional: !nonNull,
-			AsInput: dagql.NonNull(&core.InputTypeDef{
-				Name: introspectionType.Name,
-			}),
-		}, true, nil
+		var inst dagql.ObjectResult[*core.TypeDef]
+		var input dagql.ObjectResult[*core.InputTypeDef]
+		if err := dag.Select(ctx, dag.Root(), &input, dagql.Selector{
+			Field: "__inputTypeDef",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
+		}); err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inputID, err := core.ResultIDInput(input)
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "__withInputTypeDef",
+			Args:  []dagql.NamedInput{{Name: "inputTypeDef", Value: inputID}},
+		})
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(inst)
+		return inst, true, err
 
 	default:
-		return nil, false, fmt.Errorf("unexpected type kind %s", introspectionType.Kind)
+		return dagql.ObjectResult[*core.TypeDef]{}, false, fmt.Errorf("unexpected type kind %s", introspectionType.Kind)
 	}
 }

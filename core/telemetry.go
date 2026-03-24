@@ -290,8 +290,18 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 
 // logResult prints the result of a call to the span's stdout.
 func logResult(ctx context.Context, res dagql.AnyResult, frame *dagql.ResultCall) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
-	defer stdio.Close()
+	var output string
+	if str, ok := dagql.UnwrapAs[dagql.String](res); ok {
+		output = string(str)
+	} else if _, ok := dagql.UnwrapAs[dagql.IDType](res); ok {
+		// Don't print IDs; they can get quite large.
+		return
+	} else if lit, ok := dagql.UnwrapAs[call.Literate](res); ok {
+		output = lit.ToLiteral().Display()
+	} else {
+		return
+	}
+
 	fieldSpec, ok := fieldSpecForCall(ctx, frame)
 	if !ok {
 		return
@@ -300,13 +310,10 @@ func logResult(ctx context.Context, res dagql.AnyResult, frame *dagql.ResultCall
 		// Take care not to print any sensitive values.
 		return
 	}
-	if str, ok := dagql.UnwrapAs[dagql.String](res); ok {
-		fmt.Fprint(stdio.Stdout, str)
-	} else if _, ok := dagql.UnwrapAs[dagql.IDType](res); ok {
-		// Don't print IDs; they can get quite large
-	} else if lit, ok := dagql.UnwrapAs[call.Literate](res); ok {
-		fmt.Fprint(stdio.Stdout, lit.ToLiteral().Display())
-	}
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
+	defer stdio.Close()
+	fmt.Fprint(stdio.Stdout, output)
 }
 
 func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.FieldSpec, bool) {
@@ -405,8 +412,19 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 				"currentTypeDefs",
 				"currentModule",
 				"currentFunctionCall",
+				"function",
 				"typeDef",
-				"sourceMap":
+				"sourceMap",
+				"__loadInputTypeDef",
+				"__functionArg",
+				"__fieldTypeDef",
+				"__enumMemberTypeDef",
+				"__listTypeDef",
+				"__objectTypeDef",
+				"__interfaceTypeDef",
+				"__inputTypeDef",
+				"__scalarTypeDef",
+				"__enumTypeDef":
 				return true, immediateReceiver
 			default:
 				return false, immediateReceiver
@@ -431,6 +449,39 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 					"withArg",
 					"withSourceMap",
 					"withDescription":
+					return true, immediateReceiver
+				}
+				if strings.HasPrefix(cur.Field, "__") {
+					return true, immediateReceiver
+				}
+			case "TypeDef":
+				switch cur.Field {
+				case "withOptional",
+					"withKind",
+					"withScalar",
+					"withListOf",
+					"withObject",
+					"withInterface",
+					"withObjectField",
+					"withFunction",
+					"withObjectConstructor",
+					"withEnum",
+					"withEnumValue",
+					"withEnumMember":
+					return true, immediateReceiver
+				}
+				if strings.HasPrefix(cur.Field, "__") {
+					return true, immediateReceiver
+				}
+			case "FunctionArg",
+				"ObjectTypeDef",
+				"InterfaceTypeDef",
+				"InputTypeDef",
+				"FieldTypeDef",
+				"ListTypeDef",
+				"EnumTypeDef",
+				"EnumMemberTypeDef":
+				if strings.HasPrefix(cur.Field, "__") {
 					return true, immediateReceiver
 				}
 			}

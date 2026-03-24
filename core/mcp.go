@@ -471,15 +471,16 @@ func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 		modTypeName := strcase.ToCamel(modSelf.Name())
 		modTypeDef := schema.Types[modTypeName]
 		for _, obj := range modSelf.ObjectDefs {
-			def := obj.AsObject.Value
+			def := obj.Self().AsObject.Value.Self()
 			if strcase.ToCamel(def.Name) != modTypeName {
 				// we're only concerned with the entrypoint object
 				continue
 			}
 			var hasRequiredArgs bool
 			if def.Constructor.Valid {
-				for _, arg := range def.Constructor.Value.Args {
-					if !arg.TypeDef.Optional && arg.DefaultPath == "" && arg.DefaultValue == nil {
+				for _, arg := range def.Constructor.Value.Self().Args {
+					argSelf := arg.Self()
+					if !argSelf.TypeDef.Self().Optional && argSelf.DefaultPath == "" && argSelf.DefaultValue == nil {
 						hasRequiredArgs = true
 						break
 					}

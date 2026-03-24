@@ -491,13 +491,13 @@ func (s EnvHook) InstallObject(targetType dagql.ObjectType, directives ...*ast.D
 	}
 }
 
-func (s EnvHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
+func (s EnvHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef dagql.ObjectResult[*TypeDef]) (*Module, error) {
 	// Install the target type
 	mod, err := mod.WithObject(ctx, targetTypedef)
 	if err != nil {
 		return nil, err
 	}
-	typename := targetTypedef.Type().Name()
+	typename := targetTypedef.Self().Type().Name()
 	targetType, ok := s.Server.ObjectType(typename)
 	if !ok {
 		return nil, fmt.Errorf("can't retrieve object type %s", typename)

@@ -212,12 +212,12 @@ func listImplementedFunctions(sdkMod *core.Module) map[string]*core.Function {
 
 	for _, def := range sdkMod.ObjectDefs {
 		// Skip if the object isn't valid.
-		if !def.AsObject.Valid {
+		if !def.Self().AsObject.Valid {
 			continue
 		}
 
 		// Skip if it's not the main object.
-		obj := def.AsObject.Value
+		obj := def.Self().AsObject.Value.Self()
 		if gqlFieldName(obj.Name) != gqlFieldName(sdkMod.NameField) {
 			continue
 		}
@@ -225,9 +225,10 @@ func listImplementedFunctions(sdkMod *core.Module) map[string]*core.Function {
 		// Loop through the main object functions and look
 		// for a match with the interface functions.
 		for _, fn := range obj.Functions {
+			fnSelf := fn.Self()
 			for _, name := range sdkFunctions {
-				if gqlFieldName(fn.Name) == gqlFieldName(name) {
-					result[name] = fn
+				if gqlFieldName(fnSelf.Name) == gqlFieldName(name) {
+					result[name] = fnSelf
 				}
 			}
 		}

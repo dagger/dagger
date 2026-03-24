@@ -241,68 +241,44 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 	root.Server = testSrv
 	dag := dagql.NewServer(root)
 	testSrv.dag = dag
+	installTypeDefTestClasses(dag)
+	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
 
-	nestedObjDef := NewObjectTypeDef("Nested", "", nil)
-	ifaceDef := NewInterfaceTypeDef("Iface", "")
-	enumDef := NewEnumTypeDef("Choice", "", nil)
-	enumDef.Members = []*EnumMemberTypeDef{
-		NewEnumMemberTypeDef("one", "one", "", nil, nil),
-	}
-	objDef := NewObjectTypeDef("Thing", "", nil)
-	objDef.Fields = []*FieldTypeDef{
-		{
-			Name:         "child",
-			OriginalName: "child",
-			TypeDef: &TypeDef{
-				Kind:     TypeDefKindObject,
-				AsObject: dagql.NonNull(nestedObjDef),
-			},
-		},
-		{
-			Name:         "iface",
-			OriginalName: "iface",
-			TypeDef: &TypeDef{
-				Kind:        TypeDefKindInterface,
-				AsInterface: dagql.NonNull(ifaceDef),
-			},
-		},
-		{
-			Name:         "choice",
-			OriginalName: "choice",
-			TypeDef: &TypeDef{
-				Kind:   TypeDefKindEnum,
-				AsEnum: dagql.NonNull(enumDef),
-			},
-		},
-	}
+	nestedObjDef := newTypeDefAttachedResult(t, ctx, sc, dag, "nestedObjectTypeDef", NewObjectTypeDef("Nested", "", nil))
+	ifaceDef := newTypeDefAttachedResult(t, ctx, sc, dag, "ifaceTypeDef", NewInterfaceTypeDef("Iface", ""))
+	enumMember := newTypeDefAttachedResult(t, ctx, sc, dag, "enumMemberTypeDef", NewEnumMemberTypeDef("one", "one", "", nil, dagql.ObjectResult[*SourceMap]{}))
+	enumDefSelf := NewEnumTypeDef("Choice", "", dagql.ObjectResult[*SourceMap]{})
+	enumDefSelf.Members = dagql.ObjectResultArray[*EnumMemberTypeDef]{enumMember}
+	enumDef := newTypeDefAttachedResult(t, ctx, sc, dag, "enumTypeDef", enumDefSelf)
+
+	childTypeDef := newTypeDefAttachedResult(t, ctx, sc, dag, "childFieldTypeDef", (&TypeDef{}).WithObjectTypeDef(nestedObjDef))
+	ifaceTypeDef := newTypeDefAttachedResult(t, ctx, sc, dag, "ifaceFieldTypeDef", (&TypeDef{}).WithInterfaceTypeDef(ifaceDef))
+	choiceTypeDef := newTypeDefAttachedResult(t, ctx, sc, dag, "choiceFieldTypeDef", (&TypeDef{}).WithEnumTypeDef(enumDef))
+
+	childField := newTypeDefAttachedResult(t, ctx, sc, dag, "childField", NewFieldTypeDef("child", childTypeDef, "", nil))
+	ifaceField := newTypeDefAttachedResult(t, ctx, sc, dag, "ifaceField", NewFieldTypeDef("iface", ifaceTypeDef, "", nil))
+	choiceField := newTypeDefAttachedResult(t, ctx, sc, dag, "choiceField", NewFieldTypeDef("choice", choiceTypeDef, "", nil))
+
+	objDefSelf := NewObjectTypeDef("Thing", "", nil)
+	objDefSelf.Fields = dagql.ObjectResultArray[*FieldTypeDef]{childField, ifaceField, choiceField}
+	objDef := newTypeDefAttachedResult(t, ctx, sc, dag, "thingObjectTypeDef", objDefSelf)
+
+	objTypeDef := newTypeDefAttachedResult(t, ctx, sc, dag, "thingTypeDef", (&TypeDef{}).WithObjectTypeDef(objDef))
+	ifaceTypeDefTop := newTypeDefAttachedResult(t, ctx, sc, dag, "ifaceTopTypeDef", (&TypeDef{}).WithInterfaceTypeDef(ifaceDef))
+	enumTypeDefTop := newTypeDefAttachedResult(t, ctx, sc, dag, "enumTopTypeDef", (&TypeDef{}).WithEnumTypeDef(enumDef))
 
 	mod := &Module{
 		NameField:    "Test",
 		OriginalName: "Test",
 		SDKConfig:    &SDKConfig{},
 		Deps:         NewModDeps(root, nil),
-		ObjectDefs: []*TypeDef{
-			{
-				Kind:     TypeDefKindObject,
-				AsObject: dagql.NonNull(objDef),
-			},
-		},
-		InterfaceDefs: []*TypeDef{
-			{
-				Kind:        TypeDefKindInterface,
-				AsInterface: dagql.NonNull(ifaceDef),
-			},
-		},
-		EnumDefs: []*TypeDef{
-			{
-				Kind:   TypeDefKindEnum,
-				AsEnum: dagql.NonNull(enumDef),
-			},
-		},
+		ObjectDefs:    dagql.ObjectResultArray[*TypeDef]{objTypeDef},
+		InterfaceDefs: dagql.ObjectResultArray[*TypeDef]{ifaceTypeDefTop},
+		EnumDefs:      dagql.ObjectResultArray[*TypeDef]{enumTypeDefTop},
 	}
 
-	payload, err := mod.EncodePersistedObject(ctx, nil)
+	payload, err := mod.EncodePersistedObject(ctx, sc)
 	assert.NilError(t, err)
 
 	decodedTyped, err := (&Module{}).DecodePersistedObject(ctx, dag, 0, nil, payload)
@@ -313,18 +289,18 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 	assert.Equal(t, 1, len(decoded.ObjectDefs))
 	assert.Equal(t, 1, len(decoded.InterfaceDefs))
 	assert.Equal(t, 1, len(decoded.EnumDefs))
-	assert.Assert(t, decoded.ObjectDefs[0].AsObject.Valid)
-	assert.Assert(t, decoded.InterfaceDefs[0].AsInterface.Valid)
-	assert.Assert(t, decoded.EnumDefs[0].AsEnum.Valid)
+	assert.Assert(t, decoded.ObjectDefs[0].Self().AsObject.Valid)
+	assert.Assert(t, decoded.InterfaceDefs[0].Self().AsInterface.Valid)
+	assert.Assert(t, decoded.EnumDefs[0].Self().AsEnum.Valid)
 
-	decodedFields := decoded.ObjectDefs[0].AsObject.Value.Fields
+	decodedFields := decoded.ObjectDefs[0].Self().AsObject.Value.Self().Fields
 	assert.Equal(t, 3, len(decodedFields))
-	assert.Assert(t, decodedFields[0].TypeDef.AsObject.Valid)
-	assert.Assert(t, decodedFields[1].TypeDef.AsInterface.Valid)
-	assert.Assert(t, decodedFields[2].TypeDef.AsEnum.Valid)
-	assert.Equal(t, "Thing", decoded.ObjectDefs[0].AsObject.Value.Name)
-	assert.Equal(t, "Iface", decoded.InterfaceDefs[0].AsInterface.Value.Name)
-	assert.Equal(t, "Choice", decoded.EnumDefs[0].AsEnum.Value.Name)
+	assert.Assert(t, decodedFields[0].Self().TypeDef.Self().AsObject.Valid)
+	assert.Assert(t, decodedFields[1].Self().TypeDef.Self().AsInterface.Valid)
+	assert.Assert(t, decodedFields[2].Self().TypeDef.Self().AsEnum.Valid)
+	assert.Equal(t, "Thing", decoded.ObjectDefs[0].Self().AsObject.Value.Self().Name)
+	assert.Equal(t, "Iface", decoded.InterfaceDefs[0].Self().AsInterface.Value.Self().Name)
+	assert.Equal(t, "Choice", decoded.EnumDefs[0].Self().AsEnum.Value.Self().Name)
 }
 
 func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
@@ -346,36 +322,34 @@ func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 	testSrv.dag = dag
 	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "module-object-current-field-client",
+		SessionID: "module-object-current-field-session",
+	})
 	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
 
 	ifaceDef := &InterfaceTypeDef{
 		Name:         "Iface",
 		OriginalName: "Iface",
 	}
-	fieldType := &TypeDef{
-		Kind:        TypeDefKindInterface,
-		AsInterface: dagql.NonNull(ifaceDef),
-	}
-	fieldDef := &FieldTypeDef{
-		Name:         "ref",
-		OriginalName: "ref",
-		TypeDef:      fieldType,
-	}
+	ifaceDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectIface", ifaceDef)
+	fieldType := newTypeDefDetachedResult(t, dag, "moduleObjectFieldType", (&TypeDef{}).WithInterfaceTypeDef(ifaceDefRes))
+	fieldDef := newTypeDefDetachedResult(t, dag, "moduleObjectField", NewFieldTypeDef("ref", fieldType, "", nil))
 	objDef := &ObjectTypeDef{
 		Name:         "Obj",
 		OriginalName: "Obj",
-		Fields:       []*FieldTypeDef{fieldDef},
+		Fields:       dagql.ObjectResultArray[*FieldTypeDef]{fieldDef},
 	}
+	objDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectObj", objDef)
 	mod := &Module{
 		Deps: NewModDeps(root, nil),
-		ObjectDefs: []*TypeDef{{
-			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(objDef),
-		}},
-		InterfaceDefs: []*TypeDef{{
-			Kind:        TypeDefKindInterface,
-			AsInterface: dagql.NonNull(ifaceDef),
-		}},
+		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
+			newTypeDefDetachedResult(t, dag, "moduleObjectObjTypeDef", (&TypeDef{}).WithObjectTypeDef(objDefRes)),
+		},
+		InterfaceDefs: dagql.ObjectResultArray[*TypeDef]{
+			newTypeDefDetachedResult(t, dag, "moduleObjectIfaceTypeDef", (&TypeDef{}).WithInterfaceTypeDef(ifaceDefRes)),
+		},
 	}
 	modRes, err := dagql.NewObjectResultForCall(mod, dag, moduleObjectTestSyntheticCall("moduleObjectConvertCurrentFieldIDModule", mod))
 	assert.NilError(t, err)
@@ -427,25 +401,27 @@ func TestModuleObjectConvertToSDKInputRewritesStoredResults(t *testing.T) {
 	testSrv.dag = dag
 	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "module-object-rewrite-client",
+		SessionID: "module-object-rewrite-session",
+	})
 	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
 
 	childObjDef := NewObjectTypeDef("Child", "", nil)
+	childObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectRewriteChildObj", childObjDef)
 	parentObjDef := NewObjectTypeDef("Parent", "", nil)
-	parentObjDef.Fields = append(parentObjDef.Fields, &FieldTypeDef{
-		Name:         "child",
-		OriginalName: "child",
-		TypeDef:      (&TypeDef{}).WithObject("Child", "", nil, nil),
-	})
+	childTypeDef := newTypeDefDetachedResult(t, dag, "moduleObjectRewriteChildTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes))
+	parentObjDef.Fields = append(parentObjDef.Fields, newTypeDefDetachedResult(t, dag, "moduleObjectRewriteChildField", NewFieldTypeDef("child", childTypeDef, "", nil)))
+	parentObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectRewriteParentObj", parentObjDef)
 	mod := &Module{
 		NameField: "test",
 		Deps:      NewModDeps(nil, nil),
-		ObjectDefs: []*TypeDef{
-			(&TypeDef{}).WithObject("Child", "", nil, nil),
-			(&TypeDef{}).WithObject("Parent", "", nil, nil),
+		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
+			newTypeDefDetachedResult(t, dag, "moduleObjectRewriteChildTopTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes)),
+			newTypeDefDetachedResult(t, dag, "moduleObjectRewriteParentTopTypeDef", (&TypeDef{}).WithObjectTypeDef(parentObjDefRes)),
 		},
 	}
-	mod.ObjectDefs[0].AsObject.Value = childObjDef
-	mod.ObjectDefs[1].AsObject.Value = parentObjDef
 	modRes, err := dagql.NewObjectResultForCall(mod, dag, moduleObjectTestSyntheticCall("moduleObjectRewriteStoredResultsModule", mod))
 	assert.NilError(t, err)
 	parentType := &ModuleObjectType{
@@ -508,25 +484,27 @@ func TestModuleObjectPersistedResultRefsRoundTrip(t *testing.T) {
 	testSrv.dag = dag
 	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "module-object-persisted-client",
+		SessionID: "module-object-persisted-session",
+	})
 	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
 
 	childObjDef := NewObjectTypeDef("Child", "", nil)
+	childObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectPersistedChildObj", childObjDef)
 	parentObjDef := NewObjectTypeDef("Parent", "", nil)
-	parentObjDef.Fields = append(parentObjDef.Fields, &FieldTypeDef{
-		Name:         "child",
-		OriginalName: "child",
-		TypeDef:      (&TypeDef{}).WithObject("Child", "", nil, nil),
-	})
+	childTypeDef := newTypeDefDetachedResult(t, dag, "moduleObjectPersistedChildTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes))
+	parentObjDef.Fields = append(parentObjDef.Fields, newTypeDefDetachedResult(t, dag, "moduleObjectPersistedChildField", NewFieldTypeDef("child", childTypeDef, "", nil)))
+	parentObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectPersistedParentObj", parentObjDef)
 	mod := &Module{
 		NameField: "test",
 		Deps:      NewModDeps(nil, nil),
-		ObjectDefs: []*TypeDef{
-			(&TypeDef{}).WithObject("Child", "", nil, nil),
-			(&TypeDef{}).WithObject("Parent", "", nil, nil),
+		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
+			newTypeDefDetachedResult(t, dag, "moduleObjectPersistedChildTopTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes)),
+			newTypeDefDetachedResult(t, dag, "moduleObjectPersistedParentTopTypeDef", (&TypeDef{}).WithObjectTypeDef(parentObjDefRes)),
 		},
 	}
-	mod.ObjectDefs[0].AsObject.Value = childObjDef
-	mod.ObjectDefs[1].AsObject.Value = parentObjDef
 	modRes, err := dagql.NewObjectResultForCall(mod, dag, moduleObjectTestSyntheticCall("moduleObjectPersistedRefsModule", mod))
 	assert.NilError(t, err)
 	parentType := &ModuleObjectType{
@@ -582,23 +560,12 @@ func TestModuleObjectEncodeRejectsRawCallIDInSemanticField(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
+	dag := newTypeDefTestDag()
 	childObjDef := NewObjectTypeDef("Child", "", nil)
+	childObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectRawChildObj", childObjDef)
 	parentObjDef := NewObjectTypeDef("Parent", "", nil)
-	parentObjDef.Fields = append(parentObjDef.Fields, &FieldTypeDef{
-		Name:         "child",
-		OriginalName: "child",
-		TypeDef:      (&TypeDef{}).WithObject("Child", "", nil, nil),
-	})
-	mod := &Module{
-		NameField: "test",
-		Deps:      NewModDeps(nil, nil),
-		ObjectDefs: []*TypeDef{
-			(&TypeDef{}).WithObject("Child", "", nil, nil),
-			(&TypeDef{}).WithObject("Parent", "", nil, nil),
-		},
-	}
-	mod.ObjectDefs[0].AsObject.Value = childObjDef
-	mod.ObjectDefs[1].AsObject.Value = parentObjDef
+	childTypeDef := newTypeDefDetachedResult(t, dag, "moduleObjectRawChildTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes))
+	parentObjDef.Fields = append(parentObjDef.Fields, newTypeDefDetachedResult(t, dag, "moduleObjectRawChildField", NewFieldTypeDef("child", childTypeDef, "", nil)))
 
 	childID := call.New().Append((&ModuleObject{TypeDef: childObjDef}).Type(), "moduleObjectRawCallID")
 	obj := &ModuleObject{
@@ -617,12 +584,6 @@ func TestModuleObjectEncodeAllowsRawCallIDInPrivateField(t *testing.T) {
 
 	ctx := context.Background()
 	objDef := NewObjectTypeDef("Parent", "", nil)
-	mod := &Module{
-		NameField:  "test",
-		Deps:       NewModDeps(nil, nil),
-		ObjectDefs: []*TypeDef{(&TypeDef{}).WithObject("Parent", "", nil, nil)},
-	}
-	mod.ObjectDefs[0].AsObject.Value = objDef
 
 	refID := call.New().Append(dagql.String("").Type(), "moduleObjectPrivateCallID")
 	obj := &ModuleObject{
@@ -730,31 +691,29 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	baseCache, err := dagql.NewCache(ctx, "")
 	assert.NilError(t, err)
 
-	ifaceDef := NewInterfaceTypeDef("Iface", "")
-	childObjDef := NewObjectTypeDef("Child", "", nil)
-	parentObjDef := NewObjectTypeDef("Parent", "", nil)
-	parentObjDef.Fields = append(parentObjDef.Fields, &FieldTypeDef{
-		Name:         "child",
-		OriginalName: "child",
-		TypeDef: (&TypeDef{
-			Kind:        TypeDefKindInterface,
-			AsInterface: dagql.NonNull(ifaceDef),
-		}),
-	})
-	mod := &Module{
-		NameField: "test",
-		Deps:      NewModDeps(nil, nil),
-		ObjectDefs: []*TypeDef{
-			(&TypeDef{}).WithObject("Child", "", nil, nil),
-			(&TypeDef{}).WithObject("Parent", "", nil, nil),
-		},
-		InterfaceDefs: []*TypeDef{{
-			Kind:        TypeDefKindInterface,
-			AsInterface: dagql.NonNull(ifaceDef),
-		}},
+	buildModule := func(dag *dagql.Server) (*Module, *ObjectTypeDef) {
+		ifaceDef := NewInterfaceTypeDef("Iface", "")
+		ifaceDefRes := newTypeDefDetachedResult(t, dag, "semanticIfaceDef", ifaceDef)
+		childObjDef := NewObjectTypeDef("Child", "", nil)
+		childObjDefRes := newTypeDefDetachedResult(t, dag, "semanticChildObjDef", childObjDef)
+		parentObjDef := NewObjectTypeDef("Parent", "", nil)
+		ifaceTypeDef := newTypeDefDetachedResult(t, dag, "semanticIfaceTypeDef", (&TypeDef{}).WithInterfaceTypeDef(ifaceDefRes))
+		parentObjDef.Fields = append(parentObjDef.Fields, newTypeDefDetachedResult(t, dag, "semanticChildField", NewFieldTypeDef("child", ifaceTypeDef, "", nil)))
+		parentObjDefRes := newTypeDefDetachedResult(t, dag, "semanticParentObjDef", parentObjDef)
+
+		mod := &Module{
+			NameField: "test",
+			Deps:      NewModDeps(nil, nil),
+			ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
+				newTypeDefDetachedResult(t, dag, "semanticChildTopTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes)),
+				newTypeDefDetachedResult(t, dag, "semanticParentTopTypeDef", (&TypeDef{}).WithObjectTypeDef(parentObjDefRes)),
+			},
+			InterfaceDefs: dagql.ObjectResultArray[*TypeDef]{
+				newTypeDefDetachedResult(t, dag, "semanticIfaceTopTypeDef", (&TypeDef{}).WithInterfaceTypeDef(ifaceDefRes)),
+			},
+		}
+		return mod, parentObjDef
 	}
-	mod.ObjectDefs[0].AsObject.Value = childObjDef
-	mod.ObjectDefs[1].AsObject.Value = parentObjDef
 
 	producerCache := baseCache
 	producerRoot := &Query{}
@@ -766,11 +725,13 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	producerRoot.Server = producerSrv
 	producerDag := dagql.NewServer(producerRoot)
 	producerSrv.dag = producerDag
+	installTypeDefTestClasses(producerDag)
 	producerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, producerRoot), &engine.ClientMetadata{
 		ClientID:  "semantic-producer-client",
 		SessionID: "semantic-producer-session",
 	})
 	producerCtx = dagql.ContextWithCache(producerCtx, producerCache)
+	mod, parentObjDef := buildModule(producerDag)
 	mod.Deps = NewModDeps(producerRoot, nil)
 	installModuleObjectTestModuleClass(producerDag)
 	installModuleObjectSemanticIfaceChildClass(producerDag)
@@ -827,6 +788,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	consumerRoot.Server = consumerSrv
 	consumerDag := dagql.NewServer(consumerRoot)
 	consumerSrv.dag = consumerDag
+	installTypeDefTestClasses(consumerDag)
 	consumerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, consumerRoot), &engine.ClientMetadata{
 		ClientID:  "semantic-consumer-client",
 		SessionID: "semantic-consumer-session",
@@ -834,10 +796,11 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	consumerCtx = dagql.ContextWithCache(consumerCtx, consumerCache)
 	installModuleObjectTestModuleClass(consumerDag)
 	installModuleObjectSemanticIfaceChildClass(consumerDag)
-	consumerModRes, err := dagql.NewObjectResultForCall(mod, consumerDag, moduleObjectTestSyntheticCall("semanticHandleConsumerModule", mod))
+	consumerMod, _ := buildModule(consumerDag)
+	consumerModRes, err := dagql.NewObjectResultForCall(consumerMod, consumerDag, moduleObjectTestSyntheticCall("semanticHandleConsumerModule", consumerMod))
 	assert.NilError(t, err)
-	mod.Deps = NewModDeps(consumerRoot, []Mod{NewUserMod(consumerModRes)})
-	consumerSrv.defaultDeps = mod.Deps
+	consumerMod.Deps = NewModDeps(consumerRoot, []Mod{NewUserMod(consumerModRes)})
+	consumerSrv.defaultDeps = consumerMod.Deps
 
 	var retainedID call.ID
 	assert.NilError(t, retainedID.Decode(childEnc))

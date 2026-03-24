@@ -55,13 +55,17 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 	if err != nil {
 		return nil, err
 	}
+	mainObjRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, mainObj)
+	if err != nil {
+		return nil, fmt.Errorf("wrap main object typedef %q: %w", mainObj.Name, err)
+	}
 	return &ModTreeNode{
 		DagqlServer:    srv,
 		Module:         main,
 		OriginalModule: main,
 		Type: &TypeDef{
 			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(mainObj),
+			AsObject: dagql.NonNull(mainObjRes),
 		},
 		Description: main.Description,
 	}, nil
@@ -576,11 +580,12 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	var children []*ModTreeNode
 	if objType := node.ObjectType(); objType != nil {
 		nodeType := objType.Name
-		for _, fn := range objType.Functions {
+		for _, fnRes := range objType.Functions {
+			fn := fnRes.Self()
 			if functionRequiresArgs(fn) {
 				continue
 			}
-			returnType := fn.ReturnType.ToType().Name()
+			returnType := fn.ReturnType.Self().ToType().Name()
 			// toolchains are exposed as a function.
 			// if the function name returns a toolchain, set the right module so children will
 			// know they are coming from a toolchain
@@ -592,11 +597,15 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 			}
 			objectAdded := false
 			// if the type returned by the function is an object, check the children of the return type
-			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
+			if returnsObject := fn.ReturnType.Self().AsObject.Valid; returnsObject &&
 				// avoid cycles (X.withFoo: X)
 				returnType != nodeType {
 				// search for the object defined by the return type, in the "originalModule" that can be the toolchain one
-				if subObj, ok := originalModule.ObjectByName(fn.ReturnType.ToType().Name()); ok {
+				if subObj, ok := originalModule.ObjectByName(fn.ReturnType.Self().ToType().Name()); ok {
+					subObjRes, err := dagql.NewObjectResultForCurrentCall(ctx, node.DagqlServer, subObj)
+					if err != nil {
+						return nil, fmt.Errorf("wrap child object typedef %q: %w", subObj.Name, err)
+					}
 					objectAdded = true
 					children = append(children, &ModTreeNode{
 						Parent:         node,
@@ -604,7 +613,10 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 						DagqlServer:    node.DagqlServer,
 						Module:         node.Module,
 						OriginalModule: originalModule,
-						Type:           &TypeDef{AsObject: dagql.NonNull(subObj)},
+						Type: &TypeDef{
+							Kind:     TypeDefKindObject,
+							AsObject: dagql.NonNull(subObjRes),
+						},
 						IsCheck:        false,
 						IsGenerator:    false,
 						Description:    subObj.Description,
@@ -618,21 +630,22 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 					DagqlServer:    node.DagqlServer,
 					Module:         node.Module,
 					OriginalModule: originalModule,
-					Type:           fn.ReturnType,
+					Type:           fn.ReturnType.Self(),
 					IsCheck:        fn.IsCheck,
 					IsGenerator:    fn.IsGenerator,
 					Description:    fn.Description,
 				})
 			}
 		}
-		for _, field := range objType.Fields {
+		for _, fieldRes := range objType.Fields {
+			field := fieldRes.Self()
 			children = append(children, &ModTreeNode{
 				Parent:         node,
 				Name:           field.Name,
 				DagqlServer:    node.DagqlServer,
 				Module:         node.Module,
 				OriginalModule: node.OriginalModule,
-				Type:           field.TypeDef,
+				Type:           field.TypeDef.Self(),
 				IsCheck:        false,
 				IsGenerator:    false,
 				Description:    field.Description,
@@ -668,5 +681,5 @@ func (node *ModTreeNode) Child(ctx context.Context, name string) (*ModTreeNode, 
 }
 
 func (node *ModTreeNode) ObjectType() *ObjectTypeDef {
-	return node.Type.AsObject.Value
+	return node.Type.AsObject.Value.Self()
 }

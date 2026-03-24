@@ -228,7 +228,7 @@ type ModType interface {
 	SourceMod() Mod
 
 	// The core API TypeDef representation of this type
-	TypeDef() *TypeDef
+	TypeDef(context.Context) (dagql.ObjectResult[*TypeDef], error)
 }
 
 // PrimitiveType are the basic types like string, int, bool, void, etc.
@@ -267,12 +267,36 @@ func (t *PrimitiveType) SourceMod() Mod {
 	return nil
 }
 
-func (t *PrimitiveType) TypeDef() *TypeDef {
-	return t.Def
+func (t *PrimitiveType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*TypeDef]{}, err
+	}
+	var inst dagql.ObjectResult[*TypeDef]
+	if err := dag.Select(ctx, dag.Root(), &inst,
+		dagql.Selector{Field: "typeDef"},
+		dagql.Selector{
+			Field: "withKind",
+			Args: []dagql.NamedInput{
+				{Name: "kind", Value: t.Def.Kind},
+			},
+		},
+	); err != nil {
+		return inst, err
+	}
+	if t.Def.Optional {
+		if err := dag.Select(ctx, inst, &inst, dagql.Selector{
+			Field: "withOptional",
+			Args: []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+		}); err != nil {
+			return inst, err
+		}
+	}
+	return inst, nil
 }
 
 type ListType struct {
-	Elem       *TypeDef
+	Elem       dagql.ObjectResult[*TypeDef]
 	Underlying ModType
 }
 
@@ -280,7 +304,7 @@ var _ ModType = &ListType{}
 
 func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
 	arr := dagql.DynamicResultArrayOutput{
-		Elem: t.Elem.ToTyped(),
+		Elem: t.Elem.Self().ToTyped(),
 	}
 	if value == nil {
 		slog.Debug("ListType.ConvertFromSDKResult: got nil value")
@@ -377,17 +401,32 @@ func (t *ListType) SourceMod() Mod {
 	return t.Underlying.SourceMod()
 }
 
-func (t *ListType) TypeDef() *TypeDef {
-	return &TypeDef{
-		Kind: TypeDefKindList,
-		AsList: dagql.NonNull(&ListTypeDef{
-			ElementTypeDef: t.Elem.Clone(),
-		}),
+func (t *ListType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*TypeDef]{}, err
 	}
+	elemID, err := t.Elem.ID()
+	if err != nil {
+		return dagql.ObjectResult[*TypeDef]{}, err
+	}
+	var inst dagql.ObjectResult[*TypeDef]
+	if err := dag.Select(ctx, dag.Root(), &inst,
+		dagql.Selector{Field: "typeDef"},
+		dagql.Selector{
+			Field: "withListOf",
+			Args: []dagql.NamedInput{
+				{Name: "elementType", Value: dagql.NewID[*TypeDef](elemID)},
+			},
+		},
+	); err != nil {
+		return inst, err
+	}
+	return inst, nil
 }
 
 type NullableType struct {
-	InnerDef *TypeDef
+	InnerDef dagql.ObjectResult[*TypeDef]
 	Inner    ModType
 }
 
@@ -401,8 +440,8 @@ func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dag
 		}
 		return val.NullableWrapped(), nil
 	}
-	return dagql.NewResultForCurrentCall(ctx, dagql.DynamicNullable{
-		Elem: t.InnerDef.ToTyped(),
+		return dagql.NewResultForCurrentCall(ctx, dagql.DynamicNullable{
+		Elem: t.InnerDef.Self().ToTyped(),
 	})
 }
 
@@ -440,8 +479,17 @@ func (t *NullableType) SourceMod() Mod {
 	return t.Inner.SourceMod()
 }
 
-func (t *NullableType) TypeDef() *TypeDef {
-	cp := t.InnerDef.Clone()
-	cp.Optional = true
-	return cp
+func (t *NullableType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*TypeDef]{}, err
+	}
+	inst := t.InnerDef
+	if err := dag.Select(ctx, inst, &inst, dagql.Selector{
+		Field: "withOptional",
+		Args: []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
 }

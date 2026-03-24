@@ -379,17 +379,21 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 			return fmt.Errorf("load query function typedefs for %q: %w", fn.Name, err)
 		}
 		if obj := fn.ReturnType.AsObject; obj != nil {
-			// FIXME: ideally CurrentTypeDefs would return the constructors
-			// with the right name matching the schema, even if module didn't
-			// define it. This would avoid any discrepancies on name conversion
-			// between engine and CLI. Then just compare with constructor's
-			// name.
-			if obj.SourceModuleName != "" && fn.Name == gqlFieldName(obj.SourceModuleName) {
+			if fn.Name == gqlFieldName(obj.Name) {
 				obj.Constructor = fn
-				// module that corresponds to this moduleDef
-				if obj.SourceModuleName == m.Name {
-					m.MainObject = fn.ReturnType
-				}
+			}
+		}
+	}
+
+	if m.MainObject == nil {
+		for _, typeDef := range m.Objects {
+			if typeDef.AsObject == nil {
+				continue
+			}
+			obj := typeDef.AsObject
+			if obj.SourceModuleName == m.Name && gqlFieldName(obj.Name) == gqlFieldName(m.Name) {
+				m.MainObject = typeDef
+				break
 			}
 		}
 	}

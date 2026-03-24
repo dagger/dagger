@@ -2804,15 +2804,19 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			if err != nil {
 				return fmt.Errorf("failed to create scoped module for getModDef: %w", err)
 			}
+			returnType, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withObject",
+				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String("Module")}},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create module definition return type for module %q: %w", modName, err)
+			}
 
 			getModDefFn, err := core.NewModFunction(
 				ctx,
 				scopedMod,
 				nil,
-				core.NewFunction("", &core.TypeDef{
-					Kind:     core.TypeDefKindObject,
-					AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "", nil)),
-				}))
+				core.NewFunction("", returnType))
 			if err != nil {
 				return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 			}
@@ -2842,7 +2846,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 	// update the module's types with what was returned from the call above
 	mod.Description = initialized.Description
 	for _, obj := range initialized.ObjectDefs {
-		slog.ExtraDebug("ObjectDefs", "mod.Name", mod.Name(), "sourceModuleName", obj.AsObject.Value.SourceModuleName, "originalName", obj.AsObject.Value.OriginalName, "name", obj.AsObject.Value.Name)
+		slog.ExtraDebug("ObjectDefs", "mod.Name", mod.Name(), "sourceModuleName", obj.Self().AsObject.Value.Self().SourceModuleName, "originalName", obj.Self().AsObject.Value.Self().OriginalName, "name", obj.Self().AsObject.Value.Self().Name)
 		mod, err = mod.WithObject(ctx, obj)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add object to module %q: %w", modName, err)
@@ -2860,7 +2864,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			return nil, fmt.Errorf("failed to add enum to module %q: %w", modName, err)
 		}
 	}
-	err = mod.Patch()
+	err = mod.Patch(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
@@ -2930,18 +2934,15 @@ type toolchainContext struct {
 
 // createStubModule creates an empty module definition (no SDK, no blueprints)
 func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) (*core.Module, error) {
-	typeDef := &core.ObjectTypeDef{
-		Name:         mod.NameField,
-		OriginalName: mod.OriginalName,
+	typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+		Field: "withObject",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(mod.OriginalName)}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stub typedef for no-sdk module %q: %w", mod.NameField, err)
 	}
 
-	mod, err := mod.WithObject(ctx, &core.TypeDef{
-		Kind: core.TypeDefKindObject,
-		AsObject: dagql.Nullable[*core.ObjectTypeDef]{
-			Value: typeDef,
-			Valid: true,
-		},
-	})
+	mod, err = mod.WithObject(ctx, typeDef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module definition for no-sdk module %q: %w", mod.NameField, err)
 	}
@@ -2961,9 +2962,24 @@ func extractToolchainModules(mod *core.Module) []dagql.ObjectResult[*core.Module
 	return toolchainMods
 }
 
+func sameResult(a, b dagql.IDable) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	aID, err := a.ID()
+	if err != nil || aID == nil {
+		return false
+	}
+	bID, err := b.ID()
+	if err != nil || bID == nil {
+		return false
+	}
+	return aID.EngineResultID() == bID.EngineResultID()
+}
+
 // applyArgumentConfigToFunction applies argument configuration overrides to a function
-func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.ModuleConfigArgument, functionChain []string) *core.Function {
-	fn = fn.Clone()
+func applyArgumentConfigToFunction(ctx context.Context, dag *dagql.Server, fn dagql.ObjectResult[*core.Function], argConfigs []*modules.ModuleConfigArgument, functionChain []string) (dagql.ObjectResult[*core.Function], error) {
+	updatedFn := fn
 
 	// Apply configs that match the function chain (or empty for constructor)
 	for _, argCfg := range argConfigs {
@@ -2992,8 +3008,11 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 		}
 
 		// Find the matching argument and apply overrides
-		for _, arg := range fn.Args {
+		for _, argRes := range fn.Self().Args {
+			arg := argRes.Self()
 			if strings.EqualFold(arg.Name, argCfg.Argument) || strings.EqualFold(arg.OriginalName, argCfg.Argument) {
+				updatedArg := argRes
+				argChanged := false
 				// Apply default value if specified
 				if argCfg.Default != "" {
 					// Parse the default value as JSON to determine its type
@@ -3007,17 +3026,17 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 					// the argument expects a string, use the raw config value
 					// as-is. See https://github.com/dagger/dagger/issues/11882
 					if _, isString := defaultValue.(string); !isString {
-						if _, err := arg.TypeDef.ToInput().Decoder().DecodeInput(defaultValue); err != nil {
+						if _, err := arg.TypeDef.Self().ToInput().Decoder().DecodeInput(defaultValue); err != nil {
 							defaultValue = argCfg.Default
 						}
 					}
 
 					// Validate the type matches the argument type
-					_, err := arg.TypeDef.ToInput().Decoder().DecodeInput(defaultValue)
+					_, err := arg.TypeDef.Self().ToInput().Decoder().DecodeInput(defaultValue)
 					if err != nil {
 						// Log warning but don't fail - allow for flexibility
 						slog.Warn("default value type mismatch",
-							"function", fn.Name,
+							"function", fn.Self().Name,
 							"argument", arg.Name,
 							"error", err)
 					}
@@ -3026,61 +3045,144 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 					marshaledValue, err := json.Marshal(defaultValue)
 					if err != nil {
 						slog.Warn("failed to marshal default value",
-							"function", fn.Name,
+							"function", fn.Self().Name,
 							"argument", arg.Name,
 							"error", err)
 					} else {
-						arg.DefaultValue = core.JSON(marshaledValue)
+						if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+							Field: "__withDefaultValue",
+							Args:  []dagql.NamedInput{{Name: "defaultValue", Value: core.JSON(marshaledValue)}},
+						}); err != nil {
+							return updatedFn, err
+						}
+						argChanged = true
 					}
 				}
 
 				// Apply defaultPath if specified
 				if argCfg.DefaultPath != "" {
-					arg.DefaultPath = argCfg.DefaultPath
+					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+						Field: "__withDefaultPath",
+						Args:  []dagql.NamedInput{{Name: "defaultPath", Value: dagql.String(argCfg.DefaultPath)}},
+					}); err != nil {
+						return updatedFn, err
+					}
+					argChanged = true
 				}
 
 				// Apply defaultAddress if specified
 				if argCfg.DefaultAddress != "" {
-					arg.DefaultAddress = argCfg.DefaultAddress
+					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+						Field: "__withDefaultAddress",
+						Args:  []dagql.NamedInput{{Name: "defaultAddress", Value: dagql.String(argCfg.DefaultAddress)}},
+					}); err != nil {
+						return updatedFn, err
+					}
+					argChanged = true
 				}
 
 				// Apply ignore patterns if specified
 				if len(argCfg.Ignore) > 0 {
-					arg.Ignore = argCfg.Ignore
+					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+						Field: "__withIgnore",
+						Args: []dagql.NamedInput{{
+							Name:  "ignore",
+							Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(argCfg.Ignore...)),
+						}},
+					}); err != nil {
+						return updatedFn, err
+					}
+					argChanged = true
+				}
+
+				if argChanged && !sameResult(updatedArg, argRes) {
+					argID, err := core.ResultIDInput(updatedArg)
+					if err != nil {
+						return updatedFn, err
+					}
+					if err := dag.Select(ctx, updatedFn, &updatedFn, dagql.Selector{
+						Field: "__withArg",
+						Args:  []dagql.NamedInput{{Name: "arg", Value: argID}},
+					}); err != nil {
+						return updatedFn, err
+					}
 				}
 				break
 			}
 		}
 	}
 
-	return fn
+	return updatedFn, nil
 }
 
 // applyArgumentConfigsToObjectFunctions applies argument configurations to all functions in an object
-func applyArgumentConfigsToObjectFunctions(objDef *core.TypeDef, argConfigs []*modules.ModuleConfigArgument) *core.TypeDef {
-	if !objDef.AsObject.Valid {
-		return objDef
+func applyArgumentConfigsToObjectFunctions(ctx context.Context, dag *dagql.Server, objDef dagql.ObjectResult[*core.TypeDef], argConfigs []*modules.ModuleConfigArgument) (dagql.ObjectResult[*core.TypeDef], error) {
+	if !objDef.Self().AsObject.Valid {
+		return objDef, nil
 	}
 
-	objDef = objDef.Clone()
-	obj := objDef.AsObject.Value
+	obj := objDef.Self().AsObject.Value
+	updatedObj := obj
 
 	// Apply to constructor if it exists
-	if obj.Constructor.Valid {
-		obj.Constructor.Value = applyArgumentConfigToFunction(obj.Constructor.Value, argConfigs, []string{})
+	if obj.Self().Constructor.Valid {
+		updatedConstructor, err := applyArgumentConfigToFunction(ctx, dag, obj.Self().Constructor.Value, argConfigs, []string{})
+		if err != nil {
+			return objDef, err
+		}
+		if !sameResult(updatedConstructor, obj.Self().Constructor.Value) {
+			constructorID, err := core.ResultIDInput(updatedConstructor)
+			if err != nil {
+				return objDef, err
+			}
+			if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
+				Field: "__withConstructor",
+				Args:  []dagql.NamedInput{{Name: "function", Value: constructorID}},
+			}); err != nil {
+				return objDef, err
+			}
+		}
 	}
 
 	// Apply to all regular functions
-	for i, fn := range obj.Functions {
+	for _, fn := range obj.Self().Functions {
 		// Function chain is just the function's original name for direct functions
-		obj.Functions[i] = applyArgumentConfigToFunction(fn, argConfigs, []string{fn.OriginalName})
+		updatedFn, err := applyArgumentConfigToFunction(ctx, dag, fn, argConfigs, []string{fn.Self().OriginalName})
+		if err != nil {
+			return objDef, err
+		}
+		if !sameResult(updatedFn, fn) {
+			fnID, err := core.ResultIDInput(updatedFn)
+			if err != nil {
+				return objDef, err
+			}
+			if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
+				Field: "__withFunction",
+				Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+			}); err != nil {
+				return objDef, err
+			}
+		}
 	}
 
-	return objDef
+	if sameResult(updatedObj, obj) {
+		return objDef, nil
+	}
+	objID, err := core.ResultIDInput(updatedObj)
+	if err != nil {
+		return objDef, err
+	}
+	if err := dag.Select(ctx, objDef, &objDef, dagql.Selector{
+		Field: "__withObjectTypeDef",
+		Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
+	}); err != nil {
+		return objDef, err
+	}
+	return objDef, nil
 }
 
 // applyArgumentConfigsToModule applies argument configurations to all functions in a module, including chained functions
-func applyArgumentConfigsToModule(mod *core.Module, argConfigs []*modules.ModuleConfigArgument) {
+func applyArgumentConfigsToModule(ctx context.Context, dag *dagql.Server, mod *core.Module, argConfigs []*modules.ModuleConfigArgument) error {
 	// Group configs by chain length for efficiency
 	directConfigs := []*modules.ModuleConfigArgument{}
 	chainedConfigs := []*modules.ModuleConfigArgument{}
@@ -3095,102 +3197,136 @@ func applyArgumentConfigsToModule(mod *core.Module, argConfigs []*modules.Module
 
 	// Apply direct configs (constructor and single-level functions)
 	for objIdx, objDef := range mod.ObjectDefs {
-		mod.ObjectDefs[objIdx] = applyArgumentConfigsToObjectFunctions(objDef, directConfigs)
+		updated, err := applyArgumentConfigsToObjectFunctions(ctx, dag, objDef, directConfigs)
+		if err != nil {
+			return err
+		}
+		mod.ObjectDefs[objIdx] = updated
 	}
 
 	// Apply chained configs
 	for _, cfg := range chainedConfigs {
-		applyChainedArgumentConfig(mod, cfg)
+		if err := applyChainedArgumentConfig(ctx, dag, mod, cfg); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // applyChainedArgumentConfig applies a configuration to a function in a chain
-func applyChainedArgumentConfig(mod *core.Module, cfg *modules.ModuleConfigArgument) {
+func applyChainedArgumentConfig(ctx context.Context, dag *dagql.Server, mod *core.Module, cfg *modules.ModuleConfigArgument) error {
 	if len(cfg.Function) < 2 {
-		return // Not a chain
+		return nil // Not a chain
 	}
 
 	// Find the starting object that has the first function in the chain
 	for _, objDef := range mod.ObjectDefs {
-		if !objDef.AsObject.Valid {
+		if !objDef.Self().AsObject.Valid {
 			continue
 		}
 
-		obj := objDef.AsObject.Value
+		obj := objDef.Self().AsObject.Value
 
 		// Find the first function in the chain
 		firstFn := findFunction(obj, cfg.Function[0])
-		if firstFn == nil {
+		if firstFn.Self() == nil {
 			continue
 		}
 
 		// Follow the chain to find the target function
-		targetObj, targetFnIdx := followFunctionChain(mod, firstFn.ReturnType, cfg.Function[1:])
-		if targetObj == nil {
+		targetObjIdx, targetObj, targetFn := followFunctionChain(mod, firstFn.Self().ReturnType.Self(), cfg.Function[1:])
+		if targetObj.Self() == nil {
 			continue
 		}
 
 		// Apply the configuration to the target function
-		targetFn := targetObj.Functions[targetFnIdx]
-		updatedFn := applyArgumentConfigToFunction(targetFn, []*modules.ModuleConfigArgument{cfg}, cfg.Function)
-		targetObj.Functions[targetFnIdx] = updatedFn
+		updatedFn, err := applyArgumentConfigToFunction(ctx, dag, targetFn, []*modules.ModuleConfigArgument{cfg}, cfg.Function)
+		if err != nil {
+			return err
+		}
+		if sameResult(updatedFn, targetFn) {
+			return nil
+		}
+		fnID, err := core.ResultIDInput(updatedFn)
+		if err != nil {
+			return err
+		}
+		updatedObj := targetObj
+		if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
+			Field: "__withFunction",
+			Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+		}); err != nil {
+			return err
+		}
+		objID, err := core.ResultIDInput(updatedObj)
+		if err != nil {
+			return err
+		}
+		if err := dag.Select(ctx, mod.ObjectDefs[targetObjIdx], &mod.ObjectDefs[targetObjIdx], dagql.Selector{
+			Field: "__withObjectTypeDef",
+			Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
+		}); err != nil {
+			return err
+		}
+		return nil
 	}
+	return nil
 }
 
 // findFunction finds a function by name (case-insensitive) in an object
-func findFunction(obj *core.ObjectTypeDef, name string) *core.Function {
-	for _, fn := range obj.Functions {
-		if strings.EqualFold(fn.OriginalName, name) {
+func findFunction(obj dagql.ObjectResult[*core.ObjectTypeDef], name string) dagql.ObjectResult[*core.Function] {
+	for _, fn := range obj.Self().Functions {
+		if strings.EqualFold(fn.Self().OriginalName, name) {
 			return fn
 		}
 	}
-	return nil
+	return dagql.ObjectResult[*core.Function]{}
 }
 
 // findObjectInModule finds an object in mod.ObjectDefs by OriginalName
-func findObjectInModule(mod *core.Module, originalName string) *core.ObjectTypeDef {
-	for _, objDef := range mod.ObjectDefs {
-		if objDef.AsObject.Valid && objDef.AsObject.Value.OriginalName == originalName {
-			return objDef.AsObject.Value
+func findObjectInModule(mod *core.Module, originalName string) (int, dagql.ObjectResult[*core.ObjectTypeDef]) {
+	for i, objDef := range mod.ObjectDefs {
+		if objDef.Self().AsObject.Valid && objDef.Self().AsObject.Value.Self().OriginalName == originalName {
+			return i, objDef.Self().AsObject.Value
 		}
 	}
-	return nil
+	return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}
 }
 
 // followFunctionChain traverses a chain of functions through return types
 // Returns the target object and function index if the chain is valid, nil otherwise
-func followFunctionChain(mod *core.Module, startType *core.TypeDef, chain []string) (*core.ObjectTypeDef, int) {
+func followFunctionChain(mod *core.Module, startType *core.TypeDef, chain []string) (int, dagql.ObjectResult[*core.ObjectTypeDef], dagql.ObjectResult[*core.Function]) {
 	currentType := startType
 
 	for i, fnName := range chain {
 		// Unwrap the type to get to the object
 		currentType = unwrapType(currentType)
 		if currentType == nil || !currentType.AsObject.Valid {
-			return nil, -1
+			return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}, dagql.ObjectResult[*core.Function]{}
 		}
 
 		// Get the actual module object (not the cloned return type instance)
-		obj := findObjectInModule(mod, currentType.AsObject.Value.OriginalName)
-		if obj == nil {
-			return nil, -1
+		objIdx, obj := findObjectInModule(mod, currentType.AsObject.Value.Self().OriginalName)
+		if obj.Self() == nil {
+			return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}, dagql.ObjectResult[*core.Function]{}
 		}
 
 		// Find the next function in the chain
 		fnIdx := findFunctionIndex(obj, fnName)
 		if fnIdx < 0 {
-			return nil, -1
+			return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}, dagql.ObjectResult[*core.Function]{}
 		}
 
 		// If this is the last function in the chain, we found our target
 		if i == len(chain)-1 {
-			return obj, fnIdx
+			return objIdx, obj, obj.Self().Functions[fnIdx]
 		}
 
 		// Otherwise, continue following the chain
-		currentType = obj.Functions[fnIdx].ReturnType
+		currentType = obj.Self().Functions[fnIdx].Self().ReturnType.Self()
 	}
 
-	return nil, -1
+	return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}, dagql.ObjectResult[*core.Function]{}
 }
 
 // unwrapType unwraps optional and list types to get to the underlying type
@@ -3208,16 +3344,16 @@ func unwrapType(t *core.TypeDef) *core.TypeDef {
 
 	// Unwrap list
 	if t.AsList.Valid {
-		return unwrapType(t.AsList.Value.ElementTypeDef)
+		return unwrapType(t.AsList.Value.Self().ElementTypeDef.Self())
 	}
 
 	return t
 }
 
 // findFunctionIndex finds the index of a function by name (case-insensitive) in an object
-func findFunctionIndex(obj *core.ObjectTypeDef, name string) int {
-	for i, fn := range obj.Functions {
-		if strings.EqualFold(fn.OriginalName, name) {
+func findFunctionIndex(obj dagql.ObjectResult[*core.ObjectTypeDef], name string) int {
+	for i, fn := range obj.Self().Functions {
+		if strings.EqualFold(fn.Self().OriginalName, name) {
 			return i
 		}
 	}
@@ -3226,11 +3362,14 @@ func findFunctionIndex(obj *core.ObjectTypeDef, name string) int {
 
 // addToolchainFieldsToObject adds toolchain fields/functions to an existing TypeDef
 func addToolchainFieldsToObject(
-	objectDef *core.TypeDef,
+	ctx context.Context,
+	dag *dagql.Server,
+	objectDef dagql.ObjectResult[*core.TypeDef],
 	toolchainMods []dagql.ObjectResult[*core.Module],
 	mod *core.Module,
-) (*core.TypeDef, error) {
-	objectDef = objectDef.Clone()
+) (dagql.ObjectResult[*core.TypeDef], error) {
+	updatedTypeDef := objectDef
+	updatedObj := objectDef.Self().AsObject.Value
 
 	for _, tcModInst := range toolchainMods {
 		tcMod := tcModInst.Self()
@@ -3238,41 +3377,80 @@ func addToolchainFieldsToObject(
 			continue
 		}
 		for _, obj := range tcMod.ObjectDefs {
-			if obj.AsObject.Value.Name == strcase.ToCamel(tcMod.NameField) {
+			if obj.Self().AsObject.Value.Self().Name == strcase.ToCamel(tcMod.NameField) {
 				// Use the original name (with hyphens) as the map key,
-				// but use camelCase for the GraphQL field name
 				originalName := tcMod.NameField
-				fieldName := strcase.ToLowerCamel(tcMod.NameField)
 
 				// Always add toolchains as functions (treating them as zero-argument constructors
 				// if they don't have an explicit constructor). This ensures consistent behavior
 				// and proper routing to the blueprint module's runtime.
-				var constructor *core.Function
-				if obj.AsObject.Value.Constructor.Valid {
-					constructor = obj.AsObject.Value.Constructor.Value.Clone()
-				} else {
-					// Create a zero-argument function for toolchains without constructors
-					constructor = &core.Function{
-						Args: []*core.FunctionArg{},
+				constructor, err := core.SelectFunctionWithServer(ctx, dag, originalName, obj)
+				if err != nil {
+					return updatedTypeDef, fmt.Errorf("failed to create toolchain function %q: %w", originalName, err)
+				}
+				if tcMod.Description != "" {
+					if err := dag.Select(ctx, constructor, &constructor, dagql.Selector{
+						Field: "withDescription",
+						Args:  []dagql.NamedInput{{Name: "description", Value: dagql.String(tcMod.Description)}},
+					}); err != nil {
+						return updatedTypeDef, err
+					}
+				}
+				if obj.Self().AsObject.Value.Self().Constructor.Valid {
+					constructorSelf := obj.Self().AsObject.Value.Self().Constructor.Value.Self()
+					if constructorSelf.Deprecated != nil {
+						if err := dag.Select(ctx, constructor, &constructor, dagql.Selector{
+							Field: "withDeprecated",
+							Args:  []dagql.NamedInput{{Name: "reason", Value: core.OptString(constructorSelf.Deprecated)}},
+						}); err != nil {
+							return updatedTypeDef, err
+						}
+					}
+					if constructorSelf.SourceMap.Valid {
+						sourceMapID, err := core.OptionalResultIDInput(constructorSelf.SourceMap.Value)
+						if err != nil {
+							return updatedTypeDef, err
+						}
+						if err := dag.Select(ctx, constructor, &constructor, dagql.Selector{
+							Field: "__withSourceMap",
+							Args:  []dagql.NamedInput{{Name: "sourceMap", Value: sourceMapID}},
+						}); err != nil {
+							return updatedTypeDef, err
+						}
+					}
+					for _, arg := range constructorSelf.Args {
+						argID, err := core.ResultIDInput(arg)
+						if err != nil {
+							return updatedTypeDef, err
+						}
+						if err := dag.Select(ctx, constructor, &constructor, dagql.Selector{
+							Field: "__withArg",
+							Args:  []dagql.NamedInput{{Name: "arg", Value: argID}},
+						}); err != nil {
+							return updatedTypeDef, err
+						}
 					}
 				}
 
 				// Apply argument configuration overrides if present (from registry)
 				if mod.Toolchains != nil {
 					if entry, ok := mod.Toolchains.Get(originalName); ok && entry.ArgumentConfigs != nil {
-						constructor = applyArgumentConfigToFunction(constructor, entry.ArgumentConfigs, []string{})
+						constructor, err = applyArgumentConfigToFunction(ctx, dag, constructor, entry.ArgumentConfigs, []string{})
+						if err != nil {
+							return updatedTypeDef, err
+						}
 					}
 				}
 
-				constructor.Name = fieldName
-				constructor.OriginalName = originalName
-				constructor.Description = tcMod.Description
-				constructor.ReturnType = obj
-
-				var err error
-				objectDef, err = objectDef.WithFunction(constructor)
+				constructorID, err := core.ResultIDInput(constructor)
 				if err != nil {
-					return nil, fmt.Errorf("failed to add toolchain function %q: %w", fieldName, err)
+					return updatedTypeDef, err
+				}
+				if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
+					Field: "__withFunction",
+					Args:  []dagql.NamedInput{{Name: "function", Value: constructorID}},
+				}); err != nil {
+					return updatedTypeDef, fmt.Errorf("failed to add toolchain function %q: %w", originalName, err)
 				}
 
 				break
@@ -3280,19 +3458,34 @@ func addToolchainFieldsToObject(
 		}
 	}
 
-	return objectDef, nil
+	if !sameResult(updatedObj, objectDef.Self().AsObject.Value) {
+		objID, err := core.ResultIDInput(updatedObj)
+		if err != nil {
+			return updatedTypeDef, err
+		}
+		if err := dag.Select(ctx, updatedTypeDef, &updatedTypeDef, dagql.Selector{
+			Field: "__withObjectTypeDef",
+			Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
+		}); err != nil {
+			return updatedTypeDef, err
+		}
+	}
+
+	return updatedTypeDef, nil
 }
 
 // mergeToolchainsWithSDK merges toolchain fields into SDK's main object
 func mergeToolchainsWithSDK(
+	ctx context.Context,
+	dag *dagql.Server,
 	mod *core.Module,
 	toolchainMods []dagql.ObjectResult[*core.Module],
 ) error {
 	mainModuleObjectName := strcase.ToCamel(mod.NameField)
 
 	for i, obj := range mod.ObjectDefs {
-		if obj.AsObject.Valid && obj.AsObject.Value.Name == mainModuleObjectName {
-			mergedObj, err := addToolchainFieldsToObject(obj, toolchainMods, mod)
+		if obj.Self().AsObject.Valid && obj.Self().AsObject.Value.Self().Name == mainModuleObjectName {
+			mergedObj, err := addToolchainFieldsToObject(ctx, dag, obj, toolchainMods, mod)
 			if err != nil {
 				return err
 			}
@@ -3311,20 +3504,22 @@ func createShadowModuleForToolchains(
 	toolchainMods []dagql.ObjectResult[*core.Module],
 	dag *dagql.Server,
 ) (*core.Module, error) {
-	shadowTypeDef := &core.ObjectTypeDef{
-		Name:         mod.NameField,
-		OriginalName: mod.OriginalName,
-	}
-
-	shadowModule := &core.TypeDef{
-		Kind: core.TypeDefKindObject,
-		AsObject: dagql.Nullable[*core.ObjectTypeDef]{
-			Value: shadowTypeDef,
-			Valid: true,
+	shadowModule, err := core.SelectTypeDefWithServer(
+		ctx,
+		dag,
+		dagql.Selector{
+			Field: "withObject",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(mod.NameField)},
+				{Name: "sourceModuleName", Value: core.OptSourceModuleName(mod.OriginalName)},
+			},
 		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create shadow module typedef: %w", err)
 	}
 
-	shadowModule, err := addToolchainFieldsToObject(shadowModule, toolchainMods, mod)
+	shadowModule, err = addToolchainFieldsToObject(ctx, dag, shadowModule, toolchainMods, mod)
 	if err != nil {
 		return nil, err
 	}
@@ -3386,7 +3581,7 @@ func (s *moduleSourceSchema) integrateToolchains(
 	var err error
 	if hasSDK {
 		// Merge toolchain fields into SDK's main object
-		err = mergeToolchainsWithSDK(mod, toolchainMods)
+		err = mergeToolchainsWithSDK(ctx, dag, mod, toolchainMods)
 	} else {
 		// No SDK - create shadow module to hold toolchain fields
 		mod, err = createShadowModuleForToolchains(ctx, mod, toolchainMods, dag)
@@ -3577,7 +3772,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		toolchainConfigIndex < len(contextSourceForModule.Self().ConfigToolchains) {
 		tcCfg := contextSourceForModule.Self().ConfigToolchains[toolchainConfigIndex]
 		if len(tcCfg.Customizations) > 0 {
-			applyArgumentConfigsToModule(mod, tcCfg.Customizations)
+			if err := applyArgumentConfigsToModule(ctx, dag, mod, tcCfg.Customizations); err != nil {
+				return inst, err
+			}
 		}
 	}
 

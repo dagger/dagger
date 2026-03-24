@@ -26,11 +26,21 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("typeDef", s.typeDef).
 			Doc(`Create a new TypeDef.`),
 
-		dagql.Func("__inputTypeDef", s.inputTypeDef).
+		dagql.Func("__loadInputTypeDef", s.loadInputTypeDef).
 			Doc(`Load an input TypeDef by name for internal server use.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the input type.`),
 			),
+
+		dagql.Func("__functionArg", s.functionArg),
+		dagql.Func("__fieldTypeDef", s.fieldTypeDef),
+		dagql.Func("__enumMemberTypeDef", s.enumMemberTypeDef),
+		dagql.Func("__listTypeDef", s.listTypeDef),
+		dagql.Func("__objectTypeDef", s.objectTypeDef),
+		dagql.Func("__interfaceTypeDef", s.interfaceTypeDef),
+		dagql.Func("__inputTypeDef", s.inputTypeDef),
+		dagql.Func("__scalarTypeDef", s.scalarTypeDef),
+		dagql.Func("__enumTypeDef", s.enumTypeDef),
 
 		dagql.Func("generatedCode", s.generatedCode).
 			Doc(`Create a code generation result, given a directory containing the generated code.`),
@@ -240,6 +250,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("policy").Doc(`The cache policy to use.`),
 				dagql.Arg("timeToLive").Doc(`The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".`),
 			),
+		dagql.Func("__withReturnType", s.functionWithReturnType),
+		dagql.Func("__withSourceMap", s.functionWithSourceMapResult),
+		dagql.Func("__withArg", s.functionWithArgResult),
+		dagql.Func("__asConstructor", s.functionAsConstructor),
 	}.Install(dag)
 
 	dagql.Fields[*core.Function]{
@@ -249,7 +263,14 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The type returned by the function.`),
 	}.Install(dag)
 
-	dagql.Fields[*core.FunctionArg]{}.Install(dag)
+	dagql.Fields[*core.FunctionArg]{
+		dagql.Func("__withTypeDef", s.functionArgWithTypeDef),
+		dagql.Func("__withSourceMap", s.functionArgWithSourceMap),
+		dagql.Func("__withDefaultValue", s.functionArgWithDefaultValue),
+		dagql.Func("__withDefaultPath", s.functionArgWithDefaultPath),
+		dagql.Func("__withDefaultAddress", s.functionArgWithDefaultAddress),
+		dagql.Func("__withIgnore", s.functionArgWithIgnore),
+	}.Install(dag)
 
 	dagql.Fields[*core.FunctionArg]{
 		dagql.Func("typeDef", s.functionArgTypeDef).
@@ -338,6 +359,12 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("sourceMap").Doc(`The source map for the enum member definition.`),
 				dagql.Arg("deprecated").Doc(`If deprecated, the reason or migration path.`),
 			),
+		dagql.Func("__withListTypeDef", s.typeDefWithListTypeDef),
+		dagql.Func("__withObjectTypeDef", s.typeDefWithObjectTypeDef),
+		dagql.Func("__withInterfaceTypeDef", s.typeDefWithInterfaceTypeDef),
+		dagql.Func("__withInputTypeDef", s.typeDefWithInputTypeDef),
+		dagql.Func("__withScalarTypeDef", s.typeDefWithScalarTypeDef),
+		dagql.Func("__withEnumTypeDef", s.typeDefWithEnumTypeDef),
 	}.Install(dag)
 	dagql.Fields[*core.TypeDef]{
 		dagql.Func("asList", s.typeDefAsList).
@@ -361,22 +388,36 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Functions defined on this object, if any.`),
 		dagql.Func("constructor", s.objectTypeDefConstructor).
 			Doc(`The function used to construct new instances of this object, if any.`),
+		dagql.Func("__withName", s.objectTypeDefWithName),
+		dagql.Func("__withSourceMap", s.objectTypeDefWithSourceMap),
+		dagql.Func("__withSourceModuleName", s.objectTypeDefWithSourceModuleName),
+		dagql.Func("__withField", s.objectTypeDefWithField),
+		dagql.Func("__withFunction", s.objectTypeDefWithFunction),
+		dagql.Func("__withConstructor", s.objectTypeDefWithConstructor),
 	}.Install(dag)
 	dagql.Fields[*core.InterfaceTypeDef]{
 		dagql.Func("functions", s.interfaceTypeDefFunctions).
 			Doc(`Functions defined on this interface, if any.`),
+		dagql.Func("__withName", s.interfaceTypeDefWithName),
+		dagql.Func("__withSourceMap", s.interfaceTypeDefWithSourceMap),
+		dagql.Func("__withSourceModuleName", s.interfaceTypeDefWithSourceModuleName),
+		dagql.Func("__withFunction", s.interfaceTypeDefWithFunction),
 	}.Install(dag)
 	dagql.Fields[*core.InputTypeDef]{
 		dagql.Func("fields", s.inputTypeDefFields).
 			Doc(`Static fields defined on this input object, if any.`),
+		dagql.Func("__withField", s.inputTypeDefWithField),
 	}.Install(dag)
 	dagql.Fields[*core.FieldTypeDef]{
 		dagql.Func("typeDef", s.fieldTypeDefTypeDef).
 			Doc(`The type of the field.`),
+		dagql.Func("__withTypeDef", s.fieldTypeDefWithTypeDef),
+		dagql.Func("__withSourceMap", s.fieldTypeDefWithSourceMap),
 	}.Install(dag)
 	dagql.Fields[*core.ListTypeDef]{
 		dagql.Func("elementTypeDef", s.listElementTypeDef).
 			Doc(`The type of the elements in the list.`),
+		dagql.Func("__withElementTypeDef", s.listTypeDefWithElementTypeDef),
 	}.Install(dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
@@ -385,12 +426,232 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The members of the enum.`),
 		dagql.Func("members", s.enumTypeDefMembers).
 			Doc(`The members of the enum.`),
+		dagql.Func("__withName", s.enumTypeDefWithName),
+		dagql.Func("__withSourceMap", s.enumTypeDefWithSourceMap),
+		dagql.Func("__withSourceModuleName", s.enumTypeDefWithSourceModuleName),
+		dagql.Func("__withMember", s.enumTypeDefWithMember),
 	}.Install(dag)
-	dagql.Fields[*core.EnumMemberTypeDef]{}.Install(dag)
+	dagql.Fields[*core.EnumMemberTypeDef]{
+		dagql.Func("__withName", s.enumMemberTypeDefWithName),
+		dagql.Func("__withSourceMap", s.enumMemberTypeDefWithSourceMap),
+	}.Install(dag)
+}
+
+func (s *moduleSchema) loadInputTypeDef(ctx context.Context, self *core.Query, args struct {
+	Name string
+}) (*core.TypeDef, error) {
+	deps, err := self.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current module: %w", err)
+	}
+	dag, err := deps.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current schema: %w", err)
+	}
+	typeDefs, err := deps.TypeDefs(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+	for _, typeDef := range typeDefs {
+		if typeDef.Self() == nil || typeDef.Self().Kind != core.TypeDefKindInput || !typeDef.Self().AsInput.Valid {
+			continue
+		}
+		if typeDef.Self().AsInput.Value.Self().Name == args.Name {
+			return typeDef.Self(), nil
+		}
+	}
+	return nil, fmt.Errorf("input type %q not found", args.Name)
 }
 
 func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct{}) (*core.TypeDef, error) {
 	return &core.TypeDef{}, nil
+}
+
+func (s *moduleSchema) functionArg(ctx context.Context, _ *core.Query, args struct {
+	Name           string
+	TypeDef        core.TypeDefID
+	Description    string `default:""`
+	DefaultValue   core.JSON `default:""`
+	DefaultPath    string `default:""`
+	DefaultAddress string `default:""`
+	Ignore         []string `default:"[]"`
+	SourceMap      dagql.Optional[core.SourceMapID]
+	Deprecated     *string
+}) (*core.FunctionArg, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode arg type: %w", err)
+	}
+	if args.DefaultPath != "" || args.DefaultAddress != "" {
+		typeDef, err = s.withOptional(ctx, dag, typeDef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to optionalize arg type: %w", err)
+		}
+	}
+	arg := core.NewFunctionArg(args.Name, typeDef, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultAddress, args.Ignore, args.Deprecated)
+	if arg.IsWorkspace() {
+		typeDef, err = s.withOptional(ctx, dag, arg.TypeDef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to optionalize workspace arg type: %w", err)
+		}
+		arg.TypeDef = typeDef
+	}
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	if sourceMap.Self() != nil {
+		arg.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return arg, nil
+}
+
+func (s *moduleSchema) fieldTypeDef(ctx context.Context, _ *core.Query, args struct {
+	Name        string
+	TypeDef     core.TypeDefID
+	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
+	Deprecated  *string
+}) (*core.FieldTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode field type: %w", err)
+	}
+	field := core.NewFieldTypeDef(args.Name, typeDef, args.Description, args.Deprecated)
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	if sourceMap.Self() != nil {
+		field.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return field, nil
+}
+
+func (s *moduleSchema) enumMemberTypeDef(ctx context.Context, _ *core.Query, args struct {
+	Name        string
+	Value       string `default:""`
+	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
+	Deprecated  *string
+}) (*core.EnumMemberTypeDef, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return core.NewEnumMemberTypeDef(args.Name, args.Value, args.Description, args.Deprecated, sourceMap), nil
+}
+
+func (s *moduleSchema) listTypeDef(ctx context.Context, _ *core.Query, args struct {
+	ElementTypeDef core.TypeDefID
+}) (*core.ListTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	elem, err := args.ElementTypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode element type: %w", err)
+	}
+	return &core.ListTypeDef{ElementTypeDef: elem}, nil
+}
+
+func (s *moduleSchema) objectTypeDef(ctx context.Context, _ *core.Query, args struct {
+	Name             string
+	Description      string `default:""`
+	SourceMap        dagql.Optional[core.SourceMapID]
+	Deprecated       *string
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
+}) (*core.ObjectTypeDef, error) {
+	obj := core.NewObjectTypeDef(args.Name, args.Description, args.Deprecated)
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	if sourceMap.Self() != nil {
+		obj.SourceMap = dagql.NonNull(sourceMap)
+	}
+	if args.SourceModuleName.Valid {
+		obj.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return obj, nil
+}
+
+func (s *moduleSchema) interfaceTypeDef(ctx context.Context, _ *core.Query, args struct {
+	Name             string
+	Description      string `default:""`
+	SourceMap        dagql.Optional[core.SourceMapID]
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
+}) (*core.InterfaceTypeDef, error) {
+	iface := core.NewInterfaceTypeDef(args.Name, args.Description)
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	if sourceMap.Self() != nil {
+		iface.SourceMap = dagql.NonNull(sourceMap)
+	}
+	if args.SourceModuleName.Valid {
+		iface.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return iface, nil
+}
+
+func (s *moduleSchema) inputTypeDef(ctx context.Context, _ *core.Query, args struct {
+	Name string
+}) (*core.InputTypeDef, error) {
+	return &core.InputTypeDef{Name: args.Name}, nil
+}
+
+func (s *moduleSchema) withOptional(
+	ctx context.Context,
+	dag *dagql.Server,
+	inst dagql.ObjectResult[*core.TypeDef],
+) (dagql.ObjectResult[*core.TypeDef], error) {
+	if err := dag.Select(ctx, inst, &inst, dagql.Selector{
+		Field: "withOptional",
+		Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+	}); err != nil {
+		return inst, fmt.Errorf("optionalize typedef: %w", err)
+	}
+	return inst, nil
+}
+
+func (s *moduleSchema) scalarTypeDef(ctx context.Context, _ *core.Query, args struct {
+	Name             string
+	Description      string `default:""`
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
+}) (*core.ScalarTypeDef, error) {
+	scalar := core.NewScalarTypeDef(args.Name, args.Description)
+	if args.SourceModuleName.Valid {
+		scalar.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return scalar, nil
+}
+
+func (s *moduleSchema) enumTypeDef(ctx context.Context, _ *core.Query, args struct {
+	Name             string
+	Description      string `default:""`
+	SourceMap        dagql.Optional[core.SourceMapID]
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
+}) (*core.EnumTypeDef, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	enum := core.NewEnumTypeDef(args.Name, args.Description, sourceMap)
+	if args.SourceModuleName.Valid {
+		enum.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return enum, nil
 }
 
 func (s *moduleSchema) typeDefWithOptional(ctx context.Context, def *core.TypeDef, args struct {
@@ -413,11 +674,22 @@ func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef,
 	if args.Name == "" {
 		return nil, fmt.Errorf("scalar type def must have a name")
 	}
-	def = def.WithScalar(args.Name, args.Description)
-	if args.SourceModuleName.Valid && def.AsScalar.Valid {
-		def.AsScalar.Value.SourceModuleName = string(args.SourceModuleName.Value)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	return def, nil
+	var scalar dagql.ObjectResult[*core.ScalarTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &scalar, dagql.Selector{
+		Field: "__scalarTypeDef",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(args.Name)},
+			{Name: "description", Value: dagql.String(args.Description)},
+			{Name: "sourceModuleName", Value: dagql.Opt(args.SourceModuleName.Value)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return def.WithScalar(scalar), nil
 }
 
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
@@ -432,7 +704,20 @@ func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef,
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	return def.WithListOf(elemType.Self()), nil
+	elemTypeID, err := elemType.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get element type id: %w", err)
+	}
+	var list dagql.ObjectResult[*core.ListTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &list, dagql.Selector{
+		Field: "__listTypeDef",
+		Args: []dagql.NamedInput{
+			{Name: "elementTypeDef", Value: dagql.NewID[*core.TypeDef](elemTypeID)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return def.WithListOf(list), nil
 }
 
 func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef, args struct {
@@ -445,15 +730,28 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	if args.Name == "" {
 		return nil, fmt.Errorf("object type def must have a name")
 	}
-	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
 	}
-	def = def.WithObject(args.Name, args.Description, args.Deprecated, sourceMap)
-	if args.SourceModuleName.Valid && def.AsObject.Valid {
-		def.AsObject.Value.SourceModuleName = string(args.SourceModuleName.Value)
+	var obj dagql.ObjectResult[*core.ObjectTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &obj, dagql.Selector{
+		Field: "__objectTypeDef",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(args.Name)},
+			{Name: "description", Value: dagql.String(args.Description)},
+			{Name: "sourceMap", Value: optID(sourceMap)},
+			{Name: "deprecated", Value: optString(args.Deprecated)},
+			{Name: "sourceModuleName", Value: dagql.Opt(args.SourceModuleName.Value)},
+		},
+	}); err != nil {
+		return nil, err
 	}
-	return def, nil
+	return def.WithObject(obj), nil
 }
 
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
@@ -465,15 +763,27 @@ func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeD
 	if args.Name == "" {
 		return nil, fmt.Errorf("interface type def must have a name")
 	}
-	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
 	}
-	def = def.WithInterface(args.Name, args.Description, sourceMap)
-	if args.SourceModuleName.Valid && def.AsInterface.Valid {
-		def.AsInterface.Value.SourceModuleName = string(args.SourceModuleName.Value)
+	var iface dagql.ObjectResult[*core.InterfaceTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &iface, dagql.Selector{
+		Field: "__interfaceTypeDef",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(args.Name)},
+			{Name: "description", Value: dagql.String(args.Description)},
+			{Name: "sourceMap", Value: optID(sourceMap)},
+			{Name: "sourceModuleName", Value: dagql.Opt(args.SourceModuleName.Value)},
+		},
+	}); err != nil {
+		return nil, err
 	}
-	return def, nil
+	return def.WithInterface(iface), nil
 }
 
 func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.TypeDef, args struct {
@@ -492,11 +802,35 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	fieldTypeID, err := fieldType.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get field type id: %w", err)
+	}
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
 	}
-	return def.WithObjectField(args.Name, fieldType.Self(), args.Description, sourceMap, args.Deprecated)
+	var field dagql.ObjectResult[*core.FieldTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &field, dagql.Selector{
+		Field: "__fieldTypeDef",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(args.Name)},
+			{Name: "typeDef", Value: dagql.NewID[*core.TypeDef](fieldTypeID)},
+			{Name: "description", Value: dagql.String(args.Description)},
+			{Name: "sourceMap", Value: optID(sourceMap)},
+			{Name: "deprecated", Value: optString(args.Deprecated)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	var obj dagql.ObjectResult[*core.ObjectTypeDef]
+	if err := dag.Select(ctx, def.AsObject.Value, &obj, dagql.Selector{
+		Field: "__withField",
+		Args: []dagql.NamedInput{{Name: "field", Value: idInput(field)}},
+	}); err != nil {
+		return nil, err
+	}
+	return def.WithObject(obj), nil
 }
 
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
@@ -511,7 +845,29 @@ func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDe
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	return def.WithFunction(fn.Self())
+	var err2 error
+	switch def.Kind {
+	case core.TypeDefKindObject:
+		var obj dagql.ObjectResult[*core.ObjectTypeDef]
+		if err2 = dag.Select(ctx, def.AsObject.Value, &obj, dagql.Selector{
+			Field: "__withFunction",
+			Args: []dagql.NamedInput{{Name: "function", Value: idInput(fn)}},
+		}); err2 != nil {
+			return nil, err2
+		}
+		return def.WithObject(obj), nil
+	case core.TypeDefKindInterface:
+		var iface dagql.ObjectResult[*core.InterfaceTypeDef]
+		if err2 = dag.Select(ctx, def.AsInterface.Value, &iface, dagql.Selector{
+			Field: "__withFunction",
+			Args: []dagql.NamedInput{{Name: "function", Value: idInput(fn)}},
+		}); err2 != nil {
+			return nil, err2
+		}
+		return def.WithInterface(iface), nil
+	default:
+		return nil, fmt.Errorf("cannot add function to type: %s", def.Kind)
+	}
 }
 
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
@@ -526,12 +882,18 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	fn := inst.Self().Clone()
-	// Constructors are invoked by setting the ObjectName to the name of the object its constructing and the
-	// FunctionName to "", so ignore the name of the function.
-	fn.Name = ""
-	fn.OriginalName = ""
-	return def.WithObjectConstructor(fn)
+	var fn dagql.ObjectResult[*core.Function]
+	if err := dag.Select(ctx, inst, &fn, dagql.Selector{Field: "__asConstructor"}); err != nil {
+		return nil, err
+	}
+	var obj dagql.ObjectResult[*core.ObjectTypeDef]
+	if err := dag.Select(ctx, def.AsObject.Value, &obj, dagql.Selector{
+		Field: "__withConstructor",
+		Args: []dagql.NamedInput{{Name: "function", Value: idInput(fn)}},
+	}); err != nil {
+		return nil, err
+	}
+	return def.WithObject(obj), nil
 }
 
 func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, args struct {
@@ -543,15 +905,27 @@ func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, a
 	if args.Name == "" {
 		return nil, fmt.Errorf("enum type def must have a name")
 	}
-	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
 	}
-	def = def.WithEnum(args.Name, args.Description, sourceMap)
-	if args.SourceModuleName.Valid && def.AsEnum.Valid {
-		def.AsEnum.Value.SourceModuleName = string(args.SourceModuleName.Value)
+	var enum dagql.ObjectResult[*core.EnumTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &enum, dagql.Selector{
+		Field: "__enumTypeDef",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(args.Name)},
+			{Name: "description", Value: dagql.String(args.Description)},
+			{Name: "sourceMap", Value: optID(sourceMap)},
+			{Name: "sourceModuleName", Value: dagql.Opt(args.SourceModuleName.Value)},
+		},
+	}); err != nil {
+		return nil, err
 	}
-	return def, nil
+	return def.WithEnum(enum), nil
 }
 
 func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeDef, args struct {
@@ -560,11 +934,35 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	SourceMap   dagql.Optional[core.SourceMapID]
 	Deprecated  *string
 }) (*core.TypeDef, error) {
-	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
 	}
-	return def.WithEnumValue(args.Value, args.Value, args.Description, args.Deprecated, sourceMap)
+	var member dagql.ObjectResult[*core.EnumMemberTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &member, dagql.Selector{
+		Field: "__enumMemberTypeDef",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(args.Value)},
+			{Name: "value", Value: dagql.String(args.Value)},
+			{Name: "description", Value: dagql.String(args.Description)},
+			{Name: "sourceMap", Value: optID(sourceMap)},
+			{Name: "deprecated", Value: optString(args.Deprecated)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	var enum dagql.ObjectResult[*core.EnumTypeDef]
+	if err := dag.Select(ctx, def.AsEnum.Value, &enum, dagql.Selector{
+		Field: "__withMember",
+		Args: []dagql.NamedInput{{Name: "member", Value: idInput(member)}},
+	}); err != nil {
+		return nil, err
+	}
+	return def.WithEnum(enum), nil
 }
 
 func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.TypeDef, args struct {
@@ -574,15 +972,143 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 	SourceMap   dagql.Optional[core.SourceMapID]
 	Deprecated  *string
 }) (*core.TypeDef, error) {
-	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
 	}
 
 	if !supportEnumMembers(ctx) {
-		return def.WithEnumValue(args.Name, args.Value, args.Description, args.Deprecated, sourceMap)
+		var member dagql.ObjectResult[*core.EnumMemberTypeDef]
+		if err := dag.Select(ctx, dag.Root(), &member, dagql.Selector{
+			Field: "__enumMemberTypeDef",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(args.Name)},
+				{Name: "value", Value: dagql.String(args.Name)},
+				{Name: "description", Value: dagql.String(args.Description)},
+				{Name: "sourceMap", Value: optID(sourceMap)},
+				{Name: "deprecated", Value: optString(args.Deprecated)},
+			},
+		}); err != nil {
+			return nil, err
+		}
+		var enum dagql.ObjectResult[*core.EnumTypeDef]
+		if err := dag.Select(ctx, def.AsEnum.Value, &enum, dagql.Selector{
+			Field: "__withMember",
+			Args: []dagql.NamedInput{{Name: "member", Value: idInput(member)}},
+		}); err != nil {
+			return nil, err
+		}
+		return def.WithEnum(enum), nil
 	}
-	return def.WithEnumMember(args.Name, args.Value, args.Description, args.Deprecated, sourceMap)
+	var member dagql.ObjectResult[*core.EnumMemberTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &member, dagql.Selector{
+		Field: "__enumMemberTypeDef",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(args.Name)},
+			{Name: "value", Value: dagql.String(args.Value)},
+			{Name: "description", Value: dagql.String(args.Description)},
+			{Name: "sourceMap", Value: optID(sourceMap)},
+			{Name: "deprecated", Value: optString(args.Deprecated)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	var enum dagql.ObjectResult[*core.EnumTypeDef]
+	if err := dag.Select(ctx, def.AsEnum.Value, &enum, dagql.Selector{
+		Field: "__withMember",
+		Args: []dagql.NamedInput{{Name: "member", Value: idInput(member)}},
+	}); err != nil {
+		return nil, err
+	}
+	return def.WithEnum(enum), nil
+}
+
+func (s *moduleSchema) typeDefWithListTypeDef(ctx context.Context, def *core.TypeDef, args struct {
+	ListTypeDef core.ListTypeDefID
+}) (*core.TypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	list, err := args.ListTypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode list type def: %w", err)
+	}
+	return def.WithListTypeDef(list), nil
+}
+
+func (s *moduleSchema) typeDefWithObjectTypeDef(ctx context.Context, def *core.TypeDef, args struct {
+	ObjectTypeDef core.ObjectTypeDefID
+}) (*core.TypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	obj, err := args.ObjectTypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode object type def: %w", err)
+	}
+	return def.WithObjectTypeDef(obj), nil
+}
+
+func (s *moduleSchema) typeDefWithInterfaceTypeDef(ctx context.Context, def *core.TypeDef, args struct {
+	InterfaceTypeDef core.InterfaceTypeDefID
+}) (*core.TypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	iface, err := args.InterfaceTypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode interface type def: %w", err)
+	}
+	return def.WithInterfaceTypeDef(iface), nil
+}
+
+func (s *moduleSchema) typeDefWithInputTypeDef(ctx context.Context, def *core.TypeDef, args struct {
+	InputTypeDef core.InputTypeDefID
+}) (*core.TypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	input, err := args.InputTypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode input type def: %w", err)
+	}
+	return def.WithInputTypeDef(input), nil
+}
+
+func (s *moduleSchema) typeDefWithScalarTypeDef(ctx context.Context, def *core.TypeDef, args struct {
+	ScalarTypeDef core.ScalarTypeDefID
+}) (*core.TypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	scalar, err := args.ScalarTypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode scalar type def: %w", err)
+	}
+	return def.WithScalarTypeDef(scalar), nil
+}
+
+func (s *moduleSchema) typeDefWithEnumTypeDef(ctx context.Context, def *core.TypeDef, args struct {
+	EnumTypeDef core.EnumTypeDefID
+}) (*core.TypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	enum, err := args.EnumTypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode enum type def: %w", err)
+	}
+	return def.WithEnumTypeDef(enum), nil
 }
 
 func supportEnumMembers(ctx context.Context) bool {
@@ -621,7 +1147,7 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
 	}
-	return core.NewFunction(args.Name, returnType.Self()), nil
+	return core.NewFunction(args.Name, returnType), nil
 }
 
 func (s *moduleSchema) sourceMap(ctx context.Context, _ *core.Query, args struct {
@@ -668,6 +1194,13 @@ func (s *moduleSchema) functionWithGenerator(ctx context.Context, fn *core.Funct
 	return fn.WithGenerator(), nil
 }
 
+func (s *moduleSchema) functionAsConstructor(ctx context.Context, fn *core.Function, _ struct{}) (*core.Function, error) {
+	fn = fn.Clone()
+	fn.Name = ""
+	fn.OriginalName = ""
+	return fn, nil
+}
+
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
 	Name           string
 	TypeDef        core.TypeDefID
@@ -688,8 +1221,11 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode arg type: %w", err)
 	}
-
-	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	argTypeID, err := argType.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get arg type id: %w", err)
+	}
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
 	}
@@ -715,7 +1251,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		if argType.Self().Kind != core.TypeDefKindObject {
 			return nil, fmt.Errorf("can only set default path for Object, not %s", argType.Self().Kind)
 		}
-		name := argType.Self().AsObject.Value.Name
+		name := argType.Self().AsObject.Value.Self().Name
 		if !slices.Contains([]string{"Directory", "File", "GitRepository", "GitRef"}, name) {
 			return nil, fmt.Errorf("cannot set default path for %s", name)
 		}
@@ -726,7 +1262,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		if argType.Self().Kind != core.TypeDefKindObject {
 			return nil, fmt.Errorf("can only set default address for Object, not %s", argType.Self().Kind)
 		}
-		name := argType.Self().AsObject.Value.Name
+		name := argType.Self().AsObject.Value.Self().Name
 		if name != "Container" {
 			return nil, fmt.Errorf("can only set default address for Container type, not %s", name)
 		}
@@ -737,7 +1273,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		if argType.Self().Kind != core.TypeDefKindObject {
 			return nil, fmt.Errorf("can only set ignore for Object type, not %s", argType.Self().Kind)
 		}
-		name := argType.Self().AsObject.Value.Name
+		name := argType.Self().AsObject.Value.Self().Name
 		if name != "Directory" {
 			return nil, fmt.Errorf("can only set ignore for Directory type, not %s", name)
 		}
@@ -745,12 +1281,52 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 
 	// When using a default path or address, SDKs can't set a default value and the argument
 	// may be non-nullable, so we need to enforce it as optional.
-	td := argType.Self()
-	if args.DefaultPath != "" || args.DefaultAddress != "" {
-		td = td.WithOptional(true)
+	var arg dagql.ObjectResult[*core.FunctionArg]
+	if err := dag.Select(ctx, dag.Root(), &arg, dagql.Selector{
+		Field: "__functionArg",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(args.Name)},
+			{Name: "typeDef", Value: dagql.NewID[*core.TypeDef](argTypeID)},
+			{Name: "description", Value: dagql.String(args.Description)},
+			{Name: "defaultValue", Value: args.DefaultValue},
+			{Name: "defaultPath", Value: dagql.String(args.DefaultPath)},
+			{Name: "defaultAddress", Value: dagql.String(args.DefaultAddress)},
+			{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Ignore...))},
+			{Name: "sourceMap", Value: optID(sourceMap)},
+			{Name: "deprecated", Value: optString(args.Deprecated)},
+		},
+	}); err != nil {
+		return nil, err
 	}
+	return fn.WithArg(arg), nil
+}
 
-	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultAddress, args.Ignore, sourceMap, args.Deprecated), nil
+func (s *moduleSchema) functionWithArgResult(ctx context.Context, fn *core.Function, args struct {
+	Arg core.FunctionArgID
+}) (*core.Function, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	arg, err := args.Arg.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode function arg: %w", err)
+	}
+	return fn.WithArg(arg), nil
+}
+
+func (s *moduleSchema) functionWithReturnType(ctx context.Context, fn *core.Function, args struct {
+	ReturnType core.TypeDefID
+}) (*core.Function, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	returnType, err := args.ReturnType.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode return type: %w", err)
+	}
+	return fn.WithReturnType(returnType), nil
 }
 
 func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {
@@ -765,7 +1341,65 @@ func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Funct
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}
-	return fn.WithSourceMap(sourceMap.Self()), nil
+	return fn.WithSourceMap(sourceMap), nil
+}
+
+func (s *moduleSchema) functionWithSourceMapResult(ctx context.Context, fn *core.Function, args struct {
+	SourceMap dagql.Optional[core.SourceMapID]
+}) (*core.Function, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return fn.WithSourceMap(sourceMap), nil
+}
+
+func (s *moduleSchema) functionArgWithTypeDef(ctx context.Context, arg *core.FunctionArg, args struct {
+	TypeDef core.TypeDefID
+}) (*core.FunctionArg, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode arg type: %w", err)
+	}
+	return arg.WithTypeDef(typeDef), nil
+}
+
+func (s *moduleSchema) functionArgWithSourceMap(ctx context.Context, arg *core.FunctionArg, args struct {
+	SourceMap dagql.Optional[core.SourceMapID]
+}) (*core.FunctionArg, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return arg.WithSourceMap(sourceMap), nil
+}
+
+func (s *moduleSchema) functionArgWithDefaultValue(ctx context.Context, arg *core.FunctionArg, args struct {
+	DefaultValue core.JSON `default:""`
+}) (*core.FunctionArg, error) {
+	return arg.WithDefaultValue(args.DefaultValue), nil
+}
+
+func (s *moduleSchema) functionArgWithDefaultPath(ctx context.Context, arg *core.FunctionArg, args struct {
+	DefaultPath string `default:""`
+}) (*core.FunctionArg, error) {
+	return arg.WithDefaultPath(args.DefaultPath), nil
+}
+
+func (s *moduleSchema) functionArgWithDefaultAddress(ctx context.Context, arg *core.FunctionArg, args struct {
+	DefaultAddress string `default:""`
+}) (*core.FunctionArg, error) {
+	return arg.WithDefaultAddress(args.DefaultAddress), nil
+}
+
+func (s *moduleSchema) functionArgWithIgnore(ctx context.Context, arg *core.FunctionArg, args struct {
+	Ignore []string `default:"[]"`
+}) (*core.FunctionArg, error) {
+	return arg.WithIgnore(args.Ignore), nil
 }
 
 func (s *moduleSchema) functionWithCachePolicy(
@@ -815,6 +1449,219 @@ func (s *moduleSchema) functionWithCachePolicy(
 	}
 
 	return fn, nil
+}
+
+func (s *moduleSchema) objectTypeDefWithField(ctx context.Context, obj *core.ObjectTypeDef, args struct {
+	Field core.FieldTypeDefID
+}) (*core.ObjectTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	field, err := args.Field.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode field: %w", err)
+	}
+	return obj.WithField(field), nil
+}
+
+func (s *moduleSchema) objectTypeDefWithName(ctx context.Context, obj *core.ObjectTypeDef, args struct {
+	Name string
+}) (*core.ObjectTypeDef, error) {
+	return obj.WithName(args.Name), nil
+}
+
+func (s *moduleSchema) objectTypeDefWithSourceMap(ctx context.Context, obj *core.ObjectTypeDef, args struct {
+	SourceMap dagql.Optional[core.SourceMapID]
+}) (*core.ObjectTypeDef, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return obj.WithSourceMap(sourceMap), nil
+}
+
+func (s *moduleSchema) objectTypeDefWithSourceModuleName(ctx context.Context, obj *core.ObjectTypeDef, args struct {
+	SourceModuleName dagql.Optional[dagql.String]
+}) (*core.ObjectTypeDef, error) {
+	if !args.SourceModuleName.Valid {
+		return obj.WithSourceModuleName(""), nil
+	}
+	return obj.WithSourceModuleName(string(args.SourceModuleName.Value)), nil
+}
+
+func (s *moduleSchema) objectTypeDefWithFunction(ctx context.Context, obj *core.ObjectTypeDef, args struct {
+	Function core.FunctionID
+}) (*core.ObjectTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	fn, err := args.Function.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode function: %w", err)
+	}
+	return obj.WithFunction(fn), nil
+}
+
+func (s *moduleSchema) objectTypeDefWithConstructor(ctx context.Context, obj *core.ObjectTypeDef, args struct {
+	Function core.FunctionID
+}) (*core.ObjectTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	fn, err := args.Function.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode constructor function: %w", err)
+	}
+	return obj.WithConstructor(fn), nil
+}
+
+func (s *moduleSchema) interfaceTypeDefWithFunction(ctx context.Context, iface *core.InterfaceTypeDef, args struct {
+	Function core.FunctionID
+}) (*core.InterfaceTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	fn, err := args.Function.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode function: %w", err)
+	}
+	return iface.WithFunction(fn), nil
+}
+
+func (s *moduleSchema) interfaceTypeDefWithName(ctx context.Context, iface *core.InterfaceTypeDef, args struct {
+	Name string
+}) (*core.InterfaceTypeDef, error) {
+	return iface.WithName(args.Name), nil
+}
+
+func (s *moduleSchema) interfaceTypeDefWithSourceMap(ctx context.Context, iface *core.InterfaceTypeDef, args struct {
+	SourceMap dagql.Optional[core.SourceMapID]
+}) (*core.InterfaceTypeDef, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return iface.WithSourceMap(sourceMap), nil
+}
+
+func (s *moduleSchema) interfaceTypeDefWithSourceModuleName(ctx context.Context, iface *core.InterfaceTypeDef, args struct {
+	SourceModuleName dagql.Optional[dagql.String]
+}) (*core.InterfaceTypeDef, error) {
+	if !args.SourceModuleName.Valid {
+		return iface.WithSourceModuleName(""), nil
+	}
+	return iface.WithSourceModuleName(string(args.SourceModuleName.Value)), nil
+}
+
+func (s *moduleSchema) inputTypeDefWithField(ctx context.Context, input *core.InputTypeDef, args struct {
+	Field core.FieldTypeDefID
+}) (*core.InputTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	field, err := args.Field.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode field: %w", err)
+	}
+	return input.WithField(field), nil
+}
+
+func (s *moduleSchema) fieldTypeDefWithTypeDef(ctx context.Context, field *core.FieldTypeDef, args struct {
+	TypeDef core.TypeDefID
+}) (*core.FieldTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode field type: %w", err)
+	}
+	return field.WithTypeDef(typeDef), nil
+}
+
+func (s *moduleSchema) fieldTypeDefWithSourceMap(ctx context.Context, field *core.FieldTypeDef, args struct {
+	SourceMap dagql.Optional[core.SourceMapID]
+}) (*core.FieldTypeDef, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return field.WithSourceMap(sourceMap), nil
+}
+
+func (s *moduleSchema) listTypeDefWithElementTypeDef(ctx context.Context, list *core.ListTypeDef, args struct {
+	ElementTypeDef core.TypeDefID
+}) (*core.ListTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	elementTypeDef, err := args.ElementTypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode element type: %w", err)
+	}
+	return list.WithElementTypeDef(elementTypeDef), nil
+}
+
+func (s *moduleSchema) enumTypeDefWithMember(ctx context.Context, enum *core.EnumTypeDef, args struct {
+	Member core.EnumMemberTypeDefID
+}) (*core.EnumTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	member, err := args.Member.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode member: %w", err)
+	}
+	return enum.WithMember(member), nil
+}
+
+func (s *moduleSchema) enumTypeDefWithName(ctx context.Context, enum *core.EnumTypeDef, args struct {
+	Name string
+}) (*core.EnumTypeDef, error) {
+	return enum.WithName(args.Name), nil
+}
+
+func (s *moduleSchema) enumTypeDefWithSourceMap(ctx context.Context, enum *core.EnumTypeDef, args struct {
+	SourceMap dagql.Optional[core.SourceMapID]
+}) (*core.EnumTypeDef, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return enum.WithSourceMap(sourceMap), nil
+}
+
+func (s *moduleSchema) enumTypeDefWithSourceModuleName(ctx context.Context, enum *core.EnumTypeDef, args struct {
+	SourceModuleName dagql.Optional[dagql.String]
+}) (*core.EnumTypeDef, error) {
+	if !args.SourceModuleName.Valid {
+		return enum.WithSourceModuleName(""), nil
+	}
+	return enum.WithSourceModuleName(string(args.SourceModuleName.Value)), nil
+}
+
+func (s *moduleSchema) enumMemberTypeDefWithName(ctx context.Context, member *core.EnumMemberTypeDef, args struct {
+	Name string
+}) (*core.EnumMemberTypeDef, error) {
+	return member.WithName(args.Name), nil
+}
+
+func (s *moduleSchema) enumMemberTypeDefWithSourceMap(ctx context.Context, member *core.EnumMemberTypeDef, args struct {
+	SourceMap dagql.Optional[core.SourceMapID]
+}) (*core.EnumMemberTypeDef, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return member.WithSourceMap(sourceMap), nil
 }
 
 type currentModuleArgs struct {
@@ -905,7 +1752,7 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 	if err != nil {
 		return nil, err
 	}
-	return s.canonicalCurrentTypeDefs(ctx, dag, typeDefs)
+	return typeDefs, nil
 }
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {
@@ -1085,7 +1932,7 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, a
 	if err != nil {
 		return nil, err
 	}
-	return core.EnvHook{Server: dag}.ModuleWithObject(ctx, mod, def.Self())
+	return core.EnvHook{Server: dag}.ModuleWithObject(ctx, mod, def)
 }
 
 func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {
@@ -1100,7 +1947,7 @@ func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module
 	if err != nil {
 		return nil, err
 	}
-	return mod.WithInterface(ctx, def.Self())
+	return mod.WithInterface(ctx, def)
 }
 
 func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, args struct {
@@ -1116,7 +1963,7 @@ func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, arg
 		return nil, err
 	}
 
-	return mod.WithEnum(ctx, def.Self())
+	return mod.WithEnum(ctx, def)
 }
 
 func (s *moduleSchema) currentModuleName(
@@ -1279,20 +2126,43 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 	return inst, err
 }
 
-func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Optional[core.SourceMapID]) (*core.SourceMap, error) {
+func (s *moduleSchema) loadSourceMapResult(ctx context.Context, sourceMap dagql.Optional[core.SourceMapID]) (dagql.ObjectResult[*core.SourceMap], error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dag server: %w", err)
+		return dagql.ObjectResult[*core.SourceMap]{}, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
 	if !sourceMap.Valid {
-		return nil, nil
+		return dagql.ObjectResult[*core.SourceMap]{}, nil
 	}
 	sourceMapI, err := sourceMap.Value.Load(ctx, dag)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode source map: %w", err)
+		return dagql.ObjectResult[*core.SourceMap]{}, fmt.Errorf("failed to decode source map: %w", err)
 	}
-	return sourceMapI.Self(), nil
+	return sourceMapI, nil
+}
+
+func idInput[T dagql.Typed](res dagql.ObjectResult[T]) dagql.ID[T] {
+	id, err := res.ID()
+	if err != nil {
+		panic(err)
+	}
+	return dagql.NewID[T](id)
+}
+
+func optID[T dagql.Typed](res dagql.ObjectResult[T]) dagql.Optional[dagql.ID[T]] {
+	id, err := core.OptionalResultIDInput(res)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+func optString(v *string) dagql.Optional[dagql.String] {
+	if v == nil {
+		return dagql.Optional[dagql.String]{}
+	}
+	return dagql.Opt(dagql.String(*v))
 }
 
 func (s *moduleSchema) moduleImplementationScoped(

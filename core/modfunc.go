@@ -51,22 +51,23 @@ func NewModFunction(
 	metadata *Function,
 ) (*ModuleFunction, error) {
 	modInst := NewUserMod(mod)
-	returnType, ok, err := modInst.ModTypeFor(ctx, metadata.ReturnType, true)
+	returnType, ok, err := modInst.ModTypeFor(ctx, metadata.ReturnType.Self(), true)
 	if err != nil {
 		return nil, fmt.Errorf("get mod type for function %q return type: %w", metadata.Name, err)
 	}
 	if !ok {
-		return nil, fmt.Errorf("find mod type for function %q return type: %q", metadata.Name, metadata.ReturnType.ToType())
+		return nil, fmt.Errorf("find mod type for function %q return type: %q", metadata.Name, metadata.ReturnType.Self().ToType())
 	}
 
 	argTypes := make(map[string]*UserModFunctionArg, len(metadata.Args))
-	for _, argMetadata := range metadata.Args {
-		argModType, ok, err := modInst.ModTypeFor(ctx, argMetadata.TypeDef, true)
+	for _, argMetadataRes := range metadata.Args {
+		argMetadata := argMetadataRes.Self()
+		argModType, ok, err := modInst.ModTypeFor(ctx, argMetadata.TypeDef.Self(), true)
 		if err != nil {
 			return nil, fmt.Errorf("get mod type for function %q arg %q type: %w", metadata.Name, argMetadata.Name, err)
 		}
 		if !ok {
-			return nil, fmt.Errorf("find mod type for function %q arg %q type: %q", metadata.Name, argMetadata.Name, argMetadata.TypeDef.ToType())
+			return nil, fmt.Errorf("find mod type for function %q arg %q type: %q", metadata.Name, argMetadata.Name, argMetadata.TypeDef.Self().ToType())
 		}
 		argTypes[argMetadata.Name] = &UserModFunctionArg{
 			metadata: argMetadata,
@@ -179,7 +180,8 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 	}
 
 	// Load default value
-	for _, arg := range fn.metadata.Args {
+	for _, argRes := range fn.metadata.Args {
+		arg := argRes.Self()
 		name := arg.OriginalName
 		if hasArg[name] {
 			continue
@@ -218,6 +220,11 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 // typedefs. This makes the user defaults visible in typedef introspection.
 // It does not affect applying user defaults *at function call*
 func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("current dagql server: %w", err)
+	}
+	updatedMetadata := fn.metadata
 	for argName, arg := range fn.args {
 		argDefault, ok, err := fn.UserDefault(ctx, argName)
 		if err != nil {
@@ -231,18 +238,47 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 			uiFnName += "." + fn.metadata.Name
 		}
 		console(ctx, "user default: %s(%s=%q)", uiFnName, argName, argDefault.UserInput)
+		currentArgRes, ok := updatedMetadata.LookupArg(argName)
+		if !ok {
+			return fmt.Errorf("find function arg %q on %s", argName, uiFnName)
+		}
+		updatedArgRes := currentArgRes
 		if argDefault.IsObject() {
-			// FIXME (cosmetic): expose the user default value to the client, without
-			// breaking other things
-			arg.metadata.TypeDef.Optional = true
+			var optionalType dagql.ObjectResult[*TypeDef]
+			if err := dag.Select(ctx, currentArgRes.Self().TypeDef, &optionalType, dagql.Selector{
+				Field: "withOptional",
+				Args: []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+			}); err != nil {
+				return fmt.Errorf("optionalize user-default arg %q: %w", argName, err)
+			}
+			if optionalType.Self().Optional && !currentArgRes.Self().TypeDef.Self().Optional {
+				optionalTypeID, err := optionalType.ID()
+				if err != nil {
+					return fmt.Errorf("resolve optional type ID for user default arg %q: %w", argName, err)
+				}
+				if err := dag.Select(ctx, currentArgRes, &updatedArgRes, dagql.Selector{
+					Field: "__withTypeDef",
+					Args: []dagql.NamedInput{{Name: "typeDef", Value: dagql.NewID[*TypeDef](optionalTypeID)}},
+				}); err != nil {
+					return fmt.Errorf("update function arg %q type def: %w", argName, err)
+				}
+			}
 		} else {
 			defaultJSON, err := argDefault.UserDefaultPrimitive.JSONValue()
 			if err != nil {
 				return err
 			}
-			arg.metadata.DefaultValue = defaultJSON
+			if err := dag.Select(ctx, currentArgRes, &updatedArgRes, dagql.Selector{
+				Field: "__withDefaultValue",
+				Args: []dagql.NamedInput{{Name: "defaultValue", Value: defaultJSON}},
+			}); err != nil {
+				return fmt.Errorf("update function arg %q default value: %w", argName, err)
+			}
 		}
+		updatedMetadata = updatedMetadata.WithArg(updatedArgRes)
+		arg.metadata = updatedArgRes.Self()
 	}
+	fn.metadata = updatedMetadata
 	return nil
 }
 
@@ -290,7 +326,7 @@ func (udp *UserDefaultPrimitive) CallInput() (*FunctionCallArgValue, error) {
 }
 
 func (udp *UserDefaultPrimitive) Value() (any, error) {
-	switch udp.Arg.TypeDef.Kind {
+	switch udp.Arg.TypeDef.Self().Kind {
 	case TypeDefKindString:
 		return udp.UserInput, nil
 	case TypeDefKindInteger:
@@ -327,9 +363,8 @@ func (udp *UserDefaultPrimitive) DagqlInput() (dagql.Input, error) {
 	if err != nil {
 		return nil, err
 	}
-	arg := udp.Arg.Clone()
-	arg.TypeDef.Optional = true
-	return arg.TypeDef.ToInput().Decoder().DecodeInput(value)
+	typeDef := udp.Arg.TypeDef.Self().WithOptional(true)
+	return typeDef.ToInput().Decoder().DecodeInput(value)
 }
 
 func (fn *ModuleFunction) newUserDefault(arg *FunctionArg, userInput string) *UserDefault {
@@ -347,7 +382,7 @@ type UserDefault struct {
 }
 
 func (ud *UserDefault) IsObject() bool {
-	return ud.Arg.TypeDef.Kind == TypeDefKindObject
+	return ud.Arg.TypeDef.Self().Kind == TypeDefKindObject
 }
 
 func (ud *UserDefault) Value(ctx context.Context) (any, error) {
@@ -366,7 +401,7 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	// Resolve object from user-supplied "address"
 	srv := dagql.CurrentDagqlServer(mainCtx)
 	// "Secret" -> "secret", "GitRef" -> "gitRef", etc
-	typename := ud.Arg.TypeDef.ToType().Name()
+	typename := ud.Arg.TypeDef.Self().ToType().Name()
 	typename = strings.ToLower(typename[0:1]) + typename[1:]
 	var result dagql.AnyObjectResult
 	if err := srv.Select(mainCtx, srv.Root(), &result,
@@ -455,14 +490,14 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 	if err != nil {
 		return nil, false, fmt.Errorf("lookup defaults for function %q: %w", fn.metadata.Name, err)
 	}
-	userInput, ok, err := defaults.LookupCaseInsensitive(mainCtx, arg.Name)
+	userInput, ok, err := defaults.LookupCaseInsensitive(mainCtx, arg.Self().Name)
 	if err != nil {
 		return nil, false, err
 	}
 	if !ok {
 		return nil, false, nil
 	}
-	return fn.newUserDefault(arg, userInput), true, nil
+	return fn.newUserDefault(arg.Self(), userInput), true, nil
 }
 
 func (fn *ModuleFunction) UserDefaults(ctx context.Context) (*EnvFile, error) {
@@ -488,12 +523,13 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
 
-	for _, argMetadata := range fn.metadata.Args {
+	for _, argMetadataRes := range fn.metadata.Args {
+		argMetadata := argMetadataRes.Self()
 		if args[argMetadata.Name] != nil {
 			// was explicitly set by the user, skip
 			continue
 		}
-		if argMetadata.TypeDef.Kind != TypeDefKindObject {
+		if argMetadata.TypeDef.Self().Kind != TypeDefKindObject {
 			// Only default objects need processing at this time.
 			// Primitive default values were already processes earlier
 			//  in the flow.
@@ -696,9 +732,17 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if opts.ParentTyped != nil {
 		// collect any client resources stored in parent fields (secrets/sockets/etc.) and grant
 		// this function client access
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("current dagql server: %w", err)
+		}
+		objDefRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, fn.objDef)
+		if err != nil {
+			return nil, fmt.Errorf("wrap parent object typedef: %w", err)
+		}
 		parentModType, ok, err := NewUserMod(fn.mod).ModTypeFor(ctx, &TypeDef{
 			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(fn.objDef),
+			AsObject: dagql.NonNull(objDefRes),
 		}, true)
 		if err != nil {
 			return nil, fmt.Errorf("get mod type for parent: %w", err)
@@ -939,8 +983,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 // hasWorkspaceArgs returns true if any of the function's arguments are of type Workspace.
 func (fn *ModuleFunction) hasWorkspaceArgs() bool {
-	for _, arg := range fn.metadata.Args {
-		if arg.IsWorkspace() {
+	for _, argRes := range fn.metadata.Args {
+		if argRes.Self().IsWorkspace() {
 			return true
 		}
 	}
@@ -1022,7 +1066,7 @@ func (fn *ModuleFunction) loadContextualArg(
 	dag *dagql.Server,
 	arg *FunctionArg,
 ) (dagql.IDType, error) {
-	if arg.TypeDef.Kind != TypeDefKindObject {
+	if arg.TypeDef.Self().Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be an object", arg.OriginalName)
 	}
 	if dag == nil {
@@ -1031,8 +1075,8 @@ func (fn *ModuleFunction) loadContextualArg(
 
 	// Handle Container types with DefaultAddress
 	if arg.DefaultAddress != "" {
-		if arg.TypeDef.AsObject.Value.Name != "Container" {
-			return nil, fmt.Errorf("defaultAddress can only be used with Container type, not %s", arg.TypeDef.AsObject.Value.Name)
+		if arg.TypeDef.Self().AsObject.Value.Self().Name != "Container" {
+			return nil, fmt.Errorf("defaultAddress can only be used with Container type, not %s", arg.TypeDef.Self().AsObject.Value.Self().Name)
 		}
 		return loadContainerFromAddress(ctx, dag, arg.DefaultAddress)
 	}
@@ -1041,7 +1085,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		return nil, fmt.Errorf("argument %q is not a contextual argument", arg.OriginalName)
 	}
 
-	switch arg.TypeDef.AsObject.Value.Name {
+	switch arg.TypeDef.Self().AsObject.Value.Self().Name {
 	case "Directory":
 		dir, err := fn.mod.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, CopyFilter{
 			Exclude: arg.Ignore,
@@ -1073,7 +1117,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
 		isLocalGit := cleanedPath == "." || cleanedPath == ".git"
 		if isLocalMod && isLocalGit {
-			switch arg.TypeDef.AsObject.Value.Name {
+			switch arg.TypeDef.Self().AsObject.Value.Self().Name {
 			case "GitRepository":
 				repo, err := fn.mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
 				if err != nil {
@@ -1134,7 +1178,7 @@ func (fn *ModuleFunction) loadContextualArg(
 			return nil, fmt.Errorf("parse git URL %q: %w", arg.DefaultPath, err)
 		}
 
-		switch arg.TypeDef.AsObject.Value.Name {
+		switch arg.TypeDef.Self().AsObject.Value.Self().Name {
 		case "GitRepository":
 			gitID, err := git.ID()
 			if err != nil {
@@ -1161,7 +1205,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		}
 	}
 
-	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.Self().AsObject.Value.Self().Name)
 }
 
 // loadWorkspaceArg loads a workspace argument by resolving it through the
@@ -1196,10 +1240,10 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 }
 
 func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {
-	if kind := arg.TypeDef.Kind; kind != TypeDefKindObject {
+	if kind := arg.TypeDef.Self().Kind; kind != TypeDefKindObject {
 		return nil, fmt.Errorf("[kind=%v] argument %q must be of type Directory to apply ignore pattern: [%s]", kind, arg.OriginalName, strings.Join(arg.Ignore, ","))
 	}
-	if objName := arg.TypeDef.AsObject.Value.Name; objName != "Directory" {
+	if objName := arg.TypeDef.Self().AsObject.Value.Self().Name; objName != "Directory" {
 		return nil, fmt.Errorf("[ObjName=%v] argument %q must be of type Directory to apply ignore pattern: [%s]", objName, arg.OriginalName, strings.Join(arg.Ignore, ","))
 	}
 

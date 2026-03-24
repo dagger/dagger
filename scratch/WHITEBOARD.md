@@ -38,724 +38,1225 @@
 * A lot of eval'ing of lazy stuff is just triggered inline now; would be nice if dagql cache scheduler knew about these and could do that in parallel for ya
    * This is partially a pre-existing condition though, so not a big deal yet. But will probably make a great optimization in the near-ish future
 * Moved the GC + ref counting + dependency tracking refactor notes to `scratch/GC-refactor.md` so this file can stay focused on the next design/debugging pass.
-
 * Moved the Laziness Refactor notes to `scratch/laziness.md` so this file can stay focused on prune.
+* Moved the Prune Refactor notes to `scratch/prunerefactor.md` so this file can stay focused on typedef performance.
 
-# Prune Refactor
+# Making TypeDefs Highly Performant
 
 ## Design
 
-### Overall model
+### Goal
 
-The prune refactor should treat pruning as a best-effort planning problem over a
-snapshot of cache state rather than an in-place optimizer over the live e-graph.
+The typedef family should stop storing nested typedef/function/source-map graphs as
+bare nested structs and start storing canonical attached dagql object results for
+those nested children.
 
-The intended high-level flow is:
+The intended hard cut is:
 
-1. Snapshot the minimum relevant state needed for prune while holding locks for
-   as little time as possible.
-2. Outside of lock, decide what to prune by simulating over that snapshot.
-3. Reacquire the lock and apply the selected persisted-edge removals best-effort.
-   If the live graph has drifted, that is acceptable.
+* nested ideable typedef children are canonicalized at construction time
+* typedef family objects store those canonical children as `dagql.ObjectResult`
+  or `dagql.ObjectResultArray`
+* typedef family objects declare those embedded canonical children through
+  `AttachDependencyResults`
+* read paths reuse the already-canonical child result refs directly
+* persistence stores child result IDs instead of recursively embedding the full
+  nested payload graph
+* post-construction passes like namespacing and patching must stop mutating
+  shared nested children in place
 
-Prune is already heuristic and nondeterministic.
+This is explicitly a write-time canonicalization model, not a read-time
+re-canonicalization model.
 
-That means we explicitly accept:
+### Why the current design is expensive
 
-* if snapshot state drifts before apply, that is fine
-* if some planned removals are no longer possible, skip them and get them next prune
-* if new cache state appears during prune, that is fine
-* if we over-prune somewhat relative to the exact byte target, that is fine
+Today the typedef family stores nested ideable children as bare pointers and
+slices of bare pointers.
 
-The design goal is not exact optimality. The design goal is:
+That creates three large costs.
 
-* no expensive work while holding the e-graph lock
-* no giant global rescoring loops against live state
-* one coherent planning pass over a snapshot
-* one best-effort apply phase back to live state
+1. Deep cloning.
 
-### Existing problems to remove
+   `Clone()` on the typedef family recursively duplicates nested typedef,
+   function, field, enum, and source-map graphs. This creates memory churn and
+   duplicate object graphs even when the nested child values are already
+   semantically canonical.
 
-The current prune implementation has several structural problems.
+2. Read-time re-canonicalization.
 
-* `Prune` holds the full e-graph lock and then calls `measureAllResultSizesLocked`.
-  That means we can run arbitrary `CacheUsageIdentity`, `CacheUsageMayChange`,
-  and worst of all `CacheUsageSize` object code while the cache is globally locked.
-  This is exactly the sort of lock-hostile design we want to eliminate.
-* `simulatePersistedEdgeRemovalLocked` is an expensive per-candidate graph
-  simulation, and the current algorithm runs it for every candidate in a giant
-  best-candidate scoring loop.
-* The current algorithm rebuilds almost all of its global state after every
-  single selected removal:
-  * size accounting
-  * usage-identity ownership maps
-  * active/session closure
-  * candidate list
-  * candidate sort order
-  * marginal reclaim scores
-* `usageEntriesLocked` calls `resultHasSessionEdge` for every result, and that
-  helper grabs `sessionMu` and scans all sessions. That is both a performance
-  problem and the wrong kind of cross-lock interaction inside prune.
-* `sessionDependencyClosureLocked` grabs `sessionMu` while prune is already
-  holding `egraphMu`. Other codepaths take those locks in the opposite order,
-  which is both a contention problem and a lock-order smell.
-* The current greedy selection is too expensive even if it were moved entirely
-  outside of locks. The problem is not just lock placement; the algorithmic
-  shape itself is wrong for prune.
+   `core/schema/module_typedef_canonical.go` repeatedly walks those nested bare
+   graphs and reconstructs canonical dagql objects on demand. That means field
+   accessors like `function.returnType`, `function.args`, `field.typeDef`,
+   `object.functions`, `enum.members`, and the `currentTypeDefs` tree all pay a
+   recursive canonicalization tax on read.
 
-### Snapshot contents
+3. Recursive inline persistence.
 
-The prune planner should snapshot only the state needed to make pruning
-decisions.
+   The typedef family persisted payloads currently embed nested typedef/function
+   graphs recursively rather than storing references to already-canonical child
+   results. That multiplies the amount of serialization work and prevents us
+   from reusing the canonical attached children the cache already knows about.
 
-The intended snapshot contents are:
+The result is that the same conceptual typedef graph is repeatedly:
 
-* the set of persisted retained-root edges that are eligible candidates
-* enough per-result graph state to simulate ownership release:
-  * result ID
-  * current incoming ownership count
-  * dependency edges
-* enough usage-accounting state to estimate reclaimed bytes without rewalking
-  all identities after every candidate:
-  * usage identity per result
-  * size bytes per usage identity
-  * live-member count per usage identity
-* enough policy metadata per candidate to sort deterministically:
-  * expiry status / expiry time
-  * most-recent-use time
-  * created-at time
-  * current attributed size
-* the active/session-retained roots or active closure needed to exclude
-  in-use results from prune candidacy
+* cloned
+* recursively walked
+* recursively canonicalized
+* recursively persisted
 
-This snapshot should be copied out of live state quickly. Expensive work such as
-size measurement should either already be cached or should run outside the main
-lock against snapshot-owned worklists.
+instead of being built once and then referenced.
 
-### Candidate definition
+### Full inventory of affected bare ideable fields
 
-A prune candidate is not a leaf, and it is not any arbitrary graph vertex.
+These are the typedef-related struct fields that currently store bare ideable
+children and need to change.
 
-A prune candidate is:
+`Function`
+* `Args []*FunctionArg`
+* `ReturnType *TypeDef`
+* `SourceMap dagql.Nullable[*SourceMap]`
 
-* a result that currently has a persisted retained-root edge
-* that passes the prune policy filters
-* that is not blocked by active/session retention
+`FunctionArg`
+* `SourceMap dagql.Nullable[*SourceMap]`
+* `TypeDef *TypeDef`
 
-Everything else in the graph still matters to the simulation, but only as
-simulation state.
+`TypeDef`
+* `AsList dagql.Nullable[*ListTypeDef]`
+* `AsObject dagql.Nullable[*ObjectTypeDef]`
+* `AsInterface dagql.Nullable[*InterfaceTypeDef]`
+* `AsInput dagql.Nullable[*InputTypeDef]`
+* `AsScalar dagql.Nullable[*ScalarTypeDef]`
+* `AsEnum dagql.Nullable[*EnumTypeDef]`
 
-So:
+`ObjectTypeDef`
+* `SourceMap dagql.Nullable[*SourceMap]`
+* `Fields []*FieldTypeDef`
+* `Functions []*Function`
+* `Constructor dagql.Nullable[*Function]`
 
-* interior nodes with a persisted edge are valid candidates
-* top-level results with a persisted edge are valid candidates
-* a node with no persisted edge is never a direct prune action, even if it would
-  be collectible after other removals
+`FieldTypeDef`
+* `TypeDef *TypeDef`
+* `SourceMap dagql.Nullable[*SourceMap]`
 
-This keeps the action space honest: prune only plans removals it can actually
-apply.
+`InterfaceTypeDef`
+* `SourceMap dagql.Nullable[*SourceMap]`
+* `Functions []*Function`
 
-### Stage-2 planning algorithm
+`ListTypeDef`
+* `ElementTypeDef *TypeDef`
 
-The preferred planning algorithm is a one-pass ordered simulation over the
-snapshot.
+`InputTypeDef`
+* `Fields []*FieldTypeDef`
 
-The intended flow is:
+`EnumTypeDef`
+* `Members []*EnumMemberTypeDef`
+* `SourceMap dagql.Nullable[*SourceMap]`
 
-1. Build the candidate list from persisted retained-root edges.
-2. Sort candidates once by a simple heuristic priority.
-3. Walk the candidates in that fixed order.
-4. For each candidate, apply its persisted-edge removal to the snapshot counts.
-5. If any result count hits zero, propagate collection through its deps.
-6. As results become collected, decrement live counts for their usage
-   identities and add bytes once an identity becomes fully dead.
-7. Stop once estimated reclaimed bytes reaches the prune target.
-8. Apply the selected candidate removals back to the live cache best-effort.
+`EnumMemberTypeDef`
+* `SourceMap dagql.Nullable[*SourceMap]`
 
-This is intentionally not exact greedy.
+These are the fields this refactor is about. We are not including unrelated
+structures like `FunctionCall` in this pass.
 
-The point is:
+### Target field shapes
 
-* graph-aware
-* overlap-aware
-* target-aware
-* much cheaper than rescoring every candidate on every round
+The end state should be:
 
-### Heuristic order
+`Function`
+* `Args dagql.ObjectResultArray[*FunctionArg]`
+* `ReturnType dagql.ObjectResult[*TypeDef]`
+* `SourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]]`
 
-The heuristic should stay simple and explainable. The graph-awareness comes from
-the simulation, not from a fancy candidate score.
+`FunctionArg`
+* `SourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]]`
+* `TypeDef dagql.ObjectResult[*TypeDef]`
 
-A good first-pass order is:
+`TypeDef`
+* `AsList dagql.Nullable[dagql.ObjectResult[*ListTypeDef]]`
+* `AsObject dagql.Nullable[dagql.ObjectResult[*ObjectTypeDef]]`
+* `AsInterface dagql.Nullable[dagql.ObjectResult[*InterfaceTypeDef]]`
+* `AsInput dagql.Nullable[dagql.ObjectResult[*InputTypeDef]]`
+* `AsScalar dagql.Nullable[dagql.ObjectResult[*ScalarTypeDef]]`
+* `AsEnum dagql.Nullable[dagql.ObjectResult[*EnumTypeDef]]`
 
-1. expired persisted edges first
-2. older least-recently-used first
-3. older created-at first
-4. larger currently-attributed size first
-5. lower result ID as deterministic tie-break
+`ObjectTypeDef`
+* `SourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]]`
+* `Fields dagql.ObjectResultArray[*FieldTypeDef]`
+* `Functions dagql.ObjectResultArray[*Function]`
+* `Constructor dagql.Nullable[dagql.ObjectResult[*Function]]`
 
-This means:
+`FieldTypeDef`
+* `TypeDef dagql.ObjectResult[*TypeDef]`
+* `SourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]]`
 
-* obviously cold and expired data gets considered first
-* among equally cold candidates, larger roots are considered earlier so we can
-  reach the target with fewer removals
-* the order is deterministic and easy to reason about
+`InterfaceTypeDef`
+* `SourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]]`
+* `Functions dagql.ObjectResultArray[*Function]`
 
-We should not attempt to make the heuristic itself encode exact transitive
-reclaim. That is what the simulation is for.
+`ListTypeDef`
+* `ElementTypeDef dagql.ObjectResult[*TypeDef]`
 
-### Why this is graph-aware
+`InputTypeDef`
+* `Fields dagql.ObjectResultArray[*FieldTypeDef]`
 
-The planner tracks incoming ownership counts for all results in the snapshot.
+`EnumTypeDef`
+* `Members dagql.ObjectResultArray[*EnumMemberTypeDef]`
+* `SourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]]`
 
-When a candidate retained root is removed in the simulation:
+`EnumMemberTypeDef`
+* `SourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]]`
 
-* decrement that result's incoming count
-* if it reaches zero, collect it
-* for each collected result, decrement its deps
-* if those deps reach zero, collect them too
-* continue transitively until the queue drains
+That means nested typedef-family relationships become attached reference
+relationships rather than embedded bare-struct ownership.
 
-So reclaim is based on the actual DAG of ownership dependencies, not on a root's
-local size.
+### Construction-time canonicalization
 
-### Why this is overlap-aware
+Canonicalization should move to the write path.
 
-The planner carries the simulated state forward across the full ordered pass.
+Specifically:
+
+* schema constructors and mutators should load child IDs as attached object
+  results
+* those attached child results should be stored directly in the parent typedef
+  struct fields
+* top-level typedef creation and mutation APIs should become the point where
+  nested children are normalized into canonical refs
+
+This means that functions like:
+
+* `typeDefWithListOf`
+* `typeDefWithObjectField`
+* `typeDefWithFunction`
+* `typeDefWithObjectConstructor`
+* `function`
+* `functionWithArg`
+* `functionWithSourceMap`
+
+must stop passing bare `.Self()` values into core and must instead pass the
+attached object results themselves.
+
+The corresponding core mutators should then accept and store those attached
+results directly.
+
+After that change, nested children inside a typedef family object are already
+canonical when the object is created. Later field selections should not need to
+canonicalize them again.
+
+### Internal constructor surface
+
+Once nested typedef-family children are stored as attached object results, the
+schema needs an internal constructor surface that can build those child objects
+directly as canonical dagql results without exposing any new public API.
+
+These constructors should use internal `__*` field names on `Query` and should
+exist specifically so schema write paths can produce canonical child object
+results at construction time.
+
+At minimum, the design expects internal constructors for:
+
+* `Query.__functionArg(...) -> FunctionArg`
+* `Query.__fieldTypeDef(...) -> FieldTypeDef`
+* `Query.__enumMemberTypeDef(...) -> EnumMemberTypeDef`
+* `Query.__listTypeDef(...) -> ListTypeDef`
+* `Query.__objectTypeDef(...) -> ObjectTypeDef`
+* `Query.__interfaceTypeDef(...) -> InterfaceTypeDef`
+* `Query.__inputTypeDef(...) -> InputTypeDef`
+* `Query.__scalarTypeDef(...) -> ScalarTypeDef`
+* `Query.__enumTypeDef(...) -> EnumTypeDef`
+
+The exact argument lists for those constructors should mirror the fields needed
+to create each leaf/subtype object in its canonical form.
+
+Examples:
+
+* `__functionArg` should accept the canonical child refs it stores:
+  * `name`
+  * `description`
+  * `typeDef`
+  * `defaultValue`
+  * `defaultPath`
+  * `defaultAddress`
+  * `ignore`
+  * `sourceMap`
+  * `deprecated`
+* `__fieldTypeDef` should accept:
+  * `name`
+  * `description`
+  * `typeDef`
+  * `sourceMap`
+  * `deprecated`
+* `__enumMemberTypeDef` should accept:
+  * `name`
+  * `value`
+  * `description`
+  * `sourceMap`
+  * `deprecated`
+* `__listTypeDef` should accept:
+  * `elementTypeDef`
+* `__objectTypeDef` should accept:
+  * `name`
+  * `description`
+  * `sourceMap`
+  * `deprecated`
+  * `sourceModuleName`
+* `__interfaceTypeDef` should accept:
+  * `name`
+  * `description`
+  * `sourceMap`
+  * `sourceModuleName`
+* `__inputTypeDef` should at minimum accept:
+  * `name`
+* `__scalarTypeDef` should accept:
+  * `name`
+  * `description`
+  * `sourceModuleName`
+* `__enumTypeDef` should accept:
+  * `name`
+  * `description`
+  * `sourceMap`
+  * `sourceModuleName`
+
+These are internal implementation constructors. They are not intended to become
+part of the public schema surface.
+
+### Internal subtype mutator surface
+
+Internal constructors alone are not sufficient.
+
+Once `TypeDef.AsObject`, `AsInterface`, `AsInput`, `AsEnum`, and `AsList` store
+attached child results, mutating those nested subtype `.Self()` values in place
+becomes incoherent because those children are now shared canonical results.
+
+So the schema also needs internal subtype mutators that are:
+
+* copy-on-write
+* return a new subtype result
+* never mutate a previously-shared canonical child in place
+
+At minimum, the design expects:
+
+* `ObjectTypeDef.__withField(...) -> ObjectTypeDef`
+* `ObjectTypeDef.__withFunction(...) -> ObjectTypeDef`
+* `ObjectTypeDef.__withConstructor(...) -> ObjectTypeDef`
+* `InterfaceTypeDef.__withFunction(...) -> InterfaceTypeDef`
+* `InputTypeDef.__withField(...) -> InputTypeDef`
+* `EnumTypeDef.__withMember(...) -> EnumTypeDef`
+* `Function.__withArg(...) -> Function`
+* `FunctionArg.__withTypeDef(...) -> FunctionArg`
+* `FunctionArg.__withDefaultValue(...) -> FunctionArg`
+* `FunctionArg.__withDefaultPath(...) -> FunctionArg`
+* `FunctionArg.__withDefaultAddress(...) -> FunctionArg`
+* `FunctionArg.__withIgnore(...) -> FunctionArg`
+
+The subtype mutators should accept canonical attached child refs, not bare
+children.
+
+Examples:
+
+* `ObjectTypeDef.__withField` should take a canonical `FieldTypeDef` result
+* `ObjectTypeDef.__withFunction` should take a canonical `Function` result
+* `ObjectTypeDef.__withConstructor` should take a canonical `Function` result
+* `InterfaceTypeDef.__withFunction` should take a canonical `Function` result
+* `InputTypeDef.__withField` should take a canonical `FieldTypeDef` result
+* `EnumTypeDef.__withMember` should take a canonical `EnumMemberTypeDef` result
+* `Function.__withArg` should take a canonical `FunctionArg` result and return
+  a new canonical `Function` result containing that arg
+* `FunctionArg.__withTypeDef` should take a canonical `TypeDef` result and
+  return a new canonical `FunctionArg` result with the updated type ref
+* `FunctionArg.__withDefaultValue` should take the new default JSON payload and
+  return a new canonical `FunctionArg` result with that default value
+* `FunctionArg.__withDefaultPath` should take the new contextual default path
+  and return a new canonical `FunctionArg` result with that path
+* `FunctionArg.__withDefaultAddress` should take the new contextual default
+  address and return a new canonical `FunctionArg` result with that address
+* `FunctionArg.__withIgnore` should take the new ignore-pattern list and return
+  a new canonical `FunctionArg` result with those patterns
+
+Then the parent `TypeDef`-level public mutators can be implemented coherently as
+follows:
+
+1. Build the canonical leaf or subtype child result using the internal
+   constructor surface.
+2. If a nested subtype already exists, call the internal subtype mutator to get
+   a new canonical subtype result that includes the change.
+3. Replace the parent `TypeDef.As*` child ref with that new canonical subtype
+   result.
+
+This gives us:
+
+* write-time canonicalization
+* no in-place mutation of shared nested child refs
+* a cohesive path for namespacing/patch-style transformations later
+
+The same copy-on-write rule also applies to later function metadata rewrites.
+
+There are internal flows, especially module user-default handling, that need to
+make function arguments optional or inject default values so those defaults are
+visible in typedef introspection.
+
+That used to work by mutating nested bare structs in place:
+
+* mutating `FunctionArg.TypeDef.Optional`
+* mutating `FunctionArg.DefaultValue`
+* mutating `FunctionArg.DefaultPath`
+* mutating `FunctionArg.DefaultAddress`
+* mutating `FunctionArg.Ignore`
+* mutating a `Function`'s `Args` slice in place
+
+After the hard cut, that is no longer coherent because `Function.Args`,
+`FunctionArg.TypeDef`, and nested typedef children are all canonical shared
+refs.
+
+So the design rule is:
+
+* post-construction function metadata rewrites must also be expressed as
+  copy-on-write transformations over canonical refs
+
+Concretely, user-default visibility in typedef introspection should be
+implemented by:
+
+1. Building a new canonical optional typedef result when an arg type needs to
+   become optional, e.g. through the existing `withOptional(true)` path.
+2. Building a new canonical `FunctionArg` result through
+   `FunctionArg.__withTypeDef(...)` and/or
+   `FunctionArg.__withDefaultValue(...)` and/or
+   `FunctionArg.__withDefaultPath(...)` and/or
+   `FunctionArg.__withDefaultAddress(...)` and/or
+   `FunctionArg.__withIgnore(...)`.
+3. Building a new canonical `Function` result through `Function.__withArg(...)`
+   that replaces the old arg result with the updated one.
+4. Replacing the owning object/interface constructor or function list entry with
+   that new canonical function result rather than mutating the previous shared
+   child in place.
+
+This is the same design family as namespacing and patching:
+
+* no post-publication mutation of shared child `.Self()` values
+* every later metadata rewrite must become a pure transformation that returns
+  new canonical parent results while reusing unchanged child refs
+
+### Broader internal mutator surface for module-level rewrites
+
+The first wave of internal mutators is still not sufficient for the full hard
+cut.
+
+Once `core/module.go` stops treating nested typedef-family children as embedded
+mutable structs, we also need low-level copy-on-write primitives for the kinds
+of edits that namespacing, ownership stamping, patching, and source-map rebasing
+actually perform.
+
+The important design rule is:
+
+* `core/module.go` should own the *policy* of module-local rewrites
+* typedef-family objects should expose only the *copy-on-write edit
+  primitives* needed to carry out those rewrites coherently
+
+So the next required internal mutator surface should include at minimum:
+
+* `ObjectTypeDef.__withName(...) -> ObjectTypeDef`
+* `ObjectTypeDef.__withSourceMap(...) -> ObjectTypeDef`
+* `ObjectTypeDef.__withSourceModuleName(...) -> ObjectTypeDef`
+* `FieldTypeDef.__withTypeDef(...) -> FieldTypeDef`
+* `FieldTypeDef.__withSourceMap(...) -> FieldTypeDef`
+* `Function.__withReturnType(...) -> Function`
+* `Function.__withSourceMap(...) -> Function`
+* `Function.__withArg(...) -> Function`
+* `FunctionArg.__withTypeDef(...) -> FunctionArg`
+* `FunctionArg.__withSourceMap(...) -> FunctionArg`
+* `FunctionArg.__withDefaultValue(...) -> FunctionArg`
+* `InterfaceTypeDef.__withName(...) -> InterfaceTypeDef`
+* `InterfaceTypeDef.__withSourceMap(...) -> InterfaceTypeDef`
+* `InterfaceTypeDef.__withSourceModuleName(...) -> InterfaceTypeDef`
+* `InterfaceTypeDef.__withFunction(...) -> InterfaceTypeDef`
+* `ListTypeDef.__withElementTypeDef(...) -> ListTypeDef`
+* `EnumTypeDef.__withName(...) -> EnumTypeDef`
+* `EnumTypeDef.__withSourceMap(...) -> EnumTypeDef`
+* `EnumTypeDef.__withSourceModuleName(...) -> EnumTypeDef`
+* `EnumTypeDef.__withMember(...) -> EnumTypeDef`
+* `EnumMemberTypeDef.__withName(...) -> EnumMemberTypeDef`
+* `EnumMemberTypeDef.__withSourceMap(...) -> EnumMemberTypeDef`
+
+These should all remain internal schema-only mutators.
+
+They are not intended to become public API; they exist so module-level rewrite
+passes can stay purely transformational without mutating shared child `.Self()`
+values in place.
+
+#### SourceMap treatment
+
+`SourceMap` is also a shared child ref after the cut, so source-map rebasing
+cannot mutate the existing `SourceMap` payload in place either.
+
+The cleaner design is:
+
+* rebuild transformed source maps through the constructor path
+* either reuse the existing public `sourceMap(...)` constructor or introduce a
+  private `__sourceMap(...)` if we want to keep this rewrite surface fully
+  internal
+
+The main rule matters more than the exact field name:
+
+* source-map rewrites should produce a new canonical `SourceMap` result when
+  any field changes
+* unchanged source-map results should be reused as-is
+
+#### `TypeDef` itself also needs internal child-ref replacement mutators
+
+There is one more crucial implication for module-level pure transformations.
+
+Once nested `TypeDef` refs are themselves shared canonical `ObjectResult`s,
+module-level rewrites cannot coherently rebuild a transformed shared `TypeDef`
+result if the only available API is the current public constructor-style
+surface:
+
+* `withListOf(elementType: ID)`
+* `withObject(name, description, ...)`
+* `withInterface(name, description, ...)`
+* `withEnum(name, description, ...)`
+
+Those public APIs are fine for ordinary write-time construction, but they are
+not sufficient for pure rewrite passes that already have a transformed canonical
+child subtype result in hand and need to replace the existing `As*` ref without:
+
+* mutating `typeDef.Self().As*` in place, or
+* replaying a lossy reconstruction of the subtype from raw scalar fields
+
+So the design also needs internal `TypeDef` child-ref replacement mutators such
+as:
+
+* `TypeDef.__withListTypeDef(...) -> TypeDef`
+* `TypeDef.__withObjectTypeDef(...) -> TypeDef`
+* `TypeDef.__withInterfaceTypeDef(...) -> TypeDef`
+* `TypeDef.__withInputTypeDef(...) -> TypeDef`
+* `TypeDef.__withScalarTypeDef(...) -> TypeDef`
+* `TypeDef.__withEnumTypeDef(...) -> TypeDef`
+
+These are distinct from the existing public constructor-style mutators.
+
+Their role is:
+
+* accept an already-canonical child subtype result
+* return a new canonical `TypeDef` result whose `As*` ref points at that child
+* preserve the rest of the `TypeDef` state such as `Kind` and `Optional`
+
+This is what will let module-level pure transformation passes update nested
+shared `TypeDef` refs coherently when a child subtype result has changed.
+
+### Public mutators become wrappers over internal constructors/mutators
+
+The existing public `TypeDef`/`Function` schema mutators should remain the
+public API, but their implementation model changes.
+
+Instead of directly constructing or mutating nested bare structs, they should:
+
+* load attached child refs from IDs
+* call the internal `__*` constructors and subtype mutators
+* store the returned canonical child refs on the parent object
+
+Examples:
+
+* `typeDefWithListOf` should build a canonical `ListTypeDef` result via
+  `Query.__listTypeDef` and store it in `TypeDef.AsList`
+* `typeDefWithObject` should build a canonical `ObjectTypeDef` result via
+  `Query.__objectTypeDef` and store it in `TypeDef.AsObject`
+* `typeDefWithObjectField` should:
+  * build a canonical `FieldTypeDef` result via `Query.__fieldTypeDef`
+  * call `ObjectTypeDef.__withField`
+  * replace `TypeDef.AsObject` with the returned canonical `ObjectTypeDef`
+* `typeDefWithFunction` should:
+  * call `ObjectTypeDef.__withFunction` or `InterfaceTypeDef.__withFunction`
+  * replace the relevant `TypeDef.As*` child ref
+* `typeDefWithObjectConstructor` should:
+  * canonicalize the constructor function result
+  * call `ObjectTypeDef.__withConstructor`
+  * replace `TypeDef.AsObject`
+* `typeDefWithEnumMember` should:
+  * build a canonical `EnumMemberTypeDef` via `Query.__enumMemberTypeDef`
+  * call `EnumTypeDef.__withMember`
+  * replace `TypeDef.AsEnum`
+* `functionWithArg` should build a canonical `FunctionArg` via `Query.__functionArg`
+  and append it through a copy-on-write `Function` mutator rather than embedding
+  a bare struct
+
+The exact same principle applies to source-map-bearing objects and any other
+typedef-family child that becomes result-backed.
+
+### Dependency attachment contract
+
+Once typedef family objects embed canonical child result refs, they must declare
+those refs as dependency results.
+
+Every typedef-family object that stores child `ObjectResult` or
+`ObjectResultArray` fields should implement `AttachDependencyResults`.
+
+That includes:
+
+* `Function`
+* `FunctionArg`
+* `TypeDef`
+* `ObjectTypeDef`
+* `FieldTypeDef`
+* `InterfaceTypeDef`
+* `ListTypeDef`
+* `InputTypeDef`
+* `EnumTypeDef`
+* `EnumMemberTypeDef`
+
+Those implementations should:
+
+* attach/normalize the embedded child results in place
+* rewrite the struct fields with the attached versions
+* return the full set of embedded child refs
+
+This is what makes the embedding relationship honest to dagql cache:
+
+* these typedef objects now literally store result refs in their payload
+* therefore cache needs to know those are dependency results
+
+### Clone semantics after the cut
+
+`Clone()` on the typedef family should stop recursively cloning nested ideable
+subgraphs.
+
+After the cut, clone should mostly do this:
+
+* copy the outer struct
+* clone slices of object results where needed
+* preserve the nested child object results themselves as-is
+
+For example:
+
+* `Function.Clone` should stop cloning `ReturnType` and each `FunctionArg`
+  recursively; it should copy the `ObjectResultArray[*FunctionArg]` and the
+  `ObjectResult[*TypeDef]`
+* `TypeDef.Clone` should stop recursively cloning `AsList/AsObject/...`
+  payloads; it should preserve the child object result wrappers
+* `ObjectTypeDef.Clone` should stop recursively cloning nested functions, fields,
+  constructor, and source map payloads; it should copy their result wrapper
+  slices/values only
+
+This is one of the primary performance wins. It prevents exponential-looking
+object duplication when module typedef graphs are copied around.
+
+### Persistence model
+
+The current typedef persistence is deeply recursive. That should be removed.
+
+The typedef family should persist nested ideable children exactly the same way
+other core objects already persist attached child refs:
+
+* encode child object-result references as persisted result IDs
+* decode those result IDs back into attached object results via
+  `loadPersistedObjectResultByResultID`
+
+So instead of recursive persisted payload structs like:
+
+* `persistedFunctionArg{ TypeDef *persistedTypeDef }`
+* `persistedFunction{ ReturnType *persistedTypeDef, Args []*persistedFunctionArg }`
+* `persistedTypeDef{ AsObject *persistedObjectTypeDef, ... }`
+
+we want result-ID based payload fields like:
+
+* `TypeDefResultID uint64`
+* `ReturnTypeResultID uint64`
+* `ArgResultIDs []uint64`
+* `AsObjectResultID uint64`
+* `FieldResultIDs []uint64`
+* `FunctionResultIDs []uint64`
+* `ConstructorResultID uint64`
+* `SourceMapResultID uint64`
+* `MemberResultIDs []uint64`
+
+This should use the same persistence helpers and conventions already used by:
+
+* `Module`
+* `ModuleSource`
+* `Container`
+* `GitRepository`
+* `GitRef`
+
+The typedef family should not maintain its own special recursive persistence
+subsystem once nested children are attached results.
+
+### Read-path simplification in `module_typedef_canonical.go`
+
+After the cut, `core/schema/module_typedef_canonical.go` should stop
+re-canonicalizing nested children on read.
+
+Field accessors that currently rebuild child refs should instead just reuse the
+stored attached object results directly.
+
+Examples:
+
+* `functionReturnType` should become `return fn.ReturnType, nil`
+* `functionArgs` should become `return fn.Args, nil`
+* `fieldTypeDefTypeDef` should become `return field.TypeDef, nil`
+* `objectTypeDefFields` should become `return obj.Fields, nil`
+* `objectTypeDefFunctions` should become `return obj.Functions, nil`
+* `objectTypeDefConstructor` should become `return obj.Constructor, nil`
+* `interfaceTypeDefFunctions` should become `return iface.Functions, nil`
+* `listElementTypeDef` should become `return list.ElementTypeDef, nil`
+* `inputTypeDefFields` should become `return input.Fields, nil`
+* `enumTypeDefMembers` should become `return enum.Members, nil`
+* `typeDefAsList/AsObject/AsInterface/AsInput/AsScalar/AsEnum` should return
+  the stored nullable child result directly
+
+The existing recursive helpers like `canonicalTypeDefRef` and `canonicalFunction`
+should shrink dramatically and should stop being used in ordinary nested read
+paths.
+
+The intended model is:
+
+* top-level canonicalization may still exist where truly needed
+* nested field access should never recursively rebuild what was already
+  canonicalized and stored earlier
+
+### Namespacing and patching must stop mutating shared children in place
+
+This is the most important behavioral constraint of the refactor.
+
+Today, `namespaceTypeDef` and `Patch` recursively walk bare nested children and
+mutate them in place.
+
+That becomes incoherent once nested children are canonical attached results,
+because then mutating `child.Self()` mutates a shared canonical child reference
+that may be reused from multiple parents.
+
+So yes: `namespaceTypeDef` and `Patch` should be rethought as cohesive,
+cache-friendly transformation APIs rather than in-place recursive mutation over
+shared children.
+
+The rule after the cut should be:
+
+* no post-construction pass may recursively mutate nested shared child refs in
+  place
+
+Instead, normalization should happen in one of two ways.
+
+1. Preferably, before publication.
+
+   The module typedef graph should be normalized into its final namespaced,
+   module-owned form before it is stored as the canonical nested-child graph.
+
+2. If a later transformation is still necessary, it must be expressed as a pure
+   copy-on-write API.
+
+   That API should:
+   * take a top-level typedef family object
+   * return a new top-level typedef family object
+   * reuse existing child refs where unchanged
+   * create new canonical child refs only where some actual field changed
+   * never mutate previously-shared child `.Self()` values in place
+
+This could take the form of new top-level normalization helpers on the typedef
+family, but the core design rule matters more than the exact method name.
+
+The point is that namespacing, ownership stamping, source-map rebasing, and enum
+patching must become pure transformations over canonical refs, not imperative
+mutation passes over a shared nested object graph.
+
+The same rule applies to later function metadata rewrites such as:
+
+* user-default introspection visibility
+* optionalizing object args for user defaults
+* setting or changing `FunctionArg.DefaultValue`
+* setting or changing `FunctionArg.DefaultPath`
+* setting or changing `FunctionArg.DefaultAddress`
+* setting or changing `FunctionArg.Ignore`
+
+Those too must become copy-on-write canonical transformations rather than
+in-place mutation of shared child refs.
+
+The same rule also applies to module-source and toolchain argument
+customizations.
+
+In particular, helpers like `applyArgumentConfigToFunction` in
+`core/schema/modulesource.go` must stop mutating:
+
+* `FunctionArg.DefaultValue`
+* `FunctionArg.DefaultPath`
+* `FunctionArg.DefaultAddress`
+* `FunctionArg.Ignore`
+
+on shared canonical child refs in place.
+
+Instead they must:
+
+1. operate on canonical `Function` / `FunctionArg` results,
+2. build updated arg results through the internal arg mutators above,
+3. rebuild the owning function through `Function.__withArg(...)`,
+4. rebuild any owning object typedefs or top-level typedef refs through the
+   corresponding internal mutators,
+5. and reuse unchanged refs as-is.
+
+### Module-level pure transformation pipeline
+
+The important consequence for `core/module.go` is that it should stop behaving
+like an imperative nested-typedef editor.
+
+Instead, it should become an orchestrator of pure copy-on-write
+transformations over canonical typedef refs.
+
+The intended shape is:
+
+* `core/module.go` owns the high-level module policy:
+  * namespacing
+  * ownership stamping
+  * source-map rebasing
+  * enum-default patching
+  * user-default introspection visibility
+* low-level copy-on-write edits are delegated to the internal mutator surface
+  described above
+
+That means the next generation of module helpers should look more like:
+
+* `stampOwnedTypeRefs(ctx, dag, dagql.ObjectResult[*TypeDef]) (dagql.ObjectResult[*TypeDef], error)`
+* `namespaceTypeDef(ctx, dag, modPath, dagql.ObjectResult[*TypeDef]) (dagql.ObjectResult[*TypeDef], error)`
+* `patchTypeDef(ctx, dag, dagql.ObjectResult[*TypeDef]) (dagql.ObjectResult[*TypeDef], error)`
+* `namespaceSourceMap(ctx, dag, modPath, dagql.ObjectResult[*SourceMap]) (dagql.ObjectResult[*SourceMap], error)`
+
+And then narrower subtype-specific helpers beneath those:
+
+* `namespaceObjectTypeDef`
+* `namespaceInterfaceTypeDef`
+* `namespaceEnumTypeDef`
+* `namespaceFunction`
+* `namespaceFunctionArg`
+* `namespaceFieldTypeDef`
+* `patchFunction`
+* `patchFunctionArg`
+
+The contract for every such helper is:
+
+1. Recurse through child refs first.
+2. Determine whether anything semantically changed.
+3. If nothing changed, return the original canonical result unchanged.
+4. If anything changed, build a new canonical result by applying only the
+   smallest necessary internal mutators.
+5. Reuse unchanged child refs exactly as-is.
+
+That "return the original result unchanged if nothing changed" rule is
+important for performance and identity stability.
+
+### High-level transformation responsibilities
+
+#### Ownership stamping
+
+Ownership stamping should:
+
+* only stamp `SourceModuleName` on locally-owned object/interface/enum defs
+* avoid mutating dependency/core types
+* recurse through child refs only so that nested local typedefs can be stamped
+  coherently too
+
+#### Namespacing
+
+Namespacing should:
+
+* only rename locally-owned object/interface/enum defs
+* only rebase source maps on locally-owned nodes
+* recursively update:
+  * list element typedef refs
+  * field typedef refs
+  * function return typedef refs
+  * function arg typedef refs
+  * source-map refs on object/interface/function/arg/field/enum/member
+* leave dependency/core child refs untouched when they are already canonical
+
+#### Patching
+
+`Patch` should become another pure transformation pass.
+
+For now its main behavioral responsibility is enum-default normalization.
 
 That means:
 
-* if two persisted roots share a large dependency, removing the first root will
-  not reclaim that dependency while the second still retains it
-* when the last retaining root is simulated away, the shared dependency can then
-  collect
-* shared physical bytes are handled the same way via usage identities: bytes are
-  only counted reclaimed once the last live result for that identity is gone
+* walk object/interface functions
+* if a function arg has an enum default encoded in original-name form, rewrite
+  it to the canonical member `Name`
+* do that by:
+  * creating a new arg via `FunctionArg.__withDefaultValue`
+  * creating a new function via `Function.__withArg`
+  * creating a new owning subtype via `ObjectTypeDef.__withFunction` or
+    `InterfaceTypeDef.__withFunction`
+* never mutate `arg.DefaultValue` in place
 
-This avoids the current per-candidate full scan over all usage identities.
+#### User-default introspection visibility
 
-Instead, the planner should maintain:
+User-default introspection visibility in `core/modfunc.go` is the same kind of
+transformation as patching.
 
-* `remainingIncomingCount[resultID]`
-* `aliveCountByUsageIdentity[identity]`
-* `sizeBytesByUsageIdentity[identity]`
+It should:
 
-As each result is collected in the simulation:
+* optionalize arg typedefs through the canonical `withOptional(true)` path
+* create updated arg results through `FunctionArg.__withTypeDef` and/or
+  `FunctionArg.__withDefaultValue`
+* rebuild the owning function via `Function.__withArg`
+* never mutate `FunctionArg.TypeDef.Optional` or `FunctionArg.DefaultValue`
+  directly
 
-* decrement its identity's alive count
-* if that alive count reaches zero, add that identity's bytes exactly once
+### Module-level behavior after the cut
 
-### Why this is target-aware
+`Module.TypeDefs`, validation, namespacing, and patching will all need to
+traverse through attached child refs.
 
-The simulation maintains a running reclaimed-byte total.
+That means code in `core/module.go` that currently does things like:
 
-The ordered pass stops once:
+* recurse into `field.TypeDef`
+* recurse into `fn.ReturnType`
+* recurse into `arg.TypeDef`
+* recurse into `typeDef.AsList.Value.ElementTypeDef`
+* recurse into `obj.Functions`, `obj.Fields`, `obj.Constructor.Value`
+* recurse into `iface.Functions`
+* recurse into `input.Fields`
+* recurse into `enum.Members`
 
-* simulated reclaimed bytes reaches or exceeds the prune target
+must instead dereference through the stored result refs and operate on the
+result-backed children.
 
-This is sufficient for prune.
+The important design consequence is:
 
-We do not need exact optimality. We only need:
+* module-level consumers must treat typedef-family children as references, not
+  embedded subtrees
 
-* a plan that reasonably tends toward old/expired data
-* overlap-aware reclaim accounting
-* a stopping point once enough bytes are expected to be reclaimed
+That is the core model shift.
 
-### Zero-immediate-reclaim candidates
+### `ModType.TypeDef` becomes result-backed
 
-A candidate must not be discarded merely because its immediate reclaim delta is
-zero.
+The `ModType` interface should stop returning bare transient typedef graphs.
 
-This is important for shared-base-image-style cases where:
+The current shape:
 
-* many tiny retained roots all keep a huge shared dependency alive
-* removing any one of them alone does not reclaim the huge shared dependency
-* but removing enough of them eventually does
+* `TypeDef() *TypeDef`
 
-So in the ordered simulation:
+is not coherent once subtype slots like `AsObject`, `AsEnum`, `AsList`, and
+`AsInterface` require attached object results.
 
-* when a candidate is considered while we are still under target, its retained
-  edge removal is applied to the snapshot state even if that single action
-  reclaims zero bytes immediately
-* that candidate still becomes part of the prune plan
-* later candidates can then benefit from the state change it introduced
+Several internal `ModType` implementations currently synthesize transient
+typedefs outside the schema write path, for example:
 
-This is another reason the one-pass ordered simulation is a better fit than the
-current exact-marginal greedy scoring loop.
+* primitive/list/nullable wrapper types
+* core object and core enum types
+* module enum/object/interface wrappers
 
-### Relationship to the old greedy algorithm
+Once subtype slots are result-backed, those transient builders need access to
+the dagql server so they can construct canonical subtype refs through the new
+internal `__*` constructor surface.
 
-The old algorithm tries to choose the single best next candidate by exact
-marginal reclaim.
+So the design should hard-cut the `ModType` contract to:
 
-That should not be the target anymore.
+* `TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error)`
 
-Even outside locks, that shape is still:
+This is more coherent than either:
 
-* too expensive
-* too recomputation-heavy
-* too complicated for a best-effort subsystem
+* keeping `TypeDef() *TypeDef`, or
+* changing only to `TypeDef(ctx) *TypeDef`
 
-If we ever want to preserve a more greedy flavor later, a lazy-greedy/CELF-style
-variant over a snapshot would be much better than the current full rescoring
-loop, but that is not the preferred first cut.
+because it keeps the contract fully in the canonical result-backed world.
 
-The preferred first cut is:
+The consequences are:
 
-* snapshot once
-* sort once
-* simulate once
-* apply best-effort batch
+* `PrimitiveType`, `ListType`, `NullableType`, `ModuleEnumType`,
+  `CoreModObject`, `CoreModEnum`, `InterfaceType`, and any other `ModType`
+  implementation must build and return a canonical `ObjectResult[*TypeDef]`
+* any caller that only needs the struct can call `.Self()`
+* any caller that needs canonical identity, IDs, or nested child refs already
+  has the canonical typedef result
+* if the current dagql server is missing from context, that should surface as an
+  explicit error rather than silently synthesizing a fake bare subtype payload
 
-### Apply phase
+This also implies that helper structs like `NullableType` should stop storing
+bare typedef metadata such as `InnerDef *TypeDef` and should instead store the
+canonical inner typedef result, for example:
 
-Applying the plan back to the live graph should be best-effort and simple.
+* `InnerDef dagql.ObjectResult[*TypeDef]`
 
-The intended behavior is:
+Then `NullableType.TypeDef(ctx)` can derive the optional wrapper as a canonical
+typedef result rather than cloning a bare inner typedef.
+
+### Top-level module typedef storage must become result-backed too
+
+There is one more crucial consequence of the hard cut:
+
+it is not sufficient to make only the nested typedef-family children
+result-backed while keeping the module's top-level typedef collections as bare
+`[]*TypeDef`.
+
+If top-level storage remains bare, then any API that wants canonical typedef
+results still has to fabricate wrappers after the fact. That just moves the
+problem around and reintroduces detached-result invention in another place.
+
+So the coherent cut is:
+
+* `Module.ObjectDefs` becomes `dagql.ObjectResultArray[*TypeDef]`
+* `Module.InterfaceDefs` becomes `dagql.ObjectResultArray[*TypeDef]`
+* `Module.EnumDefs` becomes `dagql.ObjectResultArray[*TypeDef]`
+
+And correspondingly:
+
+* `Mod.TypeDefs(ctx, dag)` becomes
+  `func TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error)`
+
+This is the correct foundation because:
+
+* top-level typedefs already have canonical result identity at storage time
+* `TypeDefs` can return those refs directly
+* `currentTypeDefs` no longer needs to fabricate or re-canonicalize top-level
+  typedef wrappers
+* module-level transformation passes can operate directly on the real stored
+  canonical refs
+* we do not need `dagql.NewObjectResultForCurrentCall(...)` hacks inside
+  `TypeDefs` just to run rewrite logic
+
+#### Consequences of the top-level storage hard cut
+
+Once the module stores top-level typedefs as canonical results, the next
+implementation steps become:
+
+1. `core/module.go`
+   * `ObjectDefs`, `InterfaceDefs`, and `EnumDefs` become
+     `dagql.ObjectResultArray[*TypeDef]`
+2. `core/module.go`
+   * `WithObject`, `WithInterface`, and `WithEnum` accept
+     `dagql.ObjectResult[*TypeDef]` instead of bare `*TypeDef`
+   * they validate / namespace / patch by transforming those attached results
+     and then store the returned canonical results
+3. `core/module.go`
+   * `TypeDefs(ctx, dag)` returns `dagql.ObjectResultArray[*TypeDef]`
+   * in the steady state it should mostly just concatenate and/or return the
+     stored top-level result arrays
+4. `core/moddeps.go`
+   * `ModDeps.TypeDefs` becomes result-backed too
+5. `core/schema/module.go`
+   * `moduleWithObject`, `moduleWithInterface`, and `moduleWithEnum` stop doing
+     `.Self()` on the loaded typedef
+   * they pass the attached `dagql.ObjectResult[*TypeDef]` through
+6. `core/schema/module_typedef_canonical.go`
+   * `currentTypeDefs` becomes much simpler
+   * it should no longer canonicalize top-level typedefs on read
+   * it should reuse the stored top-level result arrays directly
+7. `core/module.go` persistence
+   * module top-level typedef storage must persist as result refs, not recursive
+     bare payloads
+8. `core/schema/coremod.go`
+   * coremod typedef collection must also return canonical result-backed typedefs
+     rather than bare ones
+
+The key rule is:
+
+* do not invent new current-call or detached typedef wrappers in `TypeDefs`
+  just to feed later logic
+
+If a typedef is a real stored top-level module typedef, it should already be a
+canonical result before `TypeDefs` ever returns it.
+
+### Scope of expected code movement
+
+This is not just a `core/typedef.go` edit.
+
+The design expects coordinated changes across at least:
+
+* `core/typedef.go`
+* `core/module.go`
+* `core/schema/module.go`
+* `core/schema/module_typedef_canonical.go`
+* `core/moddeps.go`
+* `core/modtypes.go`
+* `core/object.go`
+* `core/interface.go`
+* `core/enum.go`
+* `core/persisted_object.go` usage sites
+
+The first four are the core of the refactor. The others are the downstream
+plumbing sweep that must be updated to consume result-backed nested typedef
+children coherently.
 
-* reacquire the lock only around actual live mutations
-* for each selected candidate, remove the persisted retained-root edge if it is
-  still present
-* if it is already gone, skip it
-* if removing one candidate changes later live-state conditions, that is okay
-* do not attempt to re-run full planning inside apply
+### Implementation sequencing for the module-level rewrite
 
-We explicitly accept drift between snapshot and live state.
+The implementation order should be:
 
-### Secondary follow-up opportunities
+1. Finish the low-level internal mutator surface in `core/typedef.go` and the
+   internal schema fields in `core/schema/module.go`.
+2. Rewrite `core/module.go` so:
+   * `TypeDefs`
+   * `validateTypeDef`
+   * `validateObjectTypeDef`
+   * `validateInterfaceTypeDef`
+   * `namespaceTypeDef`
+   * `Patch`
+   all consume result-backed children and transform by returning new canonical
+   refs instead of mutating nested `.Self()` values.
+3. Update `core/modfunc.go` fully onto the copy-on-write function/arg rewrite
+   model for user-default introspection visibility.
+4. Sweep downstream readers and bridges:
+   * `core/moddeps.go`
+   * `core/object.go`
+   * `core/interface.go`
+   * `core/enum.go`
+   * `core/modtree.go`
+5. Only after the runtime model is stable, finish the typedef persistence hard
+   cut in `core/typedef.go`.
 
-Once the structural refactor above is in place, there are some possible
-follow-ups if needed:
-
-* add a more nuanced sort key if the simple expiry/LRU/size order proves too crude
-* introduce a prune-cycle cap so one invocation does not apply an unbounded plan
-* incrementally maintain some of the snapshot inputs, such as cached size or
-  active-session closure summaries, if that proves worthwhile
-
-But the first pass should focus on the structural hard cut:
-
-* no expensive work under the e-graph lock
-* no repeated whole-world rescoring
-* no session-lock work from inside the prune critical section
-* one-pass ordered simulation over a snapshot
-
-## Implementation plan
-
-### `dagql/cache.go`
-
-#### Snapshotting session-owned roots
-
-Specific change:
-
-* stop using `sessionDependencyClosureLocked()` from inside prune
-* replace it with a small helper that snapshots session-owned result IDs under
-  `sessionMu` alone, for example:
-  * `snapshotSessionResultIDs() map[sharedResultID]struct{}`
-* that helper should:
-  * hold only `sessionMu`
-  * copy the union of all `sessionResultIDsBySession`
-  * return the copied root set
-* closure expansion over deps must then happen outside of `sessionMu` and
-  outside of `egraphMu`, using the prune snapshot graph
-
-Result:
-
-* no `sessionMu` acquisition from inside prune's e-graph critical section
-* no lock-order inversion between session tracking and prune
-
-#### Active-state accounting for usage entries
+The important point is that `core/module.go` is not a late cleanup.
 
-Specific change:
+It is the first place where the old imperative mutation model must be fully
+replaced rather than patched around.
 
-* stop calling `resultHasSessionEdge(resultID)` once per result from
-  `usageEntriesLocked()`
-* remove the current per-result `sessionMu` scan from `usageEntriesLocked`
-* replace it with an explicit active-root snapshot input:
-  * `usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []CacheUsageEntry`
-  * or equivalently a small internal helper that takes a precomputed active set
-* `UsageEntriesAll(ctx)` should:
-  * snapshot active roots under `sessionMu`
-  * run size measurement through the new unlocked measurement pipeline
-  * reacquire `egraphMu`
-  * build usage entries using the precomputed active-root set
-
-Result:
-
-* no O(results * sessions) active-state scan during usage-entry generation
-* no `sessionMu` traffic from inside `usageEntriesLocked`
-
-#### Size measurement pipeline
-
-Specific change:
-
-* split the current locked `measureAllResultSizesLocked(ctx)` into three phases:
-
-1. locked collect:
-   * under `egraphMu`, gather a measurement worklist for results whose
-     `usageIdentity` / `sizeEstimateBytes` are missing or may change
-   * copy out only the minimum stable information needed to measure outside lock
-     for each candidate identity group:
-     * owner result ID
-     * owner shared-result pointer identity to revalidate on publish
-     * current payload object pointer / typed self
-2. unlocked measure:
-   * outside `egraphMu`, call:
-     * `CacheUsageIdentity()`
-     * `CacheUsageMayChange()`
-     * `CacheUsageSize()`
-   * group by usage identity outside lock
-   * compute the owner result ID for each identity group outside lock
-3. locked publish:
-   * reacquire `egraphMu`
-   * for each measured identity group, publish:
-     * `usageIdentity`
-     * `sizeEstimateBytes`
-   * only publish if the result still exists and still matches the expected
-     shared-result / payload identity from the collect phase
-
-* keep a small locked helper for the collect/publish pieces, but the expensive
-  object-method calls must move out of lock entirely
-* `measureAllResultSizesLocked` should disappear from prune and usage-entry
-  callers
-* replace it with an outer orchestration method such as:
-  * `measureAllResultSizes(ctx)`
-
-Result:
-
-* no arbitrary object `CacheUsage*` work under `egraphMu`
-* `Prune` and `UsageEntriesAll` can both reuse the same safe measurement path
-
-#### Usage-identity cache state
-
-Specific change:
-
-* keep `usageIdentity` and `sizeEstimateBytes` on `sharedResult`
-* continue using the smallest `sharedResultID` as the deterministic owner of a
-  usage identity for reporting purposes
-* do not change the external `CacheUsageEntry` shape in this pass
-* treat `CachePruneReport.ReclaimedBytes` as the sum of simulated reclaim deltas
-  for the actually-applied selected candidates
-
-Result:
-
-* no API churn in the first pass
-* report semantics stay simple enough for GC logging and tests
-
-#### Locked helpers kept as pure mutation-only helpers
-
-Specific change:
-
-* keep low-level mutation helpers like:
-  * `removePersistedEdge`
-  * `incrementIncomingOwnershipLocked`
-  * `decrementIncomingOwnershipLocked`
-  * `collectUnownedResultsLocked`
-* do not teach these helpers anything about prune planning
-* the new prune planner should hand them a finished best-effort removal list and
-  let them continue doing the actual live-graph mutation work
-
-Result:
-
-* planning and mutation stay clearly separated
-* no new prune-specific magic in the core ownership mutation helpers
-
-### `dagql/cache_prune.go`
-
-#### Replace the current `Prune` loop shape
-
-Specific change:
-
-* delete the current nested loop that repeatedly:
-  * locks `egraphMu`
-  * measures all sizes
-  * rebuilds entries and identity maps
-  * rebuilds active closure
-  * rescans all candidates
-  * rescored all candidates with exact marginal reclaim
-  * unlocks
-  * removes one candidate
-  * repeats
-* replace it with one plan/apply cycle per policy:
-
-1. call the new unlocked size-measurement pipeline
-2. snapshot session-owned roots under `sessionMu`
-3. snapshot prune-relevant e-graph state under `egraphMu`
-4. outside lock:
-   * build active closure from the snapshot graph
-   * build and sort candidates
-   * run the one-pass ordered simulation
-   * produce a prune plan
-5. apply the prune plan back to live state best-effort
-6. after apply, compact eq classes once if anything was actually removed
-
-Result:
-
-* one snapshot
-* one ordered simulation
-* one apply phase
-* no repeated whole-world rebuilds
-
-#### Add explicit prune snapshot structs
-
-Specific change:
-
-* add snapshot-only structs local to `cache_prune.go`, for example:
-  * `type pruneSnapshot struct`
-  * `type pruneSnapshotResult struct`
-  * `type pruneUsageIdentityState struct`
-  * `type prunePlanEntry struct`
-* `pruneSnapshotResult` should contain:
-  * `resultID`
-  * `incomingCount`
-  * `deps []sharedResultID`
-  * `usageIdentity string`
-  * `sizeBytes int64`
-  * `hasPersistedEdge bool`
-  * `expiresAtUnix int64`
-  * `createdAtUnixNano int64`
-  * `mostRecentUseTimeUnixNano int64`
-* `pruneUsageIdentityState` should contain:
-  * `identity string`
-  * `sizeBytes int64`
-  * `aliveMembers int`
-* `prunePlanEntry` should contain:
-  * the candidate result ID
-  * the corresponding `CacheUsageEntry` metadata for reporting
-  * the immediate reclaim delta produced at the moment that candidate was
-    simulated
-
-Result:
-
-* prune planning can run entirely from immutable snapshot state
-* no need to reach back into live `sharedResult` objects during simulation
-
-#### Snapshot acquisition
-
-Specific change:
-
-* add a dedicated snapshot builder in `cache_prune.go` that runs under
-  `egraphMu` and copies only prune-relevant state into `pruneSnapshot`
-* the snapshot builder must not call any `CacheUsage*` object methods
-* it should consume already-published `usageIdentity` / `sizeEstimateBytes`
-  values produced by the earlier measurement pipeline
-* while snapshotting:
-  * normalize unknown `usageIdentity` to `dagql.result.<id>` only in the
-    snapshot, not by calling back into object code
-  * copy current persisted-edge expiry metadata
-  * copy current created/last-used timestamps
-
-Result:
-
-* snapshot acquisition stays cheap and deterministic
-
-#### Active closure computation
-
-Specific change:
-
-* remove the live-graph `sessionDependencyClosureLocked` use from prune
-* replace it with an unlocked helper in `cache_prune.go` that computes active
-  closure from:
-  * the copied session-root set
-  * the copied snapshot `deps`
-* the closure builder should use plain DFS/BFS over the snapshot adjacency
-
-Result:
-
-* no session lock usage during prune planning
-* no need to hold `egraphMu` while computing active closure
-
-#### Candidate collection
-
-Specific change:
-
-* candidate collection should operate entirely on `pruneSnapshot`
-* a candidate is:
-  * a result with a persisted edge in the snapshot
-  * not in active closure
-  * matching the current prune policy
-* keep the existing policy filtering semantics from:
-  * `KeepDuration`
-  * `All`
-  * `Filters`
-  * threshold target calculation
-* reuse the existing `pruneTargetBytes`, `entryRecentlyUsed`,
-  `persistedEdgeExpired`, and `cachePrunePolicyMatchesEntry` logic unless a
-  specific simplification is required
-
-Result:
-
-* candidate definition stays honest and directly tied to removable retained
-  roots
-
-#### Candidate sort order
-
-Specific change:
-
-* replace the current exact-marginal scoring loop with a one-time sort
-* sort candidates by:
-  1. expired edge first
-  2. older `MostRecentUseTimeUnixNano` first
-  3. older `CreatedTimeUnixNano` first
-  4. larger `SizeBytes` first
-  5. lower result ID / entry ID tie-break
-* use the candidate entry's already-snapshotted size as the heuristic input
-* do not attempt to encode exact transitive reclaim into the heuristic itself
-
-Result:
-
-* the heuristic stays simple and explainable
-* graph-awareness stays in the simulation layer
-
-#### Ordered simulation
-
-Specific change:
-
-* delete `simulatePersistedEdgeRemovalLocked`
-* replace it with an unlocked one-pass simulation over the sorted candidate list
-* the simulation state should maintain:
-  * `remainingIncomingCount[resultID]`
-  * `collected[resultID]`
-  * `aliveCountByUsageIdentity[identity]`
-  * `sizeBytesByUsageIdentity[identity]`
-* for each candidate in order:
-  * decrement that candidate's `remainingIncomingCount`
-  * if it hits zero, enqueue it
-  * drain the queue:
-    * mark each newly-collected result once
-    * decrement the alive-member count for its usage identity
-    * if an identity count reaches zero, add that identity's bytes to this
-      candidate's immediate reclaim delta
-    * decrement all deps of the collected result
-    * enqueue any deps whose counts reach zero
-  * append the candidate to the prune plan even if its immediate reclaim delta
-    is zero
-  * accumulate total reclaimed bytes
-  * stop once cumulative reclaimed bytes reaches or exceeds target
-
-This zero-delta behavior is intentional.
-
-It is required for cases where:
-
-* many tiny retained roots keep a huge shared dependency alive
-* the early root removals reclaim little or nothing individually
-* the big reclaim only appears after enough prerequisites have been removed
-
-Result:
-
-* graph-aware
-* overlap-aware
-* target-aware
-* no per-candidate full rescoring pass
-
-#### Apply phase
-
-Specific change:
-
-* the apply phase should take the ordered `prunePlanEntry` list and attempt to
-  remove those persisted edges from live state in order
-* for each planned entry:
-  * call `removePersistedEdge(ctx, resultID)`
-  * if the edge is already gone, skip it
-  * if the result has drifted in live state, accept it and keep going
-* only entries whose persisted edge was actually removed should be appended to
-  the final `CachePruneReport`
-* each report entry should use the candidate's immediate reclaim delta from the
-  snapshot simulation as its `SizeBytes`
-* `CachePruneReport.ReclaimedBytes` should be the sum of those applied entry
-  deltas
-* after apply, compact eq classes once if at least one persisted edge was
-  actually removed
-
-Result:
-
-* best-effort drift-tolerant apply
-* honest per-entry reclaim reporting for zero-delta prerequisite removals and
-  later large unlocks
-
-#### Obsolete current helpers
-
-Specific change:
-
-* remove `pruneCandidate` if it no longer matches the new snapshot/planner shape
-* remove `simulatePersistedEdgeRemovalLocked`
-* do not keep a second dead codepath around for the old exact-greedy planner
-
-Result:
-
-* hard cut to the new prune model
-
-### `dagql/cache_test.go`
-
-#### Replace greedy-specific assertions
-
-Specific change:
-
-* update tests that currently encode the old exact-greedy behavior
-* specifically, `TestCachePrunePrefersHigherMarginalReclaim` should be replaced
-  with a test that matches the new ordered-simulation semantics instead of
-  asserting “pick the mathematically best single next candidate”
-
-Result:
-
-* tests stop pinning the implementation to the old rescoring algorithm
-
-#### Add ordered-simulation coverage
-
-Specific change:
-
-* add a test where:
-  * many tiny persisted roots share one large dependency
-  * early candidate removals reclaim zero or very little
-  * a later candidate unlocks the large shared reclaim
-* assert that:
-  * zero-delta prerequisite candidates are still selected into the plan
-  * the large shared dependency bytes are counted exactly once when the last
-    retaining root is removed
-
-Result:
-
-* direct coverage of the shared-base-image-style case discussed in design
-
-#### Add candidate-definition coverage
-
-Specific change:
-
-* add a test that proves:
-  * only results with persisted edges are selectable prune candidates
-  * non-persisted interior nodes can still be reclaimed transitively
-  * interior nodes with their own persisted edge are valid direct candidates
-
-Result:
-
-* candidate semantics stay explicit and regression-resistant
-
-#### Add active-closure snapshot coverage
-
-Specific change:
-
-* add a test covering:
-  * active/session-retained roots are excluded from candidate selection
-  * their structural deps are also excluded via the snapshot-computed active
-    closure
-* keep the existing “exact dependency of active result is never pruned” and
-  “term provenance only result is not protected” tests, but update them if
-  needed to match the new snapshot planner instead of live-graph rescoring
-
-Result:
-
-* the new unlocked active-closure computation is covered directly
-
-#### Add measurement / lock-behavior regression coverage
-
-Specific change:
-
-* add unit coverage for the new size-measurement split:
-  * size callbacks are invoked outside the e-graph lock
-  * unknown or mutable sizes are republished correctly
-  * usage-identity dedupe still behaves the same after republish
-* keep existing threshold/keep-duration tests and update only where report-entry
-  ordering or zero-delta entries legitimately change
-
-Result:
-
-* lock-fix regressions become visible in tests instead of only in profiles
+### Non-goals
+
+This refactor does not need to:
+
+* change unrelated `FunctionCall` payload fields
+* redesign module result storage wholesale
+* introduce backward compatibility for mixed old/new nested typedef payloads
+* preserve the current recursive persisted typedef payload encoding
+
+This should be a hard cut.
+
+### Acceptance criteria
+
+We are done only when all of the following are true.
+
+#### Field conversion is complete
+
+Every typedef-family bare ideable child field listed above has been converted to
+an attached object result or object-result array.
+
+There are no remaining typedef-family fields storing bare nested ideable
+children except where the field is intentionally top-level and outside the scope
+listed in this design.
+
+#### Construction-time canonicalization is complete
+
+Every schema/core construction path that creates or mutates typedef-family
+objects now installs canonical attached child refs at write time.
+
+In particular, paths like:
+
+* `function`
+* `functionWithArg`
+* `functionWithSourceMap`
+* `typeDefWithListOf`
+* `typeDefWithObjectField`
+* `typeDefWithFunction`
+* `typeDefWithObjectConstructor`
+* enum/object/interface/source-map mutators
+
+must no longer pass `.Self()` bare children into core when the intent is to
+store canonical child identity.
+
+#### Dependency attachment is complete
+
+Every typedef-family object that embeds child object results implements
+`AttachDependencyResults` correctly.
+
+Attaching a typedef-family parent result must attach and normalize all embedded
+child refs and must establish explicit parent dependency edges to those child
+results.
+
+#### Read-time re-canonicalization is gone
+
+Ordinary nested read paths in `core/schema/module_typedef_canonical.go` no
+longer recursively call canonicalization helpers for fields that are already
+stored as canonical child refs.
+
+Nested field resolvers must directly reuse the stored child object results.
+
+#### Recursive deep clone behavior is gone
+
+`Clone()` on the typedef family no longer recursively clones nested ideable
+children.
+
+Cloning a typedef-family object may copy outer structs and slices, but it must
+not rebuild the full nested typedef graph.
+
+#### Recursive persisted payload encoding is gone
+
+Typedef-family persistence no longer recursively embeds nested typedef/function
+payloads.
+
+Instead, nested ideable child refs are encoded as persisted result IDs and
+decoded back into attached object results.
+
+#### Namespacing/patch are coherent with shared refs
+
+There is no remaining code path that recursively mutates shared nested typedef
+child `.Self()` values in place after canonicalization.
+
+Namespacing and patching must either:
+
+* happen before canonical child refs are published, or
+* be implemented as pure copy-on-write transformations that return new top-level
+  typedef-family objects without mutating previously-shared nested children
+
+In addition:
+
+* `core/module.go` must be using the pure transformation pipeline described
+  above, not a disguised imperative walker that mutates nested `.Self()` values
+  while traversing
+* unchanged canonical child refs must be returned untouched
+* changed nodes must be rebuilt only through the internal mutator surface
+
+#### Function metadata rewrites are coherent with shared refs
+
+Any post-construction rewrite of function metadata must be copy-on-write.
+
+That includes at minimum:
+
+* user-default visibility in typedef introspection
+* optionalizing object args for user defaults
+* setting or changing `FunctionArg.DefaultValue`
+
+The implementation is only done when:
+
+* no codepath mutates `Function.Args`, `FunctionArg.TypeDef.Optional`, or
+  `FunctionArg.DefaultValue` directly on shared canonical children
+* internal mutators such as `Function.__withArg`,
+  `FunctionArg.__withTypeDef`, and `FunctionArg.__withDefaultValue` are used to
+  produce new canonical results instead
+* unchanged arg/type child refs are reused as-is
+* the resulting typedef introspection still reflects user defaults correctly
+
+#### Module-level rewrite responsibilities are fully covered
+
+The refactor is not done until the module-level rewrite pipeline covers all of:
+
+* ownership stamping
+* namespacing
+* source-map rebasing
+* enum-default patching
+* user-default introspection visibility
+
+And each of those responsibilities must be implemented as a pure
+copy-on-write transformation over canonical typedef refs.
+
+#### Module consumers are updated
+
+Module validation, namespacing, patching, mod-type resolution, object/interface
+bridges, and enum helpers all correctly recurse through the result-backed child
+refs.
+
+There must be no lingering assumptions in those paths that nested typedef
+children are embedded bare pointers.
+
+#### Canonical reuse is observable
+
+When a client selects nested typedef-family fields from `currentTypeDefs` and
+related schema APIs, the system reuses the already-stored canonical child refs
+instead of rebuilding them on read.
+
+Operationally, the code should make this true by construction, not by hopeful
+caching side effects.
+
+#### Tests prove the hard cut
+
+Tests should explicitly cover:
+
+* persistence round-trip for typedef-family objects with nested child refs
+* dependency attachment for typedef-family parents embedding child refs
+* `currentTypeDefs` nested selections reusing canonical child refs rather than
+  rebuilding them
+* namespacing/patch behavior not mutating shared nested children in place
+* clone behavior no longer deep-copying nested typedef graphs
+
+We should consider the refactor incomplete until those behaviors are locked down
+by tests.

@@ -141,7 +141,7 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, pare
 			converted[name] = updated
 			continue
 		}
-		modType, ok, err := NewUserMod(t.mod).ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+		modType, ok, err := NewUserMod(t.mod).ModTypeFor(ctx, fieldTypeDef.TypeDef.Self(), true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
 		}
@@ -149,7 +149,7 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, pare
 			return nil, fmt.Errorf("could not find mod type for field %q", name)
 		}
 		fieldCtx := ctx
-		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.ToType()); fieldCall != nil {
+		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
 			fieldCtx = dagql.ContextWithCall(ctx, fieldCall)
 		}
 		updated, err := moduleObjectValueToSDKInput(fieldCtx, modType, value)
@@ -162,7 +162,11 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, pare
 }
 
 func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any) (any, error) {
-	switch modType.TypeDef().Kind {
+	typeDef, err := modType.TypeDef(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve mod type typedef: %w", err)
+	}
+	switch typeDef.Self().Kind {
 	case TypeDefKindObject, TypeDefKindInterface:
 		switch value := value.(type) {
 		case nil:
@@ -343,7 +347,7 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 			continue
 		}
 
-		modType, ok, err := NewUserMod(t.mod).ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+		modType, ok, err := NewUserMod(t.mod).ModTypeFor(ctx, fieldTypeDef.TypeDef.Self(), true)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for field %q: %w", k, err)
 		}
@@ -352,7 +356,7 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		}
 
 		fieldCtx := ctx
-		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.ToType()); fieldCall != nil {
+		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
 			fieldCtx = dagql.ContextWithCall(ctx, fieldCall)
 		}
 		typed, err := modType.ConvertFromSDKResult(fieldCtx, v)
@@ -369,11 +373,25 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 	return nil
 }
 
-func (t *ModuleObjectType) TypeDef() *TypeDef {
-	return &TypeDef{
-		Kind:     TypeDefKindObject,
-		AsObject: dagql.NonNull(t.typeDef),
+func (t *ModuleObjectType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
+	var sourceMap dagql.Optional[dagql.ID[*SourceMap]]
+	var err error
+	if t.typeDef.SourceMap.Valid {
+		sourceMap, err = OptionalResultIDInput(t.typeDef.SourceMap.Value)
+		if err != nil {
+			return dagql.ObjectResult[*TypeDef]{}, err
+		}
 	}
+	return SelectTypeDef(ctx, dagql.Selector{
+		Field: "withObject",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(t.typeDef.OriginalName)},
+			{Name: "description", Value: dagql.String(t.typeDef.Description)},
+			{Name: "sourceMap", Value: sourceMap},
+			{Name: "deprecated", Value: OptString(t.typeDef.Deprecated)},
+			{Name: "sourceModuleName", Value: OptSourceModuleName(t.typeDef.SourceModuleName)},
+		},
+	})
 }
 
 type Callable interface {
@@ -387,12 +405,12 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 	mod := NewUserMod(t.mod)
 
 	if field, ok := t.typeDef.FieldByName(name); ok {
-		fieldType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
+		fieldType, ok, err := mod.ModTypeFor(ctx, field.TypeDef.Self(), true)
 		if err != nil {
 			return nil, fmt.Errorf("get field return type: %w", err)
 		}
 		if !ok {
-			return nil, fmt.Errorf("could not find type for field type: %s", field.TypeDef.ToType())
+			return nil, fmt.Errorf("could not find type for field type: %s", field.TypeDef.Self().ToType())
 		}
 		return &CallableField{
 			Module: t.mod.Self(),
@@ -506,7 +524,7 @@ func (obj *ModuleObject) AttachDependencyResults(
 			continue
 		}
 
-		modType, ok, err := modInst.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+		modType, ok, err := modInst.ModTypeFor(ctx, fieldTypeDef.TypeDef.Self(), true)
 		if err != nil {
 			return nil, fmt.Errorf("attach module object field %q: resolve mod type: %w", name, err)
 		}
@@ -515,7 +533,7 @@ func (obj *ModuleObject) AttachDependencyResults(
 		}
 
 		fieldCtx := ctx
-		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.ToType()); fieldCall != nil {
+		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
 			fieldCtx = dagql.ContextWithCall(ctx, fieldCall)
 		}
 
@@ -571,11 +589,14 @@ func attachTypedModuleObjectValue(
 		return updatedItems, owned, nil
 	}
 
-	typeDef := modType.TypeDef()
-	if typeDef == nil {
+	typeDef, err := modType.TypeDef(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve mod type typedef: %w", err)
+	}
+	if typeDef.Self() == nil {
 		return val, nil, nil
 	}
-	switch typeDef.Kind {
+	switch typeDef.Self().Kind {
 	case TypeDefKindObject, TypeDefKindInterface:
 		typed, err := modType.ConvertFromSDKResult(ctx, val)
 		if err != nil {
@@ -972,7 +993,7 @@ func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 		Name: obj.Type().Name(),
 	}
 	if obj.TypeDef.SourceMap.Valid {
-		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.Value.TypeDirective())
+		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.Value.Self().TypeDirective())
 	}
 	return def
 }
@@ -988,8 +1009,8 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 
 	installDirectives := []*ast.Directive{}
 	if obj.TypeDef.SourceMap.Valid {
-		classOpts.SourceMap = obj.TypeDef.SourceMap.Value.TypeDirective()
-		installDirectives = append(installDirectives, obj.TypeDef.SourceMap.Value.TypeDirective())
+		classOpts.SourceMap = obj.TypeDef.SourceMap.Value.Self().TypeDirective()
+		installDirectives = append(installDirectives, obj.TypeDef.SourceMap.Value.Self().TypeDirective())
 	}
 
 	class := dagql.NewClass(dag, classOpts)
@@ -1036,7 +1057,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		}
 
 		if objDef.SourceMap.Valid {
-			spec.Directives = append(spec.Directives, objDef.SourceMap.Value.TypeDirective())
+			spec.Directives = append(spec.Directives, objDef.SourceMap.Value.Self().TypeDirective())
 		}
 
 		dag.Root().ObjectType().Extend(
@@ -1053,11 +1074,11 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	}
 
 	// use explicit user-defined constructor if provided
-	fnTypeDef := objDef.Constructor.Value
-	if fnTypeDef.ReturnType.Kind != TypeDefKindObject {
+	fnTypeDef := objDef.Constructor.Value.Self()
+	if fnTypeDef.ReturnType.Self().Kind != TypeDefKindObject {
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
-	if fnTypeDef.ReturnType.AsObject.Value.OriginalName != objDef.OriginalName {
+	if fnTypeDef.ReturnType.Self().AsObject.Value.Self().OriginalName != objDef.OriginalName {
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 	if obj.Module.Self() == nil {
@@ -1104,7 +1125,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*ModuleObject], err error) {
 	for _, field := range obj.TypeDef.Fields {
-		objField, err := objField(ctx, obj.Module, field)
+		objField, err := objField(ctx, obj.Module, field.Self())
 		if err != nil {
 			return nil, err
 		}
@@ -1116,10 +1137,11 @@ func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*Modu
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
 	for _, fun := range obj.TypeDef.Functions {
+		funSelf := fun.Self()
 		// Check if this is a toolchain proxy function using the registry
 		if obj.Module.Self().Toolchains != nil {
-			if entry, ok := obj.Module.Self().Toolchains.Get(fun.OriginalName); ok {
-				proxyField, err := entry.CreateProxyField(ctx, obj.Module, fun, dag)
+			if entry, ok := obj.Module.Self().Toolchains.Get(funSelf.OriginalName); ok {
+				proxyField, err := entry.CreateProxyField(ctx, obj.Module, funSelf, dag)
 				if err != nil {
 					return nil, err
 				}
@@ -1128,7 +1150,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 			}
 		}
 
-		objFun, err := objFun(ctx, obj.Module, objDef, fun, dag)
+		objFun, err := objFun(ctx, obj.Module, objDef, funSelf, dag)
 		if err != nil {
 			return nil, err
 		}
@@ -1145,7 +1167,7 @@ func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *Field
 	spec := &dagql.FieldSpec{
 		Name:             field.Name,
 		Description:      field.Description,
-		Type:             field.TypeDef.ToTyped(),
+		Type:             field.TypeDef.Self().ToTyped(),
 		Module:           moduleID,
 		DeprecatedReason: field.Deprecated,
 	}
@@ -1153,12 +1175,12 @@ func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *Field
 		Name: trivialFieldDirectiveName,
 	})
 	if field.SourceMap.Valid {
-		spec.Directives = append(spec.Directives, field.SourceMap.Value.TypeDirective())
+		spec.Directives = append(spec.Directives, field.SourceMap.Value.Self().TypeDirective())
 	}
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-			modType, ok, err := NewUserMod(mod).ModTypeFor(ctx, field.TypeDef, true)
+			modType, ok, err := NewUserMod(mod).ModTypeFor(ctx, field.TypeDef.Self(), true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
 			}

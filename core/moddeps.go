@@ -135,8 +135,8 @@ func (d *ModDeps) SchemaIntrospectionJSONFileForClient(ctx context.Context) (ins
 }
 
 // All the TypeDefs exposed by this set of dependencies
-func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
-	var typeDefs []*TypeDef
+func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
+	var typeDefs dagql.ObjectResultArray[*TypeDef]
 	for _, mod := range d.mods {
 		modTypeDefs, err := mod.TypeDefs(ctx, dag)
 		if err != nil {
@@ -190,15 +190,15 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 				return nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
 			}
 			for _, def := range defs {
-				switch def.Kind {
+				switch def.Self().Kind {
 				case TypeDefKindObject:
 					objects = append(objects, &ModuleObjectType{
-						typeDef: def.AsObject.Value,
+						typeDef: def.Self().AsObject.Value.Self(),
 						mod:     userMod.res,
 					})
 				case TypeDefKindInterface:
 					ifaces = append(ifaces, &InterfaceType{
-						typeDef: def.AsInterface.Value,
+						typeDef: def.Self().AsInterface.Value.Self(),
 						mod:     userMod.res,
 					})
 				}

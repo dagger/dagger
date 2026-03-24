@@ -91,8 +91,8 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod dag
 
 	var mainObjDef *ObjectTypeDef
 	for _, objDef := range tcMod.ObjectDefs {
-		if objDef.AsObject.Valid && gqlObjectName(objDef.AsObject.Value.OriginalName) == gqlObjectName(tcMod.OriginalName) {
-			mainObjDef = objDef.AsObject.Value
+		if objDef.Self().AsObject.Valid && gqlObjectName(objDef.Self().AsObject.Value.Self().OriginalName) == gqlObjectName(tcMod.OriginalName) {
+			mainObjDef = objDef.Self().AsObject.Value.Self()
 			break
 		}
 	}
@@ -130,7 +130,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod dag
 	}
 
 	// Has constructor - create a ModFunction for it and use its spec
-	constructor := mainObjDef.Constructor.Value
+	constructor := mainObjDef.Constructor.Value.Self()
 	if entry.Module.Self() == nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q is missing module result wrapper", tcMod.Name())
 	}
