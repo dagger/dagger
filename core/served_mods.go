@@ -126,7 +126,14 @@ func (s *ServedMods) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDe
 // served modules. This server includes entrypoint proxy fields on Query.
 func (s *ServedMods) Schema(ctx context.Context) (*dagql.Server, error) {
 	srv, _, err := s.lazilyLoadSchema(ctx)
-	return srv, err
+	if err != nil {
+		return nil, fmt.Errorf("failed to load schema: %w", err)
+	}
+	dagqlCache, err := s.root.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cache: %w", err)
+	}
+	return srv.WithCache(dagqlCache), nil
 }
 
 // SchemaJSONFile returns the introspection JSON file for the schema.
