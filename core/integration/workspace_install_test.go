@@ -129,9 +129,9 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, appDir, "init", "--name=app", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "install", "--mod=./app", "./dep")
@@ -145,4 +145,57 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Empty(t, cfg.Modules)
 	})
+}
+
+func (WorkspaceSuite) TestModuleInstallCommand(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	appDir := filepath.Join(workdir, "app")
+	depDir := filepath.Join(workdir, "dep")
+
+	require.NoError(t, os.MkdirAll(appDir, 0o755))
+	require.NoError(t, os.MkdirAll(depDir, 0o755))
+	initGitRepo(ctx, t, workdir)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
+	require.NoError(t, err)
+	_, err = hostDaggerExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
+	require.NoError(t, err)
+	_, err = hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
+	require.NoError(t, err)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
+	require.NoError(t, err)
+	require.Equal(t, `Installed module dependency "dep"`, strings.TrimSpace(string(out)))
+
+	moduleConfig, err := os.ReadFile(filepath.Join(appDir, workspacecfg.ModuleConfigFileName))
+	require.NoError(t, err)
+	require.Contains(t, string(moduleConfig), `"name": "dep"`)
+
+	cfg := readInstalledWorkspaceConfig(t, workdir)
+	require.Empty(t, cfg.Modules)
+}
+
+func (WorkspaceSuite) TestModuleUpdateCommand(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	appDir := filepath.Join(workdir, "app")
+	depDir := filepath.Join(workdir, "dep")
+
+	require.NoError(t, os.MkdirAll(appDir, 0o755))
+	require.NoError(t, os.MkdirAll(depDir, 0o755))
+	initGitRepo(ctx, t, workdir)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
+	require.NoError(t, err)
+	_, err = hostDaggerExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
+	require.NoError(t, err)
+	_, err = hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
+	require.NoError(t, err)
+	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
+	require.NoError(t, err)
+
+	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "module", "update", "--mod=./app", "dep")
+	requireErrOut(t, err, `updating local dependencies is not supported`)
+
+	cfg := readInstalledWorkspaceConfig(t, workdir)
+	require.Empty(t, cfg.Modules)
 }

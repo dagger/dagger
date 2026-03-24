@@ -104,10 +104,10 @@ Reason:
 - workspace-aware top-level `dagger install` routing
 - `dagger workspace list`
 - engine-routed `dagger module init`
+- module install/update command split
 
 ### Pending Safe Pre-Lock Buckets
 
-- module install/update command split
 - local `dagger migrate`
 
 ### Explicitly Dropped Buckets
@@ -364,3 +364,30 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestWorkspaceModuleInitCommand$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/a70af3c4899e62edfc4945a319f4c18d`
+  - replayed explicit `dagger module install` / `dagger module update`
+    commands without changing the workspace-aware top-level `dagger install`
+    path
+  - design note:
+    keep the new nested commands thin and explicit: `dagger module install`
+    always mutates a module's `dagger.json`, while top-level `dagger install`
+    remains the workspace-or-module router from the earlier bucket
+  - design note:
+    share local-module mutation helpers across top-level and nested commands so
+    the replay adds command shape, not a second implementation
+  - verifier note:
+    the first focused workspace verifier failed because the earlier
+    workspace-aware `dagger init` bucket changed setup semantics inside an
+    initialized workspace; fix the tests to pass an explicit `.` path when
+    creating standalone modules under workspace subdirectories
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/(TestWorkspaceInstallCommand|TestModuleInstallCommand|TestModuleUpdateCommand)$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/e512f8e8bc3ccf7382522b5988f82199`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='TestSpanName$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/9b596ae2d4097764ebb12dd661906bc2`
