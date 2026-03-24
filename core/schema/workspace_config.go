@@ -39,24 +39,43 @@ func (s *workspaceSchema) workspaceInit(
 		return "", fmt.Errorf("workspace already initialized at %s", configDir)
 	}
 
-	query, err := core.CurrentQuery(ctx)
+	bk, err := workspaceBuildkit(ctx)
 	if err != nil {
 		return "", err
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return "", fmt.Errorf("buildkit: %w", err)
-	}
 
-	if err := exportConfigToHost(ctx, bk, parent, []byte(initialWorkspaceConfig)); err != nil {
+	if err := ensureWorkspaceInitialized(ctx, bk, parent); err != nil {
 		return "", fmt.Errorf("initialize workspace: %w", err)
 	}
 
-	parent.ConfigPath = filepath.Join(parent.Path, workspace.LockDirName, workspace.ConfigFileName)
-	parent.Initialized = true
-	parent.HasConfig = true
-
 	return dagql.String(configDir), nil
+}
+
+func workspaceBuildkit(ctx context.Context) (*buildkit.Client, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+	return bk, nil
+}
+
+func ensureWorkspaceInitialized(ctx context.Context, bk *buildkit.Client, ws *core.Workspace) error {
+	if ws.HasConfig {
+		return nil
+	}
+
+	if err := exportConfigToHost(ctx, bk, ws, []byte(initialWorkspaceConfig)); err != nil {
+		return err
+	}
+
+	ws.ConfigPath = filepath.Join(ws.Path, workspace.LockDirName, workspace.ConfigFileName)
+	ws.Initialized = true
+	ws.HasConfig = true
+	return nil
 }
 
 func configHostPath(ws *core.Workspace) (string, error) {
@@ -93,13 +112,9 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 		return nil, err
 	}
 
-	query, err := core.CurrentQuery(ctx)
+	bk, err := workspaceBuildkit(ctx)
 	if err != nil {
 		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("buildkit: %w", err)
 	}
 
 	data, err := bk.ReadCallerHostFile(ctx, configPath)
@@ -107,6 +122,37 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 	return data, nil
+}
+
+func readWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Config, error) {
+	data, err := readConfigBytes(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := workspace.ParseConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Modules == nil {
+		cfg.Modules = map[string]workspace.ModuleEntry{}
+	}
+	return cfg, nil
+}
+
+func writeWorkspaceConfig(ctx context.Context, ws *core.Workspace, cfg *workspace.Config) error {
+	if cfg.Modules == nil {
+		cfg.Modules = map[string]workspace.ModuleEntry{}
+	}
+	return writeConfigBytes(ctx, ws, workspace.SerializeConfig(cfg))
+}
+
+func writeConfigBytes(ctx context.Context, ws *core.Workspace, data []byte) error {
+	bk, err := workspaceBuildkit(ctx)
+	if err != nil {
+		return err
+	}
+	return exportConfigToHost(ctx, bk, ws, data)
 }
 
 type configReadArgs struct {
@@ -154,15 +200,7 @@ func (s *workspaceSchema) configWrite(
 		return "", err
 	}
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return "", err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return "", fmt.Errorf("buildkit: %w", err)
-	}
-	if err := exportConfigToHost(ctx, bk, parent, updated); err != nil {
+	if err := writeConfigBytes(ctx, parent, updated); err != nil {
 		return "", err
 	}
 

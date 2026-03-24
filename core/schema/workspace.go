@@ -58,6 +58,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.Func("init", s.workspaceInit).
 			DoNotCache("Mutates workspace on host").
 			Doc("Initialize a new workspace, creating .dagger/config.toml."),
+		dagql.Func("install", s.install).
+			DoNotCache("Mutates workspace config on host").
+			Doc("Install a module into the workspace, writing config.toml to the host.").
+			Args(
+				dagql.Arg("ref").Doc("Module reference to install."),
+				dagql.Arg("name").Doc("Override name for the installed module entry."),
+			),
 		dagql.Func("configRead", s.configRead).
 			DoNotCache("Reads live config from host").
 			Doc("Read a configuration value from config.toml.",

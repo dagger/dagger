@@ -14333,6 +14333,7 @@ type Workspace struct {
 	findUp        *string
 	hasConfig     *bool
 	id            *WorkspaceID
+	install       *string
 	initialized   *bool
 	path          *string
 }
@@ -14433,6 +14434,12 @@ func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// WorkspaceInstallOpts contains options for Workspace.Install
+type WorkspaceInstallOpts struct {
+	// Override name for the installed module entry.
+	Name string
 }
 
 // Path to config.toml relative to the workspace boundary (empty if not initialized).
@@ -14620,6 +14627,25 @@ func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
 // Initialize a new workspace, creating .dagger/config.toml.
 func (r *Workspace) Init(ctx context.Context) (string, error) {
 	q := r.query.Select("init")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Install a module into the workspace, writing config.toml to the host.
+func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceInstallOpts) (string, error) {
+	if r.install != nil {
+		return *r.install, nil
+	}
+	q := r.query.Select("install")
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+	}
+	q = q.Arg("ref", ref)
 
 	var response string
 

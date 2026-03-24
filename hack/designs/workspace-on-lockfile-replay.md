@@ -100,10 +100,11 @@ Reason:
 - `Workspace.init` plus `dagger workspace init`
 - workspace config model
 - `dagger workspace config` read/write
+- `Workspace.install` base mutation
 
 ### Pending Safe Pre-Lock Buckets
 
-- top-level install split and workspace install base
+- top-level install split and workspace install CLI routing
 - `dagger workspace list`
 - engine-routed `dagger module init`
 - module install/update command split
@@ -271,3 +272,23 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestWorkspaceConfig(Read|Write|RequiresInit)$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/49bba36802eca6773f6b5e8c93944553`
+  - replayed the base `Workspace.install` mutation in the engine/schema layer
+  - design note:
+    keep this bucket narrow: initialize `.dagger/config.toml` if missing,
+    resolve module identity through the existing generic `moduleSource` path,
+    rewrite local refs relative to `.dagger`, and write config through the
+    shared workspace config helpers
+  - rewrite note:
+    do not pull lock persistence, selective refresh, or workspace-specific
+    `modules.resolve` plumbing into this bucket; `lockfile` owns that base
+  - codegen note:
+    keep the bucket legible by patching only the minimal Go SDK
+    `Workspace.Install` surface instead of running full generation
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./core/schema -o /tmp/.tmp-core-schema.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestCurrentWorkspaceInstall$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/ca515babe72ef7bd2246969984da7df3`
