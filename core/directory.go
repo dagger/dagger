@@ -730,17 +730,11 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 		return nil, fmt.Errorf("failed to get source directory ref: %w", err)
 	}
 
-	//if requiredSourcePath != "" {
-	//	if err := ensureRequiredCopySourcePathExists(ctx, srcRef, src.Dir, requiredSourcePath); err != nil {
-	//		return nil, err
-	//	}
-	//}
-
-	// cache := query.BuildkitCache()
-
-	//if dirRef == nil {
-	//	panic("dirRef is nilkhh") // TODO create one?
-	//}
+	// if requiredSourcePath != "" {
+	// 	if err := ensureRequiredCopySourcePathExists(ctx, srcRef, src.Dir, requiredSourcePath); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
 	if !ok {
@@ -801,10 +795,10 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 			return fmt.Errorf("failed to mount source directory: %w", err)
 		}
 		defer lm.Unmount()
-		//resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Dir)
-		//if err != nil {
-		//	return err
-		//}
+		// resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Dir)
+		// if err != nil {
+		// 	return err
+		// }
 
 		srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
 		if err != nil {
@@ -876,9 +870,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 			pathsToCopy, err = fscopy.ResolveWildcards(mntedSrcPath, srcPath, true) // todo use action.FollowSymlink instead of true
 			if err != nil {
 				return err
-				//return errors.WithStack(err)
 			}
-			//fmt.Printf("ACB ResolveWildcards res=%v\n", m)
 
 			//	if len(m) == 0 {
 			//		if action.AllowEmptyWildcard {
@@ -886,11 +878,9 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 			//		}
 			//		return errors.Errorf("%s not found", srcPath)
 			//	}
-			//}
 
 		}
 
-		//walk(copyDest)
 		for _, srcPath := range pathsToCopy {
 			joinedDest := path.Join(dir.Dir, destDir)
 			if strings.HasSuffix(destDir, "/") && !strings.HasSuffix(joinedDest, "/") {

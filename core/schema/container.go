@@ -452,7 +452,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				//dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
+				// dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),

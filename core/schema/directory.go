@@ -808,7 +808,7 @@ type WithFileArgs struct {
 	// Hidden internal arg used for LLB fidelity; if true and source file loading
 	// fails, attempt directory-source fallback for ambiguous Dockerfile COPY
 	// lowerings where the source can be a directory.
-	AllowDirectorySourceFallback bool `internal:"true" default:"false"`
+	// AllowDirectorySourceFallback bool `internal:"true" default:"false"`
 
 	FSDagOpInternalArgs
 }
@@ -839,7 +839,7 @@ func (args WithFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
 
 	sourceRes, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		//if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+		// if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
 		//	if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
 		//		dirSourceRes, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
 		//		if dirErr == nil {
@@ -849,7 +849,7 @@ func (args WithFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
 		//			return deps, nil
 		//		}
 		//	}
-		//}
+		// }
 		return nil, fmt.Errorf("load source: %w", err)
 	}
 	if err := appendDep(sourceRes.Self().LLB); err != nil {
@@ -873,7 +873,7 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 
 	file, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		//if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+		// if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
 		//	if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
 		//		dir, fallbackErr := parent.Self().WithDirectory(
 		//			ctx,
@@ -892,7 +892,7 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		//			return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 		//		}
 		//	}
-		//}
+		// }
 		return inst, err
 	}
 
