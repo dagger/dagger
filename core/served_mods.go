@@ -167,7 +167,7 @@ func (s *ServedMods) lazilyLoadSchema(ctx context.Context) (
 		// No entrypoints — single server suffices (inner == outer).
 		mods := make([]modInstall, len(s.entries))
 		for i, e := range s.entries {
-			mods[i] = modInstall{mod: e.mod, opts: e.opts}
+			mods[i] = modInstall(e)
 		}
 		dag, schemaJSONFile, err := buildSchema(ctx, s.root, mods, nil)
 		if err != nil {
@@ -191,7 +191,7 @@ func (s *ServedMods) lazilyLoadSchema(ctx context.Context) (
 	// Build outer server: all modules with real Entrypoint flags.
 	outerMods := make([]modInstall, len(s.entries))
 	for i, e := range s.entries {
-		outerMods[i] = modInstall{mod: e.mod, opts: e.opts}
+		outerMods[i] = modInstall(e)
 	}
 	outer, schemaJSONFile, err := buildSchema(ctx, s.root, outerMods, nil)
 	if err != nil {

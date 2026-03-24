@@ -282,6 +282,8 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
 // When includeCore is false, core types (Container, Directory, etc.) are excluded from the result.
+//
+//nolint:unparam
 func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, includeCore bool) (rerr error) {
 	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(loadSpan, &rerr)

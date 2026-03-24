@@ -17,9 +17,7 @@ const (
 	ModuleName = "daggercore"
 )
 
-var (
-	TypesToIgnoreForModuleIntrospection = []string{"Host"}
-)
+var TypesToIgnoreForModuleIntrospection = []string{"Host"}
 
 /*
 ModDeps represents a set of dependencies for a module or for a caller depending on a

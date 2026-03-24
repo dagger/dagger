@@ -368,46 +368,8 @@ If no dependency is specified, all dependencies are updated.
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{
-			SkipWorkspaceModules: true,
-		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
-
-			modRef, err := getModuleSourceRefWithDefault()
-			if err != nil {
-				return err
-			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only update dependencies on a local module
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
-			}
-
-			modSrc = modSrc.WithUpdateDependencies(extraArgs)
-			if engineVersion := getCompatVersion(); engineVersion != "" {
-				modSrc = modSrc.WithEngineVersion(engineVersion)
-			}
-
-			_, err = modSrc.
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to update dependencies: %w", err)
-			}
-
-			return nil
+		return modifyLocalModule(ctx, func(dag *dagger.Client, modSrc *dagger.ModuleSource) *dagger.ModuleSource {
+			return modSrc.WithUpdateDependencies(extraArgs)
 		})
 	},
 }
@@ -493,45 +455,8 @@ var moduleUnInstallCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{
-			SkipWorkspaceModules: true,
-		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
-			modRef, err := getModuleSourceRefWithDefault()
-			if err != nil {
-				return err
-			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only uninstall dependencies on a local module
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
-			}
-
-			modSrc = modSrc.WithoutDependencies(extraArgs)
-			if engineVersion := getCompatVersion(); engineVersion != "" {
-				modSrc = modSrc.WithEngineVersion(engineVersion)
-			}
-
-			_, err = modSrc.
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to update dependencies: %w", err)
-			}
-
-			return nil
+		return modifyLocalModule(ctx, func(dag *dagger.Client, modSrc *dagger.ModuleSource) *dagger.ModuleSource {
+			return modSrc.WithoutDependencies(extraArgs)
 		})
 	},
 }
@@ -1183,6 +1108,51 @@ func getModuleSourceRefWithDefault() (string, error) {
 		return "", fmt.Errorf("cannot use default module source with --no-mod")
 	}
 	return moduleURLDefault, nil
+}
+
+// modifyLocalModule is a helper that loads a local module source, applies a
+// transformation, and exports the generated context directory back to disk.
+func modifyLocalModule(ctx context.Context, transform func(*dagger.Client, *dagger.ModuleSource) *dagger.ModuleSource) error {
+	return withEngine(ctx, client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		dag := engineClient.Dagger()
+
+		modRef, err := getModuleSourceRefWithDefault()
+		if err != nil {
+			return err
+		}
+		modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+			RequireKind: dagger.ModuleSourceKindLocalSource,
+		})
+
+		alreadyExists, err := modSrc.ConfigExists(ctx)
+		if err != nil {
+			return localModuleErrorf("failed to check if module already exists: %w", err)
+		}
+		if !alreadyExists {
+			return fmt.Errorf("module must be fully initialized")
+		}
+
+		contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+		if err != nil {
+			return localModuleErrorf("failed to get local context directory path: %w", err)
+		}
+
+		modSrc = transform(dag, modSrc)
+		if engineVersion := getCompatVersion(); engineVersion != "" {
+			modSrc = modSrc.WithEngineVersion(engineVersion)
+		}
+
+		_, err = modSrc.
+			GeneratedContextDirectory().
+			Export(ctx, contextDirPath)
+		if err != nil {
+			return fmt.Errorf("failed to update dependencies: %w", err)
+		}
+
+		return nil
+	})
 }
 
 func localModuleErrorf(format string, err error) error {

@@ -146,7 +146,7 @@ func (s *workspaceSchema) resolveRootfs(
 		return inst, nil
 	}
 
-	var ctxDir dagql.ObjectResult[*core.Directory] = ws.Rootfs()
+	ctxDir := ws.Rootfs()
 	if resolvedPath != "." && resolvedPath != "" {
 		err = srv.Select(ctx, ctxDir, &ctxDir,
 			dagql.Selector{
@@ -261,15 +261,6 @@ func workspaceAPIPath(resolvedPath string) string {
 		return "/"
 	}
 	return "/" + strings.TrimPrefix(clean, "/")
-}
-
-// workspaceHostPath returns the absolute host path for a workspace-relative path.
-// Returns an error if the workspace is remote (read-only).
-func workspaceHostPath(ws *core.Workspace) (string, error) {
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace is read-only (remote)")
-	}
-	return ws.HostPath(), nil
 }
 
 type workspaceFindUpArgs struct {
@@ -499,7 +490,7 @@ func matchSingleModuleGeneratorInclude(
 	if len(path) < 2 {
 		return false, nil
 	}
-	return matchWorkspaceIncludePath(ctx, core.ModTreePath(path[1:]), include)
+	return matchWorkspaceIncludePath(ctx, path[1:], include)
 }
 
 func matchWorkspaceIncludePath(

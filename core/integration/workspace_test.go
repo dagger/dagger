@@ -993,7 +993,6 @@ type Shadows {
 		require.NoError(t, err)
 		require.Equal(t, "my-directory", strings.TrimSpace(out))
 	})
-
 }
 
 // TestEntrypointProxySelfNamedMethod verifies that a module whose main object
@@ -1090,7 +1089,6 @@ type Dirs {
 		require.NoError(t, err)
 		require.Contains(t, strings.TrimSpace(out), "3.20")
 	})
-
 }
 
 // TestEntrypointProxyDirectoryField verifies that a container-based module

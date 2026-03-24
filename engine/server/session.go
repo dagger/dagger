@@ -500,26 +500,8 @@ func (srv *Server) initializeDaggerClient(
 	// initialize all the buildkit+session attachable state for the client
 	client.secretStore = core.NewSecretStore(srv.bkSessionManager)
 	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
-	if opts.CallID != nil {
-		if opts.CallerClientID == "" {
-			return fmt.Errorf("caller client ID is not set")
-		}
-		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: *opts.CallID}, opts.CallerClientID, true); err != nil {
-			return fmt.Errorf("failed to add client resources from ID: %w", err)
-		}
-	}
-	if opts.ParentIDs != nil {
-		if opts.CallerClientID == "" {
-			return fmt.Errorf("caller client ID is not set")
-		}
-		// we can use the caller client ID here (as opposed to the client ID of the parent function call)
-		// because any client resources returned by the parent function call will be added to the stores
-		// of the caller
-		for _, id := range opts.ParentIDs {
-			if err := srv.addClientResourcesFromID(ctx, client, id, opts.CallerClientID, false); err != nil {
-				return fmt.Errorf("failed to add parent client resources from ID: %w", err)
-			}
-		}
+	if err := srv.initClientResources(ctx, client, opts); err != nil {
+		return err
 	}
 
 	wc, err := buildkit.AsWorkerController(srv.worker)
@@ -765,6 +747,33 @@ func (srv *Server) initializeDaggerClient(
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 
 	client.state = clientStateInitialized
+	return nil
+}
+
+// initClientResources adds secrets/sockets from the call ID and parent IDs to
+// the client's stores.
+func (srv *Server) initClientResources(ctx context.Context, client *daggerClient, opts *ClientInitOpts) error {
+	if opts.CallID != nil {
+		if opts.CallerClientID == "" {
+			return fmt.Errorf("caller client ID is not set")
+		}
+		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: *opts.CallID}, opts.CallerClientID, true); err != nil {
+			return fmt.Errorf("failed to add client resources from ID: %w", err)
+		}
+	}
+	if opts.ParentIDs != nil {
+		if opts.CallerClientID == "" {
+			return fmt.Errorf("caller client ID is not set")
+		}
+		// we can use the caller client ID here (as opposed to the client ID of the parent function call)
+		// because any client resources returned by the parent function call will be added to the stores
+		// of the caller
+		for _, id := range opts.ParentIDs {
+			if err := srv.addClientResourcesFromID(ctx, client, id, opts.CallerClientID, false); err != nil {
+				return fmt.Errorf("failed to add parent client resources from ID: %w", err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -2126,7 +2135,7 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 			resolved, err := srv.resolveModuleLoad(ctx, client.dag, load)
 			if err != nil {
 				resolveErrs[i] = err
-				return nil
+				return nil //nolint:nilerr // errors collected for deterministic ordering
 			}
 			resolvedLoads[i] = resolved
 			return nil
