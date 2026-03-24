@@ -6,7 +6,6 @@ namespace Dagger\Codegen\Introspection;
 
 use DateTimeImmutable;
 use Dagger\Client\AbstractClient;
-use Dagger\Client\AbstractId;
 use Dagger\Client\AbstractInputObject;
 use Dagger\Client\AbstractObject;
 use Dagger\Client\AbstractScalar;
@@ -40,34 +39,9 @@ class NewCodegenVisitor extends CodeWriter
             $scalarClass->addComment($type->description);
         }
 
-        if (str_ends_with($type->name, 'ID')) {
-            $scalarClass->setExtends(AbstractId::class);
-        } else {
-            $scalarClass->setExtends(AbstractScalar::class);
-        }
+        $scalarClass->setExtends(AbstractScalar::class);
 
         $this->write($scalarClass);
-    }
-
-    /**
-     * Generate a per-type ID class (e.g. ContainerId) for types that have an id field.
-     * Under the unified ID scalar, these are no longer in the schema as separate scalars,
-     * but we still generate them for type safety and backward compatibility.
-     */
-    public function visitIdType(IntrospectionType $type): void
-    {
-        $phpClassName = $this->formatPhpClassName($type->name) . 'Id';
-
-        $idClass = new ClassType($phpClassName);
-        $idClass->setReadOnly(true);
-        $idClass->setExtends(AbstractId::class);
-        $idClass->addComment(sprintf(
-            'The `%sID` scalar type represents an identifier for an object of type %s.',
-            $type->name,
-            $type->name,
-        ));
-
-        $this->write($idClass);
     }
 
     public function visitInput(IntrospectionType $type): void
@@ -224,7 +198,7 @@ class NewCodegenVisitor extends CodeWriter
         // Generate parameters
         $sortedArgs = $this->sortMethodArguments($field->args);
         foreach ($sortedArgs as $arg) {
-            $this->generateMethodParameter($arg, $method);
+            $this->generateMethodParameter($arg, $method, $field);
         }
 
         // Generate method body
@@ -245,24 +219,10 @@ class NewCodegenVisitor extends CodeWriter
             $unwrapped = $this->unwrapNonNull($returnType);
 
             if ($unwrapped->isIDScalar()) {
-                // ID scalar: wrap in the typed ID class
-                $expectedType = $field->expectedType();
-                // For `id` fields, infer from parent type name
-                if ($expectedType === null && $field->name === 'id' && $field->parentTypeName !== null) {
-                    $expectedType = $field->parentTypeName;
-                }
-                if ($expectedType !== null) {
-                    $idTypeName = $this->formatPhpFqcn($this->formatPhpClassName($expectedType) . 'Id');
-                    $method->addBody(
-                        'return new ' . $idTypeName . '((string)$this->queryLeaf($leafQueryBuilder, ?));',
-                        [$field->name]
-                    );
-                } else {
-                    $method->addBody(
-                        'return (string)$this->queryLeaf($leafQueryBuilder, ?);',
-                        [$field->name]
-                    );
-                }
+                $method->addBody(
+                    'return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, ?));',
+                    [$field->name]
+                );
             } elseif ($unwrapped->isCustomScalar() && !$unwrapped->isVoid()) {
                 $typeName = $this->formatPhpFqcn($this->formatPhpClassName($unwrapped->leafName()));
                 $method->addBody(
@@ -334,7 +294,7 @@ class NewCodegenVisitor extends CodeWriter
 
         $sortedArgs = $this->sortMethodArguments($field->args);
         foreach ($sortedArgs as $arg) {
-            $this->generateMethodParameter($arg, $method);
+            $this->generateMethodParameter($arg, $method, $field);
         }
     }
 
@@ -364,17 +324,7 @@ class NewCodegenVisitor extends CodeWriter
         }
 
         if ($unwrapped->isIDScalar()) {
-            // ID scalar: determine the expected type from directive or parent context
-            $expectedType = $field->expectedType();
-            if ($expectedType !== null) {
-                return $this->formatPhpFqcn($this->formatPhpClassName($expectedType) . 'Id');
-            }
-            // For `id` fields, infer the type from the parent
-            if ($field->name === 'id' && $field->parentTypeName !== null) {
-                return $this->formatPhpFqcn($this->formatPhpClassName($field->parentTypeName) . 'Id');
-            }
-            // Bare ID without expectedType
-            return 'string';
+            return $this->formatPhpFqcn('Id');
         }
 
         if ($unwrapped->isInterface()) {
@@ -412,7 +362,7 @@ class NewCodegenVisitor extends CodeWriter
     /**
      * Determine the PHP type for an argument, using @expectedType.
      */
-    private function resolveArgType(IntrospectionInputValue $arg): string
+    private function resolveArgType(IntrospectionInputValue $arg, ?IntrospectionField $field = null): string
     {
         $typeRef = $arg->type;
         $unwrapped = $this->unwrapNonNull($typeRef);
@@ -426,26 +376,17 @@ class NewCodegenVisitor extends CodeWriter
         }
 
         if ($unwrapped->isIDScalar()) {
-            // Check for @expectedType directive
             $expectedType = $arg->expectedType();
             if ($expectedType !== null) {
-                // Accept both the ID type and the object type
-                $idClass = $this->formatPhpFqcn($this->formatPhpClassName($expectedType) . 'Id');
-                $objClass = $this->formatPhpFqcn($this->formatPhpClassName(
-                    $expectedType === 'Query' ? 'Client' : $expectedType
-                ));
-
-                // Check if the expected type is an interface
-                $schemaType = $this->schema->getType($expectedType);
-                if ($schemaType !== null && $schemaType->isInterface()) {
-                    // For interface args, just accept the interface type
-                    return $objClass;
+                // loadFooFromID takes an Id — it's the conversion point
+                if ($this->isLoadFromIDField($field)) {
+                    return $this->formatPhpFqcn('Id');
                 }
-
-                return $idClass . '|' . $objClass;
+                // All other args accept the object type directly
+                $name = $expectedType === 'Query' ? 'Client' : $expectedType;
+                return $this->formatPhpFqcn($this->formatPhpClassName($name));
             }
-            // Bare ID
-            return 'string';
+            return $this->formatPhpFqcn('Id');
         }
 
         // Enum, input object, custom scalar, etc.
@@ -473,7 +414,7 @@ class NewCodegenVisitor extends CodeWriter
 
     // ---- Parameter generation ----
 
-    private function generateMethodParameter(IntrospectionInputValue $arg, Method $method): void
+    private function generateMethodParameter(IntrospectionInputValue $arg, Method $method, ?IntrospectionField $field = null): void
     {
         $parameter = $method->addParameter($arg->name);
 
@@ -482,7 +423,7 @@ class NewCodegenVisitor extends CodeWriter
             $parameter->setDefaultValue(null);
         }
 
-        $argType = $this->resolveArgType($arg);
+        $argType = $this->resolveArgType($arg, $field);
         $parameter->setType($argType);
 
         if ($arg->defaultValue !== null && $this->unwrapNonNull($arg->type)->isBuiltinScalar()) {
@@ -573,5 +514,19 @@ class NewCodegenVisitor extends CodeWriter
             return $typeRef->ofType;
         }
         return $typeRef;
+    }
+
+    /**
+     * Returns true if the field is a loadFooFromID method on Query.
+     * These are the only ID-typed args that should accept Id directly
+     * (rather than the object type), since their purpose is to convert
+     * an Id into an object.
+     */
+    private function isLoadFromIDField(?IntrospectionField $field): bool
+    {
+        if ($field === null) {
+            return false;
+        }
+        return str_starts_with($field->name, 'load') && str_ends_with($field->name, 'FromID');
     }
 }

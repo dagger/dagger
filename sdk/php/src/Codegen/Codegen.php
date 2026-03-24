@@ -30,7 +30,6 @@ class Codegen
             return $type->isScalar()
                 && $type->name !== 'Void'
                 && $type->name !== 'DateTime'
-                && $type->name !== 'ID'
                 && !in_array($type->name, ['String', 'Int', 'Float', 'Boolean'], true);
         });
 
@@ -57,14 +56,6 @@ class Codegen
         foreach ($scalarTypes as $type) {
             $this->io->info("Generating scalar '{$type->name}'");
             $visitor->visitScalar($type);
-        }
-
-        // Generate per-type ID classes for all object and interface types that have an 'id' field
-        foreach (array_merge(array_values($objectTypes), array_values($interfaceTypes)) as $type) {
-            if ($type->hasField('id')) {
-                $this->io->info("Generating ID type for '{$type->name}'");
-                $visitor->visitIdType($type);
-            }
         }
 
         foreach ($inputObjectTypes as $type) {
