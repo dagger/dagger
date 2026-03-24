@@ -58,6 +58,22 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.Func("init", s.workspaceInit).
 			DoNotCache("Mutates workspace on host").
 			Doc("Initialize a new workspace, creating .dagger/config.toml."),
+		dagql.Func("configRead", s.configRead).
+			DoNotCache("Reads live config from host").
+			Doc("Read a configuration value from config.toml.",
+				"If key is empty, returns the full config.",
+				"If key points to a scalar, returns the value.",
+				"If key points to a table, returns flattened dotted-key output.").
+			Args(
+				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
+			),
+		dagql.Func("configWrite", s.configWrite).
+			DoNotCache("Mutates workspace config on host").
+			Doc("Write a configuration value to config.toml.").
+			Args(
+				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source)."),
+				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
+			),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(

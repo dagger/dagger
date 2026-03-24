@@ -14324,14 +14324,17 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
-	address     *string
-	clientId    *string
-	configPath  *string
-	findUp      *string
-	hasConfig   *bool
-	id          *WorkspaceID
-	initialized *bool
-	path        *string
+	address       *string
+	clientId      *string
+	configRead    *string
+	configWrite   *string
+	configPath    *string
+	defaultModule *string
+	findUp        *string
+	hasConfig     *bool
+	id            *WorkspaceID
+	initialized   *bool
+	path          *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -14380,6 +14383,51 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 		return *r.clientId, nil
 	}
 	q := r.query.Select("clientId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceConfigReadOpts contains options for Workspace.ConfigRead
+type WorkspaceConfigReadOpts struct {
+	// Dotted key path (e.g. modules.greeter.source). Empty for full config.
+	Key string
+}
+
+// Read a configuration value from config.toml.
+//
+// If key is empty, returns the full config.
+//
+// If key points to a scalar, returns the value.
+//
+// If key points to a table, returns flattened dotted-key output.
+func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadOpts) (string, error) {
+	if r.configRead != nil {
+		return *r.configRead, nil
+	}
+	q := r.query.Select("configRead")
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Write a configuration value to config.toml.
+func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (string, error) {
+	if r.configWrite != nil {
+		return *r.configWrite, nil
+	}
+	q := r.query.Select("configWrite")
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
 
 	var response string
 

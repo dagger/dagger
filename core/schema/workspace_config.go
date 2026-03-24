@@ -83,6 +83,92 @@ func exportConfigToHost(ctx context.Context, bk *buildkit.Client, ws *core.Works
 	return exportWorkspaceFileToHost(ctx, bk, configPath, config)
 }
 
+func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
+	if !ws.HasConfig {
+		return nil, fmt.Errorf("no config.toml found in workspace")
+	}
+
+	configPath, err := configHostPath(ws)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+
+	data, err := bk.ReadCallerHostFile(ctx, configPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	return data, nil
+}
+
+type configReadArgs struct {
+	Key string `default:""`
+}
+
+func (s *workspaceSchema) configRead(
+	ctx context.Context,
+	parent *core.Workspace,
+	args configReadArgs,
+) (dagql.String, error) {
+	data, err := readConfigBytes(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := workspace.ReadConfigValue(data, args.Key)
+	if err != nil {
+		return "", err
+	}
+	return dagql.String(result), nil
+}
+
+type configWriteArgs struct {
+	Key   string
+	Value string
+}
+
+func (s *workspaceSchema) configWrite(
+	ctx context.Context,
+	parent *core.Workspace,
+	args configWriteArgs,
+) (dagql.String, error) {
+	if !parent.HasConfig {
+		return "", fmt.Errorf("no config.toml found in workspace")
+	}
+
+	data, err := readConfigBytes(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+
+	updated, err := workspace.WriteConfigValue(data, args.Key, args.Value)
+	if err != nil {
+		return "", err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("buildkit: %w", err)
+	}
+	if err := exportConfigToHost(ctx, bk, parent, updated); err != nil {
+		return "", err
+	}
+
+	return dagql.String(args.Value), nil
+}
+
 func exportWorkspaceFileToHost(ctx context.Context, bk *buildkit.Client, hostPath string, contents []byte) error {
 	tmpFile, err := os.CreateTemp("", "workspace-file-*")
 	if err != nil {

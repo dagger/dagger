@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/spf13/cobra"
@@ -70,6 +71,35 @@ var workspaceInitCmd = &cobra.Command{
 	},
 }
 
+var workspaceConfigCmd = &cobra.Command{
+	Use:   "config [key] [value]",
+	Short: "Get or set workspace configuration",
+	Long: `Get or set workspace configuration values in .dagger/config.toml.
+
+With no arguments, prints the full configuration.
+With one argument, prints the value at the given key.
+With two arguments, sets the value at the given key.`,
+	Args: cobra.MaximumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			ws := engineClient.Dagger().CurrentWorkspace()
+
+			switch len(args) {
+			case 0:
+				return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, "")
+			case 1:
+				return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0])
+			case 2:
+				return writeWorkspaceConfig(ctx, ws, args[0], args[1])
+			default:
+				return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
+			}
+		})
+	},
+}
+
 type workspaceInfoView struct {
 	Address    string
 	Path       string
@@ -77,12 +107,28 @@ type workspaceInfoView struct {
 }
 
 func init() {
+	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceInfoCmd)
 }
 
 func initWorkspace(ctx context.Context, dag *dagger.Client) (string, error) {
 	return dag.CurrentWorkspace().Init(ctx)
+}
+
+func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key string) error {
+	value, err := ws.ConfigRead(ctx, dagger.WorkspaceConfigReadOpts{Key: key})
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(out, strings.TrimRight(value, "\n"))
+	return err
+}
+
+func writeWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, key, value string) error {
+	_, err := ws.ConfigWrite(ctx, key, value)
+	return err
 }
 
 func writeWorkspaceInfo(w io.Writer, info workspaceInfoView) error {
