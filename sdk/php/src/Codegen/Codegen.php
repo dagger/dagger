@@ -2,19 +2,15 @@
 
 namespace Dagger\Codegen;
 
-use Dagger\Codegen\Introspection\CodegenVisitor;
-use Dagger\Codegen\Introspection\Helpers;
-use GraphQL\Type\Definition\CustomScalarType;
-use GraphQL\Type\Definition\EnumType;
-use GraphQL\Type\Definition\InputObjectType;
-use GraphQL\Type\Definition\ObjectType;
-use GraphQL\Type\Schema;
+use Dagger\Codegen\Introspection\IntrospectionSchema;
+use Dagger\Codegen\Introspection\IntrospectionType;
+use Dagger\Codegen\Introspection\NewCodegenVisitor;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 class Codegen
 {
     public function __construct(
-        private readonly Schema $schema,
+        private readonly IntrospectionSchema $schema,
         private readonly string $writeDir,
         private readonly SymfonyStyle $io
     ) {
@@ -22,48 +18,73 @@ class Codegen
 
     public function generate(): void
     {
-        $schemaVisitor = new CodegenVisitor($this->schema, $this->writeDir);
+        $visitor = new NewCodegenVisitor($this->schema, $this->writeDir);
 
-        $filteredTypes = array_filter($this->schema->getTypeMap(), function ($type) {
-            return !str_starts_with($type->name ?? '', '_');
+        $filteredTypes = array_filter($this->schema->types, function (IntrospectionType $type) {
+            return !str_starts_with($type->name, '_')
+                && !str_starts_with($type->name, '__');
         });
 
-        $scalarTypes = array_filter($filteredTypes, function ($type) {
-            return $type instanceof CustomScalarType
-                && !Helpers::isVoidType($type)
-                && 'DateTime' !== $type->name;
+        // Scalars (custom, not Void, not DateTime, not ID)
+        $scalarTypes = array_filter($filteredTypes, function (IntrospectionType $type) {
+            return $type->isScalar()
+                && $type->name !== 'Void'
+                && $type->name !== 'DateTime'
+                && $type->name !== 'ID'
+                && !in_array($type->name, ['String', 'Int', 'Float', 'Boolean'], true);
         });
 
-        $inputObjectTypes = array_filter($filteredTypes, function ($type) {
-            return $type instanceof InputObjectType;
+        // Input objects
+        $inputObjectTypes = array_filter($filteredTypes, function (IntrospectionType $type) {
+            return $type->isInputObject();
         });
 
-        $enumObjectTypes = array_filter($filteredTypes, function ($type) {
-            return $type instanceof EnumType;
+        // Enums
+        $enumTypes = array_filter($filteredTypes, function (IntrospectionType $type) {
+            return $type->isEnum();
         });
 
-        $objectTypes = array_filter($filteredTypes, function ($type) {
-            return $type instanceof ObjectType;
+        // Objects
+        $objectTypes = array_filter($filteredTypes, function (IntrospectionType $type) {
+            return $type->isObject();
+        });
+
+        // Interfaces
+        $interfaceTypes = array_filter($filteredTypes, function (IntrospectionType $type) {
+            return $type->isInterface();
         });
 
         foreach ($scalarTypes as $type) {
             $this->io->info("Generating scalar '{$type->name}'");
-            $schemaVisitor->visitScalar($type);
+            $visitor->visitScalar($type);
+        }
+
+        // Generate per-type ID classes for all object and interface types that have an 'id' field
+        foreach (array_merge(array_values($objectTypes), array_values($interfaceTypes)) as $type) {
+            if ($type->hasField('id')) {
+                $this->io->info("Generating ID type for '{$type->name}'");
+                $visitor->visitIdType($type);
+            }
         }
 
         foreach ($inputObjectTypes as $type) {
             $this->io->info("Generating input object '{$type->name}'");
-            $schemaVisitor->visitInput($type);
+            $visitor->visitInput($type);
         }
 
-        foreach ($enumObjectTypes as $type) {
+        foreach ($enumTypes as $type) {
             $this->io->info("Generating enum object '{$type->name}'");
-            $schemaVisitor->visitEnum($type);
+            $visitor->visitEnum($type);
         }
 
         foreach ($objectTypes as $type) {
             $this->io->info("Generating object '{$type->name}'");
-            $schemaVisitor->visitObject($type);
+            $visitor->visitObject($type);
+        }
+
+        foreach ($interfaceTypes as $type) {
+            $this->io->info("Generating interface '{$type->name}'");
+            $visitor->visitInterface($type);
         }
     }
 }
