@@ -127,6 +127,10 @@ type Params struct {
 
 	SkipWorkspaceModules bool
 
+	// LockMode controls lockfile behavior for lookup resolution.
+	// Valid values: "disabled", "strict", "auto", "update".
+	LockMode string
+
 	// Workspace explicitly declares workspace binding for this client.
 	Workspace *string
 
@@ -1408,6 +1412,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.SkipWorkspaceModules {
 		md.SkipWorkspaceModules = true
+	}
+	if c.LockMode != "" {
+		md.LockMode = c.LockMode
 	}
 	if c.Workspace != nil {
 		md.Workspace = c.Workspace
