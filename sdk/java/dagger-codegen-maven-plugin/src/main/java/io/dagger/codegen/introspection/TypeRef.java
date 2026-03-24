@@ -55,6 +55,18 @@ public class TypeRef {
     return ref.kind == TypeKind.OBJECT;
   }
 
+  public boolean isInterface() {
+    TypeRef ref = this;
+    if (ref.kind == TypeKind.NON_NULL) {
+      ref = ref.ofType;
+    }
+    return ref.kind == TypeKind.INTERFACE;
+  }
+
+  public boolean isObjectOrInterface() {
+    return isObject() || isInterface();
+  }
+
   public boolean isList() {
     TypeRef ref = this;
     if (ref.kind == TypeKind.NON_NULL) {
@@ -75,7 +87,7 @@ public class TypeRef {
     if (ref.kind == TypeKind.NON_NULL) {
       ref = ref.ofType;
     }
-    return ref.isObject();
+    return ref.isObject() || ref.isInterface();
   }
 
   public TypeRef getListElementType() {
@@ -90,17 +102,19 @@ public class TypeRef {
   }
 
   public TypeName formatOutput() {
-    return formatType(false);
+    return formatType(false, null);
   }
 
   public TypeName formatInput() {
-    return formatType(true);
+    return formatType(true, null);
   }
 
-  private TypeName formatType(boolean isInput) {
-    // if (typeRef == null) {
-    //    return "void";
-    // }
+  /** Format as input type, using the given expectedType for ID scalar resolution. */
+  public TypeName formatInput(String expectedType) {
+    return formatType(true, expectedType);
+  }
+
+  private TypeName formatType(boolean isInput, String expectedType) {
     if ("Query".equals(getName())) {
       return ClassName.bestGuess("Client");
     }
@@ -116,28 +130,31 @@ public class TypeRef {
           case "Int" -> {
             return ClassName.get(Integer.class);
           }
+          case "ID" -> {
+            // Unified ID scalar: resolve to expected type if present
+            if (isInput && expectedType != null && !expectedType.isEmpty()) {
+              return ClassName.bestGuess(expectedType);
+            }
+            // When used as output (e.g. id() field), return the ID type
+            return ClassName.bestGuess("ID");
+          }
           default -> {
             if (!isInput) {
               return ClassName.bestGuess(getName());
             }
-            return Helpers.convertScalarToObject(getName());
-            //                        if (getName().endsWith("ID") && isInput) {
-            //                            return getName().substring(0, getName().length() - 2);
-            //                        }
-            //                        return getName();
+            return Helpers.convertScalarToObject(getName(), expectedType);
           }
         }
       }
-      case OBJECT, ENUM, INPUT_OBJECT -> {
+      case OBJECT, ENUM, INPUT_OBJECT, INTERFACE -> {
         return ClassName.bestGuess(getName());
       }
       case LIST -> {
         return ParameterizedTypeName.get(
-            ClassName.get(List.class), getOfType().formatType(isInput));
-        // return String.format("List<%s>", getOfType().formatType(isInput));
+            ClassName.get(List.class), getOfType().formatType(isInput, expectedType));
       }
       default -> {
-        return getOfType().formatType(isInput);
+        return getOfType().formatType(isInput, expectedType);
       }
     }
   }

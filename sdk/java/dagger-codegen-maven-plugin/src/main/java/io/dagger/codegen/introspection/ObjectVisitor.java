@@ -31,6 +31,11 @@ class ObjectVisitor extends AbstractVisitor {
                         ClassName.bestGuess("QueryBuilder"), "queryBuilder", Modifier.PRIVATE)
                     .build());
 
+    // Add implements for any interfaces this object implements
+    for (String ifaceName : type.getImplementedInterfaceNames()) {
+      classBuilder.addSuperinterface(ClassName.bestGuess(ifaceName));
+    }
+
     if ("Query".equals(type.getName())) {
       MethodSpec constructor =
           MethodSpec.constructorBuilder()
@@ -64,9 +69,9 @@ class ObjectVisitor extends AbstractVisitor {
 
       // If Object has an "id" field, implement IDAble interface
       if (type.providesId()) {
+        // With unified IDs, id() returns the ID scalar type
         classBuilder.addSuperinterface(
-            ParameterizedTypeName.get(
-                ClassName.bestGuess("IDAble"), type.getIdField().getTypeRef().formatOutput()));
+            ParameterizedTypeName.get(ClassName.bestGuess("IDAble"), ClassName.bestGuess("ID")));
         classBuilder.addAnnotation(
             AnnotationSpec.builder(JsonbTypeSerializer.class)
                 .addMember("value", "$T.class", ClassName.bestGuess("IDAbleSerializer"))
@@ -100,7 +105,7 @@ class ObjectVisitor extends AbstractVisitor {
                             ClassName.bestGuess(Helpers.formatName(type)),
                             ClassName.bestGuess("io.dagger.client.Dagger"),
                             Helpers.formatName(type),
-                            type.getIdField().getTypeRef().formatOutput())
+                            ClassName.bestGuess("ID"))
                         .addStatement("return o")
                         .build())
                 .build());
@@ -147,25 +152,39 @@ class ObjectVisitor extends AbstractVisitor {
     return classBuilder.build();
   }
 
+  private TypeName resolveArgType(InputObject arg, Field field) {
+    // For Query.loadFooFromID(id: ID! @expectedType(...)), keep as raw string for the id param
+    if ("Query".equals(field.getParentObject().getName()) && "id".equals(arg.getName())) {
+      return arg.getType().formatOutput();
+    }
+    String expectedType = arg.getExpectedType();
+    return arg.getType().formatInput(expectedType);
+  }
+
+  private TypeName resolveReturnType(Field field) {
+    if ("id".equals(field.getName())) {
+      // id() field: with unified IDs, returns String
+      return field.getTypeRef().formatOutput();
+    }
+    if (Helpers.isIdToConvert(field)) {
+      // sync-like fields: return the parent object type
+      return ClassName.bestGuess(Helpers.formatName(field.getParentObject()));
+    }
+    String expectedType = field.getExpectedType();
+    return field.getTypeRef().formatInput(expectedType);
+  }
+
   private void buildFieldMethod(
       TypeSpec.Builder classBuilder, Field field, boolean withOptionalArgs) {
     MethodSpec.Builder fieldMethodBuilder =
         MethodSpec.methodBuilder(Helpers.formatName(field)).addModifiers(Modifier.PUBLIC);
-    TypeName returnType =
-        "id".equals(field.getName())
-            ? field.getTypeRef().formatOutput()
-            : field.getTypeRef().formatInput();
+    TypeName returnType = resolveReturnType(field);
     fieldMethodBuilder.returns(returnType);
     List<ParameterSpec> mandatoryParams =
         field.getRequiredArgs().stream()
             .map(
                 arg ->
-                    ParameterSpec.builder(
-                            "Query".equals(field.getParentObject().getName())
-                                    && "id".equals(arg.getName())
-                                ? arg.getType().formatOutput()
-                                : arg.getType().formatInput(),
-                            Helpers.formatName(arg))
+                    ParameterSpec.builder(resolveArgType(arg, field), Helpers.formatName(arg))
                         .addJavadoc(Helpers.escapeJavadoc(arg.getDescription()) + "\n")
                         .build())
             .toList();
@@ -179,8 +198,6 @@ class ObjectVisitor extends AbstractVisitor {
               .build());
     }
     fieldMethodBuilder.addJavadoc(Helpers.escapeJavadoc(field.getDescription()));
-    // field.getRequiredArgs().forEach(arg -> fieldMethodBuilder.addJavadoc("\n@param $L $L",
-    // arg.getName(), arg.getDescription()));
 
     if (field.getTypeRef().isScalar()
         && !Helpers.isIdToConvert(field)
@@ -215,13 +232,16 @@ class ObjectVisitor extends AbstractVisitor {
 
     if (field.getTypeRef().isListOfObject()) {
       String objName = field.getTypeRef().getListElementType().getName();
+      // For interface list elements, use the client class
+      String clientClassName =
+          field.getTypeRef().getListElementType().isInterface() ? objName + "Client" : objName;
       fieldMethodBuilder.addStatement(
           "nextQueryBuilder = nextQueryBuilder.chain(List.of($S))", "id");
       fieldMethodBuilder.addStatement(
           "List<QueryBuilder> builders = nextQueryBuilder.executeObjectListQuery($L.class)",
-          objName);
+          clientClassName);
       fieldMethodBuilder.addStatement(
-          "return builders.stream().map(qb -> new $L(qb)).toList()", objName);
+          "return builders.stream().map(qb -> new $L(qb)).toList()", clientClassName);
       fieldMethodBuilder
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
@@ -241,8 +261,14 @@ class ObjectVisitor extends AbstractVisitor {
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
           .addException(ClassName.get("io.dagger.client.exception", "DaggerQueryException"));
-    } else if (field.getTypeRef().isObject()) {
-      fieldMethodBuilder.addStatement("return new $L(nextQueryBuilder)", returnType);
+    } else if (field.getTypeRef().isObjectOrInterface()) {
+      // For interface return types, instantiate the client class
+      if (field.getTypeRef().isInterface()) {
+        String ifaceName = field.getTypeRef().getTypeName();
+        fieldMethodBuilder.addStatement("return new $LClient(nextQueryBuilder)", ifaceName);
+      } else {
+        fieldMethodBuilder.addStatement("return new $L(nextQueryBuilder)", returnType);
+      }
     } else {
       fieldMethodBuilder.addStatement("return nextQueryBuilder.executeQuery($L.class)", returnType);
       fieldMethodBuilder
@@ -278,12 +304,7 @@ class ObjectVisitor extends AbstractVisitor {
             .map(
                 arg ->
                     FieldSpec.builder(
-                            "id".equals(arg.getName())
-                                    && "Query".equals(field.getParentObject().getName())
-                                ? arg.getType().formatOutput()
-                                : arg.getType().formatInput(),
-                            Helpers.formatName(arg),
-                            Modifier.PRIVATE)
+                            resolveArgType(arg, field), Helpers.formatName(arg), Modifier.PRIVATE)
                         .build())
             .toList();
     fieldArgumentsClassBuilder.addFields(optionalArgFields);
@@ -293,11 +314,8 @@ class ObjectVisitor extends AbstractVisitor {
             .map(
                 arg ->
                     Helpers.withSetter(
-                        arg, // arg.getName(),
-                        "id".equals(arg.getName())
-                                && "Query".equals(field.getParentObject().getName())
-                            ? arg.getType().formatOutput()
-                            : arg.getType().formatInput(),
+                        arg,
+                        resolveArgType(arg, field),
                         ClassName.bestGuess(fieldArgumentsClassName),
                         arg.getDescription()))
             .toList();
@@ -326,8 +344,6 @@ class ObjectVisitor extends AbstractVisitor {
         "Optional arguments for {@link $L#$L}\n\n",
         ClassName.bestGuess(Helpers.formatName(type)),
         Helpers.formatName(field));
-    // fieldArgumentsClassBuilder.addJavadoc("@see $T",
-    // ClassName.bestGuess(fieldArgumentsBuilderClassName));
     classBuilder.addType(fieldArgumentsClassBuilder.build());
   }
 }
