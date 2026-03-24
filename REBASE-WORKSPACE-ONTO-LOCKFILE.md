@@ -48,8 +48,12 @@ Snapshot taken on 2026-03-24:
 
 Branch facts at time of analysis:
 
+- `origin/workspace-plumbing`:
+  - `4e9d517dc` `fix(test): use constructor then method call in no-sdk shell test`
+- `origin/lockfile`:
+  - `b68344fda` `generate: refresh generated lockfile APIs`
 - `lockfile` is 7 commits ahead of `origin/workspace-plumbing`
-- `lockfile` changes 54 files, `+6187/-295`
+- `lockfile` changes 40 files, `+3631/-80`
 - current replay branch `tmp/workspace-on-plumbing` changes 87 files over
   `origin/workspace-plumbing`
 - overlap between `lockfile` and the plumbing replay:
@@ -232,6 +236,26 @@ That includes:
 This is the remaining lock-related scope that still belongs to the workspace
 replay.
 
+## New Upstream Principle From `lockfile`
+
+Since the earlier handoff draft, the `lockfile` design doc added an explicit
+implementation principle that matters for the remaining workspace replay.
+
+Principle:
+
+- new lockfile consumers should attach to existing lookup resolution flows
+- do not add new engine hooks whose only purpose is lock integration
+
+Practical consequence for the workspace replay:
+
+- when replaying `modules.resolve`, wire lock read/write behavior into the
+  existing module resolution path
+- do not treat `modules.resolve` as a reason to invent a parallel lock-specific
+  resolution API
+
+This is important enough to treat as base-branch guidance, not an optional
+refactor preference.
+
 ## Main Trap To Avoid
 
 The current plumbing replay contains stale lockfile shape in several places.
@@ -408,6 +432,11 @@ These were represented in the plumbing replay by commits such as:
 - `5cae712ce` `core/workspace: add local migration helpers`
 
 Carry the intent, not the patch shape.
+
+Additional rule from the current `lockfile` branch:
+
+- integrate `modules.resolve` into the existing module resolution flow rather
+  than creating new lock-specific engine plumbing
 
 ### 5. Re-Decide Selective Workspace Update UX
 
