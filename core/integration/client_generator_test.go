@@ -1759,6 +1759,74 @@ main()`, defaultGenDir))
 	}
 }
 
+func (ClientGeneratorTest) TestConstructorArgs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// A module whose constructor takes arguments produces a Query.with field
+	// via entrypoint proxying. The Go SDK also generates a Query.With helper
+	// for chaining closures (WithQueryFunc). These must not conflict.
+	moduleSrc := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+		With(nonNestedDevEngine(c)).
+		With(daggerNonNestedExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+type Test struct {
+	Greeting string
+}
+
+func New(
+	// +default="hello"
+	greeting string,
+) *Test {
+	return &Test{Greeting: greeting}
+}
+
+func (t *Test) Message() string {
+	return t.Greeting + ", world!"
+}
+`).
+		// Ensure the module compiles
+		With(daggerNonNestedExec("functions")).
+		// Generate the Go client. withGoSetup is not used because the
+		// module SDK already created a go.mod.
+		WithNewFile("cmd/main.go", `package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/test/dagger"
+)
+
+func main() {
+	ctx := context.Background()
+
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := dag.With(dagger.WithOpts{Greeting: "hi"}).Message(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("result:", res)
+}
+`).
+		With(daggerClientInstall("go")).
+		WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
+		With(addSDKReplaceToClient(defaultGenDir)).
+		WithExec([]string{"go", "mod", "tidy"})
+
+	out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "./cmd/main.go")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "result: hi, world!")
+}
+
 func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
