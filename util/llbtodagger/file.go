@@ -298,7 +298,6 @@ func applyMkdir(baseID *call.ID, baseContainerID *call.ID, mkdir *pb.FileActionM
 			argString("path", mkdirPath),
 			argID("source", mkdirSource),
 			argString("owner", owner),
-			argInt("permissions", int64(mkdir.Mode)),
 		)
 		return appendCall(nextContainerID, directoryType(), "rootfs"), nextContainerID, nil
 	}
