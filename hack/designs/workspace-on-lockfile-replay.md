@@ -94,10 +94,10 @@ Reason:
   - `dagger generate`
   - `dagger call`
   - `dagger functions`
+- sibling workspace-module traversal/listing for `dagger functions`
 
 ### Pending Safe Pre-Lock Buckets
 
-- sibling workspace-module traversal/listing for `dagger functions`
 - `dagger workspace info`
 - initialized-workspace detection
 - `Workspace.init` plus `dagger workspace init`
@@ -197,3 +197,10 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='Test(ParseChecksTargetArgs|ParseGenerateTargetArgs|ParseCallTargetArgs|ParseFunctionsTargetArgs|StripHelpArgs)$'`
   - trace:
     `https://dagger.cloud/dagger/traces/47a4050626111ef45c047231eb8c348f`
+  - replayed sibling workspace-module traversal/listing for `dagger functions`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='Test(ParseChecksTargetArgs|ParseGenerateTargetArgs|ParseCallTargetArgs|ParseFunctionsTargetArgs|StripHelpArgs|FindSiblingEntrypoint|FunctionListRunIncludesSiblingEntrypoints)$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/a714146e2d617b0bf30a15e1c36ba377`
