@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
@@ -749,23 +750,143 @@ func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 }
 
 type refArgs struct {
-	Name   string
-	Commit string `default:"" internal:"true"`
+	Name          string
+	Commit        string `default:"" internal:"true"`
+	LockOperation string `default:"" internal:"true"`
+	LockPolicy    string `default:"" internal:"true"`
+	LockName      string `default:"" internal:"true"`
+	LockedName    string `default:"" internal:"true"`
+}
+
+const (
+	lockGitHeadOperation   = "git.head"
+	lockGitRefOperation    = "git.ref"
+	lockGitBranchOperation = "git.branch"
+	lockGitTagOperation    = "git.tag"
+)
+
+func gitLockInputs(repo *core.GitRepository, operation, name string) ([]any, error) {
+	remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository)
+	if !ok {
+		return nil, fmt.Errorf("git locking only supports remote repositories")
+	}
+
+	switch operation {
+	case lockGitHeadOperation:
+		return []any{remoteRepo.URL.Remote()}, nil
+	case lockGitRefOperation, lockGitBranchOperation, lockGitTagOperation:
+		return []any{remoteRepo.URL.Remote(), name}, nil
+	default:
+		return nil, fmt.Errorf("unsupported git lock operation %q", operation)
+	}
+}
+
+func gitRefLockPolicy(ref *gitutil.Ref) workspace.LockPolicy {
+	if ref != nil && strings.HasPrefix(ref.Name, "refs/tags/") {
+		return workspace.PolicyPin
+	}
+	return workspace.PolicyFloat
 }
 
 func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs) (inst dagql.Result[*core.GitRef], _ error) {
 	repo := parent.Self()
+	if args.Commit != "" && !gitutil.IsCommitSHA(args.Commit) {
+		return inst, fmt.Errorf("invalid commit SHA: %q", args.Commit)
+	}
+	if args.LockOperation == "" && args.Commit == "" && !gitutil.IsCommitSHA(args.Name) {
+		args.LockOperation = lockGitRefOperation
+		args.LockPolicy = string(workspace.PolicyFloat)
+		args.LockName = args.Name
+		if strings.HasPrefix(args.Name, "refs/") {
+			args.LockedName = args.Name
+		}
+	}
+	if args.LockOperation != "" {
+		if _, ok := repo.Backend.(*core.RemoteGitRepository); !ok {
+			args.LockOperation = ""
+		}
+	}
+
+	var (
+		lockResolution lookupLockResolution
+		lookupLock     *workspaceLookupLock
+	)
+	if args.Commit == "" && args.LockOperation != "" {
+		lockMode, err := currentLookupLockMode(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("%s lock mode: %w", args.LockOperation, err)
+		}
+		if lockMode != workspace.LockModeDisabled {
+			query, err := core.CurrentQuery(ctx)
+			if err != nil {
+				return inst, err
+			}
+			lookupLock, err = loadWorkspaceLookupLock(ctx, query)
+			if err != nil {
+				return inst, fmt.Errorf("%s lockfile: %w", args.LockOperation, err)
+			}
+			if lookupLock == nil {
+				return inst, fmt.Errorf("experimental lockfile support is local-only")
+			}
+			lockInputs, err := gitLockInputs(repo, args.LockOperation, args.LockName)
+			if err != nil {
+				return inst, fmt.Errorf("%s lock inputs: %w", args.LockOperation, err)
+			}
+			lockResolution, err = resolveLookupFromLock(
+				lockMode,
+				lookupLock.lock,
+				args.LockOperation,
+				lockInputs,
+				workspace.LockPolicy(args.LockPolicy),
+			)
+			if err != nil {
+				return inst, fmt.Errorf("%s lock resolution: %w", args.LockOperation, err)
+			}
+			if lockResolution.Pin != "" {
+				ref := &gitutil.Ref{
+					Name: args.LockedName,
+					SHA:  lockResolution.Pin,
+				}
+				return s.gitRefResult(ctx, parent, ref)
+			}
+		}
+	}
+
 	ref, err := repo.Remote.Lookup(args.Name)
 	if err != nil {
 		return inst, err
-	}
-	if args.Commit != "" && !gitutil.IsCommitSHA(args.Commit) {
-		return inst, fmt.Errorf("invalid commit SHA: %q", args.Commit)
 	}
 	if args.Commit != "" && args.Commit != ref.SHA {
 		ref.SHA = args.Commit
 	}
 
+	if args.Commit == "" && args.LockOperation != "" && lockResolution.ShouldWrite && lookupLock != nil {
+		policy := lockResolution.Policy
+		if !lockResolution.Found && args.LockOperation == lockGitRefOperation {
+			policy = gitRefLockPolicy(ref)
+		}
+		lockInputs, err := gitLockInputs(repo, args.LockOperation, args.LockName)
+		if err != nil {
+			return inst, fmt.Errorf("%s lock inputs: %w", args.LockOperation, err)
+		}
+		if err := lookupLock.SetLookup(
+			lockCoreNamespace,
+			args.LockOperation,
+			lockInputs,
+			workspace.LookupResult{
+				Value:  ref.SHA,
+				Policy: policy,
+			},
+		); err != nil {
+			return inst, fmt.Errorf("set lock entry for %s: %w", args.LockOperation, err)
+		}
+	}
+
+	return s.gitRefResult(ctx, parent, ref)
+}
+
+func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], ref *gitutil.Ref) (inst dagql.Result[*core.GitRef], _ error) {
+	repo := parent.Self()
 	refBackend, err := repo.Backend.Get(ctx, ref)
 	if err != nil {
 		return inst, err
@@ -806,7 +927,11 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 }
 
 func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
-	return s.ref(ctx, parent, refArgs{Name: "HEAD"})
+	return s.ref(ctx, parent, refArgs{
+		Name:          "HEAD",
+		LockOperation: lockGitHeadOperation,
+		LockPolicy:    string(workspace.PolicyFloat),
+	})
 }
 
 func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
@@ -841,19 +966,35 @@ func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.
 type branchArgs refArgs
 
 func (s *gitSchema) branch(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args branchArgs) (dagql.Result[*core.GitRef], error) {
+	lockName := args.Name
 	if supportsStrictRefs(ctx) {
 		args.Name = "refs/heads/" + strings.TrimPrefix(args.Name, "refs/heads/")
 	}
-	return s.ref(ctx, parent, refArgs(args))
+	return s.ref(ctx, parent, refArgs{
+		Name:          args.Name,
+		Commit:        args.Commit,
+		LockOperation: lockGitBranchOperation,
+		LockPolicy:    string(workspace.PolicyFloat),
+		LockName:      lockName,
+		LockedName:    args.Name,
+	})
 }
 
 type tagArgs refArgs
 
 func (s *gitSchema) tag(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args tagArgs) (dagql.Result[*core.GitRef], error) {
+	lockName := args.Name
 	if supportsStrictRefs(ctx) {
 		args.Name = "refs/tags/" + strings.TrimPrefix(args.Name, "refs/tags/")
 	}
-	return s.ref(ctx, parent, refArgs(args))
+	return s.ref(ctx, parent, refArgs{
+		Name:          args.Name,
+		Commit:        args.Commit,
+		LockOperation: lockGitTagOperation,
+		LockPolicy:    string(workspace.PolicyPin),
+		LockName:      lockName,
+		LockedName:    args.Name,
+	})
 }
 
 type tagsArgs struct {

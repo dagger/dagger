@@ -40,7 +40,10 @@ type Query struct {
 	ConstructorArgs map[string]dagql.Input
 }
 
-var ErrNoCurrentModule = fmt.Errorf("no current module")
+var (
+	ErrNoCurrentModule    = fmt.Errorf("no current module")
+	ErrNoCurrentWorkspace = fmt.Errorf("no current workspace")
+)
 
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {

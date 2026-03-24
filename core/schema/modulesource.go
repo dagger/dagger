@@ -15,12 +15,14 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/parallel"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/sdk"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -325,7 +327,7 @@ func (s *moduleSourceSchema) moduleSource(
 			return inst, err
 		}
 	case core.ModuleSourceKindGit:
-		inst, err = s.gitModuleSource(ctx, query, parsedRef.Git, args.RefPin, !args.DisableFindUp)
+		inst, err = s.gitModuleSource(ctx, query, args.RefString, parsedRef.Git, args.RefPin, !args.DisableFindUp)
 		if err != nil {
 			return inst, err
 		}
@@ -414,7 +416,7 @@ func (s *moduleSourceSchema) localModuleSource(
 					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
 					return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
 				case core.ModuleSourceKindGit:
-					return s.gitModuleSource(ctx, query, parsedRef.Git, namedDep.Pin, false)
+					return s.gitModuleSource(ctx, query, namedDep.Source, parsedRef.Git, namedDep.Pin, false)
 				}
 			}
 		}
@@ -572,6 +574,7 @@ func (s *moduleSourceSchema) localModuleSource(
 func (s *moduleSourceSchema) gitModuleSource(
 	ctx context.Context,
 	query dagql.ObjectResult[*core.Query],
+	source string,
 	parsed *core.ParsedGitRefString,
 	refPin string,
 	// whether to search up the directory tree for a dagger.json file
@@ -580,6 +583,37 @@ func (s *moduleSourceSchema) gitModuleSource(
 	dag, err := query.Self().Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	var (
+		lockResolution lookupLockResolution
+		lookupLock     *workspaceLookupLock
+	)
+	if refPin == "" {
+		lockMode, err := currentLookupLockMode(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("%s lock mode: %w", lockModulesResolveOperation, err)
+		}
+		if lockMode != workspace.LockModeDisabled {
+			lookupLock, err = loadWorkspaceLookupLock(ctx, query.Self())
+			if err != nil {
+				return inst, fmt.Errorf("%s lockfile: %w", lockModulesResolveOperation, err)
+			}
+			if lookupLock == nil {
+				return inst, fmt.Errorf("experimental lockfile support is local-only")
+			}
+			lockResolution, err = resolveLookupFromLock(
+				lockMode,
+				lookupLock.lock,
+				lockModulesResolveOperation,
+				[]any{source},
+				workspace.PolicyFloat,
+			)
+			if err != nil {
+				return inst, fmt.Errorf("%s lock resolution: %w", lockModulesResolveOperation, err)
+			}
+			refPin = lockResolution.Pin
+		}
 	}
 
 	gitRef, err := parsed.GitRef(ctx, dag, refPin)
@@ -728,6 +762,24 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 
+	if lockResolution.ShouldWrite && lookupLock != nil {
+		policy := lockResolution.Policy
+		if !lockResolution.Found {
+			policy = moduleResolveLockPolicy(gitRef.Self().Ref)
+		}
+		if err := lookupLock.SetLookup(
+			lockCoreNamespace,
+			lockModulesResolveOperation,
+			[]any{source},
+			workspace.LookupResult{
+				Value:  gitRef.Self().Ref.SHA,
+				Policy: policy,
+			},
+		); err != nil {
+			return inst, fmt.Errorf("set lock entry for %s: %w", lockModulesResolveOperation, err)
+		}
+	}
+
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
@@ -740,6 +792,13 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	return inst.ResultWithPostCall(secretTransferPostCall), nil
+}
+
+func moduleResolveLockPolicy(ref *gitutil.Ref) workspace.LockPolicy {
+	if ref != nil && (strings.HasPrefix(ref.Name, "refs/tags/") || gitutil.IsCommitSHA(ref.Name)) {
+		return workspace.PolicyPin
+	}
+	return workspace.PolicyFloat
 }
 
 func (s *moduleSourceSchema) loadBlueprintModule(
