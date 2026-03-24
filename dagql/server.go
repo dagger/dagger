@@ -1112,6 +1112,16 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	}
 
 	if len(sel.Subselections) == 0 {
+		// Check if the value is an object type that requires sub-selections.
+		// Without this check, returning an object without sub-selections
+		// leads to a cryptic JSON marshal error because object values
+		// contain function closures that can't be serialized.
+		if _, ok := val.(AnyObjectResult); ok {
+			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
+		}
+		if _, ok := s.ObjectType(val.Type().Name()); ok {
+			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
+		}
 		return val.Unwrap(), nil
 	}
 
