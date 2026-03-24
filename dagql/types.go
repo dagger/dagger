@@ -59,6 +59,13 @@ type ObjectType interface {
 	FieldSpec(name string, view call.View) (FieldSpec, bool)
 }
 
+// ForkableObjectType is an installed object type that can be safely cloned
+// into another server without sharing mutable server-bound state like field
+// tables or schema-cache invalidation callbacks.
+type ForkableObjectType interface {
+	ForkObjectType(*Server) (ObjectType, error)
+}
+
 // TypeResolver is the minimal schema lookup surface needed by dagql cache and
 // persisted-payload reconstruction.
 type TypeResolver interface {

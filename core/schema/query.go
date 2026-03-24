@@ -28,7 +28,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 		// (via the magic __ prefix).
 		dagql.NodeFunc("__schemaJSONFile", s.schemaJSONFile).
 			IsPersistable().
-			WithInput(dagql.PerSchemaInput(srv)).
+			WithInput(dagql.CurrentSchemaInput).
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),

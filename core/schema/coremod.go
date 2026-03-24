@@ -17,17 +17,99 @@ import (
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
-type CoreMod struct {
-	Dag *dagql.Server
+type CoreSchemaBase struct {
+	base  *dagql.Server
+	views map[call.View]*coreSchemaViewState
+	mu    sync.Mutex
+}
 
-	cachedTypedefs         dagql.ObjectResultArray[*core.TypeDef]
-	cachedObjectDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
-	cachedScalarDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
-	cachedEnumDefsByName   map[string]dagql.ObjectResult[*core.TypeDef]
-	cachedTypedefsMu       sync.Mutex
+type coreSchemaViewState struct {
+	server *dagql.Server
+
+	typedefs         dagql.ObjectResultArray[*core.TypeDef]
+	objectDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
+	scalarDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
+	enumDefsByName   map[string]dagql.ObjectResult[*core.TypeDef]
+}
+
+type CoreMod struct {
+	base *CoreSchemaBase
+	view call.View
 }
 
 var _ core.Mod = (*CoreMod)(nil)
+
+func NewCoreSchemaBase(ctx context.Context) (*CoreSchemaBase, error) {
+	base := dagql.NewServer(&core.Query{})
+	base.Around(core.AroundFunc)
+	coreMod := &CoreMod{}
+	if err := coreMod.Install(ctx, base); err != nil {
+		return nil, err
+	}
+	return &CoreSchemaBase{
+		base:  base,
+		views: map[call.View]*coreSchemaViewState{},
+	}, nil
+}
+
+func (base *CoreSchemaBase) CoreMod(view call.View) *CoreMod {
+	return &CoreMod{
+		base: base,
+		view: view,
+	}
+}
+
+func (base *CoreSchemaBase) Fork(ctx context.Context, root *core.Query, view call.View) (*dagql.Server, error) {
+	state, err := base.viewState(ctx, view)
+	if err != nil {
+		return nil, err
+	}
+	return state.server.Fork(root)
+}
+
+func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*coreSchemaViewState, error) {
+	base.mu.Lock()
+	defer base.mu.Unlock()
+
+	if state, ok := base.views[view]; ok {
+		return state, nil
+	}
+
+	srv, err := base.base.Fork(&core.Query{})
+	if err != nil {
+		return nil, fmt.Errorf("fork core schema base: %w", err)
+	}
+	srv.View = view
+
+	coreMod := base.CoreMod(view)
+	typedefs, err := coreMod.buildTypeDefs(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	state := &coreSchemaViewState{
+		server:           srv,
+		typedefs:         typedefs,
+		objectDefsByName: make(map[string]dagql.ObjectResult[*core.TypeDef]),
+		scalarDefsByName: make(map[string]dagql.ObjectResult[*core.TypeDef]),
+		enumDefsByName:   make(map[string]dagql.ObjectResult[*core.TypeDef]),
+	}
+	for _, typedef := range typedefs {
+		if typedef.Self() == nil {
+			continue
+		}
+		switch typedef.Self().Kind {
+		case core.TypeDefKindObject:
+			state.objectDefsByName[typedef.Self().AsObject.Value.Self().Name] = typedef
+		case core.TypeDefKindScalar:
+			state.scalarDefsByName[typedef.Self().AsScalar.Value.Self().Name] = typedef
+		case core.TypeDefKindEnum:
+			state.enumDefsByName[typedef.Self().AsEnum.Value.Self().Name] = typedef
+		}
+	}
+	base.views[view] = state
+	return state, nil
+}
 
 func (m *CoreMod) Name() string {
 	return core.ModuleName
@@ -44,7 +126,7 @@ func (m *CoreMod) GetSource() *core.ModuleSource {
 }
 
 func (m *CoreMod) View() (call.View, bool) {
-	return m.Dag.View, true
+	return m.view, true
 }
 
 func (m *CoreMod) ResultCallModule(context.Context) (*dagql.ResultCallModule, error) {
@@ -55,10 +137,24 @@ func (m *CoreMod) ModuleResult() dagql.ObjectResult[*core.Module] {
 	return dagql.ObjectResult[*core.Module]{}
 }
 
+func (m *CoreMod) ForkSchema(ctx context.Context, root *core.Query, view call.View) (*dagql.Server, error) {
+	if m.base == nil {
+		return nil, fmt.Errorf("core schema base is nil")
+	}
+	return m.base.Fork(ctx, root, view)
+}
+
+func (m *CoreMod) WithView(view call.View) *CoreMod {
+	return &CoreMod{
+		base: m.base,
+		view: view,
+	}
+}
+
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{},
-		&environmentSchema{dag}, // install environment middleware first
+		&environmentSchema{}, // install environment middleware first
 		&directorySchema{},
 		&fileSchema{},
 		&gitSchema{},
@@ -75,7 +171,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&errorSchema{},
 		&engineSchema{},
 		&cloudSchema{},
-		&llmSchema{dag},
+		&llmSchema{},
 		&jsonvalueSchema{},
 		&envfileSchema{},
 		&addressSchema{},
@@ -89,6 +185,11 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 }
 
 func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (core.ModType, bool, error) {
+	state, err := m.viewState(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
 	var modType core.ModType
 
 	switch typeDef.Kind {
@@ -109,15 +210,12 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		}
 
 	case core.TypeDefKindScalar:
-		_, ok := m.Dag.ScalarType(typeDef.AsScalar.Value.Self().Name)
+		_, ok := state.server.ScalarType(typeDef.AsScalar.Value.Self().Name)
 		if !ok {
 			return nil, false, nil
 		}
 
-		if _, err := m.typedefs(ctx); err != nil {
-			return nil, false, err
-		}
-		resolvedDef := m.cachedScalarDefsByName[typeDef.AsScalar.Value.Self().Name]
+		resolvedDef := state.scalarDefsByName[typeDef.AsScalar.Value.Self().Name]
 		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Self().Name)
 		}
@@ -125,15 +223,12 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		modType = &CoreModScalar{coreMod: m, name: resolvedDef.Self().AsScalar.Value.Self().Name}
 
 	case core.TypeDefKindObject:
-		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Self().Name)
+		_, ok := state.server.ObjectType(typeDef.AsObject.Value.Self().Name)
 		if !ok {
 			return nil, false, nil
 		}
 
-		if _, err := m.typedefs(ctx); err != nil {
-			return nil, false, err
-		}
-		resolvedDef := m.cachedObjectDefsByName[typeDef.AsObject.Value.Self().Name]
+		resolvedDef := state.objectDefsByName[typeDef.AsObject.Value.Self().Name]
 		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Self().Name)
 		}
@@ -141,15 +236,12 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		modType = &CoreModObject{coreMod: m, name: resolvedDef.Self().AsObject.Value.Self().Name}
 
 	case core.TypeDefKindEnum:
-		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Self().Name)
+		_, ok := state.server.ScalarType(typeDef.AsEnum.Value.Self().Name)
 		if !ok {
 			return nil, false, nil
 		}
 
-		if _, err := m.typedefs(ctx); err != nil {
-			return nil, false, err
-		}
-		resolvedDef := m.cachedEnumDefsByName[typeDef.AsEnum.Value.Self().Name]
+		resolvedDef := state.enumDefsByName[typeDef.AsEnum.Value.Self().Name]
 		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Self().Name)
 		}
@@ -170,7 +262,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, fmt.Errorf("resolve core nullable inner typedef: %w", err)
 		}
 		if innerDef.Self().Optional {
-			if err := m.Dag.Select(ctx, innerDef, &innerDef, dagql.Selector{
+			if err := state.server.Select(ctx, innerDef, &innerDef, dagql.Selector{
 				Field: "withOptional",
 				Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(false)}},
 			}); err != nil {
@@ -186,39 +278,24 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	return modType, true, nil
 }
 
-func (m *CoreMod) typedefs(ctx context.Context) (dagql.ObjectResultArray[*core.TypeDef], error) {
-	m.cachedTypedefsMu.Lock()
-	defer m.cachedTypedefsMu.Unlock()
-
-	if m.cachedTypedefs == nil {
-		typedefs, err := m.TypeDefs(ctx, m.Dag)
-		if err != nil {
-			return nil, err
-		}
-		m.cachedTypedefs = typedefs
-		m.cachedObjectDefsByName = make(map[string]dagql.ObjectResult[*core.TypeDef])
-		m.cachedScalarDefsByName = make(map[string]dagql.ObjectResult[*core.TypeDef])
-		m.cachedEnumDefsByName = make(map[string]dagql.ObjectResult[*core.TypeDef])
-		for _, typedef := range typedefs {
-			if typedef.Self() == nil {
-				continue
-			}
-			switch typedef.Self().Kind {
-			case core.TypeDefKindObject:
-				m.cachedObjectDefsByName[typedef.Self().AsObject.Value.Self().Name] = typedef
-			case core.TypeDefKindScalar:
-				m.cachedScalarDefsByName[typedef.Self().AsScalar.Value.Self().Name] = typedef
-			case core.TypeDefKindEnum:
-				m.cachedEnumDefsByName[typedef.Self().AsEnum.Value.Self().Name] = typedef
-			}
-		}
+func (m *CoreMod) viewState(ctx context.Context) (*coreSchemaViewState, error) {
+	if m.base == nil {
+		return nil, fmt.Errorf("core schema base is nil")
 	}
-	return m.cachedTypedefs, nil
+	return m.base.viewState(ctx, m.view)
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*core.TypeDef], error) {
-	initialSchema := m.Dag.Schema()
+	_ = dag
 
+	state, err := m.viewState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return state.typedefs, nil
+}
+
+func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
 	schema := &introspection.Schema{}
 	if queryName := dagqlSchema.QueryType().Name(); queryName != nil {
@@ -245,11 +322,6 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.Object
 
 	typeDefs := make(dagql.ObjectResultArray[*core.TypeDef], 0, len(schema.Types))
 	for _, introspectionType := range schema.Types {
-		if _, has := initialSchema.Types[introspectionType.Name]; !has {
-			// we're only interested in types added by core
-			continue
-		}
-
 		switch introspectionType.Kind {
 		case introspection.TypeKindObject:
 			var obj dagql.ObjectResult[*core.ObjectTypeDef]
@@ -512,7 +584,11 @@ type CoreModScalar struct {
 var _ core.ModType = (*CoreModScalar)(nil)
 
 func (obj *CoreModScalar) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
-	s, ok := obj.coreMod.Dag.ScalarType(obj.name)
+	state, err := obj.coreMod.viewState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, ok := state.server.ScalarType(obj.name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModScalar.ConvertFromSDKResult: found no scalar type")
 	}
@@ -525,7 +601,11 @@ func (obj *CoreModScalar) ConvertFromSDKResult(ctx context.Context, value any) (
 }
 
 func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
-	s, ok := obj.coreMod.Dag.ScalarType(obj.name)
+	state, err := obj.coreMod.viewState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, ok := state.server.ScalarType(obj.name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModScalar.ConvertToSDKInput: found no scalar type")
 	}
@@ -549,7 +629,11 @@ func (obj *CoreModScalar) SourceMod() core.Mod {
 }
 
 func (obj *CoreModScalar) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
-	return core.SelectTypeDefWithServer(ctx, obj.coreMod.Dag, dagql.Selector{
+	state, err := obj.coreMod.viewState(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.TypeDef]{}, err
+	}
+	return core.SelectTypeDefWithServer(ctx, state.server, dagql.Selector{
 		Field: "withScalar",
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(obj.name)},
@@ -655,7 +739,11 @@ func (obj *CoreModObject) SourceMod() core.Mod {
 func (obj *CoreModObject) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
 	// TODO: to support matching core types against interfaces, we will need to actually fill
 	// this out with the functions rather than just name
-	return core.SelectTypeDefWithServer(ctx, obj.coreMod.Dag, dagql.Selector{
+	state, err := obj.coreMod.viewState(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.TypeDef]{}, err
+	}
+	return core.SelectTypeDefWithServer(ctx, state.server, dagql.Selector{
 		Field: "withObject",
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(obj.name)},
@@ -674,7 +762,11 @@ func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (d
 	if enum, ok := value.(*core.ModuleEnum); ok {
 		value = enum.Name
 	}
-	s, ok := enum.coreMod.Dag.ScalarType(enum.typeDef.Name)
+	state, err := enum.coreMod.viewState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, ok := state.server.ScalarType(enum.typeDef.Name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
 	}
@@ -691,7 +783,11 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	if enum, ok := value.(*core.ModuleEnum); ok {
 		input = enum.Name
 	}
-	s, ok := enum.coreMod.Dag.ScalarType(enum.typeDef.Name)
+	state, err := enum.coreMod.viewState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, ok := state.server.ScalarType(enum.typeDef.Name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertToSDKInput: found no enum type")
 	}
@@ -718,7 +814,11 @@ func (enum *CoreModEnum) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.
 			return dagql.ObjectResult[*core.TypeDef]{}, err
 		}
 	}
-	return core.SelectTypeDefWithServer(ctx, enum.coreMod.Dag, dagql.Selector{
+	state, err := enum.coreMod.viewState(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.TypeDef]{}, err
+	}
+	return core.SelectTypeDefWithServer(ctx, state.server, dagql.Selector{
 		Field: "withEnum",
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(enum.typeDef.OriginalName)},

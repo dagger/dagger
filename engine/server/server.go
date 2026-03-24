@@ -27,6 +27,7 @@ import (
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/filesync"
@@ -136,6 +137,9 @@ type Server struct {
 	//
 
 	telemetryPubSub *PubSub
+
+	coreSchemaBase   *schema.CoreSchemaBase
+	coreSchemaBaseMu sync.Mutex
 
 	//
 	// gc related

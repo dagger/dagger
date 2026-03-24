@@ -3851,9 +3851,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	baseMods := defaultDeps.Mods()
 	for i, depMod := range baseMods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
-			dag := *coreMod.Dag
-			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion)))
-			baseMods[i] = &CoreMod{Dag: &dag}
+			baseMods[i] = coreMod.WithView(call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion))))
 		}
 	}
 	deps := core.NewModDeps(query, baseMods)

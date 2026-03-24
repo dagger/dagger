@@ -60,6 +60,19 @@ func PerSchemaInput(srv *Server) ImplicitInput {
 	}
 }
 
+// CurrentSchemaInput scopes a call ID to the schema digest of the dagql server
+// currently executing the call.
+var CurrentSchemaInput = ImplicitInput{
+	Name: "cachePerSchema",
+	Resolver: func(ctx context.Context, _ map[string]Input) (Input, error) {
+		srv := CurrentDagqlServer(ctx)
+		if srv == nil {
+			return nil, fmt.Errorf("current dagql server not found")
+		}
+		return NewString(srv.SchemaDigest().String()), nil
+	},
+}
+
 // RequestedCacheInput scopes a call ID according to a boolean argument:
 // false => PerClientInput, true => PerCallInput.
 func RequestedCacheInput(argName string) ImplicitInput {

@@ -9,7 +9,6 @@ import (
 )
 
 type environmentSchema struct {
-	srv *dagql.Server
 }
 
 var _ SchemaResolvers = &environmentSchema{}
@@ -17,7 +16,7 @@ var _ SchemaResolvers = &environmentSchema{}
 func (s environmentSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("env", s.environment).
-			WithInput(dagql.PerClientInput, dagql.PerSchemaInput(srv)).
+			WithInput(dagql.PerClientInput, dagql.CurrentSchemaInput).
 			Doc(`Initializes a new environment`).
 			Experimental("Environments are not yet stabilized").
 			Args(
@@ -119,11 +118,15 @@ type environmentArgs struct {
 
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args environmentArgs) (*core.Env, error) {
 	var workspace dagql.ObjectResult[*core.Directory]
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if mod, err := parent.CurrentModule(ctx); err == nil {
 		workspace = mod.Self().GetSource().ContextDirectory
 	} else {
 		// FIXME: inherit from somewhere?
-		if err := s.srv.Select(ctx, s.srv.Root(), &workspace, dagql.Selector{
+		if err := dag.Select(ctx, dag.Root(), &workspace, dagql.Selector{
 			Field: "directory",
 		}); err != nil {
 			return nil, err
@@ -149,7 +152,11 @@ func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.
 		return res, err
 	}
 	if query.CurrentEnv != nil {
-		return dagql.NewID[*core.Env](query.CurrentEnv).Load(ctx, s.srv)
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return res, err
+		}
+		return dagql.NewID[*core.Env](query.CurrentEnv).Load(ctx, dag)
 	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -227,7 +234,11 @@ func (s environmentSchema) withoutOutputs(ctx context.Context, env *core.Env, ar
 func (s environmentSchema) withWorkspace(ctx context.Context, env *core.Env, args struct {
 	Workspace core.DirectoryID
 }) (*core.Env, error) {
-	dir, err := args.Workspace.Load(ctx, s.srv)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := args.Workspace.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +248,11 @@ func (s environmentSchema) withWorkspace(ctx context.Context, env *core.Env, arg
 func (s environmentSchema) withMainModule(ctx context.Context, env *core.Env, args struct {
 	Module core.ModuleID
 }) (*core.Env, error) {
-	mod, err := args.Module.Load(ctx, s.srv)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mod, err := args.Module.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +262,11 @@ func (s environmentSchema) withMainModule(ctx context.Context, env *core.Env, ar
 func (s environmentSchema) withModule(ctx context.Context, env *core.Env, args struct {
 	Module core.ModuleID
 }) (*core.Env, error) {
-	mod, err := args.Module.Load(ctx, s.srv)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mod, err := args.Module.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}

@@ -21,10 +21,12 @@ func TestCoreModTypeDefs(t *testing.T) {
 		ClientID:  "coremod-typedefs-client",
 		SessionID: "coremod-typedefs-session",
 	})
-	dag := dagql.NewServer(root)
-	coreMod := &CoreMod{Dag: dag}
+	coreSchemaBase, err := NewCoreSchemaBase(ctx)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+	coreMod := coreSchemaBase.CoreMod("")
 	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
-	require.NoError(t, coreMod.Install(ctx, dag))
 	typeDefs, err := coreModDeps.TypeDefs(ctx, dag)
 	require.NoError(t, err)
 

@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/util/hashutil"
 )
 
@@ -66,7 +67,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
-			WithInput(dagql.PerSchemaInput(dag)).
+			WithInput(dagql.CurrentSchemaInput).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
 		dagql.Func("currentFunctionCall", s.currentFunctionCall).
@@ -470,11 +471,11 @@ func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct{}
 func (s *moduleSchema) functionArg(ctx context.Context, _ *core.Query, args struct {
 	Name           string
 	TypeDef        core.TypeDefID
-	Description    string `default:""`
+	Description    string    `default:""`
 	DefaultValue   core.JSON `default:""`
-	DefaultPath    string `default:""`
-	DefaultAddress string `default:""`
-	Ignore         []string `default:"[]"`
+	DefaultPath    string    `default:""`
+	DefaultAddress string    `default:""`
+	Ignore         []string  `default:"[]"`
 	SourceMap      dagql.Optional[core.SourceMapID]
 	Deprecated     *string
 }) (*core.FunctionArg, error) {
@@ -627,7 +628,7 @@ func (s *moduleSchema) withOptional(
 
 func (s *moduleSchema) scalarTypeDef(ctx context.Context, _ *core.Query, args struct {
 	Name             string
-	Description      string `default:""`
+	Description      string                       `default:""`
 	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.ScalarTypeDef, error) {
 	scalar := core.NewScalarTypeDef(args.Name, args.Description)
@@ -826,7 +827,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	var obj dagql.ObjectResult[*core.ObjectTypeDef]
 	if err := dag.Select(ctx, def.AsObject.Value, &obj, dagql.Selector{
 		Field: "__withField",
-		Args: []dagql.NamedInput{{Name: "field", Value: idInput(field)}},
+		Args:  []dagql.NamedInput{{Name: "field", Value: idInput(field)}},
 	}); err != nil {
 		return nil, err
 	}
@@ -851,7 +852,7 @@ func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDe
 		var obj dagql.ObjectResult[*core.ObjectTypeDef]
 		if err2 = dag.Select(ctx, def.AsObject.Value, &obj, dagql.Selector{
 			Field: "__withFunction",
-			Args: []dagql.NamedInput{{Name: "function", Value: idInput(fn)}},
+			Args:  []dagql.NamedInput{{Name: "function", Value: idInput(fn)}},
 		}); err2 != nil {
 			return nil, err2
 		}
@@ -860,7 +861,7 @@ func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDe
 		var iface dagql.ObjectResult[*core.InterfaceTypeDef]
 		if err2 = dag.Select(ctx, def.AsInterface.Value, &iface, dagql.Selector{
 			Field: "__withFunction",
-			Args: []dagql.NamedInput{{Name: "function", Value: idInput(fn)}},
+			Args:  []dagql.NamedInput{{Name: "function", Value: idInput(fn)}},
 		}); err2 != nil {
 			return nil, err2
 		}
@@ -889,7 +890,7 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 	var obj dagql.ObjectResult[*core.ObjectTypeDef]
 	if err := dag.Select(ctx, def.AsObject.Value, &obj, dagql.Selector{
 		Field: "__withConstructor",
-		Args: []dagql.NamedInput{{Name: "function", Value: idInput(fn)}},
+		Args:  []dagql.NamedInput{{Name: "function", Value: idInput(fn)}},
 	}); err != nil {
 		return nil, err
 	}
@@ -958,7 +959,7 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	var enum dagql.ObjectResult[*core.EnumTypeDef]
 	if err := dag.Select(ctx, def.AsEnum.Value, &enum, dagql.Selector{
 		Field: "__withMember",
-		Args: []dagql.NamedInput{{Name: "member", Value: idInput(member)}},
+		Args:  []dagql.NamedInput{{Name: "member", Value: idInput(member)}},
 	}); err != nil {
 		return nil, err
 	}
@@ -998,7 +999,7 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 		var enum dagql.ObjectResult[*core.EnumTypeDef]
 		if err := dag.Select(ctx, def.AsEnum.Value, &enum, dagql.Selector{
 			Field: "__withMember",
-			Args: []dagql.NamedInput{{Name: "member", Value: idInput(member)}},
+			Args:  []dagql.NamedInput{{Name: "member", Value: idInput(member)}},
 		}); err != nil {
 			return nil, err
 		}
@@ -1020,7 +1021,7 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 	var enum dagql.ObjectResult[*core.EnumTypeDef]
 	if err := dag.Select(ctx, def.AsEnum.Value, &enum, dagql.Selector{
 		Field: "__withMember",
-		Args: []dagql.NamedInput{{Name: "member", Value: idInput(member)}},
+		Args:  []dagql.NamedInput{{Name: "member", Value: idInput(member)}},
 	}); err != nil {
 		return nil, err
 	}
@@ -1752,7 +1753,143 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 	if err != nil {
 		return nil, err
 	}
+	queryTypeDef, err := currentQueryTypeDef(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load live query typedef: %w", err)
+	}
+	for i, typeDef := range typeDefs {
+		if typeDef.Self() == nil || typeDef.Self().Kind != core.TypeDefKindObject {
+			continue
+		}
+		if typeDef.Self().AsObject.Value.Self().Name != "Query" {
+			continue
+		}
+		typeDefs[i] = queryTypeDef
+		return typeDefs, nil
+	}
+	typeDefs = append(typeDefs, queryTypeDef)
 	return typeDefs, nil
+}
+
+func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectResult[*core.TypeDef], error) {
+	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
+	queryType := dagqlSchema.QueryType()
+	codeGenType, err := dagqlToCodegenType(queryType)
+	if err != nil {
+		return dagql.ObjectResult[*core.TypeDef]{}, err
+	}
+
+	var obj dagql.ObjectResult[*core.ObjectTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &obj, dagql.Selector{
+		Field: "__objectTypeDef",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(codeGenType.Name)},
+			{Name: "description", Value: dagql.String(codeGenType.Description)},
+		},
+	}); err != nil {
+		return dagql.ObjectResult[*core.TypeDef]{}, err
+	}
+
+	for _, introspectionField := range codeGenType.Fields {
+		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to convert return type: %w", err)
+		}
+		if !ok {
+			continue
+		}
+		rtTypeID, err := core.ResultIDInput(rtType)
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, err
+		}
+		var fn dagql.ObjectResult[*core.Function]
+		if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
+			Field: "function",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(introspectionField.Name)},
+				{Name: "returnType", Value: rtTypeID},
+			},
+		}); err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, err
+		}
+		if introspectionField.Description != "" {
+			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
+				Field: "withDescription",
+				Args:  []dagql.NamedInput{{Name: "description", Value: dagql.String(introspectionField.Description)}},
+			}); err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, err
+			}
+		}
+		if introspectionField.DeprecationReason != nil {
+			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
+				Field: "withDeprecated",
+				Args:  []dagql.NamedInput{{Name: "reason", Value: core.OptString(introspectionField.DeprecationReason)}},
+			}); err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, err
+			}
+		}
+
+		for _, introspectionArg := range introspectionField.Args {
+			argType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionArg.TypeRef, false, true)
+			if err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to convert argument type: %w", err)
+			}
+			if !ok {
+				continue
+			}
+			argTypeID, err := core.ResultIDInput(argType)
+			if err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, err
+			}
+			var defaultValue core.JSON
+			if introspectionArg.DefaultValue != nil {
+				defaultValue = core.JSON(*introspectionArg.DefaultValue)
+			}
+			var fnArg dagql.ObjectResult[*core.FunctionArg]
+			if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{
+				Field: "__functionArg",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(introspectionArg.Name)},
+					{Name: "typeDef", Value: argTypeID},
+					{Name: "description", Value: dagql.String(introspectionArg.Description)},
+					{Name: "defaultValue", Value: defaultValue},
+					{Name: "deprecated", Value: core.OptString(introspectionArg.DeprecationReason)},
+				},
+			}); err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, err
+			}
+			fnArgID, err := core.ResultIDInput(fnArg)
+			if err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, err
+			}
+			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
+				Field: "__withArg",
+				Args:  []dagql.NamedInput{{Name: "arg", Value: fnArgID}},
+			}); err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, err
+			}
+		}
+
+		fnID, err := core.ResultIDInput(fn)
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, err
+		}
+		if err := dag.Select(ctx, obj, &obj, dagql.Selector{
+			Field: "__withFunction",
+			Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+		}); err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, err
+		}
+	}
+
+	objID, err := core.ResultIDInput(obj)
+	if err != nil {
+		return dagql.ObjectResult[*core.TypeDef]{}, err
+	}
+	return core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+		Field: "__withObjectTypeDef",
+		Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
+	})
 }
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {

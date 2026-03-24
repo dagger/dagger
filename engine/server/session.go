@@ -168,6 +168,22 @@ type daggerClient struct {
 	keepAliveTelemetryDB *clientdb.DB
 }
 
+func (srv *Server) getCoreSchemaBase(ctx context.Context) (*schema.CoreSchemaBase, error) {
+	srv.coreSchemaBaseMu.Lock()
+	defer srv.coreSchemaBaseMu.Unlock()
+
+	if srv.coreSchemaBase != nil {
+		return srv.coreSchemaBase, nil
+	}
+
+	base, err := schema.NewCoreSchemaBase(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv.coreSchemaBase = base
+	return base, nil
+}
+
 type daggerClientState string
 
 const (
@@ -569,23 +585,26 @@ func (srv *Server) initializeDaggerClient(
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
-	client.dag = dagql.NewServer(client.dagqlRoot)
-	client.dag.Around(core.AroundFunc)
-	coreMod := &schema.CoreMod{Dag: client.dag}
-	if err := coreMod.Install(ctx, client.dag); err != nil {
-		return fmt.Errorf("failed to install core module: %w", err)
+	coreSchemaBase, err := srv.getCoreSchemaBase(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialize core schema base: %w", err)
 	}
+	coreView := call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
+	client.dag, err = coreSchemaBase.Fork(ctx, client.dagqlRoot, coreView)
+	if err != nil {
+		return fmt.Errorf("failed to fork core schema base: %w", err)
+	}
+	coreMod := coreSchemaBase.CoreMod(coreView)
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
 	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-	coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
 	if opts.EncodedModuleID != "" {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
 			return fmt.Errorf("failed to decode module ID: %w", err)
 		}
-		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
+		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, client.dag)
 		if err != nil {
 			return fmt.Errorf("failed to load module during client init: %w", err)
 		}
@@ -594,12 +613,14 @@ func (srv *Server) initializeDaggerClient(
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
 		engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
-		coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
+		coreView = call.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
+		client.dag.View = coreView
+		coreMod = coreSchemaBase.CoreMod(coreView)
 
 		// NOTE: *technically* we should reload the module here, so that we can
 		// use the new typedefs api - but at this point we likely would
 		// have failed to load the module in the first place anyways?
-		// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
+		// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, client.dag)
 		// if err != nil {
 		// 	return fmt.Errorf("failed to load module: %w", err)
 		// }

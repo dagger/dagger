@@ -43,10 +43,12 @@ func getIntrospection(ctx context.Context) (*introspection.Response, error) {
 		return nil, err
 	}
 	ctx = dagql.ContextWithCache(ctx, baseCache)
-	dag := dagql.NewServer(root)
-	dag.View = call.View(version)
-	coreMod := &schema.CoreMod{Dag: dag}
-	if err := coreMod.Install(ctx, dag); err != nil {
+	coreSchemaBase, err := schema.NewCoreSchemaBase(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dag, err := coreSchemaBase.Fork(ctx, root, call.View(version))
+	if err != nil {
 		return nil, err
 	}
 

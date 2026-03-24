@@ -306,6 +306,11 @@ type EnvHook struct {
 	Server *dagql.Server
 }
 
+func (s EnvHook) ForkInstallHook(server *dagql.Server) dagql.InstallHook {
+	s.Server = server
+	return s
+}
+
 // We don't expose these types to modules SDK codegen, but
 // we still want their graphql schemas to be available for
 // internal usage. So we use this list to scrub them from
@@ -393,7 +398,11 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			if err != nil {
 				return nil, fmt.Errorf("binding %q value ID: %w", name, err)
 			}
-			obj, err := s.Server.Load(ctx, id)
+			srv := dagql.CurrentDagqlServer(ctx)
+			if srv == nil {
+				return nil, fmt.Errorf("current dagql server not found")
+			}
+			obj, err := srv.Load(ctx, id)
 			if err != nil {
 				return nil, err
 			}

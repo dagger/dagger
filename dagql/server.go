@@ -60,6 +60,12 @@ type InstallHook interface {
 	// FIXME: add support for other install functions
 }
 
+// InstallHookForker is implemented by install hooks that carry server-specific
+// state and must be rebound when a server is forked.
+type InstallHookForker interface {
+	ForkInstallHook(*Server) InstallHook
+}
+
 // AroundFunc is a function that is called around every non-cached selection.
 //
 // It's a little funny looking. I may have goofed it. This will be cleaned up
@@ -78,17 +84,7 @@ type TypeDef interface {
 
 // NewServer returns a new Server with the given root object.
 func NewServer[T Typed](root T) *Server {
-	srv := &Server{
-		objects:       map[string]ObjectType{},
-		scalars:       map[string]ScalarType{},
-		typeDefs:      map[string]TypeDef{},
-		directives:    map[string]DirectiveSpec{},
-		installLock:   &sync.Mutex{},
-		schemas:       make(map[call.View]*ast.Schema),
-		schemaDigests: make(map[call.View]digest.Digest),
-		schemaOnces:   make(map[call.View]*sync.Once),
-		schemaLock:    &sync.Mutex{},
-	}
+	srv := newBlankServer()
 	rootClass := NewClass(srv, ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
@@ -107,6 +103,72 @@ func NewServer[T Typed](root T) *Server {
 		srv.InstallDirective(directive)
 	}
 	return srv
+}
+
+func newBlankServer() *Server {
+	return &Server{
+		objects:       map[string]ObjectType{},
+		scalars:       map[string]ScalarType{},
+		typeDefs:      map[string]TypeDef{},
+		directives:    map[string]DirectiveSpec{},
+		installLock:   &sync.Mutex{},
+		schemas:       make(map[call.View]*ast.Schema),
+		schemaDigests: make(map[call.View]digest.Digest),
+		schemaOnces:   make(map[call.View]*sync.Once),
+		schemaLock:    &sync.Mutex{},
+	}
+}
+
+// Fork returns a new server that starts with a clone of the current server's
+// installed schema state but with an independent root object and independently
+// mutable object type tables.
+func (s *Server) Fork(root Typed) (*Server, error) {
+	out := newBlankServer()
+	out.telemetry = s.telemetry
+	out.View = s.View
+
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+
+	for name, scalar := range s.scalars {
+		out.scalars[name] = scalar
+	}
+	for name, typeDef := range s.typeDefs {
+		out.typeDefs[name] = typeDef
+	}
+	for name, directive := range s.directives {
+		out.directives[name] = directive
+	}
+	for name, objectType := range s.objects {
+		forkable, ok := objectType.(ForkableObjectType)
+		if !ok {
+			return nil, fmt.Errorf("object type %q (%T) cannot be forked", name, objectType)
+		}
+		forkedType, err := forkable.ForkObjectType(out)
+		if err != nil {
+			return nil, fmt.Errorf("fork object type %q: %w", name, err)
+		}
+		out.objects[name] = forkedType
+	}
+	for _, hook := range s.installHooks {
+		forkable, ok := hook.(InstallHookForker)
+		if !ok {
+			return nil, fmt.Errorf("install hook %T cannot be forked", hook)
+		}
+		out.installHooks = append(out.installHooks, forkable.ForkInstallHook(out))
+	}
+
+	rootType, ok := out.objects[root.Type().Name()]
+	if !ok {
+		return nil, fmt.Errorf("forked root type %q not found", root.Type().Name())
+	}
+	rootObj, err := rootType.New(newDetachedResult(nil, root))
+	if err != nil {
+		return nil, fmt.Errorf("new forked root: %w", err)
+	}
+	out.root = rootObj
+
+	return out, nil
 }
 
 func (s *Server) invalidateSchemaCache() {
@@ -355,7 +417,11 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 				if id.Type().ToAST().NamedType != class.TypeName() {
 					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
 				}
-				res, err := s.Load(ctx, id)
+				srv := CurrentDagqlServer(ctx)
+				if srv == nil {
+					return nil, fmt.Errorf("current dagql server not found")
+				}
+				res, err := srv.Load(ctx, id)
 				if err != nil {
 					return nil, fmt.Errorf("load: %w", err)
 				}

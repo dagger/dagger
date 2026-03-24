@@ -1260,3 +1260,706 @@ Tests should explicitly cover:
 
 We should consider the refactor incomplete until those behaviors are locked down
 by tests.
+
+# Make Core Mod Not Fucking Suck
+
+## Design
+
+### Problem statement
+
+`CoreMod` is currently carrying around a `*dagql.Server` and using that to do
+several conceptually different jobs:
+
+* identify the active `View`
+* answer core mod-type lookups
+* produce core typedefs
+* serve as the install target for core schema
+* act as the thing we awkwardly copy when we want the same core schema with a
+  different `View`
+
+That is not a good model.
+
+It makes `CoreMod` look like some kind of server owner, even though most of the
+time the server it holds is not actually the one we conceptually care about. It
+also means we keep paying for:
+
+* repeated core schema installation onto fresh dagql servers
+* repeated core typedef generation
+* weird ad hoc dag copies just to change `View`
+* repeated rebuilding of the same core-only schema state for every client and
+  every dependency-set server
+
+This memoization surface is too small and its lifetime is too short. We already
+improved the inner `CoreMod` typedef cache and its name indexes, but the
+surrounding lifetime model is still wrong, so we are still throwing away too
+much work.
+
+The hard cut we want is:
+
+* `CoreMod` should no longer store a live dagql server
+* there should be one engine-wide core-only base server
+* core schema should install once onto that base server
+* core typedefs should be cached once per `View`
+* other servers should be forked from that base rather than rebuilt from
+  nothing and reinstalled every time
+
+### New foundational model
+
+The new foundational model is:
+
+* a singleton core schema base exists for the whole engine
+* `CoreMod` becomes a lightweight view-bound handle into that base
+* non-core session or dependency servers are forked from the core schema base
+  rather than re-installing core from scratch
+* all core typedef generation and core mod-type lookup is driven from cached
+  per-view state owned by that singleton base
+
+The singleton object should **not** be called `CoreRuntime`.
+
+For this design, the proposed name is:
+
+* `CoreSchemaBase`
+
+That name is intentionally boring and descriptive:
+
+* it is specifically about schema/server state
+* it is clearly the base from which others are derived
+* it avoids colliding with the already-loaded meaning of "runtime"
+
+### `CoreSchemaBase` responsibilities
+
+`CoreSchemaBase` should own:
+
+* the installed base dagql server containing only core schema
+* the base root object used for that server
+* per-view cached state derived from that base
+
+Concretely, it should conceptually look like:
+
+* `base *dagql.Server`
+* `baseRoot *core.Query`
+* `views map[call.View]*coreSchemaViewState`
+* `mu sync.Mutex`
+
+And each `coreSchemaViewState` should own:
+
+* `server *dagql.Server`
+  a core-only fork of the base server with the target `View`
+* `typedefs dagql.ObjectResultArray[*core.TypeDef]`
+  the canonical top-level core typedefs for that `View`
+* `objectsByName map[string]dagql.ObjectResult[*core.TypeDef]`
+* `scalarsByName map[string]dagql.ObjectResult[*core.TypeDef]`
+* `enumsByName map[string]dagql.ObjectResult[*core.TypeDef]`
+
+The key is that the singleton cache is **not** just a global typedef slice.
+
+It is:
+
+* one installed base core server
+* plus one cached core-only view state for each `call.View`
+
+That is the right lifetime and the right cache boundary.
+
+### Why the cache key must include `View`
+
+`View` is real schema state. Today we already contort `CoreMod.Dag` or copy
+servers just to alter `View`.
+
+So if we made core schema installation singleton but did **not** partition the
+cached state by `View`, we would just be reintroducing the same bug in a new
+place.
+
+The cache key for core typedefs and core server state must be:
+
+* `call.View`
+
+No weaker cache key is coherent.
+
+### `CoreMod` after the cut
+
+After this refactor, `CoreMod` should stop carrying `Dag *dagql.Server`.
+
+Instead it should become a thin handle with only:
+
+* `base *CoreSchemaBase`
+* `view call.View`
+
+That means:
+
+* `CoreMod.View()` returns `view`
+* `CoreMod.TypeDefs(ctx, dag)` uses `base` + `view`
+* `CoreMod.ModTypeFor(ctx, typeDef)` uses `base` + `view`
+* `CoreMod` no longer pretends to own the dagql server it is installed into
+
+This is the key hard cut. As long as `CoreMod` still owns a live server, the
+model remains confused.
+
+### What should happen when we need an actual server
+
+There are two different server uses in the current system:
+
+1. a core-only schema server used to answer core schema questions
+2. a live session or dependency server that includes core plus extra schema
+
+The new model should make those two cases explicit.
+
+For case 1:
+
+* use the cached per-view core-only server from `CoreSchemaBase`
+
+For case 2:
+
+* fork a fresh server from the appropriate core-only base-view server
+* then install only the extra schema/modules that are needed on top
+
+That means we stop:
+
+* starting from `dagql.NewServer(...)` for every dependency-set load
+* re-running `CoreMod.Install(...)` every time
+
+### The current weirdness that this removes
+
+Today there is already a codepath that effectively admits the current design is
+bad:
+
+* in `core/schema/modulesource.go`, we shallow-copy `coreMod.Dag`
+* then overwrite only `dag.View`
+* then wrap that in a new `CoreMod`
+
+That is a symptom of the design being wrong.
+
+The new model should replace that whole pattern with:
+
+* `coreMod.WithView(view)` or equivalent lightweight construction around
+  `CoreSchemaBase`
+
+No shallow copy of a whole server just to change `View`.
+
+### The major tripwire: installed schema captures install-time server state
+
+This is the first big blocker and it must be treated as a real design concern,
+not an implementation nuisance.
+
+Today some installed schema fields/hooks capture the install-time server:
+
+* `dagql.PerSchemaInput(srv)` usage in:
+  * `core/schema/query.go`
+  * `core/schema/env.go`
+  * `core/schema/module.go`
+* schema structs carrying `dag *dagql.Server`, notably:
+  * `environmentSchema`
+  * `llmSchema`
+* install hooks carrying a specific server reference, especially:
+  * `EnvHook{Server: srv}`
+
+That means a reusable base server cannot simply be cloned and blindly reused if
+the installed closures and hooks are still bound to the original install-time
+server.
+
+So the first prerequisite is:
+
+* remove or rebind install-time server capture in core schema
+
+This is not optional. If we skip it, the base/fork model will be subtly wrong.
+
+### Prerequisite 1: stop capturing the install-time dagql server where we
+actually want the current server
+
+The schema pieces that currently capture `srv` or `dag` need to be audited and
+changed so they use the current server at call time when that is the true
+intent.
+
+That includes at minimum:
+
+* `core/schema/query.go`
+* `core/schema/env.go`
+* `core/schema/module.go`
+* `core/schema/llm.go`
+* `core/schema/coremod.go`
+
+The desired rule is:
+
+* if a field/input/helper wants "the server that is executing this call", it
+  must derive that from the call context, not from install-time closure capture
+
+In practice, this means:
+
+* replacing `PerSchemaInput(srv)` style server capture with a current-server
+  path
+* removing install-time `dag *dagql.Server` fields from schema structs where
+  those fields exist only to service call-time behavior
+
+We should only keep an install-time server reference where the server itself is
+truly part of the long-lived object identity, and for core schema that should
+be very close to nowhere.
+
+### Prerequisite 2: make install hooks fork-safe
+
+The next tripwire is install hooks.
+
+If a base server has install hooks that hold server-specific state, a fork
+cannot safely share them as-is.
+
+The main concrete case here is:
+
+* `EnvHook{Server: srv}`
+
+So we need a coherent hook-fork model.
+
+The design should be:
+
+* add a fork/rebind contract for install hooks that carry server-specific state
+* when a server is forked, each install hook must either:
+  * produce a clone bound to the new server, or
+  * fail fast because it is not safe to reuse in a forked server
+
+This should be explicit. No silent sharing of server-bound hooks across forks.
+
+### Prerequisite 3: make object type installation fork-safe
+
+The next major mutation hazard is `dagql.Class[T]`.
+
+Installed object types are not immutable descriptors. They carry mutable field
+tables and server-bound schema cache invalidation behavior.
+
+That means:
+
+* shallow-copying the object-type map from one server to another is not safe
+
+Why:
+
+* `Class.Install(...)`, `Class.Extend(...)`, and `Class.ExtendLoadByID(...)`
+  mutate class field tables in place
+* user module loading and interface extension mutate these tables after initial
+  install
+* sharing those class instances across servers would leak extensions and schema
+  mutations between otherwise-independent dags
+
+So the server fork model must include:
+
+* object types are cloned for the new server
+* the clone must get:
+  * fresh field maps/slices
+  * fresh locks
+  * a schema-cache invalidation callback bound to the new server
+
+This is another mandatory prerequisite.
+
+### Required dagql primitive: `Server.Fork(...)`
+
+The dagql layer should grow a real fork primitive rather than relying on ad hoc
+copying.
+
+Conceptually:
+
+* `func (s *Server) Fork[T dagql.Typed](root T) (*Server, error)`
+
+This should:
+
+* create a new server
+* install a fresh root value
+* copy or clone server state carefully rather than by blunt struct copy
+
+The fork operation should produce:
+
+* fresh:
+  * locks
+  * schema caches
+  * once guards
+  * root object state
+* shared or copied as appropriate:
+  * directives
+  * scalar registrations
+  * type definitions that are immutable descriptors
+* cloned:
+  * object types
+  * install hooks that are server-bound
+
+The point is not to create some magic deep clone of all possible server state.
+
+The point is:
+
+* clone exactly the mutable and server-bound pieces
+* share only the parts that are truly immutable and safe
+
+### Object-type cloning contract
+
+To make `Server.Fork(...)` honest, object types need a cloning contract.
+
+The clean design is:
+
+* object types installed in a server must be forkable into a new server
+
+In practice, that likely means:
+
+* a new interface on object types for cloning/rebinding to a target server
+
+For `dagql.Class[T]`, the fork implementation must:
+
+* shallow-copy the class struct itself
+* deep-copy field maps and field slices
+* allocate a fresh mutex
+* rebind schema-cache invalidation to the new server
+
+If some object type cannot satisfy this contract:
+
+* server fork should fail fast rather than sharing it unsafely
+
+### Root object handling in forks
+
+The forked server must not reuse the base server's root object result directly.
+
+Instead it should:
+
+* install the cloned root class
+* construct a fresh root object result for the new root value passed to
+  `Fork(...)`
+
+This avoids leaking session/client-specific root object state through the base.
+
+### What `CoreSchemaBase` should do with forks
+
+Once `Server.Fork(...)` exists and the capture issues are fixed, the singleton
+should operate like this:
+
+1. Create one base server with a base `core.Query` root.
+2. Install core schema onto that base server exactly once.
+3. For each `View` on demand:
+   * fork the base server
+   * set the target `View`
+   * cache that core-only view server
+   * generate and cache the core typedefs and lookup indexes once for that
+     view
+4. For actual client or dependency servers:
+   * fork from the appropriate cached core-only view server
+   * then install only the non-core modules/schema on top
+
+This is the entire heart of the refactor.
+
+### `CoreMod.TypeDefs` and `CoreMod.ModTypeFor` after the cut
+
+After the refactor:
+
+* `CoreMod.TypeDefs(ctx, dag)` should not regenerate typedefs by walking a
+  fresh server
+* it should simply consult the per-view cached state from `CoreSchemaBase`
+* `CoreMod.ModTypeFor(ctx, typeDef)` should use those same cached per-view
+  lookup indexes
+
+So the effective behavior becomes:
+
+* core typedef generation happens once per view
+* core object/scalar/enum lookup is O(1) against that cached per-view state
+
+### Engine session construction after the cut
+
+Today the engine session path creates a new server and installs core schema on
+it directly.
+
+After the refactor it should instead:
+
+* obtain the engine-wide `CoreSchemaBase`
+* fork a fresh session dag from the base-view server for the session's view
+* create a lightweight `CoreMod` pointing at the same `CoreSchemaBase` and that
+  view
+* use that in the session deps
+
+That means:
+
+* no per-session `CoreMod.Install(...)`
+* no per-session rebuilding of core-only schema state
+
+### `ModDeps.lazilyLoadSchema` after the cut
+
+This is another major win surface.
+
+Today it starts from:
+
+* `dagql.NewServer(...)`
+* then reinstalls all modules, including core
+
+After the cut it should:
+
+* determine the dependency-set `View`
+* fork a server from `CoreSchemaBase` for that `View`
+* install only non-core mods onto that fork
+* then run the later object/interface extension phase as it does today
+
+This avoids paying the core installation cost every time a dependency-set
+schema is materialized.
+
+### `modulesource` after the cut
+
+The weird `CoreMod.Dag` shallow-copy path should disappear entirely.
+
+Instead:
+
+* if `modulesource` needs the same core mod in another view, it should create a
+  new lightweight `CoreMod` handle around the same `CoreSchemaBase` with the
+  alternate `view`
+
+That should be a cheap operation.
+
+No copying of a whole dagql server struct just to swap `View`.
+
+### Scope of expected code movement
+
+This is a broad but coherent change. The main files expected to move are:
+
+* `dagql/server.go`
+* `dagql/objects.go`
+* `core/schema/coremod.go`
+* `engine/server/session.go`
+* `core/moddeps.go`
+* `core/schema/modulesource.go`
+* `core/schema/query.go`
+* `core/schema/env.go`
+* `core/schema/module.go`
+* `core/schema/llm.go`
+* `cmd/introspect/introspect.go`
+
+The first five are the structural center of the refactor. The schema files are
+the closure-capture cleanup. The others are the callsites that must stop
+assuming `CoreMod` owns a dagql server.
+
+### Detailed implementation sequence
+
+The implementation should proceed in this order.
+
+#### 1. Remove install-time server capture from core schema
+
+Audit and rewrite the core schema pieces that capture `srv` / `dag` when they
+really want the executing server at call time.
+
+This includes:
+
+* `PerSchemaInput(srv)` callsites in:
+  * `core/schema/query.go`
+  * `core/schema/env.go`
+  * `core/schema/module.go`
+* install-time schema structs that hold the server only to answer later calls
+  in:
+  * `core/schema/coremod.go`
+  * `core/schema/env.go`
+  * `core/schema/llm.go`
+
+The acceptance criterion for this step is:
+
+* the core schema no longer depends on install-time closure capture of a server
+  for ordinary call execution behavior
+
+#### 2. Add fork-safe contracts for install hooks and object types
+
+Introduce the minimal new dagql contracts needed so a server can be forked
+safely.
+
+This includes:
+
+* an install-hook rebinding/fork contract
+* an object-type cloning/fork contract
+* `dagql.Class[T]` support for that contract
+
+The acceptance criterion for this step is:
+
+* a fork can clone all core-installed object types and hooks without sharing
+  mutable field tables or stale server references
+
+#### 3. Implement `dagql.Server.Fork(...)`
+
+Once the contracts above exist, implement the real fork primitive in
+`dagql/server.go`.
+
+The fork operation must:
+
+* create fresh mutable server state
+* clone object types
+* rebind server-bound hooks
+* install a fresh root
+* preserve the already-installed immutable core schema definitions
+
+The acceptance criterion for this step is:
+
+* we can fork a core-only installed server into a new independent server
+  without reinstalling core and without cross-server schema mutation leakage
+
+#### 4. Introduce `CoreSchemaBase`
+
+Add the singleton `CoreSchemaBase` and the per-view cached state in
+`core/schema/coremod.go` or a nearby dedicated file.
+
+This step should:
+
+* build the base server once
+* install core schema once
+* lazily build per-view core-only forks
+* lazily build per-view typedef/index caches
+
+The acceptance criterion for this step is:
+
+* the base object exists independently of any particular client or dependency
+  server
+* per-view core typedef generation happens at most once per process lifetime
+  until invalidated by code changes/restart
+
+#### 5. Remove `Dag` from `CoreMod`
+
+Refactor `CoreMod` into a lightweight handle:
+
+* `base *CoreSchemaBase`
+* `view call.View`
+
+Update:
+
+* `CoreMod.TypeDefs`
+* `CoreMod.ModTypeFor`
+* `CoreMod.View`
+* `CoreModScalar/Object/Enum` helpers
+
+so they all work through `CoreSchemaBase` state instead of a stored server.
+
+The acceptance criterion for this step is:
+
+* `CoreMod` no longer stores `*dagql.Server`
+* no codepath relies on `CoreMod.Dag`
+
+#### 6. Switch engine session creation to fork from the core base
+
+Update `engine/server/session.go` so client dag construction starts from the
+singleton `CoreSchemaBase` rather than from a fresh bare dag plus a full core
+install.
+
+The acceptance criterion for this step is:
+
+* starting a new session no longer reruns `CoreMod.Install(...)`
+
+#### 7. Switch `ModDeps.lazilyLoadSchema` to fork from the core base
+
+Update `core/moddeps.go` so dependency-set schema construction starts from the
+core base for the target view, then installs only non-core mods.
+
+The acceptance criterion for this step is:
+
+* materializing a dependency-set schema no longer reinstalls core schema
+  repeatedly
+
+#### 8. Remove the remaining ad hoc `CoreMod` server hacks
+
+Clean up:
+
+* `core/schema/modulesource.go`
+* `cmd/introspect/introspect.go`
+* any tests or helpers still creating `CoreMod{Dag: ...}`
+
+The acceptance criterion for this step is:
+
+* there is no remaining codepath that copies a `CoreMod` server or constructs a
+  `CoreMod` around an arbitrary live dagql server
+
+### Additional design constraints
+
+The implementation must preserve these constraints.
+
+#### View isolation
+
+Different views must remain isolated.
+
+No cached typedefs, mod-type lookup indexes, or view-specific server state may
+leak across views.
+
+#### Server mutation isolation
+
+Forked servers must remain independently mutable for:
+
+* object/interface extension
+* load-by-id extension
+* module installation
+* schema-cache invalidation
+
+The base server must not observe later client/module schema mutation.
+
+#### No fake wrapper reconstruction
+
+This refactor is specifically trying to avoid rebuilding/reinstalling core
+schema over and over.
+
+So the implementation must not just move that work to some later point by
+fabricating new wrapper servers, shallow-copying classes, or rerunning typedef
+generation on demand.
+
+If the work is still being redone repeatedly, the design has not been fully
+realized.
+
+### Non-goals
+
+This refactor does not need to:
+
+* redesign non-core module installation semantics beyond changing the base
+  server they start from
+* introduce compatibility with the old `CoreMod{Dag: ...}` shape
+* preserve weird server-copy hacks that exist only because `CoreMod` currently
+  owns a server
+
+This should be a hard cut.
+
+### Acceptance criteria
+
+We are done only when all of the following are true.
+
+#### `CoreMod` no longer owns a dagql server
+
+There is no `Dag *dagql.Server` field on `CoreMod`, and no codepath depends on
+such a field existing.
+
+#### Core schema install is singleton
+
+Core schema installation happens once onto a base server for the engine process,
+not once per client session or once per dependency-set server.
+
+#### Core typedef generation is singleton per view
+
+For any given `call.View`, the core typedef graph is generated once and reused
+for later calls rather than rebuilt repeatedly through fresh `CoreMod`
+instances.
+
+#### Session/dependency servers fork from the base
+
+Per-session and per-dependency-set servers are derived from the appropriate
+base-view core server, not built from scratch and reinstalled.
+
+#### Install-time server capture is gone where inappropriate
+
+Core schema field/input resolution no longer relies on stale install-time server
+capture for behavior that should depend on the current executing server.
+
+#### Forked servers are safely isolated
+
+Forked servers can be independently extended and mutated without sharing mutable
+object type tables, install hooks, or schema-cache invalidation state with the
+base or with sibling forks.
+
+#### `modulesource` no longer copies a server to change view
+
+There is no remaining shallow-copy-of-`CoreMod.Dag` path used only to change
+`View`.
+
+#### Profiles show the intended win
+
+On representative module-heavy workloads, profiles should show that:
+
+* repeated `CoreMod.Install(...)` cost is gone or dramatically reduced
+* repeated `CoreMod.TypeDefs(...)` / `CoreMod.typedefs(...)` rebuild cost is
+  gone or dramatically reduced
+* `Module.validateObjectTypeDef` no longer spends a large fraction of its time
+  forcing rebuilds of the same core-only schema state
+
+#### Tests and empirical validation cover the new model
+
+We should not consider this done until we have verified at minimum:
+
+* new sessions reuse the singleton core schema base rather than reinstalling
+  core
+* dependency-set schema materialization reuses the core base
+* different views still see the correct core typedef state
+* forked servers can still accept later module/interface extensions safely
+* modulesource/introspection flows that previously depended on `CoreMod.Dag`
+  still behave correctly under the new base/fork model

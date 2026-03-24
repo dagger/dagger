@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
 )
 
@@ -21,6 +22,10 @@ const (
 var (
 	TypesToIgnoreForModuleIntrospection = []string{"Host"}
 )
+
+type coreSchemaForker interface {
+	ForkSchema(context.Context, *Query, call.View) (*dagql.Server, error)
+}
 
 /*
 ModDeps represents a set of dependencies for a module or for a caller depending on a
@@ -164,21 +169,41 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 		d.loadSchemaErr = rerr
 	}()
 
-	dag := dagql.NewServer(d.root)
+	var coreMod coreSchemaForker
 	for _, mod := range d.mods {
-		if version, ok := mod.View(); ok {
-			dag.View = version
+		if m, ok := mod.(coreSchemaForker); ok {
+			coreMod = m
 			break
 		}
 	}
 
-	dag.Around(AroundFunc)
+	var view call.View
+	for _, mod := range d.mods {
+		if version, ok := mod.View(); ok {
+			view = version
+			break
+		}
+	}
 
-	dagintro.Install[*Query](dag)
+	var dag *dagql.Server
+	if coreMod != nil {
+		dag, rerr = coreMod.ForkSchema(ctx, d.root, view)
+		if rerr != nil {
+			return nil, fmt.Errorf("failed to fork core schema base: %w", rerr)
+		}
+	} else {
+		dag = dagql.NewServer(d.root)
+		dag.View = view
+		dag.Around(AroundFunc)
+		dagintro.Install[*Query](dag)
+	}
 
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
 	for _, mod := range d.mods {
+		if _, ok := mod.(coreSchemaForker); ok && coreMod != nil {
+			continue
+		}
 		if err := mod.Install(ctx, dag); err != nil {
 			return nil, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}

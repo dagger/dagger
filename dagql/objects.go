@@ -117,6 +117,20 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 	return class
 }
 
+func (class Class[T]) ForkObjectType(srv *Server) (ObjectType, error) {
+	class.fieldsL.RLock()
+	defer class.fieldsL.RUnlock()
+
+	forked := class
+	forked.fields = make(map[string][]*Field[T], len(class.fields))
+	for name, fields := range class.fields {
+		forked.fields[name] = slices.Clone(fields)
+	}
+	forked.fieldsL = new(sync.RWMutex)
+	forked.invalidateSchemaCache = srv.invalidateSchemaCache
+	return forked, nil
+}
+
 func (class Class[T]) Typed() Typed {
 	return class.inner
 }
