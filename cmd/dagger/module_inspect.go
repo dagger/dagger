@@ -336,6 +336,7 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, includ
 	}
 
 	// There's always a constructor, even for Query, to make it easier to reuse code.
+	// Default to a no-op identity constructor that returns Query itself.
 	rootType.AsObject.Constructor = &modFunction{ReturnType: rootType}
 
 	// For core API only, main object is the Query type.
@@ -349,6 +350,17 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, includ
 	// initializeWorkspace does for `dagger call`.
 	if m.Name != "" && m.MainObject == nil {
 		m.MainObject = rootType
+
+		// Use Query.with as the constructor so that constructor flags
+		// (e.g. --model) are recognized. If there's no `with` function
+		// (no constructor args), the no-op identity constructor above
+		// is kept.
+		for _, fn := range rootType.AsObject.Functions {
+			if fn.Name == "with" {
+				rootType.AsObject.Constructor = fn
+				break
+			}
+		}
 	}
 
 	return nil

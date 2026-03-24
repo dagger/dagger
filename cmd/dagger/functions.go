@@ -399,14 +399,19 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return err
 		}
 
-		// When the root type is Query, collect constructor args from all
-		// modules and register them as local flags so they can be
-		// placed before the subcommand name. Proxy subcommands inherit
-		// the values via parentConstructorFlags.
-		if fn.Name == "" && fn.ReturnType != nil &&
+		// When the root type is Query and the constructor is the no-op
+		// identity (name == ""), discover `with` from the type's functions
+		// and register its args as local flags. When the constructor IS
+		// `with` (entrypoint proxying), its args are already registered
+		// by addFlagsForFunction above, but we still need to collect
+		// constructor flags from other modules sharing the Query root.
+		isQueryConstructor := fn.ReturnType != nil &&
 			fn.ReturnType.AsObject != nil &&
-			fn.ReturnType.AsObject.Name == "Query" {
+			fn.ReturnType.AsObject.Name == "Query"
+		if isQueryConstructor && fn.Name == "" {
 			fc.addConstructorLocalFlags(c, fn.ReturnType)
+		} else if isQueryConstructor && fn.Name == "with" {
+			fc.withFn = fn
 		}
 
 		// Even if just for --help, parsing flags is needed to clean up the
@@ -434,12 +439,10 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return err
 		}
 
-		// The function name can be empty if it's the mocked constructor for
-		// the root type (Query). That constructor has `fn.ReturnType` set to
-		// the root type itself, but empty name so we can exclude a selection
-		// in the query builder here. If constructor flags were provided,
-		// add a `with(args...)` selection to the query builder.
-		if fn.Name == "" {
+		// For Query constructors (both no-op and `with`), only add the
+		// `with(args...)` selection if constructor flags were actually set.
+		// This avoids an empty `with()` selection when no args are provided.
+		if isQueryConstructor {
 			return fc.selectWith(c)
 		}
 
