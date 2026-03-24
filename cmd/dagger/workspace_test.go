@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,4 +39,30 @@ func TestWriteWorkspaceInfo(t *testing.T) {
 			out.String(),
 		)
 	})
+}
+
+func TestWriteWorkspaceModuleList(t *testing.T) {
+	var out bytes.Buffer
+
+	err := writeWorkspaceModuleList(&out, []dagger.WorkspaceModule{
+		{
+			Name:      "greeter",
+			Blueprint: true,
+			Source:    ".dagger/modules/greeter",
+		},
+		{
+			Name:   "wolfi",
+			Source: "github.com/dagger/dagger/modules/wolfi",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t,
+		"Source paths are relative to the workspace root\n"+
+			"* indicates a module is a blueprint, with all its functions aliased to the root level\n"+
+			"\n"+
+			"Name       Source\n"+
+			"greeter*   .dagger/modules/greeter\n"+
+			"wolfi      github.com/dagger/dagger/modules/wolfi\n",
+		out.String(),
+	)
 }

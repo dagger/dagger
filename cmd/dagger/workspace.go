@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/juju/ansiterm/tabwriter"
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/engine/client"
@@ -100,6 +101,28 @@ With two arguments, sets the value at the given key.`,
 	},
 }
 
+var workspaceListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List workspace modules",
+	Long: `List all modules defined in the workspace configuration.
+
+Note:
+- Source paths are relative to the workspace root.
+- * means the module is a blueprint, with all its functions aliased to the root level.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			modules, err := engineClient.Dagger().CurrentWorkspace().ModuleList(ctx)
+			if err != nil {
+				return err
+			}
+			return writeWorkspaceModuleList(cmd.OutOrStdout(), modules)
+		})
+	},
+}
+
 type workspaceInfoView struct {
 	Address    string
 	Path       string
@@ -110,6 +133,7 @@ func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceInfoCmd)
+	workspaceCmd.AddCommand(workspaceListCmd)
 }
 
 func initWorkspace(ctx context.Context, dag *dagger.Client) (string, error) {
@@ -139,6 +163,33 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 
 	_, err = fmt.Fprintln(out, msg)
 	return err
+}
+
+func writeWorkspaceModuleList(out io.Writer, modules []dagger.WorkspaceModule) error {
+	if _, err := fmt.Fprintln(out, "Source paths are relative to the workspace root"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "* indicates a module is a blueprint, with all its functions aliased to the root level"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out); err != nil {
+		return err
+	}
+
+	tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+	if _, err := fmt.Fprintln(tw, "Name\tSource"); err != nil {
+		return err
+	}
+	for _, mod := range modules {
+		name := mod.Name
+		if mod.Blueprint {
+			name += "*"
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\n", name, mod.Source); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
 }
 
 func writeWorkspaceInfo(w io.Writer, info workspaceInfoView) error {

@@ -320,6 +320,18 @@ type Void string
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 type WorkspaceID string
 
+// A module entry in the workspace configuration.
+type WorkspaceModule struct {
+	// Whether the module is a blueprint (functions aliased to Query root).
+	Blueprint bool `json:"blueprint"`
+
+	// The module name.
+	Name string `json:"name"`
+
+	// The module source path.
+	Source string `json:"source"`
+}
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -14648,6 +14660,16 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 	q = q.Arg("ref", ref)
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// List modules defined in the workspace configuration.
+func (r *Workspace) ModuleList(ctx context.Context) ([]WorkspaceModule, error) {
+	q := r.query.Select("moduleList").SelectMultiple("name", "blueprint", "source")
+
+	var response []WorkspaceModule
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

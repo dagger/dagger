@@ -102,10 +102,10 @@ Reason:
 - `dagger workspace config` read/write
 - `Workspace.install` base mutation
 - workspace-aware top-level `dagger install` routing
+- `dagger workspace list`
 
 ### Pending Safe Pre-Lock Buckets
 
-- `dagger workspace list`
 - engine-routed `dagger module init`
 - module install/update command split
 - local `dagger migrate`
@@ -309,3 +309,27 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/Test(CurrentWorkspaceInstall|WorkspaceInstallCommand)$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/4f8e174d71cda956bc68f8743ef4f564`
+  - replayed `dagger workspace list`
+  - design note:
+    keep the bucket read-only and narrow: expose a simple `Workspace.moduleList`
+    field over the shared workspace config model, convert local sources back to
+    workspace-root-relative paths for display, and keep the CLI as a thin
+    formatter
+  - codegen note:
+    keep the bucket legible by patching only the minimal Go SDK
+    `Workspace.ModuleList` surface instead of reviving the old generated
+    load-by-ID object plumbing
+  - verifier note:
+    the first focused engine test failed because `WorkspaceModule` was not yet
+    installed in the GraphQL schema; fix that registration and rerun the same
+    verifier
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./core/schema -o /tmp/.tmp-core-schema.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestWorkspaceList$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/bd48931245ea07ee4a3a3ce011000527`

@@ -81,6 +81,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source)."),
 				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
 			),
+		dagql.Func("moduleList", s.moduleList).
+			DoNotCache("Reads live config from host").
+			Doc("List modules defined in the workspace configuration."),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
@@ -96,6 +99,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"Currently this refreshes existing lockfile entries only.").
 			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),
 	}.Install(srv)
+
+	dagql.Fields[*core.WorkspaceModule]{}.Install(srv)
 }
 
 func (s *workspaceSchema) currentWorkspace(
