@@ -73,6 +73,46 @@ func TestPendingLegacyModule(t *testing.T) {
 	})
 }
 
+func TestWorkspaceConfigPendingModules(t *testing.T) {
+	t.Parallel()
+
+	ws := &workspace.Workspace{Root: "/repo", Path: "."}
+	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
+		return "/resolved/" + filepath.Clean(relPath)
+	}
+
+	pending, err := workspaceConfigPendingModules(ws, &workspace.Config{
+		DefaultsFromDotEnv: true,
+		Modules: map[string]workspace.ModuleEntry{
+			"zeta": {
+				Source:    "github.com/acme/zeta@main",
+				Blueprint: true,
+				Config:    map[string]any{"message": "hello"},
+			},
+			"alpha": {
+				Source: "modules/alpha",
+			},
+		},
+	}, resolveLocalRef)
+	require.NoError(t, err)
+	require.Len(t, pending, 2)
+
+	require.Equal(t, "alpha", pending[0].Name)
+	require.Equal(t, "/resolved/.dagger/modules/alpha", pending[0].Ref)
+	require.Empty(t, pending[0].RefPin)
+	require.False(t, pending[0].Entrypoint)
+	require.True(t, pending[0].DisableFindUp)
+	require.True(t, pending[0].DefaultsFromDotEnv)
+
+	require.Equal(t, "zeta", pending[1].Name)
+	require.Equal(t, "github.com/acme/zeta@main", pending[1].Ref)
+	require.Empty(t, pending[1].RefPin)
+	require.True(t, pending[1].Entrypoint)
+	require.True(t, pending[1].DisableFindUp)
+	require.True(t, pending[1].DefaultsFromDotEnv)
+	require.Equal(t, map[string]any{"message": "hello"}, pending[1].ConfigDefaults)
+}
+
 func TestIsSameModuleReference(t *testing.T) {
 	t.Parallel()
 

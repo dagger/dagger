@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -390,6 +391,68 @@ func cwdModuleName(ctx context.Context, readFile func(context.Context, string) (
 	return cfg.Name
 }
 
+func loadWorkspaceConfig(
+	ctx context.Context,
+	readFile func(context.Context, string) ([]byte, error),
+	ws *workspace.Workspace,
+) (*workspace.Config, error) {
+	configPath := filepath.Join(ws.Root, ws.Path, workspace.LockDirName, workspace.ConfigFileName)
+	data, err := readFile(ctx, configPath)
+	if err != nil {
+		if isWorkspaceNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading workspace config %s: %w", configPath, err)
+	}
+
+	cfg, err := workspace.ParseConfig(data)
+	if err != nil {
+		return nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
+	}
+	if cfg.Modules == nil {
+		cfg.Modules = map[string]workspace.ModuleEntry{}
+	}
+	return cfg, nil
+}
+
+func workspaceConfigPendingModules(
+	ws *workspace.Workspace,
+	cfg *workspace.Config,
+	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+) ([]pendingModule, error) {
+	if cfg == nil || len(cfg.Modules) == 0 {
+		return nil, nil
+	}
+
+	names := make([]string, 0, len(cfg.Modules))
+	for name := range cfg.Modules {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	pending := make([]pendingModule, 0, len(names))
+	for _, name := range names {
+		entry := cfg.Modules[name]
+		mod := pendingModule{
+			Ref:                entry.Source,
+			Name:               name,
+			Entrypoint:         entry.Blueprint,
+			LegacyDefaultPath:  entry.LegacyDefaultPath,
+			DisableFindUp:      true,
+			ConfigDefaults:     entry.Config,
+			DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
+		}
+
+		if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
+			mod.Ref = resolveLocalRef(ws, filepath.Join(workspace.LockDirName, entry.Source))
+		}
+
+		pending = append(pending, mod)
+	}
+
+	return pending, nil
+}
+
 func pendingLegacyModule(
 	ws *workspace.Workspace,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
@@ -456,15 +519,23 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return err
 	}
 
+	var wsConfig *workspace.Config
+	if ws.Initialized {
+		wsConfig, err = loadWorkspaceConfig(ctx, readFile, ws)
+		if err != nil {
+			return err
+		}
+	}
+
 	// --- Compat mode: extract toolchains/blueprints from legacy dagger.json ---
-	// Initialized workspace configs are detected structurally, but config-owned
-	// module loading is still deferred, so a nearby dagger.json remains the only
-	// source of workspace-level enrichment in this bucket.
+	// Once an initialized workspace config exists, it owns workspace-level module
+	// loading. Legacy dagger.json enrichment remains only for uninitialized
+	// workspaces.
 	var legacyToolchains []workspace.LegacyToolchain
 	var legacyBlueprint *workspace.LegacyBlueprint
 	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
 	legacyCallerDir := legacyCallerModuleDir(isLocal, moduleDir)
-	if hasModuleConfig {
+	if wsConfig == nil && hasModuleConfig {
 		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
 		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
 			legacyToolchains, _ = workspace.ParseLegacyToolchains(data)
@@ -474,7 +545,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			slog.Warn("Inferring workspace behavior from legacy module config.",
 				"config", cfgPath)
 		}
-	} else {
+	} else if wsConfig == nil {
 		wsDir := filepath.Join(ws.Root, ws.Path)
 		slog.Info("No workspace modules detected.", "path", wsDir)
 	}
@@ -496,6 +567,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	// --- Gather all modules to load ---
 	var pending []pendingModule
+
+	pending, err = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
+	if err != nil {
+		return err
+	}
 
 	// (1a) Legacy toolchains (from compat mode, extracted above)
 	for _, tc := range legacyToolchains {
@@ -529,10 +605,21 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	// (2) Implicit module (dagger.json near CWD)
 	{
-		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
 		if hasModuleConfig {
 			wsDir := filepath.Join(ws.Root, ws.Path)
 			rel, _ := filepath.Rel(wsDir, moduleDir)
+
+			// A standalone module nested beneath an initialized workspace should
+			// win over parent workspace modules when invoked from its own
+			// directory. Keep the nested module itself, but drop the inherited
+			// workspace module set unless the module lives under the managed
+			// .dagger/modules tree.
+			isManagedModule := rel == workspace.LockDirName ||
+				strings.HasPrefix(rel, workspace.LockDirName+string(filepath.Separator))
+			if ws.Initialized && !isManagedModule {
+				pending = nil
+			}
+
 			name := cwdModuleName(ctx, readFile, moduleDir)
 			pending = append(pending, pendingModule{
 				Ref:  resolveLocalRef(ws, rel),

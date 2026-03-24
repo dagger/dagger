@@ -106,6 +106,8 @@ Reason:
 - engine-routed `dagger module init`
 - module install/update command split
 - local `dagger migrate`
+- engine/session loading of config-owned workspace modules on top of the
+  generic `ModuleSource` / `modules.resolve` path
 
 ### Pending Safe Pre-Lock Buckets
 
@@ -134,8 +136,6 @@ These intents still belong to workspace, but must be rewritten on top of the
 
 - workspace install should populate `.dagger/lock` by using the generic
   `ModuleSource` lookup path
-- engine/session loading of config-owned workspace modules should consume the
-  persisted generic module-source lookups
 - migration should emit or refresh the same generic module-source lookups
 - any selective refresh UX must layer on top of `currentWorkspace.update()` /
   `dagger lock update`, not replace them
@@ -416,3 +416,32 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestMigrate$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/19ce8adb4010457919b09890f58b959e`
+  - replayed config-owned workspace module loading in `engine/server/session.go`
+  - design note:
+    session startup now parses `.dagger/config.toml`, turns config entries into
+    pending modules, and lets `dag.moduleSource()` own remote pinning and lock
+    writes; `engine/server` does not reintroduce workspace-owned lock
+    resolution logic
+  - design note:
+    initialized workspace config now suppresses legacy `dagger.json`
+    toolchain/blueprint enrichment, while nested standalone modules outside the
+    managed `.dagger/modules` tree still override inherited workspace modules
+  - rewrite note:
+    keep workspace config refs raw for remote modules and pass them through
+    `moduleSource(refString:, disableFindUp: true)` so the generic
+    `modules.resolve` path applies the current lock mode instead of a
+    workspace-specific pre-resolution step
+  - rewrite note:
+    preserve `defaults_from_dotenv` even when a config-owned module has no
+    explicit `[modules.<name>.config]` table by applying empty workspace config
+    metadata at load time
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./engine/server --run='Test(PendingLegacyModule|WorkspaceConfigPendingModules|ApplyPendingModuleMetadata)$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/d10268482f7d37277c3821543da049e8`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestWorkspaceModuleInitCommand$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/9bc3714fac40271d6d70729038b60897`
