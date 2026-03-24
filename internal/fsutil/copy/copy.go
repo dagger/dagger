@@ -2,7 +2,6 @@ package copy
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -88,7 +87,6 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		if err != nil {
 			return err
 		}
-		fmt.Printf("ACB MkdirAll %s\n", ensureDstPath)
 		if err := MkdirAll(ensureDstPath, 0755, ci.Chown, ci.Utime); err != nil {
 			return err
 		}

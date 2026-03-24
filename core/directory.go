@@ -863,7 +863,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 			//}
 		}
 
-		srcs := []string{src.Dir}
+		pathsToCopy := []string{src.Dir}
 		if srcPath != "" {
 			fmt.Printf("ACB gotta handle srcPath=%s (root is %s)\n", srcPath, mntedSrcPath)
 			walk(mntedSrcPath)
@@ -878,7 +878,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 			}
 
 			var err error
-			srcs, err = fscopy.ResolveWildcards(mntedSrcPath, srcPath, true) // todo use action.FollowSymlink instead of true
+			pathsToCopy, err = fscopy.ResolveWildcards(mntedSrcPath, srcPath, true) // todo use action.FollowSymlink instead of true
 			if err != nil {
 				return err
 				//return errors.WithStack(err)
@@ -896,14 +896,14 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 		}
 
 		walk(copyDest)
-		for _, src := range srcs {
-			//if err := fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
-			fmt.Printf("ACB fscopy %s,%s to %s,%s\n", mntedSrcPath, src, copyDest, destDir)
+		for _, srcPath := range pathsToCopy {
 			joinedDest := path.Join(dir.Dir, destDir)
 			if strings.HasSuffix(destDir, "/") && !strings.HasSuffix(joinedDest, "/") {
 				joinedDest += "/"
 			}
-			if err := fscopy.Copy(ctx, mntedSrcPath, src, copyDest, joinedDest, opts...); err != nil {
+			if err := fscopy.Copy(ctx, mntedSrcPath, srcPath, copyDest, joinedDest, opts...); err != nil {
+				err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, src.Dir))
+				err = TrimErrPathPrefix(err, copyDest)
 				return fmt.Errorf("failed to copy source directory: %w", err)
 			}
 		}
@@ -1483,6 +1483,7 @@ func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRe
 		if parentPath == "/" {
 			return nil
 		}
+		panic("this right here")
 		return &os.PathError{Op: "lstat", Path: parentPath, Err: syscall.ENOENT}
 	}
 

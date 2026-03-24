@@ -573,7 +573,7 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 			WithNewFile("Dockerfile",
 				`FROM `+pushedRef+`
 	`).DockerBuild().Sync(ctx)
-		require.ErrorContains(t, err, "\"/some-file-that-might-exist\": no such file or directory")
+		require.ErrorContains(t, err, "/some-file-that-might-exist: no such file or directory")
 
 		// Test again, after some-file-that-might-exist is created.
 		s, err := baseDir.
