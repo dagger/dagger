@@ -1374,9 +1374,36 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 	if r.shared.id == 0 {
 		return detached, nil
 	}
+
+	childShared := detached.cacheSharedResult()
+	if childShared != nil && childShared.id != 0 {
+		srv := CurrentDagqlServer(ctx)
+		if srv == nil {
+			return nil, fmt.Errorf("load %dth value from %T: missing dagql server in context", nth, self)
+		}
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load %dth value from %T: current client metadata: %w", nth, self, err)
+		}
+		if clientMetadata.SessionID == "" {
+			return nil, fmt.Errorf("load %dth value from %T: empty session ID", nth, self)
+		}
+		cache, err := EngineCache(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
+		}
+		touchSharedResultLastUsed(childShared, time.Now().UnixNano())
+		retResAny, err := wrapSharedResultWithResolver(childShared, true, srv)
+		if err != nil {
+			return nil, fmt.Errorf("load %dth value from %T: reconstruct result: %w", nth, self, err)
+		}
+		cache.trackSessionResult(ctx, clientMetadata.SessionID, retResAny, true)
+		return retResAny, nil
+	}
+
 	srv := CurrentDagqlServer(ctx)
 	if srv == nil {
-		return detached, nil
+		return nil, fmt.Errorf("load %dth value from %T: missing dagql server in context", nth, self)
 	}
 	if parentCall.Type == nil || parentCall.Type.Elem == nil {
 		return nil, fmt.Errorf("cannot get %dth value from %T without element type", nth, self)
@@ -1400,11 +1427,6 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 	cache, err := EngineCache(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
-	}
-	if res, err := cache.GetOrInitCall(ctx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("cache miss")
-	}); err == nil {
-		return res, nil
 	}
 	return cache.GetOrInitCall(ctx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return detached, nil

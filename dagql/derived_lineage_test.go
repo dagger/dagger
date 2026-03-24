@@ -103,6 +103,137 @@ func TestNthValuePreservesAttachmentLineage(t *testing.T) {
 	assert.Equal(t, uint64(parentShared.id), childCall.Receiver.ResultID)
 }
 
+func TestNthValueAttachedObjectResultArrayReturnsCanonicalChild(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface
+	ctx = ContextWithCache(ctx, base)
+	srv := cacheTestServer(t, base)
+	ctx = srvToContext(ctx, srv)
+
+	child1Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "child1",
+	}
+	child1Detached := cacheTestObjectResult(t, srv, child1Call, 1, nil)
+	child1Any, err := base.AttachResult(ctx, "test-session", srv, child1Detached)
+	assert.NilError(t, err)
+	child1 := child1Any.(ObjectResult[*cacheTestObject])
+
+	child2Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "child2",
+	}
+	child2Detached := cacheTestObjectResult(t, srv, child2Call, 2, nil)
+	child2Any, err := base.AttachResult(ctx, "test-session", srv, child2Detached)
+	assert.NilError(t, err)
+	child2 := child2Any.(ObjectResult[*cacheTestObject])
+
+	arr := ObjectResultArray[*cacheTestObject]{child1, child2}
+	parentCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(arr.Type()),
+		Field: "items",
+	}
+	detachedParent, err := NewResultForCall(arr, parentCall)
+	assert.NilError(t, err)
+	attachedParentAny, err := base.AttachResult(ctx, "test-session", srv, detachedParent)
+	assert.NilError(t, err)
+	attachedParent := attachedParentAny.(Result[Typed])
+	parentShared := attachedParent.cacheSharedResult()
+	assert.Assert(t, parentShared != nil)
+
+	nthReq := &CallRequest{
+		ResultCall: parentCall.fork(),
+	}
+	nthReq.Type = nthReq.Type.Elem.clone()
+	nthReq.Receiver = &ResultCallRef{ResultID: uint64(parentShared.id), shared: parentShared}
+	nthReq.Nth = 1
+
+	_, hitBefore, err := base.lookupCallRequest(ctx, "test-session", srv, nthReq)
+	assert.NilError(t, err)
+	assert.Assert(t, !hitBefore)
+
+	nthAny, err := attachedParent.NthValue(ctx, 1)
+	assert.NilError(t, err)
+	nth := nthAny.(ObjectResult[*cacheTestObject])
+	assert.Assert(t, nth.HitCache())
+	assert.Assert(t, nth.cacheSharedResult() == child1.cacheSharedResult())
+
+	nthCall, err := nth.ResultCall()
+	assert.NilError(t, err)
+	assert.Equal(t, "child1", nthCall.Field)
+
+	_, hitAfter, err := base.lookupCallRequest(ctx, "test-session", srv, nthReq)
+	assert.NilError(t, err)
+	assert.Assert(t, !hitAfter)
+}
+
+func TestNthValueAttachedDynamicResultArrayReturnsCanonicalChild(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface
+	ctx = ContextWithCache(ctx, base)
+	ctx = srvToContext(ctx, cacheTestServer(t, base))
+
+	child1Call := cacheTestIntCall("result-array-child-1")
+	child1Any, err := base.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: child1Call}, ValueFunc(cacheTestIntResult(child1Call, 11)))
+	assert.NilError(t, err)
+	child1 := child1Any.(Result[Typed])
+
+	child2Call := cacheTestIntCall("result-array-child-2")
+	child2Any, err := base.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: child2Call}, ValueFunc(cacheTestIntResult(child2Call, 22)))
+	assert.NilError(t, err)
+
+	arr := DynamicResultArrayOutput{
+		Elem:   NewInt(0),
+		Values: []AnyResult{child1Any, child2Any},
+	}
+	parentCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(arr.Type()),
+		Field: "items",
+	}
+	detachedParent, err := NewResultForCall(arr, parentCall)
+	assert.NilError(t, err)
+	attachedParentAny, err := base.AttachResult(ctx, "test-session", noopTypeResolver{}, detachedParent)
+	assert.NilError(t, err)
+	attachedParent := attachedParentAny.(Result[Typed])
+	parentShared := attachedParent.cacheSharedResult()
+	assert.Assert(t, parentShared != nil)
+
+	nthReq := &CallRequest{
+		ResultCall: parentCall.fork(),
+	}
+	nthReq.Type = nthReq.Type.Elem.clone()
+	nthReq.Receiver = &ResultCallRef{ResultID: uint64(parentShared.id), shared: parentShared}
+	nthReq.Nth = 1
+
+	_, hitBefore, err := base.lookupCallRequest(ctx, "test-session", noopTypeResolver{}, nthReq)
+	assert.NilError(t, err)
+	assert.Assert(t, !hitBefore)
+
+	nth, err := attachedParent.NthValue(ctx, 1)
+	assert.NilError(t, err)
+	assert.Assert(t, nth.HitCache())
+	assert.Assert(t, nth.cacheSharedResult() == child1.cacheSharedResult())
+	assert.Equal(t, 11, cacheTestUnwrapInt(t, nth))
+
+	nthCall, err := nth.ResultCall()
+	assert.NilError(t, err)
+	assert.Equal(t, "result-array-child-1", nthCall.Field)
+
+	_, hitAfter, err := base.lookupCallRequest(ctx, "test-session", noopTypeResolver{}, nthReq)
+	assert.NilError(t, err)
+	assert.Assert(t, !hitAfter)
+}
+
 func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
