@@ -61,8 +61,13 @@ type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStru
 {{- $enumName := .Name }}
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{- $scopedName := $field.Name | FormatEnum $enumName }}
+	{{- $unscopedName := $field.Name | FormatEnum "" }}
 	{{ $field.Description | Comment }}
-	{{ $field.Name | FormatEnum $enumName }} {{ $enumName }} = dagger.{{ $field.Name | FormatEnum $enumName }}
+	{{ $scopedName }} {{ $enumName }} = dagger.{{ $scopedName }}
+	{{- if ne $unscopedName $scopedName }}
+	{{ $unscopedName }} {{ $enumName }} = dagger.{{ $unscopedName }}
+	{{- end }}
 	{{ end }}
 )
 {{- end }}
