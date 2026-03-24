@@ -31,7 +31,9 @@ work. The right move now is:
 - reuse the proven replay bucketing work
 - treat `lockfile` as the new base branch
 - drop the generic lockfile buckets that `lockfile` now owns
-- reslice the remaining workspace-authored lock behavior on top
+- let workspace consume the newer generic module-source lookup persistence that
+  `lockfile` now owns
+- reslice only the remaining workspace-specific behavior on top
 
 This file exists to make that handoff explicit.
 
@@ -208,6 +210,8 @@ The new base already contains the generic lockfile foundation:
 - generic lookup consumers:
   - `container.from`
   - Git lookup locking
+- generic persisted module-source lookup via `dag.ModuleSource()` / git module
+  resolution, recorded as `modules.resolve`
 - low-level workspace lock refresh:
   - `currentWorkspace.update(): Changeset!`
   - `dagger lock update`
@@ -217,6 +221,7 @@ Examples in the new base:
 
 - `/Users/shykes/git/github.com/dagger/dagger_lockfile/core/workspace/lock.go`
 - `/Users/shykes/git/github.com/dagger/dagger_lockfile/core/schema/lockfile.go`
+- `/Users/shykes/git/github.com/dagger/dagger_lockfile/core/schema/modulesource.go`
 - `/Users/shykes/git/github.com/dagger/dagger_lockfile/core/schema/workspace.go`
 - `/Users/shykes/git/github.com/dagger/dagger_lockfile/cmd/dagger/lock.go`
 - `/Users/shykes/git/github.com/dagger/dagger_lockfile/hack/designs/lockfile.md`
@@ -228,9 +233,11 @@ lock story is still out of tree.
 
 That includes:
 
-- `modules.resolve` entries in `.dagger/lock`
-- workspace-config-backed module loading using those pins
-- migration emitting workspace-owned lock entries
+- workspace config, install, and migrate flows deciding when to invoke the
+  generic module-source lookup path so `.dagger/lock` gets the entries they
+  need
+- workspace-config-backed module loading consuming those persisted module-source
+  lookups
 - any higher-level workspace UX layered on top of the generic lock substrate
 
 This is the remaining lock-related scope that still belongs to the workspace
@@ -246,12 +253,22 @@ Principle:
 - new lockfile consumers should attach to existing lookup resolution flows
 - do not add new engine hooks whose only purpose is lock integration
 
+This is no longer just a design note. The current `lockfile` branch already
+applies it for module source resolution:
+
+- `core/schema/modulesource.go` reads `modules.resolve` through the generic
+  lookup-lock path before resolving a git module source
+- the same file writes `modules.resolve` through `lookupLock.SetLookup(...)`
+  after live resolution
+- `core/workspace/lock.go` now exposes `GetModuleResolve` / `SetModuleResolve`
+  only as convenience wrappers over the generic tuple store
+
 Practical consequence for the workspace replay:
 
-- when replaying `modules.resolve`, wire lock read/write behavior into the
-  existing module resolution path
+- do not rebuild a workspace-specific `modules.resolve` substrate
+- prefer invoking or consuming the existing `ModuleSource` lookup path
 - do not treat `modules.resolve` as a reason to invent a parallel lock-specific
-  resolution API
+  resolution API or a second set of workspace-only lookup rules
 
 This is important enough to treat as base-branch guidance, not an optional
 refactor preference.
@@ -269,6 +286,8 @@ Do not replay these old semantics on top of `lockfile`:
 - old result-envelope lock entry shape
 - old reuse of `currentWorkspace.update` for selective workspace module updates
 - old CLI shape that removed `dagger lock update`
+- old workspace-specific `modules.resolve` plumbing that predates the generic
+  module-source lookup persistence now present in `lockfile`
 
 Concrete collisions:
 
@@ -320,6 +339,14 @@ The old replay ledger is still a useful cross-check, but the minimum reusable
 classification is copied below so a new engineer is not blocked on that scratch
 worktree.
 
+Important warning:
+
+- the old scratch replay notes are now stale specifically on ownership of
+  `modules.resolve`
+- use those notes for bucket shape and verifier history
+- do not use them as truth for which branch owns module-source lookup
+  persistence
+
 ### 1a. Safe Buckets Already Proven On `workspace-plumbing`
 
 These buckets were already replayed successfully and are still good candidates
@@ -351,6 +378,8 @@ behavior rather than replay targets:
 - generic lookup tuple helpers
 - generic lock mode propagation
 - `container.from` generic lookup locking
+- generic persisted module-source lookup via `dag.ModuleSource()` /
+  `core/schema/modulesource.go`
 - global `--lock` plumbing
 - `currentWorkspace.update(): Changeset!`
 - `dagger lock update`
@@ -361,10 +390,12 @@ behavior rather than replay targets:
 
 These are the still-live lock-related buckets after the spinout:
 
-- persist `modules.resolve` pins during workspace install
-- share `modules.resolve` lookup rules in `core/workspace`
-- load config-owned workspace modules with those pins in engine sessions
-- emit `modules.resolve` entries during migration
+- make workspace install consume the generic module-source lookup primitive
+  instead of manually persisting custom lock entries
+- load config-owned workspace modules using the persisted generic module-source
+  lookups in engine sessions
+- make migration emit or refresh module-source lookup entries by using the same
+  generic primitive
 - decide the higher-level selective refresh UX, if still wanted
 
 ### 2. Replay Safe Non-Lock Buckets First
@@ -419,15 +450,16 @@ Reason:
 These still matter, but must be rewritten on top of `lockfile` instead of
 cherry-picked:
 
-- workspace install persisting `modules.resolve` pins
-- shared `modules.resolve` resolution rules in `core/workspace`
-- engine/session loading workspace config modules with remote lock pins
-- migration emitting `modules.resolve` entries
+- workspace install should use the generic module-source lookup persistence
+  already present in `lockfile`, not manual lock writes
+- engine/session loading of workspace config modules should consume those
+  persisted generic module-source lookups
+- migration should emit or refresh the same generic module-source lookups rather
+  than maintaining a parallel workspace-only path
 
 These were represented in the plumbing replay by commits such as:
 
 - `8d1adcba7` `core/schema: persist workspace install lock entries`
-- `9f41d8365` `core/workspace: share module lookup lock rules`
 - `2675ed8ee` `engine/server: load workspace config modules with lock pins`
 - `5cae712ce` `core/workspace: add local migration helpers`
 
@@ -435,8 +467,8 @@ Carry the intent, not the patch shape.
 
 Additional rule from the current `lockfile` branch:
 
-- integrate `modules.resolve` into the existing module resolution flow rather
-  than creating new lock-specific engine plumbing
+- consume the existing `ModuleSource` lookup path rather than creating new
+  workspace-only lock plumbing
 
 ### 5. Re-Decide Selective Workspace Update UX
 
