@@ -109,7 +109,10 @@ func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, 
 	// introspection round-trip (which loses interface return types, directives,
 	// etc.). Instead, we add those functions here using the module's own
 	// TypeDefs, which have the correct metadata.
-	typeDefs = mergeModuleQueryFields(typeDefs, dag)
+	//
+	// ModDeps doesn't track entrypoint policy — all fields are treated as
+	// constructors. Use ServedMods.TypeDefs for entrypoint-aware merging.
+	typeDefs = mergeModuleQueryFields(typeDefs, dag, nil)
 
 	return typeDefs, nil
 }
@@ -117,7 +120,11 @@ func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, 
 // mergeModuleQueryFields finds the Query TypeDef and adds any module-provided
 // fields (constructors and entrypoint proxy methods) using the function
 // metadata from the source module's own TypeDefs.
-func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server) []*TypeDef {
+//
+// entrypointMods is the set of module names that are installed as entrypoints.
+// Only entrypoint modules can have proxy methods on Query; all other
+// module-provided Query fields are constructors.
+func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server, entrypointMods map[string]bool) []*TypeDef {
 	queryObjType := dag.Root().ObjectType()
 
 	// Find the Query TypeDef and build a lookup of module main objects by
@@ -159,15 +166,15 @@ func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server) []*TypeDef {
 			continue
 		}
 
-		// Check if this field is a proxy for one of the main object's
-		// methods (entrypoint proxy). If so, use the method's function
-		// definition directly — it has the correct return type, directives,
-		// etc.
-		if fn := findFunctionOnObject(mainObj, spec.Name); fn != nil {
-			proxied := fn.Clone()
-			proxied.SourceModuleName = modName
-			queryTypeDef.Functions = append(queryTypeDef.Functions, proxied)
-			continue
+		// Only entrypoint modules have proxy methods on Query. For
+		// non-entrypoint modules, every Query field is a constructor.
+		if entrypointMods[modName] {
+			if fn := findFunctionOnObject(mainObj, spec.Name); fn != nil {
+				proxied := fn.Clone()
+				proxied.SourceModuleName = modName
+				queryTypeDef.Functions = append(queryTypeDef.Functions, proxied)
+				continue
+			}
 		}
 
 		// Otherwise this is the constructor. Synthesize a function that

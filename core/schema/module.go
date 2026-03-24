@@ -767,7 +767,7 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current schema: %w", err)
 	}
-	typeDefs, err := served.ModDeps().TypeDefs(ctx, dag)
+	typeDefs, err := served.TypeDefs(ctx, dag)
 	if err != nil {
 		return nil, err
 	}

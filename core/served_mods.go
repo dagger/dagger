@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
@@ -100,6 +101,32 @@ func (s *ServedMods) PrimaryMods() []Mod {
 // where constructor policy is irrelevant.
 func (s *ServedMods) ModDeps() *ModDeps {
 	return NewModDeps(s.root, s.Mods())
+}
+
+// TypeDefs returns type definitions for all served modules, with
+// entrypoint-aware merging of module-provided Query fields. Unlike
+// ModDeps.TypeDefs, this correctly distinguishes constructors from
+// entrypoint proxy methods because ServedMods tracks install policy.
+func (s *ServedMods) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
+	var typeDefs []*TypeDef
+	for _, e := range s.entries {
+		modTypeDefs, err := e.mod.TypeDefs(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get objects from mod %q: %w", e.mod.Name(), err)
+		}
+		typeDefs = append(typeDefs, modTypeDefs...)
+	}
+
+	entrypointMods := make(map[string]bool)
+	for _, e := range s.entries {
+		if e.opts.Entrypoint {
+			entrypointMods[e.mod.Name()] = true
+		}
+	}
+
+	typeDefs = mergeModuleQueryFields(typeDefs, dag, entrypointMods)
+
+	return typeDefs, nil
 }
 
 // Schema builds and caches the combined outer (client-facing) schema for all
