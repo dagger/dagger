@@ -617,7 +617,6 @@ type lookupMatch struct {
 	inputEqIDs            []eqClassID
 	primaryLookupPossible bool
 	missingInputIndex     int
-	hitEqClassID          eqClassID
 	hitTerm               *egraphTerm
 	hitRes                *sharedResult
 	termDigest            string
@@ -638,7 +637,6 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 	match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
 	if match.hitRes != nil {
 		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
-		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[recipeDigest.String()])
 		return match
 	}
 	for _, extra := range extraDigests {
@@ -651,7 +649,6 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 			continue
 		}
 		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
-		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[extra.Digest.String()])
 		return match
 	}
 	return match
@@ -702,9 +699,6 @@ func (c *Cache) lookupMatchForCallLocked(
 		match.termSetSize = len(termSet)
 		match.hitTerm = c.firstLiveTermInSetLocked(termSet)
 		match.hitRes = c.firstResultForTermSetDeterministicallyAtLocked(termSet, nowUnix)
-		if match.hitTerm != nil {
-			match.hitEqClassID = c.findEqClassLocked(match.hitTerm.outputEqID)
-		}
 	}
 	return match, nil
 }
@@ -754,9 +748,6 @@ func (c *Cache) lookupMatchForIDLocked(ctx context.Context, id *call.ID) (lookup
 		match.termSetSize = len(termSet)
 		match.hitTerm = c.firstLiveTermInSetLocked(termSet)
 		match.hitRes = c.firstResultForTermSetDeterministicallyAtLocked(termSet, nowUnix)
-		if match.hitTerm != nil {
-			match.hitEqClassID = c.findEqClassLocked(match.hitTerm.outputEqID)
-		}
 	}
 	return match, nil
 }
@@ -836,12 +827,12 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 	}
 }
 
-// lookupCacheForID checks if the given call ID has an equivalent result in the cache. It first
-// attempts direct digest lookup using the request recipe/extra digests. If that misses, it falls
-// back to the canonical term lookup using (self, input eq-classes).
+// lookupCacheForRequestLocked checks if the given call ID has an equivalent result in the cache.
+// It first attempts direct digest lookup using the request recipe/extra digests. If that misses,
+// it falls back to the canonical term lookup using (self, input eq-classes).
 //
 // This method assumes egraphMu is already held by the caller.
-func (c *Cache) lookupCacheForRequest(
+func (c *Cache) lookupCacheForRequestLocked(
 	ctx context.Context,
 	req *CallRequest,
 	requestDigest digest.Digest,
@@ -889,6 +880,50 @@ func (c *Cache) lookupCacheForRequest(
 	}
 	c.traceLookupHit(ctx, requestDigest.String(), res, hitTerm, match.termDigest)
 	return retRes, true, nil
+}
+
+func (c *Cache) lookupCacheForRequest(
+	ctx context.Context,
+	req *CallRequest,
+	requestDigest digest.Digest,
+	requestSelf digest.Digest,
+	requestInputs []digest.Digest,
+	requestInputRefs []ResultCallStructuralInputRef,
+) (AnyResult, bool, error) {
+	if req == nil || req.ResultCall == nil {
+		return nil, false, nil
+	}
+
+	if requestDigest != "" && len(req.ResultCall.ExtraDigests) == 0 && req.TTL == 0 && !req.IsPersistable {
+		c.egraphMu.RLock()
+		match := c.lookupMatchForDigestsLocked(requestDigest, nil)
+		c.egraphMu.RUnlock()
+		if hitRes := match.hitRes; hitRes != nil {
+			c.egraphMu.Lock()
+			match = c.lookupMatchForDigestsLocked(requestDigest, nil)
+			if hitRes = match.hitRes; hitRes != nil {
+				now := time.Now()
+				touchSharedResultLastUsed(hitRes, now.UnixNano())
+				retRes := Result[Typed]{
+					shared:   hitRes,
+					hitCache: true,
+				}
+				c.traceLookupAttempt(ctx, requestDigest.String(), requestSelf.String(), requestInputs, req.IsPersistable)
+				c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.hitTerm, match.termDigest)
+				c.egraphMu.Unlock()
+				return retRes, true, nil
+			}
+
+			retRes, hit, err := c.lookupCacheForRequestLocked(ctx, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
+			c.egraphMu.Unlock()
+			return retRes, hit, err
+		}
+	}
+
+	c.egraphMu.Lock()
+	retRes, hit, err := c.lookupCacheForRequestLocked(ctx, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
+	c.egraphMu.Unlock()
+	return retRes, hit, err
 }
 
 func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID string, frame *ResultCall, res AnyResult) error {

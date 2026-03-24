@@ -1065,9 +1065,7 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		requestInputs = append(requestInputs, dig)
 	}
 
-	c.egraphMu.Lock()
 	hitRes, hit, err := c.lookupCacheForRequest(ctx, req, callDigest, requestSelf, requestInputs, requestInputRefs)
-	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("attach dependency result: %w", err)
 	}
@@ -2305,9 +2303,7 @@ func (c *Cache) getOrInitCall(
 		concurrencyKey: req.ConcurrencyKey,
 	}
 
-	c.egraphMu.Lock()
 	hitRes, hit, err := c.lookupCacheForRequest(ctx, req, callDigest, requestSelf, requestInputs, requestInputRefs)
-	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -2403,9 +2399,7 @@ func (c *Cache) lookupCallRequest(
 		requestInputs = append(requestInputs, dig)
 	}
 
-	c.egraphMu.Lock()
 	hitRes, hit, err := c.lookupCacheForRequest(ctx, req, callDigest, requestSelf, requestInputs, requestInputRefs)
-	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, false, err
 	}
