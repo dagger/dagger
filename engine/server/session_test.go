@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/stretchr/testify/require"
@@ -194,6 +196,45 @@ func TestWorkspaceBindingMode(t *testing.T) {
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingInherit, mode)
 		require.Equal(t, "", workspaceRef)
+	})
+}
+
+func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "main-client",
+	})
+
+	t.Run("initialized workspace", func(t *testing.T) {
+		t.Parallel()
+
+		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+			Root:        "/repo",
+			Path:        "services/payment",
+			Initialized: true,
+		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		require.NoError(t, err)
+		require.Equal(t, "file:///repo/services/payment", ws.Address)
+		require.Equal(t, "services/payment", ws.Path)
+		require.True(t, ws.Initialized)
+		require.True(t, ws.HasConfig)
+		require.Equal(t, filepath.Join("services/payment", workspace.LockDirName, workspace.ConfigFileName), ws.ConfigPath)
+		require.Equal(t, "/repo", ws.HostPath())
+	})
+
+	t.Run("uninitialized workspace", func(t *testing.T) {
+		t.Parallel()
+
+		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+			Root: "/repo",
+			Path: ".",
+		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		require.NoError(t, err)
+		require.False(t, ws.Initialized)
+		require.False(t, ws.HasConfig)
+		require.Empty(t, ws.ConfigPath)
 	})
 }
 

@@ -96,10 +96,10 @@ Reason:
   - `dagger functions`
 - sibling workspace-module traversal/listing for `dagger functions`
 - `dagger workspace info`
+- initialized-workspace detection via `.dagger/config.toml`
 
 ### Pending Safe Pre-Lock Buckets
 
-- initialized-workspace detection
 - `Workspace.init` plus `dagger workspace init`
 - workspace config model
 - `dagger workspace config` read/write
@@ -211,3 +211,20 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='TestWriteWorkspaceInfo$'`
   - trace:
     `https://dagger.cloud/dagger/traces/1da4d95be7485f1b14e907d0e6c53612`
+  - replayed initialized-workspace detection via `.dagger/config.toml`
+  - rewrite note:
+    do not reuse the old `.dagger` boundary heuristic from the plumbing replay;
+    `lockfile` now owns `.dagger/lock`, so initialized-workspace detection must
+    look for `.dagger/config.toml`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE go test ./core/workspace -run 'TestDetect'`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./engine/server -o /tmp/.tmp-engine-server.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./engine/server --run='Test(EnsureWorkspaceLoadedInheritsParentWorkspace|EnsureWorkspaceLoadedKeepsExistingWorkspaceBinding|WorkspaceBindingMode|BuildCoreWorkspaceIncludesConfigState)$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/31880ef073ba622125d9b8dab2a59d8f`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestCurrentWorkspaceInit$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/1bea4dc0f532e20d49dfe0557caf36d1`

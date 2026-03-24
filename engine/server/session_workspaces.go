@@ -457,8 +457,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	// --- Compat mode: extract toolchains/blueprints from legacy dagger.json ---
-	// In the foundation split, initialized workspace config is deferred, so a
-	// nearby dagger.json is the only source of workspace-level enrichment.
+	// Initialized workspace configs are detected structurally, but config-owned
+	// module loading is still deferred, so a nearby dagger.json remains the only
+	// source of workspace-level enrichment in this bucket.
 	var legacyToolchains []workspace.LegacyToolchain
 	var legacyBlueprint *workspace.LegacyBlueprint
 	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
@@ -572,12 +573,17 @@ func (srv *Server) buildCoreWorkspace(
 	}
 
 	coreWS := &core.Workspace{
-		Address:  address,
-		Path:     detected.Path,
-		ClientID: clientMetadata.ClientID,
+		Address:     address,
+		Path:        detected.Path,
+		Initialized: detected.Initialized,
+		HasConfig:   detected.Initialized,
+		ClientID:    clientMetadata.ClientID,
 	}
 	if coreWS.Address == "" {
 		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Path)
+	}
+	if detected.Initialized {
+		coreWS.ConfigPath = filepath.Join(detected.Path, workspace.LockDirName, workspace.ConfigFileName)
 	}
 
 	if isLocal {
