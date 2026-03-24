@@ -157,6 +157,21 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 			),
+		dagql.NodeFunc("__withDirectoryDockerfilCompat", DagOpDirectoryWrapper(srv, s.withDirectoryDockerfileCompat, WithPathFn(keepParentDir[WithDirectoryDockerfileCompatArgs]))).
+			View(AllVersion).
+			Doc(`Return a snapshot with a directory added`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/src/").`),
+				dagql.Arg("directory").Doc(`Identifier of the directory to copy.`).View(BeforeVersion("v0.19.0")),
+				dagql.Arg("source").Doc(`Identifier of the directory to copy.`).View(AfterVersion("v0.19.0")),
+				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
+				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
+				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
+					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
+					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
+			),
 		dagql.NodeFunc("filter", DagOpDirectoryWrapper(srv, s.filter, WithPathFn(keepParentDir[FilterArgs]))).
 			Doc(`Return a snapshot with some paths included or excluded`).
 			Args(
@@ -454,6 +469,9 @@ type WithDirectoryArgs struct {
 	// itself), while preserving file semantics when include points at a file.
 	CopySourcePathContentsWhenDir bool `internal:"true" default:"false"`
 
+	// internal
+	SrcPath string `internal:"true" default:""`
+
 	Source    core.DirectoryID
 	Directory core.DirectoryID // legacy, use Source instead
 
@@ -490,6 +508,7 @@ func (args WithDirectoryArgs) Inputs(ctx context.Context) ([]llb.State, error) {
 }
 
 func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	fmt.Printf("ACB dir.WithDirectory %+v\n", args)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
@@ -500,9 +519,11 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
+
 	with, err := parent.Self().WithDirectory(
 		ctx,
 		args.Path,
+		"", // TODO remove this
 		src.ID(),
 		args.CopyFilter,
 		args.Owner,
@@ -516,6 +537,98 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
 	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
+}
+
+type WithDirectoryDockerfileCompatArgs struct {
+	Path        string
+	Owner       string `default:""`
+	Permissions dagql.Optional[dagql.Int]
+	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
+	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
+	// BuildKit ADD archive auto-unpack compatibility semantics.
+	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, withDirectory errors
+	// if the requested source path does not exist.
+	RequiredSourcePath string `internal:"true" default:""`
+	// Hidden internal arg used for LLB fidelity; indicates destination should be
+	// treated as a directory path even if it does not yet exist.
+	DestPathHintIsDirectory bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity: when include points at a source
+	// directory path segment, copy that directory's contents (not the segment
+	// itself), while preserving file semantics when include points at a file.
+	CopySourcePathContentsWhenDir bool `internal:"true" default:"false"`
+
+	// internal
+	SrcPath string `internal:"true" default:""`
+
+	Source    core.DirectoryID
+	Directory core.DirectoryID // legacy, use Source instead
+
+	core.CopyFilter
+	DagOpInternalArgs
+}
+
+var _ core.Inputs = WithDirectoryDockerfileCompatArgs{}
+
+func (args WithDirectoryDockerfileCompatArgs) Inputs(ctx context.Context) ([]llb.State, error) {
+	deps := []llb.State{}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	if args.Source.ID() == nil {
+		return nil, nil
+	}
+
+	sourceRes, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return nil, fmt.Errorf("load source: %w", err)
+	}
+	sourceOp, err := llb.NewDefinitionOp(sourceRes.Self().LLB)
+	if err != nil {
+		return nil, fmt.Errorf("source op: %w", err)
+	}
+	if sourceOp.Output() != nil {
+		deps = append(deps, llb.NewState(sourceOp))
+	}
+
+	return deps, nil
+}
+
+func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryDockerfileCompatArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	fmt.Printf("ACB dir.withDirectoryDockerfileCompat %+v\n", args)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	src := cmp.Or(args.Source, args.Directory)
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
+	}
+
+	with, err := parent.Self().WithDirectoryDockerfileCompat(
+		ctx,
+		args.Path,
+		args.SrcPath,
+		src.ID(),
+		args.CopyFilter,
+		args.Owner,
+		perms,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+		args.RequiredSourcePath,
+		args.DestPathHintIsDirectory,
+		args.CopySourcePathContentsWhenDir,
+	)
+	if err != nil {
+		return res, fmt.Errorf("WithDirectoryDockerfileCompat %q failed: %w", args.Path, err)
+	}
+	fmt.Printf("ACB WithDirectoryDockerfileCompat ok!\n")
 	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 
@@ -537,7 +650,7 @@ func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[
 		Dir:      parent.Self().Dir,
 	}
 
-	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "", nil, false, false, "", false, false)
+	filtered, err := scratchDir.WithDirectory(ctx, "/", "", parent.ID(), args.CopyFilter, "", nil, false, false, "", false, false)
 	if err != nil {
 		return inst, fmt.Errorf("failed to filter: %w", err)
 	}
@@ -776,17 +889,17 @@ func (args WithFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
 
 	sourceRes, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
-			if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
-				dirSourceRes, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
-				if dirErr == nil {
-					if err := appendDep(dirSourceRes.Self().LLB); err != nil {
-						return nil, err
-					}
-					return deps, nil
-				}
-			}
-		}
+		//if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+		//	if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
+		//		dirSourceRes, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
+		//		if dirErr == nil {
+		//			if err := appendDep(dirSourceRes.Self().LLB); err != nil {
+		//				return nil, err
+		//			}
+		//			return deps, nil
+		//		}
+		//	}
+		//}
 		return nil, fmt.Errorf("load source: %w", err)
 	}
 	if err := appendDep(sourceRes.Self().LLB); err != nil {
@@ -810,26 +923,26 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 
 	file, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
-			if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
-				dir, fallbackErr := parent.Self().WithDirectory(
-					ctx,
-					args.Path,
-					dirSourceID,
-					core.CopyFilter{},
-					args.Owner,
-					perms,
-					args.DoNotCreateDestPath,
-					args.AttemptUnpackDockerCompatibility,
-					"",
-					false,
-					false,
-				)
-				if fallbackErr == nil {
-					return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
-				}
-			}
-		}
+		//if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+		//	if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
+		//		dir, fallbackErr := parent.Self().WithDirectory(
+		//			ctx,
+		//			args.Path,
+		//			dirSourceID,
+		//			core.CopyFilter{},
+		//			args.Owner,
+		//			perms,
+		//			args.DoNotCreateDestPath,
+		//			args.AttemptUnpackDockerCompatibility,
+		//			"",
+		//			false,
+		//			false,
+		//		)
+		//		if fallbackErr == nil {
+		//			return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+		//		}
+		//	}
+		//}
 		return inst, err
 	}
 

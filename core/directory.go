@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -686,9 +687,238 @@ func (cf *CopyFilter) IsEmpty() bool {
 }
 
 //nolint:gocyclo
+func (dir *Directory) WithDirectoryDockerfileCompat(
+	ctx context.Context,
+	destDir string,
+	srcPath string,
+	srcID *call.ID,
+	filter CopyFilter,
+	owner string,
+	permissions *int,
+	doNotCreateDestPath bool,
+	attemptUnpackDockerCompatibility bool,
+	requiredSourcePath string,
+	destPathHintIsDirectory bool,
+	copySourcePathContentsWhenDir bool,
+) (*Directory, error) {
+	fmt.Printf("ACB WithDirectoryDockerfileCompat with destDir=%s srcPath=%s filter=%+v\n", destDir, srcPath, filter)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	srcObj, err := dagql.NewID[*Directory](srcID).Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	src := srcObj.Self()
+
+	dirRef, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get directory ref: %w", err)
+	}
+	srcRef, err := getRefOrEvaluate(ctx, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory ref: %w", err)
+	}
+
+	if requiredSourcePath != "" {
+		if err := ensureRequiredCopySourcePathExists(ctx, srcRef, src.Dir, requiredSourcePath); err != nil {
+			return nil, err
+		}
+	}
+
+	// cache := query.BuildkitCache()
+
+	//if dirRef == nil {
+	//	panic("dirRef is nilkhh") // TODO create one?
+	//}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, dirRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("patch"))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, nil, func(copyDest string, destMnt *mount.Mount) error {
+		resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
+		if err != nil {
+			return err
+		}
+		if srcRef == nil {
+			err = os.MkdirAll(resolvedCopyDest, 0755)
+			if err != nil {
+				return err
+			}
+			if permissions != nil {
+				if err := os.Chmod(resolvedCopyDest, os.FileMode(*permissions)); err != nil {
+					return fmt.Errorf("failed to chmod %s: %w", resolvedCopyDest, err)
+				}
+			}
+			if owner != "" {
+				ownership, err := parseDirectoryOwner(owner)
+				if err != nil {
+					return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+				}
+				if err := os.Chown(resolvedCopyDest, ownership.UID, ownership.GID); err != nil {
+					return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
+				}
+			}
+			return nil
+		}
+		mounter, err := srcRef.Mount(ctx, true, nil)
+		if err != nil {
+			return fmt.Errorf("failed to mount source directory: %w", err)
+		}
+		ms, unmountSrc, err := mounter.Mount()
+		if err != nil {
+			return fmt.Errorf("failed to mount source directory: %w", err)
+		}
+		defer unmountSrc()
+		if len(ms) == 0 {
+			return fmt.Errorf("no mounts returned for source directory")
+		}
+		srcMnt := ms[0]
+		lm := snapshot.LocalMounterWithMounts(ms)
+		mntedSrcPath, err := lm.Mount()
+		if err != nil {
+			return fmt.Errorf("failed to mount source directory: %w", err)
+		}
+		defer lm.Unmount()
+		//resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Dir)
+		//if err != nil {
+		//	return err
+		//}
+
+		srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
+		if err != nil {
+			return fmt.Errorf("failed to create source path resolver: %w", err)
+		}
+		destResolver, err := pathResolverForMount(destMnt, copyDest)
+		if err != nil {
+			return fmt.Errorf("failed to create destination path resolver: %w", err)
+		}
+
+		var ownership *Ownership
+		if owner != "" {
+			ownership, err = parseDirectoryOwner(owner)
+			if err != nil {
+				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+			}
+		}
+
+		var opts []fscopy.Opt
+		opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
+			AlwaysReplaceExistingDestPaths: true,
+			CopyDirContents:                true,
+			//EnableHardlinkOptimization:     true,
+			SourcePathResolver: srcResolver,
+			DestPathResolver:   destResolver,
+			Mode:               permissions,
+		}))
+		for _, pattern := range filter.Include {
+			fmt.Printf("ACB adding include pattern %s\n", pattern)
+			opts = append(opts, fscopy.WithIncludePattern(pattern))
+		}
+		for _, pattern := range filter.Exclude {
+			opts = append(opts, fscopy.WithExcludePattern(pattern))
+		}
+		if filter.Gitignore {
+			opts = append(opts, fscopy.WithGitignore())
+		}
+		if ownership != nil {
+			opts = append(opts, fscopy.WithChown(ownership.UID, ownership.GID))
+		}
+
+		if attemptUnpackDockerCompatibility {
+			panic("attemptUnpackDockerCompatibility")
+			//didUnpack, err := attemptCopyArchiveUnpack(
+			//	ctx,
+			//	effectiveSrcPath,
+			//	resolvedCopyDest,
+			//	effectiveInclude,
+			//	filter.Exclude,
+			//	filter.Gitignore,
+			//	ownership,
+			//	permissions,
+			//	newRef.IdentityMapping(),
+			//	destPathHintIsDirectory,
+			//)
+			//if err != nil {
+			//	return fmt.Errorf("failed to unpack source archive: %w", err)
+			//}
+			//if didUnpack {
+			//	return nil
+			//}
+		}
+
+		srcs := []string{src.Dir}
+		if srcPath != "" {
+			fmt.Printf("ACB gotta handle srcPath=%s (root is %s)\n", srcPath, mntedSrcPath)
+			walk(mntedSrcPath)
+
+			//if !action.AllowWildcard {
+			//	m = []string{srcPath}
+			//} else {
+			//	var err error
+
+			if src.Dir != "" && src.Dir != "/" {
+				srcPath = src.Dir + "/" + srcPath
+			}
+
+			var err error
+			srcs, err = fscopy.ResolveWildcards(mntedSrcPath, srcPath, true) // todo use action.FollowSymlink instead of true
+			if err != nil {
+				return err
+				//return errors.WithStack(err)
+			}
+			//fmt.Printf("ACB ResolveWildcards res=%v\n", m)
+
+			//	if len(m) == 0 {
+			//		if action.AllowEmptyWildcard {
+			//			return nil
+			//		}
+			//		return errors.Errorf("%s not found", srcPath)
+			//	}
+			//}
+
+		}
+
+		for _, src := range srcs {
+			//if err := fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
+			fmt.Printf("ACB fscopy %s,%s to %s,%s\n", mntedSrcPath, src, copyDest, destDir)
+			if err := fscopy.Copy(ctx, mntedSrcPath, src, copyDest, path.Join(dir.Dir, destDir), opts...); err != nil {
+				return fmt.Errorf("failed to copy source directory: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	dirRef, err = newRef.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+	}
+
+	dir.Result = dirRef
+	return dir, nil
+}
+
+//nolint:gocyclo
 func (dir *Directory) WithDirectory(
 	ctx context.Context,
 	destDir string,
+	srcPath string,
 	srcID *call.ID,
 	filter CopyFilter,
 	owner string,
@@ -700,6 +930,8 @@ func (dir *Directory) WithDirectory(
 	copySourcePathContentsWhenDir bool,
 ) (*Directory, error) {
 	dir = dir.Clone()
+
+	fmt.Printf("ACB made it to WithDirectory %+v called from %s\n", dir, debug.Stack())
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -716,6 +948,22 @@ func (dir *Directory) WithDirectory(
 	}
 	src := srcObj.Self()
 
+	//// TODO instead of mounting it here, we could do a select() to call dir.Stat?
+	//execInMount(ctx, src, func(root string) error {
+	//	fmt.Printf("ACB WithDirectory loaded %+v\n", src.Dir)
+	//	resolvedDir, err := containerdfs.RootPath(root, src.Dir)
+	//	if err != nil {
+	//		return err
+	//	}
+	//	fmt.Printf("ACB gotta test if %s is a dir or file\n", resolvedDir)
+	//	fileInfo, err := os.Stat(resolvedDir)
+	//	if err != nil {
+	//		return err
+	//	}
+	//	fmt.Printf("ACB %s is a %+v (dir=%v)\n", resolvedDir, fileInfo, fileInfo.IsDir())
+	//	return nil
+	//})
+
 	destDir = path.Join(dir.Dir, destDir)
 
 	dirRef, err := getRefOrEvaluate(ctx, dir)
@@ -731,6 +979,7 @@ func (dir *Directory) WithDirectory(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source directory ref: %w", err)
 	}
+
 	if requiredSourcePath != "" {
 		if err := ensureRequiredCopySourcePathExists(ctx, srcRef, src.Dir, requiredSourcePath); err != nil {
 			return nil, err
@@ -743,7 +992,8 @@ func (dir *Directory) WithDirectory(
 			src.Dir == "/" &&
 			owner == "" &&
 			permissions == nil &&
-			!attemptUnpackDockerCompatibility
+			!attemptUnpackDockerCompatibility &&
+			srcPath == ""
 
 	cache := query.BuildkitCache()
 
@@ -808,10 +1058,11 @@ func (dir *Directory) WithDirectory(
 				return fmt.Errorf("failed to mount source directory: %w", err)
 			}
 			defer lm.Unmount()
-			resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Dir)
-			if err != nil {
-				return err
-			}
+			//resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Dir)
+			//if err != nil {
+			//	return err
+			//}
+
 			srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
 			if err != nil {
 				return fmt.Errorf("failed to create source path resolver: %w", err)
@@ -838,12 +1089,8 @@ func (dir *Directory) WithDirectory(
 				DestPathResolver:               destResolver,
 				Mode:                           permissions,
 			}))
-			effectiveSrcPath, effectiveInclude, err := maybeUseSourcePathContentsWhenDir(resolvedSrcPath, filter.Include, copySourcePathContentsWhenDir)
-			if err != nil {
-				return err
-			}
-
-			for _, pattern := range effectiveInclude {
+			for _, pattern := range filter.Include {
+				fmt.Printf("ACB adding include pattern %s\n", pattern)
 				opts = append(opts, fscopy.WithIncludePattern(pattern))
 			}
 			for _, pattern := range filter.Exclude {
@@ -857,27 +1104,28 @@ func (dir *Directory) WithDirectory(
 			}
 
 			if attemptUnpackDockerCompatibility {
-				didUnpack, err := attemptCopyArchiveUnpack(
-					ctx,
-					effectiveSrcPath,
-					resolvedCopyDest,
-					effectiveInclude,
-					filter.Exclude,
-					filter.Gitignore,
-					ownership,
-					permissions,
-					newRef.IdentityMapping(),
-					destPathHintIsDirectory,
-				)
-				if err != nil {
-					return fmt.Errorf("failed to unpack source archive: %w", err)
-				}
-				if didUnpack {
-					return nil
-				}
+				panic("attemptUnpackDockerCompatibility")
+				//didUnpack, err := attemptCopyArchiveUnpack(
+				//	ctx,
+				//	effectiveSrcPath,
+				//	resolvedCopyDest,
+				//	effectiveInclude,
+				//	filter.Exclude,
+				//	filter.Gitignore,
+				//	ownership,
+				//	permissions,
+				//	newRef.IdentityMapping(),
+				//	destPathHintIsDirectory,
+				//)
+				//if err != nil {
+				//	return fmt.Errorf("failed to unpack source archive: %w", err)
+				//}
+				//if didUnpack {
+				//	return nil
+				//}
 			}
 
-			if err := fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
+			if err := fscopy.Copy(ctx, mntedSrcPath, src.Dir, copyDest, destDir, opts...); err != nil {
 				return fmt.Errorf("failed to copy source directory: %w", err)
 			}
 			return nil
@@ -912,6 +1160,7 @@ func (dir *Directory) WithDirectory(
 		// copy but preserves the other caching benefits of MergeOp. This is the same
 		// behavior as "COPY --link" in Dockerfiles.
 
+		fmt.Printf("ACB rebasing dir to %s\n", destDir)
 		rebasedArgs := []dagql.NamedInput{
 			{Name: "path", Value: dagql.String(destDir)},
 			{Name: "source", Value: dagql.NewID[*Directory](srcID)},
@@ -920,6 +1169,10 @@ func (dir *Directory) WithDirectory(
 			{Name: "gitignore", Value: dagql.Boolean(filter.Gitignore)},
 			{Name: "owner", Value: dagql.String(owner)},
 		}
+		if srcPath != "" {
+			rebasedArgs = append(rebasedArgs, dagql.NamedInput{Name: "srcPath", Value: dagql.String(srcPath)})
+		}
+
 		if permissions != nil {
 			rebasedArgs = append(rebasedArgs, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
 		}
@@ -2167,5 +2420,25 @@ func FileModeToFileType(m fs.FileMode) FileType {
 		return FileTypeSymlink
 	} else {
 		return FileTypeUnknown
+	}
+}
+
+func walk(root string) {
+	empty := true
+	fmt.Printf("ACB walk root=%s\n", root)
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		fmt.Printf("ACB walk %s\n", path)
+		empty = false
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("ACB walk err=%v\n", err)
+		return
+	}
+	if empty {
+		fmt.Printf("ACB empty\n")
 	}
 }

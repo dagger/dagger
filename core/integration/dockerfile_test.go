@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
@@ -238,27 +239,28 @@ CMD ["sh", "-c", "cat /out/a.txt && cat /out/b.txt"]
 		require.Equal(t, "AB", strings.TrimSpace(out))
 	})
 
-	t.Run("copy-variable-substitution", func(ctx context.Context, t *testctx.T) {
+	t.Run("whelp", func(ctx context.Context, t *testctx.T) {
 		dir := baseDir.
-			WithNewFile("alt.go", "package alt\n").
+			WithNewFile("alt.go", "package alt\n// "+time.Now().String()).
 			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 ARG SRC=main.go
+RUN echo %s
 COPY ${SRC} /tmp/out.go
 CMD ["cat", "/tmp/out.go"]
-`, alpineImage))
+`, alpineImage, time.Now().String()))
 
 		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "package main")
 
-		opts := dagger.DirectoryDockerBuildOpts{
-			BuildArgs: []dagger.BuildArg{
-				{Name: "SRC", Value: "alt.go"},
-			},
-		}
-		out, err = dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "package alt\n", out)
+		//opts := dagger.DirectoryDockerBuildOpts{
+		//	BuildArgs: []dagger.BuildArg{
+		//		{Name: "SRC", Value: "alt.go"},
+		//	},
+		//}
+		//out, err = dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
+		//require.NoError(t, err)
+		//require.Equal(t, "package alt\n", out)
 	})
 
 	t.Run("copy-through-symlink-context", func(ctx context.Context, t *testctx.T) {

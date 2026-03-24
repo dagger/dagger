@@ -232,6 +232,7 @@ func (c *converter) applyFileAction(
 		nextID, err := applyRm(baseID, x.Rm)
 		return nextID, baseContainerID, err
 	case *pb.FileAction_Copy:
+		fmt.Printf("ACB applyFileAction on %+v\n", action)
 		srcID, err := resolveFileActionInput(action.SecondaryInput, opInputIDs, actionOutputs)
 		if err != nil {
 			return nil, nil, err
@@ -381,77 +382,51 @@ func applyCopy(
 		return nil, nil, fmt.Errorf("alwaysReplaceExistingDestPaths is unsupported")
 	}
 
-	sourceSubdir, include := deriveCopySelection(cp)
-	sourceDirID := sourceID
-	if sourceSubdir != "/" {
-		sourceDirID = appendCall(sourceID, directoryType(), "directory", argString("path", sourceSubdir))
-	}
-
-	owner, err := chownOwnerString(cp.Owner)
-	if err != nil {
-		return nil, nil, err
-	}
-	if isOwnerStringValid(owner) {
-		if baseContainerID == nil {
-			return nil, nil, fmt.Errorf("named user/group chown requires container context")
-		}
-		id, ctrID := applyCopyViaContainer(baseID, baseContainerID, sourceDirID, cp, include, owner)
-		return id, ctrID, nil
-	}
-
-	if filePath, ok := explicitFileCopyPath(cp, include); ok && !cp.AttemptUnpackDockerCompatibility {
-		fileID := appendCall(sourceDirID, fileType(), "file", argString("path", filePath))
-		args := []*call.Argument{
-			argString("path", cleanPath(cp.Dest)),
-			argID("source", fileID),
-			argBool("allowDirectorySourceFallback", true),
-		}
-		if !cp.CreateDestPath {
-			args = append(args, argBool("doNotCreateDestPath", true))
-		}
-		if owner != "" {
-			args = append(args, argString("owner", owner))
-		}
-		if cp.Mode >= 0 {
-			args = append(args, argInt("permissions", int64(cp.Mode)))
-		}
-		return appendCall(baseID, directoryType(), "withFile", args...), baseContainerID, nil
-	}
-
 	args := []*call.Argument{
+		argString("srcPath", cleanPath(cp.Src)),
 		argString("path", cleanPath(cp.Dest)),
-		argID("source", sourceDirID),
+		argID("source", sourceID),
 	}
-	if copyDestPathHintIsDirectory(cp.Dest) {
-		args = append(args, argBool("destPathHintIsDirectory", true))
+
+	if cp.FollowSymlink {
+		args = append(args, argBool("followSymlink", true))
 	}
-	if copySourcePathContentsWhenDir(cp) {
-		args = append(args, argBool("copySourcePathContentsWhenDir", true))
-	}
-	if !cp.CreateDestPath {
-		args = append(args, argBool("doNotCreateDestPath", true))
-	}
-	if len(include) > 0 {
-		args = append(args, argStringList("include", include))
-	}
-	if len(cp.ExcludePatterns) > 0 {
-		args = append(args, argStringList("exclude", cp.ExcludePatterns))
+	if cp.DirCopyContents {
+		args = append(args, argBool("dirCopyContents", true))
 	}
 	if cp.AttemptUnpackDockerCompatibility {
 		args = append(args, argBool("attemptUnpackDockerCompatibility", true))
 	}
-	if requiredSourcePath, ok := requiredSourcePathForCopy(cp, include); ok {
-		args = append(args, argString("requiredSourcePath", requiredSourcePath))
+	if cp.CreateDestPath {
+		args = append(args, argBool("createDestPath", true))
+	}
+	if cp.AllowWildcard {
+		args = append(args, argBool("allowWildcard", true))
+	}
+	if cp.AllowEmptyWildcard {
+		args = append(args, argBool("AllowEmptyWildcard", true))
+	}
+	if cp.Timestamp > 0 {
+		panic("timestamp not supported")
+	}
+	if len(cp.IncludePatterns) > 0 {
+		args = append(args, argStringList("include", cp.IncludePatterns))
+	}
+	if len(cp.ExcludePatterns) > 0 {
+		args = append(args, argStringList("exclude", cp.ExcludePatterns))
+	}
+	if cp.AlwaysReplaceExistingDestPaths {
+		args = append(args, argBool("alwaysReplaceExistingDestPaths", true))
 	}
 
-	if owner != "" {
-		args = append(args, argString("owner", owner))
-	}
+	//if owner != "" {
+	//	args = append(args, argString("owner", owner))
+	//}
 	if cp.Mode >= 0 {
 		args = append(args, argInt("permissions", int64(cp.Mode)))
 	}
 
-	return appendCall(baseID, directoryType(), "withDirectory", args...), baseContainerID, nil
+	return appendCall(baseID, directoryType(), "__withDirectoryDockerfilCompat", args...), baseContainerID, nil
 }
 
 func applyCopyViaContainer(
@@ -473,12 +448,13 @@ func applyCopyViaContainer(
 
 	var nextContainerID *call.ID
 	if filePath, ok := explicitFileCopyPath(cp, include); ok && !cp.AttemptUnpackDockerCompatibility {
+		fmt.Printf("ACB here1\n")
 		fileID := appendCall(sourceDirID, fileType(), "file", argString("path", filePath))
 		args := []*call.Argument{
 			argString("path", cleanPath(cp.Dest)),
 			argID("source", fileID),
 			argString("owner", owner),
-			argBool("allowDirectorySourceFallback", true),
+			//argBool("allowDirectorySourceFallback", true),
 		}
 		if !cp.CreateDestPath {
 			args = append(args, argBool("doNotCreateDestPath", true))
@@ -526,12 +502,14 @@ func applyCopyViaContainer(
 func deriveCopySelection(cp *pb.FileActionCopy) (sourceSubdir string, include []string) {
 	src := cleanPath(cp.Src)
 	include = append([]string{}, cp.IncludePatterns...)
+	fmt.Printf("ACB deriveCopySelection op include=%v\n", cp.IncludePatterns)
 
 	switch {
 	case cp.AllowWildcard:
 		sourceSubdir = cleanPath(path.Dir(src))
 		pattern := path.Base(src)
 		if pattern != "." && pattern != "/" {
+			fmt.Printf("ACB deriveCopySelection allowWildcard include=%v\n", pattern)
 			include = append([]string{pattern}, include...)
 		}
 	case cp.DirCopyContents:
@@ -539,11 +517,12 @@ func deriveCopySelection(cp *pb.FileActionCopy) (sourceSubdir string, include []
 	case src == "/" || src == ".":
 		sourceSubdir = "/"
 	default:
-		sourceSubdir = cleanPath(path.Dir(src))
-		item := path.Base(src)
-		if item != "." && item != "/" {
-			include = append([]string{item}, include...)
-		}
+		sourceSubdir = cleanPath(src)
+		//sourceSubdir = cleanPath(path.Dir(src))
+		//item := path.Base(src)
+		//if item != "." && item != "/" {
+		//	include = append([]string{item}, include...)
+		//}
 	}
 
 	if sourceSubdir == "" {
