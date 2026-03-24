@@ -1008,6 +1008,47 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
 // size.
 func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *buildkit.ExecutionMetadata) {
+	forwardedMD := readClientMetadata(r)
+	inheritedLockMode := srv.inheritedNestedClientLockMode(execMD)
+	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
+		ClientMetadata:      nestedClientMetadata(execMD, forwardedMD, inheritedLockMode),
+		CallID:              execMD.CallID,
+		CallerClientID:      execMD.CallerClientID,
+		EncodedModuleID:     execMD.EncodedModuleID,
+		EncodedFunctionCall: execMD.EncodedFunctionCall,
+		ParentIDs:           execMD.ParentIDs,
+	}).ServeHTTP(w, r)
+}
+
+func readClientMetadata(r *http.Request) *engine.ClientMetadata {
+	md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header)
+	return md
+}
+
+func (srv *Server) inheritedNestedClientLockMode(execMD *buildkit.ExecutionMetadata) string {
+	if execMD == nil {
+		return ""
+	}
+	if execMD.LockMode != "" {
+		return execMD.LockMode
+	}
+	callerClient, err := srv.clientFromIDs(execMD.SessionID, execMD.CallerClientID)
+	if err != nil || callerClient == nil || callerClient.clientMetadata == nil {
+		return ""
+	}
+	if callerClient.clientMetadata.LockMode != "" {
+		return callerClient.clientMetadata.LockMode
+	}
+	for i := len(callerClient.parents) - 1; i >= 0; i-- {
+		parent := callerClient.parents[i]
+		if parent != nil && parent.clientMetadata != nil && parent.clientMetadata.LockMode != "" {
+			return parent.clientMetadata.LockMode
+		}
+	}
+	return ""
+}
+
+func nestedClientMetadata(execMD *buildkit.ExecutionMetadata, forwarded *engine.ClientMetadata, inheritedLockMode string) *engine.ClientMetadata {
 	clientVersion := execMD.ClientVersionOverride
 	if clientVersion == "" {
 		clientVersion = engine.Version
@@ -1016,42 +1057,40 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
 	var skipWorkspaceModules bool
+	lockMode := inheritedLockMode
 	var eagerRuntime bool
 	var workspaceRef *string
-	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
-		clientVersion = md.ClientVersion
-		allowedLLMModules = md.AllowedLLMModules
-		extraModules = md.ExtraModules
-		skipWorkspaceModules = md.SkipWorkspaceModules
-		eagerRuntime = md.EagerRuntime
-		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
+	if forwarded != nil {
+		clientVersion = forwarded.ClientVersion
+		allowedLLMModules = forwarded.AllowedLLMModules
+		extraModules = forwarded.ExtraModules
+		skipWorkspaceModules = forwarded.SkipWorkspaceModules
+		if forwarded.LockMode != "" {
+			lockMode = forwarded.LockMode
+		}
+		eagerRuntime = forwarded.EagerRuntime
+		if declaredWorkspace, ok := workspaceRefFromClientMetadata(forwarded); ok {
 			ref := declaredWorkspace
 			workspaceRef = &ref
 		}
 	}
 
-	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata: &engine.ClientMetadata{
-			ClientID:             execMD.ClientID,
-			ClientVersion:        clientVersion,
-			ClientSecretToken:    execMD.SecretToken,
-			SessionID:            execMD.SessionID,
-			ClientHostname:       execMD.Hostname,
-			ClientStableID:       execMD.ClientStableID,
-			Labels:               map[string]string{},
-			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
-			AllowedLLMModules:    allowedLLMModules,
-			ExtraModules:         extraModules,
-			SkipWorkspaceModules: skipWorkspaceModules,
-			EagerRuntime:         eagerRuntime,
-			Workspace:            workspaceRef,
-		},
-		CallID:              execMD.CallID,
-		CallerClientID:      execMD.CallerClientID,
-		EncodedModuleID:     execMD.EncodedModuleID,
-		EncodedFunctionCall: execMD.EncodedFunctionCall,
-		ParentIDs:           execMD.ParentIDs,
-	}).ServeHTTP(w, r)
+	return &engine.ClientMetadata{
+		ClientID:             execMD.ClientID,
+		ClientVersion:        clientVersion,
+		ClientSecretToken:    execMD.SecretToken,
+		SessionID:            execMD.SessionID,
+		ClientHostname:       execMD.Hostname,
+		ClientStableID:       execMD.ClientStableID,
+		Labels:               map[string]string{},
+		SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
+		AllowedLLMModules:    allowedLLMModules,
+		ExtraModules:         extraModules,
+		SkipWorkspaceModules: skipWorkspaceModules,
+		LockMode:             lockMode,
+		EagerRuntime:         eagerRuntime,
+		Workspace:            workspaceRef,
+	}
 }
 
 const InstrumentationLibrary = "dagger.io/engine.server"

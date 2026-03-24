@@ -728,6 +728,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		CallID:            callID,
 		ExecID:            identity.NewID(),
 		Internal:          true,
+		LockMode:          clientMetadata.LockMode,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
