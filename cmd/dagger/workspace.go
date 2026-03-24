@@ -131,6 +131,16 @@ func writeWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, key, value 
 	return err
 }
 
+func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, ref, name string) error {
+	msg, err := dag.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: name})
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(out, msg)
+	return err
+}
+
 func writeWorkspaceInfo(w io.Writer, info workspaceInfoView) error {
 	configPath := info.ConfigPath
 	if configPath == "" {

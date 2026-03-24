@@ -101,10 +101,10 @@ Reason:
 - workspace config model
 - `dagger workspace config` read/write
 - `Workspace.install` base mutation
+- workspace-aware top-level `dagger install` routing
 
 ### Pending Safe Pre-Lock Buckets
 
-- top-level install split and workspace install CLI routing
 - `dagger workspace list`
 - engine-routed `dagger module init`
 - module install/update command split
@@ -292,3 +292,20 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestCurrentWorkspaceInstall$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/ca515babe72ef7bd2246969984da7df3`
+  - replayed workspace-aware top-level `dagger install` routing
+  - design note:
+    keep the command unified for now, but only as a thin router: preserve
+    normal module dependency installs when the current or explicit `--mod`
+    target is a module, and fall back to `CurrentWorkspace().Install(...)`
+    only when no module target exists
+  - design note:
+    reject `--compat` in workspace-install mode instead of silently ignoring a
+    module-only flag
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/Test(CurrentWorkspaceInstall|WorkspaceInstallCommand)$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/4f8e174d71cda956bc68f8743ef4f564`

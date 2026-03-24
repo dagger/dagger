@@ -414,27 +414,15 @@ var moduleDepInstallCmd = &cobra.Command{
 			EagerRuntime:         eagerRuntime,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-
-			modRef, err := getModuleSourceRefWithDefault()
+			dest, err := resolveInstallDestination(ctx, dag)
 			if err != nil {
 				return err
 			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only install dependencies to a local module
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
+			if dest.Workspace {
+				if cmd.Flags().Lookup("compat").Changed {
+					return fmt.Errorf("--compat only applies to module dependency installs; pass --mod to target a module explicitly")
+				}
+				return installWorkspaceModule(ctx, cmd.OutOrStdout(), dag, extraArgs[0], installName)
 			}
 
 			depRefStr := extraArgs[0]
@@ -450,14 +438,14 @@ var moduleDepInstallCmd = &cobra.Command{
 				depSrc = depSrc.WithName(installName)
 			}
 
-			modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{depSrc})
+			modSrc := dest.Module.WithDependencies([]*dagger.ModuleSource{depSrc})
 			if engineVersion := getCompatVersion(); engineVersion != "" {
 				modSrc = modSrc.WithEngineVersion(engineVersion)
 			}
 
 			_, err = modSrc.
 				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
+				Export(ctx, dest.ContextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to install dependency: %w", err)
 			}
@@ -524,6 +512,46 @@ var moduleDepInstallCmd = &cobra.Command{
 			return nil
 		})
 	},
+}
+
+type installDestination struct {
+	Workspace      bool
+	Module         *dagger.ModuleSource
+	ContextDirPath string
+}
+
+// resolveInstallDestination keeps top-level `dagger install` workspace-aware
+// while preserving explicit module-targeting behavior.
+func resolveInstallDestination(ctx context.Context, dag *dagger.Client) (*installDestination, error) {
+	modRef, explicitModuleRef := getExplicitModuleSourceRef()
+	if !explicitModuleRef {
+		modRef = moduleURLDefault
+	}
+
+	modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+		RequireKind: dagger.ModuleSourceKindLocalSource,
+	})
+
+	alreadyExists, err := modSrc.ConfigExists(ctx)
+	if err != nil {
+		return nil, localModuleErrorf("failed to check if module already exists: %w", err)
+	}
+	if !alreadyExists {
+		if !explicitModuleRef {
+			return &installDestination{Workspace: true}, nil
+		}
+		return nil, fmt.Errorf("module must be fully initialized")
+	}
+
+	contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+	if err != nil {
+		return nil, localModuleErrorf("failed to get local context directory path: %w", err)
+	}
+
+	return &installDestination{
+		Module:         modSrc,
+		ContextDirPath: contextDirPath,
+	}, nil
 }
 
 var moduleUnInstallCmd = &cobra.Command{
