@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"log/slog"
 	"reflect"
 	"strconv"
 	"strings"
@@ -346,6 +347,9 @@ func (v *secretValue) String() string {
 }
 
 func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+	if !strings.Contains(v.address, ":") {
+		slog.Warn("deprecation: missig URI scheme in secret argument \"" + v.address + "\". Add env:// prefix to prevent errors in future versions")
+	}
 	return c.Address(v.address).Secret(), nil
 }
 

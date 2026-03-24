@@ -65,6 +65,7 @@ func (d docker) ContainerRun(ctx context.Context, name string, opts runOpts) err
 	args := []string{"run",
 		"--name", name,
 		"-d",
+		"--init",              // reap those zombies
 		"--restart", "always", // load-bearing to prevent https://github.com/dagger/dagger/issues/7785 from being fatal
 	}
 	for _, volume := range opts.volumes {
