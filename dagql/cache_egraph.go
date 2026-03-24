@@ -357,11 +357,13 @@ func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (mer
 	if len(termSet) == 0 {
 		return nil
 	}
+	traceEnabled := c.traceEnabled()
 
 	termIDs := make([]egraphTermID, 0, len(termSet))
 	for termID := range termSet {
 		termIDs = append(termIDs, termID)
 	}
+	processedTermDigests := make(map[string]struct{}, len(termIDs))
 
 	for _, termID := range termIDs {
 		term := c.egraphTerms[termID]
@@ -371,16 +373,21 @@ func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (mer
 		}
 
 		oldInputs := term.inputEqIDs
-		newInputs := make([]eqClassID, len(oldInputs))
+		var newInputs []eqClassID
+		inputsChanged := false
 		for i, in := range oldInputs {
 			rootIn := c.findEqClassLocked(in)
+			if rootIn == in {
+				continue
+			}
+			if !inputsChanged {
+				newInputs = append([]eqClassID(nil), oldInputs...)
+				inputsChanged = true
+			}
 			newInputs[i] = rootIn
 		}
-		inputsChanged := !slices.Equal(newInputs, oldInputs)
 
 		if inputsChanged {
-			oldInputsCopy := append([]eqClassID(nil), oldInputs...)
-			// Re-home this term under canonical input classes.
 			for _, in := range oldInputs {
 				if set := c.inputEqClassToTerms[in]; set != nil {
 					delete(set, termID)
@@ -401,13 +408,9 @@ func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (mer
 				set[termID] = struct{}{}
 			}
 			term.inputEqIDs = newInputs
-			c.traceTermInputsRepaired(ctx, term.id, oldInputsCopy, newInputs)
-			c.traceTermRehomedUnderEqClasses(ctx, term.id, newInputs)
-		}
 
-		newTermDigest := calcEgraphTermDigest(term.selfDigest, term.inputEqIDs)
-		if newTermDigest != term.termDigest {
 			oldTermDigest := term.termDigest
+			newTermDigest := calcEgraphTermDigest(term.selfDigest, newInputs)
 			if set := c.egraphTermsByTermDigest[term.termDigest]; set != nil {
 				delete(set, termID)
 				if len(set) == 0 {
@@ -421,10 +424,20 @@ func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (mer
 			}
 			set[termID] = struct{}{}
 			term.termDigest = newTermDigest
-			c.traceTermDigestRecomputed(ctx, term.id, oldTermDigest, newTermDigest)
+
+			if traceEnabled {
+				oldInputsCopy := append([]eqClassID(nil), oldInputs...)
+				c.traceTermInputsRepaired(ctx, term.id, oldInputsCopy, newInputs)
+				c.traceTermRehomedUnderEqClasses(ctx, term.id, newInputs)
+				c.traceTermDigestRecomputed(ctx, term.id, oldTermDigest, newTermDigest)
+			}
 		}
 
-		set := c.egraphTermsByTermDigest[term.termDigest]
+		processedTermDigests[term.termDigest] = struct{}{}
+	}
+
+	for termDigest := range processedTermDigests {
+		set := c.egraphTermsByTermDigest[termDigest]
 		if len(set) <= 1 {
 			continue
 		}
@@ -447,7 +460,9 @@ func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (mer
 			if other == nil || other.id == first.id {
 				continue
 			}
-			c.traceTermOutputsMerged(ctx, first.id, other.id, first.outputEqID, other.outputEqID)
+			if traceEnabled {
+				c.traceTermOutputsMerged(ctx, first.id, other.id, first.outputEqID, other.outputEqID)
+			}
 			merges = append(merges, eqMergePair{
 				a: first.outputEqID,
 				b: other.outputEqID,
