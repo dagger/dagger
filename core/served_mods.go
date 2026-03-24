@@ -96,13 +96,6 @@ func (s *ServedMods) PrimaryMods() []Mod {
 	return mods
 }
 
-// ModDeps returns a ModDeps containing all served modules. This is useful
-// for callers that need the dependency-graph API (TypeDefs, ModTypeFor, etc.)
-// where constructor policy is irrelevant.
-func (s *ServedMods) ModDeps() *ModDeps {
-	return NewModDeps(s.root, s.Mods())
-}
-
 // TypeDefs returns type definitions for all served modules, with
 // entrypoint-aware merging of module-provided Query fields. Unlike
 // ModDeps.TypeDefs, this correctly distinguishes constructors from
@@ -140,6 +133,41 @@ func (s *ServedMods) Schema(ctx context.Context) (*dagql.Server, error) {
 func (s *ServedMods) SchemaJSONFile(ctx context.Context) (dagql.Result[*File], error) {
 	_, schemaJSONFile, err := s.lazilyLoadSchema(ctx)
 	return schemaJSONFile, err
+}
+
+// SchemaIntrospectionJSONFile returns an introspection JSON file for the
+// schema, optionally hiding the given types. This is used by SDK codegen.
+func (s *ServedMods) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (dagql.Result[*File], error) {
+	if len(hiddenTypes) == 0 {
+		return s.SchemaJSONFile(ctx)
+	}
+	// Hidden types require a separate JSON file built from the same schema.
+	dag, err := s.Schema(ctx)
+	if err != nil {
+		return dagql.Result[*File]{}, err
+	}
+	return schemaJSONFileFromServer(ctx, dag, hiddenTypes)
+}
+
+// SchemaIntrospectionJSONFileForModule returns an introspection JSON file with
+// types hidden that should not be exposed to module SDKs.
+func (s *ServedMods) SchemaIntrospectionJSONFileForModule(ctx context.Context) (dagql.Result[*File], error) {
+	return s.SchemaIntrospectionJSONFile(ctx, TypesToIgnoreForModuleIntrospection)
+}
+
+// ModTypeFor searches the served modules for the given type def, returning the
+// ModType if found.
+func (s *ServedMods) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bool, error) {
+	for _, e := range s.entries {
+		modType, ok, err := e.mod.ModTypeFor(ctx, typeDef, false)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to get type from mod %q: %w", e.mod.Name(), err)
+		}
+		if ok {
+			return modType, true, nil
+		}
+	}
+	return nil, false, nil
 }
 
 // Server returns the inner (canonical) server used for ID loading. This server

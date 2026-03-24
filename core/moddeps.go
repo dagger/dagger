@@ -2,9 +2,7 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"slices"
-	"sync"
 
 	"github.com/dagger/dagger/dagql"
 )
@@ -22,16 +20,16 @@ var TypesToIgnoreForModuleIntrospection = []string{"Host"}
 /*
 ModDeps represents a set of dependencies for a module or for a caller depending on a
 particular set of modules to be served.
+
+Internally it delegates schema building, type definitions, and introspection
+to a lazily-constructed ServedMods with default install options (all
+constructors, no entrypoints).
 */
 type ModDeps struct {
 	root *Query
 	Mods []Mod // TODO hide
 
-	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
-	lazilyLoadedSchema         *dagql.Server
-	lazilyLoadedSchemaJSONFile dagql.Result[*File]
-	loadSchemaErr              error
-	loadSchemaLock             sync.Mutex
+	served *ServedMods // lazily built
 }
 
 func NewModDeps(root *Query, mods []Mod) *ModDeps {
@@ -58,63 +56,51 @@ func (d *ModDeps) Append(mods ...Mod) *ModDeps {
 }
 
 func (d *ModDeps) LookupDep(name string) (Mod, bool) {
-	for _, mod := range d.Mods {
-		if mod.Name() == name {
-			return mod, true
+	return d.ServedMods().Lookup(name)
+}
+
+// ServedMods returns the underlying ServedMods, building it lazily from
+// the module list with default install options.
+func (d *ModDeps) ServedMods() *ServedMods {
+	if d.served == nil {
+		d.served = NewServedMods(d.root)
+		for _, mod := range d.Mods {
+			d.served.Add(mod, InstallOpts{})
 		}
 	}
-
-	return nil, false
+	return d.served
 }
 
 // The combined schema exposed by each mod in this set of dependencies
 func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
-	schema, _, err := d.lazilyLoadSchema(ctx, []string{})
-	if err != nil {
-		return nil, err
-	}
-	return schema, nil
+	return d.ServedMods().Schema(ctx)
 }
 
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // It is meant for consumption from modules, which have some APIs hidden from their codegen.
 func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (inst dagql.Result[*File], _ error) {
-	_, schemaJSONFile, err := d.lazilyLoadSchema(ctx, hiddenTypes)
-	if err != nil {
-		return inst, err
-	}
-	return schemaJSONFile, nil
+	return d.ServedMods().SchemaIntrospectionJSONFile(ctx, hiddenTypes)
 }
 
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // Some APIs are automatically hidden as they should not be exposed to modules.
 func (d *ModDeps) SchemaIntrospectionJSONFileForModule(ctx context.Context) (inst dagql.Result[*File], _ error) {
-	return d.SchemaIntrospectionJSONFile(ctx, TypesToIgnoreForModuleIntrospection)
+	return d.ServedMods().SchemaIntrospectionJSONFileForModule(ctx)
 }
 
-// All the TypeDefs exposed by this set of dependencies
+// All the TypeDefs exposed by this set of dependencies.
+// Note: ModDeps has no entrypoint knowledge, so all module-provided Query
+// fields are treated as constructors. Use ServedMods.TypeDefs for
+// entrypoint-aware merging.
 func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
-	var typeDefs []*TypeDef
-	for _, mod := range d.Mods {
-		modTypeDefs, err := mod.TypeDefs(ctx, dag)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get objects from mod %q: %w", mod.Name(), err)
-		}
-		typeDefs = append(typeDefs, modTypeDefs...)
-	}
+	return d.ServedMods().TypeDefs(ctx, dag)
+}
 
-	// Merge module-provided Query fields into the Query TypeDef.
-	//
-	// CoreMod.TypeDefs skips Query fields provided by modules to avoid a lossy
-	// introspection round-trip (which loses interface return types, directives,
-	// etc.). Instead, we add those functions here using the module's own
-	// TypeDefs, which have the correct metadata.
-	//
-	// ModDeps doesn't track entrypoint policy — all fields are treated as
-	// constructors. Use ServedMods.TypeDefs for entrypoint-aware merging.
-	typeDefs = mergeModuleQueryFields(typeDefs, dag, nil)
-
-	return typeDefs, nil
+// Search the deps for the given type def, returning the ModType if found. This does not recurse
+// to transitive dependencies; it only returns types directly exposed by the schema of the top-level
+// deps.
+func (d *ModDeps) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bool, error) {
+	return d.ServedMods().ModTypeFor(ctx, typeDef)
 }
 
 // mergeModuleQueryFields finds the Query TypeDef and adds any module-provided
@@ -227,53 +213,4 @@ func findFunctionOnObject(obj *ObjectTypeDef, fieldName string) *Function {
 		}
 	}
 	return nil
-}
-
-func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
-	loadedSchema *dagql.Server,
-	loadedSchemaJSONFile dagql.Result[*File],
-	rerr error,
-) {
-	d.loadSchemaLock.Lock()
-	defer d.loadSchemaLock.Unlock()
-	if d.lazilyLoadedSchema != nil {
-		return d.lazilyLoadedSchema, d.lazilyLoadedSchemaJSONFile, nil
-	}
-	if d.loadSchemaErr != nil {
-		return nil, loadedSchemaJSONFile, d.loadSchemaErr
-	}
-	defer func() {
-		d.lazilyLoadedSchema = loadedSchema
-		d.lazilyLoadedSchemaJSONFile = loadedSchemaJSONFile
-		d.loadSchemaErr = rerr
-	}()
-
-	// All modules in a ModDeps get full installation (with constructors).
-	mods := make([]modInstall, len(d.Mods))
-	for i, mod := range d.Mods {
-		mods[i] = modInstall{mod: mod}
-	}
-
-	dag, schemaJSONFile, err := buildSchema(ctx, d.root, mods, hiddenTypes)
-	if err != nil {
-		return nil, loadedSchemaJSONFile, err
-	}
-	return dag, schemaJSONFile, nil
-}
-
-// Search the deps for the given type def, returning the ModType if found. This does not recurse
-// to transitive dependencies; it only returns types directly exposed by the schema of the top-level
-// deps.
-func (d *ModDeps) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bool, error) {
-	for _, mod := range d.Mods {
-		modType, ok, err := mod.ModTypeFor(ctx, typeDef, false)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to get type from mod %q: %w", mod.Name(), err)
-		}
-		if !ok {
-			continue
-		}
-		return modType, true, nil
-	}
-	return nil, false, nil
 }

@@ -112,6 +112,18 @@ func buildSchema(
 		}
 	}
 
+	schemaJSONFile, err = schemaJSONFileFromServer(ctx, dag, hiddenTypes)
+	if err != nil {
+		return nil, schemaJSONFile, err
+	}
+
+	return dag, schemaJSONFile, nil
+}
+
+// schemaJSONFileFromServer generates an introspection JSON file from an
+// already-built dagql server, optionally hiding the given types.
+func schemaJSONFileFromServer(ctx context.Context, dag *dagql.Server, hiddenTypes []string) (dagql.Result[*File], error) {
+	var schemaJSONFile dagql.Result[*File]
 	if err := dag.Select(ctx, dag.Root(), &schemaJSONFile,
 		dagql.Selector{
 			Field: "__schemaJSONFile",
@@ -123,8 +135,7 @@ func buildSchema(
 			},
 		},
 	); err != nil {
-		return nil, schemaJSONFile, fmt.Errorf("failed to select introspection JSON file: %w", err)
+		return schemaJSONFile, fmt.Errorf("failed to select introspection JSON file: %w", err)
 	}
-
-	return dag, schemaJSONFile, nil
+	return schemaJSONFile, nil
 }
