@@ -105,10 +105,11 @@ Reason:
 - `dagger workspace list`
 - engine-routed `dagger module init`
 - module install/update command split
+- local `dagger migrate`
 
 ### Pending Safe Pre-Lock Buckets
 
-- local `dagger migrate`
+- none
 
 ### Explicitly Dropped Buckets
 
@@ -391,3 +392,27 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='TestSpanName$'`
   - trace:
     `https://dagger.cloud/dagger/traces/9b596ae2d4097764ebb12dd661906bc2`
+  - replayed local `dagger migrate`
+  - design note:
+    keep `migrate` as its own top-level CLI file (`cmd/dagger/migrate.go`)
+    instead of burying a non-workspace subcommand inside `workspace.go`
+  - rewrite note:
+    the old plumbing replay silently dropped standalone sdk-backed root modules
+    during migration unless toolchains were also present; this replay always
+    materializes the project module into `.dagger/modules/<name>` when a
+    legacy sdk-backed module is migrated, even if its source remains at the
+    project root
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `go test ./core/workspace -run 'TestMigrate' -count=1`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger-migrate.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='Test(DetectMigrationTarget|FindMigratableModuleConfigs)$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/adb63fc6bac207b8a7244fa1ab0c658c`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestMigrate$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/19ce8adb4010457919b09890f58b959e`
