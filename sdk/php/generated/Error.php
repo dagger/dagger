@@ -13,10 +13,10 @@ class Error extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Error.
      */
-    public function id(): ErrorId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ErrorId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

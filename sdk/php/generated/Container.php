@@ -286,10 +286,10 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Container.
      */
-    public function id(): ContainerId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ContainerId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -304,7 +304,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Reads the container from an OCI tarball.
      */
-    public function import(FileId|File $source, ?string $tag = ''): Container
+    public function import(File $source, ?string $tag = ''): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('import');
         $innerQueryBuilder->setArgument('source', $source);
@@ -550,7 +550,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withDirectory(
         string $path,
-        DirectoryId|Directory $source,
+        Directory $source,
         ?array $exclude = [],
         ?array $include = [],
         ?bool $gitignore = false,
@@ -629,7 +629,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Export environment variables from an env-file to the container.
      */
-    public function withEnvFileVariables(EnvFileId|EnvFile $source): Container
+    public function withEnvFileVariables(EnvFile $source): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvFileVariables');
         $innerQueryBuilder->setArgument('source', $source);
@@ -745,7 +745,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withFile(
         string $path,
-        FileId|File $source,
+        File $source,
         ?int $permissions = null,
         ?string $owner = '',
         ?bool $expand = false,
@@ -806,8 +806,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withMountedCache(
         string $path,
-        CacheVolumeId|CacheVolume $cache,
-        DirectoryId|Directory|null $source = null,
+        CacheVolume $cache,
+        ?Directory $source = null,
         ?CacheSharingMode $sharing = null,
         ?string $owner = '',
         ?bool $expand = false,
@@ -835,7 +835,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withMountedDirectory(
         string $path,
-        DirectoryId|Directory $source,
+        Directory $source,
         ?string $owner = '',
         ?bool $expand = false,
     ): Container {
@@ -854,12 +854,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this container plus a file mounted at the given path.
      */
-    public function withMountedFile(
-        string $path,
-        FileId|File $source,
-        ?string $owner = '',
-        ?bool $expand = false,
-    ): Container {
+    public function withMountedFile(string $path, File $source, ?string $owner = '', ?bool $expand = false): Container
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedFile');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
@@ -877,7 +873,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withMountedSecret(
         string $path,
-        SecretId|Secret $source,
+        Secret $source,
         ?string $owner = '',
         ?int $mode = 256,
         ?bool $expand = false,
@@ -941,7 +937,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Attach credentials for future publishing to a registry. Use in combination with publish
      */
-    public function withRegistryAuth(string $address, string $username, SecretId|Secret $secret): Container
+    public function withRegistryAuth(string $address, string $username, Secret $secret): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRegistryAuth');
         $innerQueryBuilder->setArgument('address', $address);
@@ -953,7 +949,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Change the container's root filesystem. The previous root filesystem will be lost.
      */
-    public function withRootfs(DirectoryId|Directory $directory): Container
+    public function withRootfs(Directory $directory): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRootfs');
         $innerQueryBuilder->setArgument('directory', $directory);
@@ -963,7 +959,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Set a new environment variable, using a secret value
      */
-    public function withSecretVariable(string $name, SecretId|Secret $secret): Container
+    public function withSecretVariable(string $name, Secret $secret): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSecretVariable');
         $innerQueryBuilder->setArgument('name', $name);
@@ -980,7 +976,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      *
      * The service dependency will also convey to any files or directories produced by the container.
      */
-    public function withServiceBinding(string $alias, ServiceId|Service $service): Container
+    public function withServiceBinding(string $alias, Service $service): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withServiceBinding');
         $innerQueryBuilder->setArgument('alias', $alias);
@@ -1007,7 +1003,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withUnixSocket(
         string $path,
-        SocketId|Socket $source,
+        Socket $source,
         ?string $owner = '',
         ?bool $expand = false,
     ): Container {

@@ -16,10 +16,10 @@ class FunctionCall extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this FunctionCall.
      */
-    public function id(): FunctionCallId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\FunctionCallId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -61,7 +61,7 @@ class FunctionCall extends Client\AbstractObject implements Client\IdAble
     /**
      * Return an error from the function.
      */
-    public function returnError(ErrorId|Error $error): void
+    public function returnError(Error $error): void
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('returnError');
         $leafQueryBuilder->setArgument('error', $error);

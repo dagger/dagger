@@ -61,10 +61,10 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ObjectTypeDef.
      */
-    public function id(): ObjectTypeDefId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ObjectTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

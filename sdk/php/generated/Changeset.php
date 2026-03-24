@@ -62,10 +62,10 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Changeset.
      */
-    public function id(): ChangesetId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -119,10 +119,8 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
      *
      * By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
      */
-    public function withChangeset(
-        ChangesetId|Changeset $changes,
-        ?ChangesetMergeConflict $onConflict = null,
-    ): Changeset {
+    public function withChangeset(Changeset $changes, ?ChangesetMergeConflict $onConflict = null): Changeset
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangeset');
         $innerQueryBuilder->setArgument('changes', $changes);
         if (null !== $onConflict) {

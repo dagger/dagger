@@ -878,6 +878,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Id",
+			"p": "Dagger/Id.html",
+			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\InputTypeDef",
 			"p": "Dagger/InputTypeDef.html",
 			"d": "<p>A graphql input type, which is essentially just a group of named args.</p>",

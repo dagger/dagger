@@ -25,10 +25,10 @@ class HealthcheckConfig extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this HealthcheckConfig.
      */
-    public function id(): HealthcheckConfigId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\HealthcheckConfigId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

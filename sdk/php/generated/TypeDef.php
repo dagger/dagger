@@ -70,10 +70,10 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this TypeDef.
      */
-    public function id(): TypeDefId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\TypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -97,7 +97,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
      */
-    public function withConstructor(Function_Id|Function_ $function): TypeDef
+    public function withConstructor(Function_ $function): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConstructor');
         $innerQueryBuilder->setArgument('function', $function);
@@ -109,11 +109,8 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
      *
      * Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
      */
-    public function withEnum(
-        string $name,
-        ?string $description = '',
-        SourceMapId|SourceMap|null $sourceMap = null,
-    ): TypeDef {
+    public function withEnum(string $name, ?string $description = '', ?SourceMap $sourceMap = null): TypeDef
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
@@ -132,7 +129,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         string $name,
         ?string $value = '',
         ?string $description = '',
-        SourceMapId|SourceMap|null $sourceMap = null,
+        ?SourceMap $sourceMap = null,
         ?string $deprecated = null,
     ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumMember');
@@ -158,7 +155,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     public function withEnumValue(
         string $value,
         ?string $description = '',
-        SourceMapId|SourceMap|null $sourceMap = null,
+        ?SourceMap $sourceMap = null,
         ?string $deprecated = null,
     ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumValue');
@@ -180,9 +177,9 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
      */
     public function withField(
         string $name,
-        TypeDefId|TypeDef $typeDef,
+        TypeDef $typeDef,
         ?string $description = '',
-        SourceMapId|SourceMap|null $sourceMap = null,
+        ?SourceMap $sourceMap = null,
         ?string $deprecated = null,
     ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withField');
@@ -203,7 +200,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
      */
-    public function withFunction(Function_Id|Function_ $function): TypeDef
+    public function withFunction(Function_ $function): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFunction');
         $innerQueryBuilder->setArgument('function', $function);
@@ -213,11 +210,8 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a TypeDef of kind Interface with the provided name.
      */
-    public function withInterface(
-        string $name,
-        ?string $description = '',
-        SourceMapId|SourceMap|null $sourceMap = null,
-    ): TypeDef {
+    public function withInterface(string $name, ?string $description = '', ?SourceMap $sourceMap = null): TypeDef
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInterface');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
@@ -242,7 +236,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a TypeDef of kind List with the provided type for its elements.
      */
-    public function withListOf(TypeDefId|TypeDef $elementType): TypeDef
+    public function withListOf(TypeDef $elementType): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withListOf');
         $innerQueryBuilder->setArgument('elementType', $elementType);
@@ -257,7 +251,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     public function withObject(
         string $name,
         ?string $description = '',
-        SourceMapId|SourceMap|null $sourceMap = null,
+        ?SourceMap $sourceMap = null,
         ?string $deprecated = null,
     ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');

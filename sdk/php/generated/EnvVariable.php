@@ -16,10 +16,10 @@ class EnvVariable extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this EnvVariable.
      */
-    public function id(): EnvVariableId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\EnvVariableId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

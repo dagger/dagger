@@ -161,10 +161,10 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ModuleSource.
      */
-    public function id(): ModuleSourceId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -310,7 +310,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Set a blueprint for the module source.
      */
-    public function withBlueprint(ModuleSourceId|ModuleSource $blueprint): ModuleSource
+    public function withBlueprint(ModuleSource $blueprint): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlueprint');
         $innerQueryBuilder->setArgument('blueprint', $blueprint);

@@ -35,10 +35,10 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Env.
      */
-    public function id(): EnvId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\EnvId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -94,7 +94,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Address in the environment
      */
-    public function withAddressInput(string $name, string $value, string $description): Env
+    public function withAddressInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAddressInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -117,7 +117,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type CacheVolume in the environment
      */
-    public function withCacheVolumeInput(string $name, string $value, string $description): Env
+    public function withCacheVolumeInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCacheVolumeInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -140,7 +140,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Changeset in the environment
      */
-    public function withChangesetInput(string $name, string $value, string $description): Env
+    public function withChangesetInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangesetInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -163,7 +163,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type CheckGroup in the environment
      */
-    public function withCheckGroupInput(string $name, string $value, string $description): Env
+    public function withCheckGroupInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCheckGroupInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -186,7 +186,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Check in the environment
      */
-    public function withCheckInput(string $name, string $value, string $description): Env
+    public function withCheckInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCheckInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -209,7 +209,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Cloud in the environment
      */
-    public function withCloudInput(string $name, string $value, string $description): Env
+    public function withCloudInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCloudInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -232,7 +232,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Container in the environment
      */
-    public function withContainerInput(string $name, string $value, string $description): Env
+    public function withContainerInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContainerInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -266,7 +266,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Directory in the environment
      */
-    public function withDirectoryInput(string $name, string $value, string $description): Env
+    public function withDirectoryInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectoryInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -289,7 +289,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type EnvFile in the environment
      */
-    public function withEnvFileInput(string $name, string $value, string $description): Env
+    public function withEnvFileInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvFileInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -312,7 +312,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Env in the environment
      */
-    public function withEnvInput(string $name, string $value, string $description): Env
+    public function withEnvInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -335,7 +335,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type File in the environment
      */
-    public function withFileInput(string $name, string $value, string $description): Env
+    public function withFileInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFileInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -358,7 +358,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type GeneratorGroup in the environment
      */
-    public function withGeneratorGroupInput(string $name, string $value, string $description): Env
+    public function withGeneratorGroupInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGeneratorGroupInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -381,7 +381,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Generator in the environment
      */
-    public function withGeneratorInput(string $name, string $value, string $description): Env
+    public function withGeneratorInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGeneratorInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -404,7 +404,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type GitRef in the environment
      */
-    public function withGitRefInput(string $name, string $value, string $description): Env
+    public function withGitRefInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGitRefInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -427,7 +427,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type GitRepository in the environment
      */
-    public function withGitRepositoryInput(string $name, string $value, string $description): Env
+    public function withGitRepositoryInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGitRepositoryInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -450,7 +450,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type JSONValue in the environment
      */
-    public function withJSONValueInput(string $name, string $value, string $description): Env
+    public function withJSONValueInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withJSONValueInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -475,7 +475,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
      *
      * Contextual path arguments will be populated using the environment's workspace.
      */
-    public function withMainModule(ModuleId|Module $module): Env
+    public function withMainModule(Module $module): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMainModule');
         $innerQueryBuilder->setArgument('module', $module);
@@ -487,7 +487,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
      *
      * Contextual path arguments will be populated using the environment's workspace.
      */
-    public function withModule(ModuleId|Module $module): Env
+    public function withModule(Module $module): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModule');
         $innerQueryBuilder->setArgument('module', $module);
@@ -497,7 +497,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type ModuleConfigClient in the environment
      */
-    public function withModuleConfigClientInput(string $name, string $value, string $description): Env
+    public function withModuleConfigClientInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModuleConfigClientInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -520,7 +520,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Module in the environment
      */
-    public function withModuleInput(string $name, string $value, string $description): Env
+    public function withModuleInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModuleInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -543,7 +543,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type ModuleSource in the environment
      */
-    public function withModuleSourceInput(string $name, string $value, string $description): Env
+    public function withModuleSourceInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModuleSourceInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -566,7 +566,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type PhpSdk in the environment
      */
-    public function withPhpSdkInput(string $name, string $value, string $description): Env
+    public function withPhpSdkInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPhpSdkInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -589,7 +589,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type SearchResult in the environment
      */
-    public function withSearchResultInput(string $name, string $value, string $description): Env
+    public function withSearchResultInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSearchResultInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -612,7 +612,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type SearchSubmatch in the environment
      */
-    public function withSearchSubmatchInput(string $name, string $value, string $description): Env
+    public function withSearchSubmatchInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSearchSubmatchInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -635,7 +635,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Secret in the environment
      */
-    public function withSecretInput(string $name, string $value, string $description): Env
+    public function withSecretInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSecretInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -658,7 +658,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Service in the environment
      */
-    public function withServiceInput(string $name, string $value, string $description): Env
+    public function withServiceInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withServiceInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -681,7 +681,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Socket in the environment
      */
-    public function withSocketInput(string $name, string $value, string $description): Env
+    public function withSocketInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSocketInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -704,7 +704,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Stat in the environment
      */
-    public function withStatInput(string $name, string $value, string $description): Env
+    public function withStatInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withStatInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -796,7 +796,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a new environment with the provided workspace
      */
-    public function withWorkspace(DirectoryId|Directory $workspace): Env
+    public function withWorkspace(Directory $workspace): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspace');
         $innerQueryBuilder->setArgument('workspace', $workspace);
@@ -806,7 +806,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     /**
      * Create or update a binding of type Workspace in the environment
      */
-    public function withWorkspaceInput(string $name, string $value, string $description): Env
+    public function withWorkspaceInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspaceInput');
         $innerQueryBuilder->setArgument('name', $name);

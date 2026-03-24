@@ -10,7 +10,7 @@ namespace Dagger;
 
 class PhpSdk extends Client\AbstractObject implements Client\IdAble
 {
-    public function codegen(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): GeneratedCode
+    public function codegen(ModuleSource $modSource, File $introspectionJson): GeneratedCode
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
         $innerQueryBuilder->setArgument('modSource', $modSource);
@@ -18,7 +18,7 @@ class PhpSdk extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function codegenBase(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): Container
+    public function codegenBase(ModuleSource $modSource, File $introspectionJson): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenBase');
         $innerQueryBuilder->setArgument('modSource', $modSource);
@@ -29,13 +29,13 @@ class PhpSdk extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this PhpSdk.
      */
-    public function id(): PhpSdkId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\PhpSdkId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
-    public function moduleRuntime(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): Container
+    public function moduleRuntime(ModuleSource $modSource, File $introspectionJson): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleRuntime');
         $innerQueryBuilder->setArgument('modSource', $modSource);

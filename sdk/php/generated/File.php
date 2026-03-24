@@ -87,10 +87,10 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this File.
      */
-    public function id(): FileId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\FileId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

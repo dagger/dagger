@@ -13,10 +13,10 @@ class ErrorValue extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ErrorValue.
      */
-    public function id(): ErrorValueId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ErrorValueId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

@@ -79,10 +79,10 @@ class Host extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Host.
      */
-    public function id(): HostId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\HostId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -101,7 +101,7 @@ class Host extends Client\AbstractObject implements Client\IdAble
     /**
      * Creates a tunnel that forwards traffic from the host to a service.
      */
-    public function tunnel(ServiceId|Service $service, ?bool $native = false, ?array $ports = null): Service
+    public function tunnel(Service $service, ?bool $native = false, ?array $ports = null): Service
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tunnel');
         $innerQueryBuilder->setArgument('service', $service);

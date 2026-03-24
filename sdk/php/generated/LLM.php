@@ -69,10 +69,10 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this LLM.
      */
-    public function id(): LLMId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -163,7 +163,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * allow the LLM to interact with an environment via MCP
      */
-    public function withEnv(EnvId|Env $env): LLM
+    public function withEnv(Env $env): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnv');
         $innerQueryBuilder->setArgument('env', $env);
@@ -173,7 +173,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * Add an external MCP server to the LLM
      */
-    public function withMCPServer(string $name, ServiceId|Service $service): LLM
+    public function withMCPServer(string $name, Service $service): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMCPServer');
         $innerQueryBuilder->setArgument('name', $name);
@@ -204,7 +204,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * append the contents of a file to the llm context
      */
-    public function withPromptFile(FileId|File $file): LLM
+    public function withPromptFile(File $file): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPromptFile');
         $innerQueryBuilder->setArgument('file', $file);

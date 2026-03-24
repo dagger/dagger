@@ -13,10 +13,10 @@ class CheckGroup extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this CheckGroup.
      */
-    public function id(): CheckGroupId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\CheckGroupId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

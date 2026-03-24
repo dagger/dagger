@@ -34,10 +34,10 @@ class SourceMap extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this SourceMap.
      */
-    public function id(): SourceMapId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\SourceMapId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
