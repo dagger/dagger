@@ -4,6 +4,14 @@
 
 Draft operational plan.
 
+Historical note:
+
+- this file describes the earlier replay target on `workspace-plumbing`
+- the current replay target is now `lockfile`
+- use
+  [REBASE-WORKSPACE-ONTO-LOCKFILE.md](/Users/shykes/git/github.com/dagger/dagger_workspace/REBASE-WORKSPACE-ONTO-LOCKFILE.md)
+  for the live handoff plan
+
 Snapshot refreshed on 2026-03-18 against the latest fetched plumbing tip:
 
 - `workspace`: `b45355fe0` `engine: keep rename backport behavior-neutral`
