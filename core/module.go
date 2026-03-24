@@ -696,23 +696,96 @@ func (mod *Module) modTypeForPrimitive(typedef *TypeDef) (ModType, bool) {
 	return &PrimitiveType{typedef}, true
 }
 
+type moduleValidationState struct {
+	validatedAttached map[uint64]struct{}
+	validatedDetached map[*TypeDef]struct{}
+	modTypeAttached   map[uint64]moduleValidationModTypeLookup
+	modTypeDetached   map[*TypeDef]moduleValidationModTypeLookup
+}
+
+type moduleValidationModTypeLookup struct {
+	modType ModType
+	ok      bool
+}
+
+func (mod *Module) newValidationState() *moduleValidationState {
+	return &moduleValidationState{
+		validatedAttached: make(map[uint64]struct{}),
+		validatedDetached: make(map[*TypeDef]struct{}),
+		modTypeAttached:   make(map[uint64]moduleValidationModTypeLookup),
+		modTypeDetached:   make(map[*TypeDef]moduleValidationModTypeLookup),
+	}
+}
+
+func (mod *Module) validatedTypeDef(state *moduleValidationState, typeDef dagql.ObjectResult[*TypeDef]) bool {
+	if state == nil || typeDef.Self() == nil {
+		return false
+	}
+	if id, err := typeDef.ID(); err == nil && id != nil && id.EngineResultID() != 0 {
+		key := id.EngineResultID()
+		if _, ok := state.validatedAttached[key]; ok {
+			return true
+		}
+		state.validatedAttached[key] = struct{}{}
+		return false
+	}
+	if _, ok := state.validatedDetached[typeDef.Self()]; ok {
+		return true
+	}
+	state.validatedDetached[typeDef.Self()] = struct{}{}
+	return false
+}
+
+func (mod *Module) lookupValidationModType(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) (ModType, bool, error) {
+	if state == nil {
+		return mod.Deps.ModTypeFor(ctx, typeDef.Self())
+	}
+	if id, err := typeDef.ID(); err == nil && id != nil && id.EngineResultID() != 0 {
+		key := id.EngineResultID()
+		if cached, ok := state.modTypeAttached[key]; ok {
+			return cached.modType, cached.ok, nil
+		}
+		modType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef.Self())
+		if err != nil {
+			return nil, false, err
+		}
+		state.modTypeAttached[key] = moduleValidationModTypeLookup{modType: modType, ok: ok}
+		return modType, ok, nil
+	}
+	if cached, ok := state.modTypeDetached[typeDef.Self()]; ok {
+		return cached.modType, cached.ok, nil
+	}
+	modType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef.Self())
+	if err != nil {
+		return nil, false, err
+	}
+	state.modTypeDetached[typeDef.Self()] = moduleValidationModTypeLookup{modType: modType, ok: ok}
+	return modType, ok, nil
+}
+
 // verify the typedef is has no reserved names
-func (mod *Module) validateTypeDef(ctx context.Context, typeDef *TypeDef) error {
-	switch typeDef.Kind {
+func (mod *Module) validateTypeDef(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) error {
+	if typeDef.Self() == nil {
+		return nil
+	}
+	if mod.validatedTypeDef(state, typeDef) {
+		return nil
+	}
+	switch typeDef.Self().Kind {
 	case TypeDefKindList:
-		return mod.validateTypeDef(ctx, typeDef.AsList.Value.Self().ElementTypeDef.Self())
+		return mod.validateTypeDef(ctx, typeDef.Self().AsList.Value.Self().ElementTypeDef, state)
 	case TypeDefKindObject:
-		return mod.validateObjectTypeDef(ctx, typeDef)
+		return mod.validateObjectTypeDef(ctx, typeDef, state)
 	case TypeDefKindInterface:
-		return mod.validateInterfaceTypeDef(ctx, typeDef)
+		return mod.validateInterfaceTypeDef(ctx, typeDef, state)
 	}
 	return nil
 }
 
 //nolint:gocyclo
-func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) error {
+func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) error {
 	// check whether this is a pre-existing object from core or another module
-	modType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+	modType, ok, err := mod.lookupValidationModType(ctx, typeDef, state)
 	if err != nil {
 		return fmt.Errorf("failed to get mod type for type def: %w", err)
 	}
@@ -723,7 +796,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		}
 	}
 
-	obj := typeDef.AsObject.Value.Self()
+	obj := typeDef.Self().AsObject.Value.Self()
 
 	for _, fieldRes := range obj.Fields {
 		field := fieldRes.Self()
@@ -737,7 +810,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 				field.OriginalName,
 			)
 		}
-		fieldType, ok, err := mod.Deps.ModTypeFor(ctx, field.TypeDef.Self())
+		fieldType, ok, err := mod.lookupValidationModType(ctx, field.TypeDef, state)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
@@ -756,7 +829,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 				}
 			}
 		}
-		if err := mod.validateTypeDef(ctx, field.TypeDef.Self()); err != nil {
+		if err := mod.validateTypeDef(ctx, field.TypeDef, state); err != nil {
 			return err
 		}
 	}
@@ -766,7 +839,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 		}
 		// Check if this is a type from another (non-core) module
-		retType, ok, err := mod.Deps.ModTypeFor(ctx, fn.ReturnType.Self())
+		retType, ok, err := mod.lookupValidationModType(ctx, fn.ReturnType, state)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
@@ -782,13 +855,13 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 				}
 			}
 		}
-		if err := mod.validateTypeDef(ctx, fn.ReturnType.Self()); err != nil {
+		if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
 			return err
 		}
 
 		for _, argRes := range fn.Args {
 			arg := argRes.Self()
-			argType, ok, err := mod.Deps.ModTypeFor(ctx, arg.TypeDef.Self())
+			argType, ok, err := mod.lookupValidationModType(ctx, arg.TypeDef, state)
 			if err != nil {
 				return fmt.Errorf("failed to get mod type for type def: %w", err)
 			}
@@ -805,7 +878,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 					}
 				}
 			}
-			if err := mod.validateTypeDef(ctx, arg.TypeDef.Self()); err != nil {
+			if err := mod.validateTypeDef(ctx, arg.TypeDef, state); err != nil {
 				return err
 			}
 		}
@@ -813,11 +886,11 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 	return nil
 }
 
-func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef *TypeDef) error {
-	iface := typeDef.AsInterface.Value.Self()
+func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) error {
+	iface := typeDef.Self().AsInterface.Value.Self()
 
 	// check whether this is a pre-existing interface from core or another module
-	modType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+	modType, ok, err := mod.lookupValidationModType(ctx, typeDef, state)
 	if err != nil {
 		return fmt.Errorf("failed to get mod type for type def: %w", err)
 	}
@@ -832,12 +905,12 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef *TypeDe
 		if gqlFieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on interface %q", fn.Name, iface.Name)
 		}
-		if err := mod.validateTypeDef(ctx, fn.ReturnType.Self()); err != nil {
+		if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
 			return err
 		}
 
 		for _, argRes := range fn.Args {
-			if err := mod.validateTypeDef(ctx, argRes.Self().TypeDef.Self()); err != nil {
+			if err := mod.validateTypeDef(ctx, argRes.Self().TypeDef, state); err != nil {
 				return err
 			}
 		}
@@ -1947,7 +2020,7 @@ func (mod *Module) WithObject(ctx context.Context, def dagql.ObjectResult[*TypeD
 	// they will be validated when merged into the real final module
 
 	if mod.Deps != nil {
-		if err := mod.validateTypeDef(ctx, def.Self()); err != nil {
+		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
 			return nil, fmt.Errorf("failed to validate type def: %w", err)
 		}
 	}
@@ -1974,7 +2047,7 @@ func (mod *Module) WithInterface(ctx context.Context, def dagql.ObjectResult[*Ty
 	// they will be validated when merged into the real final module
 
 	if mod.Deps != nil {
-		if err := mod.validateTypeDef(ctx, def.Self()); err != nil {
+		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
 			return nil, fmt.Errorf("failed to validate type def: %w", err)
 		}
 	}
@@ -2001,7 +2074,7 @@ func (mod *Module) WithEnum(ctx context.Context, def dagql.ObjectResult[*TypeDef
 	// they will be validated when merged into the real final module
 
 	if mod.Deps != nil {
-		if err := mod.validateTypeDef(ctx, def.Self()); err != nil {
+		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
 			return nil, fmt.Errorf("failed to validate type def: %w", err)
 		}
 	}

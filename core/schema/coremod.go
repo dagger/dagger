@@ -20,8 +20,11 @@ import (
 type CoreMod struct {
 	Dag *dagql.Server
 
-	cachedTypedefs   dagql.ObjectResultArray[*core.TypeDef]
-	cachedTypedefsMu sync.Mutex
+	cachedTypedefs         dagql.ObjectResultArray[*core.TypeDef]
+	cachedObjectDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
+	cachedScalarDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
+	cachedEnumDefsByName   map[string]dagql.ObjectResult[*core.TypeDef]
+	cachedTypedefsMu       sync.Mutex
 }
 
 var _ core.Mod = (*CoreMod)(nil)
@@ -111,22 +114,15 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		var resolvedDef *core.TypeDef
-		defs, err := m.typedefs(ctx)
-		if err != nil {
+		if _, err := m.typedefs(ctx); err != nil {
 			return nil, false, err
 		}
-		for _, def := range defs {
-			if def.Self().Kind == core.TypeDefKindScalar && def.Self().AsScalar.Value.Self().Name == typeDef.AsScalar.Value.Self().Name {
-				resolvedDef = def.Self()
-				break
-			}
-		}
-		if resolvedDef == nil {
+		resolvedDef := m.cachedScalarDefsByName[typeDef.AsScalar.Value.Self().Name]
+		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Self().Name)
 		}
 
-		modType = &CoreModScalar{coreMod: m, name: resolvedDef.AsScalar.Value.Self().Name}
+		modType = &CoreModScalar{coreMod: m, name: resolvedDef.Self().AsScalar.Value.Self().Name}
 
 	case core.TypeDefKindObject:
 		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Self().Name)
@@ -134,22 +130,15 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		var resolvedDef *core.TypeDef
-		defs, err := m.typedefs(ctx)
-		if err != nil {
+		if _, err := m.typedefs(ctx); err != nil {
 			return nil, false, err
 		}
-		for _, def := range defs {
-			if def.Self().Kind == core.TypeDefKindObject && def.Self().AsObject.Value.Self().Name == typeDef.AsObject.Value.Self().Name {
-				resolvedDef = def.Self()
-				break
-			}
-		}
-		if resolvedDef == nil {
+		resolvedDef := m.cachedObjectDefsByName[typeDef.AsObject.Value.Self().Name]
+		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Self().Name)
 		}
 
-		modType = &CoreModObject{coreMod: m, name: resolvedDef.AsObject.Value.Self().Name}
+		modType = &CoreModObject{coreMod: m, name: resolvedDef.Self().AsObject.Value.Self().Name}
 
 	case core.TypeDefKindEnum:
 		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Self().Name)
@@ -157,22 +146,15 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		var resolvedDef *core.TypeDef
-		defs, err := m.typedefs(ctx)
-		if err != nil {
+		if _, err := m.typedefs(ctx); err != nil {
 			return nil, false, err
 		}
-		for _, def := range defs {
-			if def.Self().Kind == core.TypeDefKindEnum && def.Self().AsEnum.Value.Self().Name == typeDef.AsEnum.Value.Self().Name {
-				resolvedDef = def.Self()
-				break
-			}
-		}
-		if resolvedDef == nil {
+		resolvedDef := m.cachedEnumDefsByName[typeDef.AsEnum.Value.Self().Name]
+		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Self().Name)
 		}
 
-		modType = &CoreModEnum{coreMod: m, typeDef: resolvedDef.AsEnum.Value.Self()}
+		modType = &CoreModEnum{coreMod: m, typeDef: resolvedDef.Self().AsEnum.Value.Self()}
 
 	case core.TypeDefKindInterface:
 		// core does not yet define any interfaces
@@ -214,6 +196,22 @@ func (m *CoreMod) typedefs(ctx context.Context) (dagql.ObjectResultArray[*core.T
 			return nil, err
 		}
 		m.cachedTypedefs = typedefs
+		m.cachedObjectDefsByName = make(map[string]dagql.ObjectResult[*core.TypeDef])
+		m.cachedScalarDefsByName = make(map[string]dagql.ObjectResult[*core.TypeDef])
+		m.cachedEnumDefsByName = make(map[string]dagql.ObjectResult[*core.TypeDef])
+		for _, typedef := range typedefs {
+			if typedef.Self() == nil {
+				continue
+			}
+			switch typedef.Self().Kind {
+			case core.TypeDefKindObject:
+				m.cachedObjectDefsByName[typedef.Self().AsObject.Value.Self().Name] = typedef
+			case core.TypeDefKindScalar:
+				m.cachedScalarDefsByName[typedef.Self().AsScalar.Value.Self().Name] = typedef
+			case core.TypeDefKindEnum:
+				m.cachedEnumDefsByName[typedef.Self().AsEnum.Value.Self().Name] = typedef
+			}
+		}
 	}
 	return m.cachedTypedefs, nil
 }
