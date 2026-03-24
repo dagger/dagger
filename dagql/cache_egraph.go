@@ -1052,7 +1052,7 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 }
 
 func (c *Cache) termForResultByDigestLocked(resID sharedResultID, termDigest string) *egraphTerm {
-	for termID := range c.termIDsForResultLocked(resID) {
+	for termID := range c.resultTerms[resID] {
 		term := c.egraphTerms[termID]
 		if term == nil {
 			continue
@@ -1104,15 +1104,38 @@ func (c *Cache) mergeOutputsForTermDigestLocked(ctx context.Context, termDigest 
 		return c.findEqClassLocked(outputEqID)
 	}
 
-	mergeIDs := []eqClassID{outputEqID}
+	root := c.findEqClassLocked(outputEqID)
+	if root == 0 {
+		return 0
+	}
+
+	mergeIDs := []eqClassID{root}
+	allSameRoot := true
 	for termID := range set {
 		term := c.egraphTerms[termID]
 		if term == nil {
 			continue
 		}
-		mergeIDs = append(mergeIDs, term.outputEqID)
+		termRoot := c.findEqClassLocked(term.outputEqID)
+		if termRoot == 0 {
+			continue
+		}
+		if termRoot != root {
+			allSameRoot = false
+		}
+		mergeIDs = append(mergeIDs, termRoot)
 	}
-	root := c.mergeEqClassesLocked(ctx, mergeIDs...)
+	if allSameRoot {
+		for termID := range set {
+			term := c.egraphTerms[termID]
+			if term == nil {
+				continue
+			}
+			term.outputEqID = root
+		}
+		return root
+	}
+	root = c.mergeEqClassesLocked(ctx, mergeIDs...)
 	for termID := range set {
 		term := c.egraphTerms[termID]
 		if term == nil {
@@ -1234,22 +1257,26 @@ func (c *Cache) teachResultIdentityLocked(
 		return nil
 	}
 
-	inputProvenance, err := c.inputProvenanceForRefs(requestInputRefs)
-	if err != nil {
-		return fmt.Errorf("derive input provenance for request term %s: %w", requestSelf, err)
-	}
 	inputEqIDs := c.ensureTermInputEqIDsLocked(ctx, requestInputs)
 	termDigest := calcEgraphTermDigest(requestSelf, inputEqIDs)
+	existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest])
 
 	switch {
 	case c.termForResultByDigestLocked(res.id, termDigest) != nil:
 		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
-	case c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest]) != nil:
-		existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest])
+	case existingTerm != nil:
+		inputProvenance, err := c.inputProvenanceForRefs(requestInputRefs)
+		if err != nil {
+			return fmt.Errorf("derive input provenance for request term %s: %w", requestSelf, err)
+		}
 		c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance)
 		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 	default:
 		mergedOutputEqID := c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
+		inputProvenance, err := c.inputProvenanceForRefs(requestInputRefs)
+		if err != nil {
+			return fmt.Errorf("derive input provenance for request term %s: %w", requestSelf, err)
+		}
 
 		termID := c.nextEgraphTermID
 		c.nextEgraphTermID++
@@ -1289,7 +1316,7 @@ func (c *Cache) teachResultIdentityLocked(
 	if err := c.indexResultDigestsLocked(res, requestFrame, nil); err != nil {
 		return err
 	}
-	for termID := range c.termIDsForResultLocked(res.id) {
+	for termID := range c.resultTerms[res.id] {
 		term := c.egraphTerms[termID]
 		if term == nil {
 			continue
