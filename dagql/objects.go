@@ -405,7 +405,6 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		// selector (since they're global from all perspectives)
 		view = ""
 	}
-	ctx = srvToContext(ctx, s)
 	inputArgs := make(map[string]Input, len(sel.Args))
 	frameArgs := make([]*ResultCallArg, 0, len(sel.Args))
 	for _, argSpec := range field.Spec.Args.Inputs(view) {
@@ -517,7 +516,6 @@ func (r ObjectResult[T]) call(
 	req *CallRequest,
 	inputArgs map[string]Input,
 ) (AnyResult, error) {
-	ctx = srvToContext(ctx, s)
 	ctx = ContextWithCall(ctx, req.ResultCall)
 	fieldName := req.Field
 	view := req.View

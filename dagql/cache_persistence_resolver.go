@@ -3,8 +3,6 @@ package dagql
 import (
 	"context"
 	"fmt"
-
-	"github.com/opencontainers/go-digest"
 )
 
 func (c *Cache) PersistedSnapshotLinksByResultID(_ context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
@@ -59,9 +57,9 @@ func (c *Cache) loadResultByResultID(ctx context.Context, dag *Server, resultID 
 	if err != nil {
 		return nil, err
 	}
-	wrapped, err := c.persistedResultForShared(ctx, res)
-	if err != nil {
-		return nil, err
+	wrapped := Result[Typed]{
+		shared:   res,
+		hitCache: true,
 	}
 	loaded, err := c.ensurePersistedHitValueLoaded(ctx, dag, wrapped)
 	if err != nil {
@@ -198,41 +196,4 @@ func (c *Cache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, 
 		return nil, fmt.Errorf("load persisted object by result ID %d: result is %T", resultID, res)
 	}
 	return obj, nil
-}
-
-func (c *Cache) persistedResultForShared(ctx context.Context, res *sharedResult) (AnyResult, error) {
-	if res == nil {
-		return nil, fmt.Errorf("wrap persisted shared result: nil result")
-	}
-	requestedFrame := c.resultCallByResultID(res.id)
-	if requestedFrame == nil {
-		return nil, fmt.Errorf("derive persisted requested frame for result %d: missing result call frame", res.id)
-	}
-	requestDigest, err := requestedFrame.deriveRecipeDigest(c)
-	if err != nil {
-		return nil, fmt.Errorf("derive persisted requested digest for result %d: %w", res.id, err)
-	}
-	requestSelf, requestInputRefs, err := requestedFrame.selfDigestAndInputRefs(c)
-	if err != nil {
-		return nil, fmt.Errorf("derive persisted requested term digests for result %d: %w", res.id, err)
-	}
-	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
-	for _, ref := range requestInputRefs {
-		dig, err := ref.inputDigest(c)
-		if err != nil {
-			return nil, fmt.Errorf("derive persisted requested term input digest for result %d: %w", res.id, err)
-		}
-		requestInputs = append(requestInputs, dig)
-	}
-
-	c.egraphMu.Lock()
-	if err := c.teachResultIdentityLocked(ctx, res, requestedFrame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
-		c.egraphMu.Unlock()
-		return nil, fmt.Errorf("teach persisted shared result identity for result %d: %w", res.id, err)
-	}
-	c.egraphMu.Unlock()
-	return Result[Typed]{
-		shared:   res,
-		hitCache: true,
-	}, nil
 }

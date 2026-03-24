@@ -1387,7 +1387,6 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 	req.Type = req.Type.Elem.clone()
 	req.Receiver = &ResultCallRef{ResultID: uint64(r.shared.id), shared: r.shared}
 	req.Nth = int64(nth)
-	callCtx := srvToContext(ctx, srv)
 	if shared := detached.cacheSharedResult(); shared != nil && shared.id == 0 {
 		shared.storeResultCall(req.ResultCall.clone())
 	}
@@ -1398,16 +1397,16 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 	if clientMetadata.SessionID == "" {
 		return nil, fmt.Errorf("load %dth value from %T: empty session ID", nth, self)
 	}
-	cache, err := EngineCache(callCtx)
+	cache, err := EngineCache(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
 	}
-	if res, err := cache.GetOrInitCall(callCtx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
+	if res, err := cache.GetOrInitCall(ctx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("cache miss")
 	}); err == nil {
 		return res, nil
 	}
-	return cache.GetOrInitCall(callCtx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
+	return cache.GetOrInitCall(ctx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return detached, nil
 	})
 }

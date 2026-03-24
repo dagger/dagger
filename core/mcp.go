@@ -2269,7 +2269,8 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 		if !trivial {
 			continue
 		}
-		val, err := target.Select(ctx, srv, dagql.Selector{
+		var val dagql.AnyResult
+		err := srv.Select(ctx, target, &val, dagql.Selector{
 			View:  srv.View,
 			Field: field.Name,
 		})

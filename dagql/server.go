@@ -434,6 +434,7 @@ func (s *Server) Around(rec AroundFunc) {
 // without having to go through HTTP. This can be useful for introspection, for
 // example.
 func (s *Server) Query(ctx context.Context, query string, vars map[string]any) (map[string]any, error) {
+	ctx = srvToContext(ctx, s)
 	return s.ExecOp(ctx, &graphql.OperationContext{
 		RawQuery:  query,
 		Variables: vars,
@@ -554,6 +555,7 @@ func gqlErrs(err error) (errs gqlerror.List) {
 }
 
 func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (results map[string]any, rerr error) {
+	ctx = srvToContext(ctx, s)
 	if gqlOp.Doc == nil {
 		gqlOp.Doc, rerr = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
 		if rerr != nil {
@@ -601,6 +603,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 // Each selection is resolved in parallel, and the results are returned in a
 // map whose keys correspond to the selection's field name or alias.
 func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Selection) (map[string]any, error) {
+	ctx = srvToContext(ctx, s)
 	if len(sels) == 0 {
 		return nil, nil
 	}
@@ -643,6 +646,7 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
+	ctx = srvToContext(ctx, s)
 	if id == nil {
 		return nil, fmt.Errorf("load: nil ID")
 	}
@@ -666,7 +670,7 @@ func (s *Server) loadNthValue(
 		return nil, nil
 	}
 
-	res, err := parent.NthValue(srvToContext(ctx, s), nth)
+	res, err := parent.NthValue(ctx, nth)
 	if err != nil {
 		return nil, fmt.Errorf("nth %d: %w", nth, err)
 	}
@@ -688,6 +692,7 @@ func (s *Server) loadNthValue(
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	ctx = srvToContext(ctx, s)
 	if id == nil {
 		return nil, fmt.Errorf("load type: nil ID")
 	}
@@ -703,7 +708,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 		return nil, fmt.Errorf("load %s: current dagql cache: %w", id.Display(), err)
 	}
 	if id.IsHandle() {
-		res, err := cache.LoadResultByResultID(srvToContext(ctx, s), clientMetadata.SessionID, s, id.EngineResultID())
+		res, err := cache.LoadResultByResultID(ctx, clientMetadata.SessionID, s, id.EngineResultID())
 		if err != nil {
 			return nil, err
 		}
@@ -777,7 +782,7 @@ func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
 }
 
 func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
-	callCtx := srvToContext(state.ctx, state.srv)
+	callCtx := state.ctx
 	if hit, ok, err := state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
 		return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
@@ -1186,6 +1191,7 @@ func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyO
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
+	ctx = srvToContext(ctx, s)
 	if !isNonInternal(ctx) {
 		// Annotate ctx with the internal flag so we can distinguish self-calls from
 		// user-calls in the UI.
@@ -1376,6 +1382,9 @@ func EngineCache(ctx context.Context) (*Cache, error) {
 }
 
 func srvToContext(ctx context.Context, srv *Server) context.Context {
+	if CurrentDagqlServer(ctx) == srv {
+		return ctx
+	}
 	return context.WithValue(ctx, srvCtx{}, srv)
 }
 

@@ -106,7 +106,8 @@ func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
 	srv := CurrentDagqlServer(ctx)
 	assert.Assert(t, srv != nil)
 
-	original, err := srv.root.Select(ctx, srv, Selector{Field: "obj"})
+	var original AnyResult
+	err := srv.Select(ctx, srv.root, &original, Selector{Field: "obj"})
 	assert.NilError(t, err)
 	assert.Assert(t, original != nil)
 

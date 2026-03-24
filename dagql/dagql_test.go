@@ -3048,7 +3048,7 @@ func TestServerSelect(t *testing.T) {
 		// For arrays, we need to use a different approach
 		// First, get the array result
 		var arrayResult dagql.AnyResult
-		arrayResult, err := root.Select(ctx, srv, dagql.Selector{Field: "testArray"})
+		err := srv.Select(ctx, root, &arrayResult, dagql.Selector{Field: "testArray"})
 		require.NoError(t, err)
 
 		// Verify it's enumerable
