@@ -87,9 +87,16 @@ Reason:
 
 ## Bucket Ledger
 
+### Completed Buckets
+
+- CLI workspace-target parsing and inference for:
+  - `dagger check`
+  - `dagger generate`
+  - `dagger call`
+  - `dagger functions`
+
 ### Pending Safe Pre-Lock Buckets
 
-- CLI workspace-target parsing and inference
 - sibling workspace-module traversal/listing for `dagger functions`
 - `dagger workspace info`
 - initialized-workspace detection
@@ -182,3 +189,11 @@ Known host caveats:
   - created branch `tmp/workspace-on-lockfile` from `origin/lockfile`
   - recorded initial branch contract, bucket plan, drops, rewrites, and first
     verifiers
+  - replayed CLI workspace-target parsing and inference for `check`,
+    `generate`, `call`, and `functions`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='Test(ParseChecksTargetArgs|ParseGenerateTargetArgs|ParseCallTargetArgs|ParseFunctionsTargetArgs|StripHelpArgs)$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/47a4050626111ef45c047231eb8c348f`

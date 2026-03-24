@@ -36,27 +36,40 @@ var callCoreCmd = &FuncCommand{
 }
 
 var callModCmd = &FuncCommand{
-	Name:  "call [options]",
-	Short: "Call one or more functions, interconnected into a pipeline",
+	Name:            "call [options] [workspace --] [function]...",
+	Short:           "Call one or more functions, interconnected into a pipeline",
+	ParseTargetArgs: parseCallTargetArgs,
 	Annotations: map[string]string{
 		printTraceLinkKey: "true",
 	},
 }
 
 var funcListCmd = &cobra.Command{
-	Use:   "functions [options] [function]...",
+	Use:   "functions [options] [workspace --] [function]...",
 	Short: `List available functions`,
 	Long: strings.ReplaceAll(`List available functions in a module.
 
 This is similar to ´dagger call --help´, but only focused on showing the
 available functions.
+
+Examples:
+  dagger functions                           # List top-level functions in current workspace
+  dagger functions container                 # List functions on container
+  dagger functions github.com/acme/ws --     # List top-level functions in explicit workspace
+  dagger functions github.com/acme/ws -- container from
 `,
 		"´",
 		"`",
 	),
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		params := initModuleParams(args)
+		workspaceRef, functionPath, err := parseFunctionsTargetArgs(args, cmd.Flags().ArgsLenAtDash())
+		if err != nil {
+			return err
+		}
+
+		params := initModuleParams(functionPath)
+		params.Workspace = workspaceRef
 		return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 			// -m modules are loaded at engine connect time as extra modules.
 			mod, err := initializeWorkspace(ctx, engineClient.Dagger(), loadTypeDefsOpts{HideCore: true})
@@ -65,7 +78,7 @@ available functions.
 			}
 			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
-			for _, field := range args {
+			for _, field := range functionPath {
 				// Lookup the next function in the specified pipeline
 				nextFunc, err := GetSupportedFunction(mod, o, field)
 				if err != nil {

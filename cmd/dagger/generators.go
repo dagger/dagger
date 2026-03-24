@@ -30,7 +30,7 @@ func init() {
 
 var generateCmd = &cobra.Command{
 	Hidden: true,
-	Use:    "generate [options] [pattern...]",
+	Use:    "generate [options] [workspace --] [pattern...]",
 	Short:  "Generate assets of your project",
 	Long: `Generate assets of your project
 
@@ -38,11 +38,19 @@ Examples:
   dagger generate                            # Generate all assets
   dagger generate -l                         # List all available generators
   dagger generate go:bin                     # Generate by selecting the generator function
+  dagger generate github.com/acme/ws -- go:bin  # Generate against explicit workspace
+  dagger generate -- go:bin                  # Generate in current workspace (explicit separator)
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		workspaceRef, patterns, err := parseGenerateTargetArgs(args, cmd.Flags().ArgsLenAtDash())
+		if err != nil {
+			return err
+		}
+
 		params := client.Params{
 			EnableCloudScaleOut: enableScaleOut,
+			Workspace:           workspaceRef,
 		}
 		return withEngine(
 			cmd.Context(),
@@ -51,8 +59,8 @@ Examples:
 				dag := engineClient.Dagger()
 				ws := dag.CurrentWorkspace()
 				var generators *dagger.GeneratorGroup
-				if len(args) > 0 {
-					generators = ws.Generators(dagger.WorkspaceGeneratorsOpts{Include: args})
+				if len(patterns) > 0 {
+					generators = ws.Generators(dagger.WorkspaceGeneratorsOpts{Include: patterns})
 				} else {
 					generators = ws.Generators()
 				}
