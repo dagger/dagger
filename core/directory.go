@@ -825,7 +825,6 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 			Mode:               permissions,
 		}))
 		for _, pattern := range filter.Include {
-			fmt.Printf("ACB adding include pattern %s\n", pattern)
 			opts = append(opts, fscopy.WithIncludePattern(pattern))
 		}
 		for _, pattern := range filter.Exclude {
@@ -862,8 +861,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 
 		pathsToCopy := []string{src.Dir}
 		if srcPath != "" {
-			fmt.Printf("ACB gotta handle srcPath=%s (root is %s)\n", srcPath, mntedSrcPath)
-			walk(mntedSrcPath)
+			//walk(mntedSrcPath)
 
 			//if !action.AllowWildcard {
 			//	m = []string{srcPath}
@@ -892,7 +890,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 
 		}
 
-		walk(copyDest)
+		//walk(copyDest)
 		for _, srcPath := range pathsToCopy {
 			joinedDest := path.Join(dir.Dir, destDir)
 			if strings.HasSuffix(destDir, "/") && !strings.HasSuffix(joinedDest, "/") {
@@ -2199,7 +2197,7 @@ func parseDirectoryOwner(root, owner string) (*Ownership, error) {
 				return nil, TrimErrPathPrefix(err, root)
 			}
 			defer groupReader.Close()
-			uid, err = findGID(groupReader, gidStr)
+			gid, err = findGID(groupReader, gidStr)
 			if err != nil {
 				return nil, fmt.Errorf("failed to lookup group ID for %s: %w", gidStr, err)
 			}

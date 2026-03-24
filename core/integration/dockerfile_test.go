@@ -594,12 +594,12 @@ FROM %[1]s
 WORKDIR /final
 RUN addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser
 COPY --chown=auser:agroup --from=base /work /out/owned
-RUN ls -la /out/owned > data
+RUN ls -l /out/owned/f > ls-output
 `, alpineImage))
 
-		out, err := dir.DockerBuild().File("data").Contents(ctx)
+		out, err := dir.DockerBuild().File("ls-output").Contents(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "symlink-multistage-ok", strings.TrimSpace(out))
+		require.Regexp(t, `auser +agroup`, out)
 	})
 
 }

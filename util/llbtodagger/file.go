@@ -621,7 +621,7 @@ func chownOwnerString2(chown *pb.ChownOpt) (string, error) {
 		}
 	}
 	if chown.Group != nil {
-		if byName, ok := chown.User.User.(*pb.UserOpt_ByName); ok {
+		if byName, ok := chown.Group.User.(*pb.UserOpt_ByName); ok {
 			if byName != nil && byName.ByName != nil {
 				group = byName.ByName.Name
 			}
