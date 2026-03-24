@@ -103,10 +103,10 @@ Reason:
 - `Workspace.install` base mutation
 - workspace-aware top-level `dagger install` routing
 - `dagger workspace list`
+- engine-routed `dagger module init`
 
 ### Pending Safe Pre-Lock Buckets
 
-- engine-routed `dagger module init`
 - module install/update command split
 - local `dagger migrate`
 
@@ -333,3 +333,34 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestWorkspaceList$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/bd48931245ea07ee4a3a3ce011000527`
+  - replayed engine-routed `dagger module init` for initialized workspaces
+  - design note:
+    keep the current CLI shape and make it a thin router: with no explicit path
+    and an initialized workspace, create the module under
+    `.dagger/modules/<name>` and auto-install it; with an explicit path, keep
+    standalone module init behavior
+  - design note:
+    keep license creation in the CLI wrapper instead of widening the workspace
+    GraphQL mutation with host-specific license search semantics
+  - rewrite note:
+    this bucket only covers workspace-owned module creation and installation;
+    it does not claim the later config-owned module loading/session behavior
+  - verifier note:
+    the first focused engine test failed because `requireKind` was passed to
+    `moduleSource` as a bare enum instead of `dagql.Opt(...)`; fix the selector
+    input shape and rerun the same verifier
+  - verifier note:
+    the first version of the integration test also overreached into
+    config-owned module loading by calling `dagger call mymod greet`; narrow it
+    back to init-specific assertions and leave config-owned loading for the
+    later rewrite bucket
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./core/schema -o /tmp/.tmp-core-schema.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestWorkspaceModuleInitCommand$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/a70af3c4899e62edfc4945a319f4c18d`

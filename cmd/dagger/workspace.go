@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
@@ -163,6 +164,58 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 
 	_, err = fmt.Fprintln(out, msg)
 	return err
+}
+
+type workspaceModuleInitOptions struct {
+	Name                  string
+	SDK                   string
+	Source                string
+	Include               []string
+	Blueprint             string
+	SelfCalls             bool
+	SearchExistingLicense bool
+}
+
+func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, cwd string, opts workspaceModuleInitOptions) error {
+	ws := dag.CurrentWorkspace()
+
+	msg, err := ws.ModuleInit(ctx, opts.Name, opts.SDK, dagger.WorkspaceModuleInitOpts{
+		Source:    opts.Source,
+		Include:   opts.Include,
+		Blueprint: opts.Blueprint,
+		SelfCalls: opts.SelfCalls,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.SDK != "" {
+		wsPath, err := ws.Path(ctx)
+		if err != nil {
+			return fmt.Errorf("load workspace path: %w", err)
+		}
+		modulePath, err := workspaceModulePath(cwd, wsPath, opts.Name)
+		if err != nil {
+			return err
+		}
+		if err := findOrCreateLicense(ctx, modulePath, opts.SearchExistingLicense); err != nil {
+			return err
+		}
+	}
+
+	_, err = fmt.Fprintln(out, msg)
+	return err
+}
+
+func workspaceModulePath(cwd, wsPath, name string) (string, error) {
+	boundary := cwd
+	for _, segment := range strings.Split(filepath.ToSlash(filepath.Clean(wsPath)), "/") {
+		if segment == "" || segment == "." {
+			continue
+		}
+		boundary = filepath.Dir(boundary)
+	}
+	return filepath.Join(boundary, ".dagger", "modules", name), nil
 }
 
 func writeWorkspaceModuleList(out io.Writer, modules []dagger.WorkspaceModule) error {

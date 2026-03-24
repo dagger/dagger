@@ -217,6 +217,10 @@ var moduleInitCmd = &cobra.Command{
 
 This creates a dagger.json file at the specified directory, making it the root of the new module.
 
+If no path is provided and the current workspace is already initialized, the module is created
+inside .dagger/modules/<name>/ and automatically installed in .dagger/config.toml.
+Use an explicit path to keep creating a standalone module instead.
+
 If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
 If --blueprint is specified, the given blueprint is installed in the module.
 `,
@@ -296,6 +300,26 @@ dagger init --sdk=go
 				moduleName = filepath.Base(srcRootAbsPath)
 			}
 
+			if len(extraArgs) == 0 {
+				hasConfig, err := dag.CurrentWorkspace().HasConfig(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to load workspace config state: %w", err)
+				}
+				if hasConfig {
+					if moduleSourcePath != "" && filepath.IsAbs(moduleSourcePath) {
+						return fmt.Errorf("--source must be relative when initializing a workspace module")
+					}
+					return initWorkspaceModule(ctx, cmd.OutOrStdout(), dag, cwd, workspaceModuleInitOptions{
+						Name:                  moduleName,
+						SDK:                   sdk,
+						Source:                moduleSourcePath,
+						Include:               moduleIncludes,
+						Blueprint:             initBlueprint,
+						SelfCalls:             selfCalls,
+						SearchExistingLicense: !cmd.Flags().Lookup("license").Changed,
+					})
+				}
+			}
 			// only bother setting source path if there's an sdk at this time
 			if sdk != "" {
 				// if user didn't specify moduleSourcePath explicitly,

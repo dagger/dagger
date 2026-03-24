@@ -332,6 +332,18 @@ type WorkspaceModule struct {
 	Source string `json:"source"`
 }
 
+// WorkspaceModuleInitOpts contains options for Workspace.ModuleInit.
+type WorkspaceModuleInitOpts struct {
+	// Source subpath within the new module.
+	Source string
+	// Additional include patterns for the new module.
+	Include []string
+	// Blueprint module reference to apply to the new module.
+	Blueprint string
+	// Enable the self-calls experimental feature for the new module.
+	SelfCalls bool
+}
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -14658,6 +14670,32 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 		}
 	}
 	q = q.Arg("ref", ref)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Create a new module owned by the workspace and auto-install it in config.toml.
+func (r *Workspace) ModuleInit(ctx context.Context, name string, sdk string, opts ...WorkspaceModuleInitOpts) (string, error) {
+	q := r.query.Select("moduleInit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		if !querybuilder.IsZeroValue(opts[i].Blueprint) {
+			q = q.Arg("blueprint", opts[i].Blueprint)
+		}
+		if !querybuilder.IsZeroValue(opts[i].SelfCalls) {
+			q = q.Arg("selfCalls", opts[i].SelfCalls)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("sdk", sdk)
 
 	var response string
 

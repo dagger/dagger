@@ -65,6 +65,17 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("ref").Doc("Module reference to install."),
 				dagql.Arg("name").Doc("Override name for the installed module entry."),
 			),
+		dagql.Func("moduleInit", s.moduleInit).
+			DoNotCache("Mutates workspace config and host filesystem").
+			Doc("Create a new module owned by the workspace and auto-install it in config.toml.").
+			Args(
+				dagql.Arg("name").Doc("Name of the new module."),
+				dagql.Arg("sdk").Doc("SDK to use for the new module."),
+				dagql.Arg("source").Doc("Source subpath within the new module."),
+				dagql.Arg("include").Doc("Additional include patterns for the module."),
+				dagql.Arg("blueprint").Doc("Blueprint module reference to apply to the new module."),
+				dagql.Arg("selfCalls").Doc("Enable the self-calls experimental feature for the new module."),
+			),
 		dagql.Func("configRead", s.configRead).
 			DoNotCache("Reads live config from host").
 			Doc("Read a configuration value from config.toml.",
