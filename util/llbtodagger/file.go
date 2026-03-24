@@ -419,10 +419,16 @@ func applyCopy(
 		args = append(args, argBool("alwaysReplaceExistingDestPaths", true))
 	}
 
-	//if owner != "" {
-	//	args = append(args, argString("owner", owner))
-	//}
+	owner, err := chownOwnerString2(cp.Owner)
+	if err != nil {
+		return nil, nil, err
+	}
+	if owner != "" {
+		fmt.Printf("ACB adding owner %d\n", cp.Mode)
+		args = append(args, argString("owner", owner))
+	}
 	if cp.Mode >= 0 {
+		fmt.Printf("ACB adding perm %d\n", cp.Mode)
 		args = append(args, argInt("permissions", int64(cp.Mode)))
 	}
 
@@ -595,6 +601,33 @@ func requiredSourcePathForCopy(cp *pb.FileActionCopy, include []string) (string,
 
 func hasPathWildcard(p string) bool {
 	return strings.ContainsAny(p, "*?[")
+}
+
+func chownOwnerString2(chown *pb.ChownOpt) (string, error) {
+	if chown == nil {
+		return "", nil
+	}
+
+	var (
+		user  string
+		group string
+	)
+
+	if chown.User != nil {
+		if byName, ok := chown.User.User.(*pb.UserOpt_ByName); ok {
+			if byName != nil && byName.ByName != nil {
+				user = byName.ByName.Name
+			}
+		}
+	}
+	if chown.Group != nil {
+		if byName, ok := chown.User.User.(*pb.UserOpt_ByName); ok {
+			if byName != nil && byName.ByName != nil {
+				group = byName.ByName.Name
+			}
+		}
+	}
+	return fmt.Sprintf("%s:%s", user, group), nil
 }
 
 func chownOwnerString(chown *pb.ChownOpt) (string, error) {

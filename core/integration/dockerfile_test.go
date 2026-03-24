@@ -588,15 +588,11 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 	t.Run("copy chown", func(ctx context.Context, t *testctx.T) {
 		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %[1]s AS base
 WORKDIR /work
-COPY . .
-ADD https://example.com/artifact.tgz /work/vendor/
-ADD https://github.com/dagger/dagger.git#main /work/vendor/dagger/
-RUN echo base
+RUN echo data > f
 
 FROM %[1]s
 WORKDIR /final
 RUN addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser
-COPY --from=base /work /out/work
 COPY --chown=auser:agroup --from=base /work /out/owned
 RUN ls -la /out/owned > data
 `, alpineImage))

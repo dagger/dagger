@@ -767,6 +767,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 				}
 			}
 			if owner != "" {
+				// TODO need to read /etc/passwd and /etc/group here
 				ownership, err := parseDirectoryOwner(owner)
 				if err != nil {
 					return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
@@ -812,6 +813,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 
 		var ownership *Ownership
 		if owner != "" {
+			fmt.Printf("ACB gotta deal with owner %s\n", owner)
 			ownership, err = parseDirectoryOwner(owner)
 			if err != nil {
 				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
@@ -1052,6 +1054,7 @@ func (dir *Directory) WithDirectory(
 				opts = append(opts, fscopy.WithGitignore())
 			}
 			if owner != "" {
+				// TODO I need to read from /etc/pass here to get the ints
 				ownership, err := parseDirectoryOwner(owner)
 				if err != nil {
 					return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
@@ -2163,11 +2166,13 @@ func parseDirectoryOwner(owner string) (*Ownership, error) {
 	var uid, gid int
 	uid, err := parseUID(uidStr)
 	if err != nil {
+		panic(fmt.Errorf("invalid uid %q: %w", uidStr, err))
 		return nil, fmt.Errorf("invalid uid %q: %w", uidStr, err)
 	}
 	if hasGroup {
 		gid, err = parseUID(gidStr)
 		if err != nil {
+			panic(fmt.Errorf("invalid gid %q: %w", gidStr, err))
 			return nil, fmt.Errorf("invalid gid %q: %w", gidStr, err)
 		}
 	}
