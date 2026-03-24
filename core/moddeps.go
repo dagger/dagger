@@ -88,8 +88,6 @@ func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes [
 	return schemaJSONFile, nil
 }
 
-
-
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // Some APIs are automatically hidden as they should not be exposed to modules.
 func (d *ModDeps) SchemaIntrospectionJSONFileForModule(ctx context.Context) (inst dagql.Result[*File], _ error) {
