@@ -33,6 +33,10 @@ func (WorkspaceSuite) TestCurrentWorkspaceInstall(ctx context.Context, t *testct
 		require.Equal(t, ref, cfg.Modules["mywolfi"].Source)
 		require.False(t, cfg.Modules["mywolfi"].Blueprint)
 
+		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.LockFileName))
+		require.NoError(t, err)
+		assertModuleResolveLockEntry(t, lockBytes, ref, workspacecfg.PolicyPin)
+
 		msg, err = c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
 		require.NoError(t, err)
 		require.Equal(t, `Module "mywolfi" is already installed`, msg)
@@ -92,6 +96,20 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Contains(t, cfg.Modules, "dep")
 		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
+	})
+
+	t.Run("writes install lock entries by default", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "install", ref)
+		require.NoError(t, err)
+		require.Equal(t, `Installed module "wolfi" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName), strings.TrimSpace(string(out)))
+
+		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.LockFileName))
+		require.NoError(t, err)
+		assertModuleResolveLockEntry(t, lockBytes, ref, workspacecfg.PolicyPin)
 	})
 
 	t.Run("keeps module dependency installs for the current module", func(ctx context.Context, t *testctx.T) {

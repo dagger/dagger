@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type workspaceInstallArgs struct {
@@ -65,6 +66,13 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 	ref string,
 	name string,
 ) (string, string, error) {
+	var err error
+	ctx, err = withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return "", "", err
+	}
+	ctx = workspaceInstallLookupContext(ctx)
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("dagql server: %w", err)
@@ -123,6 +131,17 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 		return "", "", fmt.Errorf("compute relative install path: %w", err)
 	}
 	return name, sourcePath, nil
+}
+
+func workspaceInstallLookupContext(ctx context.Context) context.Context {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil || clientMetadata.LockMode != "" {
+		return ctx
+	}
+
+	refreshed := *clientMetadata
+	refreshed.LockMode = string(workspace.LockModePinned)
+	return engine.ContextWithClientMetadata(ctx, &refreshed)
 }
 
 func workspaceInstallModuleSourceSelector(ref string) dagql.Selector {

@@ -108,6 +108,8 @@ Reason:
 - local `dagger migrate`
 - engine/session loading of config-owned workspace modules on top of the
   generic `ModuleSource` / `modules.resolve` path
+- workspace install populating `.dagger/lock` through the generic
+  `ModuleSource` / `modules.resolve` lookup path
 
 ### Pending Safe Pre-Lock Buckets
 
@@ -134,8 +136,6 @@ are superseded by it:
 These intents still belong to workspace, but must be rewritten on top of the
 `lockfile` base:
 
-- workspace install should populate `.dagger/lock` by using the generic
-  `ModuleSource` lookup path
 - migration should emit or refresh the same generic module-source lookups
 - any selective refresh UX must layer on top of `currentWorkspace.update()` /
   `dagger lock update`, not replace them
@@ -445,3 +445,24 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestWorkspaceModuleInitCommand$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/9bc3714fac40271d6d70729038b60897`
+  - replayed workspace install lock persistence through
+    `dag.ModuleSource()` / `modules.resolve`
+  - design note:
+    workspace install now defaults its own lookup context to `pinned` only
+    when the caller did not specify a lock mode, so default installs populate
+    `.dagger/lock` without overriding explicit `--lock` behavior
+  - rewrite note:
+    do not manually write install lock entries in workspace code; use the
+    existing generic `moduleSource` lookup persistence path
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./core/schema -o /tmp/.tmp-core-schema-workspace-install.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/schema --run='Test(CurrentLookupLockMode|WorkspaceInstallLookupContext)$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/7bcf5ac25c96736b168175f396518f7d`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/Test(CurrentWorkspaceInstall|WorkspaceInstallCommand)$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/75a668ee9ce9eceb08642d6734aaffca`
