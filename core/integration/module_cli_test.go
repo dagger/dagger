@@ -1893,7 +1893,7 @@ func (m *Hello) Hello() string {
 	})
 
 	t.Run("no-sdk module can load module with sdk", func(ctx context.Context, t *testctx.T) {
-		out, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerShell("hello")).Stdout(ctx)
+		out, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerShell("hello | hello")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hi", out)
 	})
