@@ -832,25 +832,24 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 		}
 
 		if attemptUnpackDockerCompatibility {
-			panic("attemptUnpackDockerCompatibility")
-			//didUnpack, err := attemptCopyArchiveUnpack(
-			//	ctx,
-			//	effectiveSrcPath,
-			//	resolvedCopyDest,
-			//	effectiveInclude,
-			//	filter.Exclude,
-			//	filter.Gitignore,
-			//	ownership,
-			//	permissions,
-			//	newRef.IdentityMapping(),
-			//	destPathHintIsDirectory,
-			//)
-			//if err != nil {
-			//	return fmt.Errorf("failed to unpack source archive: %w", err)
-			//}
-			//if didUnpack {
-			//	return nil
-			//}
+			didUnpack, err := attemptCopyArchiveUnpack(
+				ctx,
+				effectiveSrcPath,
+				resolvedCopyDest,
+				effectiveInclude,
+				filter.Exclude,
+				filter.Gitignore,
+				ownership,
+				permissions,
+				newRef.IdentityMapping(),
+				destPathHintIsDirectory,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to unpack source archive: %w", err)
+			}
+			if didUnpack {
+				return nil
+			}
 		}
 
 		pathsToCopy := []string{src.Dir}

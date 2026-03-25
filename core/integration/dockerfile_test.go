@@ -778,3 +778,27 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 		require.Error(t, err)
 	})
 }
+
+func (DockerfileSuite) TestUnpack(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := c.Container().
+		From(alpineImage).
+		WithWorkdir("/src").
+		WithExec([]string{"sh", "-c", "mkdir mydir && echo bigbigbigbig > mydir/data && tar czf mydir.tar.gz mydir"}).
+		//WithExec([]string{"sh", "-c", "echo bigbigbigbig > some-file"}).
+		Directory(".")
+
+	baseDir := contextDir
+
+	dir := baseDir.
+		WithNewFile("Dockerfile",
+			`FROM `+golangImage+`
+WORKDIR /work
+ADD mydir.tar.gz the-dir
+RUN ls -la > bar
+`)
+	s, err := dir.DockerBuild().File("bar").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, s, "foo\n")
+}
