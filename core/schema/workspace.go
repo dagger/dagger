@@ -464,7 +464,7 @@ func filterGeneratorsByInclude(
 			return nil, fmt.Errorf("generator %q include match: %w", generator.Name(), err)
 		}
 		if !match && allowSingleModuleCompat {
-			match, err = matchSingleModuleGeneratorInclude(ctx, generator.Node, include)
+			match, err = matchSingleModuleInclude(ctx, generator.Node, include)
 			if err != nil {
 				return nil, fmt.Errorf("generator %q compat include match: %w", generator.Name(), err)
 			}
@@ -476,9 +476,9 @@ func filterGeneratorsByInclude(
 	return filtered, nil
 }
 
-// Preserve old single-module generator include semantics by retrying matches
-// against the generator path without the leading workspace module segment.
-func matchSingleModuleGeneratorInclude(
+// matchSingleModuleInclude tries a match without the first element in the path,
+// so that "foo" can match "my-module:foo"
+func matchSingleModuleInclude(
 	ctx context.Context,
 	node *core.ModTreeNode,
 	include []string,
@@ -577,6 +577,15 @@ func filterNodesByInclude[T any](
 		match, err := matchWorkspaceInclude(ctx, nodeOf(item), include)
 		if err != nil {
 			return nil, fmt.Errorf("%s %q include match: %w", itemKind, nameOf(item), err)
+		}
+		// Preserve old single-module semantics: if the pattern doesn't match
+		// the full workspace path (module:check), retry against just the
+		// check path without the leading module name segment.
+		if !match {
+			match, err = matchSingleModuleInclude(ctx, nodeOf(item), include)
+			if err != nil {
+				return nil, fmt.Errorf("%s %q compat include match: %w", itemKind, nameOf(item), err)
+			}
 		}
 		if match {
 			filtered = append(filtered, item)
