@@ -1,13 +1,84 @@
+fragment TypeDefRefParts on TypeDef {
+	name
+	optional
+}
+
+fragment FunctionParts on Function {
+	name
+	description
+	returnType {
+		...TypeDefRefParts
+	}
+	args {
+		name
+		description
+		defaultValue
+		defaultPath
+		ignore
+		typeDef {
+			...TypeDefRefParts
+		}
+	}
+}
+
+fragment FieldParts on FieldTypeDef {
+	name
+	description
+	typeDef {
+		...TypeDefRefParts
+	}
+}
+
 query TypeDefs {
-	typeDefs: currentTypeDefs {
-		id
+	typeDefs: currentTypeDefs(returnAllTypes: true) {
+		name
 		kind
 		optional
+		asObject {
+			name
+			description
+			sourceModuleName
+			constructor {
+				...FunctionParts
+			}
+			functions {
+				...FunctionParts
+			}
+			fields {
+				...FieldParts
+			}
+		}
+		asScalar {
+			name
+			description
+			sourceModuleName
+		}
+		asEnum {
+			name
+			description
+			sourceModuleName
+			members {
+				name
+				description
+			}
+		}
+		asInterface {
+			name
+			description
+			sourceModuleName
+			functions {
+				...FunctionParts
+			}
+		}
+		asInput {
+			name
+			fields {
+				...FieldParts
+			}
+		}
 		asList {
 			elementTypeDef {
-				id
-				kind
-				optional
+				...TypeDefRefParts
 			}
 		}
 	}

@@ -464,10 +464,6 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	if fnProvider == nil {
 		return nil
 	}
-	if err := fc.mod.ensureFunctionProviderLoaded(typeDef); err != nil {
-		return err
-	}
-	fnProvider = typeDef.AsFunctionProvider()
 
 	cmd.AddGroup(funcGroup)
 
@@ -613,9 +609,6 @@ func handleObjectLeaf(md *moduleDef, q *querybuilder.Selection, typeDef *modType
 	obj := typeDef.AsFunctionProvider()
 	if obj == nil {
 		return q, nil
-	}
-	if err := md.ensureFunctionProviderLoaded(typeDef); err != nil {
-		return nil, err
 	}
 
 	// Use duck typing to detect supported functions.

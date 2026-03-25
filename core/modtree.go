@@ -63,10 +63,10 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 		DagqlServer:    srv,
 		Module:         main,
 		OriginalModule: main,
-		Type: &TypeDef{
+		Type: (&TypeDef{
 			Kind:     TypeDefKindObject,
 			AsObject: dagql.NonNull(mainObjRes),
-		},
+		}).syncName(),
 		Description: main.Description,
 	}, nil
 }
@@ -613,13 +613,13 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 						DagqlServer:    node.DagqlServer,
 						Module:         node.Module,
 						OriginalModule: originalModule,
-						Type: &TypeDef{
+						Type: (&TypeDef{
 							Kind:     TypeDefKindObject,
 							AsObject: dagql.NonNull(subObjRes),
-						},
-						IsCheck:        false,
-						IsGenerator:    false,
-						Description:    subObj.Description,
+						}).syncName(),
+						IsCheck:     false,
+						IsGenerator: false,
+						Description: subObj.Description,
 					})
 				}
 			}

@@ -11,6 +11,10 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
+type currentTypeDefsTestServer struct {
+	deps *core.ModDeps
+}
+
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
 	root := &core.Query{}
@@ -136,4 +140,64 @@ func TestCoreModTypeDefs(t *testing.T) {
 	require.Equal(t, "allowParentDirPath", exportFnAllowParentDirPathArg.Name)
 	require.Equal(t, core.TypeDefKindBoolean, exportFnAllowParentDirPathArg.TypeDef.Self().Kind)
 	require.True(t, exportFnAllowParentDirPathArg.TypeDef.Self().Optional)
+}
+
+func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "")
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "current-typedefs-client",
+		SessionID: "current-typedefs-session",
+	})
+	coreSchemaBase, err := NewCoreSchemaBase(ctx)
+	require.NoError(t, err)
+	coreMod := coreSchemaBase.CoreMod("")
+	coreModDeps := core.NewModDeps(nil, []core.Mod{coreMod})
+	root := core.NewRoot(&currentTypeDefsTestServer{deps: coreModDeps}, nil)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	var topLevel dagql.ObjectResultArray[*core.TypeDef]
+	err = dag.Select(ctx, dag.Root(), &topLevel, dagql.Selector{Field: "currentTypeDefs"})
+	require.NoError(t, err)
+
+	var allTypeDefs dagql.ObjectResultArray[*core.TypeDef]
+	err = dag.Select(ctx, dag.Root(), &allTypeDefs, dagql.Selector{
+		Field: "currentTypeDefs",
+		Args: []dagql.NamedInput{
+			{Name: "returnAllTypes", Value: dagql.Boolean(true)},
+		},
+	})
+	require.NoError(t, err)
+
+	require.Greater(t, len(allTypeDefs), len(topLevel))
+
+	topLevelIDs := make(map[uint64]struct{}, len(topLevel))
+	allIDs := make(map[uint64]struct{}, len(allTypeDefs))
+	allNames := make(map[string]struct{}, len(allTypeDefs))
+	extraTypeCount := 0
+
+	for _, typeDef := range topLevel {
+		id, err := typeDef.ID()
+		require.NoError(t, err)
+		topLevelIDs[id.EngineResultID()] = struct{}{}
+	}
+	for _, typeDef := range allTypeDefs {
+		id, err := typeDef.ID()
+		require.NoError(t, err)
+		_, dup := allIDs[id.EngineResultID()]
+		require.False(t, dup, "duplicate typedef result id %d", id.EngineResultID())
+		allIDs[id.EngineResultID()] = struct{}{}
+		require.False(t, typeDef.Self().Optional)
+		require.NotEmpty(t, typeDef.Self().Name)
+		_, dup = allNames[typeDef.Self().Name]
+		require.False(t, dup, "duplicate typedef name %s", typeDef.Self().Name)
+		allNames[typeDef.Self().Name] = struct{}{}
+		if _, topLevel := topLevelIDs[id.EngineResultID()]; !topLevel {
+			extraTypeCount++
+		}
+	}
+	require.Greater(t, extraTypeCount, 0)
 }

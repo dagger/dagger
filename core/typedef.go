@@ -757,6 +757,7 @@ func (d DynamicID) MarshalJSON() ([]byte, error) {
 }
 
 type TypeDef struct {
+	Name        string      `field:"true" doc:"The canonical non-optional name of the type." doNotCache:"simple field selection"`
 	Kind        TypeDefKind `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)." doNotCache:"simple field selection"`
 	Optional    bool        `field:"true" doc:"Whether this type can be set to null. Defaults to false." doNotCache:"simple field selection"`
 	AsList      dagql.Nullable[dagql.ObjectResult[*ListTypeDef]]
@@ -774,6 +775,67 @@ var _ dagql.HasDependencyResults = (*TypeDef)(nil)
 func (typeDef TypeDef) Clone() *TypeDef {
 	cp := typeDef
 	return &cp
+}
+
+func (typeDef *TypeDef) typeName() string {
+	if typeDef == nil {
+		return ""
+	}
+	switch typeDef.Kind {
+	case TypeDefKindString:
+		return "String"
+	case TypeDefKindInteger:
+		return "Int"
+	case TypeDefKindFloat:
+		return "Float"
+	case TypeDefKindBoolean:
+		return "Boolean"
+	case TypeDefKindVoid:
+		return "Void"
+	case TypeDefKindScalar:
+		if typeDef.AsScalar.Valid && typeDef.AsScalar.Value.Self() != nil {
+			return typeDef.AsScalar.Value.Self().Name
+		}
+	case TypeDefKindEnum:
+		if typeDef.AsEnum.Valid && typeDef.AsEnum.Value.Self() != nil {
+			return typeDef.AsEnum.Value.Self().Name
+		}
+	case TypeDefKindInput:
+		if typeDef.AsInput.Valid && typeDef.AsInput.Value.Self() != nil {
+			return typeDef.AsInput.Value.Self().Name
+		}
+	case TypeDefKindObject:
+		if typeDef.AsObject.Valid && typeDef.AsObject.Value.Self() != nil {
+			return typeDef.AsObject.Value.Self().Name
+		}
+	case TypeDefKindInterface:
+		if typeDef.AsInterface.Valid && typeDef.AsInterface.Value.Self() != nil {
+			return typeDef.AsInterface.Value.Self().Name
+		}
+	case TypeDefKindList:
+		if typeDef.AsList.Valid && typeDef.AsList.Value.Self() != nil {
+			return "[" + typeDef.AsList.Value.Self().ElementTypeDef.Self().refTypeName() + "]"
+		}
+	}
+	return ""
+}
+
+func (typeDef *TypeDef) refTypeName() string {
+	name := typeDef.typeName()
+	if name == "" {
+		return ""
+	}
+	if typeDef != nil && typeDef.Optional {
+		return name + "?"
+	}
+	return name
+}
+
+func (typeDef *TypeDef) syncName() *TypeDef {
+	if typeDef != nil {
+		typeDef.Name = typeDef.typeName()
+	}
+	return typeDef
 }
 
 func (*TypeDef) Type() *ast.Type {
@@ -978,85 +1040,85 @@ func (typeDef *TypeDef) Underlying() *TypeDef {
 func (typeDef *TypeDef) WithKind(kind TypeDefKind) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = kind
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithScalar(scalar dagql.ObjectResult[*ScalarTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindScalar)
 	typeDef.AsScalar = dagql.NonNull(scalar)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithScalarTypeDef(scalar dagql.ObjectResult[*ScalarTypeDef]) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = TypeDefKindScalar
 	typeDef.AsScalar = dagql.NonNull(scalar)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithListOf(list dagql.ObjectResult[*ListTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindList)
 	typeDef.AsList = dagql.NonNull(list)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithListTypeDef(list dagql.ObjectResult[*ListTypeDef]) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = TypeDefKindList
 	typeDef.AsList = dagql.NonNull(list)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithObject(obj dagql.ObjectResult[*ObjectTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindObject)
 	typeDef.AsObject = dagql.NonNull(obj)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithObjectTypeDef(obj dagql.ObjectResult[*ObjectTypeDef]) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = TypeDefKindObject
 	typeDef.AsObject = dagql.NonNull(obj)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithInterface(iface dagql.ObjectResult[*InterfaceTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindInterface)
 	typeDef.AsInterface = dagql.NonNull(iface)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithInterfaceTypeDef(iface dagql.ObjectResult[*InterfaceTypeDef]) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = TypeDefKindInterface
 	typeDef.AsInterface = dagql.NonNull(iface)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithInputTypeDef(input dagql.ObjectResult[*InputTypeDef]) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = TypeDefKindInput
 	typeDef.AsInput = dagql.NonNull(input)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithOptional(optional bool) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Optional = optional
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithEnum(enum dagql.ObjectResult[*EnumTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindEnum)
 	typeDef.AsEnum = dagql.NonNull(enum)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithEnumTypeDef(enum dagql.ObjectResult[*EnumTypeDef]) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = TypeDefKindEnum
 	typeDef.AsEnum = dagql.NonNull(enum)
-	return typeDef
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) validateEnumMember(name, value string) error {
@@ -2918,7 +2980,7 @@ func decodePersistedTypeDef(ctx context.Context, dag *dagql.Server, typeDef *per
 		}
 		decoded.AsEnum = dagql.NonNull(enum)
 	}
-	return decoded, nil
+	return decoded.syncName(), nil
 }
 
 func encodePersistedObjectTypeDef(cache dagql.PersistedObjectCache, obj *ObjectTypeDef) (*persistedObjectTypeDef, error) {

@@ -247,7 +247,7 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 			var optionalType dagql.ObjectResult[*TypeDef]
 			if err := dag.Select(ctx, currentArgRes.Self().TypeDef, &optionalType, dagql.Selector{
 				Field: "withOptional",
-				Args: []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+				Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
 			}); err != nil {
 				return fmt.Errorf("optionalize user-default arg %q: %w", argName, err)
 			}
@@ -258,7 +258,7 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 				}
 				if err := dag.Select(ctx, currentArgRes, &updatedArgRes, dagql.Selector{
 					Field: "__withTypeDef",
-					Args: []dagql.NamedInput{{Name: "typeDef", Value: dagql.NewID[*TypeDef](optionalTypeID)}},
+					Args:  []dagql.NamedInput{{Name: "typeDef", Value: dagql.NewID[*TypeDef](optionalTypeID)}},
 				}); err != nil {
 					return fmt.Errorf("update function arg %q type def: %w", argName, err)
 				}
@@ -270,7 +270,7 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 			}
 			if err := dag.Select(ctx, currentArgRes, &updatedArgRes, dagql.Selector{
 				Field: "__withDefaultValue",
-				Args: []dagql.NamedInput{{Name: "defaultValue", Value: defaultJSON}},
+				Args:  []dagql.NamedInput{{Name: "defaultValue", Value: defaultJSON}},
 			}); err != nil {
 				return fmt.Errorf("update function arg %q default value: %w", argName, err)
 			}
@@ -740,10 +740,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if err != nil {
 			return nil, fmt.Errorf("wrap parent object typedef: %w", err)
 		}
-		parentModType, ok, err := NewUserMod(fn.mod).ModTypeFor(ctx, &TypeDef{
+		parentModType, ok, err := NewUserMod(fn.mod).ModTypeFor(ctx, (&TypeDef{
 			Kind:     TypeDefKindObject,
 			AsObject: dagql.NonNull(objDefRes),
-		}, true)
+		}).syncName(), true)
 		if err != nil {
 			return nil, fmt.Errorf("get mod type for parent: %w", err)
 		}

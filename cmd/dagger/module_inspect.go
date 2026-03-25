@@ -136,18 +136,14 @@ func initializeClientGeneratorModule(
 
 // moduleDef is a representation of a dagger module.
 type moduleDef struct {
-	Name            string
-	Description     string
-	MainObject      *modTypeDef
-	Objects         []*modTypeDef
-	Interfaces      []*modTypeDef
-	Enums           []*modTypeDef
-	Inputs          []*modTypeDef
-	typeDefsByID    map[dagger.TypeDefID]*modTypeDef
-	typeRefDefsByID map[dagger.TypeDefID]*modTypeDef
-	namedTypeDefs   map[string]*modTypeDef
-	dag             *dagger.Client
-	loadCtx         context.Context
+	Name           string
+	Description    string
+	MainObject     *modTypeDef
+	Objects        []*modTypeDef
+	Interfaces     []*modTypeDef
+	Enums          []*modTypeDef
+	Inputs         []*modTypeDef
+	typeDefsByName map[string]*modTypeDef
 
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
@@ -287,14 +283,14 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(loadSpan, &rerr)
 
-	var indexRes struct {
+	var res struct {
 		TypeDefs []*modTypeDef
 	}
 
 	err := dag.Do(ctx, &dagger.Request{
 		Query: loadTypeDefsQuery,
 	}, &dagger.Response{
-		Data: &indexRes,
+		Data: &res,
 	})
 	if err != nil {
 		return fmt.Errorf("query module objects: %w", err)
@@ -305,37 +301,19 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	m.Interfaces = nil
 	m.Enums = nil
 	m.Inputs = nil
-	m.typeDefsByID = make(map[dagger.TypeDefID]*modTypeDef, len(indexRes.TypeDefs))
-	m.typeRefDefsByID = make(map[dagger.TypeDefID]*modTypeDef, len(indexRes.TypeDefs))
-	m.namedTypeDefs = make(map[string]*modTypeDef, len(indexRes.TypeDefs))
-	m.dag = dag
-	m.loadCtx = ctx
+	m.typeDefsByName = make(map[string]*modTypeDef, len(res.TypeDefs))
 
-	bootstrapTypeDefs := make([]*modTypeDef, 0, len(indexRes.TypeDefs))
-	for _, typeDef := range indexRes.TypeDefs {
+	for _, typeDef := range res.TypeDefs {
 		if typeDef == nil {
 			return fmt.Errorf("currentTypeDefs returned nil TypeDef")
 		}
-		if typeDef.ID == "" {
-			return fmt.Errorf("currentTypeDefs returned %s without canonical id", typeDef.Kind)
+		if typeDef.TypeName == "" {
+			return fmt.Errorf("currentTypeDefs returned %s without canonical name", typeDef.Kind)
 		}
-		if _, found := m.typeDefsByID[typeDef.ID]; found {
+		if _, found := m.typeDefsByName[typeDef.TypeName]; found {
 			continue
 		}
-		bootstrapTypeDefs = append(bootstrapTypeDefs, typeDef)
-		m.typeDefsByID[typeDef.ID] = nil
-	}
-
-	typeDefs, err := m.loadTopLevelTypeDefs(ctx, dag, bootstrapTypeDefs)
-	if err != nil {
-		return err
-	}
-	if err := m.loadNestedTypeDefRefs(ctx, dag, typeDefs); err != nil {
-		return err
-	}
-
-	for _, typeDef := range typeDefs {
-		m.indexCanonicalTypeDef(typeDef)
+		m.typeDefsByName[typeDef.TypeName] = typeDef
 		typeDef.owner = m
 		switch typeDef.Kind {
 		case dagger.TypeDefKindObjectKind:
@@ -343,35 +321,23 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 			if typeDef.AsObject != nil {
 				typeDef.AsObject.owner = m
 				typeDef.AsObject.typeDef = typeDef
-				m.namedTypeDefs[namedTypeDefKey(typeDef.Kind, typeDef.AsObject.Name)] = typeDef
 			}
 		case dagger.TypeDefKindInterfaceKind:
 			m.Interfaces = append(m.Interfaces, typeDef)
 			if typeDef.AsInterface != nil {
 				typeDef.AsInterface.owner = m
 				typeDef.AsInterface.typeDef = typeDef
-				m.namedTypeDefs[namedTypeDefKey(typeDef.Kind, typeDef.AsInterface.Name)] = typeDef
 			}
 		case dagger.TypeDefKindEnumKind:
 			m.Enums = append(m.Enums, typeDef)
-			if typeDef.AsEnum != nil {
-				m.namedTypeDefs[namedTypeDefKey(typeDef.Kind, typeDef.AsEnum.Name)] = typeDef
-			}
 		case dagger.TypeDefKindInputKind:
 			m.Inputs = append(m.Inputs, typeDef)
-			if typeDef.AsInput != nil {
-				m.namedTypeDefs[namedTypeDefKey(typeDef.Kind, typeDef.AsInput.Name)] = typeDef
-			}
-		case dagger.TypeDefKindScalarKind:
-			if typeDef.AsScalar != nil {
-				m.namedTypeDefs[namedTypeDefKey(typeDef.Kind, typeDef.AsScalar.Name)] = typeDef
-			}
 		}
 	}
 
 	rootType := m.GetTypeDef("Query")
-	if err := m.ensureFunctionProviderLoaded(rootType); err != nil {
-		return fmt.Errorf("load query provider details: %w", err)
+	if rootType == nil || rootType.AsObject == nil {
+		return fmt.Errorf("query typedef not found in currentTypeDefs")
 	}
 
 	for _, fn := range rootType.AsObject.Functions {
@@ -405,496 +371,11 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	if m.Name == "" {
 		m.MainObject = rootType
 	}
-	if m.MainObject != nil {
-		mainObjectConstructor := m.MainObject.AsObject.Constructor
-		if err := m.ensureFunctionProviderLoaded(m.MainObject); err != nil {
-			return fmt.Errorf("load main object provider details: %w", err)
-		}
-		if mainObjectConstructor != nil {
-			m.MainObject.AsObject.Constructor = mainObjectConstructor
-		}
-	}
 
 	if m.Name != "" && m.MainObject == nil {
 		return fmt.Errorf("main object not found, check that your module's name and main object match")
 	}
 
-	return nil
-}
-
-func (m *moduleDef) indexCanonicalTypeDef(typeDef *modTypeDef) {
-	if typeDef == nil || typeDef.ID == "" {
-		return
-	}
-	m.typeDefsByID[typeDef.ID] = typeDef
-}
-
-func namedTypeDefKey(kind dagger.TypeDefKind, name string) string {
-	return string(kind) + ":" + gqlObjectName(name)
-}
-
-func minimalTypeDefRefSelection() string {
-	return `
-id
-kind
-optional
-asList {
-	elementTypeDef {
-		id
-		kind
-		optional
-	}
-}`
-}
-
-func functionDetailsSelection() string {
-	return `
-name
-description
-returnType {` + minimalTypeDefRefSelection() + `
-}
-args {
-	name
-	description
-	defaultValue
-	defaultPath
-	ignore
-	typeDef {` + minimalTypeDefRefSelection() + `
-	}
-}`
-}
-
-func fieldDetailsSelection() string {
-	return `
-name
-description
-typeDef {` + minimalTypeDefRefSelection() + `
-}`
-}
-
-func topLevelTypeDefMetadataSelection(kind dagger.TypeDefKind) string {
-	switch kind {
-	case dagger.TypeDefKindObjectKind:
-		return `
-id
-kind
-optional
-asObject {
-	name
-	description
-	sourceModuleName
-}`
-	case dagger.TypeDefKindInterfaceKind:
-		return `
-id
-kind
-optional
-asInterface {
-	name
-	description
-	sourceModuleName
-}`
-	case dagger.TypeDefKindInputKind:
-		return `
-id
-kind
-optional
-asInput {
-	name
-}`
-	case dagger.TypeDefKindEnumKind:
-		return `
-id
-kind
-optional
-asEnum {
-	name
-	description
-	sourceModuleName
-	members {
-		name
-		description
-	}
-}`
-	case dagger.TypeDefKindScalarKind:
-		return `
-id
-kind
-optional
-asScalar {
-	name
-	description
-	sourceModuleName
-}`
-	case dagger.TypeDefKindListKind:
-		return minimalTypeDefRefSelection()
-	default:
-		return `
-id
-kind
-optional`
-	}
-}
-
-func providerTypeDefSelection(kind dagger.TypeDefKind) string {
-	switch kind {
-	case dagger.TypeDefKindObjectKind:
-		return `
-id
-kind
-optional
-asObject {
-	name
-	description
-	sourceModuleName
-	constructor {` + functionDetailsSelection() + `
-	}
-	functions {` + functionDetailsSelection() + `
-	}
-	fields {` + fieldDetailsSelection() + `
-	}
-}`
-	case dagger.TypeDefKindInterfaceKind:
-		return `
-id
-kind
-optional
-asInterface {
-	name
-	description
-	sourceModuleName
-	functions {` + functionDetailsSelection() + `
-	}
-}`
-	default:
-		return topLevelTypeDefMetadataSelection(kind)
-	}
-}
-
-func typeDefRefSelection(kind dagger.TypeDefKind) string {
-	switch kind {
-	case dagger.TypeDefKindListKind:
-		return `
-id
-kind
-optional
-asList {
-	elementTypeDef {
-		id
-		kind
-		optional
-	}
-}`
-	case dagger.TypeDefKindObjectKind:
-		return `
-id
-kind
-optional
-asObject {
-	name
-	sourceModuleName
-}`
-	case dagger.TypeDefKindInterfaceKind:
-		return `
-id
-kind
-optional
-asInterface {
-	name
-	sourceModuleName
-}`
-	case dagger.TypeDefKindInputKind:
-		return `
-id
-kind
-optional
-asInput {
-	name
-}`
-	case dagger.TypeDefKindEnumKind:
-		return `
-id
-kind
-optional
-asEnum {
-	name
-	sourceModuleName
-}`
-	case dagger.TypeDefKindScalarKind:
-		return `
-id
-kind
-optional
-asScalar {
-	name
-	description
-	sourceModuleName
-}`
-	default:
-		return `
-id
-kind
-optional`
-	}
-}
-
-func buildTypeDefLoadQuery(aliasPrefix string, typeDefs []*modTypeDef, selection func(dagger.TypeDefKind) string) string {
-	var query strings.Builder
-	query.WriteString("query TypeDefs {\n")
-	for i, typeDef := range typeDefs {
-		fmt.Fprintf(&query, "\t%s%d: loadTypeDefFromID(id: %q) {%s\n\t}\n", aliasPrefix, i, typeDef.ID, selection(typeDef.Kind))
-	}
-	query.WriteString("}\n")
-	return query.String()
-}
-
-func decodeAliasedTypeDefs(query string, aliasPrefix string, typeDefs []*modTypeDef, dag *dagger.Client, ctx context.Context) ([]*modTypeDef, error) {
-	if len(typeDefs) == 0 {
-		return nil, nil
-	}
-
-	var res map[string]*modTypeDef
-	err := dag.Do(ctx, &dagger.Request{
-		Query: query,
-	}, &dagger.Response{
-		Data: &res,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	loaded := make([]*modTypeDef, 0, len(typeDefs))
-	for i, requested := range typeDefs {
-		alias := fmt.Sprintf("%s%d", aliasPrefix, i)
-		typeDef := res[alias]
-		if typeDef == nil {
-			return nil, fmt.Errorf("load typedef %q returned nil", requested.ID)
-		}
-		if typeDef.ID == "" {
-			return nil, fmt.Errorf("load typedef %q returned typedef without id", requested.ID)
-		}
-		loaded = append(loaded, typeDef)
-	}
-	return loaded, nil
-}
-
-func (m *moduleDef) loadTopLevelTypeDefs(ctx context.Context, dag *dagger.Client, typeDefs []*modTypeDef) ([]*modTypeDef, error) {
-	loaded, err := decodeAliasedTypeDefs(
-		buildTypeDefLoadQuery("typedef", typeDefs, topLevelTypeDefMetadataSelection),
-		"typedef",
-		typeDefs,
-		dag,
-		ctx,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("load top-level typedef details: %w", err)
-	}
-	return loaded, nil
-}
-
-func collectNestedTypeDefRefs(typeDef *modTypeDef, refs map[dagger.TypeDefID]*modTypeDef) {
-	if typeDef == nil {
-		return
-	}
-	switch typeDef.Kind {
-	case dagger.TypeDefKindListKind:
-		if typeDef.AsList == nil || typeDef.AsList.ElementTypeDef == nil || typeDef.AsList.ElementTypeDef.ID == "" {
-			return
-		}
-		refs[typeDef.AsList.ElementTypeDef.ID] = typeDef.AsList.ElementTypeDef
-	case dagger.TypeDefKindObjectKind:
-		if typeDef.AsObject == nil {
-			return
-		}
-		for _, field := range typeDef.AsObject.Fields {
-			if field != nil && field.TypeDef != nil && field.TypeDef.ID != "" {
-				refs[field.TypeDef.ID] = field.TypeDef
-			}
-		}
-		for _, fn := range typeDef.AsObject.Functions {
-			if fn == nil {
-				continue
-			}
-			if fn.ReturnType != nil && fn.ReturnType.ID != "" {
-				refs[fn.ReturnType.ID] = fn.ReturnType
-			}
-			for _, arg := range fn.Args {
-				if arg != nil && arg.TypeDef != nil && arg.TypeDef.ID != "" {
-					refs[arg.TypeDef.ID] = arg.TypeDef
-				}
-			}
-		}
-		if typeDef.AsObject.Constructor != nil {
-			fn := typeDef.AsObject.Constructor
-			if fn.ReturnType != nil && fn.ReturnType.ID != "" {
-				refs[fn.ReturnType.ID] = fn.ReturnType
-			}
-			for _, arg := range fn.Args {
-				if arg != nil && arg.TypeDef != nil && arg.TypeDef.ID != "" {
-					refs[arg.TypeDef.ID] = arg.TypeDef
-				}
-			}
-		}
-	case dagger.TypeDefKindInterfaceKind:
-		if typeDef.AsInterface == nil {
-			return
-		}
-		for _, fn := range typeDef.AsInterface.Functions {
-			if fn == nil {
-				continue
-			}
-			if fn.ReturnType != nil && fn.ReturnType.ID != "" {
-				refs[fn.ReturnType.ID] = fn.ReturnType
-			}
-			for _, arg := range fn.Args {
-				if arg != nil && arg.TypeDef != nil && arg.TypeDef.ID != "" {
-					refs[arg.TypeDef.ID] = arg.TypeDef
-				}
-			}
-		}
-	case dagger.TypeDefKindInputKind:
-		if typeDef.AsInput == nil {
-			return
-		}
-		for _, field := range typeDef.AsInput.Fields {
-			if field != nil && field.TypeDef != nil && field.TypeDef.ID != "" {
-				refs[field.TypeDef.ID] = field.TypeDef
-			}
-		}
-	}
-}
-
-func (m *moduleDef) loadNestedTypeDefRefs(ctx context.Context, dag *dagger.Client, typeDefs []*modTypeDef) error {
-	pending := make(map[dagger.TypeDefID]*modTypeDef)
-	for _, typeDef := range typeDefs {
-		collectNestedTypeDefRefs(typeDef, pending)
-	}
-
-	for len(pending) > 0 {
-		batch := make([]*modTypeDef, 0, len(pending))
-		for id, typeDef := range pending {
-			if _, found := m.typeDefsByID[id]; found || m.typeRefDefsByID[id] != nil {
-				continue
-			}
-			switch typeDef.Kind {
-			case dagger.TypeDefKindStringKind,
-				dagger.TypeDefKindIntegerKind,
-				dagger.TypeDefKindFloatKind,
-				dagger.TypeDefKindBooleanKind,
-				dagger.TypeDefKindVoidKind:
-				continue
-			}
-			batch = append(batch, typeDef)
-		}
-		if len(batch) == 0 {
-			return nil
-		}
-
-		loaded, err := decodeAliasedTypeDefs(
-			buildTypeDefLoadQuery("ref", batch, typeDefRefSelection),
-			"ref",
-			batch,
-			dag,
-			ctx,
-		)
-		if err != nil {
-			return fmt.Errorf("load nested typedef refs: %w", err)
-		}
-
-		pending = make(map[dagger.TypeDefID]*modTypeDef)
-		for _, typeDef := range loaded {
-			m.typeRefDefsByID[typeDef.ID] = typeDef
-			collectNestedTypeDefRefs(typeDef, pending)
-		}
-	}
-
-	return nil
-}
-
-func (m *moduleDef) ensureFunctionProviderLoaded(typeDef *modTypeDef) error {
-	if typeDef == nil {
-		return nil
-	}
-	switch typeDef.Kind {
-	case dagger.TypeDefKindObjectKind, dagger.TypeDefKindInterfaceKind:
-	default:
-		return nil
-	}
-	typeDef.providerOnce.Do(func() {
-		typeDef.providerErr = m.loadFunctionProvider(typeDef)
-	})
-	return typeDef.providerErr
-}
-
-func (m *moduleDef) ensureFunctionProviderLoadedByProvider(fp functionProvider) error {
-	switch fp := fp.(type) {
-	case *modObject:
-		if fp == nil || fp.typeDef == nil {
-			return nil
-		}
-		return m.ensureFunctionProviderLoaded(fp.typeDef)
-	case *modInterface:
-		if fp == nil || fp.typeDef == nil {
-			return nil
-		}
-		return m.ensureFunctionProviderLoaded(fp.typeDef)
-	default:
-		return nil
-	}
-}
-
-func (m *moduleDef) loadFunctionProvider(typeDef *modTypeDef) error {
-	if m.dag == nil || m.loadCtx == nil {
-		return fmt.Errorf("provider details requested before module typedef load completed")
-	}
-	loaded, err := decodeAliasedTypeDefs(
-		buildTypeDefLoadQuery("provider", []*modTypeDef{typeDef}, providerTypeDefSelection),
-		"provider",
-		[]*modTypeDef{typeDef},
-		m.dag,
-		m.loadCtx,
-	)
-	if err != nil {
-		return fmt.Errorf("load provider typedef %q: %w", typeDef.ID, err)
-	}
-	provider := loaded[0]
-	if err := m.loadNestedTypeDefRefs(m.loadCtx, m.dag, loaded); err != nil {
-		return err
-	}
-	existingObject := typeDef.AsObject
-	existingInterface := typeDef.AsInterface
-
-	typeDef.Kind = provider.Kind
-	if existingObject != nil && provider.AsObject != nil {
-		*existingObject = *provider.AsObject
-		typeDef.AsObject = existingObject
-	} else {
-		typeDef.AsObject = provider.AsObject
-	}
-	if existingInterface != nil && provider.AsInterface != nil {
-		*existingInterface = *provider.AsInterface
-		typeDef.AsInterface = existingInterface
-	} else {
-		typeDef.AsInterface = provider.AsInterface
-	}
-	typeDef.AsInput = provider.AsInput
-	typeDef.AsList = provider.AsList
-	typeDef.AsScalar = provider.AsScalar
-	typeDef.AsEnum = provider.AsEnum
-	if typeDef.AsObject != nil {
-		if existingObject != nil && existingObject.Constructor != nil {
-			typeDef.AsObject.Constructor = existingObject.Constructor
-		}
-		typeDef.AsObject.owner = m
-		typeDef.AsObject.typeDef = typeDef
-	}
-	if typeDef.AsInterface != nil {
-		if len(typeDef.AsInterface.Functions) == 0 && existingInterface != nil {
-			typeDef.AsInterface.Functions = existingInterface.Functions
-		}
-		typeDef.AsInterface.owner = m
-		typeDef.AsInterface.typeDef = typeDef
-	}
 	return nil
 }
 
@@ -978,9 +459,6 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 }
 
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
-	if err := m.ensureFunctionProviderLoadedByProvider(fp); err != nil {
-		return nil, err
-	}
 	for _, fn := range fp.GetFunctions() {
 		if fn.Name == functionName || fn.CmdName() == functionName {
 			if err := m.LoadFunctionTypeDefs(fn); err != nil {
@@ -1102,8 +580,8 @@ func (m *moduleDef) HasFunction(fp functionProvider, name string) bool {
 	return fn != nil
 }
 
-// LoadTypeDef rebinds shallow named TypeDef references onto the canonical
-// top-level TypeDefs loaded from currentTypeDefs.
+// LoadTypeDef rebinds shallow TypeDef refs onto the canonical typedefs loaded
+// from currentTypeDefs(returnAllTypes: true).
 func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) error {
 	if typeDef == nil {
 		return nil
@@ -1116,108 +594,53 @@ func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) error {
 }
 
 func (m *moduleDef) loadTypeDef(typeDef *modTypeDef) error {
-	if typeDef.ID != "" {
-		ref := m.typeRefDefsByID[typeDef.ID]
-		if ref == nil {
-			ref = m.typeDefsByID[typeDef.ID]
-		}
-		if ref != nil {
-			if typeDef.AsList == nil && ref.AsList != nil {
-				typeDef.AsList = ref.AsList
-			}
-			if typeDef.AsObject == nil && ref.AsObject != nil {
-				typeDef.AsObject = ref.AsObject
-			}
-			if typeDef.AsInterface == nil && ref.AsInterface != nil {
-				typeDef.AsInterface = ref.AsInterface
-			}
-			if typeDef.AsInput == nil && ref.AsInput != nil {
-				typeDef.AsInput = ref.AsInput
-			}
-			if typeDef.AsScalar == nil && ref.AsScalar != nil {
-				typeDef.AsScalar = ref.AsScalar
-			}
-			if typeDef.AsEnum == nil && ref.AsEnum != nil {
-				typeDef.AsEnum = ref.AsEnum
-			}
-		}
+	if typeDef.TypeName == "" {
+		return fmt.Errorf("typedef ref missing canonical name")
 	}
+	canonical := m.typeDefsByName[typeDef.TypeName]
+	if canonical == nil {
+		return fmt.Errorf("typedef %q not found in currentTypeDefs(returnAllTypes: true)", typeDef.TypeName)
+	}
+
+	optional := typeDef.Optional
+	typeDef.TypeName = canonical.TypeName
+	typeDef.Kind = canonical.Kind
+	typeDef.Optional = optional
+	typeDef.AsObject = canonical.AsObject
+	typeDef.AsInterface = canonical.AsInterface
+	typeDef.AsInput = canonical.AsInput
+	typeDef.AsList = canonical.AsList
+	typeDef.AsScalar = canonical.AsScalar
+	typeDef.AsEnum = canonical.AsEnum
 
 	switch typeDef.Kind {
 	case dagger.TypeDefKindStringKind,
 		dagger.TypeDefKindIntegerKind,
 		dagger.TypeDefKindFloatKind,
 		dagger.TypeDefKindBooleanKind,
-		dagger.TypeDefKindVoidKind:
-		return nil
-	case dagger.TypeDefKindListKind:
-		if typeDef.AsList == nil || typeDef.AsList.ElementTypeDef == nil {
-			return fmt.Errorf("list typedef missing element type")
-		}
-		return m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
-	case dagger.TypeDefKindObjectKind,
-		dagger.TypeDefKindInterfaceKind,
+		dagger.TypeDefKindVoidKind,
 		dagger.TypeDefKindInputKind,
 		dagger.TypeDefKindEnumKind,
 		dagger.TypeDefKindScalarKind:
-		var canonical *modTypeDef
-		var typeName string
-		switch typeDef.Kind {
-		case dagger.TypeDefKindObjectKind:
-			if typeDef.AsObject == nil {
-				return fmt.Errorf("object typedef missing object payload")
-			}
-			typeName = typeDef.AsObject.Name
-		case dagger.TypeDefKindInterfaceKind:
-			if typeDef.AsInterface == nil {
-				return fmt.Errorf("interface typedef missing interface payload")
-			}
-			typeName = typeDef.AsInterface.Name
-		case dagger.TypeDefKindInputKind:
-			if typeDef.AsInput == nil {
-				return fmt.Errorf("input typedef missing input payload")
-			}
-			typeName = typeDef.AsInput.Name
-		case dagger.TypeDefKindEnumKind:
-			if typeDef.AsEnum == nil {
-				return fmt.Errorf("enum typedef missing enum payload")
-			}
-			typeName = typeDef.AsEnum.Name
-		case dagger.TypeDefKindScalarKind:
-			if typeDef.AsScalar == nil {
-				return fmt.Errorf("scalar typedef missing scalar payload")
-			}
-			typeName = typeDef.AsScalar.Name
+		return nil
+	case dagger.TypeDefKindListKind:
+		if typeDef.AsList == nil || typeDef.AsList.ElementTypeDef == nil {
+			return fmt.Errorf("list typedef %q missing element type", typeDef.TypeName)
 		}
-		canonical = m.namedTypeDefs[namedTypeDefKey(typeDef.Kind, typeName)]
-		if canonical == nil {
-			switch typeDef.Kind {
-			case dagger.TypeDefKindObjectKind:
-				typeDef.AsObject.owner = m
-				typeDef.AsObject.typeDef = typeDef
-				return nil
-			case dagger.TypeDefKindInterfaceKind:
-				typeDef.AsInterface.owner = m
-				typeDef.AsInterface.typeDef = typeDef
-				return nil
-			case dagger.TypeDefKindInputKind:
-				return fmt.Errorf("canonical input typedef %q not found in currentTypeDefs", typeDef.AsInput.Name)
-			case dagger.TypeDefKindEnumKind:
-				return fmt.Errorf("canonical enum typedef %q from module %q not found in currentTypeDefs", typeDef.AsEnum.Name, typeDef.AsEnum.SourceModuleName)
-			case dagger.TypeDefKindScalarKind:
-				return fmt.Errorf("canonical scalar typedef %q from module %q not found in currentTypeDefs", typeDef.AsScalar.Name, typeDef.AsScalar.SourceModuleName)
-			}
+		return m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
+	case dagger.TypeDefKindObjectKind:
+		if typeDef.AsObject == nil {
+			return fmt.Errorf("object typedef %q missing object payload", typeDef.TypeName)
 		}
-		optional := typeDef.Optional
-		typeDef.ID = canonical.ID
-		typeDef.Kind = canonical.Kind
-		typeDef.Optional = optional
-		typeDef.AsObject = canonical.AsObject
-		typeDef.AsInterface = canonical.AsInterface
-		typeDef.AsInput = canonical.AsInput
-		typeDef.AsList = canonical.AsList
-		typeDef.AsScalar = canonical.AsScalar
-		typeDef.AsEnum = canonical.AsEnum
+		typeDef.AsObject.owner = m
+		typeDef.AsObject.typeDef = typeDef
+		return nil
+	case dagger.TypeDefKindInterfaceKind:
+		if typeDef.AsInterface == nil {
+			return fmt.Errorf("interface typedef %q missing interface payload", typeDef.TypeName)
+		}
+		typeDef.AsInterface.owner = m
+		typeDef.AsInterface.typeDef = typeDef
 		return nil
 	default:
 		return fmt.Errorf("unsupported typedef kind %s", typeDef.Kind)
@@ -1229,9 +652,6 @@ func (m *moduleDef) LoadFunctionTypeDefs(fn *modFunction) error {
 		return nil
 	}
 
-	// We intentionally keep one raw currentTypeDefs query, load full top-level
-	// definitions once, and then rebind any shallow named refs onto those
-	// canonical top-level nodes by kind/name.
 	if err := m.LoadTypeDef(fn.ReturnType); err != nil {
 		return fmt.Errorf("load return type for function %q: %w", fn.Name, err)
 	}
@@ -1245,7 +665,7 @@ func (m *moduleDef) LoadFunctionTypeDefs(fn *modFunction) error {
 
 // modTypeDef is a representation of dagger.TypeDef.
 type modTypeDef struct {
-	ID          dagger.TypeDefID
+	TypeName    string `json:"name"`
 	Kind        dagger.TypeDefKind
 	Optional    bool
 	AsObject    *modObject
@@ -1259,9 +679,7 @@ type modTypeDef struct {
 	once    sync.Once
 	loadErr error
 
-	owner        *moduleDef
-	providerOnce sync.Once
-	providerErr  error
+	owner *moduleDef
 }
 
 func (t *modTypeDef) String() string {
@@ -1372,21 +790,6 @@ type functionProvider interface {
 }
 
 func GetSupportedFunctions(fp functionProvider) ([]*modFunction, []string, error) {
-	switch fp := fp.(type) {
-	case *modObject:
-		if fp != nil && fp.owner != nil {
-			if err := fp.owner.ensureFunctionProviderLoadedByProvider(fp); err != nil {
-				return nil, nil, err
-			}
-		}
-	case *modInterface:
-		if fp != nil && fp.owner != nil {
-			if err := fp.owner.ensureFunctionProviderLoadedByProvider(fp); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-
 	allFns := fp.GetFunctions()
 	fns := make([]*modFunction, 0, len(allFns))
 	skipped := make([]string, 0, len(allFns))

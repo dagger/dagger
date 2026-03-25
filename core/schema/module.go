@@ -68,6 +68,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
 			WithInput(dagql.CurrentSchemaInput).
+			Args(
+				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`),
+			).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
 		dagql.Func("currentFunctionCall", s.currentFunctionCall).
@@ -1740,7 +1743,11 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResu
 	return void, query.ServeModule(ctx, modMeta, includeDependencies)
 }
 
-func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.ObjectResultArray[*core.TypeDef], error) {
+type currentTypeDefsArgs struct {
+	ReturnAllTypes bool `default:"false"`
+}
+
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args currentTypeDefsArgs) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	deps, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
@@ -1765,10 +1772,207 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 			continue
 		}
 		typeDefs[i] = queryTypeDef
-		return typeDefs, nil
+		if !args.ReturnAllTypes {
+			return typeDefs, nil
+		}
+		return expandTypeDefClosure(ctx, dag, typeDefs)
 	}
 	typeDefs = append(typeDefs, queryTypeDef)
-	return typeDefs, nil
+	if !args.ReturnAllTypes {
+		return typeDefs, nil
+	}
+	return expandTypeDefClosure(ctx, dag, typeDefs)
+}
+
+func expandTypeDefClosure(
+	ctx context.Context,
+	dag *dagql.Server,
+	typeDefs dagql.ObjectResultArray[*core.TypeDef],
+) (dagql.ObjectResultArray[*core.TypeDef], error) {
+	orderedNames := make([]string, 0, len(typeDefs))
+	canonicalByName := make(map[string]dagql.ObjectResult[*core.TypeDef], len(typeDefs))
+	queue := make([]dagql.ObjectResult[*core.TypeDef], 0, len(typeDefs))
+
+	enqueue := func(typeDef dagql.ObjectResult[*core.TypeDef]) error {
+		if typeDef.Self() == nil {
+			return nil
+		}
+		typeDef, err := normalizeReturnAllTypesTypeDef(ctx, dag, typeDef)
+		if err != nil {
+			return err
+		}
+		typeDefSelf := typeDef.Self()
+		if typeDefSelf == nil {
+			return nil
+		}
+		if typeDefSelf.Name == "" {
+			return fmt.Errorf("typedef %q missing canonical name", typeDefSelf.Kind)
+		}
+
+		if existing, found := canonicalByName[typeDefSelf.Name]; !found {
+			orderedNames = append(orderedNames, typeDefSelf.Name)
+			canonicalByName[typeDefSelf.Name] = typeDef
+			queue = append(queue, typeDef)
+		} else if typeDefIsStub(existing.Self()) && !typeDefIsStub(typeDefSelf) {
+			canonicalByName[typeDefSelf.Name] = typeDef
+			queue = append(queue, typeDef)
+		}
+		return nil
+	}
+
+	for _, typeDef := range typeDefs {
+		if err := enqueue(typeDef); err != nil {
+			return nil, err
+		}
+	}
+
+	for len(queue) > 0 {
+		typeDef := queue[0]
+		queue = queue[1:]
+		typeDefSelf := typeDef.Self()
+		if typeDefSelf == nil {
+			continue
+		}
+
+		switch typeDefSelf.Kind {
+		case core.TypeDefKindList:
+			if typeDefSelf.AsList.Valid && typeDefSelf.AsList.Value.Self() != nil {
+				if err := enqueue(typeDefSelf.AsList.Value.Self().ElementTypeDef); err != nil {
+					return nil, err
+				}
+			}
+		case core.TypeDefKindObject:
+			if !typeDefSelf.AsObject.Valid || typeDefSelf.AsObject.Value.Self() == nil {
+				continue
+			}
+			obj := typeDefSelf.AsObject.Value.Self()
+			for _, field := range obj.Fields {
+				if field.Self() == nil {
+					continue
+				}
+				if err := enqueue(field.Self().TypeDef); err != nil {
+					return nil, err
+				}
+			}
+			for _, fn := range obj.Functions {
+				if fn.Self() == nil {
+					continue
+				}
+				if err := enqueue(fn.Self().ReturnType); err != nil {
+					return nil, err
+				}
+				for _, arg := range fn.Self().Args {
+					if arg.Self() == nil {
+						continue
+					}
+					if err := enqueue(arg.Self().TypeDef); err != nil {
+						return nil, err
+					}
+				}
+			}
+			if obj.Constructor.Valid && obj.Constructor.Value.Self() != nil {
+				if err := enqueue(obj.Constructor.Value.Self().ReturnType); err != nil {
+					return nil, err
+				}
+				for _, arg := range obj.Constructor.Value.Self().Args {
+					if arg.Self() == nil {
+						continue
+					}
+					if err := enqueue(arg.Self().TypeDef); err != nil {
+						return nil, err
+					}
+				}
+			}
+		case core.TypeDefKindInterface:
+			if !typeDefSelf.AsInterface.Valid || typeDefSelf.AsInterface.Value.Self() == nil {
+				continue
+			}
+			iface := typeDefSelf.AsInterface.Value.Self()
+			for _, fn := range iface.Functions {
+				if fn.Self() == nil {
+					continue
+				}
+				if err := enqueue(fn.Self().ReturnType); err != nil {
+					return nil, err
+				}
+				for _, arg := range fn.Self().Args {
+					if arg.Self() == nil {
+						continue
+					}
+					if err := enqueue(arg.Self().TypeDef); err != nil {
+						return nil, err
+					}
+				}
+			}
+		case core.TypeDefKindInput:
+			if !typeDefSelf.AsInput.Valid || typeDefSelf.AsInput.Value.Self() == nil {
+				continue
+			}
+			input := typeDefSelf.AsInput.Value.Self()
+			for _, field := range input.Fields {
+				if field.Self() == nil {
+					continue
+				}
+				if err := enqueue(field.Self().TypeDef); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
+	ordered := make(dagql.ObjectResultArray[*core.TypeDef], 0, len(orderedNames))
+	for _, name := range orderedNames {
+		ordered = append(ordered, canonicalByName[name])
+	}
+	return ordered, nil
+}
+
+func normalizeReturnAllTypesTypeDef(
+	ctx context.Context,
+	dag *dagql.Server,
+	typeDef dagql.ObjectResult[*core.TypeDef],
+) (dagql.ObjectResult[*core.TypeDef], error) {
+	if typeDef.Self() == nil || !typeDef.Self().Optional {
+		return typeDef, nil
+	}
+	if err := dag.Select(ctx, typeDef, &typeDef, dagql.Selector{
+		Field: "withOptional",
+		Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(false)}},
+	}); err != nil {
+		return typeDef, fmt.Errorf("normalize typedef optional=false: %w", err)
+	}
+	return typeDef, nil
+}
+
+func typeDefIsStub(typeDef *core.TypeDef) bool {
+	if typeDef == nil {
+		return false
+	}
+	switch typeDef.Kind {
+	case core.TypeDefKindObject:
+		if !typeDef.AsObject.Valid || typeDef.AsObject.Value.Self() == nil {
+			return true
+		}
+		obj := typeDef.AsObject.Value.Self()
+		return len(obj.Fields) == 0 && len(obj.Functions) == 0 && !obj.Constructor.Valid
+	case core.TypeDefKindInterface:
+		if !typeDef.AsInterface.Valid || typeDef.AsInterface.Value.Self() == nil {
+			return true
+		}
+		return len(typeDef.AsInterface.Value.Self().Functions) == 0
+	case core.TypeDefKindInput:
+		if !typeDef.AsInput.Valid || typeDef.AsInput.Value.Self() == nil {
+			return true
+		}
+		return len(typeDef.AsInput.Value.Self().Fields) == 0
+	case core.TypeDefKindEnum:
+		if !typeDef.AsEnum.Valid || typeDef.AsEnum.Value.Self() == nil {
+			return true
+		}
+		return len(typeDef.AsEnum.Value.Self().Members) == 0
+	default:
+		return false
+	}
 }
 
 func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectResult[*core.TypeDef], error) {

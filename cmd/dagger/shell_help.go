@@ -553,12 +553,6 @@ func shellTypeDoc(t *modTypeDef) string {
 	if fp.ProviderName() != "Query" {
 		doc.Add(t.KindDisplay(), t.Long())
 	}
-	if t.owner != nil {
-		if err := t.owner.ensureFunctionProviderLoaded(t); err != nil {
-			doc.Add("Error", err.Error())
-			return doc.String()
-		}
-	}
 
 	if fns := fp.GetFunctions(); len(fns) > 0 {
 		doc.Add(
