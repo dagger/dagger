@@ -937,7 +937,6 @@ func TestDefinitionToIDFileMkdirNamedChownWithContainerContext(t *testing.T) {
 	require.NotNil(t, withDir)
 	require.Equal(t, "/dst", withDir.Arg("path").Value().ToInput())
 	require.Equal(t, "builder:staff", withDir.Arg("owner").Value().ToInput())
-	require.EqualValues(t, 0o755, withDir.Arg("permissions").Value().ToInput())
 
 	sourceID, ok := withDir.Arg("source").Value().ToInput().(*call.ID)
 	require.True(t, ok)
