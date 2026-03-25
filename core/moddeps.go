@@ -114,9 +114,8 @@ func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server, entrypointMo
 	queryObjType := dag.Root().ObjectType()
 
 	// Find the Query TypeDef and build a lookup of module main objects by
-	// source module name. Only the primary object (whose name matches the
-	// module name) is stored — secondary objects from the same module
-	// (e.g. TestObj from module "test") must not overwrite it.
+	// source module name. IsMainObject is set by Module.TypeDefs() so we
+	// don't need name-matching heuristics here.
 	var queryTypeDef *ObjectTypeDef
 	modMainObjects := map[string]*ObjectTypeDef{}
 	for _, td := range typeDefs {
@@ -125,16 +124,8 @@ func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server, entrypointMo
 			if obj.Name == "Query" {
 				queryTypeDef = obj
 			}
-			// Match main objects by comparing the module's source name against
-			// the object's API name or its SDK-provided original name. The
-			// original name check handles modules that were renamed (e.g. via
-			// toolchain config "name" override) where the object keeps its
-			// SDK name but SourceModuleName reflects the new alias.
-			if obj.SourceModuleName != "" {
-				if gqlObjectName(obj.SourceModuleName) == obj.Name ||
-					(obj.OriginalName != "" && gqlObjectName(obj.OriginalName) == obj.Name) {
-					modMainObjects[obj.SourceModuleName] = obj
-				}
+			if obj.IsMainObject {
+				modMainObjects[obj.SourceModuleName] = obj
 			}
 		}
 	}

@@ -613,12 +613,17 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server, opts ...Insta
 func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
 	// TODO: use dag arg to reflect dynamic updates (if/when we support that)
 
+	mainObj, _ := mod.MainObject()
+
 	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
 
 	for _, def := range mod.ObjectDefs {
 		typeDef := def.Clone()
 		if typeDef.AsObject.Valid {
 			typeDef.AsObject.Value.SourceModuleName = mod.Name()
+			if mainObj != nil && typeDef.AsObject.Value.OriginalName == mainObj.OriginalName {
+				typeDef.AsObject.Value.IsMainObject = true
+			}
 		}
 		typeDefs = append(typeDefs, typeDef)
 	}

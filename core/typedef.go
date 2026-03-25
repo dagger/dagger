@@ -860,6 +860,12 @@ type ObjectTypeDef struct {
 	// The original name of the object as provided by the SDK that defined it, used
 	// when invoking the SDK so it doesn't need to think as hard about case conversions
 	OriginalName string
+
+	// IsMainObject is true when this object is the primary (entry-point)
+	// object of its source module, as determined by Module.MainObject().
+	// Set by Module.TypeDefs() so downstream consumers don't need
+	// name-matching heuristics.
+	IsMainObject bool
 }
 
 func (obj ObjectTypeDef) functions() iter.Seq[*Function] {
