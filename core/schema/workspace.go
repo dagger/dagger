@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -358,6 +359,12 @@ func (s *workspaceSchema) checks(
 		return nil, err
 	}
 
+	// Build a map of toolchain module name → ignoreChecks patterns from
+	// each module's toolchain config.
+	ignoreChecks := toolchainIgnorePatterns(mods, func(cfg *modules.ModuleConfigDependency) []string {
+		return cfg.IgnoreChecks
+	})
+
 	var allChecks []*core.Check
 	for _, mod := range mods {
 		checkGroup, err := mod.Checks(ctx, nil)
@@ -375,6 +382,20 @@ func (s *workspaceSchema) checks(
 		)
 		if err != nil {
 			return nil, err
+		}
+		// Apply ignoreChecks exclusion for this toolchain's checks.
+		if exclude := ignoreChecks[mod.Name()]; len(exclude) > 0 {
+			filtered, err = filterNodesByExclude(
+				ctx,
+				filtered,
+				exclude,
+				func(check *core.Check) *core.ModTreeNode { return check.Node },
+				func(check *core.Check) string { return check.Name() },
+				"check",
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 		allChecks = append(allChecks, filtered...)
 	}
@@ -540,6 +561,65 @@ func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, error)
 		mods = append(mods, userMod)
 	}
 	return mods, nil
+}
+
+// toolchainIgnorePatterns builds a map of toolchain module name → ignore
+// patterns by scanning each module's source config for toolchain entries.
+func toolchainIgnorePatterns(
+	mods []*core.Module,
+	getPatterns func(*modules.ModuleConfigDependency) []string,
+) map[string][]string {
+	result := make(map[string][]string)
+	for _, mod := range mods {
+		if !mod.Source.Valid {
+			continue
+		}
+		src := mod.Source.Value.Self()
+		if src == nil {
+			continue
+		}
+		for _, cfg := range src.ConfigToolchains {
+			if patterns := getPatterns(cfg); len(patterns) > 0 {
+				result[cfg.Name] = patterns
+			}
+		}
+	}
+	return result
+}
+
+// filterNodesByExclude removes items whose nodes match any of the exclude
+// patterns. Matching uses the same single-module compat fallback as include
+// filtering (stripping the leading module name segment).
+func filterNodesByExclude[T any](
+	ctx context.Context,
+	items []T,
+	exclude []string,
+	nodeOf func(T) *core.ModTreeNode,
+	nameOf func(T) string,
+	itemKind string,
+) ([]T, error) {
+	if len(exclude) == 0 {
+		return items, nil
+	}
+
+	filtered := make([]T, 0, len(items))
+	for _, item := range items {
+		match, err := matchWorkspaceInclude(ctx, nodeOf(item), exclude)
+		if err != nil {
+			return nil, fmt.Errorf("%s %q exclude match: %w", itemKind, nameOf(item), err)
+		}
+		if !match {
+			// Also try without module prefix for single-module compat.
+			match, err = matchSingleModuleInclude(ctx, nodeOf(item), exclude)
+			if err != nil {
+				return nil, fmt.Errorf("%s %q exclude compat match: %w", itemKind, nameOf(item), err)
+			}
+		}
+		if !match {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
 }
 
 func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string) {
