@@ -1426,7 +1426,6 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	return nil
 }
 
-
 // serveModule adds a module to the client's served set with the given install
 // policy.
 //
