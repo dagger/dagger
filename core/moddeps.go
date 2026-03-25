@@ -125,8 +125,16 @@ func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server, entrypointMo
 			if obj.Name == "Query" {
 				queryTypeDef = obj
 			}
-			if obj.SourceModuleName != "" && gqlObjectName(obj.SourceModuleName) == obj.Name {
-				modMainObjects[obj.SourceModuleName] = obj
+			// Match main objects by comparing the module's source name against
+			// the object's API name or its SDK-provided original name. The
+			// original name check handles modules that were renamed (e.g. via
+			// toolchain config "name" override) where the object keeps its
+			// SDK name but SourceModuleName reflects the new alias.
+			if obj.SourceModuleName != "" {
+				if gqlObjectName(obj.SourceModuleName) == obj.Name ||
+					(obj.OriginalName != "" && gqlObjectName(obj.OriginalName) == obj.Name) {
+					modMainObjects[obj.SourceModuleName] = obj
+				}
 			}
 		}
 	}
