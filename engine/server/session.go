@@ -2222,11 +2222,12 @@ func (srv *Server) resolveModuleSourceAsModule(
 // serveAllResolvedModuleLoads serves all resolved primary modules and their
 // related modules (blueprints, toolchains-of-toolchains).
 //
-// Transitive dependencies are NOT served into the workspace schema. Each
-// module's deps are already available in its own internal schema (mod.Deps)
-// for type resolution during function calls. Serving them globally would
-// cause version conflicts when a toolchain and its consumer depend on
-// different versions of the same module.
+// Transitive dependencies are only served for the entrypoint module — the one
+// the user is interacting with via `dagger call` or `dagger shell`. This is
+// needed so the client schema can resolve concrete types behind interfaces
+// (e.g. a Mallard backing a Duck). Toolchain deps are NOT served globally;
+// each module's deps are available in its own internal schema (mod.Deps) for
+// type resolution during function calls.
 func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
 	for i := range loads {
 		load := resolved[i]
@@ -2237,6 +2238,17 @@ func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []mod
 		}
 		if err := srv.serveModule(client, load.primary, core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
 			return moduleLoadErr(loads[i], err)
+		}
+		// For the entrypoint module (the one the user targets via dagger call),
+		// also serve its direct dependencies so the client schema can resolve
+		// concrete types behind interfaces. This mirrors the includeDependencies
+		// behavior from `main`. Toolchain/non-entrypoint deps stay internal.
+		if load.primaryEntrypoint {
+			for _, dep := range load.primary.Deps.Mods {
+				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
+					return fmt.Errorf("error serving entrypoint dependency %s: %w", dep.Name(), err)
+				}
+			}
 		}
 	}
 
