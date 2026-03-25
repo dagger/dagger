@@ -110,6 +110,8 @@ Reason:
   generic `ModuleSource` / `modules.resolve` path
 - workspace install populating `.dagger/lock` through the generic
   `ModuleSource` / `modules.resolve` lookup path
+- migration emitting or refreshing generic `ModuleSource` /
+  `modules.resolve` lookups
 
 ### Pending Safe Pre-Lock Buckets
 
@@ -136,7 +138,6 @@ are superseded by it:
 These intents still belong to workspace, but must be rewritten on top of the
 `lockfile` base:
 
-- migration should emit or refresh the same generic module-source lookups
 - any selective refresh UX must layer on top of `currentWorkspace.update()` /
   `dagger lock update`, not replace them
 
@@ -466,3 +467,29 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/Test(CurrentWorkspaceInstall|WorkspaceInstallCommand)$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/75a668ee9ce9eceb08642d6734aaffca`
+  - replayed migration lock population through
+    `dag.ModuleSource()` / `modules.resolve`
+  - design note:
+    keep exact legacy pin translation in `core/workspace.Migrate` so old pinned
+    refs survive the initial config rewrite, but have `cmd/dagger migrate`
+    follow up by resolving the migrated remote refs through `dag.ModuleSource()`
+    under `pinned` so unpinned refs create the missing generic lock entries
+  - rewrite note:
+    do not add a migration-specific lock refresh API; reuse the generic
+    module-source lookup flow, with a narrow `LookupSources` handoff from the
+    file migration helper to the CLI wrapper
+  - verifier note:
+    the first integration shape tried to use ephemeral git-daemon hostnames
+    inside a nested `dagger migrate` session; that DNS setup does not survive
+    the nested CLI engine path, so keep the integration proof on a stable
+    public module ref and leave exact legacy-pin preservation to unit tests
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `go test ./core/workspace -run 'TestMigrate' -count=1`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger-migrate-lock.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestMigrate$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/b1511fdf5277cb3db8b68b7ff2c21978`

@@ -51,6 +51,7 @@ type MigrationResult struct {
 	ModuleName        string
 	ModuleNewPath     string
 	OldSourcePath     string
+	LookupSources     []string
 	DepRewriteCount   int
 	IncRewriteCount   int
 	ToolchainCount    int
@@ -182,6 +183,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 			LegacyDefaultPath: true,
 		}
 		result.ToolchainCount++
+		addMigrationLookupSource(result, source)
 
 		if tc.Pin != "" {
 			if err := setMigrationModuleResolvePin(migrateLock, source, tc.Pin); err != nil {
@@ -206,6 +208,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 			LegacyDefaultPath: true,
 		}
 		result.BlueprintMigrated = true
+		addMigrationLookupSource(result, source)
 
 		if cfg.Blueprint.Pin != "" {
 			if err := setMigrationModuleResolvePin(migrateLock, source, cfg.Blueprint.Pin); err != nil {
@@ -214,6 +217,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 			hasLockEntries = true
 		}
 	}
+	finalizeMigrationLookupSources(result)
 
 	configContent := generateMigrationConfigTOML(wsCfg, warnings)
 	configPath := filepath.Join(migErr.ProjectRoot, LockDirName, ConfigFileName)
@@ -561,6 +565,28 @@ func copyDirLocal(src, dst string) error {
 		}
 		return os.WriteFile(target, data, info.Mode())
 	})
+}
+
+func addMigrationLookupSource(result *MigrationResult, source string) {
+	if source == "" || isLocalRef(source, "") {
+		return
+	}
+	result.LookupSources = append(result.LookupSources, source)
+}
+
+func finalizeMigrationLookupSources(result *MigrationResult) {
+	if len(result.LookupSources) < 2 {
+		return
+	}
+
+	sort.Strings(result.LookupSources)
+	compacted := result.LookupSources[:1]
+	for _, source := range result.LookupSources[1:] {
+		if source != compacted[len(compacted)-1] {
+			compacted = append(compacted, source)
+		}
+	}
+	result.LookupSources = compacted
 }
 
 func setMigrationModuleResolvePin(lock *Lock, source, pin string) error {

@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 
 	workspacecfg "github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/engine/client"
 )
 
 var migrateList bool
@@ -41,6 +44,9 @@ var migrateCmd = &cobra.Command{
 		result, err := workspacecfg.Migrate(cmd.Context(), workspacecfg.LocalMigrationIO{}, migErr)
 		if err != nil {
 			return fmt.Errorf("migration failed: %w", err)
+		}
+		if err := populateMigratedModuleLookups(cmd.Context(), result.LookupSources); err != nil {
+			return fmt.Errorf("refresh migrated module lookups: %w", err)
 		}
 
 		_, err = fmt.Fprint(cmd.OutOrStdout(), result.Summary())
@@ -134,4 +140,26 @@ func findMigratableModuleConfigs(root string) ([]string, error) {
 	}
 
 	return paths, nil
+}
+
+func populateMigratedModuleLookups(ctx context.Context, sources []string) error {
+	if len(sources) == 0 {
+		return nil
+	}
+
+	return withEngine(ctx, client.Params{
+		SkipWorkspaceModules: true,
+		LockMode:             string(workspacecfg.LockModePinned),
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		return syncMigratedModuleSources(ctx, engineClient.Dagger(), sources)
+	})
+}
+
+func syncMigratedModuleSources(ctx context.Context, dag *dagger.Client, sources []string) error {
+	for _, source := range sources {
+		if _, err := dag.ModuleSource(source).Sync(ctx); err != nil {
+			return fmt.Errorf("resolve migrated module source %q: %w", source, err)
+		}
+	}
+	return nil
 }

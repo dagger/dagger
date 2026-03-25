@@ -70,6 +70,32 @@ func TestMigrateSkipsLockWithoutPins(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestMigrateReturnsLookupSources(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ModuleConfigFileName)
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "toolchain-a", "source": "github.com/acme/toolchain@main"},
+    {"name": "toolchain-b", "source": "github.com/acme/toolchain@main"},
+    {"name": "local-toolchain", "source": "./toolchains/local"}
+  ],
+  "blueprint": {"name": "blueprint", "source": "github.com/acme/blueprint@v1.0.0"}
+}`), 0o644))
+
+	result, err := Migrate(context.Background(), LocalMigrationIO{}, &ErrMigrationRequired{
+		ConfigPath:  cfgPath,
+		ProjectRoot: root,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"github.com/acme/blueprint@v1.0.0",
+		"github.com/acme/toolchain@main",
+	}, result.LookupSources)
+}
+
 func TestMigrateFailsOnConflictingLegacyPins(t *testing.T) {
 	t.Parallel()
 

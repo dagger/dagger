@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -291,22 +292,18 @@ type Myapp {
 		require.Error(t, err, "root dagger.json should have been removed")
 	})
 
-	t.Run("writes lock pins for pinned legacy refs", func(ctx context.Context, t *testctx.T) {
+	t.Run("writes generic lock entries for migrated remote refs", func(ctx context.Context, t *testctx.T) {
+		source := "github.com/dagger/dagger/modules/wolfi@main"
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
   "toolchains": [
-    {"name": "tc", "source": "github.com/acme/toolchain@main", "pin": "1111111"}
-  ],
-  "blueprint": {"name": "bp", "source": "github.com/acme/blueprint@main", "pin": "2222222"}
+    {"name": "tc", "source": "`+source+`"}
+  ]
 }`).With(daggerExec("migrate"))
 
-		lockOut, err := ctr.WithExec([]string{"cat", ".dagger/lock"}).Stdout(ctx)
+		lockOut, err := ctr.File("/work/.dagger/lock").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, lockOut, `"modules.resolve"`)
-		require.Contains(t, lockOut, `"github.com/acme/toolchain@main"`)
-		require.Contains(t, lockOut, `"1111111","pin"`)
-		require.Contains(t, lockOut, `"github.com/acme/blueprint@main"`)
-		require.Contains(t, lockOut, `"2222222","pin"`)
+		assertModuleResolveLockEntry(t, []byte(lockOut), source, workspace.PolicyFloat)
 	})
 
 	t.Run("prints a migration summary", func(ctx context.Context, t *testctx.T) {
