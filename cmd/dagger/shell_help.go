@@ -91,7 +91,6 @@ func (h *shellCallHandler) MainHelp() string {
 		h.allBuiltinUsages(),
 		h.allFunctionUsages(),
 		h.allLoadedModules(),
-		h.allDependencyUsages(),
 		h.allStdlibUsages(),
 	))
 

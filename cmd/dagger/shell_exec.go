@@ -343,14 +343,6 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string, st *ShellStat
 			}
 			return nil, stdlib.Execute(ctx, h, a, nil)
 
-		case st.IsDeps():
-			// Example: `.deps | <dependency>`
-			st, def, err := h.GetDependency(ctx, c)
-			if err != nil {
-				return nil, err
-			}
-			return h.constructorCall(ctx, def, st, a)
-
 		case st.IsCore():
 			// Example: `.core | <function>`
 			def := h.GetDef(st)
@@ -907,8 +899,6 @@ func (h *shellCallHandler) StateResult(ctx context.Context, st *ShellState) (*Re
 		switch {
 		case st.IsStdlib():
 			r.Value = h.CommandsList(st.Cmd, h.Stdlib())
-		case st.IsDeps():
-			r.Value = h.DependenciesList()
 		case st.IsCore():
 			def := h.GetDef(nil)
 			r.Value = h.FunctionsList(st.Cmd, def.GetCoreFunctions())

@@ -16,7 +16,7 @@ import (
 
 const (
 	shellStdlibCmdName = ".stdlib"
-	shellDepsCmdName   = ".deps"
+	shellDepsCmdName = ".deps" // kept for IsDeps() state check
 	shellCoreCmdName   = ".core"
 )
 
@@ -380,19 +380,6 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						}
 						return h.Print(ctx, c.Help())
 
-					case st.IsDeps():
-						// Document dependency
-						// Example: `.deps | .help`
-						if len(args) == 0 {
-							return h.Print(ctx, h.DepsHelp())
-						}
-						// Example: `.deps | .help <dependency>`
-						_, depDef, err := h.GetDependency(ctx, args[0])
-						if err != nil {
-							return err
-						}
-						return h.Print(ctx, h.ModuleDoc(depDef))
-
 					case st.IsCore():
 						// Document core
 						// Example: `.core | .help`
@@ -623,27 +610,6 @@ Without arguments, the current working directory is replaced by the initial cont
 				}
 
 				return nil
-			},
-		},
-		&ShellCommand{
-			Use:         shellDepsCmdName,
-			Description: "Dependencies from the module loaded in the current context",
-			GroupID:     moduleGroup.ID,
-			Hidden:      true,
-			Args:        NoArgs,
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				_, err := h.GetModuleDef(nil)
-				if err != nil {
-					return err
-				}
-				return h.Save(ctx, h.NewDepsState())
-			},
-			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
-				return &CompletionContext{
-					Completer:   ctx.Completer,
-					CmdFunction: shellDepsCmdName,
-				}
 			},
 		},
 		&ShellCommand{

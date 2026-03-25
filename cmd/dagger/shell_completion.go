@@ -237,13 +237,6 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 			results = append(results, cmd.Name())
 		}
 
-	case ctx.CmdType == shellDepsCmdName:
-		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
-			for _, dep := range md.Dependencies {
-				results = append(results, dep.Name)
-			}
-		}
-
 	case ctx.CmdType == shellCoreCmdName:
 		for _, fn := range ctx.Completer.GetDef(nil).GetCoreFunctions() {
 			results = append(results, fn.CmdName())
@@ -291,10 +284,6 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 		if cmd := ctx.stdlibCmd(field); cmd != nil {
 			return cmd.Complete(ctx, args)
 		}
-	case shellDepsCmdName:
-		// TODO: loading other modules isn't supported yet
-		return nil
-
 	case shellCoreCmdName:
 		if fn := def.GetCoreFunction(field); fn != nil {
 			return &CompletionContext{
