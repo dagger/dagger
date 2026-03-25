@@ -8,7 +8,12 @@ Active replay ledger for the fresh curated `workspace` replay on top of
 This file is operational. Update it after every substantive bucket so the replay
 can be resumed from disk alone.
 
-All planned replay buckets are now landed on `tmp/workspace-on-lockfile`.
+All planned replay buckets are now landed on `tmp/workspace-on-lockfile`, and
+the branch is forward-ported onto the latest `origin/lockfile`.
+
+Companion maintainer summary:
+
+- [workspace-on-lockfile-report.md](/Users/shykes/git/github.com/dagger/dagger_workspace-on-lockfile/hack/designs/workspace-on-lockfile-report.md)
 
 ## Branch Contract
 
@@ -19,7 +24,7 @@ Current integration branch:
   `/Users/shykes/git/github.com/dagger/dagger_workspace-on-lockfile`
 - base:
   - branch: `origin/lockfile`
-  - commit: `b68344fda` `generate: refresh generated lockfile APIs`
+  - commit: `e4f5be63c` `generate: refresh generated lockfile APIs`
 
 Reference oracles:
 
@@ -529,3 +534,26 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestWorkspaceLockUpdateCommand$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/b2bde678e74916869bd689a3d5cd58b3`
+- 2026-03-25:
+  - forward-ported the replay branch onto the latest `origin/lockfile`
+    from the prior `3e0d3bc24` lockfile base
+  - forward-port note:
+    the forward-port itself was low-friction; the only content conflict was in
+    `engine/server/session.go`, where the older replay tried to restore
+    post-resolution module mutation via `applyPendingModuleMetadata`
+  - resolution note:
+    keep the newer `origin/lockfile` behavior that passes legacy/workspace
+    metadata through `moduleSource.asModule(...)` before install/caching, and
+    drop the stale helper from the older replay shape
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./core/schema -o /tmp/.tmp-core-schema.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='Test(ParseChecksTargetArgs|ParseGenerateTargetArgs|ParseCallTargetArgs|ParseFunctionsTargetArgs|StripHelpArgs|FindSiblingEntrypoint|FunctionListRunIncludesSiblingEntrypoints|WriteWorkspaceInfo|SpanName)$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/edb93fdb2475f2fc96ec2158de86826f`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/1853662f4d3974f49b9f28c0f0513679`
