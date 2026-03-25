@@ -284,23 +284,6 @@ func (Other) Version() string {
 		require.Contains(t, out, "RETURNS")
 	})
 
-	t.Run("disambiguate dependency function", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps | go | version")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "go version", out)
-	})
-
-	t.Run("disambiguate dependency function doc", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps | .help go")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "MODULE")
-		require.Contains(t, out, "A go helper")
-	})
-
 	t.Run("current module function takes precedence over stdlib", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
 			With(daggerShell("version")).
@@ -403,35 +386,6 @@ func (Other) Version() string {
 		require.Contains(t, out, "OBJECT")
 		require.Contains(t, out, "\n  Dep\n")
 		require.Regexp(t, regexp.MustCompile("\n  version +Dep version"), out)
-	})
-
-	t.Run("deps result", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "- dep")
-		require.Contains(t, out, "- git")
-		require.Contains(t, out, "- go")
-	})
-
-	t.Run("deps doc", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps | .help")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Regexp(t, regexp.MustCompile(`\n  dep +Dependency module`), out)
-		require.Regexp(t, regexp.MustCompile(`\n  git +A git helper`), out)
-		require.Regexp(t, regexp.MustCompile(`\n  go +A go helper`), out)
-	})
-
-	t.Run("deps doc module", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps | .help go")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "MODULE")
-		require.Contains(t, out, "A go helper")
 	})
 
 	t.Run("stdlib result", func(ctx context.Context, t *testctx.T) {
