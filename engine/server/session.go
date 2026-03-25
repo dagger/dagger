@@ -1426,23 +1426,6 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	return nil
 }
 
-// serveModuleWithDeps serves a module with its constructor on the Query
-// root, optionally proxies its main-object methods there as an entrypoint,
-// and serves its dependencies as type-only (types available for schema
-// resolution but no constructors).
-//
-// Not threadsafe: client.stateMu must be held when calling.
-func (srv *Server) serveModuleWithDeps(client *daggerClient, mod *core.Module, entrypoint bool) error {
-	if err := srv.serveModule(client, mod, core.InstallOpts{Entrypoint: entrypoint}); err != nil {
-		return err
-	}
-	for _, dep := range mod.Deps.Mods {
-		if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
-			return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
-		}
-	}
-	return nil
-}
 
 // serveModule adds a module to the client's served set with the given install
 // policy.
@@ -2236,26 +2219,15 @@ func (srv *Server) resolveModuleSourceAsModule(
 	return resolved.Self(), nil
 }
 
-func (srv *Server) serveResolvedModuleLoad(client *daggerClient, load resolvedModuleLoad) error {
-	for _, related := range load.related {
-		if err := srv.serveModuleWithDeps(client, related.mod, related.entrypoint); err != nil {
-			return err
-		}
-	}
-	return srv.serveModuleWithDeps(client, load.primary, load.primaryEntrypoint)
-}
-
-// serveAllResolvedModuleLoads serves all resolved modules in two passes:
-//  1. Primary modules first (toolchains, blueprints, -m modules) so their
-//     authoritative copies with workspace customizations are registered.
-//  2. Dependencies second (SkipConstructor) so they only contribute types
-//     without overriding the primary copies.
+// serveAllResolvedModuleLoads serves all resolved primary modules and their
+// related modules (blueprints, toolchains-of-toolchains).
 //
-// This prevents a dependency copy (e.g. "go" as a dep of "engine-dev")
-// from shadowing the toolchain copy (e.g. "go" with workspace customizations).
+// Transitive dependencies are NOT served into the workspace schema. Each
+// module's deps are already available in its own internal schema (mod.Deps)
+// for type resolution during function calls. Serving them globally would
+// cause version conflicts when a toolchain and its consumer depend on
+// different versions of the same module.
 func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
-	// Pass 1: serve all primary modules and their related modules (blueprints,
-	// toolchains-of-toolchains) WITHOUT their transitive dependencies.
 	for i := range loads {
 		load := resolved[i]
 		for _, related := range load.related {
@@ -2265,23 +2237,6 @@ func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []mod
 		}
 		if err := srv.serveModule(client, load.primary, core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
 			return moduleLoadErr(loads[i], err)
-		}
-	}
-
-	// Pass 2: serve all dependencies (types only, no constructors).
-	for i := range loads {
-		load := resolved[i]
-		for _, related := range load.related {
-			for _, dep := range related.mod.Deps.Mods {
-				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
-					return fmt.Errorf("error serving dependency %s of related module %s: %w", dep.Name(), related.mod.Name(), err)
-				}
-			}
-		}
-		for _, dep := range load.primary.Deps.Mods {
-			if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
-				return fmt.Errorf("error serving dependency %s of module %s: %w", dep.Name(), load.primary.Name(), err)
-			}
 		}
 	}
 
