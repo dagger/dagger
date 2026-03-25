@@ -912,6 +912,41 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
+func directorySourceIDFromFileSourceID(fileSourceID *call.ID) (*call.ID, bool) {
+	if fileSourceID == nil || fileSourceID.Field() != "file" {
+		return nil, false
+	}
+
+	receiver := fileSourceID.Receiver()
+	if receiver == nil {
+		return nil, false
+	}
+
+	pathArg := fileSourceID.Arg("path")
+	if pathArg == nil {
+		return nil, false
+	}
+	pathVal, ok := pathArg.Value().ToInput().(string)
+	if !ok {
+		return nil, false
+	}
+
+	return receiver.Append(
+		(&core.Directory{}).Type(),
+		"directory",
+		call.WithArgs(call.NewArgument("path", call.NewLiteralString(pathVal), false)),
+	), true
+}
+
+func shouldAttemptDirectorySourceFallback(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Only fallback for the specific "path is a directory" case. Missing files
+	// or other load failures should remain hard errors.
+	return strings.Contains(err.Error(), "is a directory, not a file")
+}
+
 func keepParentDir[A any](_ context.Context, val *core.Directory, _ A) (string, error) {
 	return val.Dir, nil
 }

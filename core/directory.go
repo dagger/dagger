@@ -833,32 +833,34 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 
 		if attemptUnpackDockerCompatibility {
 			panic("attemptUnpackDockerCompatibility")
-			// didUnpack, err := attemptCopyArchiveUnpack(
-			// 	ctx,
-			// 	effectiveSrcPath,
-			// 	resolvedCopyDest,
-			// 	effectiveInclude,
-			// 	filter.Exclude,
-			// 	filter.Gitignore,
-			// 	ownership,
-			// 	permissions,
-			// 	newRef.IdentityMapping(),
-			// 	destPathHintIsDirectory,
-			// )
-			// if err != nil {
-			// 	return fmt.Errorf("failed to unpack source archive: %w", err)
-			// }
-			// if didUnpack {
-			// 	return nil
-			// }
+			//didUnpack, err := attemptCopyArchiveUnpack(
+			//	ctx,
+			//	effectiveSrcPath,
+			//	resolvedCopyDest,
+			//	effectiveInclude,
+			//	filter.Exclude,
+			//	filter.Gitignore,
+			//	ownership,
+			//	permissions,
+			//	newRef.IdentityMapping(),
+			//	destPathHintIsDirectory,
+			//)
+			//if err != nil {
+			//	return fmt.Errorf("failed to unpack source archive: %w", err)
+			//}
+			//if didUnpack {
+			//	return nil
+			//}
 		}
 
 		pathsToCopy := []string{src.Dir}
 		if srcPath != "" {
-			// if !action.AllowWildcard {
-			// 	m = []string{srcPath}
-			// } else {
-			//	...
+			//walk(mntedSrcPath)
+
+			//if !action.AllowWildcard {
+			//	m = []string{srcPath}
+			//} else {
+			//	var err error
 
 			if src.Dir != "" && src.Dir != "/" {
 				srcPath = src.Dir + "/" + srcPath
@@ -876,6 +878,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 			//		}
 			//		return errors.Errorf("%s not found", srcPath)
 			//	}
+
 		}
 
 		for _, srcPath := range pathsToCopy {
@@ -1176,6 +1179,110 @@ func copyFile(srcPath, dstPath string, tryHardlink bool) (err error) {
 	return os.Chtimes(dstPath, modTime, modTime)
 }
 
+func attemptCopyArchiveUnpack(
+	ctx context.Context,
+	srcRoot string,
+	destPath string,
+	includePatterns []string,
+	excludePatterns []string,
+	useGitignore bool,
+	ownership *Ownership,
+	permissions *int,
+	idmap *idtools.IdentityMapping,
+	destPathHintIsDirectory bool,
+) (bool, error) {
+	// Keep default path untouched for anything non-canonical to this compatibility mode.
+	if useGitignore || len(excludePatterns) > 0 || len(includePatterns) == 0 {
+		return false, nil
+	}
+
+	matches, ok, err := resolveAttemptUnpackMatches(srcRoot, includePatterns)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	if len(matches) == 0 {
+		// No matches means no copy work to do; handled here to keep fallback copy from
+		// re-applying broader include semantics.
+		return true, nil
+	}
+
+	var opts []fscopy.Opt
+	opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
+		AlwaysReplaceExistingDestPaths: true,
+		CopyDirContents:                true,
+		Mode:                           permissions,
+	}))
+	if ownership != nil {
+		opts = append(opts, fscopy.WithChown(ownership.UID, ownership.GID))
+	}
+
+	for _, src := range matches {
+		resolvedSrcPath, err := containerdfs.RootPath(srcRoot, src)
+		if err != nil {
+			return false, err
+		}
+
+		unpacked, err := unpackArchiveFile(resolvedSrcPath, destPath, ownership, idmap)
+		if err != nil {
+			return false, err
+		}
+		if unpacked {
+			continue
+		}
+
+		if len(matches) == 1 {
+			copiedAsSingleFile, err := copyAttemptUnpackNonArchiveSingleFile(resolvedSrcPath, src, destPath, permissions, ownership, destPathHintIsDirectory)
+			if err != nil {
+				return false, err
+			}
+			if copiedAsSingleFile {
+				continue
+			}
+		}
+
+		if err := fscopy.Copy(ctx, srcRoot, src, destPath, ".", opts...); err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+func maybeUseSourcePathContentsWhenDir(
+	resolvedSrcPath string,
+	includePatterns []string,
+	copySourcePathContentsWhenDir bool,
+) (string, []string, error) {
+	if !copySourcePathContentsWhenDir || len(includePatterns) != 1 {
+		return resolvedSrcPath, includePatterns, nil
+	}
+	inc := includePatterns[0]
+	if inc == "" || strings.HasPrefix(inc, "!") || strings.ContainsAny(inc, "*?[") {
+		return resolvedSrcPath, includePatterns, nil
+	}
+
+	candidate, err := containerdfs.RootPath(resolvedSrcPath, inc)
+	if err != nil {
+		return "", nil, err
+	}
+
+	info, err := os.Stat(candidate)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return resolvedSrcPath, includePatterns, nil
+		}
+		return "", nil, err
+	}
+	if !info.IsDir() {
+		return resolvedSrcPath, includePatterns, nil
+	}
+
+	return candidate, nil, nil
+}
+
 func copyAttemptUnpackNonArchiveSingleFile(
 	resolvedSrcPath string,
 	srcPatternPath string,
@@ -1227,6 +1334,30 @@ func copyAttemptUnpackNonArchiveSingleFile(
 		}
 	}
 	return true, nil
+}
+
+func resolveAttemptUnpackMatches(srcRoot string, includePatterns []string) ([]string, bool, error) {
+	seen := make(map[string]struct{}, len(includePatterns))
+	out := make([]string, 0, len(includePatterns))
+
+	for _, includePattern := range includePatterns {
+		if includePattern == "" || strings.HasPrefix(includePattern, "!") {
+			return nil, false, nil
+		}
+		matches, err := fscopy.ResolveWildcards(srcRoot, includePattern, true)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, match := range matches {
+			if _, ok := seen[match]; ok {
+				continue
+			}
+			seen[match] = struct{}{}
+			out = append(out, match)
+		}
+	}
+
+	return out, true, nil
 }
 
 func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, idmap *idtools.IdentityMapping) (bool, error) {
@@ -1300,6 +1431,34 @@ func isDir(path string) (bool, error) {
 	return fi.Mode().IsDir(), nil
 }
 
+func ensureRequiredCopySourcePathExists(ctx context.Context, srcRef bkcache.ImmutableRef, srcDir string, requiredSourcePath string) error {
+	requiredSourcePath = strings.TrimPrefix(path.Clean(requiredSourcePath), "/")
+	requiredDisplayPath := "/" + requiredSourcePath
+	if requiredSourcePath == "" || requiredSourcePath == "." {
+		requiredSourcePath = ""
+		requiredDisplayPath = "/"
+	}
+	if srcRef == nil {
+		return fmt.Errorf("%q: not found", requiredDisplayPath)
+	}
+
+	return MountRef(ctx, srcRef, nil, func(root string, _ *mount.Mount) error {
+		resolvedSrcDir, err := containerdfs.RootPath(root, path.Clean(srcDir))
+		if err != nil {
+			return err
+		}
+		resolvedRequiredPath, err := containerdfs.RootPath(resolvedSrcDir, requiredSourcePath)
+		if err != nil {
+			return err
+		}
+		_, err = os.Lstat(resolvedRequiredPath)
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%q: not found", requiredDisplayPath)
+		}
+		return TrimErrPathPrefix(err, root)
+	})
+}
+
 func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRef, destPath string) error {
 	parentPath := filepath.Dir(path.Clean(destPath))
 	if parentPath == "." {
@@ -1310,8 +1469,8 @@ func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRe
 		if parentPath == "/" {
 			return nil
 		}
-		panic("hit this right here, right now")
-		// return &os.PathError{Op: "lstat", Path: parentPath, Err: syscall.ENOENT}
+		panic("this right here")
+		return &os.PathError{Op: "lstat", Path: parentPath, Err: syscall.ENOENT}
 	}
 
 	return MountRef(ctx, baseRef, nil, func(root string, _ *mount.Mount) error {
@@ -2197,5 +2356,25 @@ func FileModeToFileType(m fs.FileMode) FileType {
 		return FileTypeSymlink
 	} else {
 		return FileTypeUnknown
+	}
+}
+
+func walk(root string) {
+	empty := true
+	fmt.Printf("ACB walk root=%s\n", root)
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		fmt.Printf("ACB walk %s\n", path)
+		empty = false
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("ACB walk err=%v\n", err)
+		return
+	}
+	if empty {
+		fmt.Printf("ACB empty\n")
 	}
 }
