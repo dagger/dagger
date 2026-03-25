@@ -863,36 +863,28 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 
 		pathsToCopy := []string{src.Dir}
 		if srcPath != "" {
-			//walk(mntedSrcPath)
-
-			//if !action.AllowWildcard {
-			//	m = []string{srcPath}
-			//} else {
-			//	var err error
-
 			if src.Dir != "" && src.Dir != "/" {
 				srcPath = src.Dir + "/" + srcPath
 			}
-
 			var err error
 			pathsToCopy, err = fscopy.ResolveWildcards(mntedSrcPath, srcPath, true) // todo use action.FollowSymlink instead of true
 			if err != nil {
 				return err
 			}
-
-			//	if len(m) == 0 {
-			//		if action.AllowEmptyWildcard {
-			//			return nil
-			//		}
-			//		return errors.Errorf("%s not found", srcPath)
-			//	}
-
 		}
 
 		for _, srcPath := range pathsToCopy {
 			joinedDest := path.Join(dir.Dir, destDir)
 			if strings.HasSuffix(destDir, "/") && !strings.HasSuffix(joinedDest, "/") {
 				joinedDest += "/"
+			}
+			if !createDestPath {
+				destDirPath := filepath.Dir(path.Join(copyDest, joinedDest))
+				if _, err := os.Lstat(destDirPath); err != nil {
+					err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, src.Dir))
+					return err
+				}
+
 			}
 			if err := fscopy.Copy(ctx, mntedSrcPath, srcPath, copyDest, joinedDest, opts...); err != nil {
 				err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, src.Dir))
@@ -1260,38 +1252,6 @@ func attemptCopyArchiveUnpack(
 	return true, nil
 }
 
-func maybeUseSourcePathContentsWhenDir(
-	resolvedSrcPath string,
-	includePatterns []string,
-	copySourcePathContentsWhenDir bool,
-) (string, []string, error) {
-	if !copySourcePathContentsWhenDir || len(includePatterns) != 1 {
-		return resolvedSrcPath, includePatterns, nil
-	}
-	inc := includePatterns[0]
-	if inc == "" || strings.HasPrefix(inc, "!") || strings.ContainsAny(inc, "*?[") {
-		return resolvedSrcPath, includePatterns, nil
-	}
-
-	candidate, err := containerdfs.RootPath(resolvedSrcPath, inc)
-	if err != nil {
-		return "", nil, err
-	}
-
-	info, err := os.Stat(candidate)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return resolvedSrcPath, includePatterns, nil
-		}
-		return "", nil, err
-	}
-	if !info.IsDir() {
-		return resolvedSrcPath, includePatterns, nil
-	}
-
-	return candidate, nil, nil
-}
-
 func copyAttemptUnpackNonArchiveSingleFile(
 	resolvedSrcPath string,
 	srcPatternPath string,
@@ -1343,30 +1303,6 @@ func copyAttemptUnpackNonArchiveSingleFile(
 		}
 	}
 	return true, nil
-}
-
-func resolveAttemptUnpackMatches(srcRoot string, includePatterns []string) ([]string, bool, error) {
-	seen := make(map[string]struct{}, len(includePatterns))
-	out := make([]string, 0, len(includePatterns))
-
-	for _, includePattern := range includePatterns {
-		if includePattern == "" || strings.HasPrefix(includePattern, "!") {
-			return nil, false, nil
-		}
-		matches, err := fscopy.ResolveWildcards(srcRoot, includePattern, true)
-		if err != nil {
-			return nil, false, err
-		}
-		for _, match := range matches {
-			if _, ok := seen[match]; ok {
-				continue
-			}
-			seen[match] = struct{}{}
-			out = append(out, match)
-		}
-	}
-
-	return out, true, nil
 }
 
 func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, idmap *idtools.IdentityMapping) (bool, error) {
@@ -1448,34 +1384,6 @@ func isDir(path string) (bool, error) {
 		return false, err
 	}
 	return fi.Mode().IsDir(), nil
-}
-
-func ensureRequiredCopySourcePathExists(ctx context.Context, srcRef bkcache.ImmutableRef, srcDir string, requiredSourcePath string) error {
-	requiredSourcePath = strings.TrimPrefix(path.Clean(requiredSourcePath), "/")
-	requiredDisplayPath := "/" + requiredSourcePath
-	if requiredSourcePath == "" || requiredSourcePath == "." {
-		requiredSourcePath = ""
-		requiredDisplayPath = "/"
-	}
-	if srcRef == nil {
-		return fmt.Errorf("%q: not found", requiredDisplayPath)
-	}
-
-	return MountRef(ctx, srcRef, nil, func(root string, _ *mount.Mount) error {
-		resolvedSrcDir, err := containerdfs.RootPath(root, path.Clean(srcDir))
-		if err != nil {
-			return err
-		}
-		resolvedRequiredPath, err := containerdfs.RootPath(resolvedSrcDir, requiredSourcePath)
-		if err != nil {
-			return err
-		}
-		_, err = os.Lstat(resolvedRequiredPath)
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("%q: not found", requiredDisplayPath)
-		}
-		return TrimErrPathPrefix(err, root)
-	})
 }
 
 func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRef, destPath string) error {
@@ -2375,25 +2283,5 @@ func FileModeToFileType(m fs.FileMode) FileType {
 		return FileTypeSymlink
 	} else {
 		return FileTypeUnknown
-	}
-}
-
-func walk(root string) {
-	empty := true
-	fmt.Printf("ACB walk root=%s\n", root)
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		fmt.Printf("ACB walk %s\n", path)
-		empty = false
-		return nil
-	})
-	if err != nil {
-		fmt.Printf("ACB walk err=%v\n", err)
-		return
-	}
-	if empty {
-		fmt.Printf("ACB empty\n")
 	}
 }
