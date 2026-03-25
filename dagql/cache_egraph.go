@@ -581,35 +581,11 @@ func (c *Cache) firstResultForOutputEqClassDeterministicallyAtLocked(
 	return c.resultsByID[bestID]
 }
 
-func (c *Cache) deterministicDigestForEqClassLocked(eqID eqClassID) digest.Digest {
-	eqID = c.findEqClassLocked(eqID)
-	if eqID == 0 {
-		return ""
-	}
-	var best string
-	for dig := range c.eqClassToDigests[eqID] {
-		if best == "" || dig < best {
-			best = dig
-		}
-	}
-	return digest.Digest(best)
-}
-
 func (c *Cache) resultExpiredAtLocked(res *sharedResult, nowUnix int64) bool {
 	if res == nil || res.expiresAtUnix == 0 {
 		return false
 	}
 	return nowUnix >= res.expiresAtUnix
-}
-
-func (c *Cache) firstTermForResultLocked(resID sharedResultID) *egraphTerm {
-	for termID := range c.termIDsForResultLocked(resID) {
-		term := c.egraphTerms[termID]
-		if term != nil {
-			return term
-		}
-	}
-	return nil
 }
 
 type lookupMatch struct {
@@ -619,13 +595,12 @@ type lookupMatch struct {
 	primaryLookupPossible bool
 	missingInputIndex     int
 	hitRecipeDigest       bool
-	hitTerm               *egraphTerm
 	hitRes                *sharedResult
 	termDigest            string
 	termSetSize           int
 }
 
-func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDigests []call.ExtraDigest) lookupMatch {
+func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDigests []call.ExtraDigest, nowUnix int64) lookupMatch {
 	match := lookupMatch{
 		primaryLookupPossible: true,
 		missingInputIndex:     -1,
@@ -634,12 +609,10 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 		return match
 	}
 
-	nowUnix := time.Now().Unix()
 	resultSet := c.egraphResultsByDigest[recipeDigest.String()]
 	match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
 	if match.hitRes != nil {
 		match.hitRecipeDigest = true
-		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
 		return match
 	}
 	for _, extra := range extraDigests {
@@ -651,7 +624,6 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 		if match.hitRes == nil {
 			continue
 		}
-		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
 		return match
 	}
 	return match
@@ -663,6 +635,7 @@ func (c *Cache) lookupMatchForCallLocked(
 	recipeDigest digest.Digest,
 	selfDigest digest.Digest,
 	inputDigests []digest.Digest,
+	nowUnix int64,
 ) (lookupMatch, error) {
 	match := lookupMatch{
 		primaryLookupPossible: true,
@@ -671,9 +644,8 @@ func (c *Cache) lookupMatchForCallLocked(
 	if frame == nil {
 		return match, nil
 	}
-	nowUnix := time.Now().Unix()
 
-	match = c.lookupMatchForDigestsLocked(recipeDigest, frame.ExtraDigests)
+	match = c.lookupMatchForDigestsLocked(recipeDigest, frame.ExtraDigests, nowUnix)
 	if match.hitRes != nil {
 		return match, nil
 	}
@@ -700,7 +672,6 @@ func (c *Cache) lookupMatchForCallLocked(
 		match.termDigest = calcEgraphTermDigest(selfDigest, match.inputEqIDs)
 		termSet := c.egraphTermsByTermDigest[match.termDigest]
 		match.termSetSize = len(termSet)
-		match.hitTerm = c.firstLiveTermInSetLocked(termSet)
 		match.hitRes = c.firstResultForTermSetDeterministicallyAtLocked(termSet, nowUnix)
 	}
 	return match, nil
@@ -716,7 +687,7 @@ func (c *Cache) lookupMatchForIDLocked(ctx context.Context, id *call.ID) (lookup
 	}
 	nowUnix := time.Now().Unix()
 
-	match = c.lookupMatchForDigestsLocked(id.Digest(), id.ExtraDigests())
+	match = c.lookupMatchForDigestsLocked(id.Digest(), id.ExtraDigests(), nowUnix)
 	if match.hitRes != nil {
 		return match, nil
 	}
@@ -749,7 +720,6 @@ func (c *Cache) lookupMatchForIDLocked(ctx context.Context, id *call.ID) (lookup
 		match.termDigest = calcEgraphTermDigest(selfDigest, match.inputEqIDs)
 		termSet := c.egraphTermsByTermDigest[match.termDigest]
 		match.termSetSize = len(termSet)
-		match.hitTerm = c.firstLiveTermInSetLocked(termSet)
 		match.hitRes = c.firstResultForTermSetDeterministicallyAtLocked(termSet, nowUnix)
 	}
 	return match, nil
@@ -846,12 +816,13 @@ func (c *Cache) lookupCacheForRequestLocked(
 	if req == nil || req.ResultCall == nil {
 		return nil, false, nil
 	}
-	match, err := c.lookupMatchForCallLocked(ctx, req.ResultCall, requestDigest, requestSelf, requestInputs)
+	now := time.Now()
+	nowUnix := now.Unix()
+	match, err := c.lookupMatchForCallLocked(ctx, req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
 	if err != nil {
 		return nil, false, err
 	}
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
-	hitTerm := match.hitTerm
 	hitRes := match.hitRes
 
 	if hitRes == nil {
@@ -861,13 +832,12 @@ func (c *Cache) lookupCacheForRequestLocked(
 
 	// fast-path: if we got a very simple recipe-digest hit we can skip trying to teach the egraph anything new
 	if requestDigest != "" && len(req.ResultCall.ExtraDigests) == 0 && req.TTL == 0 && !req.IsPersistable && match.hitRecipeDigest {
-		now := time.Now()
 		touchSharedResultLastUsed(hitRes, now.UnixNano())
 		retRes := Result[Typed]{
 			shared:   hitRes,
 			hitCache: true,
 		}
-		c.traceLookupHit(ctx, requestDigest.String(), hitRes, hitTerm, match.termDigest)
+		c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.termDigest)
 		return retRes, true, nil
 	}
 
@@ -876,8 +846,6 @@ func (c *Cache) lookupCacheForRequestLocked(
 	res := hitRes
 	// A TTL-bearing call can alias an existing result on lookup; apply the same
 	// conservative expiry merge policy here so TTL remains effective on hits.
-	now := time.Now()
-	nowUnix := now.Unix()
 	res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		res.expiresAtUnix,
 		candidateSharedResultExpiryUnix(nowUnix, req.TTL),
@@ -893,7 +861,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 		shared:   res,
 		hitCache: true,
 	}
-	c.traceLookupHit(ctx, requestDigest.String(), res, hitTerm, match.termDigest)
+	c.traceLookupHit(ctx, requestDigest.String(), res, match.termDigest)
 	return retRes, true, nil
 }
 
@@ -1127,7 +1095,7 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	match, err := c.lookupMatchForCallLocked(ctx, frame, requestDigest, requestSelf, requestInputs)
+	match, err := c.lookupMatchForCallLocked(ctx, frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -1615,7 +1583,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	if err := c.indexResultDigestsLocked(res, requestFrame, responseFrame); err != nil {
 		return err
 	}
-	for termID := range c.termIDsForResultLocked(res.id) {
+	for termID := range c.resultTerms[res.id] {
 		term := c.egraphTerms[termID]
 		if term == nil {
 			continue
@@ -1660,7 +1628,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	}
 
 	affectedOutputEqClasses := c.outputEqClassesForResultLocked(res.id)
-	for termID := range c.termIDsForResultLocked(res.id) {
+	for termID := range c.resultTerms[res.id] {
 		if termResults := c.termResults[termID]; termResults != nil {
 			delete(termResults, res.id)
 			if len(termResults) == 0 {

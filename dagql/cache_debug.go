@@ -453,13 +453,9 @@ func (c *Cache) traceLookupMissNoMatch(ctx context.Context, requestDigest string
 	})
 }
 
-func (c *Cache) traceLookupHit(ctx context.Context, requestDigest string, res *sharedResult, hitTerm *egraphTerm, termDigest string) {
+func (c *Cache) traceLookupHit(ctx context.Context, requestDigest string, res *sharedResult, termDigest string) {
 	c.traceLazy(ctx, "lookup_hit", func() []any {
-		termID := egraphTermID(0)
-		if hitTerm != nil {
-			termID = hitTerm.id
-		}
-		return []any{"phase", "runtime", "request_digest", requestDigest, "shared_result_id", res.id, "term_id", termID, "term_digest", termDigest}
+		return []any{"phase", "runtime", "request_digest", requestDigest, "shared_result_id", res.id, "term_digest", termDigest}
 	})
 }
 

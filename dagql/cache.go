@@ -2439,7 +2439,9 @@ func (c *Cache) lookupCacheForDigests(
 	}
 
 	c.egraphMu.Lock()
-	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests)
+	now := time.Now()
+	nowUnix := now.Unix()
+	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
 	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
 	hitRes := match.hitRes
 	if hitRes == nil {
@@ -2448,8 +2450,6 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, nil
 	}
 
-	now := time.Now()
-	nowUnix := now.Unix()
 	hitRes.expiresAtUnix = mergeSharedResultExpiryUnix(
 		hitRes.expiresAtUnix,
 		candidateSharedResultExpiryUnix(nowUnix, 0),
@@ -2459,7 +2459,7 @@ func (c *Cache) lookupCacheForDigests(
 		shared:   hitRes,
 		hitCache: true,
 	}
-	c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.hitTerm, match.termDigest)
+	c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.termDigest)
 	hitShared := retRes.cacheSharedResult()
 	if hitShared == nil || hitShared.id == 0 {
 		c.egraphMu.Unlock()
