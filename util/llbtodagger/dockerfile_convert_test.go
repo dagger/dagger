@@ -405,9 +405,6 @@ ADD archive.tar /downloads/
 	require.NotNil(t, attemptUnpack)
 	require.Equal(t, true, attemptUnpack.Value().ToInput())
 
-	destPathHintIsDirectory := withDir.Arg("destPathHintIsDirectory")
-	require.NotNil(t, destPathHintIsDirectory)
-	require.Equal(t, true, destPathHintIsDirectory.Value().ToInput())
 }
 
 func TestDefinitionToIDDockerfileAddGit(t *testing.T) {

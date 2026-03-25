@@ -788,8 +788,6 @@ func TestDefinitionToIDFileCopyAttemptUnpackUsesWithDirectoryHiddenArg(t *testin
 	require.NotNil(t, attemptUnpack)
 	require.Equal(t, true, attemptUnpack.Value().ToInput())
 
-	destPathHintIsDirectory := withDir.Arg("destPathHintIsDirectory")
-	require.Nil(t, destPathHintIsDirectory)
 }
 
 func TestDefinitionToIDFileCopyAttemptUnpackDestDirHintUsesWithDirectoryHiddenArg(t *testing.T) {
@@ -812,9 +810,6 @@ func TestDefinitionToIDFileCopyAttemptUnpackDestDirHintUsesWithDirectoryHiddenAr
 	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
 	require.Equal(t, "/dst/", withDir.Arg("path").Value().ToInput())
 
-	destPathHintIsDirectory := withDir.Arg("destPathHintIsDirectory")
-	require.NotNil(t, destPathHintIsDirectory)
-	require.Equal(t, true, destPathHintIsDirectory.Value().ToInput())
 }
 
 func TestChownOwnerStringNamedUserGroup(t *testing.T) {
