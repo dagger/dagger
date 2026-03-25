@@ -2,9 +2,6 @@ package llbtodagger
 
 import (
 	"fmt"
-	"path"
-	"strconv"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -419,7 +416,7 @@ func applyCopy(
 		args = append(args, argBool("alwaysReplaceExistingDestPaths", true))
 	}
 
-	owner, err := chownOwnerString2(cp.Owner)
+	owner, err := chownOwnerString(cp.Owner)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -435,175 +432,7 @@ func applyCopy(
 	return appendCall(baseID, directoryType(), "__withDirectoryDockerfilCompat", args...), baseContainerID, nil
 }
 
-func applyCopyViaContainer(
-	baseID *call.ID,
-	baseContainerID *call.ID,
-	sourceDirID *call.ID,
-	cp *pb.FileActionCopy,
-	include []string,
-	owner string,
-) (*call.ID, *call.ID) {
-	// Ensure the container context used for owner name resolution matches the
-	// current directory view for this action input.
-	workingContainerID := appendCall(
-		baseContainerID,
-		containerType(),
-		"withRootfs",
-		argID("directory", baseID),
-	)
-
-	var nextContainerID *call.ID
-	if filePath, ok := explicitFileCopyPath(cp, include); ok && !cp.AttemptUnpackDockerCompatibility {
-		fmt.Printf("ACB here1\n")
-		fileID := appendCall(sourceDirID, fileType(), "file", argString("path", filePath))
-		args := []*call.Argument{
-			argString("path", cleanPath(cp.Dest)),
-			argID("source", fileID),
-			argString("owner", owner),
-			//argBool("allowDirectorySourceFallback", true),
-		}
-		if !cp.CreateDestPath {
-			args = append(args, argBool("doNotCreateDestPath", true))
-		}
-		if cp.Mode >= 0 {
-			args = append(args, argInt("permissions", int64(cp.Mode)))
-		}
-		nextContainerID = appendCall(workingContainerID, containerType(), "withFile", args...)
-	} else {
-		args := []*call.Argument{
-			argString("path", cleanPath(cp.Dest)),
-			argID("source", sourceDirID),
-			argString("owner", owner),
-		}
-		if copyDestPathHintIsDirectory(cp.Dest) {
-			args = append(args, argBool("destPathHintIsDirectory", true))
-		}
-		if copySourcePathContentsWhenDir(cp) {
-			args = append(args, argBool("copySourcePathContentsWhenDir", true))
-		}
-		if !cp.CreateDestPath {
-			args = append(args, argBool("doNotCreateDestPath", true))
-		}
-		if len(include) > 0 {
-			args = append(args, argStringList("include", include))
-		}
-		if len(cp.ExcludePatterns) > 0 {
-			args = append(args, argStringList("exclude", cp.ExcludePatterns))
-		}
-		if cp.AttemptUnpackDockerCompatibility {
-			args = append(args, argBool("attemptUnpackDockerCompatibility", true))
-		}
-		if requiredSourcePath, ok := requiredSourcePathForCopy(cp, include); ok {
-			args = append(args, argString("requiredSourcePath", requiredSourcePath))
-		}
-		if cp.Mode >= 0 {
-			args = append(args, argInt("permissions", int64(cp.Mode)))
-		}
-		nextContainerID = appendCall(workingContainerID, containerType(), "withDirectory", args...)
-	}
-
-	return appendCall(nextContainerID, directoryType(), "rootfs"), nextContainerID
-}
-
-func deriveCopySelection(cp *pb.FileActionCopy) (sourceSubdir string, include []string) {
-	src := cleanPath(cp.Src)
-	include = append([]string{}, cp.IncludePatterns...)
-	fmt.Printf("ACB deriveCopySelection op include=%v\n", cp.IncludePatterns)
-
-	switch {
-	case cp.AllowWildcard:
-		sourceSubdir = cleanPath(path.Dir(src))
-		pattern := path.Base(src)
-		if pattern != "." && pattern != "/" {
-			fmt.Printf("ACB deriveCopySelection allowWildcard include=%v\n", pattern)
-			include = append([]string{pattern}, include...)
-		}
-	case cp.DirCopyContents:
-		sourceSubdir = src
-	case src == "/" || src == ".":
-		sourceSubdir = "/"
-	default:
-		sourceSubdir = cleanPath(src)
-		//sourceSubdir = cleanPath(path.Dir(src))
-		//item := path.Base(src)
-		//if item != "." && item != "/" {
-		//	include = append([]string{item}, include...)
-		//}
-	}
-
-	if sourceSubdir == "" {
-		sourceSubdir = "/"
-	}
-	return sourceSubdir, include
-}
-
-func explicitFileCopyPath(cp *pb.FileActionCopy, include []string) (string, bool) {
-	if cp == nil {
-		return "", false
-	}
-	if strings.HasSuffix(cp.Dest, "/") || strings.HasSuffix(cp.Dest, "/.") {
-		return "", false
-	}
-	if len(cp.IncludePatterns) > 0 || len(cp.ExcludePatterns) > 0 {
-		return "", false
-	}
-	if len(include) != 1 {
-		return "", false
-	}
-	inc := path.Clean(include[0])
-	if inc == "." || inc == "/" || strings.HasPrefix(inc, "../") {
-		return "", false
-	}
-	if hasPathWildcard(inc) {
-		return "", false
-	}
-	srcBase := path.Base(cleanPath(cp.Src))
-	if srcBase == "." || srcBase == "/" || hasPathWildcard(srcBase) {
-		return "", false
-	}
-	return strings.TrimPrefix(inc, "/"), true
-}
-
-func copyDestPathHintIsDirectory(dest string) bool {
-	return strings.HasSuffix(dest, "/") || strings.HasSuffix(dest, "/.")
-}
-
-func copySourcePathContentsWhenDir(cp *pb.FileActionCopy) bool {
-	if cp == nil {
-		return false
-	}
-	if !cp.AllowWildcard {
-		return false
-	}
-	src := cleanPath(cp.Src)
-	return !hasPathWildcard(src)
-}
-
-func requiredSourcePathForCopy(cp *pb.FileActionCopy, include []string) (string, bool) {
-	if cp == nil {
-		return "", false
-	}
-	if len(cp.ExcludePatterns) > 0 {
-		return "", false
-	}
-	if len(include) != 1 {
-		return "", false
-	}
-	req := path.Clean(include[0])
-	if req == "." || req == "/" || strings.HasPrefix(req, "../") {
-		return "", false
-	}
-	if hasPathWildcard(req) {
-		return "", false
-	}
-	return strings.TrimPrefix(req, "/"), true
-}
-
-func hasPathWildcard(p string) bool {
-	return strings.ContainsAny(p, "*?[")
-}
-
-func chownOwnerString2(chown *pb.ChownOpt) (string, error) {
+func chownOwnerString(chown *pb.ChownOpt) (string, error) {
 	if chown == nil {
 		return "", nil
 	}
@@ -618,6 +447,8 @@ func chownOwnerString2(chown *pb.ChownOpt) (string, error) {
 			if byName != nil && byName.ByName != nil {
 				user = byName.ByName.Name
 			}
+		} else {
+			return "", fmt.Errorf("chown.User is set to unhandled type %T", chown.User)
 		}
 	}
 	if chown.Group != nil {
@@ -625,96 +456,9 @@ func chownOwnerString2(chown *pb.ChownOpt) (string, error) {
 			if byName != nil && byName.ByName != nil {
 				group = byName.ByName.Name
 			}
+		} else {
+			return "", fmt.Errorf("chown.Group is set to unhandled type %T", chown.Group)
 		}
 	}
 	return fmt.Sprintf("%s:%s", user, group), nil
-}
-
-func chownOwnerString(chown *pb.ChownOpt) (string, error) {
-	if chown == nil {
-		return "", nil
-	}
-	var (
-		user string
-		err  error
-	)
-	// BuildKit represents group-only chown from Dockerfile ("--chown=:gid")
-	// as an empty named user with group set. Normalize that user side to UID 0.
-	if isEmptyNamedUser(chown.User) && chown.Group != nil {
-		user = ""
-	} else {
-		user, err = userOptToString(chown.User)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	group, err := userOptToString(chown.Group)
-	if err != nil {
-		return "", err
-	}
-
-	switch {
-	case user == "" && group == "":
-		return "", nil
-	case user == "" && group != "":
-		return "0:" + group, nil
-	case group == "":
-		return user, nil
-	default:
-		return user + ":" + group, nil
-	}
-}
-
-func isEmptyNamedUser(user *pb.UserOpt) bool {
-	if user == nil {
-		return false
-	}
-	byName, ok := user.User.(*pb.UserOpt_ByName)
-	if !ok {
-		return false
-	}
-	if byName.ByName == nil {
-		return false
-	}
-	return strings.TrimSpace(byName.ByName.Name) == ""
-}
-
-func userOptToString(user *pb.UserOpt) (string, error) {
-	if user == nil {
-		return "", nil
-	}
-	switch v := user.User.(type) {
-	case *pb.UserOpt_ByID:
-		return strconv.FormatUint(uint64(v.ByID), 10), nil
-	case *pb.UserOpt_ByName:
-		if v.ByName == nil || strings.TrimSpace(v.ByName.Name) == "" {
-			return "", fmt.Errorf("empty named user is unsupported")
-		}
-		return strings.TrimSpace(v.ByName.Name), nil
-	default:
-		return "", fmt.Errorf("unknown user option type")
-	}
-}
-
-func isOwnerStringValid(owner string) bool {
-	if owner == "" {
-		return false
-	}
-	user, group, hasGroup := strings.Cut(owner, ":")
-	if isStringWholeNumber(user) {
-		return true
-	}
-	if hasGroup && isStringWholeNumber(group) {
-		return true
-	}
-	return false
-}
-
-func isStringWholeNumber(component string) bool {
-	if component == "" {
-		return false
-	}
-	_, err := strconv.ParseUint(component, 10, 32)
-	return err != nil
 }
