@@ -805,10 +805,6 @@ type WithFileArgs struct {
 	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
 	// BuildKit ADD archive auto-unpack compatibility semantics.
 	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
-	// Hidden internal arg used for LLB fidelity; if true and source file loading
-	// fails, attempt directory-source fallback for ambiguous Dockerfile COPY
-	// lowerings where the source can be a directory.
-	// AllowDirectorySourceFallback bool `internal:"true" default:"false"`
 
 	FSDagOpInternalArgs
 }

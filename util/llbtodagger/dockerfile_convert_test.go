@@ -282,9 +282,6 @@ COPY --chmod=751 input.txt /app/out.txt
 	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
 	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
 	require.EqualValues(t, 0o751, withFile.Arg("permissions").Value().ToInput())
-	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
-	require.NotNil(t, allowDirFallback)
-	require.Equal(t, true, allowDirFallback.Value().ToInput())
 
 	srcFile := argIDFromCall(t, withFile, "source")
 	fileCall := findFieldInChain(srcFile, "file")
@@ -309,9 +306,6 @@ COPY --chown=:123 input.txt /app/out.txt
 	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
 	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
 	require.Equal(t, "0:123", withFile.Arg("owner").Value().ToInput())
-	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
-	require.NotNil(t, allowDirFallback)
-	require.Equal(t, true, allowDirFallback.Value().ToInput())
 
 	srcFile := argIDFromCall(t, withFile, "source")
 	fileCall := findFieldInChain(srcFile, "file")
@@ -337,9 +331,6 @@ COPY --chown=auser:agroup input.txt /app/out.txt
 	require.NotNil(t, withFile)
 	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
 	require.Equal(t, "auser:agroup", withFile.Arg("owner").Value().ToInput())
-	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
-	require.NotNil(t, allowDirFallback)
-	require.Equal(t, true, allowDirFallback.Value().ToInput())
 
 	srcFile := argIDFromCall(t, withFile, "source")
 	fileCall := findFieldInChain(srcFile, "file")

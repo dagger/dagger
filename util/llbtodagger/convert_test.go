@@ -730,10 +730,6 @@ func TestDefinitionToIDFileCopyModeOverride(t *testing.T) {
 	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
 	require.EqualValues(t, 0o751, withFile.Arg("permissions").Value().ToInput())
 	require.Equal(t, "/dst/a.txt", withFile.Arg("path").Value().ToInput())
-	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
-	require.NotNil(t, allowDirFallback)
-	require.Equal(t, true, allowDirFallback.Value().ToInput())
-
 	sourceID, ok := withFile.Arg("source").Value().ToInput().(*call.ID)
 	require.True(t, ok)
 	sourceFile := findFieldInChain(sourceID, "file")
@@ -760,9 +756,6 @@ func TestDefinitionToIDFileCopyExplicitDestPathUsesWithFile(t *testing.T) {
 	withFile := rootfsArgFromContainer(t, id)
 	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
 	require.Equal(t, "/dst/renamed.txt", withFile.Arg("path").Value().ToInput())
-	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
-	require.NotNil(t, allowDirFallback)
-	require.Equal(t, true, allowDirFallback.Value().ToInput())
 
 	sourceID, ok := withFile.Arg("source").Value().ToInput().(*call.ID)
 	require.True(t, ok)
