@@ -139,33 +139,72 @@ func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server, entrypointMo
 		existingFns[fn.Name] = true
 	}
 
-	// Enumerate module-provided Query fields directly from the dagql type.
-	for _, spec := range queryObjType.FieldSpecs(dag.View) {
-		if existingFns[spec.Name] || spec.Module == nil {
-			continue
-		}
-
-		modName := spec.Module.Name()
+	// First pass: add entrypoint proxy methods directly from the main
+	// object's type definition. We derive these from the module's own
+	// TypeDefs rather than from dagql FieldSpecs because a dep constructor
+	// with the same name may have been the last-registered FieldSpec before
+	// the entrypoint was installed. By adding proxies first, the CLI sees
+	// them as module functions.
+	for modName := range entrypointMods {
 		mainObj, ok := modMainObjects[modName]
 		if !ok {
 			continue
 		}
-
-		// Only entrypoint modules have proxy methods on Query. For
-		// non-entrypoint modules, every Query field is a constructor.
-		if entrypointMods[modName] {
-			if fn := findFunctionOnObject(mainObj, spec.Name); fn != nil {
-				proxied := fn.Clone()
-				proxied.SourceModuleName = modName
-				queryTypeDef.Functions = append(queryTypeDef.Functions, proxied)
+		for _, fn := range mainObj.Functions {
+			fieldName := gqlFieldName(fn.Name)
+			if existingFns[fieldName] {
 				continue
 			}
+			// Verify the field actually exists on Query.
+			if _, found := queryObjType.FieldSpec(fieldName, dag.View); !found {
+				continue
+			}
+			proxied := fn.Clone()
+			proxied.SourceModuleName = modName
+			queryTypeDef.Functions = append(queryTypeDef.Functions, proxied)
+			existingFns[fieldName] = true
 		}
+		// Also add the "with" constructor if present.
+		if !existingFns["with"] {
+			if _, found := queryObjType.FieldSpec("with", dag.View); found {
+				withFn := &Function{
+					Name:             "with",
+					Description:      mainObj.Description,
+					SourceModuleName: modName,
+					ReturnType: &TypeDef{
+						Kind: TypeDefKindObject,
+						AsObject: dagql.NonNull(&ObjectTypeDef{
+							Name: "Query",
+						}),
+					},
+				}
+				if mainObj.Constructor.Valid {
+					withFn.Args = mainObj.Constructor.Value.Args
+				}
+				queryTypeDef.Functions = append(queryTypeDef.Functions, withFn)
+				existingFns["with"] = true
+			}
+		}
+	}
 
-		// Otherwise this is the constructor. Synthesize a function that
-		// returns the main object type, using args from the module's
-		// explicit constructor if one was defined.
-		fn := constructorFunctionFromMainObject(mainObj, spec.Name, modName)
+	// Second pass: add constructors for non-entrypoint modules. We derive
+	// these from modMainObjects rather than FieldSpecs because an entrypoint
+	// proxy can shadow a dep constructor of the same name in FieldSpecs.
+	// Both need to appear in the TypeDef so that initializeModule can find
+	// each module's constructor by SourceModuleName.
+	for modName, mainObj := range modMainObjects {
+		if entrypointMods[modName] {
+			continue
+		}
+		constructorName := gqlFieldName(modName)
+		// The constructor field exists on the dagql server even if an
+		// entrypoint proxy with the same name was installed later
+		// (dagql appends, so both exist; FieldSpec returns last-wins
+		// but the field is still callable).
+		if _, found := queryObjType.FieldSpec(constructorName, dag.View); !found {
+			continue
+		}
+		fn := constructorFunctionFromMainObject(mainObj, constructorName, modName)
 		queryTypeDef.Functions = append(queryTypeDef.Functions, fn)
 	}
 
