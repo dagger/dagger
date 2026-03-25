@@ -2304,24 +2304,29 @@ func moduleLoadErr(load moduleLoadRequest, err error) error {
 // resolveModule resolves a module through the dagql pipeline.
 // Handles all module sources uniformly: legacy compat modules,
 // implicit CWD modules, and -m flag modules.
+//
+// Legacy settings (LegacyDefaultPath, ArgCustomizations, WorkspaceConfig, etc.)
+// are passed as internal args to asModule so they are applied BEFORE the module
+// is installed into dagql — mutating the result after Select is incorrect because
+// dagql may return a cached (and already-installed) pointer.
 func (srv *Server) resolveModule(
 	ctx context.Context,
 	dag *dagql.Server,
 	mod pendingModule,
 ) (*core.Module, error) {
-	args := []dagql.NamedInput{
+	srcArgs := []dagql.NamedInput{
 		{Name: "refString", Value: dagql.String(mod.Ref)},
 	}
 	if mod.RefPin != "" {
-		args = append(args, dagql.NamedInput{Name: "refPin", Value: dagql.String(mod.RefPin)})
+		srcArgs = append(srcArgs, dagql.NamedInput{Name: "refPin", Value: dagql.String(mod.RefPin)})
 	}
 	if mod.DisableFindUp {
-		args = append(args, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})
+		srcArgs = append(srcArgs, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})
 	}
 
 	var src dagql.ObjectResult[*core.ModuleSource]
 	err := dag.Select(ctx, dag.Root(), &src,
-		dagql.Selector{Field: "moduleSource", Args: args},
+		dagql.Selector{Field: "moduleSource", Args: srcArgs},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
@@ -2333,28 +2338,49 @@ func (srv *Server) resolveModule(
 		}
 	}
 
+	// Build asModule args — legacy settings flow through dagql so they are
+	// applied before Install runs inside moduleSourceAsModule.
+	asModuleArgs := []dagql.NamedInput{}
+	if mod.Name != "" {
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "legacyNameOverride", Value: dagql.String(mod.Name),
+		})
+	}
+	if mod.LegacyDefaultPath {
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "legacyDefaultPath", Value: dagql.Boolean(true),
+		})
+	}
+	if len(mod.ConfigDefaults) > 0 {
+		wsJSON, err := json.Marshal(mod.ConfigDefaults)
+		if err != nil {
+			return nil, fmt.Errorf("encoding workspace config for %q: %w", mod.Ref, err)
+		}
+		asModuleArgs = append(asModuleArgs,
+			dagql.NamedInput{Name: "legacyWorkspaceConfigJson", Value: dagql.String(string(wsJSON))},
+		)
+		if mod.DefaultsFromDotEnv {
+			asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+				Name: "legacyDefaultsFromDotEnv", Value: dagql.Boolean(true),
+			})
+		}
+	}
+	if len(mod.ArgCustomizations) > 0 {
+		custJSON, err := json.Marshal(mod.ArgCustomizations)
+		if err != nil {
+			return nil, fmt.Errorf("encoding arg customizations for %q: %w", mod.Ref, err)
+		}
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
+		})
+	}
+
 	var resolved dagql.ObjectResult[*core.Module]
 	err = dag.Select(ctx, src, &resolved,
-		dagql.Selector{Field: "asModule"},
+		dagql.Selector{Field: "asModule", Args: asModuleArgs},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
-	}
-
-	if mod.Name != "" {
-		resolved.Self().NameField = mod.Name
-	}
-	// noop: Entrypoint is handled during module gathering, not at load time.
-	if mod.LegacyDefaultPath {
-		resolved.Self().LegacyDefaultPath = true
-	}
-	if len(mod.ConfigDefaults) > 0 {
-		resolved.Self().WorkspaceConfig = mod.ConfigDefaults
-		resolved.Self().DefaultsFromDotEnv = mod.DefaultsFromDotEnv
-		resolved.Self().ApplyWorkspaceDefaultsToTypeDefs()
-	}
-	if len(mod.ArgCustomizations) > 0 {
-		resolved.Self().ApplyLegacyCustomizationsToTypeDefs(mod.ArgCustomizations)
 	}
 
 	return resolved.Self(), nil

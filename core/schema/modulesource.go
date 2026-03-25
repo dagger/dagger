@@ -3144,6 +3144,28 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// right after function caching is enabled. It can be removed after SDKs have been updated
 		// to latest engine versions.
 		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
+
+		// LegacyDefaultPath, when true, causes +defaultPath to resolve relative
+		// to the workspace root instead of the module's own source directory.
+		// Used for legacy toolchains loaded from dagger.json.
+		LegacyDefaultPath bool `internal:"true" default:"false"`
+
+		// LegacyArgCustomizationsJSON is a JSON-encoded []*modules.ModuleConfigArgument
+		// carrying arg customizations from the workspace dagger.json.
+		// Applied after type defs are populated so constructor arg metadata
+		// (Ignore, DefaultPath, etc.) can be overridden before Install.
+		LegacyArgCustomizationsJSON string `internal:"true" default:""`
+
+		// LegacyNameOverride, when non-empty, overrides the module name.
+		LegacyNameOverride string `internal:"true" default:""`
+
+		// LegacyWorkspaceConfigJSON is a JSON-encoded map[string]any
+		// carrying workspace config defaults from the workspace dagger.json.
+		LegacyWorkspaceConfigJSON string `internal:"true" default:""`
+
+		// LegacyDefaultsFromDotEnv, when true and workspace config is set,
+		// also load .env defaults for args not found in WorkspaceConfig.
+		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -3175,6 +3197,22 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod.DisableDefaultFunctionCaching = false
 	}
 
+	// Apply legacy settings that must be set before Install runs.
+	if args.LegacyNameOverride != "" {
+		mod.NameField = args.LegacyNameOverride
+	}
+	if args.LegacyDefaultPath {
+		mod.LegacyDefaultPath = true
+	}
+	if args.LegacyWorkspaceConfigJSON != "" {
+		var wsConfig map[string]any
+		if err := json.Unmarshal([]byte(args.LegacyWorkspaceConfigJSON), &wsConfig); err != nil {
+			return inst, fmt.Errorf("decoding legacy workspace config: %w", err)
+		}
+		mod.WorkspaceConfig = wsConfig
+		mod.DefaultsFromDotEnv = args.LegacyDefaultsFromDotEnv
+	}
+
 	// Initialize module based on SDK presence
 	if src.Self().SDKImpl != nil {
 		mod, err = s.initializeSDKModule(ctx, src, mod, dag)
@@ -3187,6 +3225,19 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		if err != nil {
 			return inst, err
 		}
+	}
+
+	// Apply legacy arg customizations and workspace defaults after type defs
+	// are populated (SDK codegen has run) but before the result is cached.
+	if args.LegacyWorkspaceConfigJSON != "" {
+		mod.ApplyWorkspaceDefaultsToTypeDefs()
+	}
+	if args.LegacyArgCustomizationsJSON != "" {
+		var customizations []*modules.ModuleConfigArgument
+		if err := json.Unmarshal([]byte(args.LegacyArgCustomizationsJSON), &customizations); err != nil {
+			return inst, fmt.Errorf("decoding legacy arg customizations: %w", err)
+		}
+		mod.ApplyLegacyCustomizationsToTypeDefs(customizations)
 	}
 
 	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, mod)
