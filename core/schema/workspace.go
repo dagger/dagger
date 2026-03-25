@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -105,6 +104,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
+		dagql.NodeFunc("refreshModules", DagOpChangesetWrapper(srv, s.refreshModules)).
+			Doc("Refresh lock entries for selected workspace-config modules.",
+				"This layers selective workspace refresh on top of the lockfile base.").
+			Args(
+				dagql.Arg("moduleNames").Doc("Workspace module names to refresh."),
+			).
+			Experimental("Experimental selective workspace lock refresh API."),
 		dagql.NodeFunc("update", DagOpChangesetWrapper(srv, s.update)).
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
@@ -328,48 +334,7 @@ func (s *workspaceSchema) update(
 		return nil, fmt.Errorf("update workspace lock: %w", err)
 	}
 
-	lockBytes, err := lock.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("marshal workspace lock: %w", err)
-	}
-
-	baseDir, err := s.resolveRootfs(ctx, ws, resolveWorkspacePath(".", ws.Path), core.CopyFilter{}, false)
-	if err != nil {
-		return nil, err
-	}
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var updatedDir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, baseDir, &updatedDir,
-		dagql.Selector{
-			Field: "withNewFile",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(path.Join(workspace.LockDirName, workspace.LockFileName))},
-				{Name: "contents", Value: dagql.String(lockBytes)},
-				{Name: "permissions", Value: dagql.Int(0o644)},
-			},
-		},
-	); err != nil {
-		return nil, fmt.Errorf("workspace update lockfile: %w", err)
-	}
-
-	var changes dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, updatedDir, &changes,
-		dagql.Selector{
-			Field: "changes",
-			Args: []dagql.NamedInput{
-				{Name: "from", Value: dagql.NewID[*core.Directory](baseDir.ID())},
-			},
-		},
-	); err != nil {
-		return nil, fmt.Errorf("workspace update changeset: %w", err)
-	}
-
-	return changes.Self(), nil
+	return s.workspaceLockChangeset(ctx, ws, lock)
 }
 
 // resolveWorkspacePath resolves a workspace API path into a boundary-relative path:

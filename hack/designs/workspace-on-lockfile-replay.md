@@ -8,6 +8,8 @@ Active replay ledger for the fresh curated `workspace` replay on top of
 This file is operational. Update it after every substantive bucket so the replay
 can be resumed from disk alone.
 
+All planned replay buckets are now landed on `tmp/workspace-on-lockfile`.
+
 ## Branch Contract
 
 Current integration branch:
@@ -112,6 +114,8 @@ Reason:
   `ModuleSource` / `modules.resolve` lookup path
 - migration emitting or refreshing generic `ModuleSource` /
   `modules.resolve` lookups
+- selective workspace lock refresh layered onto `dagger lock update` /
+  `currentWorkspace.update()`
 
 ### Pending Safe Pre-Lock Buckets
 
@@ -135,11 +139,7 @@ are superseded by it:
 
 ### Rewrite Buckets
 
-These intents still belong to workspace, but must be rewritten on top of the
-`lockfile` base:
-
-- any selective refresh UX must layer on top of `currentWorkspace.update()` /
-  `dagger lock update`, not replace them
+None.
 
 ## Stale Oracle Notes
 
@@ -493,3 +493,39 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestMigrate$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/b1511fdf5277cb3db8b68b7ff2c21978`
+  - replayed selective workspace lock refresh on top of the `lockfile` base
+  - design note:
+    preserve `currentWorkspace.update()` and zero-arg `dagger lock update` as
+    the generic whole-lock refresh path; selective refresh is additive, via
+    `Workspace.refreshModules(moduleNames: ...)` and `dagger lock update
+    <module...>`
+  - design note:
+    share module-source lookup resolution with the generic lockfile path so the
+    workspace rewrite adds selection semantics, not a second lookup substrate
+  - rewrite note:
+    config-owned local module refs are stored relative to `.dagger`, so
+    selective refresh must resolve local source kind checks against that same
+    base instead of the workspace root
+  - verifier note:
+    the first focused integration run exposed a test bug rather than a product
+    issue: the idempotence assertion reran `dagger lock update wolfi` from the
+    original filesystem, so it could only ever report `Updated .dagger/lock`;
+    rerun the second refresh on top of the first exec result
+  - verifier passed:
+    `git diff --check`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger-lock-update.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./core/schema -o /tmp/.tmp-core-schema-lock-refresh.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/schema --run='Test(ResolveWorkspaceRefreshModules|ResolveLookupFromLock|CurrentLookupLockMode|WorkspaceInstallLookupContext)$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/e2c7c2457fc3d027a8847f5629b9dc32`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='TestSpanName$'`
+  - trace:
+    `https://dagger.cloud/dagger/traces/4ece6487ba3278a4052e2ae3ccf68f75`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestWorkspaceLockUpdateCommand$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/b2bde678e74916869bd689a3d5cd58b3`

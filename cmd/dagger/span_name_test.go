@@ -16,6 +16,7 @@ func TestSpanName(t *testing.T) {
 	for _, test := range []example{
 		{args: []string{"dagger", "version"}, want: "dagger version"},
 		{args: []string{"dagger", "install", "foo"}, want: "dagger install foo"},
+		{args: []string{"dagger", "lock", "update", "foo"}, want: "dagger lock update foo"},
 		{args: []string{"dagger", "module", "update", "foo"}, want: "dagger module update foo"},
 		{args: []string{"dagger", "call", "foo"}, want: "foo"},
 		{args: []string{"dagger", "call", "echo", "--msg", ""}, want: "echo --msg "},

@@ -19,9 +19,28 @@ const workspaceLockUpdateQuery = `query {
 }
 `
 
+const workspaceLockRefreshModulesQuery = `query WorkspaceLockRefreshModules($moduleNames: [String!]!) {
+  currentWorkspace {
+    refreshModules(moduleNames: $moduleNames) {
+      isEmpty
+      export(path: ".")
+    }
+  }
+}
+`
+
 type workspaceLockUpdateResponse struct {
 	CurrentWorkspace struct {
 		Update struct {
+			IsEmpty bool
+			Export  string
+		}
+	}
+}
+
+type workspaceLockRefreshModulesResponse struct {
+	CurrentWorkspace struct {
+		RefreshModules struct {
 			IsEmpty bool
 			Export  string
 		}
@@ -41,26 +60,50 @@ var lockCmd = &cobra.Command{
 }
 
 var lockUpdateCmd = &cobra.Command{
-	Use:   "update",
+	Use:   "update [module...]",
 	Short: "Refresh workspace lock entries",
 	Long: `Refresh workspace lock entries.
 
-Refresh entries already recorded in .dagger/lock.`,
-	Args: cobra.NoArgs,
+With no module names, refresh entries already recorded in .dagger/lock.
+
+With module names, refresh only those modules from .dagger/config.toml.`,
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger())
+			return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger(), args)
 		})
 	},
 }
 
-func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client) error {
+func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client, moduleNames []string) error {
+	if len(moduleNames) > 0 {
+		return refreshWorkspaceLockModules(ctx, outWriter, dag, moduleNames)
+	}
+
 	var res workspaceLockUpdateResponse
 	if err := dag.Do(ctx, &dagger.Request{Query: workspaceLockUpdateQuery}, &dagger.Response{Data: &res}); err != nil {
 		return err
 	}
 
-	if res.CurrentWorkspace.Update.IsEmpty {
+	return writeWorkspaceLockUpdateResult(outWriter, res.CurrentWorkspace.Update.IsEmpty)
+}
+
+func refreshWorkspaceLockModules(ctx context.Context, outWriter io.Writer, dag *dagger.Client, moduleNames []string) error {
+	var res workspaceLockRefreshModulesResponse
+	if err := dag.Do(ctx, &dagger.Request{
+		Query: workspaceLockRefreshModulesQuery,
+		Variables: map[string]any{
+			"moduleNames": moduleNames,
+		},
+	}, &dagger.Response{Data: &res}); err != nil {
+		return err
+	}
+
+	return writeWorkspaceLockUpdateResult(outWriter, res.CurrentWorkspace.RefreshModules.IsEmpty)
+}
+
+func writeWorkspaceLockUpdateResult(outWriter io.Writer, isEmpty bool) error {
+	if isEmpty {
 		_, err := outWriter.Write([]byte("Lockfile already up to date\n"))
 		return err
 	}
