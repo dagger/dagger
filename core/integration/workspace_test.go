@@ -1142,3 +1142,122 @@ func (p *Playground) SayHello() string {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"sayHello":"hello!", "directory":{"entries": []}}`, out)
 }
+
+// TestMainObjectWithPrefixedChildren mirrors the Elixir TestReturnChildObject
+// test: module "objects" has main object Objects and children ObjectsA,
+// ObjectsB.
+//
+// The child names are important: because ObjectsA already starts with
+// "Objects" (the module name), namespaceObject is a no-op for it — it
+// produces Name == gqlObjectName(OriginalName). A prior heuristic in
+// mergeModuleQueryFields used that equality to identify main objects, which
+// falsely matched ObjectsA and overwrote the real main object Objects.
+// Children whose names don't carry the module prefix (e.g. "Child") would
+// be namespaced to "ObjectsChild" and wouldn't trigger the bug.
+func (WorkspaceSuite) TestMainObjectWithPrefixedChildren(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	source := `
+type Objects {
+  pub objectA: ObjectsA! {
+    ObjectsA()
+  }
+}
+
+type ObjectsA {
+  pub message: String! {
+    "Hello from A"
+  }
+
+  pub objectB: ObjectsB! {
+    ObjectsB()
+  }
+}
+
+type ObjectsB {
+  pub message: String! {
+    "Hello from B"
+  }
+}
+`
+
+	t.Run("standalone module", func(ctx context.Context, t *testctx.T) {
+		base := workspaceBase(t, c).
+			With(initStandaloneDangModule("objects", source))
+
+		out, err := base.With(daggerCall("object-a", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from A", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("object-a", "object-b", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from B", strings.TrimSpace(out))
+	})
+
+	t.Run("toolchain module", func(ctx context.Context, t *testctx.T) {
+		base := workspaceBase(t, c).
+			With(initDangModule("objects", source))
+
+		out, err := base.With(daggerCall("objects", "object-a", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from A", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("objects", "object-a", "object-b", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from B", strings.TrimSpace(out))
+	})
+}
+
+// TestRenamedToolchainModule verifies that a toolchain module renamed via the
+// workspace config "name" field still has its constructor correctly
+// synthesized on Query. The SDK type keeps its original name (e.g.
+// "HelloWorld") but the module is installed under the alias (e.g. "greeter").
+// The namespaceObject function rewrites the main object's Name to match the
+// alias, so this has always worked, but this test makes the coverage explicit.
+func (WorkspaceSuite) TestRenamedToolchainModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create a module named "hello-world" but install it as "greeter".
+	base := workspaceBase(t, c).
+		WithWorkdir("toolchains/hello-world").
+		With(daggerExec("init", "--sdk=dang", "--name=hello-world")).
+		WithNewFile("main.dang", `
+type HelloWorld {
+  pub greet(name: String! = "world"): String! {
+    "hello, " + name + "!"
+  }
+}
+`).
+		WithWorkdir("../../").
+		With(daggerExec("init")).
+		WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "greeter",
+      "source": "./toolchains/hello-world"
+    }
+  ]
+}
+`)
+
+	t.Run("constructor appears under renamed alias", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("greeter", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, world!", strings.TrimSpace(out))
+	})
+
+	t.Run("constructor accepts args", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("greeter", "greet", "--name", "dagger")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, dagger!", strings.TrimSpace(out))
+	})
+
+	t.Run("functions list shows renamed alias", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "greeter")
+	})
+}
