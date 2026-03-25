@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"maps"
@@ -17,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 )
@@ -43,6 +45,27 @@ func cloneContainerForTerminal(ctr *Container) *Container {
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	return &cp
+}
+
+func newSyntheticTerminalContainerResult(
+	srv *dagql.Server,
+	ctr *Container,
+	syntheticOp string,
+) (dagql.ObjectResult[*Container], error) {
+	return dagql.NewObjectResultForCall(ctr, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		Type:        dagql.NewResultCallType(ctr.Type()),
+		SyntheticOp: syntheticOp,
+		ImplicitInputs: []*dagql.ResultCallArg{
+			{
+				Name: "terminalNonce",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: rand.Text(),
+				},
+			},
+		},
+	})
 }
 
 type ExecTerminalArgs struct {
@@ -98,6 +121,26 @@ func (container *Container) terminal(
 	if err != nil {
 		return err
 	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dagql server: %w", err)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return fmt.Errorf("terminal attach container: empty session ID")
+	}
+	attachedAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, containerRes)
+	if err != nil {
+		return fmt.Errorf("failed to attach terminal container: %w", err)
+	}
+	attached, ok := attachedAny.(dagql.ObjectResult[*Container])
+	if !ok {
+		return fmt.Errorf("failed to attach terminal container: expected %T, got %T", containerRes, attachedAny)
+	}
+	containerRes = attached
 	// HACK: ensure that container is entirely built before interrupting nice
 	// progress output with the terminal
 	if err := cache.Evaluate(ctx, containerRes); err != nil {
@@ -112,11 +155,7 @@ func (container *Container) terminal(
 	defer term.Close(bkgwpb.UnknownExitStatus) // always close term; it's wrapped in a once so it won't be called multiple times
 	container.Config.Env = prepTerminalEnv(output, container.Config.Env)
 
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get dagql server: %w", err)
-	}
-	containerRes, err = dagql.NewObjectResultForCurrentCall(ctx, srv, container)
+	containerRes, err = newSyntheticTerminalContainerResult(srv, container, "terminal_container")
 	if err != nil {
 		return fmt.Errorf("failed to attach terminal container: %w", err)
 	}
@@ -210,7 +249,7 @@ func (dir *Directory) Terminal(
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
-		ctr, err = dagql.NewObjectResultForCurrentCall(ctx, srv, defaultCtr)
+		ctr, err = newSyntheticTerminalContainerResult(srv, defaultCtr, "default_terminal_container")
 		if err != nil {
 			return fmt.Errorf("failed to attach terminal container: %w", err)
 		}
@@ -222,7 +261,7 @@ func (dir *Directory) Terminal(
 	if err != nil {
 		return fmt.Errorf("failed to create terminal container: %w", err)
 	}
-	termCtrRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, termCtr)
+	termCtrRes, err := newSyntheticTerminalContainerResult(srv, termCtr, "directory_terminal_container")
 	if err != nil {
 		return fmt.Errorf("failed to attach terminal container: %w", err)
 	}

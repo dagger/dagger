@@ -1673,7 +1673,7 @@ func (container *Container) WithExec(
 					rerr = err
 					return
 				}
-				terminalContainerRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, terminalContainer)
+				terminalContainerRes, err := newSyntheticTerminalContainerResult(srv, terminalContainer, "terminal_exec_error_container")
 				if err != nil {
 					rerr = err
 					return
