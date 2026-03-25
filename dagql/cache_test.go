@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
@@ -2188,7 +2189,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
 		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]map[egraphTermID]struct{})
+		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		c.egraphMu.Unlock()
@@ -2235,7 +2236,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
 		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]map[egraphTermID]struct{})
+		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		c.egraphMu.Unlock()
@@ -2306,7 +2307,7 @@ func TestIndexResultDigestsUsesExplicitRequestAndResponseIDs(t *testing.T) {
 		responseExtra.Digest,
 	} {
 		postings := c.egraphResultsByDigest[dig.String()]
-		_, ok := postings[shared.id]
+		ok := postings != nil && postings.Contains(shared.id)
 		assert.Assert(t, ok, "expected posting for digest %s", dig)
 	}
 
@@ -3095,7 +3096,7 @@ func TestCacheTeachContentDigestPreservesAttachment(t *testing.T) {
 	shared := res.cacheSharedResult()
 	assert.Assert(t, shared != nil)
 	c.egraphMu.RLock()
-	_, ok := c.egraphResultsByDigest[contentDigest.String()][shared.id]
+	ok := c.egraphResultsByDigest[contentDigest.String()].Contains(shared.id)
 	c.egraphMu.RUnlock()
 	assert.Assert(t, ok)
 
@@ -3455,10 +3456,10 @@ func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) 
 
 	foreignSet := c.egraphResultsByDigest[foreignDigest.String()]
 	if foreignSet == nil {
-		foreignSet = make(map[sharedResultID]struct{})
+		foreignSet = newSharedResultIDSet()
 		c.egraphResultsByDigest[foreignDigest.String()] = foreignSet
 	}
-	foreignSet[shared.id] = struct{}{}
+	foreignSet.Insert(shared.id)
 	c.egraphMu.Unlock()
 
 	assert.NilError(t, c.ReleaseSession(ctxA, "release-eq-class-a"))

@@ -11701,9 +11701,21 @@ func (r *Client) CurrentModule() *CurrentModule {
 	}
 }
 
+// CurrentTypeDefsOpts contains options for Client.CurrentTypeDefs
+type CurrentTypeDefsOpts struct {
+	// Return the full referenced typedef closure instead of only top-level served typedefs.
+	ReturnAllTypes bool
+}
+
 // The TypeDef representations of the objects currently being served in the session.
-func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+func (r *Client) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `returnAllTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReturnAllTypes) {
+			q = q.Arg("returnAllTypes", opts[i].ReturnAllTypes)
+		}
+	}
 
 	q = q.Select("id")
 

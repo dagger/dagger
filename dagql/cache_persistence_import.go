@@ -275,10 +275,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.termInputProvenance[termID] = inputProvenance
 			digestTerms := c.egraphTermsByTermDigest[term.termDigest]
 			if digestTerms == nil {
-				digestTerms = make(map[egraphTermID]struct{})
+				digestTerms = newEgraphTermIDSet()
 				c.egraphTermsByTermDigest[term.termDigest] = digestTerms
 			}
-			digestTerms[termID] = struct{}{}
+			digestTerms.Insert(termID)
 			for _, inputEqID := range inputEqIDs {
 				if inputEqID == 0 {
 					continue
@@ -356,10 +356,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				for dig := range c.eqClassToDigests[outputEqID] {
 					set := c.egraphResultsByDigest[dig]
 					if set == nil {
-						set = make(map[sharedResultID]struct{})
+						set = newSharedResultIDSet()
 						c.egraphResultsByDigest[dig] = set
 					}
-					set[resultID] = struct{}{}
+					set.Insert(resultID)
 				}
 			}
 		}

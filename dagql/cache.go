@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	set "github.com/hashicorp/go-set/v3"
 	"golang.org/x/sync/errgroup"
 	_ "modernc.org/sqlite"
 
@@ -602,7 +603,7 @@ type Cache struct {
 	egraphTerms map[egraphTermID]*egraphTerm
 
 	// term digest -> all terms with that digest
-	egraphTermsByTermDigest map[string]map[egraphTermID]struct{}
+	egraphTermsByTermDigest map[string]*set.TreeSet[egraphTermID]
 
 	//
 	// indexes for results
@@ -634,7 +635,7 @@ type Cache struct {
 
 	// Reverse index from any known result-associated digest to materialized results.
 	// This includes request recipe+extra digests and result recipe+extra digests.
-	egraphResultsByDigest map[string]map[sharedResultID]struct{}
+	egraphResultsByDigest map[string]*set.TreeSet[sharedResultID]
 
 	// Explicit retained-root edges for persisted results.
 	persistedEdgesByResult map[sharedResultID]persistedEdge
