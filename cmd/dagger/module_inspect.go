@@ -553,7 +553,28 @@ func (m *moduleDef) HasCoreFunction(name string) bool {
 }
 
 func (m *moduleDef) HasMainFunction(name string) bool {
-	return m.HasFunction(m.MainObject.AsFunctionProvider(), name)
+	return m.GetMainFunction(name) != nil
+}
+
+// GetMainFunction returns a function from the main object that belongs to
+// the module itself (not a dependency constructor). When entrypoint proxying
+// promotes methods onto Query, dep constructors also live on Query but must
+// not be treated as "main" functions.
+func (m *moduleDef) GetMainFunction(name string) *modFunction {
+	fp := m.MainObject.AsFunctionProvider()
+	if fp == nil {
+		return nil
+	}
+	fn, _ := m.GetFunction(fp, name)
+	if fn == nil {
+		return nil
+	}
+	// A function belongs to this module if it has no source module (core or
+	// non-proxied) or its source module matches our own name.
+	if fn.SourceModuleName != "" && fn.SourceModuleName != m.Name {
+		return nil
+	}
+	return fn
 }
 
 // HasFunction checks if an object has a function with the given name.
