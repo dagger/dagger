@@ -2,8 +2,6 @@ package llbtodagger
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -474,35 +472,4 @@ func chownOwnerString(chown *pb.ChownOpt) (string, error) {
 		}
 	}
 	return fmt.Sprintf("%s:%s", user, group), nil
-}
-
-func isEmptyNamedUser(user *pb.UserOpt) bool {
-	if user == nil {
-		return false
-	}
-	byName, ok := user.User.(*pb.UserOpt_ByName)
-	if !ok {
-		return false
-	}
-	if byName.ByName == nil {
-		return false
-	}
-	return strings.TrimSpace(byName.ByName.Name) == ""
-}
-
-func userOptToString(user *pb.UserOpt) (string, error) {
-	if user == nil {
-		return "", nil
-	}
-	switch v := user.User.(type) {
-	case *pb.UserOpt_ByID:
-		return strconv.FormatUint(uint64(v.ByID), 10), nil
-	case *pb.UserOpt_ByName:
-		if v.ByName == nil || strings.TrimSpace(v.ByName.Name) == "" {
-			return "", fmt.Errorf("empty named user is unsupported")
-		}
-		return strings.TrimSpace(v.ByName.Name), nil
-	default:
-		return "", fmt.Errorf("unknown user option type")
-	}
 }

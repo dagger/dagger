@@ -884,7 +884,6 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 					err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, src.Dir))
 					return err
 				}
-
 			}
 			if err := fscopy.Copy(ctx, mntedSrcPath, srcPath, copyDest, joinedDest, opts...); err != nil {
 				err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, src.Dir))
@@ -1396,7 +1395,6 @@ func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRe
 		if parentPath == "/" {
 			return nil
 		}
-		panic("this right here")
 		return &os.PathError{Op: "lstat", Path: parentPath, Err: syscall.ENOENT}
 	}
 
