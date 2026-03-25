@@ -386,6 +386,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			Type:        &Query{},
 			Module:      obj.Module.IDModule(),
 			Args:        dagql.NewInputSpecs(constructorArgs...),
+			DoNotCache:  "Pure routing; the inner module constructor has its own caching policy.",
 		}
 		dag.Root().ObjectType().Extend(
 			withSpec,
