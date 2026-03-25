@@ -189,30 +189,6 @@ func (op DangEvalOp) eval(
 		return nil, fmt.Errorf("decode schema: %w", err)
 	}
 
-	// Ensure @check and @generate directives are recognized by the Dang
-	// parser, even if the schema doesn't already define them (older engines).
-	var hasCheck, hasGenerate bool
-	for _, dir := range intro.Schema.Directives {
-		if dir.Name == "check" {
-			hasCheck = true
-		}
-		if dir.Name == "generate" {
-			hasGenerate = true
-		}
-	}
-	if !hasCheck {
-		intro.Schema.Directives = append(intro.Schema.Directives, &introspection.DirectiveDef{
-			Name:      "check",
-			Locations: []string{"FIELD_DEFINITION"},
-		})
-	}
-	if !hasGenerate {
-		intro.Schema.Directives = append(intro.Schema.Directives, &introspection.DirectiveDef{
-			Name:      "generate",
-			Locations: []string{"FIELD_DEFINITION"},
-		})
-	}
-
 	ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
 		Name:       "Dagger",
 		Client:     gqlClient,
