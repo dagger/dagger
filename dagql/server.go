@@ -45,7 +45,7 @@ type Server struct {
 	schemaOnces   map[call.View]*sync.Once
 	schemaLock    *sync.Mutex
 
-	installLock  *sync.Mutex
+	installLock  *sync.RWMutex
 	installHooks []InstallHook
 
 	// View is the default view that is applied to queries on this server.
@@ -111,7 +111,7 @@ func newBlankServer() *Server {
 		scalars:       map[string]ScalarType{},
 		typeDefs:      map[string]TypeDef{},
 		directives:    map[string]DirectiveSpec{},
-		installLock:   &sync.Mutex{},
+		installLock:   &sync.RWMutex{},
 		schemas:       make(map[call.View]*ast.Schema),
 		schemaDigests: make(map[call.View]digest.Digest),
 		schemaOnces:   make(map[call.View]*sync.Once),
@@ -127,8 +127,8 @@ func (s *Server) Fork(root Typed) (*Server, error) {
 	out.telemetry = s.telemetry
 	out.View = s.View
 
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 
 	for name, scalar := range s.scalars {
 		out.scalars[name] = scalar
@@ -469,24 +469,24 @@ func (s *Server) InstallTypeDef(def TypeDef) {
 
 // ObjectType returns the ObjectType with the given name, if it exists.
 func (s *Server) ObjectType(name string) (ObjectType, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 	t, ok := s.objects[name]
 	return t, ok
 }
 
 // ScalarType returns the ScalarType with the given name, if it exists.
 func (s *Server) ScalarType(name string) (ScalarType, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 	t, ok := s.scalars[name]
 	return t, ok
 }
 
 // InputType returns the InputType with the given name, if it exists.
 func (s *Server) TypeDef(name string) (TypeDef, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 	t, ok := s.typeDefs[name]
 	return t, ok
 }
@@ -515,6 +515,8 @@ func (s *Server) Schema() *ast.Schema {
 }
 
 func (s *Server) SchemaForView(view call.View) *ast.Schema {
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 	s.schemaLock.Lock()
 	defer s.schemaLock.Unlock()
 
