@@ -1,12 +1,15 @@
 import contextlib
 import dataclasses
+import io
 import json
 import logging
+import os
 import subprocess
+import threading
 import time
 from importlib import metadata
 from pathlib import Path
-from typing import cast
+from typing import TextIO, cast
 
 from dagger._managers import SyncResource
 from dagger.client._session import ConnectParams
@@ -81,6 +84,25 @@ def start_cli_session_sync(cfg: Config, path: str):
         raise SessionError(e) from e
 
 
+def _has_fileno(stream: TextIO) -> bool:
+    """Check if a stream has a real file descriptor."""
+    try:
+        stream.fileno()
+    except (io.UnsupportedOperation, OSError, AttributeError):
+        return False
+    return True
+
+
+def _forward_stream(read_fd: int, output: TextIO) -> None:
+    """Forward data from a pipe file descriptor to a TextIO stream."""
+    with os.fdopen(read_fd, "r") as reader:
+        for line in reader:
+            try:
+                output.write(line)
+            except (ValueError, OSError):
+                break
+
+
 def run(cfg: Config, path: str) -> subprocess.Popen[str]:
     args = [
         path,
@@ -94,6 +116,19 @@ def run(cfg: Config, path: str) -> subprocess.Popen[str]:
         args.extend(["--workdir", str(Path(cfg.workdir).absolute())])
     if cfg.config_path:
         args.extend(["--project", str(Path(cfg.config_path).absolute())])
+
+    # If log_output doesn't have a real file descriptor (e.g. StringIO),
+    # use a pipe and forward output in a background thread.
+    stderr = cfg.log_output or subprocess.PIPE
+    pipe_write_fd = None
+    if cfg.log_output is not None and not _has_fileno(cfg.log_output):
+        read_fd, pipe_write_fd = os.pipe()
+        stderr = pipe_write_fd
+        threading.Thread(
+            target=_forward_stream,
+            args=(read_fd, cfg.log_output),
+            daemon=True,
+        ).start()
 
     # Retry starting if "text file busy" error is hit. That error can happen
     # due to a flaw in how Linux works: if any fork of this process happens
@@ -110,7 +145,7 @@ def run(cfg: Config, path: str) -> subprocess.Popen[str]:
                 bufsize=0,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=cfg.log_output or subprocess.PIPE,
+                stderr=stderr,
                 encoding="utf-8",
             )
         except OSError as e:  # noqa: PERF203
@@ -119,8 +154,14 @@ def run(cfg: Config, path: str) -> subprocess.Popen[str]:
             logger.warning("file busy, retrying in 0.1 seconds...")
             time.sleep(0.1)
         else:
+            # Close parent's copy of the write end so the forwarding thread
+            # gets EOF when the subprocess exits.
+            if pipe_write_fd is not None:
+                os.close(pipe_write_fd)
             return proc
 
+    if pipe_write_fd is not None:
+        os.close(pipe_write_fd)
     msg = "CLI busy"
     raise SessionError(msg)
 
