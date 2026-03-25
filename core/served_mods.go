@@ -44,24 +44,13 @@ func (s *ServedMods) Add(mod Mod, opts InstallOpts) {
 	for i, e := range s.entries {
 		if e.mod.Name() == mod.Name() {
 			promoted := e.opts
-			replaced := false
 			if promoted.SkipConstructor && !opts.SkipConstructor {
 				promoted.SkipConstructor = false
 			}
 			if !promoted.Entrypoint && opts.Entrypoint {
 				promoted.Entrypoint = true
 			}
-			// When the existing entry was added as a dependency
-			// (SkipConstructor) and the incoming module is the
-			// authoritative workspace/toolchain copy, replace the
-			// module pointer so that workspace-level customizations
-			// (LegacyDefaultPath, Ignore, WorkspaceConfig, etc.)
-			// are preserved.
-			if e.opts.SkipConstructor && !opts.SkipConstructor {
-				s.entries[i].mod = mod
-				replaced = true
-			}
-			if promoted != e.opts || replaced {
+			if promoted != e.opts {
 				s.entries[i].opts = promoted
 				s.invalidateCache()
 			}

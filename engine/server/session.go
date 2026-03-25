@@ -2157,12 +2157,10 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
-	for i, load := range loads {
-		if err := srv.serveResolvedModuleLoad(client, resolvedLoads[i]); err != nil {
-			client.modulesErr = moduleLoadErr(load, err)
-			client.modulesLoaded = true
-			return client.modulesErr
-		}
+	if err := srv.serveAllResolvedModuleLoads(client, loads, resolvedLoads); err != nil {
+		client.modulesErr = err
+		client.modulesLoaded = true
+		return client.modulesErr
 	}
 
 	client.modulesLoaded = true
@@ -2245,6 +2243,49 @@ func (srv *Server) serveResolvedModuleLoad(client *daggerClient, load resolvedMo
 		}
 	}
 	return srv.serveModuleWithDeps(client, load.primary, load.primaryEntrypoint)
+}
+
+// serveAllResolvedModuleLoads serves all resolved modules in two passes:
+//  1. Primary modules first (toolchains, blueprints, -m modules) so their
+//     authoritative copies with workspace customizations are registered.
+//  2. Dependencies second (SkipConstructor) so they only contribute types
+//     without overriding the primary copies.
+//
+// This prevents a dependency copy (e.g. "go" as a dep of "engine-dev")
+// from shadowing the toolchain copy (e.g. "go" with workspace customizations).
+func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
+	// Pass 1: serve all primary modules and their related modules (blueprints,
+	// toolchains-of-toolchains) WITHOUT their transitive dependencies.
+	for i := range loads {
+		load := resolved[i]
+		for _, related := range load.related {
+			if err := srv.serveModule(client, related.mod, core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
+				return fmt.Errorf("error serving related module %s: %w", related.mod.Name(), err)
+			}
+		}
+		if err := srv.serveModule(client, load.primary, core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
+			return moduleLoadErr(loads[i], err)
+		}
+	}
+
+	// Pass 2: serve all dependencies (types only, no constructors).
+	for i := range loads {
+		load := resolved[i]
+		for _, related := range load.related {
+			for _, dep := range related.mod.Deps.Mods {
+				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
+					return fmt.Errorf("error serving dependency %s of related module %s: %w", dep.Name(), related.mod.Name(), err)
+				}
+			}
+		}
+		for _, dep := range load.primary.Deps.Mods {
+			if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
+				return fmt.Errorf("error serving dependency %s of module %s: %w", dep.Name(), load.primary.Name(), err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModule) []moduleLoadRequest {
