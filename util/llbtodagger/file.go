@@ -429,7 +429,7 @@ func applyCopy(
 		args = append(args, argInt("permissions", int64(cp.Mode)))
 	}
 
-	return appendCall(baseID, directoryType(), "__withDirectoryDockerfilCompat", args...), baseContainerID, nil
+	return appendCall(baseID, directoryType(), "__withDirectoryDockerfileCompat", args...), baseContainerID, nil
 }
 
 func chownUserOptString(uOpt *pb.UserOpt) (string, error) {

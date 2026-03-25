@@ -156,7 +156,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
-		dagql.NodeFunc("__withDirectoryDockerfilCompat", DagOpDirectoryWrapper(srv, s.withDirectoryDockerfileCompat, WithPathFn(keepParentDir[WithDirectoryDockerfileCompatArgs]))).
+		dagql.NodeFunc("__withDirectoryDockerfileCompat", DagOpDirectoryWrapper(srv, s.withDirectoryDockerfileCompat, WithPathFn(keepParentDir[WithDirectoryDockerfileCompatArgs]))).
 			View(AllVersion).
 			Doc(`Return a snapshot with a directory added`).
 			Args(
