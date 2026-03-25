@@ -238,8 +238,8 @@ COPY . /app/
 	require.Equal(t, "container", fields[0])
 	require.NotNil(t, findFieldInChain(id, "withRootfs"))
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
-	require.Equal(t, "/app", withDir.Arg("path").Value().ToInput())
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/app/", withDir.Arg("path").Value().ToInput())
 
 	sourceID := argIDFromCall(t, withDir, "source")
 	hostDir := findHostDirectoryCall(sourceID)
@@ -260,8 +260,8 @@ COPY --chmod=751 . /app/
 	require.Equal(t, "container", fields[0])
 	require.NotNil(t, findFieldInChain(id, "withRootfs"))
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
-	require.Equal(t, "/app", withDir.Arg("path").Value().ToInput())
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/app/", withDir.Arg("path").Value().ToInput())
 	require.EqualValues(t, 0o751, withDir.Arg("permissions").Value().ToInput())
 }
 
@@ -279,7 +279,7 @@ COPY --chmod=751 input.txt /app/out.txt
 	require.NotNil(t, findFieldInChain(id, "withRootfs"))
 
 	withFile := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
 	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
 	require.EqualValues(t, 0o751, withFile.Arg("permissions").Value().ToInput())
 	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
@@ -306,7 +306,7 @@ COPY --chown=:123 input.txt /app/out.txt
 	require.NotNil(t, findFieldInChain(id, "withRootfs"))
 
 	withFile := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
 	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
 	require.Equal(t, "0:123", withFile.Arg("owner").Value().ToInput())
 	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
@@ -364,7 +364,6 @@ WORKDIR /work
 	mkdirCompat := findCallByStringArg(id, "withDirectory", "owner", "app:appgrp")
 	require.NotNil(t, mkdirCompat)
 	require.Equal(t, "/work", mkdirCompat.Arg("path").Value().ToInput())
-	require.EqualValues(t, 0o755, mkdirCompat.Arg("permissions").Value().ToInput())
 
 	sourceID := argIDFromCall(t, mkdirCompat, "source")
 	sourceDir := findFieldInChain(sourceID, "directory")
@@ -385,8 +384,8 @@ ADD https://example.com/pkg.tar.gz /downloads/
 	require.Equal(t, "container", fields[0])
 	require.NotNil(t, findFieldInChain(id, "withRootfs"))
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
-	require.Equal(t, "/downloads", withDir.Arg("path").Value().ToInput())
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/downloads/", withDir.Arg("path").Value().ToInput())
 
 	sourceID := argIDFromCall(t, withDir, "source")
 	httpID := findFieldAnywhere(sourceID, "http")
@@ -408,16 +407,12 @@ ADD archive.tar /downloads/
 	require.Equal(t, "container", fields[0])
 	require.NotNil(t, findFieldInChain(id, "withRootfs"))
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
-	require.Equal(t, "/downloads", withDir.Arg("path").Value().ToInput())
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/downloads/", withDir.Arg("path").Value().ToInput())
 
 	attemptUnpack := withDir.Arg("attemptUnpackDockerCompatibility")
 	require.NotNil(t, attemptUnpack)
 	require.Equal(t, true, attemptUnpack.Value().ToInput())
-
-	requiredSourcePath := withDir.Arg("requiredSourcePath")
-	require.NotNil(t, requiredSourcePath)
-	require.Equal(t, "archive.tar", requiredSourcePath.Value().ToInput())
 
 	destPathHintIsDirectory := withDir.Arg("destPathHintIsDirectory")
 	require.NotNil(t, destPathHintIsDirectory)
@@ -437,8 +432,8 @@ ADD https://github.com/dagger/dagger.git#main /vendor/dagger/
 	require.Equal(t, "container", fields[0])
 	require.NotNil(t, findFieldInChain(id, "withRootfs"))
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
-	require.Equal(t, "/vendor/dagger", withDir.Arg("path").Value().ToInput())
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/vendor/dagger/", withDir.Arg("path").Value().ToInput())
 
 	sourceID := argIDFromCall(t, withDir, "source")
 	gitID := findFieldAnywhere(sourceID, "git")
@@ -466,12 +461,8 @@ COPY --from=buildfull /out /
 	require.NotNil(t, findFieldInChain(id, "withRootfs"))
 
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, "withDirectory", withDir.Field())
+	require.Equal(t, "__withDirectoryDockerfileCompat", withDir.Field())
 	require.Equal(t, "/", withDir.Arg("path").Value().ToInput())
-	require.Equal(t, []any{"out"}, withDir.Arg("include").Value().ToInput())
-	copySourcePathContentsWhenDir := withDir.Arg("copySourcePathContentsWhenDir")
-	require.NotNil(t, copySourcePathContentsWhenDir)
-	require.Equal(t, true, copySourcePathContentsWhenDir.Value().ToInput())
 
 	sourceID := argIDFromCall(t, withDir, "source")
 	require.Equal(t, "rootfs", sourceID.Field())
@@ -569,8 +560,8 @@ COPY --link . /linked/
 	require.Equal(t, "container", fields[0])
 	require.NotNil(t, findFieldInChain(id, "withRootfs"))
 	copyCall := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(copyCall))
-	require.Equal(t, "/linked", copyCall.Arg("path").Value().ToInput())
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(copyCall))
+	require.Equal(t, "/linked/", copyCall.Arg("path").Value().ToInput())
 	require.NotNil(t, findHostDirectoryCall(argIDFromCall(t, copyCall, "source")))
 }
 

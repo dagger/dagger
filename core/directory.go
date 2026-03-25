@@ -730,12 +730,6 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 		return nil, fmt.Errorf("failed to get source directory ref: %w", err)
 	}
 
-	// if requiredSourcePath != "" {
-	// 	if err := ensureRequiredCopySourcePathExists(ctx, srcRef, src.Dir, requiredSourcePath); err != nil {
-	// 		return nil, err
-	// 	}
-	// }
-
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
 	if !ok {
 		return nil, fmt.Errorf("no buildkit session group in context")

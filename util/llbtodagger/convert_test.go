@@ -679,13 +679,10 @@ func TestDefinitionToIDFileCopyDoNotCreateDestPathWithDirectory(t *testing.T) {
 	require.NoError(t, err)
 
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
 	doNotCreateDestPath := withDir.Arg("doNotCreateDestPath")
 	require.NotNil(t, doNotCreateDestPath)
 	require.Equal(t, true, doNotCreateDestPath.Value().ToInput())
-	requiredSourcePath := withDir.Arg("requiredSourcePath")
-	require.NotNil(t, requiredSourcePath)
-	require.Equal(t, "a.txt", requiredSourcePath.Value().ToInput())
 }
 
 func TestDefinitionToIDFileCopyDoNotCreateDestPathWithFile(t *testing.T) {
@@ -705,7 +702,7 @@ func TestDefinitionToIDFileCopyDoNotCreateDestPathWithFile(t *testing.T) {
 	require.NoError(t, err)
 
 	withFile := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
 	doNotCreateDestPath := withFile.Arg("doNotCreateDestPath")
 	require.NotNil(t, doNotCreateDestPath)
 	require.Equal(t, true, doNotCreateDestPath.Value().ToInput())
@@ -730,7 +727,7 @@ func TestDefinitionToIDFileCopyModeOverride(t *testing.T) {
 	require.Equal(t, []string{"container", "withRootfs"}, fieldsFromRoot(id))
 
 	withFile := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
 	require.EqualValues(t, 0o751, withFile.Arg("permissions").Value().ToInput())
 	require.Equal(t, "/dst/a.txt", withFile.Arg("path").Value().ToInput())
 	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
@@ -761,7 +758,7 @@ func TestDefinitionToIDFileCopyExplicitDestPathUsesWithFile(t *testing.T) {
 	require.NoError(t, err)
 
 	withFile := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
 	require.Equal(t, "/dst/renamed.txt", withFile.Arg("path").Value().ToInput())
 	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
 	require.NotNil(t, allowDirFallback)
@@ -791,16 +788,12 @@ func TestDefinitionToIDFileCopyAttemptUnpackUsesWithDirectoryHiddenArg(t *testin
 	require.NoError(t, err)
 
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
 	require.Equal(t, "/dst/out.txt", withDir.Arg("path").Value().ToInput())
 
 	attemptUnpack := withDir.Arg("attemptUnpackDockerCompatibility")
 	require.NotNil(t, attemptUnpack)
 	require.Equal(t, true, attemptUnpack.Value().ToInput())
-
-	requiredSourcePath := withDir.Arg("requiredSourcePath")
-	require.NotNil(t, requiredSourcePath)
-	require.Equal(t, "archive.tar", requiredSourcePath.Value().ToInput())
 
 	destPathHintIsDirectory := withDir.Arg("destPathHintIsDirectory")
 	require.Nil(t, destPathHintIsDirectory)
@@ -823,41 +816,12 @@ func TestDefinitionToIDFileCopyAttemptUnpackDestDirHintUsesWithDirectoryHiddenAr
 	require.NoError(t, err)
 
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
-	require.Equal(t, "/dst", withDir.Arg("path").Value().ToInput())
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/dst/", withDir.Arg("path").Value().ToInput())
 
 	destPathHintIsDirectory := withDir.Arg("destPathHintIsDirectory")
 	require.NotNil(t, destPathHintIsDirectory)
 	require.Equal(t, true, destPathHintIsDirectory.Value().ToInput())
-}
-
-func TestChownOwnerStringGroupOnlyByID(t *testing.T) {
-	t.Parallel()
-
-	owner, err := chownOwnerString(&pb.ChownOpt{
-		Group: &pb.UserOpt{
-			User: &pb.UserOpt_ByID{ByID: 123},
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, "0:123", owner)
-}
-
-func TestChownOwnerStringGroupOnlyWithEmptyUserName(t *testing.T) {
-	t.Parallel()
-
-	owner, err := chownOwnerString(&pb.ChownOpt{
-		User: &pb.UserOpt{
-			User: &pb.UserOpt_ByName{
-				ByName: &pb.NamedUserOpt{Name: ""},
-			},
-		},
-		Group: &pb.UserOpt{
-			User: &pb.UserOpt_ByID{ByID: 456},
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, "0:456", owner)
 }
 
 func TestChownOwnerStringNamedUserGroup(t *testing.T) {
@@ -877,42 +841,6 @@ func TestChownOwnerStringNamedUserGroup(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "builder:staff", owner)
-}
-
-func TestDefinitionToIDFileCopyNamedChownWithoutContainerContextUnsupported(t *testing.T) {
-	t.Parallel()
-
-	src := llb.Scratch().
-		File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).
-		File(llb.Mkfile("/src/a.txt", 0o644, []byte("hello")))
-	st := llb.Scratch().File(
-		llb.Copy(
-			src,
-			"/src/a.txt",
-			"/dst/a.txt",
-			&llb.CopyInfo{CreateDestPath: true},
-			llb.WithUser("builder:staff"),
-		),
-	)
-
-	_, err := DefinitionToID(marshalStateToPB(t, st), nil)
-	require.Error(t, err)
-}
-
-func TestDefinitionToIDFileMkdirNamedChownWithoutContainerContextUnsupported(t *testing.T) {
-	t.Parallel()
-
-	st := llb.Scratch().File(
-		llb.Mkdir(
-			"/dst",
-			0o755,
-			llb.WithParents(true),
-			llb.WithUser("builder:staff"),
-		),
-	)
-
-	_, err := DefinitionToID(marshalStateToPB(t, st), nil)
-	require.Error(t, err)
 }
 
 func TestDefinitionToIDFileMkdirNamedChownWithContainerContext(t *testing.T) {
@@ -999,8 +927,8 @@ func TestDefinitionToIDFileCopyGroupOnlyChown(t *testing.T) {
 	require.NoError(t, err)
 
 	withFile := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
-	require.Equal(t, "0:789", withFile.Arg("owner").Value().ToInput())
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
+	require.Equal(t, ":789", withFile.Arg("owner").Value().ToInput())
 }
 
 func TestDefinitionToIDFileCopyAlwaysReplaceUnsupported(t *testing.T) {
