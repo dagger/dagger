@@ -796,9 +796,9 @@ func (DockerfileSuite) TestUnpack(ctx context.Context, t *testctx.T) {
 			`FROM `+golangImage+`
 WORKDIR /work
 ADD mydir.tar.gz the-dir
-RUN ls -la > bar
+RUN test -f the-dir/mydir/data
 `)
-	s, err := dir.DockerBuild().File("bar").Contents(ctx)
+	s, err := dir.DockerBuild().File("the-dir/mydir/data").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, s, "foo\n")
+	require.Equal(t, s, "bigbigbigbig\n")
 }

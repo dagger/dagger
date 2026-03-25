@@ -832,11 +832,19 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 		}
 
 		if attemptUnpackDockerCompatibility {
+			destPathHintIsDirectory := strings.HasSuffix(resolvedCopyDest, "/") // TODO is this correct?
+			fmt.Printf("ACB attemptCopyArchiveUnpack happening with destPathHintIsDirectory=%v\n", destPathHintIsDirectory)
+			srcPathCopy := srcPath
+			if src.Dir != "" && src.Dir != "/" {
+				srcPathCopy = src.Dir + "/" + srcPath
+			}
+
 			didUnpack, err := attemptCopyArchiveUnpack(
 				ctx,
-				effectiveSrcPath,
+				mntedSrcPath,
+				srcPathCopy,
 				resolvedCopyDest,
-				effectiveInclude,
+				filter.Include,
 				filter.Exclude,
 				filter.Gitignore,
 				ownership,
@@ -850,6 +858,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 			if didUnpack {
 				return nil
 			}
+			fmt.Printf("ACB attemptCopyArchiveUnpack did not unpack\n")
 		}
 
 		pathsToCopy := []string{src.Dir}
@@ -1180,7 +1189,8 @@ func copyFile(srcPath, dstPath string, tryHardlink bool) (err error) {
 
 func attemptCopyArchiveUnpack(
 	ctx context.Context,
-	srcRoot string,
+	mntedSrcPath string,
+	srcPath string,
 	destPath string,
 	includePatterns []string,
 	excludePatterns []string,
@@ -1190,21 +1200,20 @@ func attemptCopyArchiveUnpack(
 	idmap *idtools.IdentityMapping,
 	destPathHintIsDirectory bool,
 ) (bool, error) {
-	// Keep default path untouched for anything non-canonical to this compatibility mode.
-	if useGitignore || len(excludePatterns) > 0 || len(includePatterns) == 0 {
+	if useGitignore || len(excludePatterns) > 0 || len(includePatterns) > 0 {
+		fmt.Printf("ACB returned here1 %v %v %v\n", useGitignore, excludePatterns, includePatterns)
 		return false, nil
 	}
 
-	matches, ok, err := resolveAttemptUnpackMatches(srcRoot, includePatterns)
+	fmt.Printf("ACB attemptCopyArchiveUnpack %s\n", srcPath)
+	matches, err := fscopy.ResolveWildcards(mntedSrcPath, srcPath, true) // todo use action.FollowSymlink instead of true
 	if err != nil {
 		return false, err
 	}
-	if !ok {
-		return false, nil
-	}
+	fmt.Printf("ACB got matches %v\n", matches)
+
 	if len(matches) == 0 {
-		// No matches means no copy work to do; handled here to keep fallback copy from
-		// re-applying broader include semantics.
+		fmt.Printf("ACB returned here2\n")
 		return true, nil
 	}
 
@@ -1219,11 +1228,12 @@ func attemptCopyArchiveUnpack(
 	}
 
 	for _, src := range matches {
-		resolvedSrcPath, err := containerdfs.RootPath(srcRoot, src)
+		resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src)
 		if err != nil {
 			return false, err
 		}
 
+		fmt.Printf("ACB unpackArchiveFile %s to %s\n", resolvedSrcPath, destPath)
 		unpacked, err := unpackArchiveFile(resolvedSrcPath, destPath, ownership, idmap)
 		if err != nil {
 			return false, err
@@ -1242,7 +1252,7 @@ func attemptCopyArchiveUnpack(
 			}
 		}
 
-		if err := fscopy.Copy(ctx, srcRoot, src, destPath, ".", opts...); err != nil {
+		if err := fscopy.Copy(ctx, srcPath, src, destPath, ".", opts...); err != nil {
 			return false, err
 		}
 	}
@@ -1360,6 +1370,7 @@ func resolveAttemptUnpackMatches(srcRoot string, includePatterns []string) ([]st
 }
 
 func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, idmap *idtools.IdentityMapping) (bool, error) {
+	fmt.Printf("unpackArchiveFile %s\n", srcPath)
 	if !isArchivePath(srcPath) {
 		return false, nil
 	}
@@ -1371,10 +1382,12 @@ func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, id
 		}
 	}
 
+	fmt.Printf("unpackArchiveFile mkdirall %s\n", destPath)
 	if err := fscopy.MkdirAll(destPath, 0o755, chowner, nil); err != nil {
 		return false, err
 	}
 
+	fmt.Printf("unpackArchiveFile open %s\n", srcPath)
 	file, err := os.Open(srcPath)
 	if err != nil {
 		return false, err
@@ -1387,6 +1400,7 @@ func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, id
 	if idmap != nil {
 		opts.IDMap = *idmap
 	}
+	fmt.Printf("chrootarchive.Untar dest=%s\n", destPath)
 	if err := chrootarchive.Untar(file, destPath, opts); err != nil { //nolint:staticcheck
 		return false, err
 	}
@@ -1394,28 +1408,34 @@ func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, id
 }
 
 func isArchivePath(path string) bool {
+	fmt.Printf("ACB isArchivePath %s\n", path)
 	fi, err := os.Lstat(path)
 	if err != nil {
+		fmt.Printf("ACB isArchivePath err1 %v\n", err)
 		return false
 	}
 	if fi.Mode()&os.ModeType != 0 {
+		fmt.Printf("ACB here1\n")
 		return false
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
+		fmt.Printf("ACB isArchivePath err2 %v\n", err)
 		return false
 	}
 	defer file.Close()
 
 	rdr, err := archive.DecompressStream(file) //nolint:staticcheck
 	if err != nil {
+		fmt.Printf("ACB isArchivePath err3 %v\n", err)
 		return false
 	}
 	defer rdr.Close()
 
 	tr := tar.NewReader(rdr)
 	_, err = tr.Next()
+	fmt.Printf("ACB isArchivePath err4 %v\n", err)
 	return err == nil
 }
 
