@@ -316,22 +316,30 @@ func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 		doc.Add("Module", meta.String())
 	}
 
-	fn := m.MainObject.AsObject.Constructor
-	usage := h.FunctionUseLine(m, fn)
+	// When entrypoint proxying is active, MainObject is Query and the
+	// constructor is the synthetic `with` function. Look up the module's
+	// named main object to get the original constructor and its functions.
+	constr := m.MainObject.AsObject.Constructor
+	mainObj := m.GetObject(m.Name)
+	if mainObj != nil && mainObj.Constructor != nil {
+		constr = mainObj.Constructor
+	}
 
-	if len(fn.Args) > 0 {
+	usage := h.FunctionUseLine(m, constr)
+
+	if len(constr.Args) > 0 {
 		constructor := new(strings.Builder)
 		constructor.WriteString("Usage: ")
 		constructor.WriteString(usage)
 
-		if fn.Description != "" {
+		if constr.Description != "" {
 			constructor.WriteString("\n\n")
-			constructor.WriteString(fn.Description)
+			constructor.WriteString(constr.Description)
 		}
 
 		doc.Add("Entrypoint", constructor.String())
 
-		if args := fn.RequiredArgs(); len(args) > 0 {
+		if args := constr.RequiredArgs(); len(args) > 0 {
 			doc.AddSection(
 				"Required Arguments",
 				nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
@@ -339,7 +347,7 @@ func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 				}),
 			)
 		}
-		if args := fn.OptionalArgs(); len(args) > 0 {
+		if args := constr.OptionalArgs(); len(args) > 0 {
 			doc.AddSection(
 				"Optional Arguments",
 				nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
@@ -349,7 +357,14 @@ func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 		}
 	}
 
-	if fns := m.MainObject.AsFunctionProvider().GetFunctions(); len(fns) > 0 {
+	// Show the module's own functions, not all of Query's.
+	var fns []*modFunction
+	if mainObj != nil {
+		fns = mainObj.GetFunctions()
+	} else {
+		fns = m.MainObject.AsFunctionProvider().GetFunctions()
+	}
+	if len(fns) > 0 {
 		doc.Add(
 			"Available Functions",
 			nameShortWrapped(fns, func(f *modFunction) (string, string) {

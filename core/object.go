@@ -393,9 +393,15 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 	// entrypoint proxy resolvers to forward to the constructor.
 	// Only installed when the constructor has arguments.
 	if len(constructorArgs) > 0 {
+		// Use the original constructor's description if available,
+		// since `with` IS the user-facing constructor.
+		withDesc := obj.TypeDef.Constructor.Value.Description
+		if withDesc == "" {
+			withDesc = fmt.Sprintf("Configure the %s constructor arguments.", obj.Module.Name())
+		}
 		withSpec := dagql.FieldSpec{
 			Name:        "with",
-			Description: fmt.Sprintf("Configure the %s constructor arguments.", obj.Module.Name()),
+			Description: withDesc,
 			Type:        &Query{},
 			Module:      obj.Module.IDModule(),
 			Args:        dagql.NewInputSpecs(constructorArgs...),

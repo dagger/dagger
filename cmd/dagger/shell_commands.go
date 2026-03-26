@@ -356,6 +356,15 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 				// Document type
 				// Example: `container | .help`
 				if len(args) == 0 {
+					// When entrypoint proxying is active, the constructor
+					// returns Query. Show the module's named main object
+					// type instead so `. | .help` documents the module
+					// object, not Query.
+					if t.AsFunctionProvider() != nil && t.AsFunctionProvider().ProviderName() == "Query" && def.HasModule() {
+						if mt := def.GetTypeDef(gqlObjectName(def.Name)); mt != nil {
+							t = mt
+						}
+					}
 					return h.Print(ctx, shellTypeDoc(t))
 				}
 
