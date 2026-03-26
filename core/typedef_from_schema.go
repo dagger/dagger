@@ -130,7 +130,7 @@ func TypeDefsFromSchema(dag *dagql.Server, filterSchema map[string]*ast.Definiti
 			})
 
 		case introspection.TypeKindInterface:
-			ifaceDef, ok, err := introspectionInterfaceToTypeDef(introspectionType, dag)
+			ifaceDef, ok, err := introspectionInterfaceToTypeDef(introspectionType)
 			if err != nil {
 				return nil, err
 			}
@@ -284,7 +284,7 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 
 // introspectionInterfaceToTypeDef converts an introspection interface type to a core TypeDef.
 // Returns (nil, false, nil) if the type should be skipped.
-func introspectionInterfaceToTypeDef(introspectionType *introspection.Type, dag *dagql.Server) (*TypeDef, bool, error) {
+func introspectionInterfaceToTypeDef(introspectionType *introspection.Type) (*TypeDef, bool, error) {
 	typeDef := &InterfaceTypeDef{
 		Name:        introspectionType.Name,
 		Description: unformatGqlDescription(introspectionType.Description),
