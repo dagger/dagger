@@ -1857,7 +1857,7 @@ func (m *Hello) Hello() string {
 		require.NoError(t, err)
 		require.Contains(t, out, "container") // stdlib
 		require.Contains(t, out, "directory") // stdlib
-		require.Contains(t, out, "Use \".help <command>\" for more information.")
+		require.Contains(t, out, "Use \".help <command> | <function>\" for more information.")
 	})
 
 	t.Run("core types are still available and working", func(ctx context.Context, t *testctx.T) {
