@@ -69,7 +69,7 @@ func TypeDefsFromSchema(dag *dagql.Server, filterSchema map[string]*ast.Definiti
 			for _, introspectionField := range introspectionType.InputFields {
 				field := &FieldTypeDef{
 					Name:        introspectionField.Name,
-					Description: introspectionField.Description,
+					Description: unformatGqlDescription(introspectionField.Description),
 					Deprecated:  introspectionField.DeprecationReason,
 				}
 				fieldType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
@@ -91,7 +91,7 @@ func TypeDefsFromSchema(dag *dagql.Server, filterSchema map[string]*ast.Definiti
 		case introspection.TypeKindScalar:
 			typedef := &ScalarTypeDef{
 				Name:        introspectionType.Name,
-				Description: introspectionType.Description,
+				Description: unformatGqlDescription(introspectionType.Description),
 			}
 
 			// Check for source module via @sourceMap directive on the type.
@@ -107,7 +107,7 @@ func TypeDefsFromSchema(dag *dagql.Server, filterSchema map[string]*ast.Definiti
 		case introspection.TypeKindEnum:
 			typedef := &EnumTypeDef{
 				Name:        introspectionType.Name,
-				Description: introspectionType.Description,
+				Description: unformatGqlDescription(introspectionType.Description),
 			}
 
 			// Check for source module via @sourceMap directive on the type.
@@ -119,7 +119,7 @@ func TypeDefsFromSchema(dag *dagql.Server, filterSchema map[string]*ast.Definiti
 				typedef.Members = append(typedef.Members, &EnumMemberTypeDef{
 					Name:        value.Name,
 					Value:       value.Directives.EnumValue(),
-					Description: value.Description,
+					Description: unformatGqlDescription(value.Description),
 					Deprecated:  value.DeprecationReason,
 				})
 			}
@@ -146,12 +146,20 @@ func TypeDefsFromSchema(dag *dagql.Server, filterSchema map[string]*ast.Definiti
 	return typeDefs, nil
 }
 
+// unformatGqlDescription reverses the effect of formatGqlDescription, which
+// wraps descriptions in newlines for GraphQL triple-quote formatting. The
+// schema stores the formatted version, but TypeDef consumers expect the raw
+// description without the surrounding newlines.
+func unformatGqlDescription(desc string) string {
+	return strings.TrimSpace(desc)
+}
+
 // introspectionObjectToTypeDef converts an introspection object type to a core TypeDef.
 // Returns (nil, false, nil) if the type should be skipped.
 func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *dagql.Server) (*TypeDef, bool, error) {
 	typeDef := &ObjectTypeDef{
 		Name:        introspectionType.Name,
-		Description: introspectionType.Description,
+		Description: unformatGqlDescription(introspectionType.Description),
 	}
 
 	// Check for source module via @sourceMap directive on the type.
@@ -172,7 +180,7 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 
 		fn := &Function{
 			Name:        introspectionField.Name,
-			Description: introspectionField.Description,
+			Description: unformatGqlDescription(introspectionField.Description),
 			Deprecated:  introspectionField.DeprecationReason,
 		}
 
@@ -210,7 +218,7 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 		for _, introspectionArg := range introspectionField.Args {
 			fnArg := &FunctionArg{
 				Name:        introspectionArg.Name,
-				Description: introspectionArg.Description,
+				Description: unformatGqlDescription(introspectionArg.Description),
 				Deprecated:  introspectionArg.DeprecationReason,
 			}
 
@@ -279,7 +287,7 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 func introspectionInterfaceToTypeDef(introspectionType *introspection.Type, dag *dagql.Server) (*TypeDef, bool, error) {
 	typeDef := &InterfaceTypeDef{
 		Name:        introspectionType.Name,
-		Description: introspectionType.Description,
+		Description: unformatGqlDescription(introspectionType.Description),
 	}
 
 	// Check for source module via @sourceMap directive on the type.
@@ -294,7 +302,7 @@ func introspectionInterfaceToTypeDef(introspectionType *introspection.Type, dag 
 
 		fn := &Function{
 			Name:        introspectionField.Name,
-			Description: introspectionField.Description,
+			Description: unformatGqlDescription(introspectionField.Description),
 			Deprecated:  introspectionField.DeprecationReason,
 		}
 
@@ -320,7 +328,7 @@ func introspectionInterfaceToTypeDef(introspectionType *introspection.Type, dag 
 		for _, introspectionArg := range introspectionField.Args {
 			fnArg := &FunctionArg{
 				Name:        introspectionArg.Name,
-				Description: introspectionArg.Description,
+				Description: unformatGqlDescription(introspectionArg.Description),
 				Deprecated:  introspectionArg.DeprecationReason,
 			}
 
