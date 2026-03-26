@@ -15,8 +15,7 @@ import (
 )
 
 const (
-	shellStdlibCmdName = ".stdlib"
-	shellCoreCmdName   = ".core"
+	shellCoreCmdName = ".core"
 )
 
 // ShellCommand is a Dagger Shell builtin or stdlib command
@@ -178,28 +177,9 @@ func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
 	return nil, fmt.Errorf("command not found: %q", name)
 }
 
-func (h *shellCallHandler) StdlibCommand(name string) (*ShellCommand, error) {
-	for _, c := range h.stdlib {
-		if c.Name() == name {
-			return c, nil
-		}
-	}
-	return nil, fmt.Errorf("command not found: %q", name)
-}
-
 func (h *shellCallHandler) Builtins() []*ShellCommand {
 	l := make([]*ShellCommand, 0, len(h.builtins))
 	for _, c := range h.builtins {
-		if !c.Hidden {
-			l = append(l, c)
-		}
-	}
-	return l
-}
-
-func (h *shellCallHandler) Stdlib() []*ShellCommand {
-	l := make([]*ShellCommand, 0, len(h.stdlib))
-	for _, c := range h.stdlib {
 		if !c.Hidden {
 			l = append(l, c)
 		}
@@ -306,7 +286,6 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 
 func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 	var builtins []*ShellCommand
-	var stdlib []*ShellCommand
 
 	builtins = append(builtins,
 		&ShellCommand{
@@ -366,19 +345,6 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 
 				if st.IsEmpty() {
 					switch {
-					case st.IsStdlib():
-						// Document stdlib
-						// Example: `.stdlib | .help`
-						if len(args) == 0 {
-							return h.Print(ctx, h.StdlibHelp())
-						}
-						// Example: .stdlib | .help <command>`
-						c, err := h.StdlibCommand(args[0])
-						if err != nil {
-							return err
-						}
-						return h.Print(ctx, c.Help())
-
 					case st.IsCore():
 						// Document core
 						// Example: `.core | .help`
@@ -394,7 +360,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 
 					case len(args) == 0:
 						if !def.HasModule() {
-							return fmt.Errorf("module not loaded.\nUse %q to see what's available", shellStdlibCmdName)
+							return fmt.Errorf("module not loaded")
 						}
 						// Document module
 						// Example: `.help [module]`
@@ -612,22 +578,6 @@ Without arguments, the current working directory is replaced by the initial cont
 			},
 		},
 		&ShellCommand{
-			Use:         shellStdlibCmdName,
-			Description: "Standard library functions",
-			Hidden:      true,
-			Args:        NoArgs,
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				return h.Save(ctx, h.NewStdlibState())
-			},
-			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
-				return &CompletionContext{
-					Completer:   ctx.Completer,
-					CmdFunction: shellStdlibCmdName,
-				}
-			},
-		},
-		&ShellCommand{
 			Use:         ".core [function]",
 			Description: "Load any core Dagger type",
 			Hidden:      true,
@@ -652,111 +602,11 @@ Without arguments, the current working directory is replaced by the initial cont
 	// Add LLM commands
 	builtins = append(builtins, h.llmBuiltins()...)
 
-	def := h.GetDef(nil)
-
-	for _, fn := range def.GetCoreFunctions() {
-		def.LoadFunctionTypeDefs(fn)
-
-		// TODO: Don't hardcode this list.
-		promoted := []string{
-			"address",
-			"cache-volume",
-			"checks",
-			"container",
-			"directory",
-			"engine",
-			"env",
-			"env-file",
-			"file",
-			"git",
-			"host",
-			"http",
-			"json",
-			"llm",
-			"secret",
-			"set-secret",
-			"version",
-		}
-
-		if !slices.Contains(promoted, fn.CmdName()) {
-			continue
-		}
-
-		stdlib = append(stdlib,
-			&ShellCommand{
-				Use:         h.FunctionUseLine(def, fn),
-				Description: fn.Description,
-				State:       NoState,
-				HelpFunc: func(cmd *ShellCommand) string {
-					return h.FunctionDoc(def, fn)
-				},
-				// Don't resolve state args since this is calling functionCall
-				// which needs state args to be passed as-is for specialized
-				// flag handling.
-				NoResolveStateArgs: true,
-				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-					emptySt := h.NewState()
-					st, err := h.functionCall(ctx, &emptySt, fn.CmdName(), args)
-					if err != nil {
-						return err
-					}
-					return h.Save(ctx, *st)
-				},
-				Complete: func(ctx *CompletionContext, args []string) *CompletionContext {
-					return &CompletionContext{
-						Completer:   ctx.Completer,
-						ModFunction: fn,
-					}
-				},
-			},
-		)
-	}
-
-	// Add current-env command that creates an env with the current module installed
-	stdlib = append(stdlib, &ShellCommand{
-		Use:         "current-env",
-		Description: "Initialize an environment with the current module installed",
-		State:       NoState,
-		Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-			def := h.GetDef(nil)
-			if def.Source == nil {
-				return fmt.Errorf("no module loaded")
-			}
-			// Get the module ID from the module source
-			moduleID, err := def.Source.AsModule().ID(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module ID: %w", err)
-			}
-			// Create an env state
-			emptySt := h.NewState()
-			envSt, err := h.functionCall(ctx, &emptySt, "env", []string{})
-			if err != nil {
-				return fmt.Errorf("failed to create env: %w", err)
-			}
-			// Get the withModule function definition to bypass argument parsing
-			// which would try to resolve the module ID as a path
-			withModuleFn, err := envSt.Function().GetNextDef(def, "withModule")
-			if err != nil {
-				return fmt.Errorf("failed to get withModule function: %w", err)
-			}
-			// Directly construct the state with the module ID, bypassing parseArgumentValues
-			finalSt := envSt.WithCall(withModuleFn, map[string]any{
-				"module": string(moduleID),
-			})
-			return h.Save(ctx, finalSt)
-		},
-	})
-
 	slices.SortStableFunc(builtins, func(x, y *ShellCommand) int {
 		return cmp.Compare(x.Use, y.Use)
 	})
 
-	slices.SortStableFunc(stdlib, func(x, y *ShellCommand) int {
-		return cmp.Compare(x.Use, y.Use)
-	})
-
 	h.builtins = builtins
-	h.stdlib = stdlib
 }
 
 func cobraToShellCommand(c *cobra.Command) *ShellCommand {

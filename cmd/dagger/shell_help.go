@@ -67,7 +67,6 @@ func (h *shellCallHandler) MainHelp() string {
 		h.allBuiltinUsages(),
 		h.allFunctionUsages(),
 		h.allLoadedModules(),
-		h.allStdlibUsages(),
 	))
 
 	// move builtins to last
@@ -176,17 +175,6 @@ func (h *shellCallHandler) allLoadedModules() iter.Seq2[string, string] {
 	}
 }
 
-// allStdlibUsages returns a sequence of all stdlib commands, as name and short description
-func (h *shellCallHandler) allStdlibUsages() iter.Seq2[string, string] {
-	return func(yield func(string, string) bool) {
-		for _, cmd := range h.Stdlib() {
-			if !yield(cmd.Name(), cmd.Short()) {
-				return
-			}
-		}
-	}
-}
-
 // allBuiltinUsages returns a sequence of all builtin commands, as name and short description
 func (h *shellCallHandler) allBuiltinUsages() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
@@ -196,18 +184,6 @@ func (h *shellCallHandler) allBuiltinUsages() iter.Seq2[string, string] {
 			}
 		}
 	}
-}
-
-func (h *shellCallHandler) StdlibHelp() string {
-	var doc ShellDoc
-
-	doc.Add("Commands", nameShortWrapped(h.Stdlib(), func(c *ShellCommand) (string, string) {
-		return c.Name(), c.Description
-	}))
-
-	doc.Add("", fmt.Sprintf(`Use "%s | .help <command>" for more information on a command.`, shellStdlibCmdName))
-
-	return doc.String()
 }
 
 func (h *shellCallHandler) CoreHelp() string {

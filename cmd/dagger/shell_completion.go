@@ -232,20 +232,12 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 			results = append(results, builtin.Name())
 		}
 
-	case ctx.CmdType == shellStdlibCmdName:
-		for _, cmd := range ctx.Completer.Stdlib() {
-			results = append(results, cmd.Name())
-		}
-
 	case ctx.CmdType == shellCoreCmdName:
 		for _, fn := range ctx.Completer.GetDef(nil).GetCoreFunctions() {
 			results = append(results, fn.CmdName())
 		}
 
 	case ctx.root:
-		for _, cmd := range ctx.stdlib() {
-			results = append(results, cmd.Name())
-		}
 		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
 			for _, fn := range md.MainObject.AsFunctionProvider().GetFunctions() {
 				results = append(results, fn.CmdName())
@@ -280,10 +272,6 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 
 	// Limit options for these namespace-setting commands
 	switch ctx.CmdType {
-	case shellStdlibCmdName:
-		if cmd := ctx.stdlibCmd(field); cmd != nil {
-			return cmd.Complete(ctx, args)
-		}
 	case shellCoreCmdName:
 		if fn := def.GetCoreFunction(field); fn != nil {
 			return &CompletionContext{
@@ -317,12 +305,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 		return nil
 	}
 
-	// 3. Stdlib
-	if cmd := ctx.stdlibCmd(field); cmd != nil {
-		return cmd.Complete(ctx, args)
-	}
-
-	// 4. Module reference
+	// 3. Module reference
 	// TODO: loading other modules isn't supported yet
 	if ctx.Completer.IsDefaultModule(field) {
 		return &CompletionContext{
@@ -362,10 +345,6 @@ func (ctx *CompletionContext) builtins() []*ShellCommand {
 	return cmds
 }
 
-func (ctx *CompletionContext) stdlib() []*ShellCommand {
-	return ctx.Completer.Stdlib()
-}
-
 func (ctx *CompletionContext) builtinCmd(name string) *ShellCommand {
 	for _, cmd := range ctx.builtins() {
 		if cmd.Name() == name {
@@ -378,14 +357,4 @@ func (ctx *CompletionContext) builtinCmd(name string) *ShellCommand {
 	return nil
 }
 
-func (ctx *CompletionContext) stdlibCmd(name string) *ShellCommand {
-	for _, cmd := range ctx.stdlib() {
-		if cmd.Name() == name {
-			if cmd.Complete == nil {
-				return nil
-			}
-			return cmd
-		}
-	}
-	return nil
-}
+

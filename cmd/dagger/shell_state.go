@@ -294,10 +294,6 @@ func (st ShellState) IsCommandRoot() bool {
 	return st.IsEmpty() && st.Cmd != ""
 }
 
-func (st ShellState) IsStdlib() bool {
-	return st.Cmd == shellStdlibCmdName
-}
-
 func (st ShellState) IsCore() bool {
 	return st.Cmd == shellCoreCmdName
 }
@@ -501,12 +497,6 @@ func (h *shellCallHandler) newModState(dig string) ShellState {
 
 func (h *shellCallHandler) NewState() ShellState {
 	return ShellState{}
-}
-
-func (h *shellCallHandler) NewStdlibState() ShellState {
-	return ShellState{
-		Cmd: shellStdlibCmdName,
-	}
 }
 
 func (h *shellCallHandler) NewCoreState() ShellState {

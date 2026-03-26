@@ -91,9 +91,6 @@ type shellCallHandler struct {
 	// builtins is the list of Dagger Shell builtin commands
 	builtins []*ShellCommand
 
-	// stdlib is the list of standard library commands
-	stdlib []*ShellCommand
-
 	// state stores the pipeline state between commands in a chain
 	state *ShellStateStore
 

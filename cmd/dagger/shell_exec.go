@@ -335,14 +335,6 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string, st *ShellStat
 
 	if st.IsCommandRoot() {
 		switch {
-		case st.IsStdlib():
-			// Example: .stdlib | <command>`
-			stdlib, err := h.StdlibCommand(c)
-			if err != nil {
-				return nil, err
-			}
-			return nil, stdlib.Execute(ctx, h, a, nil)
-
 		case st.IsCore():
 			// Example: `.core | <function>`
 			def := h.GetDef(st)
@@ -370,14 +362,6 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 	}
 	if h.Debug() {
 		shellDebug(ctx, "Entrypoint", cmd, args, st)
-	}
-
-	if st.IsStdlib() {
-		cmd, err := h.StdlibCommand(cmd)
-		if err != nil {
-			return nil, err
-		}
-		return nil, cmd.Execute(ctx, h, args, nil)
 	}
 
 	if md, _ := h.GetModuleDef(st); md != nil {
@@ -437,13 +421,7 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 		}
 	}
 
-	// 4. Standard library command
-	if cmd, _ := h.StdlibCommand(name); cmd != nil {
-		st := h.NewStdlibState()
-		return &st, nil
-	}
-
-	// 5. Path to local or remote module source
+	// 4. Path to local or remote module source
 	def, _, err := h.maybeLoadModule(ctx, name)
 	if err != nil {
 		return nil, err
@@ -897,8 +875,6 @@ func (h *shellCallHandler) StateResult(ctx context.Context, st *ShellState) (*Re
 	if st.IsCommandRoot() {
 		r := &Result{}
 		switch {
-		case st.IsStdlib():
-			r.Value = h.CommandsList(st.Cmd, h.Stdlib())
 		case st.IsCore():
 			def := h.GetDef(nil)
 			r.Value = h.FunctionsList(st.Cmd, def.GetCoreFunctions())

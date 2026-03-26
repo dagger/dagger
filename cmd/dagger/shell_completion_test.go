@@ -37,7 +37,7 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 		// top-level deps
 		`<a$lpine >`,
 
-		// stdlib fallback
+		// core function fallback
 		`<dir$ectory >`,
 		`directory | <with$-new-file >`,
 
@@ -76,12 +76,6 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 		// // .deps builtin
 		// `.deps | <$alpine >`,
 		// `.deps | <a$lpine >`,
-		//
-		// // .stdlib builtin
-		// `.stdlib | <$container >`,
-		// `.stdlib | <con$tainer >`,
-		// `.stdlib | container <--$platform >`,
-		// `.stdlib | container | <dir$ectory >`,
 		//
 		// // .core builtin
 		// `.core | <con$tainer >`,
