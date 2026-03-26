@@ -290,13 +290,7 @@ func (st ShellState) IsEmpty() bool {
 	return len(st.Calls) == 0
 }
 
-func (st ShellState) IsCommandRoot() bool {
-	return st.IsEmpty() && st.Cmd != ""
-}
 
-func (st ShellState) IsCore() bool {
-	return st.Cmd == shellCoreCmdName
-}
 
 // FunctionCall represents a querybyilder.Selection
 //
@@ -499,8 +493,4 @@ func (h *shellCallHandler) NewState() ShellState {
 	return ShellState{}
 }
 
-func (h *shellCallHandler) NewCoreState() ShellState {
-	return ShellState{
-		Cmd: shellCoreCmdName,
-	}
-}
+

@@ -186,23 +186,6 @@ func (h *shellCallHandler) allBuiltinUsages() iter.Seq2[string, string] {
 	}
 }
 
-func (h *shellCallHandler) CoreHelp() string {
-	var doc ShellDoc
-
-	def := h.GetDef(nil)
-
-	doc.Add(
-		"Available Functions",
-		nameShortWrapped(def.GetCoreFunctions(), func(f *modFunction) (string, string) {
-			return f.CmdName(), f.Short()
-		}),
-	)
-
-	doc.Add("", fmt.Sprintf(`Use "%s | .help <function>" for more information on a function.`, shellCoreCmdName))
-
-	return doc.String()
-}
-
 func (h *shellCallHandler) TypesHelp() string {
 	var doc ShellDoc
 

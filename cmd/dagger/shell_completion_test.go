@@ -76,11 +76,6 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 		// // .deps builtin
 		// `.deps | <$alpine >`,
 		// `.deps | <a$lpine >`,
-		//
-		// // .core builtin
-		// `.core | <con$tainer >`,
-		// `.core | container <--$platform >`,
-		// `.core | container | <dir$ectory >`,
 
 		// FIXME: avoid inserting extra spaces
 		// `<contain$er> `,

@@ -232,11 +232,6 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 			results = append(results, builtin.Name())
 		}
 
-	case ctx.CmdType == shellCoreCmdName:
-		for _, fn := range ctx.Completer.GetDef(nil).GetCoreFunctions() {
-			results = append(results, fn.CmdName())
-		}
-
 	case ctx.root:
 		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
 			for _, fn := range md.MainObject.AsFunctionProvider().GetFunctions() {
@@ -267,17 +262,6 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 		return &CompletionContext{
 			Completer:   ctx.Completer,
 			ModFunction: next,
-		}
-	}
-
-	// Limit options for these namespace-setting commands
-	switch ctx.CmdType {
-	case shellCoreCmdName:
-		if fn := def.GetCoreFunction(field); fn != nil {
-			return &CompletionContext{
-				Completer:   ctx.Completer,
-				ModFunction: fn,
-			}
 		}
 	}
 

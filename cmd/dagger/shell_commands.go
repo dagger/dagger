@@ -14,9 +14,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
-const (
-	shellCoreCmdName = ".core"
-)
+
 
 // ShellCommand is a Dagger Shell builtin or stdlib command
 type ShellCommand struct {
@@ -343,29 +341,13 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 
 				def := h.GetDef(st)
 
-				if st.IsEmpty() {
-					switch {
-					case st.IsCore():
-						// Document core
-						// Example: `.core | .help`
-						if len(args) == 0 {
-							return h.Print(ctx, h.CoreHelp())
-						}
-						// Example: `.core | .help <function>`
-						fn := def.GetCoreFunction(args[0])
-						if fn == nil {
-							return fmt.Errorf("core function %q not found", args[0])
-						}
-						return h.Print(ctx, h.FunctionDoc(def, fn))
-
-					case len(args) == 0:
-						if !def.HasModule() {
-							return fmt.Errorf("module not loaded")
-						}
-						// Document module
-						// Example: `.help [module]`
-						return h.Print(ctx, h.ModuleDoc(def))
+				if st.IsEmpty() && len(args) == 0 {
+					if !def.HasModule() {
+						return fmt.Errorf("module not loaded")
 					}
+					// Document module
+					// Example: `.help [module]`
+					return h.Print(ctx, h.ModuleDoc(def))
 				}
 
 				t, err := st.GetTypeDef(def)
@@ -575,21 +557,6 @@ Without arguments, the current working directory is replaced by the initial cont
 				}
 
 				return nil
-			},
-		},
-		&ShellCommand{
-			Use:         ".core [function]",
-			Description: "Load any core Dagger type",
-			Hidden:      true,
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				return h.Save(ctx, h.NewCoreState())
-			},
-			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
-				return &CompletionContext{
-					Completer:   ctx.Completer,
-					CmdFunction: shellCoreCmdName,
-				}
 			},
 		},
 		cobraToShellCommand(loginCmd),

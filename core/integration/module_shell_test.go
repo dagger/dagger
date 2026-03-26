@@ -369,50 +369,6 @@ func (Other) Version() string {
 		require.Regexp(t, regexp.MustCompile("\n  version +Dep version"), out)
 	})
 
-	t.Run("core result", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".core")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "- load-container-from-id")
-		require.NotContains(t, out, "Load a Container") // no descriptions
-		require.NotContains(t, out, "- git")            // replaced by dependency
-	})
-
-	t.Run("core doc", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".core | .help")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "load-container-from-id")
-		require.Contains(t, out, "Load a Container from its ID")
-		require.NotContains(t, out, "- git") // replaced by dependency
-	})
-
-	t.Run("core doc function", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".core | .help load-container-from-id")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Regexp(t, regexp.MustCompile(`^Load a Container from its ID`), out)
-		require.Contains(t, out, "load-container-from-id <id>")
-		require.Contains(t, out, "RETURNS")
-	})
-
-	t.Run("core with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
-		_, err := setup.
-			With(daggerShell(".core | git")).
-			Sync(ctx)
-		requireErrOut(t, err, `"git" not found`)
-	})
-
-	t.Run("core doc with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
-		_, err := setup.
-			With(daggerShell(".core | .help git")).
-			Sync(ctx)
-		requireErrOut(t, err, `"git" not found`)
-	})
-
 	t.Run("types result", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
 			With(daggerShell(".types")).
@@ -603,7 +559,7 @@ func (m *Test) DirectoryID(ctx context.Context) (string, error) {
 	return string(id), err
 }
 `
-	script := ".core | load-directory-from-id $(directory-id) | file foo | contents"
+	script := "load-directory-from-id $(directory-id) | file foo | contents"
 
 	out, err := modInit(t, c, "go", source).
 		With(daggerShell(script)).

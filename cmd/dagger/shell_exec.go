@@ -333,19 +333,6 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string, st *ShellStat
 		return nil, builtin.Execute(ctx, h, a, st)
 	}
 
-	if st.IsCommandRoot() {
-		switch {
-		case st.IsCore():
-			// Example: `.core | <function>`
-			def := h.GetDef(st)
-			if !def.HasCoreFunction(c) {
-				return nil, fmt.Errorf("core function %q not found", c)
-			}
-			// an empty state's first object is Query by default so
-			// functionCall already handles it
-		}
-	}
-
 	// module or core function call
 	return h.functionCall(ctx, st, c, a)
 }
@@ -870,18 +857,6 @@ func (r *Result) IsVoid() bool {
 func (h *shellCallHandler) StateResult(ctx context.Context, st *ShellState) (*Result, error) {
 	if st == nil {
 		return nil, nil
-	}
-
-	if st.IsCommandRoot() {
-		r := &Result{}
-		switch {
-		case st.IsCore():
-			def := h.GetDef(nil)
-			r.Value = h.FunctionsList(st.Cmd, def.GetCoreFunctions())
-		default:
-			return nil, fmt.Errorf("unexpected namespace %q", st.Cmd)
-		}
-		return r, nil
 	}
 
 	def := h.GetDef(st)
