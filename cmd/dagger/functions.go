@@ -185,9 +185,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					execArgs = stripHelpArgs(execArgs)
 				}
 
+				coreOnly := shouldSkipWorkspaceModules(fc.DisableModuleLoad)
 				params := initModuleParams(execArgs)
-				params.SkipWorkspaceModules = shouldSkipWorkspaceModules(fc.DisableModuleLoad)
-				params.HideCoreAPI = true
+				params.SkipWorkspaceModules = coreOnly
+				params.HideCoreAPI = !coreOnly
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
