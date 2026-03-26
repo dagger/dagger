@@ -200,15 +200,16 @@ func (s *ServedMods) lazilyLoadSchema(ctx context.Context) (
 	}()
 
 	// Check if any entry has Entrypoint set.
-	hasEntrypoint := false
+	var nonEntrypoints, entrypoints []servedModEntry
 	for _, e := range s.entries {
 		if e.opts.Entrypoint {
-			hasEntrypoint = true
-			break
+			entrypoints = append(entrypoints, e)
+		} else {
+			nonEntrypoints = append(nonEntrypoints, e)
 		}
 	}
 
-	if !hasEntrypoint {
+	if len(entrypoints) == 0 {
 		// No entrypoints — single server suffices (inner == outer).
 		mods := make([]modInstall, len(s.entries))
 		for i, e := range s.entries {
@@ -234,9 +235,12 @@ func (s *ServedMods) lazilyLoadSchema(ctx context.Context) (
 	}
 
 	// Build outer server: all modules with real Entrypoint flags.
-	outerMods := make([]modInstall, len(s.entries))
-	for i, e := range s.entries {
-		outerMods[i] = modInstall(e)
+	outerMods := make([]modInstall, 0, len(s.entries))
+	for _, e := range nonEntrypoints {
+		outerMods = append(outerMods, modInstall(e))
+	}
+	for _, e := range entrypoints {
+		outerMods = append(outerMods, modInstall(e))
 	}
 	outer, schemaJSONFile, err := buildSchema(ctx, s.root, outerMods, nil)
 	if err != nil {
