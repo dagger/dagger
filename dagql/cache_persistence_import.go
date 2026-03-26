@@ -150,7 +150,6 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			res := &sharedResult{
 				id:                 resultID,
 				isObject:           env.Kind == persistedResultKindObject,
-				safeToPersistCache: row.SafeToPersistCache,
 				expiresAtUnix:      row.ExpiresAtUnix,
 				createdAtUnixNano:  row.CreatedAtUnixNano,
 				lastUsedAtUnixNano: row.LastUsedAtUnixNano,

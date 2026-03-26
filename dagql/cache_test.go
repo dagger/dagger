@@ -3315,7 +3315,7 @@ func TestCacheTeachContentDigestWithResultRefs(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
-func TestDerefValuePropagatesSafeToPersistMetadataForNullables(t *testing.T) {
+func TestDerefValueForNullables(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -3347,13 +3347,12 @@ func TestDerefValuePropagatesSafeToPersistMetadataForNullables(t *testing.T) {
 			call := &ResultCall{
 				Kind:  ResultCallKindField,
 				Type:  NewResultCallType(tc.value.Type()),
-				Field: tc.name + "-safe",
+				Field: tc.name,
 			}
-			outer := cacheTestDetachedResult(call, tc.value).WithSafeToPersistCache(true)
+			outer := cacheTestDetachedResult(call, tc.value)
 
 			deref, ok := outer.DerefValue()
 			assert.Assert(t, ok)
-			assert.Assert(t, deref.IsSafeToPersistCache())
 			assert.Equal(t, tc.expected, cacheTestUnwrapInt(t, deref))
 		})
 	}
@@ -4538,7 +4537,7 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 		TTL:        60,
 	}, func(context.Context) (AnyResult, error) {
 		initCalls++
-		return cacheTestIntResult(keyCall, 5).(Result[Int]).WithSafeToPersistCache(true), nil
+		return cacheTestIntResult(keyCall, 5), nil
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, 1, initCalls)

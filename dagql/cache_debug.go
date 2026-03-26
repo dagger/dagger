@@ -77,7 +77,6 @@ type CacheDebugResult struct {
 	ResultCallInputDigestsError           string      `json:"result_call_input_digests_error,omitempty"`
 	AssociatedTermIDs                     []uint64    `json:"associated_term_ids,omitempty"`
 	IndexedDigests                        []string    `json:"indexed_digests,omitempty"`
-	SafeToPersistCache                    bool        `json:"safe_to_persist_cache"`
 	ExpiresAtUnix                         int64       `json:"expires_at_unix,omitempty"`
 	CreatedAtUnixNano                     int64       `json:"created_at_unix_nano,omitempty"`
 	LastUsedAtUnixNano                    int64       `json:"last_used_at_unix_nano,omitempty"`
@@ -1096,7 +1095,6 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				ResultCallInputDigestsError:           inputDigestsErr,
 				AssociatedTermIDs:                     assocTermIDs,
 				IndexedDigests:                        append([]string(nil), indexedDigestsByResult[resultID]...),
-				SafeToPersistCache:                    res.safeToPersistCache,
 				ExpiresAtUnix:                         res.expiresAtUnix,
 				CreatedAtUnixNano:                     state.createdAtUnixNano,
 				LastUsedAtUnixNano:                    state.lastUsedAtUnixNano,

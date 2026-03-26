@@ -116,12 +116,6 @@ type AnyResult interface {
 	// is an Enumerable. If the wrapped value is not Enumerable, it returns an error.
 	NthValue(context.Context, int) (AnyResult, error)
 
-	// IsSafeToPersistCache returns whether it's safe to persist this result in the cache.
-	IsSafeToPersistCache() bool
-
-	// WithSafeToPersistCache returns a new AnyResult with the given safe-to-persist-cache flag.
-	WithSafeToPersistCache(safe bool) AnyResult
-
 	// NullableWrapped returns a nullable view over the same underlying result.
 	NullableWrapped() AnyResult
 

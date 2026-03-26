@@ -27,7 +27,7 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(key, 42).WithSafeToPersistCache(true), nil
+		return cacheTestIntResult(key, 42), nil
 	})
 	assert.NilError(t, err)
 
@@ -66,7 +66,7 @@ func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(key, 42).WithSafeToPersistCache(true), nil
+		return cacheTestIntResult(key, 42), nil
 	})
 	assert.NilError(t, err)
 	cacheTestReleaseSession(t, cacheIface, ctx)
@@ -121,7 +121,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 		ResultCall:    sourceKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(sourceKey, 11).WithSafeToPersistCache(true), nil
+		return cacheTestIntResult(sourceKey, 11), nil
 	})
 	assert.NilError(t, err)
 
@@ -135,7 +135,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 		ResultCall:    rootKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestPlainResult(NewInt(22)).WithSafeToPersistCache(true), nil
+		return cacheTestPlainResult(NewInt(22)), nil
 	})
 	assert.NilError(t, err)
 

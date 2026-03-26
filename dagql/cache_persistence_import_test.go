@@ -37,7 +37,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(key, 123).WithSafeToPersistCache(true), nil
+		return cacheTestIntResult(key, 123), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !resA.HitCache())
@@ -178,7 +178,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(key, 7).WithSafeToPersistCache(true), nil
+		return cacheTestIntResult(key, 7), nil
 	})
 	assert.NilError(t, err)
 	cacheTestReleaseSession(t, cA, ctx)
@@ -201,7 +201,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(key, 8).WithSafeToPersistCache(true), nil
+		return cacheTestIntResult(key, 8), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !resB.HitCache())
@@ -224,7 +224,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(key, 50).WithSafeToPersistCache(true), nil
+		return cacheTestIntResult(key, 50), nil
 	})
 	assert.NilError(t, err)
 	cacheTestReleaseSession(t, cA, ctx)
@@ -249,7 +249,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(key, 51).WithSafeToPersistCache(true), nil
+		return cacheTestIntResult(key, 51), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !resB.HitCache())

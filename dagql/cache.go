@@ -778,10 +778,8 @@ type sharedResult struct {
 	// prune-accounting timestamps that can change after initial publication.
 	payloadMu sync.RWMutex
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
-	hasValue bool
-
-	safeToPersistCache bool
-	onRelease          OnReleaseFunc
+	hasValue  bool
+	onRelease OnReleaseFunc
 	// deps tracks exact materialized child-result dependencies used for
 	// release/liveness propagation and persistence closure. This includes
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
@@ -961,10 +959,9 @@ func newDetachedResult[T Typed](call *ResultCall, self T) Result[T] {
 	}
 	return Result[T]{
 		shared: &sharedResult{
-			self:               self,
-			resultCall:         resultCall,
-			hasValue:           true,
-			safeToPersistCache: true,
+			self:       self,
+			resultCall: resultCall,
+			hasValue:   true,
 		},
 	}
 }
@@ -1407,11 +1404,7 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 		return r, true
 	}
 	if anyRes, ok := inner.(AnyResult); ok {
-		// Suspicious: WithSafeToPersistCache currently clones into a detached
-		// payload. If we hit weird secret/function caching bugs, check whether
-		// this propagation is incorrectly stripping attachment from an already-
-		// attached inner result.
-		return anyRes.WithSafeToPersistCache(r.IsSafeToPersistCache()), true
+		return anyRes, true
 	}
 	return r.resultWithDerefView(), true
 }
@@ -1503,7 +1496,6 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 			isObject:               state.isObject,
 			resultCall:             r.shared.loadResultCall(),
 			hasValue:               state.hasValue,
-			safeToPersistCache:     r.shared.safeToPersistCache,
 			persistedEnvelope:      state.persistedEnvelope,
 			persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
 			createdAtUnixNano:      state.createdAtUnixNano,
@@ -1560,16 +1552,6 @@ func (r Result[T]) ResultWithCall(frame *ResultCall) Result[T] {
 	r = r.withDetachedPayload()
 	r.shared.storeResultCall(frame.clone())
 	return r
-}
-
-func (r Result[T]) WithSafeToPersistCache(safe bool) AnyResult {
-	r = r.withDetachedPayload()
-	r.shared.safeToPersistCache = safe
-	return r
-}
-
-func (r Result[T]) IsSafeToPersistCache() bool {
-	return r.shared != nil && r.shared.safeToPersistCache
 }
 
 func (r Result[T]) WithContentDigest(contentDigest digest.Digest) Result[T] {
@@ -1662,11 +1644,7 @@ func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
 		return r, true
 	}
 	if anyRes, ok := inner.(AnyResult); ok {
-		// Suspicious: WithSafeToPersistCache currently clones into a detached
-		// payload. If we hit weird secret/function caching bugs, check whether
-		// this propagation is incorrectly stripping attachment from an already-
-		// attached inner result.
-		return anyRes.WithSafeToPersistCache(r.IsSafeToPersistCache()), true
+		return anyRes, true
 	}
 	r.Result = r.Result.resultWithDerefView()
 	return r, true
@@ -2340,10 +2318,9 @@ func (c *Cache) getOrInitCall(
 		}
 
 		detached := &sharedResult{
-			self:               val.Unwrap(),
-			resultCall:         req.ResultCall.clone(),
-			hasValue:           true,
-			safeToPersistCache: val.IsSafeToPersistCache(),
+			self:       val.Unwrap(),
+			resultCall: req.ResultCall.clone(),
+			hasValue:   true,
 		}
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
 			return nil, fmt.Errorf("do-not-cache result %T cannot implement OnReleaser", onReleaser)
@@ -2735,7 +2712,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_request_frame", nil, oc.res.loadResultCall())
 			}
 			oc.res.hasValue = true
-			oc.res.safeToPersistCache = oc.val.IsSafeToPersistCache()
 
 			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
 				oc.res.onRelease = onReleaser.OnRelease
@@ -2748,24 +2724,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 	}
 	requestForIndex := req
-	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
-	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
-		requestForIndex = &CallRequest{
-			ResultCall:     req.ResultCall.fork(),
-			ConcurrencyKey: req.ConcurrencyKey,
-			TTL:            req.TTL,
-			DoNotCache:     req.DoNotCache,
-			IsPersistable:  req.IsPersistable,
-		}
-		requestForIndex.ImplicitInputs = append(requestForIndex.ImplicitInputs, &ResultCallArg{
-			Name: "sessionID",
-			Value: &ResultCallLiteral{
-				Kind:        ResultCallLiteralKindString,
-				StringValue: sessionID,
-			},
-		})
-	}
-
 	if oc.res.createdAtUnixNano == 0 {
 		oc.res.createdAtUnixNano = now.UnixNano()
 	}

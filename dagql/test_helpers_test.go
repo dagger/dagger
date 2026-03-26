@@ -49,9 +49,8 @@ func cacheTestDetachedResult[T Typed](frame *ResultCall, self T) Result[T] {
 func cacheTestPlainResult[T Typed](self T) Result[T] {
 	return Result[T]{
 		shared: &sharedResult{
-			self:               self,
-			hasValue:           true,
-			safeToPersistCache: true,
+			self:     self,
+			hasValue: true,
 		},
 	}
 }

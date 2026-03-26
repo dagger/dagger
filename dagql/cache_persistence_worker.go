@@ -158,7 +158,6 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			persistedEnvelope: payload.persistedEnvelope,
 			row: persistdb.MirrorResult{
 				ID:                 int64(resultID),
-				SafeToPersistCache: res.safeToPersistCache,
 				ExpiresAtUnix:      res.expiresAtUnix,
 				CreatedAtUnixNano:  payload.createdAtUnixNano,
 				LastUsedAtUnixNano: payload.lastUsedAtUnixNano,
