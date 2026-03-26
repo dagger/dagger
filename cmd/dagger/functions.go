@@ -187,6 +187,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 				params := initModuleParams(execArgs)
 				params.SkipWorkspaceModules = shouldSkipWorkspaceModules(fc.DisableModuleLoad)
+				params.HideCoreAPI = true
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
@@ -562,19 +563,6 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	fns, skipped := GetSupportedFunctions(fnProvider)
 
 	for _, fn := range fns {
-		// On the Query root type, hide core API functions — only show functions
-		// provided by modules (constructors and auto-aliases). This doesn't apply
-		// to `dagger core`.
-		if !fc.DisableModuleLoad && typeDef.AsObject != nil && typeDef.AsObject.Name == "Query" {
-			if fn.SourceModuleName == "" {
-				continue
-			}
-			// Hide loadXxxFromID plumbing functions — they are internal
-			// helpers for ID loading, not user-facing.
-			if strings.HasPrefix(fn.Name, "load") && strings.HasSuffix(fn.Name, "FromID") {
-				continue
-			}
-		}
 		subCmd := fc.makeSubCmd(ctx, fn)
 		cmd.AddCommand(subCmd)
 	}

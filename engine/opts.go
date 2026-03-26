@@ -120,6 +120,13 @@ type ClientMetadata struct {
 	// SkipWorkspaceModules skips loading workspace modules when true.
 	SkipWorkspaceModules bool `json:"skip_workspace_modules,omitempty"`
 
+	// HideCoreAPI prevents the core API from being added to the client's
+	// served modules, so that core Query fields (like container, directory,
+	// etc.) are not intermixed with module entrypoint functions. The core
+	// API is still installed on the inner dagql server for ID loading and
+	// type resolution; it just won't appear in the client-facing schema.
+	HideCoreAPI bool `json:"hide_core_api,omitempty"`
+
 	// Workspace explicitly declares the workspace binding for this client.
 	// When unset, the engine applies default workspace binding behavior.
 	Workspace *string `json:"workspace,omitempty"`

@@ -632,9 +632,9 @@ type Foo struct{
 func (ShellSuite) TestNotExists(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	_, err := modInit(t, c, "go", "").
-		With(daggerShell("load-container-from-id")).
+		With(daggerShell("i-dont-exist")).
 		Sync(ctx)
-	requireErrOut(t, err, "\"load-container-from-id\" does not exist")
+	requireErrOut(t, err, "\"i-dont-exist\" does not exist")
 }
 
 func (ShellSuite) TestIntegerArg(ctx context.Context, t *testctx.T) {

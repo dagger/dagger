@@ -945,6 +945,9 @@ func (srv *Server) getOrInitClient(
 		if opts.SkipWorkspaceModules {
 			client.clientMetadata.SkipWorkspaceModules = true
 		}
+		if opts.HideCoreAPI {
+			client.clientMetadata.HideCoreAPI = true
+		}
 		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
 			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
 				ref := workspaceRef
@@ -1028,6 +1031,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
 	var skipWorkspaceModules bool
+	var hideCoreAPI bool
 	var eagerRuntime bool
 	var workspaceRef *string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
@@ -1035,6 +1039,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		allowedLLMModules = md.AllowedLLMModules
 		extraModules = md.ExtraModules
 		skipWorkspaceModules = md.SkipWorkspaceModules
+		hideCoreAPI = md.HideCoreAPI
 		eagerRuntime = md.EagerRuntime
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
 			ref := declaredWorkspace
@@ -1055,6 +1060,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			AllowedLLMModules:    allowedLLMModules,
 			ExtraModules:         extraModules,
 			SkipWorkspaceModules: skipWorkspaceModules,
+			HideCoreAPI:          hideCoreAPI,
 			EagerRuntime:         eagerRuntime,
 			Workspace:            workspaceRef,
 		},
