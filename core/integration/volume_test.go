@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -129,33 +130,11 @@ sleep infinity
 		WithDefaultArgs([]string{"sh", "/root/start.sh"}).
 		AsService()
 
-	// Use the service's internal TCP endpoint (ip:port) directly; engine needs a resolvable target.
-	// Resolve the service's container IP by binding it under an alias inside a helper container.
-	// Using the raw IP avoids DNS lookup inside the engine for the ephemeral hostname.
-	ipLookup := c.Container().
-		From(alpineImage).
-		WithServiceBinding("ssh", sshSvc).
-		WithExec([]string{"sh", "-c", "getent hosts ssh | awk '{print $1; exit}'"})
-	ip, ipErr := ipLookup.Stdout(ctx)
-	if ipErr != nil || strings.TrimSpace(ip) == "" {
-		// Fallback: attempt nslookup (install bind-tools) if getent failed
-		ip2, ipErr2 := c.Container().
-			From(alpineImage).
-			WithExec([]string{"sh", "-c", "apk add --no-cache bind-tools >/dev/null 2>&1; nslookup ssh 2>/dev/null | awk '/^Address: / {print $2; exit}'"}).
-			WithServiceBinding("ssh", sshSvc).
-			Stdout(ctx)
-		if ipErr2 == nil && strings.TrimSpace(ip2) != "" {
-			ip = ip2
-		} else {
-			// Last resort: assume default docker bridge network; may still fail but keeps engine untouched.
-			ip = "172.17.0.2" // common first container address; hacky fallback
-			t.Logf("service IP resolution failed (getent err=%v nslookup err=%v); falling back to %s", ipErr, ipErr2, ip)
-		}
-	}
-	ip = strings.TrimSpace(ip)
+	sshHost, err := sshSvc.Hostname(ctx)
+	require.NoError(t, err)
 
-	sshfsEndpoint := fmt.Sprintf("root@%s:%d/root/repo", ip, sshPort)
-	t.Logf("sshfs endpoint using resolved service IP %s: %s", ip, sshfsEndpoint)
+	sshfsEndpoint := fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)
+	t.Logf("sshfs endpoint using service hostname %s: %s", sshHost, sshfsEndpoint)
 
 	privKeySecret := c.SetSecret("sshfs-private-key", userPrivateKey)
 	hostKeySecret := c.SetSecret("sshfs-public-key", userPublicKey)
@@ -178,7 +157,9 @@ sleep infinity
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	sshfsVolume := c.SshfsVolume(sshfsEndpoint, privKeySecret, hostKeySecret)
+	sshfsVolume := c.SshfsVolume(sshfsEndpoint, privKeySecret, hostKeySecret, dagger.SshfsVolumeOpts{
+		ExperimentalServiceHost: sshSvc,
+	})
 
 	// Ensure that the initial content is available to the first container using the volume
 	output, err := c.Container().

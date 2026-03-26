@@ -2273,6 +2273,13 @@ export type ClientSecretOpts = {
   cacheKey?: string
 }
 
+export type ClientSshfsVolumeOpts = {
+  /**
+   * A service which must be started before the SSHFS volume is mounted.
+   */
+  experimentalServiceHost?: Service
+}
+
 /**
  * Expected return type of an execution
  */
@@ -2708,6 +2715,11 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+/**
+ * The `VolumeID` scalar type represents an identifier for an object of type Volume.
+ */
+export type VolumeID = string & { __VolumeID: never }
+
 export type WorkspaceDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -3127,6 +3139,14 @@ export class Binding extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Retrieve the binding value, as type Volume
+   */
+  asVolume = (): Volume => {
+    const ctx = this._ctx.select("asVolume")
+    return new Volume(ctx)
   }
 
   /**
@@ -4693,6 +4713,16 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container plus a host directory mounted at the given path.
+   * @param source Source path of the host directory to mount (e.g., "/home/user/directory").
+   * @param path Location of the mounted directory (e.g., "/mnt/directory").
+   */
+  withMountedHostDirectory = (source: string, path: string): Container => {
+    const ctx = this._ctx.select("withMountedHostDirectory", { source, path })
+    return new Container(ctx)
+  }
+
+  /**
    * Retrieves this container plus a secret mounted into a file at the given path.
    * @param path Location of the secret file (e.g., "/tmp/secret.txt").
    * @param source Identifier of the secret to mount.
@@ -4845,6 +4875,16 @@ export class Container extends BaseClient {
    */
   withUser = (name: string): Container => {
     const ctx = this._ctx.select("withUser", { name })
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieves this container plus an engine-managed volume mounted at the given path.
+   * @param path Location where the volume will be mounted (e.g., "/mnt/volume").
+   * @param volume Identifier of the volume to mount.
+   */
+  withVolumeMount = (path: string, volume: Volume): Container => {
+    const ctx = this._ctx.select("withVolumeMount", { path, volume })
     return new Container(ctx)
   }
 
@@ -7215,6 +7255,31 @@ export class Env extends BaseClient {
    */
   withStringOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withStringOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Volume in the environment
+   * @param name The name of the binding
+   * @param value The Volume value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withVolumeInput = (name: string, value: Volume, description: string): Env => {
+    const ctx = this._ctx.select("withVolumeInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Volume output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withVolumeOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withVolumeOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -12390,6 +12455,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Volume from its ID.
+   */
+  loadVolumeFromID = (id: VolumeID): Volume => {
+    const ctx = this._ctx.select("loadVolumeFromID", { id })
+    return new Volume(ctx)
+  }
+
+  /**
    * Load a Workspace from its ID.
    */
   loadWorkspaceFromID = (id: WorkspaceID): Workspace => {
@@ -12467,6 +12540,28 @@ export class Client extends BaseClient {
   sourceMap = (filename: string, line: number, column: number): SourceMap => {
     const ctx = this._ctx.select("sourceMap", { filename, line, column })
     return new SourceMap(ctx)
+  }
+
+  /**
+   * Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
+   * @param endpoint SSH endpoint URL, e.g. ssh://user@host[:port]/absolute/path
+   * @param privateKey The private key to use for authentication
+   * @param publicKey The public key to use for authentication
+   * @param opts.experimentalServiceHost A service which must be started before the SSHFS volume is mounted.
+   */
+  sshfsVolume = (
+    endpoint: string,
+    privateKey: Secret,
+    publicKey: Secret,
+    opts?: ClientSshfsVolumeOpts,
+  ): Volume => {
+    const ctx = this._ctx.select("sshfsVolume", {
+      endpoint,
+      privateKey,
+      publicKey,
+      ...opts,
+    })
+    return new Volume(ctx)
   }
 
   /**
@@ -13682,6 +13777,37 @@ export class TypeDef extends BaseClient {
    */
   with = (arg: (param: TypeDef) => TypeDef) => {
     return arg(this)
+  }
+}
+
+/**
+ * A reference to an engine-managed volume.
+ */
+export class Volume extends BaseClient {
+  private readonly _id?: VolumeID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: VolumeID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Volume.
+   */
+  id = async (): Promise<VolumeID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<VolumeID> = await ctx.execute()
+
+    return response
   }
 }
 
