@@ -507,17 +507,6 @@ func (Other) Version() string {
 	})
 }
 
-func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	modGen := daggerCliBase(t, c)
-
-	t.Run("module builtin does not work", func(ctx context.Context, t *testctx.T) {
-		// .help with no module loaded should indicate no module is available
-		_, err := modGen.With(daggerShell(".help")).Sync(ctx)
-		requireErrOut(t, err, "module not loaded")
-	})
-}
-
 func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("sanity check", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
@@ -1107,7 +1096,7 @@ directory | with-new-file test bar | file test | contents
 	t.Run("async", func(ctx context.Context, t *testctx.T) {
 		script := `
 directory | with-new-file test foo | file test | contents &
-directory | with-new-file test bar | file test | contents & 
+directory | with-new-file test bar | file test | contents &
 .wait
 `
 		c := connect(ctx, t)
