@@ -119,16 +119,16 @@ func combineUsages(groups ...iter.Seq2[string, string]) iter.Seq[string] {
 	}
 }
 
-// allFunctionUsages returns a sequence of all top-level module functions, as name and short description
+// allFunctionUsages returns a sequence of all top-level functions, as name and short description
+//
+// When a module is loaded, this includes both core and module functions
+// available on Query. When no module is loaded, this is the core API.
 //
 // If the constructor has any required arguments this will be empty because
 // users won't be able to use the module's functions directly.
 func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
-		def, _ := h.GetModuleDef(nil)
-		if def == nil {
-			return
-		}
+		def := h.GetDef(nil)
 
 		constr := def.MainObject.AsObject.Constructor
 
@@ -156,8 +156,8 @@ func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
 // helps to combine in `combineUsages` function.
 func (h *shellCallHandler) allLoadedModules() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
-		def, _ := h.GetModuleDef(nil)
-		if def == nil {
+		def := h.GetDef(nil)
+		if !def.HasModule() {
 			return
 		}
 

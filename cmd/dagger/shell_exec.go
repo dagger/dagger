@@ -351,35 +351,35 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 		shellDebug(ctx, "Entrypoint", cmd, args, st)
 	}
 
-	if md, _ := h.GetModuleDef(st); md != nil {
-		// Command is a function in current context
-		if h.isCurrentContextFunction(cmd) {
-			// When entrypoint proxying is active, MainObject is Query
-			// and functions are already on Query — no constructor needed.
-			if md.MainObject.AsObject != nil && md.MainObject.AsObject.Name == "Query" {
-				newSt := h.NewState()
-				return h.functionCall(ctx, &newSt, cmd, args)
-			}
-			// We need to assume a constructor call without arguments
-			st, err := h.constructorCall(ctx, md, st, nil)
-			if err != nil {
-				return nil, err
-			}
-			return h.functionCall(ctx, st, cmd, args)
-		}
+	def := h.GetDef(st)
 
-		// Command is a dependency or module ref, so this is the constructor call
-		if st.IsEmpty() {
-			return h.constructorCall(ctx, md, st, args)
+	// Command is a function in current context (module or core)
+	if h.isCurrentContextFunction(cmd) {
+		// When MainObject is Query (entrypoint proxy or core-only),
+		// functions are already on Query — no constructor needed.
+		if def.MainObject.AsObject != nil && def.MainObject.AsObject.Name == "Query" {
+			newSt := h.NewState()
+			return h.functionCall(ctx, &newSt, cmd, args)
 		}
+		// We need to assume a constructor call without arguments
+		st, err := h.constructorCall(ctx, def, st, nil)
+		if err != nil {
+			return nil, err
+		}
+		return h.functionCall(ctx, st, cmd, args)
+	}
+
+	// Command is a dependency or module ref, so this is the constructor call
+	if def.HasModule() && st.IsEmpty() {
+		return h.constructorCall(ctx, def, st, args)
 	}
 
 	return st, nil
 }
 
 func (h *shellCallHandler) isCurrentContextFunction(name string) bool {
-	md, _ := h.GetModuleDef(nil)
-	return md != nil && md.HasMainFunction(name)
+	def := h.GetDef(nil)
+	return def.HasMainFunction(name)
 }
 
 func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*ShellState, error) {
@@ -387,22 +387,24 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 		shellDebug(ctx, "StateLookup", name)
 	}
 
-	// Is current context a loaded module?
-	if md, _ := h.GetModuleDef(nil); md != nil {
-		// 1. Function in current context
-		if md.HasMainFunction(name) {
-			st := h.NewState()
-			return &st, nil
-		}
+	def := h.GetDef(nil)
 
+	// 1. Function in current context (module or core)
+	if def.HasMainFunction(name) {
+		st := h.NewState()
+		return &st, nil
+	}
+
+	// Module-specific lookups
+	if def.HasModule() {
 		// 2. Is it the current module's name?
-		if md.Name == name {
-			st := h.newModState(md.SourceDigest)
+		if def.Name == name {
+			st := h.newModState(def.SourceDigest)
 			return &st, nil
 		}
 
 		// 3. Dependency short name
-		if dep := md.GetDependency(name); dep != nil {
+		if dep := def.GetDependency(name); dep != nil {
 			depSt, _, err := h.GetDependency(ctx, name)
 			return depSt, err
 		}
@@ -952,18 +954,10 @@ func (h *shellCallHandler) GetDef(st *ShellState) *moduleDef {
 	panic(fmt.Sprintf("module %q not loaded", dig))
 }
 
-// GetModuleDef returns the module definition for the current state
-func (h *shellCallHandler) GetModuleDef(st *ShellState) (*moduleDef, error) {
-	if def := h.GetDef(st); def.HasModule() {
-		return def, nil
-	}
-	return nil, fmt.Errorf("module not loaded")
-}
-
 func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*ShellState, *moduleDef, error) {
-	modDef, err := h.GetModuleDef(nil)
-	if err != nil {
-		return nil, nil, err
+	modDef := h.GetDef(nil)
+	if !modDef.HasModule() {
+		return nil, nil, fmt.Errorf("module not loaded")
 	}
 	dep := modDef.GetDependency(name)
 	if dep == nil {

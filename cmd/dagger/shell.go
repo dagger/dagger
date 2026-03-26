@@ -441,7 +441,7 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 
 	switch h.mode {
 	case modeShell:
-		if def, _ := h.GetModuleDef(nil); def != nil {
+		if def := h.GetDef(nil); def.HasModule() {
 			sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
 			sb.WriteString(out.String(" ").String())
 		}

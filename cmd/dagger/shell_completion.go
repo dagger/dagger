@@ -191,13 +191,6 @@ func (h *shellAutoComplete) root() *CompletionContext {
 type CompletionContext struct {
 	Completer *shellAutoComplete
 
-	// CmdType indicates the completions should be performed in the new
-	// namespace set by a namespace-setting command.
-	CmdType string
-	// CmdFunction indicates the completions should be performed on the
-	// arguments of the namespace-setting command.
-	CmdFunction string
-
 	// ModType indicates the completions should be performed on an
 	// object/interface/etc.
 	ModType functionProvider
@@ -233,13 +226,12 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 		}
 
 	case ctx.root:
-		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
-			for _, fn := range md.MainObject.AsFunctionProvider().GetFunctions() {
-				results = append(results, fn.CmdName())
-			}
-			for _, dep := range md.Dependencies {
-				results = append(results, dep.Name)
-			}
+		def := ctx.Completer.GetDef(nil)
+		for _, fn := range def.MainObject.AsFunctionProvider().GetFunctions() {
+			results = append(results, fn.CmdName())
+		}
+		for _, dep := range def.Dependencies {
+			results = append(results, dep.Name)
 		}
 		results = append(results, ctx.Completer.LoadedModulePaths()...)
 	}
@@ -308,12 +300,6 @@ func (ctx *CompletionContext) lookupType() *CompletionContext {
 		return &CompletionContext{
 			Completer: ctx.Completer,
 			ModType:   next,
-		}
-	}
-	if ctx.CmdFunction != "" {
-		return &CompletionContext{
-			Completer: ctx.Completer,
-			CmdType:   ctx.CmdFunction,
 		}
 	}
 	return nil
