@@ -302,10 +302,6 @@ func (st ShellState) IsCore() bool {
 	return st.Cmd == shellCoreCmdName
 }
 
-func (st ShellState) IsDeps() bool {
-	return st.Cmd == shellDepsCmdName
-}
-
 // FunctionCall represents a querybyilder.Selection
 //
 // The query builder only cares about the name of the function and its arguments,
@@ -516,11 +512,5 @@ func (h *shellCallHandler) NewStdlibState() ShellState {
 func (h *shellCallHandler) NewCoreState() ShellState {
 	return ShellState{
 		Cmd: shellCoreCmdName,
-	}
-}
-
-func (h *shellCallHandler) NewDepsState() ShellState {
-	return ShellState{
-		Cmd: shellDepsCmdName,
 	}
 }

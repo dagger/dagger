@@ -16,7 +16,6 @@ import (
 
 const (
 	shellStdlibCmdName = ".stdlib"
-	shellDepsCmdName = ".deps" // kept for IsDeps() state check
 	shellCoreCmdName   = ".core"
 )
 

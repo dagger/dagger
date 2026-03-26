@@ -58,30 +58,6 @@ func (h *shellCallHandler) CommandsList(name string, cmds []*ShellCommand) strin
 	return sb.String()
 }
 
-func (h *shellCallHandler) DependenciesList() string {
-	// This is validated in the .deps command
-	def, _ := h.GetModuleDef(nil)
-	if def == nil || len(def.Dependencies) == 0 {
-		return ""
-	}
-
-	sb := new(strings.Builder)
-
-	sb.WriteString("Available dependencies:\n")
-	for _, dep := range def.Dependencies {
-		sb.WriteString("  - ")
-		sb.WriteString(dep.Name)
-		sb.WriteString("\n")
-	}
-
-	usage := shellDepsCmdName + " | .help"
-
-	fmt.Fprintf(sb, "\nUse %q for more details.", usage)
-	fmt.Fprintf(sb, "\nUse %q for more information on a dependency.\n", usage+" <dependency>")
-
-	return sb.String()
-}
-
 func (h *shellCallHandler) MainHelp() string {
 	var doc ShellDoc
 
@@ -200,21 +176,6 @@ func (h *shellCallHandler) allLoadedModules() iter.Seq2[string, string] {
 	}
 }
 
-// allDependencyUsages returns a sequence of all dependencies, as name and short description
-func (h *shellCallHandler) allDependencyUsages() iter.Seq2[string, string] {
-	return func(yield func(string, string) bool) {
-		def, _ := h.GetModuleDef(nil)
-		if def == nil {
-			return
-		}
-		for _, dep := range def.Dependencies {
-			if !yield(dep.Name, dep.Short()) {
-				return
-			}
-		}
-	}
-}
-
 // allStdlibUsages returns a sequence of all stdlib commands, as name and short description
 func (h *shellCallHandler) allStdlibUsages() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
@@ -262,27 +223,6 @@ func (h *shellCallHandler) CoreHelp() string {
 	)
 
 	doc.Add("", fmt.Sprintf(`Use "%s | .help <function>" for more information on a function.`, shellCoreCmdName))
-
-	return doc.String()
-}
-
-func (h *shellCallHandler) DepsHelp() string {
-	// This is validated in the .deps command
-	def, _ := h.GetModuleDef(nil)
-	if def == nil {
-		return ""
-	}
-
-	var doc ShellDoc
-
-	doc.Add(
-		"Module Dependencies",
-		nameShortWrapped(def.Dependencies, func(dep *moduleDef) (string, string) {
-			return dep.Name, dep.Short()
-		}),
-	)
-
-	doc.Add("", fmt.Sprintf(`Use "%s | .help <dependency>" for more information on a dependency.`, shellDepsCmdName))
 
 	return doc.String()
 }
