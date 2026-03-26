@@ -227,8 +227,6 @@ func (Other) Version() string {
 			With(daggerShell(".help")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "Main module")
-		require.NotContains(t, out, "Multiline module description.")
 		require.Regexp(t, `version\s+Test version`, out)
 		require.Regexp(t, `go\s+Encouragement`, out)
 		require.Regexp(t, `dep\s+Dependency module`, out)

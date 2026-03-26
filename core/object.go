@@ -282,9 +282,16 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
+		// Prefer the object's description; fall back to the module's
+		// description so that dependency constructors on Query always
+		// carry the module's doc string when the struct itself has none.
+		desc := formatGqlDescription(objDef.Description)
+		if desc == "" {
+			desc = formatGqlDescription(mod.Description)
+		}
 		spec := dagql.FieldSpec{
 			Name:             gqlFieldName(mod.Name()),
-			Description:      formatGqlDescription(objDef.Description),
+			Description:      desc,
 			Type:             obj,
 			Module:           obj.Module.IDModule(),
 			GetCacheConfig:   mod.CacheConfigForCall,
@@ -329,6 +336,12 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
 	spec.Name = gqlFieldName(mod.Name())
+	// When the constructor function has no doc comment, fall back to the
+	// module description so that dependency constructors on Query carry a
+	// meaningful description in the shell and schema.
+	if spec.Description == "" {
+		spec.Description = formatGqlDescription(mod.Description)
+	}
 	spec.Module = obj.Module.IDModule()
 	spec.GetCacheConfig = fn.CacheConfigForCall
 
