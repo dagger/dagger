@@ -452,8 +452,8 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 
 	case introspection.TypeKindInterface:
 		return &TypeDef{
-			Kind:        TypeDefKindInterface,
-			Optional:    !nonNull,
+			Kind:     TypeDefKindInterface,
+			Optional: !nonNull,
 			AsInterface: dagql.NonNull(&InterfaceTypeDef{
 				Name: introspectionType.Name,
 			}),

@@ -186,5 +186,3 @@ func (s *querySchema) schemaJSONFile(
 	}
 	return dagql.NewObjectResultForID(f, s.srv, curID)
 }
-
-

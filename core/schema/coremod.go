@@ -387,5 +387,3 @@ func (enum *CoreModEnum) TypeDef() *core.TypeDef {
 		AsEnum: dagql.NonNull(enum.typeDef),
 	}
 }
-
-

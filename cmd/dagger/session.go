@@ -21,8 +21,8 @@ import (
 )
 
 var (
-	sessionLabels              = enginetel.NewLabelFlag()
-	sessionVersion             string
+	sessionLabels               = enginetel.NewLabelFlag()
+	sessionVersion              string
 	sessionSkipWorkspaceModules bool
 )
 
