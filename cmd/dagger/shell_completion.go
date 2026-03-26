@@ -326,5 +326,3 @@ func (ctx *CompletionContext) builtinCmd(name string) *ShellCommand {
 	}
 	return nil
 }
-
-

@@ -14,8 +14,6 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
-
-
 // ShellCommand is a Dagger Shell builtin or stdlib command
 type ShellCommand struct {
 	// Use is the one-line usage message

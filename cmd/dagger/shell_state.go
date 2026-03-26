@@ -290,8 +290,6 @@ func (st ShellState) IsEmpty() bool {
 	return len(st.Calls) == 0
 }
 
-
-
 // FunctionCall represents a querybyilder.Selection
 //
 // The query builder only cares about the name of the function and its arguments,
@@ -492,5 +490,3 @@ func (h *shellCallHandler) newModState(dig string) ShellState {
 func (h *shellCallHandler) NewState() ShellState {
 	return ShellState{}
 }
-
-
