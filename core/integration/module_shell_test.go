@@ -356,7 +356,7 @@ func (Other) Version() string {
 			WithWorkdir("modules/git").
 			With(daggerShell("url")).
 			Sync(ctx)
-		requireErrOut(t, err, "constructor: requires 1 positional argument(s), received 0")
+		requireErrOut(t, err, `missing required argument: "url"`)
 	})
 
 	t.Run("current module required constructor arg function", func(ctx context.Context, t *testctx.T) {
