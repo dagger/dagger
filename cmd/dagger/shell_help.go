@@ -138,6 +138,9 @@ func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
 		// It'll at least show the constructor itself (next).
 		if !constr.HasRequiredArgs() {
 			for _, fn := range def.MainObject.AsFunctionProvider().GetFunctions() {
+				if isLoadFromIDFunction(fn.CmdName()) {
+					continue
+				}
 				if !yield(fn.CmdName(), fn.Short()) {
 					return
 				}
@@ -463,4 +466,10 @@ func shellTypeDoc(t *modTypeDef) string {
 	}
 
 	return doc.String()
+}
+
+// isLoadFromIDFunction returns true for internal "load-<type>-from-id"
+// functions that are callable but should not clutter .help output.
+func isLoadFromIDFunction(name string) bool {
+	return strings.HasPrefix(name, "load-") && strings.HasSuffix(name, "-from-id")
 }
