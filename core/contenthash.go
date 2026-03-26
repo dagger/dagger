@@ -41,7 +41,7 @@ func MakeDirectoryContentHashed(
 		return dirInst, nil
 	}
 
-	return dirInst.WithContentDigest(dgst), nil
+	return dirInst.WithContentDigest(ctx, dgst)
 }
 
 func GetContentHashFromDirectory(

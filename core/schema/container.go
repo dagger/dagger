@@ -982,11 +982,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 
 		// detach identity from the :tag, make the result purely content-addressed based on the digest
-		return inst.WithContentDigest(hashutil.HashStrings(
+		return inst.WithContentDigest(ctx, hashutil.HashStrings(
 			"container.from",
 			refName.Digest().String(),
 			ctr.Platform.Format(),
-		)), nil
+		))
 	}
 
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical

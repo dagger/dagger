@@ -737,7 +737,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	if httpAuthHeader.Self() != nil {
 		dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(httpAuthHeader.Self() != nil))
 	}
-	inst = inst.WithContentDigest(hashutil.HashStrings(dgstInputs...))
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
+	if err != nil {
+		return inst, err
+	}
 	return inst, nil
 }
 
@@ -812,7 +815,10 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
 		}
 	}
-	inst = inst.WithContentDigest(hashutil.HashStrings(dgstInputs...))
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
+	if err != nil {
+		return inst, err
+	}
 	return inst, nil
 }
 
@@ -1064,7 +1070,10 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 			if err != nil {
 				return inst, fmt.Errorf("failed to get content hash: %w", err)
 			}
-			inst = inst.WithContentDigest(dgst)
+			inst, err = inst.WithContentDigest(ctx, dgst)
+			if err != nil {
+				return inst, err
+			}
 		}
 	}
 

@@ -286,7 +286,10 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return inst, fmt.Errorf("failed to create directory result: %w", err)
 	}
-	inst = inst.WithContentDigest(contentDgst)
+	inst, err = inst.WithContentDigest(ctx, contentDgst)
+	if err != nil {
+		return inst, err
+	}
 
 	return inst, nil
 }
@@ -312,7 +315,10 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
-	inst = inst.WithContentDigest(dgst)
+	inst, err = inst.WithContentDigest(ctx, dgst)
+	if err != nil {
+		return inst, err
+	}
 
 	upsertSocket := func(ctx context.Context) error {
 		callerClientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -405,7 +411,10 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
-	inst = inst.WithContentDigest(scopedDigest)
+	inst, err = inst.WithContentDigest(ctx, scopedDigest)
+	if err != nil {
+		return inst, err
+	}
 
 	if err := upsertScopedSSHAuthSocket(ctx, query, args.Source.Valid, scopedSocket, sourceSocket); err != nil {
 		return inst, err

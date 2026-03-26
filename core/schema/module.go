@@ -2527,5 +2527,5 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, err
 	}
-	return inst.WithContentDigest(scopedDigest), nil
+	return inst.WithContentDigest(ctx, scopedDigest)
 }

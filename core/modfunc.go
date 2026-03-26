@@ -884,17 +884,30 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	if returnValue != nil && fn.hasWorkspaceArgs() {
-		returnedContent := NewCollectedContent()
-		if err := fn.returnType.CollectContent(ctx, returnValue, returnedContent); err != nil {
-			return nil, fmt.Errorf("collect content: %w", err)
+		returnType := fn.returnType
+		for {
+			nullable, ok := returnType.(*NullableType)
+			if !ok {
+				break
+			}
+			returnType = nullable.Inner
 		}
+		if _, ok := returnType.(*ModuleObjectType); ok {
+			returnedContent := NewCollectedContent()
+			if err := fn.returnType.CollectContent(ctx, returnValue, returnedContent); err != nil {
+				return nil, fmt.Errorf("collect content: %w", err)
+			}
 
-		// If this function accepts Workspace args, set a content digest on the
-		// result derived from all content it returned — both core object IDs
-		// (Directory, File, etc.) and primitive scalar values (String, Int, etc.).
-		// This ensures downstream calls that reference this result get a different
-		// cache key when the underlying content changes.
-		returnValue = returnValue.WithContentDigestAny(returnedContent.Digest())
+			// If this function accepts Workspace args and returns a user module
+			// object, set a content digest on the result derived from all content
+			// it returned. This ensures downstream calls that reference this
+			// result get a different cache key when the underlying content
+			// changes.
+			returnValue, err = returnValue.WithContentDigestAny(ctx, returnedContent.Digest())
+			if err != nil {
+				return nil, fmt.Errorf("set content digest on module function return value: %w", err)
+			}
+		}
 	}
 
 	return returnValue, nil

@@ -120,7 +120,7 @@ type AnyResult interface {
 	NullableWrapped() AnyResult
 
 	// WithContentDigest returns a new AnyResult with the given content digest.
-	WithContentDigestAny(digest.Digest) AnyResult
+	WithContentDigestAny(context.Context, digest.Digest) (AnyResult, error)
 
 	HitCache() bool
 	ResultCall() (*ResultCall, error)

@@ -3617,7 +3617,7 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	if err != nil {
 		return inst, err
 	}
-	return inst.WithContentDigest(scopedDigest), nil
+	return inst.WithContentDigest(ctx, scopedDigest)
 }
 
 func (s *moduleSourceSchema) moduleSourceAsModule(

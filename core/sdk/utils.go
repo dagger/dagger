@@ -71,7 +71,11 @@ func ScopeModuleForSDKOperation(
 	if err != nil {
 		return inst, fmt.Errorf("scope module for sdk operation %q: engine cache: %w", op, err)
 	}
-	attached, err := cache.AttachResult(ctx, clientMetadata.SessionID, dag, scopedModInst.WithContentDigest(scopedDigest))
+	scopedModInst, err = scopedModInst.WithContentDigest(ctx, scopedDigest)
+	if err != nil {
+		return inst, fmt.Errorf("scope module for sdk operation %q: set content digest: %w", op, err)
+	}
+	attached, err := cache.AttachResult(ctx, clientMetadata.SessionID, dag, scopedModInst)
 	if err != nil {
 		return inst, err
 	}

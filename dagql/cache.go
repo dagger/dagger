@@ -1485,32 +1485,6 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 	})
 }
 
-// withDetachedPayload clones shared payload so per-result metadata changes do
-// not affect other Results. It intentionally reuses the authoritative call
-// frame; call-frame mutations must fork explicitly.
-func (r Result[T]) withDetachedPayload() Result[T] {
-	if r.shared != nil {
-		state := r.shared.loadPayloadState()
-		r.shared = &sharedResult{
-			self:                   state.self,
-			isObject:               state.isObject,
-			resultCall:             r.shared.loadResultCall(),
-			hasValue:               state.hasValue,
-			persistedEnvelope:      state.persistedEnvelope,
-			persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
-			createdAtUnixNano:      state.createdAtUnixNano,
-			lastUsedAtUnixNano:     state.lastUsedAtUnixNano,
-			sizeEstimateBytes:      r.shared.sizeEstimateBytes,
-			usageIdentity:          r.shared.usageIdentity,
-			description:            r.shared.description,
-			recordType:             r.shared.recordType,
-		}
-	} else {
-		r.shared = &sharedResult{}
-	}
-	return r
-}
-
 func (r Result[T]) resultWithDerefView() Result[T] {
 	r.derefView = true
 	r.nullableWrapped = false
@@ -1538,28 +1512,44 @@ func derefTyped(val Typed) (Typed, bool) {
 	return derefable.Deref()
 }
 
-func (r Result[T]) withDetachedCallPayload() Result[T] {
-	r = r.withDetachedPayload()
-	if r.shared != nil {
-		if frame := r.shared.loadResultCall(); frame != nil {
-			r.shared.storeResultCall(frame.fork())
+func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest) (Result[T], error) {
+	if contentDigest == "" {
+		return r, fmt.Errorf("set content digest on %T: empty digest", r.Self())
+	}
+	if r.shared == nil {
+		return r, fmt.Errorf("set content digest on %T: missing shared result", r.Self())
+	}
+	if r.shared.id != 0 {
+		cache, err := EngineCache(ctx)
+		if err != nil {
+			return r, fmt.Errorf("set content digest on %T: current dagql cache: %w", r.Self(), err)
 		}
+		if err := cache.TeachContentDigest(ctx, r, contentDigest); err != nil {
+			return r, err
+		}
+		return r, nil
 	}
-	return r
-}
 
-func (r Result[T]) ResultWithCall(frame *ResultCall) Result[T] {
-	r = r.withDetachedPayload()
-	r.shared.storeResultCall(frame.clone())
-	return r
-}
-
-func (r Result[T]) WithContentDigest(contentDigest digest.Digest) Result[T] {
-	r = r.withDetachedCallPayload()
+	state := r.shared.loadPayloadState()
 	frame := r.shared.loadResultCall()
-	if r.shared == nil || frame == nil {
-		panic(fmt.Sprintf("set content digest on %T: missing call frame", r.Self()))
+	if frame == nil {
+		return r, fmt.Errorf("set content digest on %T: missing call frame", r.Self())
 	}
+	r.shared = &sharedResult{
+		self:                   state.self,
+		isObject:               state.isObject,
+		resultCall:             frame.fork(),
+		hasValue:               state.hasValue,
+		persistedEnvelope:      state.persistedEnvelope,
+		persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
+		createdAtUnixNano:      state.createdAtUnixNano,
+		lastUsedAtUnixNano:     state.lastUsedAtUnixNano,
+		sizeEstimateBytes:      r.shared.sizeEstimateBytes,
+		usageIdentity:          r.shared.usageIdentity,
+		description:            r.shared.description,
+		recordType:             r.shared.recordType,
+	}
+	frame = r.shared.loadResultCall()
 	replaced := false
 	for i, extra := range frame.ExtraDigests {
 		if extra.Label != call.ExtraDigestLabelContent {
@@ -1575,13 +1565,13 @@ func (r Result[T]) WithContentDigest(contentDigest digest.Digest) Result[T] {
 			Digest: contentDigest,
 		})
 	}
-	return r
+	return r, nil
 }
 
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
-func (r Result[T]) WithContentDigestAny(customDigest digest.Digest) AnyResult {
-	return r.WithContentDigest(customDigest)
+func (r Result[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
+	return r.WithContentDigest(ctx, customDigest)
 }
 
 // String returns the instance in Class@sha256:... format.
@@ -1696,25 +1686,28 @@ func (r ObjectResult[T]) Receiver(ctx context.Context, srv *Server) (AnyObjectRe
 	return obj, nil
 }
 
-func (r ObjectResult[T]) WithContentDigest(contentDigest digest.Digest) ObjectResult[T] {
-	return ObjectResult[T]{
-		Result: r.Result.WithContentDigest(contentDigest),
-		class:  r.class,
+func (r ObjectResult[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest) (ObjectResult[T], error) {
+	res, err := r.Result.WithContentDigest(ctx, contentDigest)
+	if err != nil {
+		return ObjectResult[T]{}, err
 	}
+	return ObjectResult[T]{
+		Result: res,
+		class:  r.class,
+	}, nil
 }
 
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
-func (r ObjectResult[T]) WithContentDigestAny(customDigest digest.Digest) AnyResult {
-	return ObjectResult[T]{
-		Result: r.Result.WithContentDigest(customDigest),
-		class:  r.class,
+func (r ObjectResult[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
+	res, err := r.Result.WithContentDigest(ctx, customDigest)
+	if err != nil {
+		return nil, err
 	}
-}
-
-func (r ObjectResult[T]) ObjectResultWithCall(frame *ResultCall) ObjectResult[T] {
-	r.Result = r.Result.ResultWithCall(frame)
-	return r
+	return ObjectResult[T]{
+		Result: res,
+		class:  r.class,
+	}, nil
 }
 
 func (r ObjectResult[T]) objectResultWithDerefView() AnyResult {

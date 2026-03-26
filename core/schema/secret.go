@@ -94,7 +94,10 @@ func (s *secretSchema) secret(
 	}
 
 	if args.CacheKey.Valid {
-		i = i.WithContentDigest(hashutil.HashStrings(string(args.CacheKey.Value)))
+		i, err = i.WithContentDigest(ctx, hashutil.HashStrings(string(args.CacheKey.Value)))
+		if err != nil {
+			return i, err
+		}
 	} else {
 		plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, secret)
 		if err != nil {
@@ -134,7 +137,10 @@ func (s *secretSchema) secret(
 			keySize,
 		)
 		b64Key := base64.RawStdEncoding.EncodeToString(key)
-		i = i.WithContentDigest(digest.Digest("argon2:" + b64Key))
+		i, err = i.WithContentDigest(ctx, digest.Digest("argon2:"+b64Key))
+		if err != nil {
+			return i, err
+		}
 	}
 
 	if err := secretStore.AddSecret(ctx, i); err != nil {
@@ -204,7 +210,10 @@ func (s *secretSchema) setSecret(
 	if err != nil {
 		return i, fmt.Errorf("failed to create secret instance: %w", err)
 	}
-	secret = secret.WithContentDigest(dgst)
+	secret, err = secret.WithContentDigest(ctx, dgst)
+	if err != nil {
+		return secret, err
+	}
 	if err := secretStore.AddSecret(ctx, secret); err != nil {
 		return i, fmt.Errorf("failed to add secret: %w", err)
 	}

@@ -3106,27 +3106,23 @@ func TestExtraDigestLabelIsolation(t *testing.T) {
 	assert.Assert(t, !f2HasLabelA)
 
 	f1Res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(f1Call, 501).(Result[Int]).WithContentDigest(contentA).ResultWithCall(
-			&ResultCall{
-				Kind:         ResultCallKindField,
-				Type:         NewResultCallType(Int(0).Type()),
-				Field:        "label-isolation-f-1",
-				ExtraDigests: []call.ExtraDigest{sharedA, noiseA},
-			},
-		), nil
+		return cacheTestIntResult(&ResultCall{
+			Kind:         ResultCallKindField,
+			Type:         NewResultCallType(Int(0).Type()),
+			Field:        "label-isolation-f-1",
+			ExtraDigests: []call.ExtraDigest{sharedA, noiseA},
+		}, 501).(Result[Int]).WithContentDigest(ctx, contentA)
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !f1Res.HitCache())
 
 	f2Res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(f2Call, 502).(Result[Int]).WithContentDigest(contentB).ResultWithCall(
-			&ResultCall{
-				Kind:         ResultCallKindField,
-				Type:         NewResultCallType(Int(0).Type()),
-				Field:        "label-isolation-f-2",
-				ExtraDigests: []call.ExtraDigest{sharedB, noiseB},
-			},
-		), nil
+		return cacheTestIntResult(&ResultCall{
+			Kind:         ResultCallKindField,
+			Type:         NewResultCallType(Int(0).Type()),
+			Field:        "label-isolation-f-2",
+			ExtraDigests: []call.ExtraDigest{sharedB, noiseB},
+		}, 502).(Result[Int]).WithContentDigest(ctx, contentB)
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !f2Res.HitCache())
@@ -3182,7 +3178,7 @@ func TestCacheHitReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	outputCall := cacheTestIntCall("hit-return-id-output")
 
 	res1, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(outputCall, 77).(Result[Int]).WithContentDigest(contentDigest), nil
+		return cacheTestIntResult(outputCall, 77).(Result[Int]).WithContentDigest(ctx, contentDigest)
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, ctx, res1).ContentDigest().String())
@@ -3217,7 +3213,7 @@ func TestCacheFreshReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	sourceOutCall := cacheTestIntCall("fresh-return-id-output")
 
 	sourceRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: sourceCall}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(sourceOutCall, 91).(Result[Int]).WithContentDigest(contentDigest), nil
+		return cacheTestIntResult(sourceOutCall, 91).(Result[Int]).WithContentDigest(ctx, contentDigest)
 	})
 	assert.NilError(t, err)
 	shared := sourceRes.cacheSharedResult()
@@ -3451,14 +3447,12 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 		With(call.WithContentDigest(digest.FromString("result-content")))
 
 	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: storageCall}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(storageCall, 44).(Result[Int]).
-			WithContentDigest(digest.FromString("result-content")).
-			ResultWithCall(&ResultCall{
-				Kind:         ResultCallKindField,
-				Type:         NewResultCallType(Int(0).Type()),
-				Field:        "storage-key",
-				ExtraDigests: []call.ExtraDigest{{Digest: digest.FromString("result-digest")}},
-			}), nil
+		return cacheTestIntResult(&ResultCall{
+			Kind:         ResultCallKindField,
+			Type:         NewResultCallType(Int(0).Type()),
+			Field:        "storage-key",
+			ExtraDigests: []call.ExtraDigest{{Digest: digest.FromString("result-digest")}},
+		}, 44).(Result[Int]).WithContentDigest(ctx, digest.FromString("result-content"))
 	})
 	assert.NilError(t, err)
 
@@ -5558,7 +5552,7 @@ func TestCacheResultCallFirstWriterWins(t *testing.T) {
 	}
 
 	first, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: id}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(id, 1).(Result[Int]).ResultWithCall(firstFrame), nil
+		return cacheTestIntResult(firstFrame, 1), nil
 	})
 	assert.NilError(t, err)
 	firstShared := first.cacheSharedResult()
@@ -5567,7 +5561,7 @@ func TestCacheResultCallFirstWriterWins(t *testing.T) {
 	assert.Equal(t, "first", firstShared.resultCall.SyntheticOp)
 
 	second, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: id}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(id, 2).(Result[Int]).ResultWithCall(secondFrame), nil
+		return cacheTestIntResult(secondFrame, 2), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, second.HitCache())

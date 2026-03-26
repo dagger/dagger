@@ -134,7 +134,8 @@ func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
 	attach := func(res dagql.AnyResult) (dagql.AnyResult, error) {
 		recipeID, err := res.RecipeID(ctx)
 		assert.NilError(t, err)
-		attached := res.WithContentDigestAny(digest.FromString(recipeID.Digest().String())).(dagql.AnyResult)
+		attached, err := res.WithContentDigestAny(ctx, digest.FromString(recipeID.Digest().String()))
+		assert.NilError(t, err)
 		attachedByDigest[recipeID.Digest().String()] = attached
 		return attached, nil
 	}
@@ -269,10 +270,10 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 	enumTypeDefTop := newTypeDefAttachedResult(t, ctx, sc, dag, "enumTopTypeDef", (&TypeDef{}).WithEnumTypeDef(enumDef))
 
 	mod := &Module{
-		NameField:    "Test",
-		OriginalName: "Test",
-		SDKConfig:    &SDKConfig{},
-		Deps:         NewModDeps(root, nil),
+		NameField:     "Test",
+		OriginalName:  "Test",
+		SDKConfig:     &SDKConfig{},
+		Deps:          NewModDeps(root, nil),
 		ObjectDefs:    dagql.ObjectResultArray[*TypeDef]{objTypeDef},
 		InterfaceDefs: dagql.ObjectResultArray[*TypeDef]{ifaceTypeDefTop},
 		EnumDefs:      dagql.ObjectResultArray[*TypeDef]{enumTypeDefTop},

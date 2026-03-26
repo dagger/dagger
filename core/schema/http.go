@@ -164,7 +164,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	if err != nil {
 		return inst, err
 	}
-	return inst.WithContentDigest(outputDigest), nil
+	return inst.WithContentDigest(ctx, outputDigest)
 }
 
 func parseChecksumArg(checksum *string) (digest.Digest, error) {
