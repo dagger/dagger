@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"iter"
-	"slices"
 	"strings"
 
 	"github.com/muesli/reflow/indent"
@@ -61,23 +59,93 @@ func (h *shellCallHandler) CommandsList(name string, cmds []*ShellCommand) strin
 func (h *shellCallHandler) MainHelp() string {
 	var doc ShellDoc
 
-	// NB: Order is important to apply proper shadowing. This reflects the
-	// lookup order when the handler executes a command.
-	groups := slices.Collect(combineUsages(
-		h.allBuiltinUsages(),
-		h.allFunctionUsages(),
-		h.allLoadedModules(),
-	))
+	def := h.GetDef(nil)
 
-	// move builtins to last
-	groups = append(groups[1:], groups[0])
-
-	// move module before its functions
-	groups[0], groups[1] = groups[1], groups[0]
-
-	for _, group := range groups {
-		doc.Add("", group)
+	// Group functions by source module.
+	type moduleGroup struct {
+		name  string // module name ("" for core)
+		short string // module description
+		fns   []*modFunction
 	}
+
+	// Collect functions into groups, preserving encounter order.
+	groups := make(map[string]*moduleGroup)
+	var order []string
+
+	constr := def.MainObject.AsObject.Constructor
+	if !constr.HasRequiredArgs() {
+		for _, fn := range def.MainObject.AsFunctionProvider().GetFunctions() {
+			if isLoadFromIDFunction(fn.CmdName()) {
+				continue
+			}
+			src := fn.SourceModuleName
+			g, ok := groups[src]
+			if !ok {
+				g = &moduleGroup{name: src}
+				groups[src] = g
+				order = append(order, src)
+			}
+			g.fns = append(g.fns, fn)
+		}
+	}
+
+	// Fill in module descriptions from dependencies.
+	for _, g := range groups {
+		if g.name == "" {
+			continue
+		}
+		if dep := def.GetDependency(g.name); dep != nil {
+			g.short = dep.Short()
+		} else if g.name == def.Name {
+			g.short = def.Short()
+		}
+	}
+
+	// Emit groups: core first, then entrypoint modules, then dependencies.
+	if g, ok := groups[""]; ok {
+		doc.Add("Available Functions",
+			nameShortWrapped(g.fns, func(f *modFunction) (string, string) {
+				return f.CmdName(), f.Short()
+			}),
+		)
+	}
+
+	// Entrypoint module functions (source module == current module name).
+	if def.HasModule() {
+		if g, ok := groups[def.Name]; ok {
+			title := def.Name
+			body := nameShortWrapped(g.fns, func(f *modFunction) (string, string) {
+				return f.CmdName(), f.Short()
+			})
+			if g.short != "" && g.short != "-" {
+				body = g.short + "\n" + body
+			}
+			doc.Add(title,
+				body,
+			)
+		}
+	}
+
+	// Installed (non-entrypoint) modules in a single group.
+	var installed []*modFunction
+	for _, src := range order {
+		if src == "" || src == def.Name {
+			continue
+		}
+		installed = append(installed, groups[src].fns...)
+	}
+	doc.Add("Installed Modules",
+		nameShortWrapped(installed, func(f *modFunction) (string, string) {
+			return f.CmdName(), f.Short()
+		}),
+	)
+
+	// Builtins last.
+	doc.Add("Builtins",
+		nameShortWrapped(h.Builtins(), func(c *ShellCommand) (string, string) {
+			return c.Name(), c.Short()
+		}),
+	)
 
 	types := "<command>"
 	if len(doc.Groups) > 2 {
@@ -87,106 +155,6 @@ func (h *shellCallHandler) MainHelp() string {
 	doc.Add("", fmt.Sprintf(`Use ".help %s" for more information.`, types))
 
 	return doc.String()
-}
-
-// combineUsages removes shadowed functions, even in different sections or groups
-//
-// Returns the section's compiled string of usages, in the order they were passed.
-func combineUsages(groups ...iter.Seq2[string, string]) iter.Seq[string] {
-	return func(yield func(string) bool) {
-		seen := make(map[string]struct{})
-
-		// filter out elements that already exist
-		filtered := func(seq iter.Seq2[string, string]) iter.Seq2[string, string] {
-			return func(y func(string, string) bool) {
-				for k, v := range seq {
-					if _, exists := seen[k]; !exists {
-						seen[k] = struct{}{}
-						if !y(k, v) {
-							return
-						}
-					}
-				}
-			}
-		}
-
-		for _, usages := range groups {
-			body := nameShortWrappedIter(filtered(usages))
-			if !yield(body) {
-				return
-			}
-		}
-	}
-}
-
-// allFunctionUsages returns a sequence of all top-level functions, as name and short description
-//
-// When a module is loaded, this includes both core and module functions
-// available on Query. When no module is loaded, this is the core API.
-//
-// If the constructor has any required arguments this will be empty because
-// users won't be able to use the module's functions directly.
-func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
-	return func(yield func(string, string) bool) {
-		def := h.GetDef(nil)
-
-		constr := def.MainObject.AsObject.Constructor
-
-		// When using a top-level function, we're automatically making a call
-		// to the constructor without arguments. If it has required arguments
-		// this isn't possible, so don't show them as being immediately available.
-		// It'll at least show the constructor itself (next).
-		if !constr.HasRequiredArgs() {
-			for _, fn := range def.MainObject.AsFunctionProvider().GetFunctions() {
-				if isLoadFromIDFunction(fn.CmdName()) {
-					continue
-				}
-				if !yield(fn.CmdName(), fn.Short()) {
-					return
-				}
-			}
-		}
-	}
-}
-
-// allLoadedModules returns a sequence of a single module if one is currently loaded
-//
-// The function name can be misleading since we only consider one module to
-// be the "current" module, at least at the moment. Making this a sequence
-// helps to combine in `combineUsages` function.
-func (h *shellCallHandler) allLoadedModules() iter.Seq2[string, string] {
-	return func(yield func(string, string) bool) {
-		def := h.GetDef(nil)
-		if !def.HasModule() {
-			return
-		}
-
-		constr := def.MainObject.AsObject.Constructor
-
-		// The module name is a convenience for clarity. Can always use the path (`.`)
-		// No point if there's no arguments though.
-		if len(constr.Args) == 0 {
-			return
-		}
-
-		short := constr.Short()
-		if short == "" || short == "-" {
-			short = def.Short()
-		}
-
-		yield(constr.CmdName(), short)
-	}
-}
-
-// allBuiltinUsages returns a sequence of all builtin commands, as name and short description
-func (h *shellCallHandler) allBuiltinUsages() iter.Seq2[string, string] {
-	return func(yield func(string, string) bool) {
-		for _, cmd := range h.Builtins() {
-			if !yield(cmd.Name(), cmd.Short()) {
-				return
-			}
-		}
-	}
 }
 
 func (h *shellCallHandler) TypesHelp() string {
