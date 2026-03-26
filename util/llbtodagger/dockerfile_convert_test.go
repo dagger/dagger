@@ -284,7 +284,7 @@ COPY --chmod=751 input.txt /app/out.txt
 	require.EqualValues(t, 0o751, withFile.Arg("permissions").Value().ToInput())
 
 	srcFile := argIDFromCall(t, withFile, "source")
-	fileCall := findFieldInChain(srcFile, "file")
+	fileCall := findFieldInChain(srcFile, "__withDirectoryDockerfileCompat")
 	require.NotNil(t, fileCall)
 	require.Equal(t, "input.txt", fileCall.Arg("path").Value().ToInput())
 }
@@ -308,7 +308,7 @@ COPY --chown=:123 input.txt /app/out.txt
 	require.Equal(t, "0:123", withFile.Arg("owner").Value().ToInput())
 
 	srcFile := argIDFromCall(t, withFile, "source")
-	fileCall := findFieldInChain(srcFile, "file")
+	fileCall := findFieldInChain(srcFile, "__withDirectoryDockerfileCompat")
 	require.NotNil(t, fileCall)
 	require.Equal(t, "input.txt", fileCall.Arg("path").Value().ToInput())
 }
@@ -327,7 +327,7 @@ COPY --chown=auser:agroup input.txt /app/out.txt
 	require.Equal(t, "container", fields[0])
 	require.NotNil(t, findFieldInChain(id, "withExec"))
 
-	withFile := findFieldInChain(id, "withFile")
+	withFile := findFieldInChain(id, "__withDirectoryDockerfileCompat")
 	require.NotNil(t, withFile)
 	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
 	require.Equal(t, "auser:agroup", withFile.Arg("owner").Value().ToInput())
@@ -586,7 +586,7 @@ RUN echo done
 	require.NotNil(t, findFieldAnywhere(id, "git"))
 	require.NotNil(t, findFieldAnywhere(id, "withNewDirectory"))
 
-	namedOwnerCopy := findCallByStringArg(id, "withDirectory", "owner", "auser:agroup")
+	namedOwnerCopy := findCallByStringArg(id, "__withDirectoryDockerfileCompat", "owner", "auser:agroup")
 	if namedOwnerCopy == nil {
 		namedOwnerCopy = findCallByStringArg(id, "withFile", "owner", "auser:agroup")
 	}

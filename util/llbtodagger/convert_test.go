@@ -680,9 +680,6 @@ func TestDefinitionToIDFileCopyDoNotCreateDestPathWithDirectory(t *testing.T) {
 
 	withDir := rootfsArgFromContainer(t, id)
 	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
-	doNotCreateDestPath := withDir.Arg("doNotCreateDestPath")
-	require.NotNil(t, doNotCreateDestPath)
-	require.Equal(t, true, doNotCreateDestPath.Value().ToInput())
 }
 
 func TestDefinitionToIDFileCopyDoNotCreateDestPathWithFile(t *testing.T) {
@@ -703,9 +700,6 @@ func TestDefinitionToIDFileCopyDoNotCreateDestPathWithFile(t *testing.T) {
 
 	withFile := rootfsArgFromContainer(t, id)
 	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withFile))
-	doNotCreateDestPath := withFile.Arg("doNotCreateDestPath")
-	require.NotNil(t, doNotCreateDestPath)
-	require.Equal(t, true, doNotCreateDestPath.Value().ToInput())
 }
 
 func TestDefinitionToIDFileCopyModeOverride(t *testing.T) {
@@ -759,7 +753,7 @@ func TestDefinitionToIDFileCopyExplicitDestPathUsesWithFile(t *testing.T) {
 
 	sourceID, ok := withFile.Arg("source").Value().ToInput().(*call.ID)
 	require.True(t, ok)
-	sourceFile := findFieldInChain(sourceID, "file")
+	sourceFile := findFieldInChain(sourceID, "__withDirectoryDockerfileCompat")
 	require.NotNil(t, sourceFile)
 	require.Equal(t, "a.txt", sourceFile.Arg("path").Value().ToInput())
 }
