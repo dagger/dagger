@@ -2811,7 +2811,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			if err != nil {
 				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
 			}
-			resultInst, ok := result.(dagql.Result[*core.Module])
+			resultInst, ok := result.(dagql.ObjectResult[*core.Module])
 			if !ok {
 				return fmt.Errorf("expected Module result, got %T", result)
 			}
