@@ -360,17 +360,10 @@ For example, to mirror the default Docker Hub `docker.io` registry to `mirror.gc
 To test the configuration:
 
 ```shell
-dagger query --progress=plain <<'EOF'
-{
-  container {
-    from(address:"hello-world") {
-      withExec(args:["/hello"]) {
-        stdout
-      }
-    }
-  }
-}
-EOF
+dagger -M call --progress=plain container \
+  from --address=hello-world \
+  with-exec --args=/hello \
+  stdout
 ```
 
 The specified `hello-world` container will now be pulled from the mirror
@@ -410,17 +403,10 @@ The configuration can be repeated for multiple registries and mirrors if needed:
 To test the configuration:
 
 ```shell
-dagger query --progress=plain <<'EOF'
-{
-  container {
-    from(address:"hello-world") {
-      withExec(args:["/hello"]) {
-        stdout
-      }
-    }
-  }
-}
-EOF
+dagger -M call --progress=plain container \
+  from --address=hello-world \
+  with-exec --args=/hello \
+  stdout
 ```
 
 The specified `hello-world` container will now be pulled from the mirror
