@@ -93,6 +93,8 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 							Internal:    true,
 						},
 					),
+					// TODO: ?
+					DoNotCache: "cause",
 				},
 				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
 					recipe, _ := args["recipe"].(Boolean)
@@ -599,10 +601,6 @@ func (r ObjectResult[T]) call(
 	}
 	if res == nil {
 		return nil, nil
-	}
-
-	if err := res.PostCall(ctx); err != nil {
-		return nil, fmt.Errorf("post-call error: %w", err)
 	}
 
 	return res, nil

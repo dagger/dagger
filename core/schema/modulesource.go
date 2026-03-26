@@ -25,7 +25,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
@@ -741,22 +740,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	contextDirID, err := gitSrc.ContextDirectory.ID()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get git module source context directory ID: %w", err)
-	}
-	secretTransferPostCall, _, err := core.ResourceTransferPostCall(ctx, query.Self(), clientMetadata.ClientID, &resource.ID{
-		ID: contextDirID,
-	})
-	if err != nil {
-		return inst, fmt.Errorf("failed to create secret transfer post call: %w", err)
-	}
-
-	return inst.ResultWithPostCall(secretTransferPostCall), nil
+	return inst, nil
 }
 
 func (s *moduleSourceSchema) loadBlueprintModule(
@@ -2827,10 +2811,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			if err != nil {
 				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
 			}
-			if err := result.PostCall(ctx); err != nil {
-				return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
-			}
-
 			resultInst, ok := result.(dagql.Result[*core.Module])
 			if !ok {
 				return fmt.Errorf("expected Module result, got %T", result)

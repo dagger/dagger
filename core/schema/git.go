@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -729,39 +728,16 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		// -> see below
 	}
 
-	var resourceIDs []*resource.ID
 	if sshAuthSock.Self() != nil {
 		dgstInputs = append(dgstInputs, "sshAuthSock", sshAuthSock.Self().IDDigest.String())
-		sshAuthSockResultID, err := sshAuthSock.ID()
-		if err != nil {
-			return inst, fmt.Errorf("ssh auth socket result ID: %w", err)
-		}
-		resourceIDs = append(resourceIDs, &resource.ID{ID: sshAuthSockResultID})
 	}
 	if httpAuthToken.Self() != nil {
 		dgstInputs = append(dgstInputs, "authToken", strconv.FormatBool(httpAuthToken.Self() != nil))
-		httpAuthTokenResultID, err := httpAuthToken.ID()
-		if err != nil {
-			return inst, fmt.Errorf("http auth token result ID: %w", err)
-		}
-		resourceIDs = append(resourceIDs, &resource.ID{ID: httpAuthTokenResultID})
 	}
 	if httpAuthHeader.Self() != nil {
 		dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(httpAuthHeader.Self() != nil))
-		httpAuthHeaderResultID, err := httpAuthHeader.ID()
-		if err != nil {
-			return inst, fmt.Errorf("http auth header result ID: %w", err)
-		}
-		resourceIDs = append(resourceIDs, &resource.ID{ID: httpAuthHeaderResultID})
 	}
 	inst = inst.WithContentDigest(hashutil.HashStrings(dgstInputs...))
-	if len(resourceIDs) > 0 {
-		postCall, _, err := core.ResourceTransferPostCall(ctx, parent.Self(), clientMetadata.ClientID, resourceIDs...)
-		if err != nil {
-			return inst, fmt.Errorf("failed to create post call: %w", err)
-		}
-		inst = inst.ObjectResultWithPostCall(postCall)
-	}
 	return inst, nil
 }
 

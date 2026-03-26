@@ -106,7 +106,6 @@ type AnyResult interface {
 	Wrapper
 	IDable
 	RecipeIDable
-	PostCallable
 	Setter
 
 	// DerefValue returns an AnyResult when the wrapped value is Derefable and
@@ -116,9 +115,6 @@ type AnyResult interface {
 	// NthValue returns the Nth value of the wrapped value when the wrapped value
 	// is an Enumerable. If the wrapped value is not Enumerable, it returns an error.
 	NthValue(context.Context, int) (AnyResult, error)
-
-	// WithPostCall returns a new AnyResult with the given post-call function attached to it.
-	WithPostCall(fn PostCallFunc) AnyResult
 
 	// IsSafeToPersistCache returns whether it's safe to persist this result in the cache.
 	IsSafeToPersistCache() bool
@@ -163,13 +159,6 @@ type AnyObjectResult interface {
 type InterfaceValue interface {
 	// UnderlyingObject returns the underlying object of the InterfaceValue
 	UnderlyingObject() (Typed, error)
-}
-
-// PostCallable is a type that has a callback attached that needs to always run before returned to a caller
-// whether or not the type is being returned from cache or not
-type PostCallable interface {
-	// Call the postcall func (or no-op if none is set)
-	PostCall(context.Context) error
 }
 
 // A type that has a callback attached that needs to always run when the result is removed

@@ -14,7 +14,6 @@ import (
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/filesync"
-	"github.com/dagger/dagger/engine/server/resource"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
@@ -22,10 +21,10 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/moby/locker"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func testResultCall(field string, typ dagql.Typed, receiver *dagql.ResultCall) *dagql.ResultCall {
@@ -123,9 +122,6 @@ func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error {
 func (ms *mockServer) Secrets(context.Context) (*SecretStore, error)           { return nil, nil }
 func (ms *mockServer) Sockets(context.Context) (*SocketStore, error)           { return nil, nil }
 
-func (ms *mockServer) AddClientResourcesFromID(ctx context.Context, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
-	return nil
-}
 func (ms *mockServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) { return nil, nil }
 
 func (ms *mockServer) Buildkit(context.Context) (*buildkit.Client, error) { return nil, nil }
@@ -284,16 +280,20 @@ type telemetryTestSpan struct {
 	attrs []attribute.KeyValue
 }
 
-func (s *telemetryTestSpan) End(...trace.SpanEndOption)                          {}
-func (s *telemetryTestSpan) AddEvent(string, ...trace.EventOption)               {}
-func (s *telemetryTestSpan) AddLink(trace.Link)                                  {}
-func (s *telemetryTestSpan) IsRecording() bool                                   { return true }
-func (s *telemetryTestSpan) RecordError(error, ...trace.EventOption)             {}
-func (s *telemetryTestSpan) SpanContext() trace.SpanContext                      { return trace.SpanContext{} }
-func (s *telemetryTestSpan) SetStatus(codes.Code, string)                        {}
-func (s *telemetryTestSpan) SetName(string)                                      {}
-func (s *telemetryTestSpan) SetAttributes(attrs ...attribute.KeyValue)           { s.attrs = append(s.attrs, attrs...) }
-func (s *telemetryTestSpan) TracerProvider() trace.TracerProvider                { return trace.NewNoopTracerProvider() }
+func (s *telemetryTestSpan) End(...trace.SpanEndOption)              {}
+func (s *telemetryTestSpan) AddEvent(string, ...trace.EventOption)   {}
+func (s *telemetryTestSpan) AddLink(trace.Link)                      {}
+func (s *telemetryTestSpan) IsRecording() bool                       { return true }
+func (s *telemetryTestSpan) RecordError(error, ...trace.EventOption) {}
+func (s *telemetryTestSpan) SpanContext() trace.SpanContext          { return trace.SpanContext{} }
+func (s *telemetryTestSpan) SetStatus(codes.Code, string)            {}
+func (s *telemetryTestSpan) SetName(string)                          {}
+func (s *telemetryTestSpan) SetAttributes(attrs ...attribute.KeyValue) {
+	s.attrs = append(s.attrs, attrs...)
+}
+func (s *telemetryTestSpan) TracerProvider() trace.TracerProvider {
+	return trace.NewNoopTracerProvider()
+}
 
 type telemetryTestLazyString struct {
 	dagql.String

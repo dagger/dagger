@@ -733,8 +733,6 @@ type callConcurrencyKeys struct {
 	concurrencyKey string
 }
 
-type PostCallFunc = func(context.Context) error
-
 type OnReleaseFunc = func(context.Context) error
 
 type sharedResultID uint64
@@ -781,7 +779,6 @@ type sharedResult struct {
 	payloadMu sync.RWMutex
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
 	hasValue bool
-	postCall PostCallFunc
 
 	safeToPersistCache bool
 	onRelease          OnReleaseFunc
@@ -1506,7 +1503,6 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 			isObject:               state.isObject,
 			resultCall:             r.shared.loadResultCall(),
 			hasValue:               state.hasValue,
-			postCall:               r.shared.postCall,
 			safeToPersistCache:     r.shared.safeToPersistCache,
 			persistedEnvelope:      state.persistedEnvelope,
 			persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
@@ -1557,16 +1553,6 @@ func (r Result[T]) withDetachedCallPayload() Result[T] {
 			r.shared.storeResultCall(frame.fork())
 		}
 	}
-	return r
-}
-
-func (r Result[T]) WithPostCall(fn PostCallFunc) AnyResult {
-	return r.ResultWithPostCall(fn)
-}
-
-func (r Result[T]) ResultWithPostCall(fn PostCallFunc) Result[T] {
-	r = r.withDetachedPayload()
-	r.shared.postCall = fn
 	return r
 }
 
@@ -1631,13 +1617,6 @@ func (r Result[T]) String() string {
 		return fmt.Sprintf("%s@<encode-error>", typ.Name())
 	}
 	return fmt.Sprintf("%s@%s", typ.Name(), enc)
-}
-
-func (r Result[T]) PostCall(ctx context.Context) error {
-	if r.shared != nil && r.shared.postCall != nil {
-		return r.shared.postCall(ctx)
-	}
-	return nil
 }
 
 func (r Result[T]) MarshalJSON() ([]byte, error) {
@@ -1753,11 +1732,6 @@ func (r ObjectResult[T]) WithContentDigestAny(customDigest digest.Digest) AnyRes
 		Result: r.Result.WithContentDigest(customDigest),
 		class:  r.class,
 	}
-}
-
-func (r ObjectResult[T]) ObjectResultWithPostCall(fn PostCallFunc) ObjectResult[T] {
-	r.Result = r.Result.ResultWithPostCall(fn)
-	return r
 }
 
 func (r ObjectResult[T]) ObjectResultWithCall(frame *ResultCall) ObjectResult[T] {
@@ -2369,7 +2343,6 @@ func (c *Cache) getOrInitCall(
 			self:               val.Unwrap(),
 			resultCall:         req.ResultCall.clone(),
 			hasValue:           true,
-			postCall:           val.PostCall,
 			safeToPersistCache: val.IsSafeToPersistCache(),
 		}
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
@@ -2762,7 +2735,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_request_frame", nil, oc.res.loadResultCall())
 			}
 			oc.res.hasValue = true
-			oc.res.postCall = oc.val.PostCall
 			oc.res.safeToPersistCache = oc.val.IsSafeToPersistCache()
 
 			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {

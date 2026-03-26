@@ -14,7 +14,6 @@ import (
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/filesync"
-	"github.com/dagger/dagger/engine/server/resource"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
@@ -76,10 +75,6 @@ func (s *currentTypeDefsTestServer) Secrets(context.Context) (*core.SecretStore,
 
 func (s *currentTypeDefsTestServer) Sockets(context.Context) (*core.SocketStore, error) {
 	return nil, nil
-}
-
-func (s *currentTypeDefsTestServer) AddClientResourcesFromID(context.Context, *resource.ID, string, bool) error {
-	return nil
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {

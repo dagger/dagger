@@ -3315,100 +3315,6 @@ func TestCacheTeachContentDigestWithResultRefs(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
-func TestCachePostCallAndSafeToPersistMetadataPreserved(t *testing.T) {
-	t.Parallel()
-	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
-	assert.NilError(t, err)
-	c := cacheIface
-
-	keyCall := cacheTestIntCall("metadata")
-	postCallCount := 0
-
-	res1, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(keyCall, 7).(Result[Int]).
-			ResultWithPostCall(func(context.Context) error {
-				postCallCount++
-				return nil
-			}).
-			WithSafeToPersistCache(true), nil
-	})
-	assert.NilError(t, err)
-	assert.Assert(t, res1.IsSafeToPersistCache())
-	assert.NilError(t, res1.PostCall(ctx))
-	assert.Equal(t, 1, postCallCount)
-
-	res2, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("unexpected initializer call")
-	})
-	assert.NilError(t, err)
-	assert.Assert(t, res2.HitCache())
-	assert.Assert(t, res2.IsSafeToPersistCache())
-	assert.NilError(t, res2.PostCall(ctx))
-	assert.Equal(t, 2, postCallCount)
-
-	cacheTestReleaseSession(t, c, ctx)
-	assert.Equal(t, 0, c.Size())
-}
-
-func TestCacheWrapperPostCallMergedOntoCacheBackedResult(t *testing.T) {
-	t.Parallel()
-	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
-	assert.NilError(t, err)
-	c := cacheIface
-
-	childCall := cacheTestIntCall("child-postcall")
-	wrapperCallA := cacheTestIntCall("wrapper-postcall", call.ExtraDigest{
-		Digest: digest.FromString("wrapper-a"),
-		Label:  "noise",
-	})
-	wrapperCallB := cacheTestIntCall("wrapper-postcall", call.ExtraDigest{
-		Digest: digest.FromString("wrapper-b"),
-		Label:  "noise",
-	})
-	postCallCount := 0
-
-	childRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(childCall, 7), nil
-	})
-	assert.NilError(t, err)
-
-	wrapperRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: wrapperCallA}, func(context.Context) (AnyResult, error) {
-		attachedChild, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
-			return nil, fmt.Errorf("unexpected child initializer call")
-		})
-		if err != nil {
-			return nil, err
-		}
-		return attachedChild.WithPostCall(func(context.Context) error {
-			postCallCount++
-			return nil
-		}), nil
-	})
-	assert.NilError(t, err)
-	assert.Assert(t, !wrapperRes.HitCache())
-	assert.NilError(t, wrapperRes.PostCall(ctx))
-	assert.Equal(t, 1, postCallCount)
-	wrapperShared := wrapperRes.cacheSharedResult()
-	assert.Assert(t, wrapperShared != nil)
-	childShared := childRes.cacheSharedResult()
-	assert.Assert(t, childShared != nil)
-	assert.Assert(t, wrapperShared.id != childShared.id)
-
-	hitRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: wrapperCallB}, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("unexpected wrapper initializer call")
-	})
-	assert.NilError(t, err)
-	assert.Assert(t, hitRes.HitCache())
-	hitShared := hitRes.cacheSharedResult()
-	assert.Assert(t, hitShared != nil)
-	assert.Equal(t, wrapperShared.id, hitShared.id)
-	assert.NilError(t, hitRes.PostCall(ctx))
-	assert.Equal(t, 2, postCallCount)
-	cacheTestReleaseSession(t, c, ctx)
-}
-
 func TestDerefValuePropagatesSafeToPersistMetadataForNullables(t *testing.T) {
 	t.Parallel()
 
@@ -5394,8 +5300,6 @@ func TestCacheAttachDependencyResults(t *testing.T) {
 
 	parentCall := cacheTestIntCall("parent-with-additional-output")
 	childCall := cacheTestIntCall("child-additional-output")
-	childPostCallCount := &atomic.Int32{}
-
 	parentRes, err := c.GetOrInitCall(ctxParent, "attach-owned-parent", noopTypeResolver{}, &CallRequest{
 		ResultCall:    parentCall,
 		IsPersistable: true,
@@ -5406,10 +5310,7 @@ func TestCacheAttachDependencyResults(t *testing.T) {
 			128,
 			"snapshot://cache-additional-output",
 			nil,
-		).WithPostCall(func(context.Context) error {
-			childPostCallCount.Add(1)
-			return nil
-		})
+		)
 		return cacheTestDetachedResult(parentCall, &cacheTestOwnedDepsInt{
 			Int:          NewInt(1),
 			ownedResults: []AnyResult{child},
@@ -5425,14 +5326,11 @@ func TestCacheAttachDependencyResults(t *testing.T) {
 		return cacheTestIntResult(childCall, 99), nil
 	})
 	assert.NilError(t, err)
-	assert.Equal(t, int32(0), childPostCallCount.Load())
 	assert.Equal(t, 0, childInitCalls)
 	assert.Assert(t, childRes.HitCache())
 	childVal, ok := UnwrapAs[cacheTestSizedInt](childRes)
 	assert.Assert(t, ok)
 	assert.Equal(t, int64(2), int64(childVal.Int))
-	assert.NilError(t, childRes.PostCall(ctxParent))
-	assert.Equal(t, int32(1), childPostCallCount.Load())
 
 	childShared := childRes.cacheSharedResult()
 	assert.Assert(t, childShared != nil)

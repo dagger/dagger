@@ -28,7 +28,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -1233,22 +1232,6 @@ func (src *ModuleSource) LoadContextDir(
 		}
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	mainClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	instID, err = inst.ID()
-	if err != nil {
-		return inst, fmt.Errorf("context directory ID after hashing: %w", err)
-	}
-	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: instID}, mainClientMetadata.ClientID, false); err != nil {
-		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
-	}
-
 	return inst, nil
 }
 
@@ -1555,18 +1538,6 @@ func (src *ModuleSource) LoadContextFile(
 
 	default:
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
-	}
-
-	mainClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	instID, err := inst.ID()
-	if err != nil {
-		return inst, fmt.Errorf("directory source ID: %w", err)
-	}
-	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: instID}, mainClientMetadata.ClientID, false); err != nil {
-		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 
 	return inst, nil

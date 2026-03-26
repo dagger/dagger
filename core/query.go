@@ -22,7 +22,6 @@ import (
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/filesync"
-	"github.com/dagger/dagger/engine/server/resource"
 )
 
 // Query forms the root of the DAG and houses all necessary state and
@@ -86,11 +85,6 @@ type Server interface {
 
 	// The socket store for the current client
 	Sockets(context.Context) (*SocketStore, error)
-
-	// Add client-isolated resources like secrets, sockets, etc. to the current client's session based
-	// on anything embedded in the given ID. skipTopLevel, if true, will result in the leaf selection
-	// of the ID to be skipped when walking the ID to find these resources.
-	AddClientResourcesFromID(ctx context.Context, id *resource.ID, sourceClientID string, skipTopLevel bool) error
 
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)

@@ -9,22 +9,15 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
 
-// CollectedContent accumulates core object IDs and a rolling content hash
-// while walking a module function's return value. IDs are used for resource
-// transfer (secrets, sockets, etc.) and the content hash is used to compute
-// content-addressed cache keys for Workspace-aware functions.
+// CollectedContent accumulates a rolling content hash while walking a module
+// function's value tree. The content hash is used to compute content-addressed
+// cache keys for Workspace-aware functions.
 type CollectedContent struct {
-	// IDs maps recipe digest → resource ID for every core object (Directory,
-	// File, Container, …) found in the value tree. Recipe IDs use their recipe
-	// digest; handle IDs use a digest of their encoded runtime identity.
-	IDs map[digest.Digest]*resource.ID
-
 	// hasher accumulates a rolling hash of all content found in the value
 	// tree — both core object content digests and primitive scalar values.
 	// Each implementor feeds its contribution directly, avoiding the need
@@ -36,7 +29,6 @@ type CollectedContent struct {
 
 func NewCollectedContent() *CollectedContent {
 	return &CollectedContent{
-		IDs:    map[digest.Digest]*resource.ID{},
 		hasher: hashutil.NewHasher(),
 	}
 }
@@ -67,21 +59,6 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 		}
 		return fmt.Errorf("invalid ID")
 	}
-	rid := &resource.ID{
-		ID:       idp,
-		Optional: unknown, // mark this id as optional, since it's a best-guess attempt
-	}
-	var key digest.Digest
-	if idp.IsHandle() {
-		encoded, err := idp.Encode()
-		if err != nil {
-			return fmt.Errorf("encode handle ID: %w", err)
-		}
-		key = digest.FromString(encoded)
-	} else {
-		key = idp.Digest()
-	}
-	content.IDs[key] = rid
 	// TODO: deeper integration with dagql/cache would be preferable but ContentPreferredDigest works
 	// for current workspace requirements.
 	// Deeper integration would allow full equivalence set cache hits on any IDs, whereas this approach
@@ -105,7 +82,7 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 			return fmt.Errorf("content preferred digest: %w", err)
 		}
 	} else {
-		dgst = rid.ID.ContentPreferredDigest()
+		dgst = idp.ContentPreferredDigest()
 	}
 	content.hasher.WithString(string(dgst))
 	return nil
@@ -218,10 +195,8 @@ type ModType interface {
 	// by the SDK, which may include converting objects to their IDs
 	ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error)
 
-	// CollectContent walks the given value and collects core object IDs and
-	// primitive scalar values into the provided CollectedContent. This is
-	// used for resource transfer (IDs) and for computing content-addressed
-	// cache keys (IDs + Values).
+	// CollectContent walks the given value and hashes core object content and
+	// primitive scalar values into the provided CollectedContent.
 	CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error
 
 	// SourceMod is the module in which this type was originally defined

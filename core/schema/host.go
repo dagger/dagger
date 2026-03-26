@@ -340,7 +340,7 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 		return inst, err
 	}
 
-	return inst.ResultWithPostCall(upsertSocket), nil
+	return inst, nil
 }
 
 type hostSSHAuthSocketArgs struct {
@@ -411,13 +411,7 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 		return inst, err
 	}
 
-	// This postcall may run for different callers that hit the same cached
-	// Host._sshAuthSocket result. Resolve caller-specific SSH auth socket metadata
-	// at postcall execution time to avoid leaking a previous caller's session/path
-	// into a different caller's socket store.
-	return inst.ResultWithPostCall(func(ctx context.Context) error {
-		return upsertScopedSSHAuthSocket(ctx, query, args.Source.Valid, scopedSocket, sourceSocket)
-	}), nil
+	return inst, nil
 }
 
 // upsertScopedSSHAuthSocket persists the scoped socket mapping in the caller store.
@@ -447,10 +441,9 @@ func upsertScopedSSHAuthSocket(
 		return fmt.Errorf("failed to get client metadata: %w", err)
 	}
 	if clientMetadata.SSHAuthSocketPath == "" {
-		// Cached post-call replay can happen in contexts that don't expose
-		// SSH_AUTH_SOCK (for example when loading IDs to transfer client
-		// resources). Treat this as a no-op so replay doesn't fail; direct
-		// Host._sshAuthSocket calls still fail earlier in the resolver.
+		// Nested evaluation contexts can exist without SSH_AUTH_SOCK available.
+		// Treat this as a no-op so replay doesn't fail; direct Host._sshAuthSocket
+		// calls still fail earlier in the resolver.
 		return nil
 	}
 

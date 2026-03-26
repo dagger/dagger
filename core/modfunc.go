@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -21,7 +20,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -700,7 +698,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Call:              curCall,
 		ExecID:            identity.NewID(),
 		Internal:          true,
-		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
 	if curCall != nil {
@@ -727,34 +724,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	parentJSON, err := json.Marshal(opts.ParentFields)
 	if err != nil {
 		return nil, fmt.Errorf("marshal parent value: %w", err)
-	}
-
-	if opts.ParentTyped != nil {
-		// collect any client resources stored in parent fields (secrets/sockets/etc.) and grant
-		// this function client access
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("current dagql server: %w", err)
-		}
-		objDefRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, fn.objDef)
-		if err != nil {
-			return nil, fmt.Errorf("wrap parent object typedef: %w", err)
-		}
-		parentModType, ok, err := NewUserMod(fn.mod).ModTypeFor(ctx, (&TypeDef{
-			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(objDefRes),
-		}).syncName(), true)
-		if err != nil {
-			return nil, fmt.Errorf("get mod type for parent: %w", err)
-		}
-		if !ok {
-			return nil, fmt.Errorf("find mod type for parent %q", fn.objDef.Name)
-		}
-		parentContent := NewCollectedContent()
-		if err := parentModType.CollectContent(ctx, opts.ParentTyped, parentContent); err != nil {
-			return nil, fmt.Errorf("collect IDs from parent fields: %w", err)
-		}
-		execMD.ParentIDs = parentContent.IDs
 	}
 
 	modID, err := fn.mod.ID()
@@ -914,68 +883,18 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	safeToPersistCache := true
-	if returnValue != nil {
-		// If the function returned anything that's isolated per-client, this caller client should
-		// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
+	if returnValue != nil && fn.hasWorkspaceArgs() {
 		returnedContent := NewCollectedContent()
 		if err := fn.returnType.CollectContent(ctx, returnValue, returnedContent); err != nil {
 			return nil, fmt.Errorf("collect content: %w", err)
 		}
-
-		// Function calls are cached per-session, but every client caller needs to add
-		// secret/socket/etc. resources from the result to their store.
-		returnedIDsList := make([]*resource.ID, 0, len(returnedContent.IDs))
-		for _, id := range returnedContent.IDs {
-			returnedIDsList = append(returnedIDsList, id)
-		}
-		resourceTransferPostCall, hasNamedSecretsOrSockets, err := ResourceTransferPostCall(ctx, query, execMD.ClientID, returnedIDsList...)
-		if err != nil {
-			return nil, fmt.Errorf("create secret transfer post call: %w", err)
-		}
-		if hasNamedSecretsOrSockets {
-			// Named secrets/sockets are only safe to persist across sessions when the
-			// return value is itself Secret/Socket data. If they're embedded in other
-			// objects (e.g. container state), persisting can incorrectly reuse
-			// secret-dependent results across sessions.
-			for _, id := range returnedIDsList {
-				var typ *call.Type
-				if id.ID != nil {
-					typ = id.ID.Type()
-				}
-				if typ == nil {
-					safeToPersistCache = false
-					break
-				}
-				switch typ.NamedType() {
-				case "Secret", "Socket":
-				default:
-					safeToPersistCache = false
-				}
-				if !safeToPersistCache {
-					break
-				}
-			}
-		}
-
-		returnValue = returnValue.WithPostCall(resourceTransferPostCall)
 
 		// If this function accepts Workspace args, set a content digest on the
 		// result derived from all content it returned — both core object IDs
 		// (Directory, File, etc.) and primitive scalar values (String, Int, etc.).
 		// This ensures downstream calls that reference this result get a different
 		// cache key when the underlying content changes.
-		if fn.hasWorkspaceArgs() {
-			returnValue = returnValue.WithContentDigestAny(returnedContent.Digest())
-		}
-	}
-	if returnValue != nil {
-		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
+		returnValue = returnValue.WithContentDigestAny(returnedContent.Digest())
 	}
 
 	return returnValue, nil

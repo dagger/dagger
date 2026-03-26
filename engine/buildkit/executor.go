@@ -23,7 +23,6 @@ import (
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkresourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
@@ -68,12 +67,6 @@ type ExecutionMetadata struct {
 	EncodedContentModuleID string
 	EncodedFunctionCall    json.RawMessage
 	CallerClientID         string
-
-	// Client resource IDs passed to this client from parent object fields.
-	// Needed to handle finding any secrets, sockets or other client resources
-	// that this client should have access to due to being set in the parent
-	// object.
-	ParentIDs map[digest.Digest]*resource.ID
 
 	// If set, overrides the buildkit cache key used for this execution.
 	// Bridges us to the non-buildkit world by just telling buildkit to do

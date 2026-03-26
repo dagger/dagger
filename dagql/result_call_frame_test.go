@@ -85,9 +85,6 @@ func TestDetachedResultMetadataReuseAndCallMutationFork(t *testing.T) {
 
 	base := cacheTestDetachedResult(cacheTestIntCall("detached"), NewInt(1))
 
-	withPostCall := base.ResultWithPostCall(func(context.Context) error { return nil })
-	require.Same(t, base.shared.resultCall, withPostCall.shared.resultCall)
-
 	withContent := base.WithContentDigest(digest.FromString("detached-content"))
 	require.NotSame(t, base.shared.resultCall, withContent.shared.resultCall)
 	require.Empty(t, base.shared.resultCall.ContentDigest())

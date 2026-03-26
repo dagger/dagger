@@ -3,7 +3,6 @@ package core
 import (
 	"testing"
 
-	"github.com/opencontainers/go-digest"
 	"gotest.tools/v3/assert"
 
 	"github.com/dagger/dagger/dagql"
@@ -33,6 +32,5 @@ func TestCollectedContentCollectUnknownAnyResult(t *testing.T) {
 
 	content := NewCollectedContent()
 	assert.NilError(t, content.CollectUnknown(ctx, recipeID))
-	assert.Equal(t, 1, len(content.IDs))
-	assert.Assert(t, content.IDs[digest.Digest(recipeID.Digest())] != nil)
+	assert.Assert(t, content.Digest() != "")
 }

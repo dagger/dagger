@@ -23,7 +23,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/attribute"
@@ -46,7 +45,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/cleanups"
@@ -454,12 +452,6 @@ type ClientInitOpts struct {
 	// If the client is running from a function in a module, this is the encoded function call
 	// metadata (of type core.FunctionCall)
 	EncodedFunctionCall json.RawMessage
-
-	// Client resource IDs passed to this client from parent object fields.
-	// Needed to handle finding any secrets, sockets or other client resources
-	// that this client should have access to due to being set in the parent
-	// object.
-	ParentIDs map[digest.Digest]*resource.ID
 }
 
 // requires that client.stateMu is held
@@ -480,31 +472,6 @@ func (srv *Server) initializeDaggerClient(
 	// initialize all the buildkit+session attachable state for the client
 	client.secretStore = core.NewSecretStore(srv.bkSessionManager)
 	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
-	if opts.Call != nil {
-		if opts.CallerClientID == "" {
-			return fmt.Errorf("caller client ID is not set")
-		}
-		callID, err := srv.engineCache.RecipeIDForCall(ctx, opts.Call)
-		if err != nil {
-			return fmt.Errorf("rebuild nested client recipe ID: %w", err)
-		}
-		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: callID}, opts.CallerClientID, true); err != nil {
-			return fmt.Errorf("failed to add client resources from ID: %w", err)
-		}
-	}
-	if opts.ParentIDs != nil {
-		if opts.CallerClientID == "" {
-			return fmt.Errorf("caller client ID is not set")
-		}
-		// we can use the caller client ID here (as opposed to the client ID of the parent function call)
-		// because any client resources returned by the parent function call will be added to the stores
-		// of the caller
-		for _, id := range opts.ParentIDs {
-			if err := srv.addClientResourcesFromID(ctx, client, id, opts.CallerClientID, false); err != nil {
-				return fmt.Errorf("failed to add parent client resources from ID: %w", err)
-			}
-		}
-	}
 
 	var callerG singleflight.Group[string, bksession.Caller]
 	client.getClientCaller = func(id string) (bksession.Caller, error) {
@@ -953,7 +920,6 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		EncodedModuleID:        execMD.EncodedModuleID,
 		EncodedContentModuleID: execMD.EncodedContentModuleID,
 		EncodedFunctionCall:    execMD.EncodedFunctionCall,
-		ParentIDs:              execMD.ParentIDs,
 	}).ServeHTTP(w, r)
 }
 
