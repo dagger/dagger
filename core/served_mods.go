@@ -251,18 +251,10 @@ func (s *ServedMods) lazilyLoadSchema(ctx context.Context) (
 	}
 
 	// Build outer server: all modules with real Entrypoint flags.
-	// Install entrypoint modules last so their proxy methods take precedence
-	// over dep constructors with the same name (dagql uses last-write-wins).
-	outerMods := make([]modInstall, 0, len(s.entries))
-	var outerEntrypoints []modInstall
-	for _, e := range s.entries {
-		if e.opts.Entrypoint {
-			outerEntrypoints = append(outerEntrypoints, modInstall(e))
-		} else {
-			outerMods = append(outerMods, modInstall(e))
-		}
+	outerMods := make([]modInstall, len(s.entries))
+	for i, e := range s.entries {
+		outerMods[i] = modInstall(e)
 	}
-	outerMods = append(outerMods, outerEntrypoints...)
 	outer, schemaJSONFile, err := buildSchema(ctx, s.root, outerMods, nil)
 	if err != nil {
 		return nil, loadedSchemaJSONFile, err

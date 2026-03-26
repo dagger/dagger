@@ -159,11 +159,6 @@ type moduleDef struct {
 	HTMLRepoURL       string
 
 	Dependencies []*moduleDef
-
-	// Entrypoint is true when the module is loaded with entrypoint proxying,
-	// meaning its methods are promoted directly onto Query rather than
-	// being accessed through a named constructor.
-	Entrypoint bool
 }
 
 type clientGeneratorModuleDef struct {
@@ -354,7 +349,6 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, includ
 	// go through Query.with. Treat Query as the main object, same as
 	// initializeWorkspace does for `dagger call`.
 	if m.Name != "" && m.MainObject == nil {
-		m.Entrypoint = true
 		m.MainObject = rootType
 
 		// Use Query.with as the constructor so that constructor flags
