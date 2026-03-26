@@ -164,6 +164,26 @@ func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server, entrypointMo
 			queryTypeDef.Functions = append(queryTypeDef.Functions, proxied)
 			existingFns[fieldName] = true
 		}
+		// Also promote fields from the main object onto Query. Fields
+		// are installed as dagql FieldSpecs by installEntrypointMethods
+		// but need to appear in the TypeDef so the CLI can discover them.
+		for _, f := range mainObj.Fields {
+			fieldName := gqlFieldName(f.Name)
+			if existingFns[fieldName] {
+				continue
+			}
+			if _, found := queryObjType.FieldSpec(fieldName, dag.View); !found {
+				continue
+			}
+			proxied := &Function{
+				Name:             f.Name,
+				Description:      f.Description,
+				ReturnType:       f.TypeDef,
+				SourceModuleName: modName,
+			}
+			queryTypeDef.Functions = append(queryTypeDef.Functions, proxied)
+			existingFns[fieldName] = true
+		}
 		// Also add the "with" constructor if present.
 		if !existingFns["with"] {
 			if _, found := queryObjType.FieldSpec("with", dag.View); found {
