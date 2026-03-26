@@ -652,7 +652,7 @@ func TestDefinitionToIDFileCopy(t *testing.T) {
 	require.Equal(t, []string{"container", "withRootfs"}, fieldsFromRoot(id))
 
 	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
+	require.Equal(t, []string{"directory", "__withDirectoryDockerfileCompat"}, fieldsFromRoot(withDir))
 	require.Equal(t, "/dst/a.txt", withDir.Arg("path").Value().ToInput())
 	require.Equal(t, []any{"a.txt"}, withDir.Arg("include").Value().ToInput())
 	require.Equal(t, []any{"*.tmp"}, withDir.Arg("exclude").Value().ToInput())
