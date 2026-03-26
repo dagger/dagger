@@ -792,7 +792,6 @@ func withOutgoingContext(ctx context.Context) context.Context {
 	if ok {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
-	ctx = buildkitTelemetryProvider(ctx)
 	return ctx
 }
 

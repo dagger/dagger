@@ -58,7 +58,7 @@ func TestRollUpStateIncremental(t *testing.T) {
 		case "pending":
 			span.EndTime = now
 			span.Status = sdktrace.Status{Code: codes.Ok}
-			span.EffectIDs = []string{"pending-effect"}
+			span.Pending = true
 		}
 		span.PropagateStatusToParentsAndLinks()
 	}
@@ -154,6 +154,55 @@ func TestRollUpStateIncremental(t *testing.T) {
 			parent.rollUpState.FailedCount,
 			parent.rollUpState.CanceledCount,
 		)
+	}
+}
+
+func TestPendingClearsAndPropagatesThroughCausalContinuation(t *testing.T) {
+	db := NewDB()
+
+	origID := SpanID{trace.SpanID{1}}
+	orig := db.newSpan(origID)
+	orig.Received = true
+	orig.Name = "original"
+	orig.Pending = true
+	orig.StartTime = time.Now()
+	orig.EndTime = orig.StartTime.Add(time.Millisecond)
+	db.Spans.Add(orig)
+	db.integrateSpan(orig)
+	orig.PropagateStatusToParentsAndLinks()
+
+	if !orig.IsPending() {
+		t.Fatal("expected original span to start pending")
+	}
+
+	resumeID := SpanID{trace.SpanID{2}}
+	resume := db.newSpan(resumeID)
+	resume.Received = true
+	resume.Name = "resume"
+	resume.StartTime = time.Now()
+	resume.EndTime = resume.StartTime.Add(-time.Millisecond)
+	resume.Links = []SpanLink{{
+		SpanContext: SpanContext{
+			SpanID: origID,
+		},
+	}}
+	db.Spans.Add(resume)
+	db.integrateSpan(resume)
+	resume.PropagateStatusToParentsAndLinks()
+
+	if orig.IsPending() {
+		t.Fatal("expected causal continuation to clear pending state")
+	}
+	if !orig.IsRunningOrEffectsRunning() {
+		t.Fatal("expected original span to inherit running state from continuation")
+	}
+
+	resume.EndTime = time.Now()
+	resume.Status = sdktrace.Status{Code: codes.Error}
+	resume.PropagateStatusToParentsAndLinks()
+
+	if !orig.IsFailedOrCausedFailure() {
+		t.Fatal("expected original span to inherit failure from continuation")
 	}
 }
 

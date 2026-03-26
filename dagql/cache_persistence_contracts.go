@@ -34,7 +34,6 @@ type persistResultSnapshot struct {
 	self                Typed
 	hasValue            bool
 	persistedEnvelope   *PersistedResultEnvelope
-	outputEffectIDs     []string
 	row                 persistdb.MirrorResult
 	resultDeps          []persistdb.MirrorResultDep
 	resultSnapshotLinks []persistdb.MirrorResultSnapshotLink

@@ -141,8 +141,8 @@ func AroundFunc(
 
 		defer telemetry.EndWithCause(span, err)
 		recordStatus(ctx, res, span, cached, req.ResultCall)
+		recordPending(res, span)
 		logResult(ctx, res, req.ResultCall)
-		collectEffects(ctx, res, span, req.ResultCall)
 	}
 }
 
@@ -288,6 +288,12 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 	}
 }
 
+func recordPending(res dagql.AnyResult, span trace.Span) {
+	if dagql.HasPendingLazyEvaluation(res) {
+		span.SetAttributes(attribute.Bool(dagql.PendingAttr, true))
+	}
+}
+
 // logResult prints the result of a call to the span's stdout.
 func logResult(ctx context.Context, res dagql.AnyResult, frame *dagql.ResultCall) {
 	var output string
@@ -332,59 +338,6 @@ func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.Field
 		return dagql.FieldSpec{}, false
 	}
 	return parentType.FieldSpec(frame.Field, frame.View)
-}
-
-// collectEffects records LLB op digests installed by this call so that we can
-// know that it has pending work.
-//
-// Effects will become complete as spans appear from Buildkit with a
-// corresponding effect ID.
-func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, frame *dagql.ResultCall) {
-	var parentEffects []string
-	if frame != nil {
-		if receiver, err := frame.ReceiverCall(ctx); err == nil && receiver != nil {
-			parentEffects, _ = receiver.AllEffectIDs()
-		}
-	}
-
-	if res == nil {
-		if len(parentEffects) > 0 {
-			span.SetAttributes(attribute.StringSlice(telemetry.EffectsCompletedAttr, parentEffects))
-		}
-		return
-	}
-
-	allEffects, err := resultEffectIDs(ctx, res)
-	if err != nil {
-		if len(parentEffects) > 0 {
-			span.SetAttributes(attribute.StringSlice(telemetry.EffectsCompletedAttr, parentEffects))
-		}
-		return
-	}
-	if len(allEffects) == 0 && len(parentEffects) == 0 {
-		return
-	}
-
-	seen := make(map[string]bool, len(parentEffects))
-	for _, effect := range parentEffects {
-		seen[effect] = true
-	}
-
-	var newEffects []string
-	for _, effect := range allEffects {
-		if seen[effect] {
-			continue
-		}
-		seen[effect] = true
-		newEffects = append(newEffects, effect)
-	}
-
-	if len(newEffects) > 0 {
-		span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, newEffects))
-	}
-	if len(parentEffects) > 0 {
-		span.SetAttributes(attribute.StringSlice(telemetry.EffectsCompletedAttr, parentEffects))
-	}
 }
 
 // isIntrospection detects whether an ID is an introspection query.
@@ -554,18 +507,4 @@ func objectRecipeDigest(ctx context.Context, obj dagql.AnyResult) (digest.Digest
 		return "", err
 	}
 	return id.Digest(), nil
-}
-
-func resultEffectIDs(ctx context.Context, res dagql.AnyResult) ([]string, error) {
-	type effecter interface {
-		AllEffectIDs(context.Context) ([]string, error)
-	}
-	if eff, ok := any(res).(effecter); ok {
-		return eff.AllEffectIDs(ctx)
-	}
-	id, err := res.RecipeID(ctx)
-	if err != nil || id == nil {
-		return nil, err
-	}
-	return id.AllEffectIDs(), nil
 }

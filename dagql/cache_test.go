@@ -13,9 +13,13 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
@@ -80,6 +84,40 @@ func (v cacheTestSizedInt) CacheUsageMayChange() bool {
 type cacheTestOwnedDepsInt struct {
 	Int
 	ownedResults []AnyResult
+}
+
+type cacheTestSpanExporter struct {
+	mu    sync.Mutex
+	spans []sdktrace.ReadOnlySpan
+}
+
+func (e *cacheTestSpanExporter) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.spans = append(e.spans, spans...)
+	return nil
+}
+
+func (*cacheTestSpanExporter) Shutdown(context.Context) error { return nil }
+func (*cacheTestSpanExporter) ForceFlush(context.Context) error {
+	return nil
+}
+
+type cacheTestLogExporter struct {
+	mu   sync.Mutex
+	logs []sdklog.Record
+}
+
+func (e *cacheTestLogExporter) Export(_ context.Context, logs []sdklog.Record) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.logs = append(e.logs, logs...)
+	return nil
+}
+
+func (*cacheTestLogExporter) Shutdown(context.Context) error { return nil }
+func (*cacheTestLogExporter) ForceFlush(context.Context) error {
+	return nil
 }
 
 func (v *cacheTestOwnedDepsInt) AttachDependencyResults(
@@ -224,6 +262,135 @@ func TestAttachResultAllowsAlreadyAttachedResultWithoutFrame(t *testing.T) {
 	attached, err := c.AttachResult(ctx, "test-session", noopTypeResolver{}, res)
 	assert.NilError(t, err)
 	assert.Equal(t, attached, res)
+}
+
+func TestCaptureSessionLazySpanContextFirstWriterWinsAndRelease(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	ctx := ContextWithCache(baseCtx, cacheIface)
+	c := cacheIface
+
+	reqCall := cacheTestIntCall("telemetry-span-owner")
+	spanCtxA := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	})
+	ctxA := trace.ContextWithSpanContext(ctx, spanCtxA)
+	resA, err := c.GetOrInitCall(ctxA, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(reqCall, 1), nil
+	})
+	assert.NilError(t, err)
+
+	spanCtxB := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{2},
+		SpanID:  trace.SpanID{2},
+	})
+	ctxB := trace.ContextWithSpanContext(ctx, spanCtxB)
+	resB, err := c.GetOrInitCall(ctxB, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(reqCall, 2), nil
+	})
+	assert.NilError(t, err)
+
+	sharedA := resA.cacheSharedResult()
+	sharedB := resB.cacheSharedResult()
+	assert.Assert(t, sharedA != nil)
+	assert.Assert(t, sharedB != nil)
+	assert.Equal(t, sharedA.id, sharedB.id)
+
+	gotSpanCtx, ok := c.sessionLazySpanContext("test-session", sharedA.id)
+	assert.Assert(t, ok)
+	assert.Equal(t, gotSpanCtx.TraceID(), spanCtxA.TraceID())
+	assert.Equal(t, gotSpanCtx.SpanID(), spanCtxA.SpanID())
+
+	cacheTestReleaseSession(t, c, ctx)
+	_, ok = c.sessionLazySpanContext("test-session", sharedA.id)
+	assert.Assert(t, !ok)
+}
+
+func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	ctx := ContextWithCache(baseCtx, cacheIface)
+	c := cacheIface
+	srv := cacheTestServer(t, c)
+
+	spanExporter := &cacheTestSpanExporter{}
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
+	defer tracerProvider.Shutdown(t.Context())
+
+	logExporter := &cacheTestLogExporter{}
+	loggerProvider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(logExporter)))
+	defer loggerProvider.Shutdown(t.Context())
+
+	ctx = telemetry.WithLoggerProvider(ctx, loggerProvider)
+
+	originalCtx, originalSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "original")
+	reqCall := &ResultCall{
+		Type: NewResultCallType(&ast.Type{
+			NamedType: "CacheTestObject",
+			NonNull:   true,
+		}),
+		Field: "lazyResume",
+	}
+	res, err := c.GetOrInitCall(originalCtx, "test-session", srv, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, reqCall, &cacheTestObject{
+			Value: 1,
+			lazyEval: func(ctx context.Context) error {
+				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+				fmt.Fprint(stdio.Stdout, "hello from lazy")
+				assert.NilError(t, stdio.Close())
+
+				_, childSpan := Tracer(ctx).Start(ctx, "lazy child")
+				childSpan.End()
+				return nil
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, HasPendingLazyEvaluation(res))
+
+	triggerCtx, triggerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "trigger")
+	assert.NilError(t, c.Evaluate(triggerCtx, res))
+	triggerSpan.End()
+	originalSpan.End()
+
+	assert.NilError(t, tracerProvider.ForceFlush(t.Context()))
+	assert.NilError(t, loggerProvider.ForceFlush(t.Context()))
+
+	originalSpanID := originalSpan.SpanContext().SpanID()
+
+	logExporter.mu.Lock()
+	logs := append([]sdklog.Record(nil), logExporter.logs...)
+	logExporter.mu.Unlock()
+	assert.Assert(t, len(logs) > 0, "expected lazy evaluation to emit logs")
+	assert.Equal(t, logs[0].SpanID(), originalSpanID)
+
+	spanExporter.mu.Lock()
+	spans := append([]sdktrace.ReadOnlySpan(nil), spanExporter.spans...)
+	spanExporter.mu.Unlock()
+
+	var sawResume bool
+	var sawChild bool
+	for _, span := range spans {
+		switch span.Name() {
+		case "lazy child":
+			sawChild = true
+			assert.Equal(t, span.Parent().SpanID(), originalSpanID)
+		case "resume lazyResume":
+			sawResume = true
+			assert.Equal(t, span.Parent().SpanID(), triggerSpan.SpanContext().SpanID())
+			assert.Equal(t, len(span.Links()), 1)
+			assert.Equal(t, span.Links()[0].SpanContext.SpanID(), originalSpanID)
+		}
+	}
+	assert.Assert(t, sawChild, "expected nested lazy child span to be recorded")
+	assert.Assert(t, sawResume, "expected hidden resume span to be recorded")
 }
 
 func (*cacheTestObject) Type() *ast.Type {

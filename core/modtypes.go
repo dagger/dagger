@@ -287,7 +287,7 @@ func (t *PrimitiveType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDe
 	if t.Def.Optional {
 		if err := dag.Select(ctx, inst, &inst, dagql.Selector{
 			Field: "withOptional",
-			Args: []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+			Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
 		}); err != nil {
 			return inst, err
 		}
@@ -440,7 +440,7 @@ func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dag
 		}
 		return val.NullableWrapped(), nil
 	}
-		return dagql.NewResultForCurrentCall(ctx, dagql.DynamicNullable{
+	return dagql.NewResultForCurrentCall(ctx, dagql.DynamicNullable{
 		Elem: t.InnerDef.Self().ToTyped(),
 	})
 }
@@ -487,7 +487,7 @@ func (t *NullableType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef
 	inst := t.InnerDef
 	if err := dag.Select(ctx, inst, &inst, dagql.Selector{
 		Field: "withOptional",
-		Args: []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+		Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
 	}); err != nil {
 		return inst, err
 	}

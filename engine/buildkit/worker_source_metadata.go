@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/resolver"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/hashicorp/go-multierror"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -163,7 +164,7 @@ func (w *Worker) Exporter(name string, sm *session.Manager) (exporter.Exporter, 
 }
 
 func (w *Worker) resolveRegistryImageConfig(ctx context.Context, ref string, opt sourceresolver.Opt, sm *session.Manager, g session.Group) (dgst digest.Digest, config []byte, retErr error) {
-	span, ctx := tracing.StartSpan(ctx, "resolving "+ref)
+	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated())
 	defer func() {
 		tracing.FinishWithError(span, retErr)
 	}()
@@ -200,7 +201,7 @@ func (w *Worker) resolveRegistryImageConfig(ctx context.Context, ref string, opt
 }
 
 func (w *Worker) resolveOCILayoutImageConfig(ctx context.Context, ref string, opt sourceresolver.Opt, sm *session.Manager, g session.Group) (dgst digest.Digest, config []byte, retErr error) {
-	span, ctx := tracing.StartSpan(ctx, "resolving "+ref)
+	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated())
 	defer func() {
 		tracing.FinishWithError(span, retErr)
 	}()

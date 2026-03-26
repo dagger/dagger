@@ -54,7 +54,6 @@ type CacheDebugSnapshot struct {
 type EGraphDebugResult struct {
 	SharedResultID         uint64                     `json:"shared_result_id"`
 	OutputEqClassIDs       []uint64                   `json:"output_eq_class_ids,omitempty"`
-	OutputEffectIDs        []string                   `json:"output_effect_ids,omitempty"`
 	RecordType             string                     `json:"record_type,omitempty"`
 	Description            string                     `json:"description,omitempty"`
 	TypeName               string                     `json:"type_name,omitempty"`
@@ -774,7 +773,6 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 		snap.Results = append(snap.Results, EGraphDebugResult{
 			SharedResultID:         uint64(res.id),
 			OutputEqClassIDs:       outputEqIDs,
-			OutputEffectIDs:        append([]string(nil), res.outputEffectIDs...),
 			RecordType:             res.recordType,
 			Description:            res.description,
 			TypeName:               typeName,
@@ -1078,7 +1076,6 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				EGraphDebugResult: EGraphDebugResult{
 					SharedResultID:         uint64(res.id),
 					OutputEqClassIDs:       outputEqIDs,
-					OutputEffectIDs:        append([]string(nil), res.outputEffectIDs...),
 					RecordType:             res.recordType,
 					Description:            res.description,
 					TypeName:               typeName,

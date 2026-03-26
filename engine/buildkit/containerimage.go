@@ -29,7 +29,6 @@ func (c *Client) PublishContainerImage(
 	useOCIMediaTypes bool,
 	forceCompression string,
 ) (map[string]string, error) {
-	ctx = buildkitTelemetryProvider(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -120,7 +119,6 @@ func (c *Client) ExportContainerImage(
 	leaseID string, // only required when tarExport is false
 	useOCIMediaTypes bool,
 ) (map[string]string, error) {
-	ctx = buildkitTelemetryProvider(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -205,7 +203,6 @@ func (c *Client) ContainerImageToTarball(
 	useOCIMediaTypes bool,
 	forceCompression string,
 ) error {
-	ctx = buildkitTelemetryProvider(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return err

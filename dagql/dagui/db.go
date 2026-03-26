@@ -39,12 +39,7 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	CauseSpans   map[string]SpanSet
-	EffectSpans  map[string]SpanSet
 	CreatorSpans map[string]SpanSet
-
-	CompletedEffects map[string]bool
-	FailedEffects    map[string]bool
 
 	// Map of call digest -> metric name -> data points
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
@@ -77,12 +72,7 @@ func NewDB() *DB {
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
 
-		CauseSpans:   make(map[string]SpanSet),
-		EffectSpans:  make(map[string]SpanSet),
 		CreatorSpans: make(map[string]SpanSet),
-
-		CompletedEffects: make(map[string]bool),
-		FailedEffects:    make(map[string]bool),
 
 		updatedSpans: NewSpanSet(),
 		seenSpans:    make(map[SpanID]struct{}),
@@ -713,38 +703,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		span.PropagateStatusToParentsAndLinks()
 	}
 
-	if span.EffectID != "" {
-		if db.EffectSpans[span.EffectID] == nil {
-			db.EffectSpans[span.EffectID] = NewSpanSet()
-		}
-		db.EffectSpans[span.EffectID].Add(span)
-		if span.IsFailed() {
-			db.FailedEffects[span.EffectID] = true
-		}
-		causes := db.CauseSpans[span.EffectID]
-		if causes == nil {
-			causes = NewSpanSet()
-			db.CauseSpans[span.EffectID] = causes
-		}
-		span.causesViaAttrs = causes
-	}
-
-	for _, id := range span.EffectIDs {
-		effects := db.EffectSpans[id]
-		if effects == nil {
-			effects = NewSpanSet()
-			db.EffectSpans[id] = effects
-		}
-		if span.effectsViaAttrs == nil {
-			span.effectsViaAttrs = make(map[string]SpanSet)
-		}
-		span.effectsViaAttrs[id] = effects
-	}
-
-	for _, dig := range span.EffectsCompleted {
-		db.CompletedEffects[dig] = true
-	}
-
 	if span.CallDigest != "" && span.Output != "" {
 		// parent -> child
 		if db.Outputs[span.CallDigest] == nil {
@@ -763,13 +721,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.CreatorSpans[span.Output] = NewSpanSet()
 		}
 		db.CreatorSpans[span.Output].Add(span)
-	}
-
-	for _, id := range span.EffectIDs {
-		if db.CauseSpans[id] == nil {
-			db.CauseSpans[id] = NewSpanSet()
-		}
-		db.CauseSpans[id].Add(span)
 	}
 
 	// finally, install the span if we don't already have it

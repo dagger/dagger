@@ -147,18 +147,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("import result %d: empty self payload kind", resultID)
 			}
 
-			var outputEffects []string
-			if row.OutputEffectIDs != "" {
-				if err := json.Unmarshal([]byte(row.OutputEffectIDs), &outputEffects); err != nil {
-					return fmt.Errorf("import result %d output effect IDs: %w", resultID, err)
-				}
-			}
-
 			res := &sharedResult{
 				id:                 resultID,
 				isObject:           env.Kind == persistedResultKindObject,
 				safeToPersistCache: row.SafeToPersistCache,
-				outputEffectIDs:    outputEffects,
 				expiresAtUnix:      row.ExpiresAtUnix,
 				createdAtUnixNano:  row.CreatedAtUnixNano,
 				lastUsedAtUnixNano: row.LastUsedAtUnixNano,

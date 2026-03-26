@@ -637,11 +637,6 @@ func (srv *Server) initializeDaggerClient(
 	// configure OTel providers that export to SQLite
 	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	tracerOpts := []sdktrace.TracerProviderOption{
-		// install a span processor that modifies spans created by Buildkit to
-		// fit our ideal format
-		sdktrace.WithSpanProcessor(buildkit.NewSpanProcessor(
-			client.bkClient,
-		)),
 		// save to our own client's DB
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
 			client.spanExporter,

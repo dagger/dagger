@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	_ "modernc.org/sqlite"
 
@@ -215,6 +217,66 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 	}
 }
 
+func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID string, res AnyResult) {
+	if c == nil || sessionID == "" || res == nil {
+		return
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return
+	}
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if !spanCtx.IsValid() {
+		return
+	}
+
+	c.sessionMu.Lock()
+	if c.sessionLazySpansBySession == nil {
+		c.sessionLazySpansBySession = make(map[string]map[sharedResultID]trace.SpanContext)
+	}
+	if c.sessionLazySpansBySession[sessionID] == nil {
+		c.sessionLazySpansBySession[sessionID] = make(map[sharedResultID]trace.SpanContext)
+	}
+	if _, exists := c.sessionLazySpansBySession[sessionID][shared.id]; !exists {
+		c.sessionLazySpansBySession[sessionID][shared.id] = spanCtx
+	}
+	c.sessionMu.Unlock()
+}
+
+func (c *Cache) sessionLazySpanContext(sessionID string, resultID sharedResultID) (trace.SpanContext, bool) {
+	if c == nil || sessionID == "" || resultID == 0 {
+		return trace.SpanContext{}, false
+	}
+
+	c.sessionMu.Lock()
+	spanCtx := c.sessionLazySpansBySession[sessionID][resultID]
+	c.sessionMu.Unlock()
+	if !spanCtx.IsValid() {
+		return trace.SpanContext{}, false
+	}
+	return spanCtx, true
+}
+
+func HasPendingLazyEvaluation(res AnyResult) bool {
+	if res == nil {
+		return false
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return false
+	}
+
+	shared.lazyMu.Lock()
+	defer shared.lazyMu.Unlock()
+	if shared.lazyEvalComplete {
+		return false
+	}
+	if shared.lazyEval != nil {
+		return true
+	}
+	return lazyEvalFuncOfResult(res) != nil
+}
+
 func (c *Cache) trackSessionArbitrary(sessionID string, res ArbitraryCachedResult) {
 	if c == nil || sessionID == "" || res == nil {
 		return
@@ -258,6 +320,7 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	arbitraryCallKeys := c.sessionArbitraryCallKeysBySession[sessionID]
 	delete(c.sessionResultIDsBySession, sessionID)
 	delete(c.sessionArbitraryCallKeysBySession, sessionID)
+	delete(c.sessionLazySpansBySession, sessionID)
 	c.sessionMu.Unlock()
 
 	var (
@@ -650,6 +713,7 @@ type Cache struct {
 
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
+	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
 
 	sqlDB *sql.DB
 	// persistent normalized cache store (disk persistence/import).
@@ -730,7 +794,6 @@ type sharedResult struct {
 	// typed self payload is decoded/rehydrated. They are not child-result deps.
 	persistedSnapshotLinks []PersistedSnapshotRefLink
 
-	outputEffectIDs []string
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
 	expiresAtUnix int64
@@ -1262,15 +1325,6 @@ func (r Result[T]) RecipeDigest(ctx context.Context) (digest.Digest, error) {
 	return call.deriveRecipeDigest(c)
 }
 
-func (r Result[T]) AllEffectIDs(ctx context.Context) ([]string, error) {
-	call := r.shared.loadResultCall()
-	if r.shared == nil || call == nil {
-		return nil, fmt.Errorf("result %T has no call frame", r.Self())
-	}
-	_ = ctx
-	return call.AllEffectIDs()
-}
-
 func (r Result[T]) ContentPreferredDigest(ctx context.Context) (digest.Digest, error) {
 	call := r.shared.loadResultCall()
 	if r.shared == nil || call == nil {
@@ -1456,7 +1510,6 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 			safeToPersistCache:     r.shared.safeToPersistCache,
 			persistedEnvelope:      state.persistedEnvelope,
 			persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
-			outputEffectIDs:        slices.Clone(r.shared.outputEffectIDs),
 			createdAtUnixNano:      state.createdAtUnixNano,
 			lastUsedAtUnixNano:     state.lastUsedAtUnixNano,
 			sizeEstimateBytes:      r.shared.sizeEstimateBytes,
@@ -1780,6 +1833,20 @@ func lazyEvalStackContains(stack *lazyEvalStackNode, id sharedResultID) bool {
 	return false
 }
 
+type resumedCallbackSpan struct {
+	trace.Span
+	sc trace.SpanContext
+	tp trace.TracerProvider
+}
+
+func (s resumedCallbackSpan) SpanContext() trace.SpanContext {
+	return s.sc
+}
+
+func (s resumedCallbackSpan) TracerProvider() trace.TracerProvider {
+	return s.tp
+}
+
 func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult, waitCh chan struct{}) error {
 	var waitErr error
 	select {
@@ -1876,6 +1943,10 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 	waitCh := make(chan struct{})
 	evalCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
 	lazyEval := shared.lazyEval
+	resultCall := shared.loadResultCall()
+	if resultCall != nil {
+		evalCtx = ContextWithCall(evalCtx, resultCall)
+	}
 	shared.lazyEvalWaitCh = waitCh
 	shared.lazyEvalCancel = cancel
 	shared.lazyEvalWaiters = 1
@@ -1883,7 +1954,34 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 	shared.lazyMu.Unlock()
 
 	go func() {
-		err := lazyEval(evalCtx)
+		callbackCtx := evalCtx
+		var resumeSpan trace.Span
+		if clientMD, err := engine.ClientMetadataFromContext(evalCtx); err == nil && clientMD.SessionID != "" {
+			if originalSpanCtx, ok := c.sessionLazySpanContext(clientMD.SessionID, shared.id); ok {
+				spanName := "resume lazy evaluation"
+				if resultCall != nil && resultCall.Field != "" {
+					spanName = "resume " + resultCall.Field
+				}
+				var resumeCtx context.Context
+				resumeCtx, resumeSpan = Tracer(evalCtx).Start(
+					evalCtx,
+					spanName,
+					telemetry.Resume(trace.ContextWithSpanContext(evalCtx, originalSpanCtx)),
+					telemetry.Passthrough(),
+				)
+				callbackCtx = trace.ContextWithSpan(resumeCtx, resumedCallbackSpan{
+					Span: resumeSpan,
+					sc:   originalSpanCtx,
+					tp:   resumeSpan.TracerProvider(),
+				})
+			}
+		}
+
+		var err error
+		if resumeSpan != nil {
+			defer telemetry.EndWithCause(resumeSpan, &err)
+		}
+		err = lazyEval(callbackCtx)
 
 		shared.lazyMu.Lock()
 		shared.lazyEvalErr = err
@@ -2274,11 +2372,6 @@ func (c *Cache) getOrInitCall(
 			postCall:           val.PostCall,
 			safeToPersistCache: val.IsSafeToPersistCache(),
 		}
-		outputEffects, err := detached.resultCall.AllEffectIDs()
-		if err != nil {
-			return nil, fmt.Errorf("derive do-not-cache output effects: %w", err)
-		}
-		detached.outputEffectIDs = outputEffects
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
 			return nil, fmt.Errorf("do-not-cache result %T cannot implement OnReleaser", onReleaser)
 		}
@@ -2326,6 +2419,7 @@ func (c *Cache) getOrInitCall(
 		return nil, err
 	}
 	if hit {
+		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
 		return hitRes, nil
 	}
 
@@ -2608,6 +2702,7 @@ func (c *Cache) wait(
 		hitCache: false,
 	}
 	c.trackSessionResult(ctx, sessionID, retRes, false)
+	c.captureSessionLazySpanContext(ctx, sessionID, retRes)
 	c.callsMu.Lock()
 	oc.waiters--
 	lastWaiter := oc.waiters == 0
@@ -2733,12 +2828,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	)
 	if !resWasCacheBacked {
 		if resultCall := oc.res.loadResultCall(); resultCall != nil {
-			outputEffects, err := resultCall.AllEffectIDs()
-			if err != nil {
-				return fmt.Errorf("derive result output effects: %w", err)
-			}
-			oc.res.outputEffectIDs = outputEffects
-
 			selfDigest, inputRefs, deriveErr := resultCall.selfDigestAndInputRefs(c)
 			if deriveErr != nil {
 				return fmt.Errorf("derive result term digests: %w", deriveErr)

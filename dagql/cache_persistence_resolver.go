@@ -121,6 +121,7 @@ func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag 
 	if sessionID != "" && c.traceEnabled() {
 		c.traceSessionResultTracked(ctx, sessionID, loaded, true, trackedCount)
 	}
+	c.captureSessionLazySpanContext(ctx, sessionID, loaded)
 	return loaded, nil
 }
 

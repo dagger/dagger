@@ -156,7 +156,6 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			self:              payload.self,
 			hasValue:          payload.hasValue,
 			persistedEnvelope: payload.persistedEnvelope,
-			outputEffectIDs:   slices.Clone(res.outputEffectIDs),
 			row: persistdb.MirrorResult{
 				ID:                 int64(resultID),
 				SafeToPersistCache: res.safeToPersistCache,
@@ -252,10 +251,6 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		if err != nil {
 			return persistStateSnapshot{}, fmt.Errorf("persist result %d payload JSON: %w", resultSnapshot.resultID, err)
 		}
-		outputEffectIDs, err := json.Marshal(resultSnapshot.outputEffectIDs)
-		if err != nil {
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d output effect IDs: %w", resultSnapshot.resultID, err)
-		}
 		callFrameJSON, err := json.Marshal(resultSnapshot.frame)
 		if err != nil {
 			return persistStateSnapshot{}, fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
@@ -263,7 +258,6 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 		resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
 		resultSnapshot.row.SelfPayload = payload
-		resultSnapshot.row.OutputEffectIDs = string(outputEffectIDs)
 	}
 	return snapshot, nil
 }
