@@ -512,7 +512,8 @@ func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
 	modGen := daggerCliBase(t, c)
 
 	t.Run("module builtin does not work", func(ctx context.Context, t *testctx.T) {
-		_, err := modGen.With(daggerShell(".deps")).Sync(ctx)
+		// .help with no module loaded should indicate no module is available
+		_, err := modGen.With(daggerShell(".help")).Sync(ctx)
 		requireErrOut(t, err, "module not loaded")
 	})
 }
