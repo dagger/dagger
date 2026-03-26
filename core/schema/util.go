@@ -19,7 +19,7 @@ func Syncer[T dagql.Typed]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {
 		Recipe bool `default:"false" internal:"true"`
 	}) (res dagql.Result[dagql.ID[T]], _ error) {
-		if _, ok := any(self.Self()).(dagql.HasLazyEvaluation); ok {
+		if _, ok := dagql.UnwrapAs[dagql.HasLazyEvaluation](self); ok {
 			cache, err := dagql.EngineCache(ctx)
 			if err != nil {
 				return res, err
@@ -28,7 +28,7 @@ func Syncer[T dagql.Typed]() dagql.Field[T] {
 				return res, err
 			}
 		} else {
-			syncable, ok := any(self.Self()).(core.Syncable)
+			syncable, ok := dagql.UnwrapAs[core.Syncable](self)
 			if !ok {
 				return res, fmt.Errorf("internal error: %T does not support sync", self.Self())
 			}

@@ -254,7 +254,7 @@ func normalizeRef(ref string) string {
 
 // recordStatus records the status of a call on a span.
 func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, frame *dagql.ResultCall) {
-	if cached {
+	if cached && !dagql.HasPendingLazyEvaluation(res) {
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
 

@@ -19,8 +19,13 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/moby/locker"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func testResultCall(field string, typ dagql.Typed, receiver *dagql.ResultCall) *dagql.ResultCall {
@@ -266,5 +271,65 @@ func TestIsIntrospectionPreservesClassification(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, isIntrospection(ctx, tc.frame))
 		})
+	}
+}
+
+type telemetryTestNoopResolver struct{}
+
+func (telemetryTestNoopResolver) ObjectType(string) (dagql.ObjectType, bool) { return nil, false }
+func (telemetryTestNoopResolver) ScalarType(string) (dagql.ScalarType, bool) { return nil, false }
+
+type telemetryTestSpan struct {
+	trace.Span
+	attrs []attribute.KeyValue
+}
+
+func (s *telemetryTestSpan) End(...trace.SpanEndOption)                          {}
+func (s *telemetryTestSpan) AddEvent(string, ...trace.EventOption)               {}
+func (s *telemetryTestSpan) AddLink(trace.Link)                                  {}
+func (s *telemetryTestSpan) IsRecording() bool                                   { return true }
+func (s *telemetryTestSpan) RecordError(error, ...trace.EventOption)             {}
+func (s *telemetryTestSpan) SpanContext() trace.SpanContext                      { return trace.SpanContext{} }
+func (s *telemetryTestSpan) SetStatus(codes.Code, string)                        {}
+func (s *telemetryTestSpan) SetName(string)                                      {}
+func (s *telemetryTestSpan) SetAttributes(attrs ...attribute.KeyValue)           { s.attrs = append(s.attrs, attrs...) }
+func (s *telemetryTestSpan) TracerProvider() trace.TracerProvider                { return trace.NewNoopTracerProvider() }
+
+type telemetryTestLazyString struct {
+	dagql.String
+}
+
+func (telemetryTestLazyString) Type() *ast.Type {
+	return dagql.String("").Type()
+}
+
+func (telemetryTestLazyString) LazyEvalFunc() dagql.LazyEvalFunc {
+	return func(context.Context) error { return nil }
+}
+
+func TestRecordStatusDoesNotMarkPendingLazyResultCached(t *testing.T) {
+	ctx := t.Context()
+	cacheIface, err := dagql.NewCache(ctx, "")
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cacheIface)
+
+	reqCall := &dagql.ResultCall{
+		Kind:  dagql.ResultCallKindField,
+		Field: "withExec",
+		Type:  dagql.NewResultCallType(dagql.String("").Type()),
+	}
+	req := &dagql.CallRequest{ResultCall: reqCall}
+
+	res, err := cacheIface.GetOrInitCall(ctx, "test-session", telemetryTestNoopResolver{}, req, func(ctx context.Context) (dagql.AnyResult, error) {
+		return dagql.NewResultForCurrentCall(ctx, telemetryTestLazyString{String: dagql.String("lazy")})
+	})
+	require.NoError(t, err)
+	require.True(t, dagql.HasPendingLazyEvaluation(res))
+
+	span := &telemetryTestSpan{}
+	recordStatus(ctx, res, span, true, reqCall)
+
+	for _, attr := range span.attrs {
+		require.NotEqual(t, telemetry.CachedAttr, string(attr.Key))
 	}
 }
