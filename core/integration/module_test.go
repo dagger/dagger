@@ -3278,81 +3278,62 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 		require.NoError(t, c.Close())
 	})
 
-	t.Run("secret by id leak", func(ctx context.Context, t *testctx.T) {
-		// check that modules can't access each other's global secret stores,
-		// even when we know the underlying IDs
+	t.Run("secret by id cross-session isolation", func(ctx context.Context, t *testctx.T) {
+		tmpdir := t.TempDir()
 
-		var logs safeBuffer
-		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+		initCmd := hostDaggerCommand(ctx, t, tmpdir, "init", "--source=.", "--name=test", "--sdk=go")
+		initOutput, err := initCmd.CombinedOutput()
+		require.NoError(t, err, string(initOutput))
 
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-		ctr = ctr.
-			WithWorkdir("/toplevel/leaker").
-			With(daggerExec("init", "--name=leaker", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", `package main
+		err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
 
 import (
 	"context"
-
-	"dagger/leaker/internal/dagger"
 )
 
-type Leaker struct {}
+type Test struct{}
 
-func (l *Leaker) Leak(ctx context.Context, target string) string {
-	secret, _ := dag.LoadSecretFromID(dagger.SecretID(target)).Plaintext(ctx)
-	return secret
+func (*Test) MakeSecretID(ctx context.Context) (string, error) {
+	id, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
 }
-`,
-			)
-
-		ctr = ctr.
-			WithWorkdir("/toplevel").
-			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
-			With(daggerExec("install", "./leaker")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-)
-
-type Toplevel struct {}
-
-func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
-	secretID, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
-	if err != nil {
-		return err
-	}
-
-	// loading secret-by-id in the same module should succeed
-	plaintext, err := dag.LoadSecretFromID(secretID).Plaintext(ctx)
-	if err != nil {
-		return err
-	}
-	if plaintext != "asdfasdf" {
-		return fmt.Errorf("expected \"asdfasdf\", but got %q", plaintext)
-	}
-
-	// but getting a leaker module to do this should fail
-	plaintext, err = dag.Leaker().Leak(ctx, string(secretID))
-	if err != nil {
-		return err
-	}
-	if plaintext != "" {
-		return fmt.Errorf("expected \"\", but got %q", plaintext)
-	}
-
-	return nil
-}
-`,
-			)
-
-		_, err := ctr.With(daggerQuery(`{toplevel{attempt(uniq: %q)}}`, identity.NewID())).Stdout(ctx)
+`), 0o644)
 		require.NoError(t, err)
-		require.NoError(t, c.Close())
+
+		c1 := connect(ctx, t)
+		require.NoError(t, c1.ModuleSource(tmpdir).AsModule().Serve(ctx))
+
+		res1, err := testutil.QueryWithClient[struct {
+			Test struct {
+				MakeSecretId string
+			}
+		}](c1, t, `{test{makeSecretId}}`, nil)
+		require.NoError(t, err)
+		secretID := res1.Test.MakeSecretId
+		require.NotEmpty(t, secretID)
+
+		sameSession, err := c1.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "asdfasdf", sameSession)
+
+		c2 := connect(ctx, t)
+		require.NoError(t, c2.ModuleSource(tmpdir).AsModule().Serve(ctx))
+
+		_, err = c2.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no bound resource for session")
+
+		require.NoError(t, c1.Close())
+
+		c3 := connect(ctx, t)
+		require.NoError(t, c3.ModuleSource(tmpdir).AsModule().Serve(ctx))
+
+		_, err = c3.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no bound resource for session")
 	})
 
 	t.Run("secrets cache normally", func(ctx context.Context, t *testctx.T) {

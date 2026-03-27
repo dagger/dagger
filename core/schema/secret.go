@@ -201,7 +201,11 @@ func (s *secretSchema) setSecret(
 	if err != nil {
 		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to create concrete setSecret result: %w", err)
 	}
-	handle := core.SecretHandleFromPlaintext(parent.Self().SecretSalt(), concreteVal.PlaintextVal)
+	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self(), args.Name)
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get client resource accessor: %w", err)
+	}
+	handle := core.SetSecretHandle(args.Name, accessor)
 	if handle == "" {
 		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("setSecret must have a session resource handle")
 	}

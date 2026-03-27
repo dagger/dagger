@@ -187,6 +187,13 @@ func SecretHandleFromCacheKey(cacheKey string) dagql.SessionResourceHandle {
 	return dagql.SessionResourceHandle(hashutil.HashStrings(cacheKey))
 }
 
+func SetSecretHandle(name string, accessor string) dagql.SessionResourceHandle {
+	if name == "" || accessor == "" {
+		return ""
+	}
+	return dagql.SessionResourceHandle(hashutil.HashStrings(name, accessor))
+}
+
 func SecretHandleFromPlaintext(secretSalt []byte, plaintext []byte) dagql.SessionResourceHandle {
 	if len(plaintext) == 0 {
 		return ""
