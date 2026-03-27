@@ -29,12 +29,13 @@ const (
 )
 
 type GhcpClient struct {
-	endpoint   *LLMEndpoint
-	cliVersion string
-	svc        *dagger.Service  // the copilot CLI sidecar
-	client     *copilot.Client  // SDK client connected via CLIUrl
-	session    *copilot.Session // persistent session (multi-turn, Phase 2)
-	mu         sync.Mutex       // protects svc, client, session
+	endpoint     *LLMEndpoint
+	cliVersion   string
+	svc          *dagger.Service  // the copilot CLI sidecar
+	client       *copilot.Client  // SDK client connected via CLIUrl
+	session      *copilot.Session // persistent session (multi-turn)
+	mu           sync.Mutex       // protects svc, client, session, sentMsgCount
+	sentMsgCount int              // number of history messages already sent to this session
 }
 
 var _ LLMClient = (*GhcpClient)(nil)
@@ -148,8 +149,8 @@ func (c *GhcpClient) ensureConnected(ctx context.Context) error {
 }
 
 // getOrCreateSession returns the persistent session, creating it if needed.
-// Phase 2 will add session reuse with proper history threading.
-func (c *GhcpClient) getOrCreateSession(ctx context.Context, tools []copilot.Tool) (*copilot.Session, error) {
+// systemPrompt is passed to SessionConfig.SystemMessage on first creation only.
+func (c *GhcpClient) getOrCreateSession(ctx context.Context, systemPrompt string, tools []copilot.Tool) (*copilot.Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -157,10 +158,16 @@ func (c *GhcpClient) getOrCreateSession(ctx context.Context, tools []copilot.Too
 		return c.session, nil
 	}
 
+	var sysMsg *copilot.SystemMessageConfig
+	if systemPrompt != "" {
+		sysMsg = &copilot.SystemMessageConfig{Content: systemPrompt}
+	}
+
 	session, err := c.client.CreateSession(ctx, &copilot.SessionConfig{
 		Streaming:           true, // required for message_delta events
 		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
 		Tools:               tools,
+		SystemMessage:       sysMsg,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create copilot session: %w", err)
@@ -169,9 +176,10 @@ func (c *GhcpClient) getOrCreateSession(ctx context.Context, tools []copilot.Too
 	return session, nil
 }
 
-// SendQuery sends the last user message in history to Copilot and returns the
-// response. Phase 1 sends only the final user message; Phase 2 will thread the
-// full history through session.Send.
+// SendQuery sends only the new messages (since the last call) to Copilot and
+// returns the response. The Copilot CLI maintains full conversation history
+// server-side within the session, so we track a cursor (sentMsgCount) and
+// send only the delta each time.
 func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	copilotModel := StripGitHubModelPrefix(c.endpoint.Model)
 
@@ -211,43 +219,94 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 	}
 
 	sdkTools := buildSDKTools(tools)
-	session, err := c.getOrCreateSession(ctx, sdkTools)
-	if err != nil {
-		return nil, err
+
+	// Extract system prompt for new session creation (only used on first call).
+	systemPrompt := ""
+	for _, msg := range history {
+		if msg.Role == "system" {
+			systemPrompt = msg.Content
+			break
+		}
 	}
 
-	// Capture token usage from assistant.usage events, which fire before session.idle.
-	var usage LLMTokenUsage
-	var usageMu sync.Mutex
-	unsubscribe := session.On(func(event copilot.SessionEvent) {
-		if event.Type != copilot.SessionEventTypeAssistantUsage {
-			return
-		}
-		usageMu.Lock()
-		defer usageMu.Unlock()
-		if event.Data.InputTokens != nil {
-			usage.InputTokens = int64(*event.Data.InputTokens)
-		}
-		if event.Data.OutputTokens != nil {
-			usage.OutputTokens = int64(*event.Data.OutputTokens)
-		}
-		if event.Data.CacheReadTokens != nil {
-			usage.CachedTokenReads = int64(*event.Data.CacheReadTokens)
-		}
-		if event.Data.CacheWriteTokens != nil {
-			usage.CachedTokenWrites = int64(*event.Data.CacheWriteTokens)
-		}
-		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
-	})
-	defer unsubscribe()
+	// Phase 2: send only new messages, retry once on session expiry.
+	var (
+		resp    *copilot.SessionEvent
+		sendErr error
+		usage   LLMTokenUsage
+		usageMu sync.Mutex
+	)
 
-	// Phase 1: send last user message only. Phase 2 will thread full history.
-	prompt := ghcpLastUserMessage(history)
+	for attempt := 0; attempt < 2; attempt++ {
+		session, err := c.getOrCreateSession(ctx, systemPrompt, sdkTools)
+		if err != nil {
+			return nil, err
+		}
 
-	resp, err := session.SendAndWait(ctx, copilot.MessageOptions{Prompt: prompt})
-	if err != nil {
-		return nil, fmt.Errorf("copilot send: %w", err)
+		// Read cursor under lock so it's consistent with the session.
+		c.mu.Lock()
+		startIdx := c.sentMsgCount
+		c.mu.Unlock()
+
+		// Identify messages not yet sent to this session.
+		newMsgs := history[startIdx:]
+		prompt := ""
+		for _, msg := range newMsgs {
+			if msg.Role == "user" {
+				prompt = msg.Content
+			}
+		}
+		if prompt == "" {
+			return nil, fmt.Errorf("no user message found in new history")
+		}
+
+		// Capture token usage from assistant.usage events, which fire before session.idle.
+		usage = LLMTokenUsage{}
+		unsubscribe := session.On(func(event copilot.SessionEvent) {
+			if event.Type != copilot.SessionEventTypeAssistantUsage {
+				return
+			}
+			usageMu.Lock()
+			defer usageMu.Unlock()
+			if event.Data.InputTokens != nil {
+				usage.InputTokens = int64(*event.Data.InputTokens)
+			}
+			if event.Data.OutputTokens != nil {
+				usage.OutputTokens = int64(*event.Data.OutputTokens)
+			}
+			if event.Data.CacheReadTokens != nil {
+				usage.CachedTokenReads = int64(*event.Data.CacheReadTokens)
+			}
+			if event.Data.CacheWriteTokens != nil {
+				usage.CachedTokenWrites = int64(*event.Data.CacheWriteTokens)
+			}
+			usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+		})
+
+		resp, sendErr = session.SendAndWait(ctx, copilot.MessageOptions{Prompt: prompt})
+		unsubscribe()
+
+		if sendErr != nil && isSessionExpired(sendErr) && attempt == 0 {
+			// Session gone server-side — clear state and retry with a fresh session.
+			c.mu.Lock()
+			c.session = nil
+			c.sentMsgCount = 0
+			c.mu.Unlock()
+			continue
+		}
+		break
 	}
+
+	if sendErr != nil {
+		return nil, fmt.Errorf("copilot send: %w", sendErr)
+	}
+
+	// Advance cursor: all messages in history are now acknowledged by the server.
+	// Dagger will append the assistant response after we return, so the next call
+	// will see len(history)+1 messages and send only the new user turn.
+	c.mu.Lock()
+	c.sentMsgCount = len(history)
+	c.mu.Unlock()
 
 	content := ""
 	if resp != nil && resp.Data.Content != nil {
@@ -283,14 +342,17 @@ func (c *GhcpClient) IsRetryable(err error) bool {
 		strings.Contains(errStr, "transport")
 }
 
-// ghcpLastUserMessage returns the content of the last user-role message.
-func ghcpLastUserMessage(history []*ModelMessage) string {
-	for i := len(history) - 1; i >= 0; i-- {
-		if history[i].Role == "user" {
-			return history[i].Content
-		}
+// isSessionExpired reports whether an error indicates the server-side session
+// is no longer valid and a fresh session should be created.
+func isSessionExpired(err error) bool {
+	if err == nil {
+		return false
 	}
-	return ""
+	s := err.Error()
+	return strings.Contains(s, "session not found") ||
+		strings.Contains(s, "session expired") ||
+		strings.Contains(s, "disconnected") ||
+		strings.Contains(s, "not connected")
 }
 
 // buildSDKTools converts Dagger LLMTools to Copilot SDK Tool definitions.
