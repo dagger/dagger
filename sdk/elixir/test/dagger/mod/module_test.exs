@@ -281,10 +281,11 @@ defmodule Dagger.Mod.ModuleTest do
     end
 
     test "accept and return custom enum", %{dag: dag} do
-      assert {:ok, [simple, enum_opt]} =
+      assert {:ok, [scan, enum_opt]} =
                root_object(dag, CustomEnum) |> Dagger.ObjectTypeDef.functions()
 
-      assert {:ok, [arg]} = Dagger.Function.args(simple)
+      assert {:ok, [arg]} = Dagger.Function.args(scan)
+
       arg_type_def = Dagger.FunctionArg.type_def(arg)
       assert {:ok, :ENUM_KIND} = Dagger.TypeDef.kind(arg_type_def)
 
@@ -293,7 +294,7 @@ defmodule Dagger.Mod.ModuleTest do
                |> Dagger.TypeDef.as_enum()
                |> Dagger.EnumTypeDef.name()
 
-      return_type_def = Dagger.Function.return_type(simple)
+      return_type_def = Dagger.Function.return_type(scan)
       assert {:ok, :ENUM_KIND} = Dagger.TypeDef.kind(return_type_def)
 
       assert {:ok, "SimpleEnum"} =
@@ -301,12 +302,23 @@ defmodule Dagger.Mod.ModuleTest do
                |> Dagger.TypeDef.as_enum()
                |> Dagger.EnumTypeDef.name()
 
-      assert {:ok, [arg]} = Dagger.Function.args(enum_opt)
-      enum_type_def = arg |> Dagger.FunctionArg.type_def() |> Dagger.TypeDef.as_enum()
-      [low, high, unknown] = Dagger.EnumTypeDef.values(enum_type_def)
-      assert {:ok, "low"} = Dagger.EnumValueTypeDef.name(low)
-      assert {:ok, "high"} = Dagger.EnumValueTypeDef.name(high)
-      assert {:ok, "unknown"} = Dagger.EnumValueTypeDef.name(unknown)
+      assert {:ok, [arg]} = Dagger.Function.args(scan)
+
+      type_def =
+        arg
+        |> Dagger.FunctionArg.type_def()
+
+      assert {:ok, :ENUM_KIND} =
+               Dagger.TypeDef.kind(type_def)
+
+      enum_type_def = type_def |> Dagger.TypeDef.as_enum()
+
+      Dagger.EnumTypeDef.description(enum_type_def)
+      Dagger.EnumTypeDef.name(enum_type_def)
+      {:ok, [unknown, low, high]} = Dagger.EnumTypeDef.members(enum_type_def)
+      assert {:ok, "LOW"} = Dagger.EnumValueTypeDef.name(low)
+      assert {:ok, "HIGH"} = Dagger.EnumValueTypeDef.name(high)
+      assert {:ok, "UNKNOWN"} = Dagger.EnumValueTypeDef.name(unknown)
     end
   end
 

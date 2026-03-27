@@ -52,7 +52,11 @@ defmodule Dagger.Mod.Decoder do
 
     case module.__kind__() do
       :object ->
-        Nestru.decode(value, module, dag)
+        if function_exported?(module, :__struct__, 0) do
+          Nestru.decode(value, module, dag)
+        else
+          {:ok, value}
+        end
 
       :enum ->
         if function_exported?(module, :__enum__, 2) do
