@@ -109,6 +109,9 @@ func moduleErrorIDFromRef(
 	if err != nil {
 		return id, false, err
 	}
+	if strings.TrimSpace(string(idBytes)) == "" {
+		return id, false, nil
+	}
 	if err := id.Decode(string(idBytes)); err != nil {
 		return id, false, err
 	}

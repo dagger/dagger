@@ -1121,33 +1121,6 @@ func (typeDef *TypeDef) WithEnumTypeDef(enum dagql.ObjectResult[*EnumTypeDef]) *
 	return typeDef.syncName()
 }
 
-func (typeDef *TypeDef) validateEnumMember(name, value string) error {
-	// Validate if the enum follows GraphQL spec.
-	// A GraphQL enum should be: only letters, digits and underscores, and has to start with a letter or a single underscore.
-	// To do so, we can use a regular expression.
-	// ^            : Start of the string
-	// [a-zA-Z_]    : First character must be a letter or underscore
-	// [a-zA-Z0-9_]*: Following characters can be letters, digits, or underscores (zero or more times)
-	// $            : End of the string
-	pattern := `^[a-zA-Z_][a-zA-Z0-9_]*$`
-	if !regexp.MustCompile(pattern).MatchString(name) {
-		return fmt.Errorf("enum name %q is not valid (only letters, digits and underscores are allowed)", name)
-	}
-
-	// Verify if the enum value is duplicated.
-	for _, v := range typeDef.AsEnum.Value.Self().Members {
-		member := v.Self()
-		if member.Name == name {
-			return fmt.Errorf("enum %q is already defined", name)
-		}
-		if member.Value != "" && member.Value == value {
-			return fmt.Errorf("enum %q is already defined with value %q", member.Name, value)
-		}
-	}
-
-	return nil
-}
-
 func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 	if typeDef == nil || otherDef == nil {
 		return false
@@ -2117,25 +2090,55 @@ func (enum *EnumTypeDef) WithSourceModuleName(sourceModuleName string) *EnumType
 	return enum
 }
 
-func (enum *EnumTypeDef) WithMember(member dagql.ObjectResult[*EnumMemberTypeDef]) *EnumTypeDef {
+func (enum *EnumTypeDef) WithMember(member dagql.ObjectResult[*EnumMemberTypeDef]) (*EnumTypeDef, error) {
 	enum = enum.Clone()
+	memberSelf := member.Self()
+	if memberSelf == nil {
+		return enum, nil
+	}
+
+	replacementIdx := -1
 	for i, existing := range enum.Members {
 		existingSelf := existing.Self()
-		memberSelf := member.Self()
-		if existingSelf == nil || memberSelf == nil {
+		if existingSelf == nil {
 			continue
 		}
 		switch {
 		case existingSelf.OriginalName != "" && memberSelf.OriginalName != "" && existingSelf.OriginalName == memberSelf.OriginalName:
-			enum.Members[i] = member
-			return enum
+			replacementIdx = i
 		case existingSelf.Name == memberSelf.Name:
-			enum.Members[i] = member
-			return enum
+			replacementIdx = i
+		}
+		if replacementIdx != -1 {
+			break
 		}
 	}
+
+	pattern := `^[a-zA-Z_][a-zA-Z0-9_]*$`
+	if !regexp.MustCompile(pattern).MatchString(memberSelf.Name) {
+		return nil, fmt.Errorf("enum name %q is not valid (only letters, digits and underscores are allowed)", memberSelf.Name)
+	}
+	for i, existing := range enum.Members {
+		if i == replacementIdx {
+			continue
+		}
+		existingSelf := existing.Self()
+		if existingSelf == nil {
+			continue
+		}
+		if existingSelf.Name == memberSelf.Name {
+			return nil, fmt.Errorf("enum %q is already defined", memberSelf.Name)
+		}
+		if memberSelf.Value != "" && existingSelf.Value == memberSelf.Value {
+			return nil, fmt.Errorf("enum %q is already defined with value %q", existingSelf.Name, memberSelf.Value)
+		}
+	}
+	if replacementIdx != -1 {
+		enum.Members[replacementIdx] = member
+		return enum, nil
+	}
 	enum.Members = append(enum.Members, member)
-	return enum
+	return enum, nil
 }
 
 type EnumMemberTypeDef struct {

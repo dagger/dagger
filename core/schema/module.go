@@ -1624,7 +1624,7 @@ func (s *moduleSchema) enumTypeDefWithMember(ctx context.Context, enum *core.Enu
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode member: %w", err)
 	}
-	return enum.WithMember(member), nil
+	return enum.WithMember(member)
 }
 
 func (s *moduleSchema) enumTypeDefWithName(ctx context.Context, enum *core.EnumTypeDef, args struct {
