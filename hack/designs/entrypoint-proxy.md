@@ -1,4 +1,4 @@
-# Entrypoint Proxy: Two-Server Architecture
+# Entrypoint Proxy: Canonical and Sugared Servers
 
 ## Overview
 
@@ -11,31 +11,35 @@ even the module's own constructor (a module named `test` with a method
 `test`). To handle this safely, the engine maintains two `dagql.Server`
 instances that share a single `SessionCache`:
 
-- **Inner (canonical)**: All core types, module types, constructors, and
-  `loadXxxFromID` fields. No entrypoint proxies. IDs are loaded here.
+- **Canonical**: All core types, module types, constructors, and
+  `loadXxxFromID` fields. No entrypoint proxies. The real namespace.
 
-- **Outer (client-facing)**: Everything the inner server has, PLUS
+- **Sugared (client-facing)**: Everything the canonical server has, PLUS
   entrypoint proxy fields and the `with` field on `Query`. Served to
   clients over HTTP and used for schema introspection.
 
-When no module has `Entrypoint` set, only one server is built and inner
-== outer.
+The sugared server's `Canonical()` method returns the canonical server.
+For servers without entrypoints, `Canonical()` returns the receiver
+itself (only one server is built).
 
 ## Key Invariants
 
-1. **IDs are always loaded through the inner server.** Canonical IDs like
-   `test(...).file(...)` never touch proxy fields during evaluation.
+1. **IDs are always loaded through the canonical server.** `Load` and
+   `LoadType` on the sugared server delegate to `Canonical()`.
+   Canonical IDs like `test(...).file(...)` never touch proxy fields
+   during evaluation.
 
-2. **Proxy resolvers always Select through the inner server.** This
-   prevents infinite recursion when a proxy shadows the field it needs
-   to call (e.g. proxy `test` calling constructor `test`).
+2. **Proxy resolvers always Select through the canonical server.** They
+   call `dag.Canonical().Select(...)`, preventing infinite recursion
+   when a proxy shadows the field it needs to call (e.g. proxy `test`
+   calling constructor `test`).
 
 3. **Both servers share one `SessionCache`.** A constructor call cached
-   during proxy resolution on the outer server is a cache hit when the
-   inner server evaluates the same call during ID loading.
+   during proxy resolution on the sugared server is a cache hit when
+   the canonical server evaluates the same call during ID loading.
 
 4. **Proxy fields use `DoNotCache` and `NoTelemetry`.** They are pure
-   routing — the real work (and caching) happens in the inner
+   routing — the real work (and caching) happens in the canonical
    constructor and method calls.
 
 ## Constructor Args: The `with` Field
@@ -57,7 +61,7 @@ returns a new `Query` with those args stored in `Query.ConstructorArgs`.
    returns it with a canonical ID like `with(foo: "abc")`.
 
 2. `gimmeFoo` proxy resolver reads `Query.ConstructorArgs` from `self`,
-   calls `test(foo: "abc").gimmeFoo()` through the inner server.
+   calls `test(foo: "abc").gimmeFoo()` through the canonical server.
 
 3. The result carries a canonical ID like `test(foo: "abc").gimmeFoo()`.
 
@@ -69,75 +73,82 @@ local flags on the root `call` command. When any of these flags are
 set, `selectWith` adds `with(args...)` to the query builder chain
 before the proxy subcommand.
 
-## dagql.Server Fields
+## dagql.Server: Canonical()
 
-Two fields on `dagql.Server` (`dagql/server.go`) support the
-architecture:
-
-### `IDLoader`
+The `dagql.Server` has a private `canonical` field and a public
+`Canonical()` method (`dagql/server.go`):
 
 ```go
-IDLoader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)
+func (s *Server) Canonical() *Server {
+    if s.canonical != nil {
+        return s.canonical
+    }
+    return s
+}
 ```
 
-Checked first by `Load()` and `LoadType()`. When set, all ID evaluation
-is delegated to the inner server. Set to `inner.Load` on the outer
-server.
+This is set by `SchemaBuilder` via `SetCanonical(inner)` when building
+the sugared/canonical server pair. `Load()` and `LoadType()` delegate
+to `Canonical()` so that ID evaluation always runs against the
+un-sugared schema.
 
-### `Inner`
+## Who Uses Canonical vs. Sugared
 
-```go
-Inner *Server
-```
-
-A direct reference to the inner server. Used by code that needs to
-`Select` core API fields without risk of hitting an entrypoint proxy.
-The closures in proxy resolvers capture `dag` (the outer `*Server`)
-at install time; since `Inner` is set after both servers are built
-but before any resolver runs, the closures see it through the pointer.
-
-## Who Uses Inner vs. Outer
-
-### Outer server (`servedMods.Schema(ctx)`)
+### Sugared server (`schemaBuilder.Server(ctx)`)
 
 | Caller | File | Purpose |
 |--------|------|---------|
 | `session.go` HTTP handler | `engine/server/session.go` | GraphQL endpoint served to clients |
 | `currentTypeDefs` | `core/schema/module.go` | Schema introspection — sees proxy fields and `with` so CLI discovers them |
+| `client_resources.go` | `engine/server/client_resources.go` | `LoadIDResults` for secrets and sockets — `Load` delegates to canonical via `Canonical()` |
 
-### Inner server (`servedMods.Server(ctx)`)
-
-| Caller | File | Purpose |
-|--------|------|---------|
-| `client_resources.go` | `engine/server/client_resources.go` | `LoadIDResults` / `LoadIDs` for secrets and sockets — needs canonical ID evaluation |
-
-### `dag.Inner` (inner server via pointer on outer)
+### Canonical server (via `dag.Canonical()`)
 
 | Caller | File | Purpose |
 |--------|------|---------|
-| Proxy resolvers (functions) | `core/object.go` | `target.Select(ctx, target.Root(), ...)` — calls constructor→method chain without hitting the proxy |
+| Proxy resolvers (functions) | `core/object.go` | `canonical.Select(ctx, canonical.Root(), ...)` — calls constructor→method chain without hitting the proxy |
 | Proxy resolvers (fields) | `core/object.go` | Same pattern for field proxies |
 | `ContainerRuntime.Call` | `core/sdk.go` | Selects `directory` from Query root to create module metadata dir — must not hit a `directory` proxy |
 
-## Schema Build Flow
+## SchemaBuilder
 
-`ServedMods.lazilyLoadSchema` in `core/served_mods.go`:
+`SchemaBuilder` (`core/moddeps.go`) is an immutable type that lazily
+constructs a dagql server from a set of modules with per-module install
+policy (`InstallOpts`). Builder methods (`Append`, `Prepend`, `With`,
+`Clone`) return new instances; the server is computed once on first
+access and cached.
+
+### Schema Build Flow
+
+`SchemaBuilder.lazilyLoadSchema`:
 
 ```
 hasEntrypoint?
-├─ no  → buildSchema(mods) → single server (inner == outer)
-└─ yes → buildSchema(mods with Entrypoint:false) → inner
-         buildSchema(mods with real Entrypoint flags) → outer
-         outer.IDLoader = inner.Load
-         outer.Inner = inner
+├─ no  → buildSchema(mods) → single server (canonical == self)
+└─ yes → buildSchema(mods with Entrypoint:false) → canonical
+         buildSchema(mods with real Entrypoint flags) → sugared
+         sugared.SetCanonical(canonical)
 ```
 
 `buildSchema` (`core/schema_build.go`) creates a `dagql.Server`, calls
-`mod.Install(ctx, dag, opts)` for each module, wires up interface
-extensions, and produces the introspection JSON file. Both inner and
-outer builds use the same `root.Cache(ctx)` so they share a
+`mod.Install(ctx, dag, opts)` for each module, and wires up interface
+extensions. Both builds use the same `root.Cache(ctx)` so they share a
 `SessionCache`. Module `Install` is all in-memory registration (classes,
 fields, specs) — no I/O — so the double build is cheap.
+
+### Introspection JSON
+
+`SchemaBuilder` does not cache introspection JSON files. JSON is
+generated on-demand via `dag.Select("__schemaJSONFile", hiddenTypes)`
+and dagql's `CachePerSchema` handles per-args deduplication.
+
+Three convenience methods control what gets hidden:
+
+| Method | Hidden types | Use case |
+|--------|-------------|----------|
+| `SchemaIntrospectionJSONFileForModule` | `TypesToIgnoreForModuleIntrospection` + `TypesHiddenFromModuleSDKs` (Engine, etc.) | Module SDK codegen |
+| `SchemaIntrospectionJSONFileForClient` | none | Standalone client codegen |
+| `SchemaIntrospectionJSONFile` | caller-specified | Custom filtering |
 
 ## Proxy Installation
 
@@ -151,8 +162,8 @@ fields, specs) — no I/O — so the double build is cheap.
    extend Query root with a proxy that:
    - Takes only the method's own args (no constructor args)
    - Reads stored constructor args from `self` (the Query)
-   - Calls `target.Select(target.Root(), constructorSel, methodSel)`
-     through the inner server
+   - Calls `canonical.Select(canonical.Root(), constructorSel, methodSel)`
+     through the canonical server
 
 3. **Install field proxies**: Same pattern for fields (no args of their
    own — constructor args come from `self`).
@@ -174,5 +185,5 @@ contextual defaults survive the round-trip through introspection.
 
 | Conflict | Behavior |
 |----------|----------|
-| Method name == core field name (e.g. `container`) | Proxy shadows core field on outer server. Core field is unambiguous on inner server. IDs produced by core `container` load correctly. |
-| Method name == constructor name (e.g. module `test`, method `test`) | Proxy shadows constructor on outer server. Resolver calls through inner server where constructor is unambiguous. |
+| Method name == core field name (e.g. `container`) | Proxy shadows core field on sugared server. Core field is unambiguous on canonical server. IDs produced by core `container` load correctly. |
+| Method name == constructor name (e.g. module `test`, method `test`) | Proxy shadows constructor on sugared server. Resolver desugars through canonical server where constructor is unambiguous. |
