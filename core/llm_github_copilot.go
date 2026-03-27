@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,8 +36,9 @@ type GhcpClient struct {
 	svc          *dagger.Service  // the copilot CLI sidecar
 	client       *copilot.Client  // SDK client connected via CLIUrl
 	session      *copilot.Session // persistent session (multi-turn)
-	mu           sync.Mutex       // protects svc, client, session, sentMsgCount
+	mu           sync.Mutex       // protects svc, client, session, sentMsgCount, toolsHash
 	sentMsgCount int              // number of history messages already sent to this session
+	toolsHash    string           // fingerprint of registered tools; triggers session recreation on change
 }
 
 var _ LLMClient = (*GhcpClient)(nil)
@@ -150,9 +153,18 @@ func (c *GhcpClient) ensureConnected(ctx context.Context) error {
 
 // getOrCreateSession returns the persistent session, creating it if needed.
 // systemPrompt is passed to SessionConfig.SystemMessage on first creation only.
+// If the registered tool set changes (by name fingerprint), the old session is
+// closed and a new one is created so the new tools are available.
 func (c *GhcpClient) getOrCreateSession(ctx context.Context, systemPrompt string, tools []copilot.Tool) (*copilot.Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	newHash := hashTools(tools)
+	if c.session != nil && c.toolsHash != newHash {
+		c.session.Disconnect() //nolint:errcheck
+		c.session = nil
+		c.sentMsgCount = 0
+	}
 
 	if c.session != nil {
 		return c.session, nil
@@ -173,6 +185,7 @@ func (c *GhcpClient) getOrCreateSession(ctx context.Context, systemPrompt string
 		return nil, fmt.Errorf("create copilot session: %w", err)
 	}
 	c.session = session
+	c.toolsHash = newHash
 	return session, nil
 }
 
@@ -235,6 +248,9 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 		sendErr error
 		usage   LLMTokenUsage
 		usageMu sync.Mutex
+
+		toolCallsMu   sync.Mutex
+		capturedCalls []LLMToolCall
 	)
 
 	for attempt := 0; attempt < 2; attempt++ {
@@ -260,9 +276,14 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 			return nil, fmt.Errorf("no user message found in new history")
 		}
 
-		// Capture token usage from assistant.usage events, which fire before session.idle.
+		// Reset per-attempt state.
 		usage = LLMTokenUsage{}
-		unsubscribe := session.On(func(event copilot.SessionEvent) {
+		toolCallsMu.Lock()
+		capturedCalls = capturedCalls[:0]
+		toolCallsMu.Unlock()
+
+		// Capture token usage from assistant.usage events, which fire before session.idle.
+		unsubUsage := session.On(func(event copilot.SessionEvent) {
 			if event.Type != copilot.SessionEventTypeAssistantUsage {
 				return
 			}
@@ -283,8 +304,42 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 			usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 		})
 
+		// Capture tool call metadata so Dagger can display them and track history.
+		// The SDK auto-executes tools via Tool.Handler during SendAndWait; we record
+		// each invocation here for Dagger's TUI and cursor accounting.
+		unsubTools := session.On(func(event copilot.SessionEvent) {
+			if event.Type != copilot.SessionEventTypeExternalToolRequested {
+				return
+			}
+			toolCallID := ""
+			if event.Data.ToolCallID != nil {
+				toolCallID = *event.Data.ToolCallID
+			}
+			toolName := ""
+			if event.Data.ToolName != nil {
+				toolName = *event.Data.ToolName
+			}
+			var args map[string]any
+			if event.Data.Arguments != nil {
+				if m, ok := event.Data.Arguments.(map[string]any); ok {
+					args = m
+				}
+			}
+			toolCallsMu.Lock()
+			defer toolCallsMu.Unlock()
+			capturedCalls = append(capturedCalls, LLMToolCall{
+				ID:   toolCallID,
+				Type: "function",
+				Function: FuncCall{
+					Name:      toolName,
+					Arguments: args,
+				},
+			})
+		})
+
 		resp, sendErr = session.SendAndWait(ctx, copilot.MessageOptions{Prompt: prompt})
-		unsubscribe()
+		unsubUsage()
+		unsubTools()
 
 		if sendErr != nil && isSessionExpired(sendErr) && attempt == 0 {
 			// Session gone server-side — clear state and retry with a fresh session.
@@ -313,8 +368,10 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 		content = *resp.Data.Content
 	}
 
-	// Phase 3 will implement full tool call execution.
-	toolCalls := ghcpExtractToolCalls(resp)
+	toolCallsMu.Lock()
+	toolCalls := make([]LLMToolCall, len(capturedCalls))
+	copy(toolCalls, capturedCalls)
+	toolCallsMu.Unlock()
 
 	usageMu.Lock()
 	finalUsage := usage
@@ -356,52 +413,69 @@ func isSessionExpired(err error) bool {
 }
 
 // buildSDKTools converts Dagger LLMTools to Copilot SDK Tool definitions.
-// Phase 1: stub handlers return an error; Phase 3 will wire to tool.Call.
+// The Handler calls tool.Call synchronously; the SDK manages the round-trip to
+// the LLM inside SendAndWait so Dagger never sees raw tool-call/result pairs.
 func buildSDKTools(tools []LLMTool) []copilot.Tool {
 	if len(tools) == 0 {
 		return nil
 	}
 	sdkTools := make([]copilot.Tool, 0, len(tools))
 	for _, t := range tools {
+		tool := t // capture loop var
 		sdkTools = append(sdkTools, copilot.Tool{
-			Name:           t.Name,
-			Description:    t.Description,
-			Parameters:     t.Schema,
+			Name:           tool.Name,
+			Description:    tool.Description,
+			Parameters:     tool.Schema,
 			SkipPermission: true,
 			Handler: func(inv copilot.ToolInvocation) (copilot.ToolResult, error) {
-				// Phase 3: replace with t.Call(inv.TraceContext, inv.Arguments)
-				return copilot.ToolResult{
-					Error:      "tool execution not yet implemented (Phase 3)",
-					ResultType: "error",
-				}, nil
+				if tool.Call == nil {
+					return copilot.ToolResult{
+						Error:      fmt.Sprintf("tool %q has no handler", tool.Name),
+						ResultType: "error",
+					}, nil
+				}
+
+				// inv.Arguments is map[string]any from SDK JSON-RPC parsing.
+				args, _ := inv.Arguments.(map[string]any)
+				if args == nil {
+					args = map[string]any{}
+				}
+
+				// inv.TraceContext carries W3C trace propagation from the CLI span.
+				result, err := tool.Call(inv.TraceContext, args)
+				if err != nil {
+					return copilot.ToolResult{
+						Error:      err.Error(),
+						ResultType: "error",
+					}, nil
+				}
+
+				switch v := result.(type) {
+				case string:
+					return copilot.ToolResult{TextResultForLLM: v, ResultType: "success"}, nil
+				case []byte:
+					return copilot.ToolResult{TextResultForLLM: string(v), ResultType: "success"}, nil
+				default:
+					b, err := json.Marshal(result)
+					if err != nil {
+						return copilot.ToolResult{TextResultForLLM: fmt.Sprintf("%v", result), ResultType: "success"}, nil
+					}
+					return copilot.ToolResult{TextResultForLLM: string(b), ResultType: "success"}, nil
+				}
 			},
 		})
 	}
 	return sdkTools
 }
 
-// ghcpExtractToolCalls converts SDK ToolRequests to Dagger LLMToolCall values.
-// Phase 3 will complete the tool calling loop.
-func ghcpExtractToolCalls(event *copilot.SessionEvent) []LLMToolCall {
-	if event == nil || len(event.Data.ToolRequests) == 0 {
-		return nil
+// hashTools returns a stable fingerprint of the tool set by sorting tool names
+// and joining them. A change in fingerprint triggers session recreation so the
+// new tools are registered with the Copilot CLI.
+func hashTools(tools []copilot.Tool) string {
+	names := make([]string, len(tools))
+	for i, t := range tools {
+		names[i] = t.Name
 	}
-	calls := make([]LLMToolCall, 0, len(event.Data.ToolRequests))
-	for _, req := range event.Data.ToolRequests {
-		var args map[string]any
-		if req.Arguments != nil {
-			if m, ok := req.Arguments.(map[string]any); ok {
-				args = m
-			}
-		}
-		calls = append(calls, LLMToolCall{
-			ID:   req.ToolCallID,
-			Type: "function",
-			Function: FuncCall{
-				Name:      req.Name,
-				Arguments: args,
-			},
-		})
-	}
-	return calls
+	sort.Strings(names)
+	return strings.Join(names, ",")
 }
