@@ -208,6 +208,20 @@ func (Go) Version() string {
 }
 `,
 		)).
+		With(withModInitAt("modules/objdoc", "go", `package main
+
+func New() *Objdoc {
+	return &Objdoc{}
+}
+
+// Object-only description
+type Objdoc struct{}
+
+func (Objdoc) Hello() string {
+	return "hello"
+}
+`,
+		)).
 		With(withModInitAt("other", "go", ` package main
 
 // A local module
@@ -220,7 +234,8 @@ func (Other) Version() string {
 		)).
 		With(daggerExec("install", "./modules/dep")).
 		With(daggerExec("install", "./modules/git")).
-		With(daggerExec("install", "./modules/go"))
+		With(daggerExec("install", "./modules/go")).
+		With(daggerExec("install", "./modules/objdoc"))
 
 	t.Run("general help", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
@@ -231,6 +246,10 @@ func (Other) Version() string {
 		require.Regexp(t, `go\s+Encouragement`, out)
 		require.Regexp(t, `dep\s+Dependency module`, out)
 		require.Regexp(t, `git\s+A git helper`, out)
+		// Constructor has no description and module has no package doc,
+		// but the object type has a doc comment — the engine should use
+		// it as the constructor's description on the Query root.
+		require.Regexp(t, `objdoc\s+Object-only description`, out)
 		require.NotContains(t, out, "A go helper")
 	})
 

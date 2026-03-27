@@ -337,8 +337,12 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	}
 	spec.Name = gqlFieldName(mod.Name())
 	// When the constructor function has no doc comment, fall back to the
-	// module description so that dependency constructors on Query carry a
-	// meaningful description in the shell and schema.
+	// object description, then the module description, so that dependency
+	// constructors on Query carry a meaningful description in the shell
+	// and schema — matching the no-constructor path above.
+	if spec.Description == "" {
+		spec.Description = formatGqlDescription(objDef.Description)
+	}
 	if spec.Description == "" {
 		spec.Description = formatGqlDescription(mod.Description)
 	}

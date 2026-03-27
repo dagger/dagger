@@ -113,18 +113,9 @@ func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer) 
 		return fns[i].Name < fns[j].Name
 	})
 	for _, fn := range fns {
-		desc := fn.Short()
-		// When listing module constructors at the Query root, the constructor
-		// function itself usually has no description. Fall back to the return
-		// type's object description (the module type's doc comment).
-		if desc == "-" && fn.ReturnType != nil && fn.ReturnType.AsObject != nil {
-			if objDesc := shortDescription(fn.ReturnType.AsObject.Description); objDesc != "-" {
-				desc = objDesc
-			}
-		}
 		fmt.Fprintf(tw, "%s\t%s\n",
 			fn.CmdName(),
-			desc,
+			fn.Short(),
 		)
 	}
 	if len(skipped) > 0 {
