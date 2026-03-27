@@ -344,7 +344,7 @@ func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, erro
 		return nil, fmt.Errorf("%q: load core schema: %w", mod.Name(), err)
 	}
 	// Install dependencies
-	for _, defaultDep := range defaultDeps.Mods {
+	for _, defaultDep := range defaultDeps.Mods() {
 		if err := defaultDep.Install(ctx, srv); err != nil {
 			return nil, fmt.Errorf("%q: serve core schema: %w", mod.Name(), err)
 		}

@@ -127,11 +127,11 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 			return nil, err
 		}
 	}
-	served, err := parent.CurrentServedDeps(ctx)
+	deps, err := parent.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, err
 	}
-	env := core.NewEnv(workspace, core.NewModDeps(parent, served.Mods()))
+	env := core.NewEnv(workspace, deps)
 	if args.Privileged {
 		env = env.Privileged()
 	}

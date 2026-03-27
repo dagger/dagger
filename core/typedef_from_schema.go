@@ -16,7 +16,7 @@ import (
 // included; pass nil to include all types.
 //
 // This is the single source of truth for reconstructing TypeDefs from a
-// schema. Both CoreMod.TypeDefs and ServedMods.TypeDefs use it.
+// schema. Both CoreMod.TypeDefs and ModDeps.TypeDefs use it.
 func TypeDefsFromSchema(dag *dagql.Server, filterSchema map[string]*ast.Definition) ([]*TypeDef, error) {
 	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
 	schema := &introspection.Schema{}

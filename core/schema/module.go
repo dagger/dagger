@@ -991,8 +991,9 @@ func (s *moduleSchema) moduleDependencies(
 	mod *core.Module,
 	args struct{},
 ) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Deps.Mods))
-	for _, dep := range mod.Deps.Mods {
+	mods := mod.Deps.Mods()
+	depMods := make([]*core.Module, 0, len(mods))
+	for _, dep := range mods {
 		switch dep := dep.(type) {
 		case *core.Module:
 			depMods = append(depMods, dep)
@@ -1088,8 +1089,9 @@ func (s *moduleSchema) currentModuleDependencies(
 	mod *core.CurrentModule,
 	args struct{},
 ) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Module.Deps.Mods))
-	for _, dep := range mod.Module.Deps.Mods {
+	mods := mod.Module.Deps.Mods()
+	depMods := make([]*core.Module, 0, len(mods))
+	for _, dep := range mods {
 		switch dep := dep.(type) {
 		case *core.Module:
 			depMods = append(depMods, dep)

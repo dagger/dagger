@@ -2688,13 +2688,10 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
 	}
 
-	// Build a ServedMods to produce the client-facing schema. Dependencies
-	// get normal installation; the self module (when present) is installed
-	// as an entrypoint so its methods are promoted to Query.
-	served := core.NewServedMods(query)
-	for _, dep := range deps.Mods {
-		served.Add(dep, core.InstallOpts{})
-	}
+	// Build the client-facing schema. Dependencies get normal installation;
+	// the self module (when present) is installed as an entrypoint so its
+	// methods are promoted to Query.
+	codegenDeps := deps
 
 	// If the current module source has sources and its SDK implements the `Runtime` interface,
 	// we can transform it into a module to generate self bindings.
@@ -2709,11 +2706,11 @@ func (s *moduleSourceSchema) runClientGenerator(
 				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
 			}
 
-			served.Add(mod.Self(), core.InstallOpts{Entrypoint: true})
+			codegenDeps = codegenDeps.With(mod.Self(), core.InstallOpts{Entrypoint: true})
 		}
 	}
 
-	schemaJSONFile, err := served.SchemaJSONFile(ctx)
+	schemaJSONFile, err := codegenDeps.SchemaJSONFile(ctx)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to get schema for client generation: %w", err)
 	}
@@ -3285,22 +3282,24 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default dependencies: %w", err)
 	}
-	deps := core.NewModDeps(query, defaultDeps.Mods)
-	for _, depMod := range depMods {
-		deps = deps.Append(depMod.Self())
-	}
-	for i, depMod := range deps.Mods {
-		if coreMod, ok := depMod.(*CoreMod); ok {
+	// Start from the default deps (core), applying the correct schema
+	// version view for this module's engine version.
+	mods := make([]core.Mod, 0, len(defaultDeps.Mods())+len(depMods))
+	for _, m := range defaultDeps.Mods() {
+		if coreMod, ok := m.(*CoreMod); ok {
 			// this is needed so that a module's dependency on the core
 			// uses the correct schema version
 			dag := *coreMod.Dag
-
 			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion)))
-			deps.Mods[i] = &CoreMod{Dag: &dag}
+			mods = append(mods, &CoreMod{Dag: &dag})
+		} else {
+			mods = append(mods, m)
 		}
 	}
-
-	return deps, nil
+	for _, depMod := range depMods {
+		mods = append(mods, depMod.Self())
+	}
+	return core.NewModDeps(query, mods), nil
 }
 
 func (s *moduleSourceSchema) moduleSourceWithClient(

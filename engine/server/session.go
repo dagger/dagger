@@ -153,7 +153,7 @@ type daggerClient struct {
 
 	// the set of modules being served to this client, with per-module
 	// install policy (constructor vs type-only)
-	servedMods *core.ServedMods
+	servedMods *core.ModDeps
 	// the default deps that each client/module starts out with (currently just core)
 	defaultDeps *core.ModDeps
 
@@ -642,9 +642,7 @@ func (srv *Server) initializeDaggerClient(
 		return fmt.Errorf("failed to install core module: %w", err)
 	}
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-
-	client.servedMods = core.NewServedMods(client.dagqlRoot)
-	client.servedMods.Add(coreMod, core.InstallOpts{})
+	client.servedMods = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
 	if opts.EncodedModuleID != "" {
@@ -672,14 +670,13 @@ func (srv *Server) initializeDaggerClient(
 		// }
 		// client.mod = modInst.Self
 
-		client.servedMods = core.NewServedMods(client.dagqlRoot)
-		client.servedMods.Add(coreMod, core.InstallOpts{})
-		for _, dep := range client.mod.Deps.Mods {
-			client.servedMods.Add(dep, core.InstallOpts{})
+		client.servedMods = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+		for _, dep := range client.mod.Deps.Mods() {
+			client.servedMods = client.servedMods.With(dep, core.InstallOpts{})
 		}
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
-			client.servedMods.Add(client.mod, core.InstallOpts{})
+			client.servedMods = client.servedMods.With(client.mod, core.InstallOpts{})
 		}
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
@@ -1423,7 +1420,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 		return err
 	}
 	if includeDependencies {
-		for _, dep := range mod.Deps.Mods {
+		for _, dep := range mod.Deps.Mods() {
 			if err := srv.serveModule(client, dep, core.InstallOpts{}); err != nil {
 				return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
 			}
@@ -1445,8 +1442,8 @@ func (srv *Server) serveModule(client *daggerClient, mod core.Mod, opts core.Ins
 			)
 		}
 	}
-	// Add handles deduplication and promotion internally.
-	client.servedMods.Add(mod, opts)
+	// With handles deduplication and promotion internally.
+	client.servedMods = client.servedMods.With(mod, opts)
 	return nil
 }
 
@@ -2249,7 +2246,7 @@ func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []mod
 		// concrete types behind interfaces. This mirrors the includeDependencies
 		// behavior from `main`. Toolchain/non-entrypoint deps stay internal.
 		if load.primaryEntrypoint {
-			for _, dep := range load.primary.Deps.Mods {
+			for _, dep := range load.primary.Deps.Mods() {
 				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
 					return fmt.Errorf("error serving entrypoint dependency %s: %w", dep.Name(), err)
 				}
@@ -2508,7 +2505,7 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 }
 
 // Return the modules being served to the current client
-func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ServedMods, error) {
+func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
