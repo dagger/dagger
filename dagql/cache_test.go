@@ -4683,6 +4683,120 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	cacheTestReleaseSession(t, c, ctx)
 }
 
+func TestCacheMakeResultUnpruneableRetainsAcrossSessionClose(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	c := cacheIface
+
+	ctxSessionA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "unpruneable-client-a",
+		SessionID: "unpruneable-session-a",
+	})
+	ctxSessionB := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "unpruneable-client-b",
+		SessionID: "unpruneable-session-b",
+	})
+	key := cacheTestIntCall("make-result-unpruneable")
+
+	initCallsA := 0
+	resA, err := c.GetOrInitCall(ctxSessionA, "unpruneable-session-a", noopTypeResolver{}, &CallRequest{
+		ResultCall: key,
+	}, func(context.Context) (AnyResult, error) {
+		initCallsA++
+		return cacheTestIntResult(key, 55), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, initCallsA)
+	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
+
+	assert.NilError(t, c.MakeResultUnpruneable(ctxSessionA, resA))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+
+	assert.NilError(t, c.ReleaseSession(ctxSessionA, "unpruneable-session-a"))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, c.Size())
+
+	initCallsB := 0
+	resB, err := c.GetOrInitCall(ctxSessionB, "unpruneable-session-b", noopTypeResolver{}, &CallRequest{
+		ResultCall: key,
+	}, func(context.Context) (AnyResult, error) {
+		initCallsB++
+		return cacheTestIntResult(key, 99), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, initCallsB)
+	assert.Assert(t, resB.HitCache())
+	assert.Equal(t, 55, cacheTestUnwrapInt(t, resB))
+
+	assert.NilError(t, c.ReleaseSession(ctxSessionB, "unpruneable-session-b"))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+}
+
+func TestCacheMakeResultUnpruneableSkipsPrune(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface
+
+	key := cacheTestIntCall("make-result-unpruneable-skip-prune")
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall: key,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 77), nil
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, c.MakeResultUnpruneable(ctx, res))
+	cacheTestReleaseSession(t, c, ctx)
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{All: true}})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, len(report.Entries))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, c.Size())
+
+	c.egraphMu.RLock()
+	edge := c.persistedEdgesByResult[res.cacheSharedResult().id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, edge.unpruneable)
+	assert.Equal(t, int64(0), edge.expiresAtUnix)
+}
+
+func TestCacheMakeResultUnpruneableClearsPersistedExpiry(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface
+
+	key := cacheTestIntCall("make-result-unpruneable-clear-expiry")
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    key,
+		IsPersistable: true,
+		TTL:           60,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 88), nil
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, c.MakeResultUnpruneable(ctx, res))
+
+	shared := res.cacheSharedResult()
+	assert.Assert(t, shared != nil)
+
+	c.egraphMu.RLock()
+	edge := c.persistedEdgesByResult[shared.id]
+	resExpiry := shared.expiresAtUnix
+	c.egraphMu.RUnlock()
+	assert.Assert(t, edge.unpruneable)
+	assert.Equal(t, int64(0), edge.expiresAtUnix)
+	assert.Equal(t, int64(0), resExpiry)
+}
+
 func TestCacheUsageEntriesAllReportsSessionAndRetainedState(t *testing.T) {
 	t.Parallel()
 

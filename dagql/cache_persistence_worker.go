@@ -183,6 +183,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			ResultID:          int64(resultID),
 			CreatedAtUnixNano: edge.createdAtUnixNano,
 			ExpiresAtUnix:     edge.expiresAtUnix,
+			Unpruneable:       edge.unpruneable,
 		})
 	}
 

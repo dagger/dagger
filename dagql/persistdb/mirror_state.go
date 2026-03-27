@@ -54,6 +54,7 @@ type MirrorPersistedEdge struct {
 	ResultID          int64
 	CreatedAtUnixNano int64
 	ExpiresAtUnix     int64
+	Unpruneable       bool
 }
 
 type MirrorResultSnapshotLink struct {
@@ -162,11 +163,11 @@ func (q *Queries) InsertMirrorResultDep(ctx context.Context, arg MirrorResultDep
 }
 
 const insertMirrorPersistedEdge = `
-INSERT INTO persisted_edges (result_id, created_at_unix_nano, expires_at_unix) VALUES (?, ?, ?)
+INSERT INTO persisted_edges (result_id, created_at_unix_nano, expires_at_unix, unpruneable) VALUES (?, ?, ?, ?)
 `
 
 func (q *Queries) InsertMirrorPersistedEdge(ctx context.Context, arg MirrorPersistedEdge) error {
-	_, err := q.exec(ctx, nil, insertMirrorPersistedEdge, arg.ResultID, arg.CreatedAtUnixNano, arg.ExpiresAtUnix)
+	_, err := q.exec(ctx, nil, insertMirrorPersistedEdge, arg.ResultID, arg.CreatedAtUnixNano, arg.ExpiresAtUnix, arg.Unpruneable)
 	return err
 }
 
@@ -237,7 +238,7 @@ func (q *Queries) ListMirrorEqClasses(ctx context.Context) ([]MirrorEqClass, err
 }
 
 const listMirrorPersistedEdges = `
-SELECT result_id, created_at_unix_nano, expires_at_unix FROM persisted_edges
+SELECT result_id, created_at_unix_nano, expires_at_unix, unpruneable FROM persisted_edges
 `
 
 func (q *Queries) ListMirrorPersistedEdges(ctx context.Context) ([]MirrorPersistedEdge, error) {
@@ -249,7 +250,7 @@ func (q *Queries) ListMirrorPersistedEdges(ctx context.Context) ([]MirrorPersist
 	var out []MirrorPersistedEdge
 	for rows.Next() {
 		var row MirrorPersistedEdge
-		if err := rows.Scan(&row.ResultID, &row.CreatedAtUnixNano, &row.ExpiresAtUnix); err != nil {
+		if err := rows.Scan(&row.ResultID, &row.CreatedAtUnixNano, &row.ExpiresAtUnix, &row.Unpruneable); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

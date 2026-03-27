@@ -867,35 +867,9 @@ func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T
 		return found, nil
 	}
 
-	var (
-		baselineReady bool
-		baselineDagql float64
-	)
-	for attempt := 1; attempt <= 20; attempt++ {
-		metrics, err := getMetrics()
-		if err != nil {
-			t.Logf("baseline attempt %d: failed to fetch metrics: %v", attempt, err)
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		if metrics["dagger_connected_clients"] == 0 {
-			baselineDagql = metrics["dagger_dagql_cache_entries"]
-			baselineReady = true
-			break
-		}
-		t.Logf(
-			"baseline attempt %d: waiting for connected clients to drain (connected=%v dagql_cache=%v)",
-			attempt,
-			metrics["dagger_connected_clients"],
-			metrics["dagger_dagql_cache_entries"],
-		)
-		time.Sleep(500 * time.Millisecond)
-	}
-	require.True(t, baselineReady, "failed to capture baseline dagql cache metrics")
-
-	// Do meaningful dagql work: load a Go module with a Python dependency.
-	_, err := engineClientContainer(ctx, t, c, devEngine).
-		WithExec([]string{"sh", "-ec", `
+	runWorkload := func() error {
+		_, err := engineClientContainer(ctx, t, c, devEngine).
+			WithExec([]string{"sh", "-ec", `
 set -eu
 rm -rf /tmp/main
 mkdir -p /tmp/main
@@ -915,7 +889,38 @@ for i in $(seq 1 4); do
   dagger functions >/dev/null
 done
 			`}).Sync(ctx)
-	require.NoError(t, err)
+		return err
+	}
+
+	require.NoError(t, runWorkload())
+
+	var (
+		baselineReady bool
+		baselineDagql float64
+	)
+	for attempt := 1; attempt <= 24; attempt++ {
+		metrics, err := getMetrics()
+		if err != nil {
+			t.Logf("warmup attempt %d: failed to fetch metrics: %v", attempt, err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if metrics["dagger_connected_clients"] == 0 {
+			baselineDagql = metrics["dagger_dagql_cache_entries"]
+			baselineReady = true
+			break
+		}
+		t.Logf(
+			"warmup attempt %d: waiting for connected clients to drain (connected=%v dagql_cache=%v)",
+			attempt,
+			metrics["dagger_connected_clients"],
+			metrics["dagger_dagql_cache_entries"],
+		)
+		time.Sleep(500 * time.Millisecond)
+	}
+	require.True(t, baselineReady, "failed to capture warmed dagql cache baseline")
+
+	require.NoError(t, runWorkload())
 
 	var (
 		settled    bool
@@ -948,7 +953,7 @@ done
 	require.Truef(
 		t,
 		settled,
-		"dagql cache entries did not return to baseline after clients closed (connected_clients=%v dagql_cache_entries=%v baseline=%v)",
+		"dagql cache entries did not return to warmed baseline after clients closed (connected_clients=%v dagql_cache_entries=%v baseline=%v)",
 		lastClient,
 		lastDagql,
 		baselineDagql,

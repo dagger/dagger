@@ -49,6 +49,36 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	assert.Check(t, cmp.Contains(storedCallFrameJSON, `"field":"persist-worker-retained"`))
 }
 
+func TestCachePersistenceWorkerMirrorsUnpruneablePersistedEdge(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	cacheIface, err := NewCache(ctx, dbPath)
+	assert.NilError(t, err)
+	c := cacheIface
+	defer func() {
+		assert.NilError(t, c.Close(context.Background()))
+	}()
+
+	key := cacheTestIntCall("persist-worker-unpruneable")
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall: key,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 42), nil
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, c.MakeResultUnpruneable(ctx, res))
+	cacheTestReleaseSession(t, cacheIface, ctx)
+	assert.NilError(t, c.persistCurrentState(ctx))
+
+	rows, err := c.pdb.ListMirrorPersistedEdges(ctx)
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(rows))
+	assert.Assert(t, rows[0].Unpruneable)
+	assert.Equal(t, int64(0), rows[0].ExpiresAtUnix)
+}
+
 func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
 	t.Parallel()
 

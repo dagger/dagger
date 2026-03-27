@@ -902,7 +902,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 	)
 	touchSharedResultLastUsed(res, now.UnixNano())
 	if req.IsPersistable {
-		c.upsertPersistedEdgeLocked(ctx, res, candidateSharedResultExpiryUnix(nowUnix, req.TTL))
+		c.upsertPersistedEdgeLocked(ctx, res, candidateSharedResultExpiryUnix(nowUnix, req.TTL), false)
 	}
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		return nil, false, err

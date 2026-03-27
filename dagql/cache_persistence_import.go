@@ -192,11 +192,17 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if c.persistedEdgesByResult == nil {
 				c.persistedEdgesByResult = make(map[sharedResultID]persistedEdge)
 			}
-			c.persistedEdgesByResult[resultID] = persistedEdge{
+			edge := persistedEdge{
 				resultID:          resultID,
 				createdAtUnixNano: row.CreatedAtUnixNano,
 				expiresAtUnix:     row.ExpiresAtUnix,
+				unpruneable:       row.Unpruneable,
 			}
+			if edge.unpruneable {
+				edge.expiresAtUnix = 0
+				res.expiresAtUnix = 0
+			}
+			c.persistedEdgesByResult[resultID] = edge
 			c.incrementIncomingOwnershipLocked(ctx, res)
 		}
 

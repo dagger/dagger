@@ -205,3 +205,51 @@ func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
 	require.Equal(t, core.TypeDefKindString, allKinds["String"])
 	require.Equal(t, core.TypeDefKindBoolean, allKinds["Boolean"])
 }
+
+func TestCurrentTypeDefsReturnAllTypesAfterSessionRelease(t *testing.T) {
+	baseCtx := context.Background()
+	baseCache, err := dagql.NewCache(baseCtx, "")
+	require.NoError(t, err)
+	baseCtx = dagql.ContextWithCache(baseCtx, baseCache)
+
+	ctxSessionA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "current-typedefs-release-client-a",
+		SessionID: "current-typedefs-release-session-a",
+	})
+	coreSchemaBase, err := NewCoreSchemaBase(ctxSessionA)
+	require.NoError(t, err)
+	coreMod := coreSchemaBase.CoreMod("")
+	coreModDeps := core.NewModDeps(nil, []core.Mod{coreMod})
+	root := core.NewRoot(&currentTypeDefsTestServer{deps: coreModDeps}, nil)
+	dagA, err := coreSchemaBase.Fork(ctxSessionA, root, "")
+	require.NoError(t, err)
+
+	var initial dagql.ObjectResultArray[*core.TypeDef]
+	err = dagA.Select(ctxSessionA, dagA.Root(), &initial, dagql.Selector{
+		Field: "currentTypeDefs",
+		Args: []dagql.NamedInput{
+			{Name: "returnAllTypes", Value: dagql.Boolean(true)},
+		},
+	})
+	require.NoError(t, err)
+	require.Greater(t, len(initial), 0)
+
+	require.NoError(t, baseCache.ReleaseSession(ctxSessionA, "current-typedefs-release-session-a"))
+
+	ctxSessionB := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "current-typedefs-release-client-b",
+		SessionID: "current-typedefs-release-session-b",
+	})
+	dagB, err := coreSchemaBase.Fork(ctxSessionB, root, "")
+	require.NoError(t, err)
+
+	var afterRelease dagql.ObjectResultArray[*core.TypeDef]
+	err = dagB.Select(ctxSessionB, dagB.Root(), &afterRelease, dagql.Selector{
+		Field: "currentTypeDefs",
+		Args: []dagql.NamedInput{
+			{Name: "returnAllTypes", Value: dagql.Boolean(true)},
+		},
+	})
+	require.NoError(t, err)
+	require.Greater(t, len(afterRelease), 0)
+}

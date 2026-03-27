@@ -77,9 +77,10 @@ type persistedEdge struct {
 	resultID          sharedResultID
 	createdAtUnixNano int64
 	expiresAtUnix     int64
+	unpruneable       bool
 }
 
-const cachePersistenceSchemaVersion = "9"
+const cachePersistenceSchemaVersion = "10"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
@@ -494,7 +495,7 @@ func (c *Cache) snapshotSessionResultIDs() map[sharedResultID]struct{} {
 	return roots
 }
 
-func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64) {
+func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) {
 	if c == nil || res == nil || res.id == 0 {
 		return
 	}
@@ -513,8 +514,32 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		}
 		c.incrementIncomingOwnershipLocked(ctx, res)
 	}
-	edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
+	if unpruneable {
+		edge.unpruneable = true
+		edge.expiresAtUnix = 0
+		res.expiresAtUnix = 0
+	} else if !edge.unpruneable {
+		edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
+	}
 	c.persistedEdgesByResult[res.id] = edge
+}
+
+func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error {
+	if c == nil {
+		return fmt.Errorf("make result unpruneable: nil cache")
+	}
+	if res == nil {
+		return fmt.Errorf("make result unpruneable: nil result")
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return fmt.Errorf("make result unpruneable: result is not cache-backed")
+	}
+
+	c.egraphMu.Lock()
+	c.upsertPersistedEdgeLocked(ctx, shared, 0, true)
+	c.egraphMu.Unlock()
+	return nil
 }
 
 func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) (bool, error) {
@@ -3230,7 +3255,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		return err
 	}
 	if oc.isPersistable {
-		c.upsertPersistedEdgeLocked(ctx, oc.res, candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds))
+		c.upsertPersistedEdgeLocked(ctx, oc.res, candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds), false)
 	}
 	c.incrementIncomingOwnershipLocked(ctx, oc.res)
 	oc.handoffHoldActive = true

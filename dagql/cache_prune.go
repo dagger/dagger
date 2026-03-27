@@ -25,13 +25,14 @@ type pruneUsageIdentityState struct {
 }
 
 type pruneSnapshotResult struct {
-	resultID         sharedResultID
-	incomingCount    int64
-	deps             []sharedResultID
-	usageIdentity    string
-	entry            CacheUsageEntry
-	hasPersistedEdge bool
-	expiresAtUnix    int64
+	resultID                 sharedResultID
+	incomingCount            int64
+	deps                     []sharedResultID
+	usageIdentity            string
+	entry                    CacheUsageEntry
+	hasPersistedEdge         bool
+	persistedEdgeUnpruneable bool
+	expiresAtUnix            int64
 }
 
 type pruneSnapshot struct {
@@ -212,8 +213,9 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 				MostRecentUseTimeUnixNano: lastUsedAt,
 				ActivelyUsed:              activelyUsed,
 			},
-			hasPersistedEdge: hasPersistedEdge,
-			expiresAtUnix:    edge.expiresAtUnix,
+			hasPersistedEdge:         hasPersistedEdge,
+			persistedEdgeUnpruneable: edge.unpruneable,
+			expiresAtUnix:            edge.expiresAtUnix,
 		}
 		snapshot.usedBytes += sizeBytes
 	}
@@ -257,7 +259,7 @@ func collectPruneCandidates(snapshot pruneSnapshot, activeClosure map[sharedResu
 
 	candidates := make([]pruneCandidate, 0, len(snapshot.results))
 	for resultID, res := range snapshot.results {
-		if !res.hasPersistedEdge {
+		if !res.hasPersistedEdge || res.persistedEdgeUnpruneable {
 			continue
 		}
 		switch {

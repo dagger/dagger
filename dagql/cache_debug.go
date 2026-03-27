@@ -52,18 +52,19 @@ type CacheDebugSnapshot struct {
 }
 
 type EGraphDebugResult struct {
-	SharedResultID         uint64                     `json:"shared_result_id"`
-	OutputEqClassIDs       []uint64                   `json:"output_eq_class_ids,omitempty"`
-	RecordType             string                     `json:"record_type,omitempty"`
-	Description            string                     `json:"description,omitempty"`
-	TypeName               string                     `json:"type_name,omitempty"`
-	IncomingOwnershipCount int64                      `json:"incoming_ownership_count"`
-	HasValue               bool                       `json:"has_value"`
-	PayloadState           string                     `json:"payload_state"`
-	HasPersistedEdge       bool                       `json:"has_persisted_edge"`
-	ExplicitDeps           []uint64                   `json:"explicit_dep_ids,omitempty"`
-	HeldDependencyResults  int                        `json:"held_dependency_results_count"`
-	SnapshotLinks          []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
+	SharedResultID           uint64                     `json:"shared_result_id"`
+	OutputEqClassIDs         []uint64                   `json:"output_eq_class_ids,omitempty"`
+	RecordType               string                     `json:"record_type,omitempty"`
+	Description              string                     `json:"description,omitempty"`
+	TypeName                 string                     `json:"type_name,omitempty"`
+	IncomingOwnershipCount   int64                      `json:"incoming_ownership_count"`
+	HasValue                 bool                       `json:"has_value"`
+	PayloadState             string                     `json:"payload_state"`
+	HasPersistedEdge         bool                       `json:"has_persisted_edge"`
+	PersistedEdgeUnpruneable bool                       `json:"persisted_edge_unpruneable"`
+	ExplicitDeps             []uint64                   `json:"explicit_dep_ids,omitempty"`
+	HeldDependencyResults    int                        `json:"held_dependency_results_count"`
+	SnapshotLinks            []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
 }
 
 type CacheDebugResult struct {
@@ -770,18 +771,19 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 		}
 
 		snap.Results = append(snap.Results, EGraphDebugResult{
-			SharedResultID:         uint64(res.id),
-			OutputEqClassIDs:       outputEqIDs,
-			RecordType:             res.recordType,
-			Description:            res.description,
-			TypeName:               typeName,
-			IncomingOwnershipCount: res.incomingOwnershipCount,
-			HasValue:               state.hasValue,
-			PayloadState:           payloadState,
-			HasPersistedEdge:       c.persistedEdgesByResult[res.id].resultID != 0,
-			ExplicitDeps:           depIDs,
-			HeldDependencyResults:  len(res.deps),
-			SnapshotLinks:          links,
+			SharedResultID:           uint64(res.id),
+			OutputEqClassIDs:         outputEqIDs,
+			RecordType:               res.recordType,
+			Description:              res.description,
+			TypeName:                 typeName,
+			IncomingOwnershipCount:   res.incomingOwnershipCount,
+			HasValue:                 state.hasValue,
+			PayloadState:             payloadState,
+			HasPersistedEdge:         c.persistedEdgesByResult[res.id].resultID != 0,
+			PersistedEdgeUnpruneable: c.persistedEdgesByResult[res.id].unpruneable,
+			ExplicitDeps:             depIDs,
+			HeldDependencyResults:    len(res.deps),
+			SnapshotLinks:            links,
 		})
 	}
 
@@ -1073,18 +1075,19 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 
 			if err := writeElem(CacheDebugResult{
 				EGraphDebugResult: EGraphDebugResult{
-					SharedResultID:         uint64(res.id),
-					OutputEqClassIDs:       outputEqIDs,
-					RecordType:             res.recordType,
-					Description:            res.description,
-					TypeName:               typeName,
-					IncomingOwnershipCount: res.incomingOwnershipCount,
-					HasValue:               state.hasValue,
-					PayloadState:           payloadState,
-					HasPersistedEdge:       c.persistedEdgesByResult[res.id].resultID != 0,
-					ExplicitDeps:           depIDs,
-					HeldDependencyResults:  len(res.deps),
-					SnapshotLinks:          links,
+					SharedResultID:           uint64(res.id),
+					OutputEqClassIDs:         outputEqIDs,
+					RecordType:               res.recordType,
+					Description:              res.description,
+					TypeName:                 typeName,
+					IncomingOwnershipCount:   res.incomingOwnershipCount,
+					HasValue:                 state.hasValue,
+					PayloadState:             payloadState,
+					HasPersistedEdge:         c.persistedEdgesByResult[res.id].resultID != 0,
+					PersistedEdgeUnpruneable: c.persistedEdgesByResult[res.id].unpruneable,
+					ExplicitDeps:             depIDs,
+					HeldDependencyResults:    len(res.deps),
+					SnapshotLinks:            links,
 				},
 				ResultCall:                            frame,
 				ResultCallRecipeDigest:                recipeDigest,

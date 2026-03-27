@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS persisted_edges (
     result_id INTEGER PRIMARY KEY,
     created_at_unix_nano INTEGER NOT NULL,
     expires_at_unix INTEGER NOT NULL DEFAULT 0,
+    unpruneable INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(result_id) REFERENCES results(id) ON DELETE CASCADE
 ) STRICT;
 
