@@ -177,6 +177,7 @@ func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
 	topLevelIDs := make(map[uint64]struct{}, len(topLevel))
 	allIDs := make(map[uint64]struct{}, len(allTypeDefs))
 	allNames := make(map[string]struct{}, len(allTypeDefs))
+	allKinds := make(map[string]core.TypeDefKind, len(allTypeDefs))
 	extraTypeCount := 0
 
 	for _, typeDef := range topLevel {
@@ -195,9 +196,12 @@ func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
 		_, dup = allNames[typeDef.Self().Name]
 		require.False(t, dup, "duplicate typedef name %s", typeDef.Self().Name)
 		allNames[typeDef.Self().Name] = struct{}{}
+		allKinds[typeDef.Self().Name] = typeDef.Self().Kind
 		if _, topLevel := topLevelIDs[id.EngineResultID()]; !topLevel {
 			extraTypeCount++
 		}
 	}
 	require.Greater(t, extraTypeCount, 0)
+	require.Equal(t, core.TypeDefKindString, allKinds["String"])
+	require.Equal(t, core.TypeDefKindBoolean, allKinds["Boolean"])
 }

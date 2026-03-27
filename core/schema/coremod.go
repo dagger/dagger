@@ -525,13 +525,45 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 			typeDefs = append(typeDefs, typeDef)
 
 		case introspection.TypeKindScalar:
-			typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-				Field: "withScalar",
-				Args: []dagql.NamedInput{
-					{Name: "name", Value: dagql.String(introspectionType.Name)},
-					{Name: "description", Value: dagql.String(introspectionType.Description)},
-				},
-			})
+			var (
+				typeDef dagql.ObjectResult[*core.TypeDef]
+				err     error
+			)
+			switch introspectionType.Name {
+			case string(introspection.ScalarString):
+				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+					Field: "withKind",
+					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindString}},
+				})
+			case string(introspection.ScalarInt):
+				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+					Field: "withKind",
+					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindInteger}},
+				})
+			case string(introspection.ScalarFloat):
+				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+					Field: "withKind",
+					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindFloat}},
+				})
+			case string(introspection.ScalarBoolean):
+				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+					Field: "withKind",
+					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindBoolean}},
+				})
+			case string(introspection.ScalarVoid):
+				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+					Field: "withKind",
+					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindVoid}},
+				})
+			default:
+				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+					Field: "withScalar",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(introspectionType.Name)},
+						{Name: "description", Value: dagql.String(introspectionType.Description)},
+					},
+				})
+			}
 			if err != nil {
 				return nil, err
 			}
