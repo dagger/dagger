@@ -503,13 +503,19 @@ func (s *addressSchema) service(
 	default:
 		return inst, fmt.Errorf("unsupported service address: %q. Must be a valid tcp:// or udp:// URL", u.Scheme)
 	}
-	ports = append(ports, dagql.InputObject[core.PortForward]{
-		Value: core.PortForward{
-			Backend:  nPort,
-			Frontend: &nPort,
-			Protocol: protocol,
-		},
+	portInputAny, err := (dagql.InputObject[core.PortForward]{}).Decoder().DecodeInput(map[string]any{
+		"frontend": nPort,
+		"backend":  nPort,
+		"protocol": string(protocol),
 	})
+	if err != nil {
+		return inst, fmt.Errorf("decode service address port forward input: %w", err)
+	}
+	portInput, ok := portInputAny.(dagql.InputObject[core.PortForward])
+	if !ok {
+		return inst, fmt.Errorf("decode service address port forward input: unexpected input %T", portInputAny)
+	}
+	ports = append(ports, portInput)
 	q := []dagql.Selector{
 		{
 			Field: "host",
