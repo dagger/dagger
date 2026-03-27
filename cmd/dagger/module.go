@@ -239,6 +239,7 @@ dagger init --sdk=go
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
+			// default the module source root to the current working directory if it doesn't exist yet
 			cwd, err := pathutil.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
@@ -255,9 +256,17 @@ dagger init --sdk=go
 			}
 
 			modSrc := dag.ModuleSource(srcRootArg, dagger.ModuleSourceOpts{
-				DisableFindUp:  true,
+				// Tell the engine to use the provided arg as the source root, don't
+				// try to find-up a dagger.json in a parent directory and use that as
+				// the source root.
+				// This enables cases like initializing a new module in a subdirectory of
+				// another existing module.
+				DisableFindUp: true,
+				// It's okay if the source root/source dir don't exist yet since we'll
+				// create them when exporting the generated context directory.
 				AllowNotExists: true,
-				RequireKind:    dagger.ModuleSourceKindLocalSource,
+				// We can only init local modules
+				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
@@ -281,17 +290,23 @@ dagger init --sdk=go
 			}
 			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
 
+			// default module name to directory of source root
 			if moduleName == "" {
 				moduleName = filepath.Base(srcRootAbsPath)
 			}
 
+			// only bother setting source path if there's an sdk at this time
 			if sdk != "" {
+				// if user didn't specify moduleSourcePath explicitly,
+				// check if current dir is non-empty and infer the source
+				// path accordingly.
 				if moduleSourcePath == "" {
 					moduleSourcePath, err = inferSourcePathDir(srcRootAbsPath)
 					if err != nil {
 						return err
 					}
 				} else {
+					// ensure source path is relative to the source root
 					sourceAbsPath, err := pathutil.Abs(moduleSourcePath)
 					if err != nil {
 						return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
@@ -314,14 +329,19 @@ dagger init --sdk=go
 			if len(moduleIncludes) > 0 {
 				modSrc = modSrc.WithIncludes(moduleIncludes)
 			}
+			// engine version must be set before setting blueprint
 			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
+			// Install blueprint if specified
 			if initBlueprint != "" {
+				// Validate that we don't have both SDK and blueprint
 				if sdk != "" {
 					return fmt.Errorf("cannot specify both --sdk and --blueprint; use one or the other")
 				}
+				// Create a new module source for the blueprint installation
 				blueprintSrc := dag.ModuleSource(initBlueprint, dagger.ModuleSourceOpts{
 					DisableFindUp: true,
 				})
+				// Install the blueprint
 				modSrc = modSrc.WithBlueprint(blueprintSrc)
 			}
 
@@ -332,18 +352,22 @@ dagger init --sdk=go
 				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
 			}
 
+			// Export generated files, including dagger.json
 			_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
 			if sdk != "" {
+				// If we're generating code by setting a SDK, we should also generate a license
+				// if it doesn't already exists.
 				searchExisting := !cmd.Flags().Lookup("license").Changed
 				if err := findOrCreateLicense(ctx, srcRootAbsPath, searchExisting); err != nil {
 					return err
 				}
 			}
 
+			// Print success message to user
 			infoMessage := []any{"Initialized module", moduleName, "in", srcRootAbsPath}
 			if initBlueprint != "" {
 				infoMessage = append(infoMessage, "with blueprint", initBlueprint)
@@ -395,6 +419,7 @@ var moduleDepInstallCmd = &cobra.Command{
 				return err
 			}
 			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only install dependencies to a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
 
@@ -673,6 +698,7 @@ var toolchainInstallCmd = &cobra.Command{
 				return err
 			}
 			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only install toolchains to a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
 
@@ -731,6 +757,7 @@ var toolchainUpdateCmd = &cobra.Command{
 				return err
 			}
 			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only update toolchains on a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
 
@@ -781,6 +808,7 @@ var toolchainUninstallCmd = &cobra.Command{
 				return err
 			}
 			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only uninstall toolchains on a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
 
@@ -873,6 +901,7 @@ var toolchainListCmd = &cobra.Command{
 				return err
 			}
 			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only list toolchains from a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
 			toolchains, err := loadToolchainInfo(ctx, dag, modSrc)
