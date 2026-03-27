@@ -60,9 +60,8 @@ Examples:
 				}
 				if checksListMode {
 					return listChecks(ctx, dag, checks, cmd)
-				} else {
-					return runChecks(ctx, dag, checks, cmd)
 				}
+				return runChecks(ctx, dag, checks, cmd)
 			},
 		)
 	},

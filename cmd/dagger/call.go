@@ -56,8 +56,9 @@ available functions.
 	),
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		functionPath := args
-		return withEngine(cmd.Context(), initModuleParams(functionPath), func(ctx context.Context, engineClient *client.Client) (rerr error) {
+		params := initModuleParams(args)
+		params.HideCoreAPI = true // only show entrypoint fns + modules
+		return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 			// -m modules are loaded at engine connect time as extra modules.
 			mod, err := initializeWorkspace(ctx, engineClient.Dagger())
 			if err != nil {
@@ -65,7 +66,7 @@ available functions.
 			}
 			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
-			for _, field := range functionPath {
+			for _, field := range args {
 				// Lookup the next function in the specified pipeline
 				nextFunc, err := GetSupportedFunction(mod, o, field)
 				if err != nil {
@@ -89,38 +90,13 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			// Only filter core functions when listing the Query root in
-			// workspace mode (multiple modules as sub-commands). When a
-			// main module is set (single module or -m), or when navigating
-			// into a module type, show all functions.
-			filterCore := len(functionPath) == 0 &&
-				mod.MainObject.AsObject != nil &&
-				mod.MainObject.AsObject.Name == "Query"
-			return functionListRun(o, cmd.OutOrStdout(), cmd.ErrOrStderr(), filterCore)
+			return functionListRun(o, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer, filterCore bool) error {
+func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer) error {
 	fns, skipped := GetSupportedFunctions(o)
-
-	// At the Query root, filter out core API constructors — only show module
-	// constructors. When navigating into a module type, show all functions.
-	if filterCore {
-		filtered := make([]*modFunction, 0, len(fns))
-		for _, fn := range fns {
-			if fn.SourceModuleName == "" {
-				continue
-			}
-			// Hide loadXxxFromID plumbing functions.
-			if strings.HasPrefix(fn.Name, "load") && strings.HasSuffix(fn.Name, "FromID") {
-				continue
-			}
-			filtered = append(filtered, fn)
-		}
-		fns = filtered
-		skipped = nil // don't show core "skipped" noise either
-	}
 
 	if len(fns) == 0 {
 		fmt.Fprintln(errWriter, "No functions found.")
