@@ -337,6 +337,7 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 			Field: "exists",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(".env")},
+				{Name: "expectedType", Value: dagql.Opt(ExistsTypeRegular)},
 			},
 		},
 	); status.Code(err) == codes.NotFound {
@@ -385,6 +386,7 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 			Field: "findUp",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.NewString(".env")},
+				{Name: "fileType", Value: dagql.Opt(FileTypeRegular)},
 			},
 		},
 	); err != nil {

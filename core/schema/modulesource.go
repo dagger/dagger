@@ -380,7 +380,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("failed to get cwd: %w", err)
 		}
-		defaultFindUpSourceRootDir, defaultFindUpExists, err := core.Host{}.FindUp(ctx, core.NewCallerStatFS(bk), cwd, modules.Filename)
+		defaultFindUpSourceRootDir, defaultFindUpExists, err := core.Host{}.FindUp(ctx, core.NewCallerStatFS(bk), cwd, modules.Filename, core.FileTypeRegular)
 		if err != nil {
 			return inst, fmt.Errorf("failed to find up root: %w", err)
 		}
@@ -436,9 +436,9 @@ func (s *moduleSourceSchema) localModuleSource(
 
 	// We always find-up the context dir. When doFindUp is true, we also try a find-up for the source root.
 	const dotGit = ".git"
-	foundPaths, err := core.Host{}.FindUpAll(ctx, core.NewCallerStatFS(bk), localAbsPath, map[string]struct{}{
-		modules.Filename: {}, // dagger.json, the directory containing this is the source root
-		dotGit:           {}, // the context dir is the git repo root, if it exists
+	foundPaths, err := core.Host{}.FindUpAll(ctx, core.NewCallerStatFS(bk), localAbsPath, map[string]core.FileType{
+		modules.Filename: core.FileTypeRegular,   // dagger.json, the directory containing this is the source root
+		dotGit:           core.FileTypeDirectory, // the context dir is the git repo root, if it exists
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to find up source root and context: %w", err)
@@ -643,6 +643,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		configDir, found, err := core.Host{}.FindUp(ctx, statFS,
 			filepath.Join("/", gitSrc.SourceRootSubpath),
 			modules.Filename,
+			core.FileTypeRegular,
 		)
 		if err != nil {
 			return inst, fmt.Errorf("failed to find-up dagger.json: %w", err)
