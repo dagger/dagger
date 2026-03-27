@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -108,9 +109,13 @@ func copilotSidecar(token, cliVersion string) *dagger.Service {
 		})
 }
 
-// newGhcpClient creates a GhcpClient. The sidecar and SDK connection are
-// established lazily on the first SendQuery call.
-func newGhcpClient(endpoint *LLMEndpoint, cliVersion string) *GhcpClient {
+// newGhcpClient creates an LLMClient for GitHub Copilot.
+// When GITHUB_COPILOT_LEGACY=true, the original CLI-in-container path is used
+// instead of the SDK, as an escape hatch while the SDK is in Technical Preview.
+func newGhcpClient(endpoint *LLMEndpoint, cliVersion string) LLMClient {
+	if os.Getenv("GITHUB_COPILOT_LEGACY") == "true" {
+		return newGhcpLegacyClient(endpoint, cliVersion)
+	}
 	if cliVersion == "" {
 		cliVersion = ghcpDefaultCLIVersion
 	}
@@ -628,4 +633,146 @@ func hashTools(tools []copilot.Tool) string {
 	}
 	sort.Strings(names)
 	return strings.Join(names, ",")
+}
+
+// ---------------------------------------------------------------------------
+// GhcpLegacyClient — original CLI-in-container (pre-SDK) fallback
+// ---------------------------------------------------------------------------
+
+// GhcpLegacyClient implements LLMClient using the original CLI-in-container approach
+// (node:24 + npm install @github/copilot). Activated via GITHUB_COPILOT_LEGACY=true
+// as an escape hatch while the copilot-sdk/go is in Technical Preview.
+//
+// Deprecated: Use GhcpClient (SDK path) instead. This will be removed once the
+// SDK is stable.
+type GhcpLegacyClient struct {
+	client   *dagger.Container
+	endpoint *LLMEndpoint
+}
+
+var _ LLMClient = (*GhcpLegacyClient)(nil)
+
+func newGhcpLegacyClient(endpoint *LLMEndpoint, cliVersion string) *GhcpLegacyClient {
+	if cliVersion == "" {
+		cliVersion = ghcpDefaultCLIVersion
+	}
+	ctx := context.Background()
+	container := ghcpLegacyContainer(ctx, endpoint.Key, cliVersion)
+	return &GhcpLegacyClient{client: container, endpoint: endpoint}
+}
+
+func ghcpLegacyContainer(ctx context.Context, token, cliVersion string) *dagger.Container {
+	ghcpSessionCache := dag.CacheVolume("copilot-session-" + token[:8])
+	return dag.Container().
+		From("node:24-bookworm-slim").
+		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("@github/copilot@%s", cliVersion)}).
+		WithEnvVariable("GITHUB_TOKEN", token).
+		WithMountedCache("/root/.copilot", ghcpSessionCache).
+		WithWorkdir("/workspace")
+}
+
+func (c *GhcpLegacyClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+	copilotModel := StripGitHubModelPrefix(c.endpoint.Model)
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+
+	m := telemetry.Meter(ctx, InstrumentationLibrary)
+	spanCtx := trace.SpanContextFromContext(ctx)
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
+		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
+		attribute.String("model", copilotModel),
+		attribute.String("provider", string(c.endpoint.Provider)),
+	}
+
+	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get inputTokens gauge: %w", err)
+	}
+	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get inputTokensCacheReads gauge: %w", err)
+	}
+	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get outputTokens gauge: %w", err)
+	}
+
+	if len(history) == 0 {
+		return nil, fmt.Errorf("prompt/chat history cannot be empty")
+	}
+
+	// Legacy path: only the last user message is sent (no multi-turn support).
+	var prompt *ModelMessage
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			prompt = history[i]
+			break
+		}
+	}
+	if prompt == nil {
+		return nil, fmt.Errorf("no user message found in history")
+	}
+
+	container := c.client.WithExec([]string{
+		"copilot",
+		"--model", copilotModel,
+		"--prompt", prompt.Content,
+		"--stream", "off",
+		"--continue",
+	})
+
+	content, err := container.Stdout(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	stderr, err := container.Stderr(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	usage := parseCopilotTokenMetadata(stderr)
+
+	inputTokens.Record(ctx, usage.InputTokens, metric.WithAttributes(attrs...))
+	outputTokens.Record(ctx, usage.OutputTokens, metric.WithAttributes(attrs...))
+	inputTokensCacheReads.Record(ctx, usage.CachedTokenReads, metric.WithAttributes(attrs...))
+
+	return &LLMResponse{
+		Content:    content,
+		ToolCalls:  nil,
+		TokenUsage: usage,
+	}, nil
+}
+
+func (c *GhcpLegacyClient) IsRetryable(err error) bool {
+	return false
+}
+
+// parseCopilotTokenMetadata parses the token usage summary line written by the
+// Copilot CLI to stderr, e.g. "123 input, 45 output, 6k cache read".
+func parseCopilotTokenMetadata(metadata string) LLMTokenUsage {
+	var usage LLMTokenUsage
+	re := regexp.MustCompile(`(\d+(?:\.\d+)?)(k?)\s+input,\s*(\d+(?:\.\d+)?)(k?)\s+output,\s*(\d+(?:\.\d+)?)(k?)\s+cache read(?:,\s*(\d+(?:\.\d+)?)(k?)\s+cache write)?`)
+	matches := re.FindStringSubmatch(metadata)
+	if len(matches) > 7 {
+		usage.InputTokens = parseTokenValue(matches[1], matches[2])
+		usage.OutputTokens = parseTokenValue(matches[3], matches[4])
+		usage.CachedTokenReads = parseTokenValue(matches[5], matches[6])
+		usage.CachedTokenWrites = parseTokenValue(matches[7], matches[8])
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+	}
+	return usage
+}
+
+func parseTokenValue(valueStr, multiplierStr string) int64 {
+	if v, err := strconv.ParseFloat(valueStr, 64); err == nil {
+		if strings.ToLower(multiplierStr) == "k" {
+			v *= 1000
+		}
+		return int64(v)
+	}
+	return 0
 }
