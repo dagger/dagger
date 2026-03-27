@@ -75,6 +75,7 @@ type ModuleConfig struct {
 	Codegen *ModuleCodegenConfig `json:"codegen,omitempty"`
 
 	// Paths to explicitly exclude from the module, relative to the configuration file.
+	//
 	// Deprecated: Use !<pattern> in the include list instead.
 	Exclude []string `json:"exclude,omitempty"`
 
