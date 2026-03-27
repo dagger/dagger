@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
 )
 
 func testResultCall(field string, typ dagql.Typed, receiver *dagql.ResultCall) *dagql.ResultCall {
@@ -109,6 +110,10 @@ func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.C
 	return nil, nil
 }
 
+func (ms *mockServer) SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error) {
+	return nil, nil
+}
+
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
@@ -119,8 +124,6 @@ func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySee
 }
 func (ms *mockServer) Server(context.Context) (*dagql.Server, error)           { return nil, nil }
 func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error { return nil }
-func (ms *mockServer) Secrets(context.Context) (*SecretStore, error)           { return nil, nil }
-func (ms *mockServer) Sockets(context.Context) (*SocketStore, error)           { return nil, nil }
 
 func (ms *mockServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) { return nil, nil }
 

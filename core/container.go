@@ -883,7 +883,7 @@ type ContainerSecret struct {
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
 // but potentially as a TCP or UDP address in the future.
 type ContainerSocket struct {
-	Source        *Socket
+	Source        dagql.ObjectResult[*Socket]
 	ContainerPath string
 	Owner         *Ownership
 }
@@ -1276,9 +1276,8 @@ func (container *Container) Build(
 	buildArgs []BuildArg,
 	target string,
 	secrets []dagql.ObjectResult[*Secret],
-	secretStore *SecretStore,
 	noInit bool,
-	sshSocketID *call.ID,
+	sshSocket dagql.ObjectResult[*Socket],
 ) (*Container, error) {
 	dockerfilePath := dockerfile
 	if dockerfilePath == "" {
@@ -1335,16 +1334,12 @@ func (container *Container) Build(
 		if err != nil {
 			return nil, fmt.Errorf("get dockerBuild secret recipe ID: %w", err)
 		}
-		secretDgst := SecretDigest(ctx, secret)
-		if secretDgst == "" {
-			return nil, fmt.Errorf("get dockerBuild secret digest: missing secret digest")
-		}
-		secretName, ok := secretStore.GetSecretName(secretDgst)
-		if !ok {
-			return nil, fmt.Errorf("secret not found: %s", secretDgst)
+		secretName, err := secret.Self().Name(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get dockerBuild secret name: %w", err)
 		}
 		if secretName == "" {
-			return nil, fmt.Errorf("secret %s has no name and cannot be referenced from Dockerfile secret id", secretDgst)
+			return nil, fmt.Errorf("secret has no name and cannot be referenced from Dockerfile secret id")
 		}
 		if existing, found := secretIDsByLLBID[secretName]; found {
 			if existing.Digest() != secretRecipeID.Digest() {
@@ -1359,17 +1354,10 @@ func (container *Container) Build(
 		})
 	}
 	sshSocketIDsByLLBID := map[string]*call.ID{}
-	if sshSocketID != nil {
-		sshSocketRecipeID := sshSocketID
-		if sshSocketRecipeID.IsHandle() {
-			socketRes, err := dagql.NewID[*Socket](sshSocketID).Load(ctx, srv)
-			if err != nil {
-				return nil, fmt.Errorf("get dockerBuild ssh socket: %w", err)
-			}
-			sshSocketRecipeID, err = socketRes.RecipeID(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("get dockerBuild ssh socket recipe ID: %w", err)
-			}
+	if sshSocket.Self() != nil {
+		sshSocketRecipeID, err := sshSocket.RecipeID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get dockerBuild ssh socket recipe ID: %w", err)
 		}
 		sshSocketIDsByLLBID[""] = sshSocketRecipeID
 	}
@@ -2210,12 +2198,12 @@ func (container *Container) MountTargets(ctx context.Context) ([]string, error) 
 }
 
 // mutates container caller must have handled cloning or creating a new child.
-func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket, owner string) (*Container, error) {
+func (container *Container) WithUnixSocket(ctx context.Context, target string, source dagql.ObjectResult[*Socket], owner string) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 	return container.WithUnixSocketFromParent(ctx, dagql.ObjectResult[*Container]{}, target, source, owner)
 }
 
-func (container *Container) WithUnixSocketFromParent(ctx context.Context, parent dagql.ObjectResult[*Container], target string, source *Socket, owner string) (*Container, error) {
+func (container *Container) WithUnixSocketFromParent(ctx context.Context, parent dagql.ObjectResult[*Container], target string, source dagql.ObjectResult[*Socket], owner string) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
 	ownership, err := container.ownership(ctx, parent, owner)

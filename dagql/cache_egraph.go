@@ -616,9 +616,94 @@ type lookupMatch struct {
 	primaryLookupPossible bool
 	missingInputIndex     int
 	hitRecipeDigest       bool
-	hitRes                *sharedResult
+	candidates            *set.TreeSet[*sharedResult]
 	termDigest            string
 	termSetSize           int
+}
+
+func newSharedResultSet() *set.TreeSet[*sharedResult] {
+	return set.NewTreeSet(compareSharedResults)
+}
+
+func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult], dig digest.Digest, nowUnix int64) {
+	if dig == "" {
+		return
+	}
+	resultSet := c.egraphResultsByDigest[dig.String()]
+	if resultSet == nil {
+		return
+	}
+	for resID := range resultSet.Items() {
+		res := c.resultsByID[resID]
+		if res == nil || c.resultExpiredAtLocked(res, nowUnix) {
+			continue
+		}
+		candidates.Insert(res)
+	}
+}
+
+func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], nowUnix int64) {
+	if termSet == nil {
+		return
+	}
+
+	for termID := range termSet.Items() {
+		for resID := range c.termResults[termID] {
+			res := c.resultsByID[resID]
+			if res == nil || c.resultExpiredAtLocked(res, nowUnix) {
+				continue
+			}
+			candidates.Insert(res)
+		}
+	}
+	if !candidates.Empty() {
+		return
+	}
+
+	seenOutputEqClasses := make(map[eqClassID]struct{}, termSet.Size())
+	for termID := range termSet.Items() {
+		term := c.egraphTerms[termID]
+		if term == nil {
+			continue
+		}
+		outputEqID := c.findEqClassLocked(term.outputEqID)
+		if outputEqID == 0 {
+			continue
+		}
+		if _, ok := seenOutputEqClasses[outputEqID]; ok {
+			continue
+		}
+		seenOutputEqClasses[outputEqID] = struct{}{}
+		for dig := range c.eqClassToDigests[outputEqID] {
+			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix)
+		}
+	}
+}
+
+func (c *Cache) sessionSatisfiesResourceRequirementsLocked(sessionID string, res *sharedResult) bool {
+	if res == nil || res.requiredSessionResources == nil || res.requiredSessionResources.Empty() {
+		return true
+	}
+
+	c.sessionMu.Lock()
+	available := c.sessionHandlesBySession[sessionID]
+	c.sessionMu.Unlock()
+	if available == nil {
+		return false
+	}
+	return available.Subset(res.requiredSessionResources)
+}
+
+func (c *Cache) selectLookupCandidateForSessionLocked(sessionID string, candidates *set.TreeSet[*sharedResult]) *sharedResult {
+	if candidates == nil {
+		return nil
+	}
+	for res := range candidates.Items() {
+		if c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
+			return res
+		}
+	}
+	return nil
 }
 
 func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDigests []call.ExtraDigest, nowUnix int64) lookupMatch {
@@ -630,22 +715,18 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 		return match
 	}
 
-	resultSet := c.egraphResultsByDigest[recipeDigest.String()]
-	match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
-	if match.hitRes != nil {
+	candidates := newSharedResultSet()
+	c.appendDigestResultsLocked(candidates, recipeDigest, nowUnix)
+	if !candidates.Empty() {
+		match.candidates = candidates
 		match.hitRecipeDigest = true
 		return match
 	}
 	for _, extra := range extraDigests {
-		if extra.Digest == "" {
-			continue
-		}
-		resultSet := c.egraphResultsByDigest[extra.Digest.String()]
-		match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
-		if match.hitRes == nil {
-			continue
-		}
-		return match
+		c.appendDigestResultsLocked(candidates, extra.Digest, nowUnix)
+	}
+	if !candidates.Empty() {
+		match.candidates = candidates
 	}
 	return match
 }
@@ -667,7 +748,7 @@ func (c *Cache) lookupMatchForCallLocked(
 	}
 
 	match = c.lookupMatchForDigestsLocked(recipeDigest, frame.ExtraDigests, nowUnix)
-	if match.hitRes != nil {
+	if match.candidates != nil && !match.candidates.Empty() {
 		return match, nil
 	}
 
@@ -695,70 +776,13 @@ func (c *Cache) lookupMatchForCallLocked(
 		if termSet != nil {
 			match.termSetSize = termSet.Size()
 		}
-		match.hitRes = c.firstResultForTermSetDeterministicallyAtLocked(termSet, nowUnix)
+		candidates := newSharedResultSet()
+		c.appendTermSetResultsLocked(candidates, termSet, nowUnix)
+		if !candidates.Empty() {
+			match.candidates = candidates
+		}
 	}
 	return match, nil
-}
-
-func (c *Cache) lookupMatchForIDLocked(ctx context.Context, id *call.ID) (lookupMatch, error) {
-	match := lookupMatch{
-		primaryLookupPossible: true,
-		missingInputIndex:     -1,
-	}
-	if id == nil {
-		return match, nil
-	}
-	nowUnix := time.Now().Unix()
-
-	match = c.lookupMatchForDigestsLocked(id.Digest(), id.ExtraDigests(), nowUnix)
-	if match.hitRes != nil {
-		return match, nil
-	}
-
-	// do a full structural lookup based on the abstracted term (self digest + input eq classes)
-
-	selfDigest, inputDigests, err := id.SelfDigestAndInputs()
-	if err != nil {
-		return match, fmt.Errorf("derive call term: %w", err)
-	}
-	match.selfDigest = selfDigest
-	match.inputDigests = inputDigests
-	match.inputEqIDs = make([]eqClassID, len(inputDigests))
-	for i, inDig := range inputDigests {
-		classID, ok := c.egraphDigestToClass[inDig.String()]
-		if !ok {
-			match.primaryLookupPossible = false
-			match.missingInputIndex = i
-			break
-		}
-		root := c.findEqClassLocked(classID)
-		if root == 0 {
-			match.primaryLookupPossible = false
-			match.missingInputIndex = i
-			break
-		}
-		match.inputEqIDs[i] = root
-	}
-	if match.primaryLookupPossible {
-		match.termDigest = calcEgraphTermDigest(selfDigest, match.inputEqIDs)
-		termSet := c.egraphTermsByTermDigest[match.termDigest]
-		if termSet != nil {
-			match.termSetSize = termSet.Size()
-		}
-		match.hitRes = c.firstResultForTermSetDeterministicallyAtLocked(termSet, nowUnix)
-	}
-	return match, nil
-}
-
-func (c *Cache) resolveSharedResultForInputIDLocked(ctx context.Context, id *call.ID) (*sharedResult, error) {
-	match, err := c.lookupMatchForIDLocked(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if match.hitRes == nil {
-		return nil, fmt.Errorf("no cached shared result found for structural input %s", id.Digest())
-	}
-	return match.hitRes, nil
 }
 
 func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, responseFrame *ResultCall) error {
@@ -832,6 +856,7 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 // This method assumes egraphMu is already held by the caller.
 func (c *Cache) lookupCacheForRequestLocked(
 	ctx context.Context,
+	sessionID string,
 	req *CallRequest,
 	requestDigest digest.Digest,
 	requestSelf digest.Digest,
@@ -848,7 +873,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 		return nil, false, err
 	}
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
-	hitRes := match.hitRes
+	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, requestDigest.String(), match.primaryLookupPossible, match.missingInputIndex, match.termDigest, match.termSetSize)
@@ -911,7 +936,7 @@ func (c *Cache) lookupCacheForRequest(
 	}
 
 	c.egraphMu.Lock()
-	retRes, hit, err := c.lookupCacheForRequestLocked(ctx, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
+	retRes, hit, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil || !hit {
 		c.egraphMu.Unlock()
 		return retRes, hit, err
@@ -1124,10 +1149,15 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 	if err != nil {
 		return 0, err
 	}
-	if match.hitRes == nil || match.hitRes.id == 0 {
+	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
 	}
-	return match.hitRes.id, nil
+	for hitRes := range match.candidates.Items() {
+		if hitRes != nil && hitRes.id != 0 {
+			return hitRes.id, nil
+		}
+	}
+	return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
 }
 
 func (c *Cache) termForResultByDigestLocked(resID sharedResultID, termDigest string) *egraphTerm {

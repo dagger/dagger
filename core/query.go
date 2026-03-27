@@ -22,6 +22,7 @@ import (
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/filesync"
+	"google.golang.org/grpc"
 )
 
 // Query forms the root of the DAG and houses all necessary state and
@@ -80,11 +81,9 @@ type Server interface {
 	// Mix in this http endpoint+handler to the current client's session
 	MuxEndpoint(context.Context, string, http.Handler) error
 
-	// The secret store for the current client
-	Secrets(context.Context) (*SecretStore, error)
-
-	// The socket store for the current client
-	Sockets(context.Context) (*SocketStore, error)
+	// The session attachables connection for a specific client ID within the
+	// same session as the current client.
+	SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error)
 
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)

@@ -97,6 +97,8 @@ type RecipeIDable interface {
 	RecipeID(context.Context) (*call.ID, error)
 }
 
+type SessionResourceHandle string
+
 // AnyResult is a Typed value wrapped with an ID constructor. The wrapped value may
 // be any graphql type, including scalars, objects, arrays, etc.
 // It's a Result but as an interface and without any type params, allowing it
@@ -121,6 +123,8 @@ type AnyResult interface {
 
 	// WithContentDigest returns a new AnyResult with the given content digest.
 	WithContentDigestAny(context.Context, digest.Digest) (AnyResult, error)
+	// WithSessionResourceHandle returns a new AnyResult with the given session resource handle.
+	WithSessionResourceHandleAny(context.Context, SessionResourceHandle) (AnyResult, error)
 
 	HitCache() bool
 	ResultCall() (*ResultCall, error)

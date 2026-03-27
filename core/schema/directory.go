@@ -1579,23 +1579,15 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return nil, err
 	}
-	secretStore, err := query.Secrets(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get secret store: %w", err)
-	}
 
-	var sshSocketID *call.ID
+	var sshSocket dagql.ObjectResult[*core.Socket]
 	if args.SSH.Valid {
-		sshSocketResult, err := args.SSH.Value.Load(ctx, srv)
+		sshSocket, err = args.SSH.Value.Load(ctx, srv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load SSH socket: %w", err)
 		}
-		if sshSocketResult.Self() == nil {
+		if sshSocket.Self() == nil {
 			return nil, fmt.Errorf("failed to load SSH socket: nil socket")
-		}
-		sshSocketID, err = sshSocketResult.RecipeID(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get SSH socket recipe ID: %w", err)
 		}
 	}
 	buildctxDirID, err := buildctxDir.RecipeID(ctx)
@@ -1611,9 +1603,8 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
 		secrets,
-		secretStore,
 		args.NoInit,
-		sshSocketID,
+		sshSocket,
 	)
 }
 

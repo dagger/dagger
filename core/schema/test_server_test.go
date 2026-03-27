@@ -19,6 +19,7 @@ import (
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
+	"google.golang.org/grpc"
 )
 
 func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool) error {
@@ -53,6 +54,10 @@ func (s *currentTypeDefsTestServer) SpecificClientMetadata(context.Context, stri
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.ModDeps, error) {
 	return nil, nil
 }
@@ -67,14 +72,6 @@ func (s *currentTypeDefsTestServer) Server(context.Context) (*dagql.Server, erro
 
 func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Handler) error {
 	return nil
-}
-
-func (s *currentTypeDefsTestServer) Secrets(context.Context) (*core.SecretStore, error) {
-	return nil, nil
-}
-
-func (s *currentTypeDefsTestServer) Sockets(context.Context) (*core.SocketStore, error) {
-	return nil, nil
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {

@@ -84,15 +84,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		if err != nil {
 			return inst, err
 		}
-		secretStore, err := parent.Self().Secrets(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		secretDigest := core.SecretDigest(ctx, secret)
-		if secretDigest == "" {
-			return inst, fmt.Errorf("auth header secret must have a digest")
-		}
-		authHeaderRaw, err := secretStore.GetSecretPlaintext(ctx, secretDigest)
+		authHeaderRaw, err := secret.Self().Plaintext(ctx)
 		if err != nil {
 			return inst, err
 		}

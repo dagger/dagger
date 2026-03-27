@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,26 +14,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	ctrdmount "github.com/containerd/containerd/v2/core/mount"
-	"golang.org/x/sync/errgroup"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	"github.com/dagger/dagger/internal/buildkit/session/secrets"
-	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	utilsystem "github.com/dagger/dagger/internal/buildkit/util/system"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/sys/userns"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"google.golang.org/grpc/codes"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -275,20 +270,33 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 	return pb.NetMode_UNSET, nil
 }
 
-func (container *Container) secretEnvs(ctx context.Context) (secretEnvs []*pb.SecretEnv, err error) {
+func (container *Container) secretEnvValues(ctx context.Context) ([]string, error) {
+	env := make([]string, 0, len(container.Secrets))
 	for _, secret := range container.Secrets {
-		if secret.EnvName != "" {
-			secretDigest := SecretDigest(ctx, secret.Secret)
-			if secretDigest == "" {
-				return nil, fmt.Errorf("secret env %q digest: secret must have a digest", secret.EnvName)
-			}
-			secretEnvs = append(secretEnvs, &pb.SecretEnv{
-				ID:   secretDigest.String(),
-				Name: secret.EnvName,
-			})
+		if secret.EnvName == "" {
+			continue
 		}
+		plaintext, err := secret.Secret.Self().Plaintext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("secret env %q: %w", secret.EnvName, err)
+		}
+		env = append(env, secret.EnvName+"="+string(plaintext))
 	}
-	return secretEnvs, nil
+	return env, nil
+}
+
+type execSecretMountConfig struct {
+	Secret dagql.ObjectResult[*Secret]
+	UID    int
+	GID    int
+	Mode   fs.FileMode
+}
+
+type execSSHMountConfig struct {
+	Socket dagql.ObjectResult[*Socket]
+	UID    int
+	GID    int
+	Mode   fs.FileMode
 }
 
 type execMountState struct {
@@ -300,8 +308,8 @@ type execMountState struct {
 	SourceRef bkcache.Ref
 
 	TmpfsOpt  *pb.TmpfsOpt
-	SecretOpt *pb.SecretOpt
-	SSHOpt    *pb.SSHOpt
+	Secret *execSecretMountConfig
+	SSH    *execSSHMountConfig
 
 	ApplyOutput func(bkcache.ImmutableRef) error
 
@@ -423,17 +431,17 @@ func prepareMounts(
 		case pb.MountType_TMPFS:
 			mountable = execTmpFSMountable(cache, state.TmpfsOpt)
 
-		case pb.MountType_SECRET:
-			mountable, err = prepareExecSecretMount(ctx, cache, session, state.SecretOpt, g)
-			if err != nil {
-				return err
-			}
+			case pb.MountType_SECRET:
+				mountable, err = prepareExecSecretMount(ctx, cache, state.Secret)
+				if err != nil {
+					return err
+				}
 
-		case pb.MountType_SSH:
-			mountable, err = prepareExecSSHMount(ctx, cache, session, state.SSHOpt, g)
-			if err != nil {
-				return err
-			}
+			case pb.MountType_SSH:
+				mountable, err = prepareExecSSHMount(ctx, cache, state.SSH)
+				if err != nil {
+					return err
+				}
 
 		default:
 			return fmt.Errorf("mount type %s not implemented", state.MountType)
@@ -611,22 +619,18 @@ func prepareMounts(
 		if secret.Owner != nil {
 			uid, gid = secret.Owner.UID, secret.Owner.GID
 		}
-		secretDigest := SecretDigest(ctx, secret.Secret)
-		if secretDigest == "" {
-			return materialized, fmt.Errorf("secret mount %q digest: secret must have a digest", secret.MountPath)
-		}
-		secretState := &execMountState{
-			Dest:      secret.MountPath,
-			MountType: pb.MountType_SECRET,
-			SecretOpt: &pb.SecretOpt{
-				ID:   secretDigest.String(),
-				Uid:  uint32(uid),
-				Gid:  uint32(gid),
-				Mode: uint32(secret.Mode),
-			},
-		}
-		if err := materializeState(secretState); err != nil {
-			return materialized, err
+			secretState := &execMountState{
+				Dest:      secret.MountPath,
+				MountType: pb.MountType_SECRET,
+				Secret: &execSecretMountConfig{
+					Secret: secret.Secret,
+					UID:    uid,
+					GID:    gid,
+					Mode:   secret.Mode,
+				},
+			}
+			if err := materializeState(secretState); err != nil {
+				return materialized, err
 		}
 	}
 
@@ -641,11 +645,11 @@ func prepareMounts(
 		socketState := &execMountState{
 			Dest:      socket.ContainerPath,
 			MountType: pb.MountType_SSH,
-			SSHOpt: &pb.SSHOpt{
-				ID:   socket.Source.LLBID(),
-				Uid:  uint32(uid),
-				Gid:  uint32(gid),
-				Mode: 0o600,
+			SSH: &execSSHMountConfig{
+				Socket: socket.Source,
+				UID:    uid,
+				GID:    gid,
+				Mode:   0o600,
 			},
 		}
 		if err := materializeState(socketState); err != nil {
@@ -722,42 +726,32 @@ func (tmpfs *execTmpFSMount) IdentityMapping() *idtools.IdentityMapping {
 	return tmpfs.idmap
 }
 
-func prepareExecSecretMount(ctx context.Context, cache bkcache.SnapshotManager, session *bksession.Manager, secretOpt *pb.SecretOpt, g bksession.Group) (bkcache.Mountable, error) {
-	if secretOpt == nil {
+func prepareExecSecretMount(ctx context.Context, cache bkcache.SnapshotManager, cfg *execSecretMountConfig) (bkcache.Mountable, error) {
+	if cfg == nil {
 		return nil, fmt.Errorf("invalid secret mount options")
 	}
-	secret := *secretOpt
-	if secret.ID == "" {
-		return nil, fmt.Errorf("secret ID missing from mount options")
+	if cfg.Secret.Self() == nil {
+		return nil, fmt.Errorf("secret mount missing secret")
 	}
 
-	var (
-		data []byte
-		err  error
-	)
-	err = session.Any(ctx, g, func(ctx context.Context, _ string, caller bksession.Caller) error {
-		data, err = secrets.GetSecret(ctx, caller, secret.ID)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	data, err := cfg.Secret.Self().Plaintext(ctx)
 	if err != nil {
-		if errors.Is(err, secrets.ErrNotFound) && secret.Optional {
-			return nil, nil
-		}
 		return nil, err
 	}
 
 	return &execSecretMount{
-		secret: &secret,
+		uid:   cfg.UID,
+		gid:   cfg.GID,
+		mode:  cfg.Mode,
 		data:   data,
 		idmap:  cache.IdentityMapping(),
 	}, nil
 }
 
 type execSecretMount struct {
-	secret *pb.SecretOpt
+	uid   int
+	gid   int
+	mode  fs.FileMode
 	data   []byte
 	idmap  *idtools.IdentityMapping
 }
@@ -789,7 +783,7 @@ func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error,
 	}
 
 	var mountOpts []string
-	if secret.secret.secret.Mode&0o111 == 0 {
+	if secret.secret.mode&0o111 == 0 {
 		mountOpts = append(mountOpts, "noexec")
 	}
 
@@ -820,8 +814,8 @@ func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error,
 		return nil, nil, err
 	}
 
-	uid := int(secret.secret.secret.Uid)
-	gid := int(secret.secret.secret.Gid)
+	uid := secret.secret.uid
+	gid := secret.secret.gid
 	if secret.idmap != nil {
 		hostIdentity, err := secret.idmap.ToHost(idtools.Identity{
 			UID: uid,
@@ -839,7 +833,7 @@ func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error,
 		_ = cleanup()
 		return nil, nil, err
 	}
-	if err := os.Chmod(fp, os.FileMode(secret.secret.secret.Mode&0o777)); err != nil {
+	if err := os.Chmod(fp, os.FileMode(secret.secret.mode&0o777)); err != nil {
 		_ = cleanup()
 		return nil, nil, err
 	}
@@ -855,98 +849,88 @@ func (secret *execSecretMountInstance) IdentityMapping() *idtools.IdentityMappin
 	return secret.idmap
 }
 
-func prepareExecSSHMount(ctx context.Context, cache bkcache.SnapshotManager, session *bksession.Manager, sshOpt *pb.SSHOpt, g bksession.Group) (bkcache.Mountable, error) {
-	if sshOpt == nil {
+func prepareExecSSHMount(ctx context.Context, cache bkcache.SnapshotManager, cfg *execSSHMountConfig) (bkcache.Mountable, error) {
+	if cfg == nil {
 		return nil, fmt.Errorf("invalid ssh mount options")
 	}
-	ssh := *sshOpt
-
-	var caller bksession.Caller
-	err := session.Any(ctx, g, func(ctx context.Context, _ string, c bksession.Caller) error {
-		if err := sshforward.CheckSSHID(ctx, c, ssh.ID); err != nil {
-			if ssh.Optional {
-				return nil
-			}
-			if grpcerrors.Code(err) == codes.Unimplemented {
-				return fmt.Errorf("no SSH key %q forwarded from the client", ssh.ID)
-			}
-			return err
-		}
-		caller = c
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if caller == nil {
-		return nil, nil
+	if cfg.Socket.Self() == nil {
+		return nil, fmt.Errorf("ssh mount missing socket")
 	}
 
 	return &execSSHMount{
-		sshOpt: &ssh,
-		caller: caller,
+		socket: cfg.Socket,
+		uid:    cfg.UID,
+		gid:    cfg.GID,
+		mode:   cfg.Mode,
 		idmap:  cache.IdentityMapping(),
 	}, nil
 }
 
 type execSSHMount struct {
-	sshOpt *pb.SSHOpt
-	caller bksession.Caller
+	socket dagql.ObjectResult[*Socket]
+	uid    int
+	gid    int
+	mode   fs.FileMode
 	idmap  *idtools.IdentityMapping
 }
 
-func (ssh *execSSHMount) Mount(_ context.Context, _ bool, _ bksession.Group) (snapshot.Mountable, error) {
+func (ssh *execSSHMount) Mount(ctx context.Context, _ bool, _ bksession.Group) (snapshot.Mountable, error) {
+	sock, cleanup, err := ssh.socket.Self().MountSSHAgent(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &execSSHMountInstance{
-		ssh:   ssh,
-		idmap: ssh.idmap,
+		ssh:     ssh,
+		sock:    sock,
+		cleanup: cleanup,
+		idmap:   ssh.idmap,
 	}, nil
 }
 
 type execSSHMountInstance struct {
-	ssh   *execSSHMount
-	idmap *idtools.IdentityMapping
+	ssh     *execSSHMount
+	sock    string
+	cleanup func() error
+	idmap   *idtools.IdentityMapping
 }
 
 func (ssh *execSSHMountInstance) Mount() ([]ctrdmount.Mount, func() error, error) {
-	ctx, cancel := context.WithCancelCause(context.TODO())
-
-	uid := int(ssh.ssh.sshOpt.Uid)
-	gid := int(ssh.ssh.sshOpt.Gid)
+	uid := ssh.ssh.uid
+	gid := ssh.ssh.gid
 	if ssh.idmap != nil {
 		hostIdentity, err := ssh.idmap.ToHost(idtools.Identity{
 			UID: uid,
 			GID: gid,
 		})
 		if err != nil {
-			cancel(err)
 			return nil, nil, err
 		}
 		uid = hostIdentity.UID
 		gid = hostIdentity.GID
 	}
 
-	sock, cleanup, err := sshforward.MountSSHSocket(ctx, ssh.ssh.caller, sshforward.SocketOpt{
-		ID:   ssh.ssh.sshOpt.ID,
-		UID:  uid,
-		GID:  gid,
-		Mode: int(ssh.ssh.sshOpt.Mode & 0o777),
-	})
-	if err != nil {
-		cancel(err)
+	if err := os.Chown(ssh.sock, uid, gid); err != nil {
+		if ssh.cleanup != nil {
+			_ = ssh.cleanup()
+		}
+		return nil, nil, err
+	}
+	if err := os.Chmod(ssh.sock, os.FileMode(ssh.ssh.mode&0o777)); err != nil {
+		if ssh.cleanup != nil {
+			_ = ssh.cleanup()
+		}
 		return nil, nil, err
 	}
 	release := func() error {
-		var err error
-		if cleanup != nil {
-			err = cleanup()
+		if ssh.cleanup == nil {
+			return nil
 		}
-		cancel(err)
-		return err
+		return ssh.cleanup()
 	}
 
 	return []ctrdmount.Mount{{
 		Type:    "bind",
-		Source:  sock,
+		Source:  ssh.sock,
 		Options: []string{"rbind"},
 	}}, release, nil
 }
@@ -1051,7 +1035,7 @@ func (container *Container) WithExec(
 			return fmt.Errorf("get current query: %w", err)
 		}
 
-		secretEnvs, err := container.secretEnvs(ctx)
+		secretEnv, err := container.secretEnvValues(ctx)
 		if err != nil {
 			return err
 		}
@@ -1062,7 +1046,6 @@ func (container *Container) WithExec(
 		}
 
 		cache := query.BuildkitCache()
-		session := query.BuildkitSession()
 
 		metaSpec, err := container.metaSpec(ctx, opts)
 		if err != nil {
@@ -1200,13 +1183,13 @@ func (container *Container) WithExec(
 				mountable = execTmpFSMountable(cache, state.TmpfsOpt)
 
 			case pb.MountType_SECRET:
-				mountable, err = prepareExecSecretMount(ctx, cache, session, state.SecretOpt, bkSessionGroup)
+				mountable, err = prepareExecSecretMount(ctx, cache, state.Secret)
 				if err != nil {
 					return err
 				}
 
 			case pb.MountType_SSH:
-				mountable, err = prepareExecSSHMount(ctx, cache, session, state.SSHOpt, bkSessionGroup)
+				mountable, err = prepareExecSSHMount(ctx, cache, state.SSH)
 				if err != nil {
 					return err
 				}
@@ -1407,18 +1390,14 @@ func (container *Container) WithExec(
 			if secret.Owner != nil {
 				uid, gid = secret.Owner.UID, secret.Owner.GID
 			}
-			secretDigest := SecretDigest(ctx, secret.Secret)
-			if secretDigest == "" {
-				return failPrepare(fmt.Errorf("secret mount %q digest: secret must have a digest", secret.MountPath))
-			}
 			secretState := &execMountState{
 				Dest:      secret.MountPath,
 				MountType: pb.MountType_SECRET,
-				SecretOpt: &pb.SecretOpt{
-					ID:   secretDigest.String(),
-					Uid:  uint32(uid),
-					Gid:  uint32(gid),
-					Mode: uint32(secret.Mode),
+				Secret: &execSecretMountConfig{
+					Secret: secret.Secret,
+					UID:    uid,
+					GID:    gid,
+					Mode:   secret.Mode,
 				},
 			}
 			if err := materializeState(secretState); err != nil {
@@ -1437,11 +1416,11 @@ func (container *Container) WithExec(
 			socketState := &execMountState{
 				Dest:      socket.ContainerPath,
 				MountType: pb.MountType_SSH,
-				SSHOpt: &pb.SSHOpt{
-					ID:   socket.Source.LLBID(),
-					Uid:  uint32(uid),
-					Gid:  uint32(gid),
-					Mode: 0o600,
+				SSH: &execSSHMountConfig{
+					Socket: socket.Source,
+					UID:    uid,
+					GID:    gid,
+					Mode:   0o600,
 				},
 			}
 			if err := materializeState(socketState); err != nil {
@@ -1714,10 +1693,6 @@ func (container *Container) WithExec(
 
 		meta := *metaSpec
 		meta.Env = slices.Clone(meta.Env)
-		secretEnv, err := loadSecretEnv(ctx, bkSessionGroup, session, secretEnvs)
-		if err != nil {
-			return err
-		}
 		meta.Env = append(meta.Env, secretEnv...)
 
 		svcs, err := query.Services(ctx)
@@ -1830,44 +1805,4 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 		return "", err
 	}
 	return string(content), nil
-}
-
-func loadSecretEnv(ctx context.Context, g bksession.Group, sm *bksession.Manager, secretenv []*pb.SecretEnv) ([]string, error) {
-	if len(secretenv) == 0 {
-		return nil, nil
-	}
-	out := make([]string, 0, len(secretenv))
-	eg, gctx := errgroup.WithContext(ctx)
-	var mu sync.Mutex
-	for _, sopt := range secretenv {
-		id := sopt.ID
-		eg.Go(func() error {
-			if id == "" {
-				return fmt.Errorf("secret ID missing for %q environment variable", sopt.Name)
-			}
-			var dt []byte
-			var err error
-			err = sm.Any(gctx, g, func(ctx context.Context, _ string, caller bksession.Caller) error {
-				dt, err = secrets.GetSecret(ctx, caller, id)
-				if err != nil {
-					if errors.Is(err, secrets.ErrNotFound) && sopt.Optional {
-						return nil
-					}
-					return err
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-			mu.Lock()
-			out = append(out, fmt.Sprintf("%s=%s", sopt.Name, string(dt)))
-			mu.Unlock()
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-	return out, nil
 }

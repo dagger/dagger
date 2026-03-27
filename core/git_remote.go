@@ -176,20 +176,22 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 func (repo *RemoteGitRepository) remoteCacheScope(ctx context.Context) []string {
 	scope := make([]string, 0, 4)
 	if token := repo.AuthToken; token.Self() != nil {
-		if tokenDigest := SecretDigest(ctx, token); tokenDigest != "" {
-			scope = append(scope, "token:"+tokenDigest.String())
+		if tokenHandle := token.Self().Handle; tokenHandle != "" {
+			scope = append(scope, "token:"+string(tokenHandle))
 		}
 	}
 	if header := repo.AuthHeader; header.Self() != nil {
-		if headerDigest := SecretDigest(ctx, header); headerDigest != "" {
-			scope = append(scope, "header:"+headerDigest.String())
+		if headerHandle := header.Self().Handle; headerHandle != "" {
+			scope = append(scope, "header:"+string(headerHandle))
 		}
 	}
 	if repo.AuthUsername != "" {
 		scope = append(scope, "username:"+repo.AuthUsername)
 	}
 	if sshSock := repo.SSHAuthSocket; sshSock.Self() != nil {
-		scope = append(scope, "ssh-auth-scope:"+sshSock.Self().IDDigest.String())
+		if sshHandle := sshSock.Self().Handle; sshHandle != "" {
+			scope = append(scope, "ssh-auth-scope:"+string(sshHandle))
+		}
 	}
 	return scope
 }
@@ -247,15 +249,12 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	}()
 
 	if repo.SSHAuthSocket.Self() != nil {
-		socketStore, err := query.Sockets(ctx)
-		if err == nil {
-			sockpath, cleanup, err := socketStore.MountSocket(ctx, repo.SSHAuthSocket.Self().IDDigest)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to mount SSH socket: %w", err)
-			}
-			opts = append(opts, gitutil.WithSSHAuthSock(sockpath))
-			cleanups.Add("cleanup SSH socket", cleanup)
+		sockpath, cleanup, err := repo.SSHAuthSocket.Self().MountSSHAgent(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to mount SSH socket: %w", err)
 		}
+		opts = append(opts, gitutil.WithSSHAuthSock(sockpath))
+		cleanups.Add("cleanup SSH socket", cleanup)
 	}
 
 	var knownHostsPath string
@@ -289,29 +288,13 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	}
 
 	if repo.AuthToken.Self() != nil {
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		tokenDigest := SecretDigest(ctx, repo.AuthToken)
-		if tokenDigest == "" {
-			return nil, nil, fmt.Errorf("get auth token digest: secret must have a digest")
-		}
-		password, err := secretStore.GetSecretPlaintext(ctx, tokenDigest)
+		password, err := repo.AuthToken.Self().Plaintext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
 		opts = append(opts, gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername))
 	} else if repo.AuthHeader.Self() != nil {
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		headerDigest := SecretDigest(ctx, repo.AuthHeader)
-		if headerDigest == "" {
-			return nil, nil, fmt.Errorf("get auth header digest: secret must have a digest")
-		}
-		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, headerDigest)
+		byteAuthHeader, err := repo.AuthHeader.Self().Plaintext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}

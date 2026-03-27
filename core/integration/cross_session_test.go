@@ -701,8 +701,8 @@ func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, e
 }
 
 func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
-	// verify that if a function call does SetSecret and is cached, the secret is
-	// successfully transferred to clients even if they are in a different session
+	// verify that setSecret-producing calls do not transfer cached secrets across
+	// sessions; each session should rerun and produce a fresh secret value
 	t.Run("cached set-secret transfers", func(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client) (string, error) {
 			return goGitBase(t, c).
@@ -736,17 +736,18 @@ func (_ *Secreter) Make() *dagger.Secret {
 		out2, err := callMod(c2)
 		require.NoError(t, err)
 
-		require.Equal(t, out1, out2)
+		require.NotEqual(t, out1, out2)
 
-		// close original client, ensure secret is still available
+		// close original client and ensure a later session still reruns rather than
+		// reusing either earlier secret value
 		require.NoError(t, c1.Close())
 
 		c3 := connect(ctx, t)
 		out3, err := callMod(c3)
 		require.NoError(t, err)
 
-		require.Equal(t, out1, out3)
-		require.Equal(t, out2, out3)
+		require.NotEqual(t, out1, out3)
+		require.NotEqual(t, out2, out3)
 	})
 
 	t.Run("different secrets with same name do not cache", func(ctx context.Context, t *testctx.T) {

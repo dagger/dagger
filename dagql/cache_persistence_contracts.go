@@ -33,6 +33,7 @@ type persistResultSnapshot struct {
 	frame               *ResultCall
 	self                Typed
 	hasValue            bool
+	sessionResourceHandle SessionResourceHandle
 	persistedEnvelope   *PersistedResultEnvelope
 	row                 persistdb.MirrorResult
 	resultDeps          []persistdb.MirrorResultDep

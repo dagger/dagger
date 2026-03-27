@@ -3,16 +3,14 @@ package schema
 import (
 	"context"
 	cryptorand "crypto/rand"
-	"encoding/base64"
 	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
-	"golang.org/x/crypto/argon2"
 )
 
 type secretSchema struct{}
@@ -69,85 +67,82 @@ func (s *secretSchema) secret(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	args secretArgs,
-) (i dagql.ObjectResult[*core.Secret], err error) {
+) (dagql.ObjectResult[*core.Secret], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return i, fmt.Errorf("failed to get dagql server: %w", err)
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return i, fmt.Errorf("failed to get client metadata from context: %w", err)
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
-
-	secretStore, err := parent.Self().Secrets(ctx)
+	if clientMetadata.SessionID == "" {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get session ID from client metadata")
+	}
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return i, fmt.Errorf("failed to get secret store: %w", err)
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get dagql cache: %w", err)
+	}
+	if _, _, err := secretprovider.ResolverForID(args.URI); err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, err
 	}
 
-	secret := &core.Secret{
-		URI:               args.URI,
-		BuildkitSessionID: clientMetadata.ClientID,
+	concreteVal := &core.Secret{
+		URIVal:         args.URI,
+		SourceClientID: clientMetadata.ClientID,
 	}
-	i, err = dagql.NewObjectResultForCurrentCall(ctx, srv, secret)
+	concrete, err := dagql.NewObjectResultForCurrentCall(ctx, srv, concreteVal)
 	if err != nil {
-		return i, fmt.Errorf("failed to create instance: %w", err)
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to create concrete secret result: %w", err)
 	}
 
+	var handle dagql.SessionResourceHandle
 	if args.CacheKey.Valid {
-		i, err = i.WithContentDigest(ctx, hashutil.HashStrings(string(args.CacheKey.Value)))
-		if err != nil {
-			return i, err
-		}
+		handle = core.SecretHandleFromCacheKey(string(args.CacheKey.Value))
 	} else {
-		plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, secret)
+		plaintext, err := concreteVal.Plaintext(ctx)
 		if err != nil {
-			// secret wasn't found, but since it may be available later at use, tolerate the error and just use a random cache key
 			slog.Warn("failed to get secret plaintext, falling back to random cache key", "uri", args.URI, "error", err)
 			plaintext = make([]byte, 32)
 			if _, err := cryptorand.Read(plaintext); err != nil {
-				return i, fmt.Errorf("failed to read random bytes: %w", err)
+				return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to read random bytes: %w", err)
 			}
 		}
-
-		/* Derive the cache key from the plaintext value using argon2.
-		We avoid a simple xxh3/sha256/etc. hash since the cache key is public; it's sent around in IDs and stored on the local disk unencrypted.
-
-		This is similar to the problems a web-server avoids when hashing passwords in that we want to make brute-forcing the secret from its hash
-		infeasible, even in offline attacks. This argon2 hash takes on the order of 1-100ms, which is 10s of millions of times slower than the
-		time to compute e.g. a sha256 hash on a modern GPU, but not slow enough to be a noticeable bottleneck in our execution.
-
-		The main difference from the more typical password-hashing use-case is that we *don't* want a unique salt per secret since we need deterministic
-		cache keys. Instead, we use a salt unique to the engine instance as a whole (stored on the local disk along-side the cache).
-		*/
-		const (
-			// Argon2 is flexible in terms of time+memory tradeoffs, tuned by these parameters. We use a relatively low memory cost here and in exchange
-			// increase the number of time (aka passes).
-			time    = 10       // 10 passes
-			memory  = 2 * 1024 // 2MB
-			threads = 1        // no parallelism
-
-			// byte size of the returned key; this is mostly arbitrarily chosen right now, with the only consideration being it should be large enough
-			// to avoid collisions. 32 bytes should be more than enough.
-			keySize = 32
-		)
-		key := argon2.IDKey(
-			plaintext,
-			parent.Self().SecretSalt(),
-			time, memory, threads,
-			keySize,
-		)
-		b64Key := base64.RawStdEncoding.EncodeToString(key)
-		i, err = i.WithContentDigest(ctx, digest.Digest("argon2:"+b64Key))
-		if err != nil {
-			return i, err
-		}
+		handle = core.SecretHandleFromPlaintext(parent.Self().SecretSalt(), plaintext)
+	}
+	if handle == "" {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("secret must have a session resource handle")
 	}
 
-	if err := secretStore.AddSecret(ctx, i); err != nil {
-		return i, fmt.Errorf("failed to add secret: %w", err)
+	handleVal := &core.Secret{
+		Handle: handle,
+	}
+	handleRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, handleVal)
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to create handle secret result: %w", err)
+	}
+	handleRes, err = handleRes.WithContentDigest(ctx, digest.Digest(handle))
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, err
+	}
+	handleRes, err = handleRes.WithSessionResourceHandle(ctx, handle)
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, err
 	}
 
-	return i, nil
+	attachedConcreteAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, concrete)
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to attach concrete secret result: %w", err)
+	}
+	attachedConcrete, ok := attachedConcreteAny.(dagql.ObjectResult[*core.Secret])
+	if !ok {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("attached concrete secret result had unexpected type %T", attachedConcreteAny)
+	}
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, attachedConcrete); err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to bind concrete secret result: %w", err)
+	}
+
+	return handleRes, nil
 }
 
 type setSecretArgs struct {
@@ -159,24 +154,26 @@ func (s *secretSchema) setSecret(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	args setSecretArgs,
-) (i dagql.ObjectResult[*core.Secret], err error) {
+) (dagql.ObjectResult[*core.Secret], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return i, fmt.Errorf("failed to get dagql server: %w", err)
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get dagql server: %w", err)
 	}
-
-	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self(), args.Name)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return i, fmt.Errorf("failed to get client resource accessor: %w", err)
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
-	dgst := hashutil.HashStrings(
-		args.Name,
-		accessor,
-	)
+	if clientMetadata.SessionID == "" {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get session ID from client metadata")
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get dagql cache: %w", err)
+	}
 
 	curCall := dagql.CurrentCall(ctx)
 	if curCall == nil {
-		return i, fmt.Errorf("current call is nil")
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("current call is nil")
 	}
 	sanitizedCall := *curCall
 	sanitizedCall.Args = []*dagql.ResultCallArg{
@@ -189,8 +186,6 @@ func (s *secretSchema) setSecret(
 		},
 		{
 			Name: "plaintext",
-			// Hide plaintext in the returned identity; content digest still
-			// carries uniqueness.
 			Value: &dagql.ResultCallLiteral{
 				Kind:        dagql.ResultCallLiteralKindString,
 				StringValue: "***",
@@ -198,88 +193,62 @@ func (s *secretSchema) setSecret(
 		},
 	}
 
-	secretStore, err := parent.Self().Secrets(ctx)
+	concreteVal := &core.Secret{
+		NameVal:      args.Name,
+		PlaintextVal: []byte(args.Plaintext),
+	}
+	concrete, err := dagql.NewObjectResultForCall(concreteVal, srv, &sanitizedCall)
 	if err != nil {
-		return i, fmt.Errorf("failed to get secret store: %w", err)
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to create concrete setSecret result: %w", err)
 	}
-	secretVal := &core.Secret{
-		Name:      args.Name,
-		Plaintext: []byte(args.Plaintext),
-	}
-	secret, err := dagql.NewObjectResultForCall(secretVal, srv, &sanitizedCall)
-	if err != nil {
-		return i, fmt.Errorf("failed to create secret instance: %w", err)
-	}
-	secret, err = secret.WithContentDigest(ctx, dgst)
-	if err != nil {
-		return secret, err
-	}
-	if err := secretStore.AddSecret(ctx, secret); err != nil {
-		return i, fmt.Errorf("failed to add secret: %w", err)
+	handle := core.SecretHandleFromPlaintext(parent.Self().SecretSalt(), concreteVal.PlaintextVal)
+	if handle == "" {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("setSecret must have a session resource handle")
 	}
 
-	return secret, nil
+	handleVal := &core.Secret{
+		Handle: handle,
+	}
+	handleRes, err := dagql.NewObjectResultForCall(handleVal, srv, &sanitizedCall)
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to create handle setSecret result: %w", err)
+	}
+	handleRes, err = handleRes.WithContentDigest(ctx, digest.Digest(handle))
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, err
+	}
+	handleRes, err = handleRes.WithSessionResourceHandle(ctx, handle)
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, err
+	}
+
+	attachedConcreteAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, concrete)
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to attach concrete setSecret result: %w", err)
+	}
+	attachedConcrete, ok := attachedConcreteAny.(dagql.ObjectResult[*core.Secret])
+	if !ok {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("attached concrete setSecret result had unexpected type %T", attachedConcreteAny)
+	}
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, attachedConcrete); err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to bind concrete setSecret result: %w", err)
+	}
+
+	return handleRes, nil
 }
 
 func (s *secretSchema) name(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (string, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return "", err
-	}
-	secretStore, err := query.Secrets(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get secret store: %w", err)
-	}
-	secretDigest := core.SecretDigest(ctx, secret)
-	if secretDigest == "" {
-		return "", fmt.Errorf("secret must have a digest")
-	}
-	name, ok := secretStore.GetSecretName(secretDigest)
-	if !ok {
-		return "", fmt.Errorf("secret not found: %s", secretDigest)
-	}
-
-	return name, nil
+	return secret.Self().Name(ctx)
 }
 
 func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (string, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return "", err
-	}
-	secretStore, err := query.Secrets(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get secret store: %w", err)
-	}
-	secretDigest := core.SecretDigest(ctx, secret)
-	if secretDigest == "" {
-		return "", fmt.Errorf("secret must have a digest")
-	}
-	name, ok := secretStore.GetSecretURI(secretDigest)
-	if !ok {
-		return "", fmt.Errorf("secret not found: %s", secretDigest)
-	}
-
-	return name, nil
+	return secret.Self().URI(ctx)
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (string, error) {
-	query, err := core.CurrentQuery(ctx)
+	plaintext, err := secret.Self().Plaintext(ctx)
 	if err != nil {
 		return "", err
 	}
-	secretStore, err := query.Secrets(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get secret store: %w", err)
-	}
-	secretDigest := core.SecretDigest(ctx, secret)
-	if secretDigest == "" {
-		return "", fmt.Errorf("secret must have a digest")
-	}
-	plaintext, err := secretStore.GetSecretPlaintext(ctx, secretDigest)
-	if err != nil {
-		return "", err
-	}
-
 	return string(plaintext), nil
 }

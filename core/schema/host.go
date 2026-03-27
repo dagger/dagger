@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/distribution/reference"
+	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/trace"
 
@@ -21,7 +23,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/filesync"
-	"github.com/dagger/dagger/util/hashutil"
 )
 
 type hostSchema struct{}
@@ -299,53 +300,19 @@ type hostSocketArgs struct {
 }
 
 func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostSocketArgs) (inst dagql.Result[*core.Socket], err error) {
-	query, err := core.CurrentQuery(ctx)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-
-	accessor, err := core.GetClientResourceAccessor(ctx, query, args.Path)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client resource name: %w", err)
+	sock := &core.Socket{
+		Kind:           core.SocketKindUnixOpaque,
+		URLVal:         (&url.URL{Scheme: "unix", Path: args.Path}).String(),
+		SourceClientID: clientMetadata.ClientID,
 	}
-	dgst := hashutil.HashStrings(accessor)
-
-	sock := &core.Socket{IDDigest: dgst}
 	inst, err = dagql.NewResultForCurrentCall(ctx, sock)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
-	inst, err = inst.WithContentDigest(ctx, dgst)
-	if err != nil {
-		return inst, err
-	}
-
-	upsertSocket := func(ctx context.Context) error {
-		callerClientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get client metadata: %w", err)
-		}
-		callerSocketStore, err := query.Sockets(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get socket store: %w", err)
-		}
-		nonModuleParentClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
-		if err == nil && nonModuleParentClientMetadata.ClientID != callerClientMetadata.ClientID {
-			// In nested module contexts, preserve any pre-imported socket mapping (e.g. an explicitly
-			// passed socket argument) instead of clobbering it with the nested client's session.
-			if callerSocketStore.HasSocket(sock.IDDigest) {
-				return nil
-			}
-		}
-		if err := callerSocketStore.AddUnixSocket(sock, callerClientMetadata.ClientID, args.Path); err != nil {
-			return fmt.Errorf("failed to add unix socket to store: %w", err)
-		}
-		return nil
-	}
-	if err := upsertSocket(ctx); err != nil {
-		return inst, err
-	}
-
 	return inst, nil
 }
 
@@ -362,9 +329,9 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 	if err != nil {
 		return inst, err
 	}
-	socketStore, err := query.Sockets(ctx)
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get socket store: %w", err)
+		return inst, fmt.Errorf("failed to get dagql cache: %w", err)
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -372,104 +339,67 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-	var sourceSocket *core.Socket
+	var concrete dagql.AnyResult
+	var concreteSelf *core.Socket
 	if args.Source.Valid {
-		sourceInst, err := args.Source.Value.Load(ctx, srv)
+		concrete, err = args.Source.Value.Load(ctx, srv)
 		if err != nil {
 			return inst, fmt.Errorf("failed to load source socket: %w", err)
 		}
-		sourceSocket = sourceInst.Self()
-		if sourceSocket == nil {
+		concreteSelf, _ = dagql.UnwrapAs[*core.Socket](concrete)
+		if concreteSelf == nil {
 			return inst, errors.New("source socket is nil")
-		}
-		if !socketStore.HasSocket(sourceSocket.IDDigest) {
-			return inst, fmt.Errorf("source socket %s not found in socket store", sourceSocket.IDDigest)
 		}
 	} else {
 		if clientMetadata.SSHAuthSocketPath == "" {
 			return inst, errors.New("SSH_AUTH_SOCK is not set")
 		}
-		accessor, err := core.GetClientResourceAccessor(ctx, query, clientMetadata.SSHAuthSocketPath)
+		concreteVal := &core.Socket{
+			Kind:           core.SocketKindUnixOpaque,
+			URLVal:         (&url.URL{Scheme: "unix", Path: clientMetadata.SSHAuthSocketPath}).String(),
+			SourceClientID: clientMetadata.ClientID,
+		}
+		concrete, err = dagql.NewResultForCurrentCall(ctx, concreteVal)
 		if err != nil {
-			return inst, fmt.Errorf("failed to get client resource accessor: %w", err)
+			return inst, fmt.Errorf("failed to create source SSH auth socket: %w", err)
 		}
-		sourceSocket = &core.Socket{
-			IDDigest: hashutil.HashStrings(accessor),
-		}
-		if err := socketStore.AddUnixSocket(sourceSocket, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
-			return inst, fmt.Errorf("failed to register source SSH auth socket: %w", err)
-		}
+		concreteSelf = concreteVal
 	}
 
-	scopedDigest, err := core.ScopedSSHAuthSocketDigestFromStore(ctx, query, socketStore, sourceSocket.IDDigest)
+	fingerprints, err := concreteSelf.AgentFingerprints(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to scope SSH auth socket from agent identities: %w", err)
+		return inst, fmt.Errorf("failed to get SSH auth socket fingerprints: %w", err)
+	}
+	handle := core.ScopedSSHAuthSocketHandle(query.SecretSalt(), fingerprints)
+	if handle == "" {
+		return inst, fmt.Errorf("failed to derive SSH auth socket handle")
 	}
 
-	scopedSocket := &core.Socket{IDDigest: scopedDigest}
-	inst, err = dagql.NewResultForCurrentCall(ctx, scopedSocket)
+	handleVal := &core.Socket{
+		Kind:   core.SocketKindSSHHandle,
+		Handle: handle,
+	}
+	inst, err = dagql.NewResultForCurrentCall(ctx, handleVal)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
-	inst, err = inst.WithContentDigest(ctx, scopedDigest)
+	inst, err = inst.WithContentDigest(ctx, digest.Digest(handle))
 	if err != nil {
 		return inst, err
 	}
-
-	if err := upsertScopedSSHAuthSocket(ctx, query, args.Source.Valid, scopedSocket, sourceSocket); err != nil {
+	inst, err = inst.WithSessionResourceHandle(ctx, handle)
+	if err != nil {
+		return inst, err
+	}
+	attachedConcreteAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, concrete)
+	if err != nil {
+		return inst, fmt.Errorf("failed to attach concrete SSH auth socket: %w", err)
+	}
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, attachedConcreteAny); err != nil {
 		return inst, err
 	}
 
 	return inst, nil
-}
-
-// upsertScopedSSHAuthSocket persists the scoped socket mapping in the caller store.
-// If a source socket was provided, it aliases scoped -> source. Otherwise it registers
-// the scoped socket as a unix socket using the caller SSH auth socket session/path.
-func upsertScopedSSHAuthSocket(
-	ctx context.Context,
-	query *core.Query,
-	hasSource bool,
-	scopedSocket *core.Socket,
-	sourceSocket *core.Socket,
-) error {
-	callerSocketStore, err := query.Sockets(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get caller socket store: %w", err)
-	}
-
-	if hasSource {
-		if err := callerSocketStore.AddSocketAlias(scopedSocket, sourceSocket.IDDigest); err != nil {
-			return fmt.Errorf("failed to alias scoped SSH auth socket: %w", err)
-		}
-		return nil
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	if clientMetadata.SSHAuthSocketPath == "" {
-		// Nested evaluation contexts can exist without SSH_AUTH_SOCK available.
-		// Treat this as a no-op so replay doesn't fail; direct Host._sshAuthSocket
-		// calls still fail earlier in the resolver.
-		return nil
-	}
-
-	nonModuleParentClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
-	if err == nil && nonModuleParentClientMetadata.ClientID != clientMetadata.ClientID {
-		// In nested module contexts, keep an existing scoped socket mapping from the
-		// parent caller (for example an explicitly passed socket arg) instead of
-		// clobbering it with this nested client's own session/path.
-		if callerSocketStore.HasSocket(scopedSocket.IDDigest) {
-			return nil
-		}
-	}
-
-	if err := callerSocketStore.AddUnixSocket(scopedSocket, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
-		return fmt.Errorf("failed to register scoped SSH auth socket: %w", err)
-	}
-	return nil
 }
 
 type hostFileArgs struct {
@@ -730,15 +660,6 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 		return inst, errors.New("no ports specified")
 	}
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	socketStore, err := query.Sockets(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get socket store: %w", err)
-	}
-
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
@@ -747,14 +668,11 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 	ports := collectInputsSlice(args.Ports)
 	socks := make([]*core.Socket, 0, len(ports))
 	for _, port := range ports {
-		accessor, err := core.GetHostIPSocketAccessor(ctx, query, args.Host, port)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get host ip socket accessor: %w", err)
-		}
-
-		sock := &core.Socket{IDDigest: hashutil.HashStrings(accessor)}
-		if err := socketStore.AddIPSocket(sock, clientMetadata.ClientID, args.Host, port); err != nil {
-			return inst, fmt.Errorf("failed to add ip socket to store: %w", err)
+		sock := &core.Socket{
+			Kind:           core.SocketKindHostIP,
+			URLVal:         (&url.URL{Scheme: port.Protocol.Network(), Host: fmt.Sprintf("%s:%d", args.Host, port.Backend)}).String(),
+			PortForwardVal: port,
+			SourceClientID: clientMetadata.ClientID,
 		}
 		socks = append(socks, sock)
 	}

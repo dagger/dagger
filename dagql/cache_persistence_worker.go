@@ -151,11 +151,12 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 		payload := res.loadPayloadState()
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
-			resultID:          resultID,
-			frame:             res.loadResultCall().clone(),
-			self:              payload.self,
-			hasValue:          payload.hasValue,
-			persistedEnvelope: payload.persistedEnvelope,
+			resultID:              resultID,
+			frame:                 res.loadResultCall().clone(),
+			self:                  payload.self,
+			hasValue:              payload.hasValue,
+			sessionResourceHandle: res.sessionResourceHandle,
+			persistedEnvelope:     payload.persistedEnvelope,
 			row: persistdb.MirrorResult{
 				ID:                 int64(resultID),
 				ExpiresAtUnix:      res.expiresAtUnix,
@@ -352,9 +353,10 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		return PersistedResultEnvelope{}, fmt.Errorf("result has no call frame and no persisted envelope")
 	}
 	shared := &sharedResult{
-		self:     snapshot.self,
-		hasValue: snapshot.hasValue,
-		id:       snapshot.resultID,
+		self:                  snapshot.self,
+		hasValue:              snapshot.hasValue,
+		id:                    snapshot.resultID,
+		sessionResourceHandle: snapshot.sessionResourceHandle,
 	}
 	shared.storeResultCall(snapshot.frame)
 	persistCtx := context.WithoutCancel(ctx)

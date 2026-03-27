@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	set "github.com/hashicorp/go-set/v3"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -26,6 +27,7 @@ type PersistedResultEnvelope struct {
 	Kind         string                    `json:"kind"`
 	TypeName     string                    `json:"typeName,omitempty"`
 	ResultID     uint64                    `json:"resultID,omitempty"`
+	SessionResourceHandle SessionResourceHandle `json:"sessionResourceHandle,omitempty"`
 	ObjectJSON   json.RawMessage           `json:"objectJSON,omitempty"`
 	ScalarJSON   json.RawMessage           `json:"scalarJSON,omitempty"`
 	ElemTypeName string                    `json:"elemTypeName,omitempty"`
@@ -91,6 +93,10 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			resultID = persistedResultID
 		}
 	}
+	var sessionResourceHandle SessionResourceHandle
+	if shared := res.cacheSharedResult(); shared != nil {
+		sessionResourceHandle = shared.sessionResourceHandle
+	}
 
 	if _, ok := res.(AnyObjectResult); ok {
 		encoder, ok := res.Unwrap().(PersistedObject)
@@ -102,11 +108,12 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			return PersistedResultEnvelope{}, fmt.Errorf("encode persisted object payload: %w", err)
 		}
 		return PersistedResultEnvelope{
-			Version:    2,
-			Kind:       persistedResultKindObject,
-			TypeName:   res.Type().Name(),
-			ResultID:   resultID,
-			ObjectJSON: objectJSON,
+			Version:               2,
+			Kind:                  persistedResultKindObject,
+			TypeName:              res.Type().Name(),
+			ResultID:              resultID,
+			SessionResourceHandle: sessionResourceHandle,
+			ObjectJSON:            objectJSON,
 		}, nil
 	}
 	if encoder, ok := res.Unwrap().(PersistedObject); ok {
@@ -115,11 +122,12 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			return PersistedResultEnvelope{}, fmt.Errorf("encode persisted object payload: %w", err)
 		}
 		return PersistedResultEnvelope{
-			Version:    2,
-			Kind:       persistedResultKindObject,
-			TypeName:   res.Type().Name(),
-			ResultID:   resultID,
-			ObjectJSON: objectJSON,
+			Version:               2,
+			Kind:                  persistedResultKindObject,
+			TypeName:              res.Type().Name(),
+			ResultID:              resultID,
+			SessionResourceHandle: sessionResourceHandle,
+			ObjectJSON:            objectJSON,
 		}, nil
 	}
 
@@ -137,12 +145,13 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			itemEnvs = append(itemEnvs, itemEnv)
 		}
 		return PersistedResultEnvelope{
-			Version:      2,
-			Kind:         persistedResultKindList,
-			TypeName:     res.Type().Name(),
-			ResultID:     resultID,
-			ElemTypeName: enumerable.Element().Type().Name(),
-			Items:        itemEnvs,
+			Version:               2,
+			Kind:                  persistedResultKindList,
+			TypeName:              res.Type().Name(),
+			ResultID:              resultID,
+			SessionResourceHandle: sessionResourceHandle,
+			ElemTypeName:          enumerable.Element().Type().Name(),
+			Items:                 itemEnvs,
 		}, nil
 	}
 
@@ -151,15 +160,31 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		return PersistedResultEnvelope{}, fmt.Errorf("encode scalar_json payload: %w", err)
 	}
 	return PersistedResultEnvelope{
-		Version:    2,
-		Kind:       persistedResultKindScalar,
-		TypeName:   res.Type().Name(),
-		ResultID:   resultID,
-		ScalarJSON: scalarJSON,
+		Version:               2,
+		Kind:                  persistedResultKindScalar,
+		TypeName:              res.Type().Name(),
+		ResultID:              resultID,
+		SessionResourceHandle: sessionResourceHandle,
+		ScalarJSON:            scalarJSON,
 	}, nil
 }
 
 func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {
+	setHandle := func(res AnyResult) AnyResult {
+		if res == nil || env.SessionResourceHandle == "" {
+			return res
+		}
+		shared := res.cacheSharedResult()
+		if shared == nil {
+			return res
+		}
+		shared.sessionResourceHandle = env.SessionResourceHandle
+		reqs := set.NewTreeSet(compareSessionResourceHandles)
+		reqs.Insert(env.SessionResourceHandle)
+		shared.requiredSessionResources = reqs
+		return res
+	}
+
 	switch env.Kind {
 	case persistedResultKindNull:
 		return nil, nil
@@ -191,7 +216,7 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 		if err != nil {
 			return nil, fmt.Errorf("decode object_id envelope instantiate: %w", err)
 		}
-		return objRes, nil
+		return setHandle(objRes), nil
 	case persistedResultKindScalar:
 		if call == nil {
 			return nil, fmt.Errorf("decode scalar_json envelope: missing authoritative call")
@@ -207,14 +232,22 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 				if err != nil {
 					return nil, fmt.Errorf("decode scalar_json envelope input: %w", err)
 				}
-				return NewResultForCall(input, call)
+				res, err := NewResultForCall(input, call)
+				if err != nil {
+					return nil, err
+				}
+				return setHandle(res), nil
 			}
 		}
 		builtin, err := decodeBuiltinPersistedScalar(env.TypeName, raw)
 		if err != nil {
 			return nil, fmt.Errorf("decode scalar_json envelope builtin input: %w", err)
 		}
-		return NewResultForCall(builtin, call)
+		res, err := NewResultForCall(builtin, call)
+		if err != nil {
+			return nil, err
+		}
+		return setHandle(res), nil
 	case persistedResultKindList:
 		if call == nil {
 			return nil, fmt.Errorf("decode list envelope: missing authoritative call")
@@ -246,10 +279,14 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 			elem = persistedTypedRef{name: env.ElemTypeName}
 		}
 
-		return NewResultForCall(DynamicResultArrayOutput{
+		res, err := NewResultForCall(DynamicResultArrayOutput{
 			Elem:   elem,
 			Values: items,
 		}, call)
+		if err != nil {
+			return nil, err
+		}
+		return setHandle(res), nil
 	default:
 		return nil, fmt.Errorf("decode persisted result envelope: unsupported kind %q", env.Kind)
 	}

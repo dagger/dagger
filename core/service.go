@@ -213,13 +213,9 @@ func (svc *Service) Endpoint(ctx context.Context, dig digest.Digest, port int, s
 		}
 
 		if port == 0 {
-			socketStore, err := query.Sockets(ctx)
+			portForward, err := svc.HostSockets[0].PortForward(ctx)
 			if err != nil {
-				return "", fmt.Errorf("failed to get socket store: %w", err)
-			}
-			portForward, ok := socketStore.GetSocketPortForward(svc.HostSockets[0].IDDigest)
-			if !ok {
-				return "", fmt.Errorf("service endpoint: socket not found: %s", svc.HostSockets[0].IDDigest)
+				return "", fmt.Errorf("service endpoint: socket port forward: %w", err)
 			}
 			port = portForward.FrontendOrBackendPort()
 		}
@@ -508,11 +504,7 @@ func (svc *Service) startContainer(
 		resize = convertResizeChannel(ctx, sio.ResizeCh)
 	}
 
-	secretEnvs, err := ctr.secretEnvs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	secretEnv, err := loadSecretEnv(ctx, bksession.NewGroup(bk.ID()), bk.SessionManager, secretEnvs)
+	secretEnv, err := ctr.secretEnvValues(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -874,11 +866,6 @@ func (svc *Service) startReverseTunnel(ctx context.Context, dig digest.Digest) (
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	sockStore, err := query.Sockets(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get socket store: %w", err)
-	}
-
 	// we don't need a full container, just a CNI provisioned network namespace to listen in
 	netNS, err := bk.NewNetworkNamespace(ctx, fullHost)
 	if err != nil {
@@ -888,9 +875,9 @@ func (svc *Service) startReverseTunnel(ctx context.Context, dig digest.Digest) (
 	checkPorts := []Port{}
 	descs := make([]string, 0, len(svc.HostSockets))
 	for _, sock := range svc.HostSockets {
-		port, ok := sockStore.GetSocketPortForward(sock.IDDigest)
-		if !ok {
-			return nil, fmt.Errorf("service reverse tunnel: socket not found: %s", sock.IDDigest)
+		port, err := sock.PortForward(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("service reverse tunnel: socket port forward: %w", err)
 		}
 		desc := fmt.Sprintf("tunnel %s %d -> %d", port.Protocol, port.FrontendOrBackendPort(), port.Backend)
 		descs = append(descs, desc)
@@ -913,10 +900,9 @@ func (svc *Service) startReverseTunnel(ctx context.Context, dig digest.Digest) (
 	}()
 
 	tunnel := &c2hTunnel{
-		bk:        bk,
-		ns:        netNS,
-		socks:     svc.HostSockets,
-		sockStore: sockStore,
+		bk:    bk,
+		ns:    netNS,
+		socks: svc.HostSockets,
 	}
 
 	// NB: decouple from the incoming ctx cancel and add our own

@@ -148,16 +148,17 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 
 			res := &sharedResult{
-				id:                 resultID,
-				isObject:           env.Kind == persistedResultKindObject,
-				expiresAtUnix:      row.ExpiresAtUnix,
-				createdAtUnixNano:  row.CreatedAtUnixNano,
-				lastUsedAtUnixNano: row.LastUsedAtUnixNano,
-				sizeEstimateBytes:  row.SizeEstimateBytes,
-				usageIdentity:      row.UsageIdentity,
-				description:        row.Description,
-				recordType:         row.RecordType,
-				persistedEnvelope:  &env,
+				id:                    resultID,
+				isObject:              env.Kind == persistedResultKindObject,
+				sessionResourceHandle: env.SessionResourceHandle,
+				expiresAtUnix:         row.ExpiresAtUnix,
+				createdAtUnixNano:     row.CreatedAtUnixNano,
+				lastUsedAtUnixNano:    row.LastUsedAtUnixNano,
+				sizeEstimateBytes:     row.SizeEstimateBytes,
+				usageIdentity:         row.UsageIdentity,
+				description:           row.Description,
+				recordType:            row.RecordType,
+				persistedEnvelope:     &env,
 			}
 			res.storeResultCall(&frame)
 			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, &frame)
@@ -341,6 +342,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role, row.Slot)
 		}
 
+		for _, res := range c.resultsByID {
+			if err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
+				return fmt.Errorf("recompute imported required session resources for result %d: %w", res.id, err)
+			}
+		}
+
 		for resultID := range c.resultsByID {
 			outputEqClasses := c.outputEqClassesForResultLocked(resultID)
 			for outputEqID := range outputEqClasses {
@@ -392,6 +399,15 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				res.self = decoded.Unwrap()
 				res.hasValue = true
 				setTypedPersistedResultID(res.self, resultID)
+				decodedShared := decoded.cacheSharedResult()
+				if decodedShared != nil {
+					res.sessionResourceHandle = decodedShared.sessionResourceHandle
+					if decodedShared.requiredSessionResources != nil {
+						res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
+					} else if decodedShared.sessionResourceHandle == "" {
+						res.requiredSessionResources = nil
+					}
+				}
 				res.persistedEnvelope = nil
 			}
 			res.payloadMu.Unlock()
@@ -475,6 +491,15 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		res.self = decoded.Unwrap()
 		res.hasValue = true
 		setTypedPersistedResultID(res.self, res.id)
+		decodedShared := decoded.cacheSharedResult()
+		if decodedShared != nil {
+			res.sessionResourceHandle = decodedShared.sessionResourceHandle
+			if decodedShared.requiredSessionResources != nil {
+				res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
+			} else if decodedShared.sessionResourceHandle == "" {
+				res.requiredSessionResources = nil
+			}
+		}
 		res.persistedEnvelope = nil
 		c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 	}

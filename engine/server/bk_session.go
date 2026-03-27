@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	sessioncontent "github.com/dagger/dagger/internal/buildkit/session/content"
-	"github.com/dagger/dagger/internal/buildkit/session/secrets/secretsprovider"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"go.opentelemetry.io/otel/trace"
 
@@ -40,8 +39,6 @@ func (srv *Server) newBuildkitSession(ctx context.Context, c *daggerClient) (*bk
 		return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
 	}
 
-	sess.Allow(secretsprovider.NewSecretProvider(c.secretStore.AsBuildkitSecretStore()))
-	sess.Allow(c.socketStore)
 	sess.Allow(&authProxy{c, srv.bkSessionManager})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show

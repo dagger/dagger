@@ -217,6 +217,125 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 	}
 }
 
+func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error {
+	if res == nil {
+		return nil
+	}
+
+	var reqs *set.TreeSet[SessionResourceHandle]
+	if res.sessionResourceHandle != "" {
+		reqs = set.NewTreeSet(compareSessionResourceHandles)
+		reqs.Insert(res.sessionResourceHandle)
+	}
+	for depID := range res.deps {
+		dep := c.resultsByID[depID]
+		if dep == nil {
+			return fmt.Errorf("recompute required session resources: missing dep result %d", depID)
+		}
+		if dep.requiredSessionResources == nil {
+			continue
+		}
+		if reqs == nil {
+			reqs = dep.requiredSessionResources.Copy()
+		} else {
+			reqs = reqs.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
+		}
+	}
+	if reqs == nil || reqs.Empty() {
+		res.requiredSessionResources = nil
+		return nil
+	}
+	res.requiredSessionResources = reqs
+	return nil
+}
+
+func (c *Cache) BindSessionResource(ctx context.Context, sessionID string, handle SessionResourceHandle, concrete AnyResult) error {
+	if c == nil {
+		return errors.New("bind session resource: nil cache")
+	}
+	if sessionID == "" {
+		return errors.New("bind session resource: empty session ID")
+	}
+	if handle == "" {
+		return errors.New("bind session resource: empty handle")
+	}
+	if concrete == nil {
+		return errors.New("bind session resource: nil concrete result")
+	}
+	shared := concrete.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return fmt.Errorf("bind session resource %q: concrete result %T is not attached", handle, concrete)
+	}
+
+	c.trackSessionResult(ctx, sessionID, concrete, false)
+
+	c.sessionMu.Lock()
+	if c.sessionResourcesBySession == nil {
+		c.sessionResourcesBySession = make(map[string]map[SessionResourceHandle]*set.TreeSet[*sharedResult])
+	}
+	if c.sessionResourcesBySession[sessionID] == nil {
+		c.sessionResourcesBySession[sessionID] = make(map[SessionResourceHandle]*set.TreeSet[*sharedResult])
+	}
+	bindings := c.sessionResourcesBySession[sessionID]
+	if bindings[handle] == nil {
+		bindings[handle] = set.NewTreeSet(compareSharedResults)
+	}
+	bindings[handle].Insert(shared)
+	if c.sessionHandlesBySession == nil {
+		c.sessionHandlesBySession = make(map[string]*set.TreeSet[SessionResourceHandle])
+	}
+	if c.sessionHandlesBySession[sessionID] == nil {
+		c.sessionHandlesBySession[sessionID] = set.NewTreeSet(compareSessionResourceHandles)
+	}
+	c.sessionHandlesBySession[sessionID].Insert(handle)
+	c.sessionMu.Unlock()
+
+	return nil
+}
+
+func (c *Cache) ResolveSessionResource(
+	ctx context.Context,
+	sessionID string,
+	resolver TypeResolver,
+	handle SessionResourceHandle,
+) (AnyResult, error) {
+	if c == nil {
+		return nil, errors.New("resolve session resource: nil cache")
+	}
+	if sessionID == "" {
+		return nil, errors.New("resolve session resource: empty session ID")
+	}
+	if resolver == nil {
+		return nil, errors.New("resolve session resource: type resolver is nil")
+	}
+	if handle == "" {
+		return nil, errors.New("resolve session resource: empty handle")
+	}
+
+	c.sessionMu.Lock()
+	bindings := c.sessionResourcesBySession[sessionID]
+	var shared *sharedResult
+	if bindingSet := bindings[handle]; bindingSet != nil {
+		for candidate := range bindingSet.Items() {
+			shared = candidate
+			break
+		}
+	}
+	c.sessionMu.Unlock()
+	if shared == nil {
+		return nil, fmt.Errorf("resolve session resource %q: no bound resource for session %q", handle, sessionID)
+	}
+
+	touchSharedResultLastUsed(shared, time.Now().UnixNano())
+	if !shared.loadPayloadState().hasValue {
+		return Result[Typed]{shared: shared}, nil
+	}
+	if !shared.loadPayloadState().isObject {
+		return Result[Typed]{shared: shared}, nil
+	}
+	return wrapSharedResultWithResolver(shared, false, resolver)
+}
+
 func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID string, res AnyResult) {
 	if c == nil || sessionID == "" || res == nil {
 		return
@@ -321,6 +440,8 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	delete(c.sessionResultIDsBySession, sessionID)
 	delete(c.sessionArbitraryCallKeysBySession, sessionID)
 	delete(c.sessionLazySpansBySession, sessionID)
+	delete(c.sessionResourcesBySession, sessionID)
+	delete(c.sessionHandlesBySession, sessionID)
 	c.sessionMu.Unlock()
 
 	var (
@@ -714,6 +835,8 @@ type Cache struct {
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
+	sessionResourcesBySession         map[string]map[SessionResourceHandle]*set.TreeSet[*sharedResult]
+	sessionHandlesBySession           map[string]*set.TreeSet[SessionResourceHandle]
 
 	sqlDB *sql.DB
 	// persistent normalized cache store (disk persistence/import).
@@ -738,6 +861,34 @@ type OnReleaseFunc = func(context.Context) error
 type sharedResultID uint64
 
 const sharedResultSizeUnknown int64 = -1
+
+func compareSessionResourceHandles(a, b SessionResourceHandle) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func compareSharedResults(a, b *sharedResult) int {
+	switch {
+	case a == nil && b == nil:
+		return 0
+	case a == nil:
+		return -1
+	case b == nil:
+		return 1
+	case a.id < b.id:
+		return -1
+	case a.id > b.id:
+		return 1
+	default:
+		return 0
+	}
+}
 
 type cacheUsageSizer interface {
 	// CacheUsageSize returns the concrete size of the cached payload when known.
@@ -785,6 +936,11 @@ type sharedResult struct {
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
 	// during materialization.
 	deps map[sharedResultID]struct{}
+	// sessionResourceHandle is set when this result is itself an attached
+	// session-resource handle leaf. requiredSessionResources is the flattened
+	// transitive set of handle requirements for cache-hit validation.
+	sessionResourceHandle    SessionResourceHandle
+	requiredSessionResources *set.TreeSet[SessionResourceHandle]
 	// persistedSnapshotLinks are imported snapshot-link associations used before
 	// typed self payload is decoded/rehydrated. They are not child-result deps.
 	persistedSnapshotLinks []PersistedSnapshotRefLink
@@ -1227,6 +1383,9 @@ func (c *Cache) addExplicitDependencyLocked(
 	parentRes.deps[depRes.id] = struct{}{}
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
+	if err := c.recomputeRequiredSessionResourcesLocked(parentRes); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -1535,11 +1694,26 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 	if frame == nil {
 		return r, fmt.Errorf("set content digest on %T: missing call frame", r.Self())
 	}
+	var deps map[sharedResultID]struct{}
+	if len(r.shared.deps) > 0 {
+		deps = make(map[sharedResultID]struct{}, len(r.shared.deps))
+		for depID := range r.shared.deps {
+			deps[depID] = struct{}{}
+		}
+	}
 	r.shared = &sharedResult{
-		self:                   state.self,
-		isObject:               state.isObject,
-		resultCall:             frame.fork(),
-		hasValue:               state.hasValue,
+		self:                  state.self,
+		isObject:              state.isObject,
+		resultCall:            frame.fork(),
+		hasValue:              state.hasValue,
+		deps:                  deps,
+		sessionResourceHandle: r.shared.sessionResourceHandle,
+		requiredSessionResources: func() *set.TreeSet[SessionResourceHandle] {
+			if r.shared.requiredSessionResources == nil {
+				return nil
+			}
+			return r.shared.requiredSessionResources.Copy()
+		}(),
 		persistedEnvelope:      state.persistedEnvelope,
 		persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
 		createdAtUnixNano:      state.createdAtUnixNano,
@@ -1568,10 +1742,77 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 	return r, nil
 }
 
+func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle SessionResourceHandle) (Result[T], error) {
+	if handle == "" {
+		return r, fmt.Errorf("set session resource handle on %T: empty handle", r.Self())
+	}
+	if r.shared == nil {
+		return r, fmt.Errorf("set session resource handle on %T: missing shared result", r.Self())
+	}
+	if r.shared.id != 0 {
+		cache, err := EngineCache(ctx)
+		if err != nil {
+			return r, fmt.Errorf("set session resource handle on %T: current dagql cache: %w", r.Self(), err)
+		}
+		cache.egraphMu.Lock()
+		defer cache.egraphMu.Unlock()
+
+		cached := cache.resultsByID[r.shared.id]
+		if cached == nil {
+			return r, fmt.Errorf("set session resource handle on %T: result %d missing from cache", r.Self(), r.shared.id)
+		}
+		cached.sessionResourceHandle = handle
+		if err := cache.recomputeRequiredSessionResourcesLocked(cached); err != nil {
+			return r, err
+		}
+		return r, nil
+	}
+
+	state := r.shared.loadPayloadState()
+	frame := r.shared.loadResultCall()
+	var deps map[sharedResultID]struct{}
+	if len(r.shared.deps) > 0 {
+		deps = make(map[sharedResultID]struct{}, len(r.shared.deps))
+		for depID := range r.shared.deps {
+			deps[depID] = struct{}{}
+		}
+	}
+	reqs := set.NewTreeSet(compareSessionResourceHandles)
+	if r.shared.requiredSessionResources != nil {
+		reqs = r.shared.requiredSessionResources.Copy()
+	}
+	reqs.Insert(handle)
+	r.shared = &sharedResult{
+		self:                  state.self,
+		isObject:              state.isObject,
+		resultCall:            frame,
+		hasValue:              state.hasValue,
+		deps:                  deps,
+		sessionResourceHandle: handle,
+		requiredSessionResources: reqs,
+		persistedEnvelope:      state.persistedEnvelope,
+		persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
+		createdAtUnixNano:      state.createdAtUnixNano,
+		lastUsedAtUnixNano:     state.lastUsedAtUnixNano,
+		sizeEstimateBytes:      r.shared.sizeEstimateBytes,
+		usageIdentity:          r.shared.usageIdentity,
+		description:            r.shared.description,
+		recordType:             r.shared.recordType,
+	}
+	if frame != nil {
+		r.shared.storeResultCall(frame.fork())
+	}
+	return r, nil
+}
+
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
 func (r Result[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
 	return r.WithContentDigest(ctx, customDigest)
+}
+
+func (r Result[T]) WithSessionResourceHandleAny(ctx context.Context, handle SessionResourceHandle) (AnyResult, error) {
+	return r.WithSessionResourceHandle(ctx, handle)
 }
 
 // String returns the instance in Class@sha256:... format.
@@ -1697,10 +1938,32 @@ func (r ObjectResult[T]) WithContentDigest(ctx context.Context, contentDigest di
 	}, nil
 }
 
+func (r ObjectResult[T]) WithSessionResourceHandle(ctx context.Context, handle SessionResourceHandle) (ObjectResult[T], error) {
+	res, err := r.Result.WithSessionResourceHandle(ctx, handle)
+	if err != nil {
+		return ObjectResult[T]{}, err
+	}
+	return ObjectResult[T]{
+		Result: res,
+		class:  r.class,
+	}, nil
+}
+
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
 func (r ObjectResult[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
 	res, err := r.Result.WithContentDigest(ctx, customDigest)
+	if err != nil {
+		return nil, err
+	}
+	return ObjectResult[T]{
+		Result: res,
+		class:  r.class,
+	}, nil
+}
+
+func (r ObjectResult[T]) WithSessionResourceHandleAny(ctx context.Context, handle SessionResourceHandle) (AnyResult, error) {
+	res, err := r.Result.WithSessionResourceHandle(ctx, handle)
 	if err != nil {
 		return nil, err
 	}
@@ -2315,6 +2578,12 @@ func (c *Cache) getOrInitCall(
 			resultCall: req.ResultCall.clone(),
 			hasValue:   true,
 		}
+		if shared := val.cacheSharedResult(); shared != nil {
+			detached.sessionResourceHandle = shared.sessionResourceHandle
+			if shared.requiredSessionResources != nil {
+				detached.requiredSessionResources = shared.requiredSessionResources.Copy()
+			}
+		}
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
 			return nil, fmt.Errorf("do-not-cache result %T cannot implement OnReleaser", onReleaser)
 		}
@@ -2481,7 +2750,7 @@ func (c *Cache) lookupCacheForDigests(
 	nowUnix := now.Unix()
 	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
 	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
-	hitRes := match.hitRes
+	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, recipeDigest.String(), false, -1, "", 0)
 		c.egraphMu.Unlock()
@@ -2698,6 +2967,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				if frame := shared.loadResultCall(); frame != nil {
 					oc.res.storeResultCall(frame.clone())
 					c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_existing_value_frame", nil, oc.res.loadResultCall())
+				}
+				oc.res.sessionResourceHandle = shared.sessionResourceHandle
+				if shared.requiredSessionResources != nil {
+					oc.res.requiredSessionResources = shared.requiredSessionResources.Copy()
 				}
 			}
 			if oc.res.loadResultCall() == nil {
@@ -2949,6 +3222,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.deps[depID] = struct{}{}
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
+	}
+	if err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
+		c.egraphMu.Unlock()
+		return err
 	}
 	if oc.isPersistable {
 		c.upsertPersistedEdgeLocked(ctx, oc.res, candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds))

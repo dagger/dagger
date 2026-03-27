@@ -1026,66 +1026,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	return inst, nil
 }
 
-/*
-TODO: re-implement Dockerfile.
-
-type containerBuildArgs struct {
-	Context    core.DirectoryID
-	Dockerfile string                             `default:"Dockerfile"`
-	Target     string                             `default:""`
-	BuildArgs  []dagql.InputObject[core.BuildArg] `default:"[]"`
-	Secrets    []core.SecretID                    `default:"[]"`
-	NoInit     bool                               `default:"false"`
-}
-
-func (s *containerSchema) build(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerBuildArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
-	}
-
-	dir, err := args.Context.Load(ctx, srv)
-	if err != nil {
-		return nil, err
-	}
-	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
-	if err != nil {
-		return nil, err
-	}
-	secretStore, err := query.Secrets(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	buildctxDir, err := applyDockerIgnore(ctx, srv, dir, args.Dockerfile)
-	if err != nil {
-		return nil, err
-	}
-
-	buildctxDirID, err := buildctxDir.RecipeID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get build context ID: %w", err)
-	}
-
-	return parent.Self().Build(
-		ctx,
-		dir.Self(),
-		buildctxDirID,
-		args.Dockerfile,
-		collectInputsSlice(args.BuildArgs),
-		args.Target,
-		secrets,
-		secretStore,
-		args.NoInit,
-		nil,
-	)
-}
-*/
-
 type containerWithRootFSArgs struct {
 	Directory core.DirectoryID
 }
@@ -2847,7 +2787,7 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithUnixSocketFromParent(ctx, parent, path, socket.Self(), args.Owner)
+	return ctr.WithUnixSocketFromParent(ctx, parent, path, socket, args.Owner)
 }
 
 type containerWithoutUnixSocketArgs struct {
@@ -3230,15 +3170,7 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 		return nil, err
 	}
 
-	secretStore, err := query.Secrets(ctx)
-	if err != nil {
-		return nil, err
-	}
-	secretDigest := core.SecretDigest(ctx, secret)
-	if secretDigest == "" {
-		return nil, fmt.Errorf("failed to get secret digest: secret must have a digest")
-	}
-	secretBytes, err := secretStore.GetSecretPlaintext(ctx, secretDigest)
+	secretBytes, err := secret.Self().Plaintext(ctx)
 	if err != nil {
 		return nil, err
 	}

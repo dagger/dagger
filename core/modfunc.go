@@ -417,16 +417,6 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		return nil, ud.errorf(err, "resolve object (%q)", typename)
 	}
 
-	if secret, ok := dagql.UnwrapAs[dagql.ObjectResult[*Secret]](result); ok {
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		if err := secretStore.AddSecret(ctx, secret); err != nil {
-			return nil, fmt.Errorf("failed to add secret: %w", err)
-		}
-	}
-
 	id, err := result.Select(mainCtx, srv, dagql.Selector{
 		Field: "id",
 	})

@@ -36,22 +36,14 @@ func (*Host) DecodePersistedObject(context.Context, *dagql.Server, uint64, *dagq
 
 // Lookup an environment variable in the host system from the current context
 func (Host) GetEnv(ctx context.Context, name string) string {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return ""
-	}
-	secretStore, err := query.Secrets(ctx)
-	if err != nil {
-		return ""
-	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return ""
 	}
-	plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, &Secret{
-		URI:               "env://" + name,
-		BuildkitSessionID: clientMetadata.ClientID,
-	})
+	plaintext, err := (&Secret{
+		URIVal:         "env://" + name,
+		SourceClientID: clientMetadata.ClientID,
+	}).Plaintext(ctx)
 	if err != nil {
 		return ""
 	}

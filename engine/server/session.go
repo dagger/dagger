@@ -32,6 +32,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
 	"golang.org/x/sync/errgroup"
 	"resenje.org/singleflight"
 
@@ -124,9 +125,6 @@ type daggerClient struct {
 	// the number of active http requests to any endpoint from this client,
 	// used to determine when to cleanup the client+session
 	activeCount int
-
-	secretStore *core.SecretStore
-	socketStore *core.SocketStore
 
 	dag       *dagql.Server
 	dagqlRoot *core.Query
@@ -468,10 +466,6 @@ func (srv *Server) initializeDaggerClient(
 		"mainClientID", client.daggerSession.mainClientCallerID,
 	)
 	slog.Info("initializing new client")
-
-	// initialize all the buildkit+session attachable state for the client
-	client.secretStore = core.NewSecretStore(srv.bkSessionManager)
-	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
 
 	var callerG singleflight.Group[string, bksession.Caller]
 	client.getClientCaller = func(id string) (bksession.Caller, error) {
@@ -1394,6 +1388,25 @@ func (srv *Server) SpecificClientMetadata(ctx context.Context, clientID string) 
 	return clientMD.clientMetadata, nil
 }
 
+func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID string) (*grpc.ClientConn, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := client.getClientCaller(clientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session attachable caller for client %q: %w", clientID, err)
+	}
+	if caller == nil {
+		return nil, fmt.Errorf("session attachable caller for client %q was nil", clientID)
+	}
+	conn := caller.Conn()
+	if conn == nil {
+		return nil, fmt.Errorf("session attachable conn for client %q was nil", clientID)
+	}
+	return conn, nil
+}
+
 // The nearest ancestor client that is not a module (either a caller from the host like the CLI
 // or a nested exec). Useful for figuring out where local sources should be resolved from through
 // chains of dependency modules.
@@ -1463,24 +1476,6 @@ func (srv *Server) MuxEndpoint(ctx context.Context, path string, handler http.Ha
 	defer client.daggerSession.endpointMu.Unlock()
 	client.daggerSession.endpoints[path] = handler
 	return nil
-}
-
-// The secret store for the current client
-func (srv *Server) Secrets(ctx context.Context) (*core.SecretStore, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return client.secretStore, nil
-}
-
-// The socket store for the current client
-func (srv *Server) Sockets(ctx context.Context) (*core.SocketStore, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return client.socketStore, nil
 }
 
 // The auth provider for the current client
