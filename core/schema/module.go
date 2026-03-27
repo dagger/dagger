@@ -11,7 +11,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 )
 
 type moduleSchema struct{}
@@ -48,7 +47,15 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
-			Doc(`The TypeDef representations of the objects currently being served in the session.`),
+			Doc(`The TypeDef representations of the objects currently being served in the session.`).
+			Args(
+				dagql.Arg("hideCore").Doc(
+					`Strip core API functions from the Query type, leaving only`,
+					`module-sourced functions (constructors, entrypoint proxies, etc.).`,
+					`Core types (Container, Directory, etc.) are kept so return types`,
+					`and method chaining still work.`,
+				),
+			),
 
 		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
@@ -754,7 +761,10 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 	return void, query.ServeModule(ctx, modMeta, includeDependencies)
 }
 
-func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args struct{}) (dagql.Array[*core.TypeDef], error) {
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args struct {
+	HideCore dagql.Optional[dagql.Boolean]
+},
+) (dagql.Array[*core.TypeDef], error) {
 	served, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
@@ -768,12 +778,7 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 		return nil, err
 	}
 
-	// When HideCoreAPI is set (by the CLI/shell), strip core Query-root
-	// functions so that core API fields (container, directory,
-	// loadContainerFromID, etc.) don't appear alongside entrypoint
-	// functions. Core types (Container, Directory, etc.) are kept so
-	// return types and method chaining still work.
-	if md, _ := engine.ClientMetadataFromContext(ctx); md != nil && md.HideCoreAPI {
+	if args.HideCore.GetOr(dagql.NewBoolean(false)).Bool() {
 		typeDefs = stripCoreQueryFunctions(typeDefs)
 	}
 
@@ -782,18 +787,17 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 
 // stripCoreQueryFunctions removes core-originated functions from the Query
 // type definition, leaving only module-sourced functions (constructors,
-// entrypoint proxies, etc.). This is used when HideCoreAPI is set so the
-// CLI/shell only sees module functions at the top level.
+// entrypoint proxies, etc.). Core types (Container, Directory, etc.) are
+// kept so return types and method chaining still work. The "with" field
+// (entrypoint constructor mechanism) is preserved so clients can discover
+// constructor arguments.
 func stripCoreQueryFunctions(typeDefs []*core.TypeDef) []*core.TypeDef {
 	result := make([]*core.TypeDef, 0, len(typeDefs))
 	for _, td := range typeDefs {
 		if td.AsObject.Valid && td.AsObject.Value.Name == "Query" {
-			// Clone the Query typedef and filter its functions.
 			obj := td.AsObject.Value.Clone()
 			filtered := make([]*core.Function, 0, len(obj.Functions))
 			for _, fn := range obj.Functions {
-				// Keep functions that originate from a module (non-empty
-				// SourceModuleName). Core functions have empty source.
 				if fn.SourceModuleName != "" {
 					filtered = append(filtered, fn)
 				}

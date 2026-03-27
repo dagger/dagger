@@ -57,10 +57,9 @@ available functions.
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := initModuleParams(args)
-		params.HideCoreAPI = true // only show entrypoint fns + modules
 		return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 			// -m modules are loaded at engine connect time as extra modules.
-			mod, err := initializeWorkspace(ctx, engineClient.Dagger())
+			mod, err := initializeWorkspace(ctx, engineClient.Dagger(), loadTypeDefsOpts{HideCore: true})
 			if err != nil {
 				return err
 			}

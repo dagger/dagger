@@ -37,13 +37,13 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 //
 // The CLI consumes workspace entrypoint methods and module constructors
 // directly from the engine schema's Query root.
-func initializeWorkspace(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
+func initializeWorkspace(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load workspace: .")
 	defer telemetry.EndWithCause(span, &rerr)
 
 	def := &moduleDef{}
 
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, opts...); err != nil {
 		return nil, err
 	}
 
@@ -280,17 +280,30 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	return def, nil
 }
 
+// loadTypeDefsOpts configures the loadTypeDefs call.
+type loadTypeDefsOpts struct {
+	// HideCore strips core API functions from the Query type, leaving
+	// only module-sourced functions (constructors, entrypoint proxies).
+	HideCore bool
+}
+
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
-func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr error) {
+func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rerr error) {
 	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(loadSpan, &rerr)
+
+	var o loadTypeDefsOpts
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 
 	var res struct {
 		TypeDefs []*modTypeDef
 	}
 
 	err := dag.Do(ctx, &dagger.Request{
-		Query: loadTypeDefsQuery,
+		Query:     loadTypeDefsQuery,
+		Variables: map[string]any{"hideCore": o.HideCore},
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -358,6 +371,15 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 			}
 		}
 	}
+
+	// Strip "with" from the visible functions list — it's an entrypoint
+	// constructor mechanism exposed as constructor flags, not a
+	// user-facing sub-command. (Constructor detection above has already
+	// captured it.)
+	rootType.AsObject.Functions = slices.DeleteFunc(
+		rootType.AsObject.Functions,
+		func(fn *modFunction) bool { return fn.Name == "with" },
+	)
 
 	return nil
 }

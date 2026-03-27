@@ -188,7 +188,6 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				coreOnly := shouldSkipWorkspaceModules(fc.DisableModuleLoad)
 				params := initModuleParams(execArgs)
 				params.SkipWorkspaceModules = coreOnly
-				params.HideCoreAPI = !coreOnly
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
@@ -321,7 +320,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
 		// -m modules are loaded at engine connect time as extra modules.
-		mod, err = initializeWorkspace(ctx, fc.c.Dagger())
+		mod, err = initializeWorkspace(ctx, fc.c.Dagger(), loadTypeDefsOpts{HideCore: true})
 	}
 	if err != nil {
 		return err

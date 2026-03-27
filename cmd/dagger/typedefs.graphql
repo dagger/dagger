@@ -65,8 +65,8 @@ fragment FieldParts on FieldTypeDef {
   }
 }
 
-query TypeDefs {
-  typeDefs: currentTypeDefs {
+query TypeDefs($hideCore: Boolean) {
+  typeDefs: currentTypeDefs(hideCore: $hideCore) {
     kind
     optional
     asObject {

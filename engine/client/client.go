@@ -127,10 +127,6 @@ type Params struct {
 
 	SkipWorkspaceModules bool
 
-	// HideCoreAPI prevents core API fields from appearing in the
-	// client-facing schema served to this client.
-	HideCoreAPI bool
-
 	// Workspace explicitly declares workspace binding for this client.
 	Workspace *string
 
@@ -1412,9 +1408,6 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.SkipWorkspaceModules {
 		md.SkipWorkspaceModules = true
-	}
-	if c.HideCoreAPI {
-		md.HideCoreAPI = true
 	}
 	if c.Workspace != nil {
 		md.Workspace = c.Workspace
