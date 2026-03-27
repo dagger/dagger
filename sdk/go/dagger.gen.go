@@ -11684,21 +11684,9 @@ func (r *Query) CurrentModule() *CurrentModule {
 	}
 }
 
-// CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
-type CurrentTypeDefsOpts struct {
-	// Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
-	IncludeCore bool
-}
-
 // The TypeDef representations of the objects currently being served in the session.
-func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
+func (r *Query) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `includeCore` optional argument
-		if !querybuilder.IsZeroValue(opts[i].IncludeCore) {
-			q = q.Arg("includeCore", opts[i].IncludeCore)
-		}
-	}
 
 	q = q.Select("id")
 

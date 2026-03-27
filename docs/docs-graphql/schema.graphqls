@@ -4780,12 +4780,7 @@ type Query {
   """
   The TypeDef representations of the objects currently being served in the session.
   """
-  currentTypeDefs(
-    """
-    Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
-    """
-    includeCore: Boolean
-  ): [TypeDef!]!
+  currentTypeDefs: [TypeDef!]!
 
   """Detect and return the current workspace."""
   currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")

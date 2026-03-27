@@ -117,12 +117,9 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * The TypeDef representations of the objects currently being served in the session.
      */
-    public function currentTypeDefs(?bool $includeCore = null): array
+    public function currentTypeDefs(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTypeDefs');
-        if (null !== $includeCore) {
-        $leafQueryBuilder->setArgument('includeCore', $includeCore);
-        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'currentTypeDefs');
     }
 

@@ -2132,13 +2132,6 @@ export type ClientContainerOpts = {
   platform?: Platform
 }
 
-export type ClientCurrentTypeDefsOpts = {
-  /**
-   * Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
-   */
-  includeCore?: boolean
-}
-
 export type ClientEnvOpts = {
   /**
    * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
@@ -11812,16 +11805,13 @@ export class Client extends BaseClient {
 
   /**
    * The TypeDef representations of the objects currently being served in the session.
-   * @param opts.includeCore Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
    */
-  currentTypeDefs = async (
-    opts?: ClientCurrentTypeDefsOpts,
-  ): Promise<TypeDef[]> => {
+  currentTypeDefs = async (): Promise<TypeDef[]> => {
     type currentTypeDefs = {
       id: TypeDefID
     }
 
-    const ctx = this._ctx.select("currentTypeDefs", { ...opts }).select("id")
+    const ctx = this._ctx.select("currentTypeDefs").select("id")
 
     const response: Awaited<currentTypeDefs[]> = await ctx.execute()
 

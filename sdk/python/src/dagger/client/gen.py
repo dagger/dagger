@@ -11897,23 +11897,11 @@ class Query(Root):
         _ctx = self._select("currentModule", _args)
         return CurrentModule(_ctx)
 
-    async def current_type_defs(
-        self,
-        *,
-        include_core: bool | None = None,
-    ) -> list["TypeDef"]:
+    async def current_type_defs(self) -> list["TypeDef"]:
         """The TypeDef representations of the objects currently being served in
         the session.
-
-        Parameters
-        ----------
-        include_core:
-            Whether to include core types (Container, Directory, etc.) in the
-            result. Defaults to true.
         """
-        _args = [
-            Arg("includeCore", include_core, None),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("currentTypeDefs", _args)
         return await _ctx.execute_object_list(TypeDef)
 
