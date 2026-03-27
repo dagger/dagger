@@ -807,31 +807,6 @@ func stripCoreQueryFunctions(typeDefs []*core.TypeDef) []*core.TypeDef {
 	return result
 }
 
-// isCoreTypeDef returns true if the TypeDef originates from the core module
-// (i.e., has no SourceModuleName set).
-// The Query root type is never considered "core" — it's always included
-// because it holds module constructors as root fields.
-func isCoreTypeDef(td *core.TypeDef) bool {
-	if td.AsObject.Valid {
-		if td.AsObject.Value.Name == "Query" {
-			return false
-		}
-		return td.AsObject.Value.SourceModuleName == ""
-	}
-	if td.AsInterface.Valid {
-		return td.AsInterface.Value.SourceModuleName == ""
-	}
-	if td.AsEnum.Valid {
-		return td.AsEnum.Value.SourceModuleName == ""
-	}
-	if td.AsScalar.Valid {
-		return td.AsScalar.Value.SourceModuleName == ""
-	}
-	// Input types and list types don't have SourceModuleName;
-	// they are core types by convention.
-	return true
-}
-
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {
 	Value core.JSON
 },
