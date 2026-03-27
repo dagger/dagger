@@ -110,17 +110,45 @@ final readonly class DaggerObject
         array $fields,
         array $functions,
     ): void {
-        $fieldNames = array_map(fn($f) => ucfirst($f->name), $fields);
-        $functionNames = array_map(fn($f) => ucfirst($f->name), $functions);
+        $fields = array_combine(
+            array_map(fn($f) => $f->name, $fields),
+            array_map(fn($f) => ucfirst($f->name), $fields),
+        );
+        $functions = array_combine(
+            array_map(fn($f) => $f->name, $functions),
+            array_map(fn($f) => ucfirst($f->name), $functions),
+        );
 
-        foreach ($fieldNames as $fieldName) {
-            foreach ($functionNames as $functionName) {
-                if ($fieldName === $functionName) {
-                    throw new \RuntimeException(sprintf(
-                        'Field name "%s" will conflict with function name "%s"',
-                        $fieldName,
-                        $functionName,
-                    ));
+        while ($fields !== []) {
+            $name = array_key_last($fields);
+            $nameNormalized = array_pop($fields);
+
+            foreach ($fields as $other => $otherNormalized) {
+                if ($otherNormalized === $nameNormalized) {
+                    throw new \RuntimeException(
+                        "Fields; '$name' and '$other' conflict",
+                    );
+                }
+            }
+
+            foreach ($functions as $other => $otherNormalized) {
+                if ($otherNormalized === $nameNormalized) {
+                    throw new \RuntimeException(
+                        "Field; '$name' conflicts with function; '$other'",
+                    );
+                }
+            }
+        }
+
+        while ($functions !== []) {
+            $name = array_key_last($functions);
+            $nameNormalized = array_pop($functions);
+
+            foreach ($functions as $other => $otherNormalized) {
+                if ($otherNormalized === $nameNormalized) {
+                    throw new \RuntimeException(
+                        "Functions; '$name' and '$other' conflict",
+                    );
                 }
             }
         }
