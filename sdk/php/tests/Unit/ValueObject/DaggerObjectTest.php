@@ -50,6 +50,26 @@ class DaggerObjectTest extends TestCase
         self::assertEquals($expected, $sut->hasConstructor());
     }
 
+    /**
+     * @param DaggerFunction[] $functions
+     * @param DaggerField[] $fields
+     */
+    #[Test]
+    #[DataProvider('provideNamesThatMayConflict')]
+    public function ItDetectsNameConflicts(
+        array $fields = [],
+        array $functions = [],
+        ?\RuntimeException $expected = null,
+    ): void {
+        if ($expected) {
+            self::expectExceptionObject($expected);
+        } else {
+            self::expectNotToPerformAssertions();
+        }
+
+        $sut = new DaggerObject('', '', $fields, $functions);
+    }
+
 
     #[Test, DataProvider('provideReflectionClasses')]
     public function ItBuildsFromReflectionClass(
@@ -104,6 +124,55 @@ class DaggerObjectTest extends TestCase
                 new DaggerFunction('', '', [], new Type(DaggerObject::class)),
             ],
             true,
+        ];
+    }
+
+    /**
+     * @return \Generator<array{
+     *     0?:  DaggerField[],
+     *     1?:  DaggerFunction[],
+     *     2?: \RuntimeException,
+     * }>
+     */
+    public static function provideNamesThatMayConflict(): \Generator
+    {
+        yield 'no fields or functions' => [];
+
+        yield 'rejects fields; "foo" + "Foo"' => [
+            [
+                new DaggerField('foo', '', new Type('string')),
+                new DaggerField('Foo', '', new Type('int')),
+            ],
+            [],
+            new \RuntimeException("Fields; 'Foo' and 'foo' conflict"),
+        ];
+
+        yield 'accepts fields; "Foobar" + "FooBar"' => [
+            [
+                new DaggerField('Foobar', '', new Type('string')),
+                new DaggerField('FooBar', '', new Type('int')),
+            ],
+            [],
+        ];
+
+
+        yield 'rejects methods; "fooBar" + "FooBar"' => [
+            [],
+            [
+                new DaggerFunction('fooBar', '', [], new Type('string')),
+                new DaggerFunction('FooBar', '', [], new Type('int')),
+            ],
+            new \RuntimeException(
+                "Functions; 'FooBar' and 'fooBar' conflict",
+            ),
+        ];
+
+        yield 'rejects field "fooBar" + method; "FooBar"' => [
+            [new DaggerField('fooBar', '', new Type('string'))],
+            [new DaggerFunction('FooBar', '', [], new Type('int'))],
+            new \RuntimeException(
+                "Field; 'fooBar' conflicts with function; 'FooBar'",
+            ),
         ];
     }
 
