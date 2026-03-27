@@ -99,6 +99,7 @@ type containerBackend interface {
 	ContainerStart(ctx context.Context, name string) error
 	ContainerExists(ctx context.Context, name string) (bool, error)
 	ContainerLs(ctx context.Context) ([]string, error)
+	ContainerLogs(ctx context.Context, name string) (string, error)
 }
 
 var errContainerAlreadyExists = errors.New("container already exists")
@@ -325,6 +326,10 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		// maybe someone else started the container simultaneously?
 		if !errors.Is(err, errContainerAlreadyExists) {
 			if exists, _ := d.backend.ContainerExists(ctx, containerName); !exists {
+				// Fetch container logs to provide more context on failure
+				if logs, logsErr := d.backend.ContainerLogs(ctx, containerName); logsErr == nil && logs != "" {
+					return nil, fmt.Errorf("failed to run container: %w\n\nContainer logs:\n%s", err, logs)
+				}
 				return nil, fmt.Errorf("failed to run container: %w", err)
 			}
 		}
