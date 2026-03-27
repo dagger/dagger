@@ -53,27 +53,41 @@ defmodule Dagger.Mod.Module do
   defp maybe_put_optional(opts, nil), do: opts
   defp maybe_put_optional(opts, {key, val}), do: Keyword.put(opts, key, val)
 
-  defp define_enum(dag, module) do
-    mod_name = module.__object__(:name)
+  def extract_keys_from_base(module) do
+    {:ok, [type: {:t, {:type, _, :union, unions}, _}]} = Code.Typespec.fetch_types(module)
+    unions |> Enum.map(&elem(&1, 2))
+  end
+
+  def define_enum(dag, module) do
+    mod_name = module.__name__()
 
     type_def =
       dag
       |> Dagger.Client.type_def()
       |> Dagger.TypeDef.with_enum(Helper.camelize(mod_name))
 
-    Enum.reduce(module.__enum__(:keys), type_def, fn key, type_def ->
-      value = module.__enum__(:value, key)
-      doc = module.__enum__(:doc, key)
-      opts = []
+    keys =
+      case Kernel.function_exported?(module, :__enum__, 1) do
+        true -> module.__enum__(:keys)
+        false -> extract_keys_from_base(module)
+      end
 
-      opts =
-        if doc do
-          Keyword.put(opts, :description, doc)
-        else
-          opts
+    keys
+    |> Enum.reduce(type_def, fn keys, tdef ->
+      key =
+        case keys do
+          {k, _v} when is_atom(k) -> k
+          k when is_atom(k) -> k
         end
 
-      Dagger.TypeDef.with_enum_value(type_def, value, opts)
+      val = key |> Atom.to_string()
+
+      opts =
+        []
+        |> maybe_put_optional({:value, val})
+        |> maybe_put_optional({:description, Dagger.Mod.Enum.get_key_description(module, key)})
+
+      Dagger.TypeDef.with_enum_member(tdef, val, opts)
     end)
   end
 

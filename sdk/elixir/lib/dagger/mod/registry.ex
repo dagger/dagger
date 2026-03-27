@@ -1,7 +1,7 @@
 defmodule Dagger.Mod.Registry do
   @moduledoc false
 
-  defstruct modules: %{}
+  defstruct modules: %{}, enums: []
 
   def register(root_module) do
     root_module
@@ -10,11 +10,24 @@ defmodule Dagger.Mod.Registry do
   end
 
   def put_module(%__MODULE__{} = registry, module) when is_atom(module) do
-    %__MODULE__{modules: Map.put(registry.modules, module.__name__(), module)}
+    if function_exported?(module, :__kind__, 0) do
+      case module.__kind__() do
+        :enum ->
+          %__MODULE__{registry | enums: [module | registry.enums]}
+
+        :object ->
+          %__MODULE__{modules: Map.put(registry.modules, module.__name__(), module)}
+
+        _ ->
+          registry
+      end
+    else
+      registry
+    end
   end
 
   def all_modules(%__MODULE__{} = registry) do
-    Map.values(registry.modules) |> Enum.sort()
+    (Map.values(registry.modules) ++ registry.enums) |> Enum.sort()
   end
 
   def get_module_by_name!(%__MODULE__{} = registry, name) when is_binary(name) do
@@ -32,14 +45,43 @@ defmodule Dagger.Mod.Registry do
   defp traverse([], modules), do: modules |> List.flatten() |> Enum.uniq() |> Enum.reverse()
 
   defp traverse([{_, fun_def} | funs], modules) do
-    module = fun_def.return
+    enum_modules = collect_enums_from_funs(fun_def)
 
-    if object?(module) and module not in modules do
-      traverse(funs, [traverse(module) | modules])
+    ret_module = fun_def.return
+
+    modules_to_add = enum_modules
+
+    modules_to_add =
+      if object?(ret_module) and ret_module not in modules do
+        traverse(funs, [traverse(ret_module) | modules])
+      else
+        modules_to_add
+      end
+
+    traverse(funs, [modules_to_add | modules])
+  end
+
+  defp collect_enums_from_funs(fun_def) do
+    fun_def.args
+    |> Enum.flat_map(fn {_name, arg_def} ->
+      type = Keyword.fetch!(arg_def, :type)
+      collect_enums_from_args(type)
+    end)
+  end
+
+  defp collect_enums_from_args({:optional, type}), do: collect_enums_from_args(type)
+  defp collect_enums_from_args({:list, type}), do: collect_enums_from_args(type)
+
+  defp collect_enums_from_args(module) when is_atom(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :__kind__, 0) and
+         module.__kind__() == :enum do
+      [module]
     else
-      traverse(funs, modules)
+      []
     end
   end
+
+  defp collect_enums_from_args(_), do: []
 
   defp object?(:integer), do: false
   defp object?(:float), do: false
