@@ -18,7 +18,8 @@ final readonly class DaggerField
         public string $name,
         public ?string $description,
         public ListOfType|Type $type,
-    ) {}
+    ) {
+    }
 
     /**
      * @throws RuntimeException
