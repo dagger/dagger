@@ -31,10 +31,9 @@ type SchemaBuilder struct {
 	entries []modDepEntry
 
 	// lazy cache — computed once per instance, never invalidated
-	lazilyLoadedServer         *dagql.Server
-	lazilyLoadedSchemaJSONFile dagql.Result[*File]
-	loadSchemaErr              error
-	loadSchemaLock             sync.Mutex
+	lazilyLoadedServer *dagql.Server
+	loadSchemaErr      error
+	loadSchemaLock     sync.Mutex
 }
 
 type modDepEntry struct {
@@ -151,7 +150,7 @@ func (b *SchemaBuilder) PrimaryMods() []Mod {
 // Query, and ID loading is delegated to an inner server without proxies
 // so that IDs are always evaluated against a clean schema.
 func (b *SchemaBuilder) Server(ctx context.Context) (*dagql.Server, error) {
-	srv, _, err := b.lazilyLoadSchema(ctx)
+	srv, err := b.lazilyLoadSchema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load schema: %w", err)
 	}
@@ -162,19 +161,11 @@ func (b *SchemaBuilder) Server(ctx context.Context) (*dagql.Server, error) {
 	return srv.WithCache(dagqlCache), nil
 }
 
-// SchemaJSONFile returns the introspection JSON file for the schema.
-func (b *SchemaBuilder) SchemaJSONFile(ctx context.Context) (dagql.Result[*File], error) {
-	_, schemaJSONFile, err := b.lazilyLoadSchema(ctx)
-	return schemaJSONFile, err
-}
-
 // SchemaIntrospectionJSONFile returns an introspection JSON file for the
-// schema, optionally hiding the given types. This is used by SDK codegen.
+// schema, optionally hiding the given types. The dagql Select cache
+// (CachePerSchema) handles caching per-args, so different hiddenTypes
+// produce correctly different results.
 func (b *SchemaBuilder) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (dagql.Result[*File], error) {
-	if len(hiddenTypes) == 0 {
-		return b.SchemaJSONFile(ctx)
-	}
-	// Hidden types require a separate JSON file built from the same server.
 	dag, err := b.Server(ctx)
 	if err != nil {
 		return dagql.Result[*File]{}, err
@@ -185,7 +176,19 @@ func (b *SchemaBuilder) SchemaIntrospectionJSONFile(ctx context.Context, hiddenT
 // SchemaIntrospectionJSONFileForModule returns an introspection JSON file
 // with types hidden that should not be exposed to module SDKs.
 func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context) (dagql.Result[*File], error) {
-	return b.SchemaIntrospectionJSONFile(ctx, TypesToIgnoreForModuleIntrospection)
+	// Include both the module-specific hidden types and the engine-internal types
+	hiddenTypes := append([]string{}, TypesToIgnoreForModuleIntrospection...)
+	for _, typed := range TypesHiddenFromModuleSDKs {
+		hiddenTypes = append(hiddenTypes, typed.Type().Name())
+	}
+	return b.SchemaIntrospectionJSONFile(ctx, hiddenTypes)
+}
+
+// SchemaIntrospectionJSONFileForClient returns an introspection JSON file
+// for standalone client generation. Unlike module SDKs, standalone clients
+// have access to Engine and other types that are hidden from modules.
+func (b *SchemaBuilder) SchemaIntrospectionJSONFileForClient(ctx context.Context) (dagql.Result[*File], error) {
+	return b.SchemaIntrospectionJSONFile(ctx, []string{})
 }
 
 // TypeDefs returns type definitions for all modules by introspecting the
@@ -213,20 +216,18 @@ func (b *SchemaBuilder) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModTy
 
 func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 	loadedSchema *dagql.Server,
-	loadedSchemaJSONFile dagql.Result[*File],
 	rerr error,
 ) {
 	b.loadSchemaLock.Lock()
 	defer b.loadSchemaLock.Unlock()
 	if b.lazilyLoadedServer != nil {
-		return b.lazilyLoadedServer, b.lazilyLoadedSchemaJSONFile, nil
+		return b.lazilyLoadedServer, nil
 	}
 	if b.loadSchemaErr != nil {
-		return nil, loadedSchemaJSONFile, b.loadSchemaErr
+		return nil, b.loadSchemaErr
 	}
 	defer func() {
 		b.lazilyLoadedServer = loadedSchema
-		b.lazilyLoadedSchemaJSONFile = loadedSchemaJSONFile
 		b.loadSchemaErr = rerr
 	}()
 
@@ -246,11 +247,11 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 		for i, e := range b.entries {
 			mods[i] = modInstall(e)
 		}
-		dag, schemaJSONFile, err := buildSchema(ctx, b.root, mods, nil)
+		dag, err := buildSchema(ctx, b.root, mods)
 		if err != nil {
-			return nil, loadedSchemaJSONFile, err
+			return nil, err
 		}
-		return dag, schemaJSONFile, nil
+		return dag, nil
 	}
 
 	// Build inner server: all modules with Entrypoint forced to false.
@@ -260,9 +261,9 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 		opts.Entrypoint = false
 		innerMods[i] = modInstall{mod: e.mod, opts: opts}
 	}
-	inner, _, err := buildSchema(ctx, b.root, innerMods, nil)
+	inner, err := buildSchema(ctx, b.root, innerMods)
 	if err != nil {
-		return nil, loadedSchemaJSONFile, err
+		return nil, err
 	}
 
 	// Build outer server: all modules with real Entrypoint flags.
@@ -273,9 +274,9 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 	for _, e := range entrypoints {
 		outerMods = append(outerMods, modInstall(e))
 	}
-	outer, schemaJSONFile, err := buildSchema(ctx, b.root, outerMods, nil)
+	outer, err := buildSchema(ctx, b.root, outerMods)
 	if err != nil {
-		return nil, loadedSchemaJSONFile, err
+		return nil, err
 	}
 
 	// Wire up delegation: the outer server's Load, LoadType, and
@@ -283,5 +284,5 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 	// canonical and proxy resolvers can reach the real constructors.
 	outer.SetCanonical(inner)
 
-	return outer, schemaJSONFile, nil
+	return outer, nil
 }

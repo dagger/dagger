@@ -14,23 +14,16 @@ type modInstall struct {
 	opts InstallOpts
 }
 
-// buildSchema creates a dagql server with the given modules installed, wires
-// up interface extensions, and produces the introspection JSON file.
+// buildSchema creates a dagql server with the given modules installed and
+// wires up interface extensions.
 func buildSchema(
 	ctx context.Context,
 	root *Query,
 	mods []modInstall,
-	hiddenTypes []string,
-) (
-	*dagql.Server,
-	dagql.Result[*File],
-	error,
-) {
-	var schemaJSONFile dagql.Result[*File]
-
+) (*dagql.Server, error) {
 	dagqlCache, err := root.Cache(ctx)
 	if err != nil {
-		return nil, schemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
+		return nil, fmt.Errorf("failed to get cache: %w", err)
 	}
 	dag := dagql.NewServer(root, dagqlCache)
 	for _, m := range mods {
@@ -48,14 +41,14 @@ func buildSchema(
 	var ifaces []*InterfaceType
 	for _, m := range mods {
 		if err := m.mod.Install(ctx, dag, m.opts); err != nil {
-			return nil, schemaJSONFile, fmt.Errorf("failed to get schema for module %q: %w", m.mod.Name(), err)
+			return nil, fmt.Errorf("failed to get schema for module %q: %w", m.mod.Name(), err)
 		}
 
 		// TODO support core interfaces types
 		if userMod, ok := m.mod.(*Module); ok {
 			defs, err := m.mod.TypeDefs(ctx, dag)
 			if err != nil {
-				return nil, schemaJSONFile, fmt.Errorf("failed to get type defs for module %q: %w", m.mod.Name(), err)
+				return nil, fmt.Errorf("failed to get type defs for module %q: %w", m.mod.Name(), err)
 			}
 			for _, def := range defs {
 				switch def.Kind {
@@ -80,7 +73,7 @@ func buildSchema(
 		obj := objType.typeDef
 		class, found := dag.ObjectType(obj.Name)
 		if !found {
-			return nil, schemaJSONFile, fmt.Errorf("failed to find object %q in schema", obj.Name)
+			return nil, fmt.Errorf("failed to find object %q in schema", obj.Name)
 		}
 		for _, ifaceType := range ifaces {
 			iface := ifaceType.typeDef
@@ -112,12 +105,7 @@ func buildSchema(
 		}
 	}
 
-	schemaJSONFile, err = schemaJSONFileFromServer(ctx, dag, hiddenTypes)
-	if err != nil {
-		return nil, schemaJSONFile, err
-	}
-
-	return dag, schemaJSONFile, nil
+	return dag, nil
 }
 
 // schemaJSONFileFromServer generates an introspection JSON file from an

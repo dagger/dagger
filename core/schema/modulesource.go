@@ -2710,7 +2710,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 		}
 	}
 
-	schemaJSONFile, err := codegenDeps.SchemaJSONFile(ctx)
+	schemaJSONFile, err := codegenDeps.SchemaIntrospectionJSONFileForClient(ctx)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to get schema for client generation: %w", err)
 	}
