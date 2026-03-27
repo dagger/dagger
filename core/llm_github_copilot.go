@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -439,15 +440,48 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 	}, nil
 }
 
-// IsRetryable returns true for transient network and connection errors.
+var ghcpRetryable = []string{
+	// HTTP status codes surfaced in error messages
+	"429",
+	"500",
+	"503",
+	"504",
+	// Copilot-specific messages
+	"rate limit",
+	"rate_limit",
+	"quota exceeded",
+	"overloaded",
+	"capacity",
+	"try again",
+	"temporarily unavailable",
+	"service unavailable",
+	"Internal server error",
+	// Network/transport errors
+	"connection refused",
+	"connection reset",
+	"EOF",
+	"transport",
+	"dial ",
+	"i/o timeout",
+	"broken pipe",
+}
+
+// IsRetryable returns true for transient errors that warrant a retry.
 func (c *GhcpClient) IsRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "connection refused") ||
-		strings.Contains(errStr, "EOF") ||
-		strings.Contains(errStr, "transport")
+	// Never retry on context cancellation
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, pattern := range ghcpRetryable {
+		if strings.Contains(msg, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
 }
 
 // isSessionExpired reports whether an error indicates the server-side session
