@@ -1137,6 +1137,31 @@ func (c *Cache) normalizePendingResultCallRefs(ctx context.Context, frame *Resul
 	return c.normalizePendingResultCallRefsWithSeen(ctx, frame, map[*ResultCall]struct{}{})
 }
 
+func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sharedResult, nowUnix int64) *sharedResult {
+	if res == nil || res.id == 0 {
+		return nil
+	}
+
+	candidates := newSharedResultSet()
+	for outputEqID := range c.outputEqClassesForResultLocked(res.id) {
+		outputEqID = c.findEqClassLocked(outputEqID)
+		if outputEqID == 0 {
+			continue
+		}
+		for dig := range c.eqClassToDigests[outputEqID] {
+			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix)
+		}
+	}
+
+	if candidates.Empty() {
+		return res
+	}
+	if canonical := c.selectLookupCandidateForSessionLocked(sessionID, candidates); canonical != nil {
+		return canonical
+	}
+	return res
+}
+
 func (c *Cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, frame *ResultCall, seen map[*ResultCall]struct{}) error {
 	if frame == nil {
 		return nil
@@ -1192,7 +1217,7 @@ func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 		return err
 	}
 	ref.ResultID = uint64(resultID)
-	if shared, _, _, err := c.sharedResultByResultID(ctx, "", resultID); err == nil {
+	if shared, _, _, err := c.sharedResultByResultID(ctx, "", resultID, sharedResultLookupExact); err == nil {
 		ref.shared = shared
 	}
 	ref.Call = nil
@@ -1783,21 +1808,21 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 	}
 	reqs.Insert(handle)
 	r.shared = &sharedResult{
-		self:                  state.self,
-		isObject:              state.isObject,
-		resultCall:            frame,
-		hasValue:              state.hasValue,
-		deps:                  deps,
-		sessionResourceHandle: handle,
+		self:                     state.self,
+		isObject:                 state.isObject,
+		resultCall:               frame,
+		hasValue:                 state.hasValue,
+		deps:                     deps,
+		sessionResourceHandle:    handle,
 		requiredSessionResources: reqs,
-		persistedEnvelope:      state.persistedEnvelope,
-		persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
-		createdAtUnixNano:      state.createdAtUnixNano,
-		lastUsedAtUnixNano:     state.lastUsedAtUnixNano,
-		sizeEstimateBytes:      r.shared.sizeEstimateBytes,
-		usageIdentity:          r.shared.usageIdentity,
-		description:            r.shared.description,
-		recordType:             r.shared.recordType,
+		persistedEnvelope:        state.persistedEnvelope,
+		persistedSnapshotLinks:   slices.Clone(r.shared.persistedSnapshotLinks),
+		createdAtUnixNano:        state.createdAtUnixNano,
+		lastUsedAtUnixNano:       state.lastUsedAtUnixNano,
+		sizeEstimateBytes:        r.shared.sizeEstimateBytes,
+		usageIdentity:            r.shared.usageIdentity,
+		description:              r.shared.description,
+		recordType:               r.shared.recordType,
 	}
 	if frame != nil {
 		r.shared.storeResultCall(frame.fork())

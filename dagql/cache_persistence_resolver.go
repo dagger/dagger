@@ -4,15 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dagger/dagger/engine"
+)
+
+type sharedResultLookupMode uint8
+
+const (
+	sharedResultLookupExact sharedResultLookupMode = iota
+	sharedResultLookupCanonicalEquivalent
 )
 
 func (c *Cache) PersistedSnapshotLinksByResultID(ctx context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
 	// Startup/import paths intentionally inspect persisted entries without adding
 	// session ownership. These results are retained by persisted edges directly
 	// or by dependency closure from another persisted result.
-	res, _, _, err := c.sharedResultByResultID(ctx, "", sharedResultID(resultID))
+	res, _, _, err := c.sharedResultByResultID(ctx, "", sharedResultID(resultID), sharedResultLookupExact)
 	if err != nil {
 		return nil, err
 	}
@@ -40,12 +48,15 @@ func (c *Cache) PersistedResultID(res AnyResult) (uint64, error) {
 	return uint64(shared.id), nil
 }
 
-func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, resultID sharedResultID) (*sharedResult, bool, int, error) {
+func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, resultID sharedResultID, mode sharedResultLookupMode) (*sharedResult, bool, int, error) {
 	if c == nil {
 		return nil, false, 0, fmt.Errorf("resolve result %d: nil cache", resultID)
 	}
 	if resultID == 0 {
 		return nil, false, 0, fmt.Errorf("resolve result: zero result ID")
+	}
+	if mode == sharedResultLookupCanonicalEquivalent && sessionID == "" {
+		return nil, false, 0, fmt.Errorf("resolve result %d: canonical equivalent lookup requires session ID", resultID)
 	}
 	if sessionID == "" {
 		c.egraphMu.RLock()
@@ -63,6 +74,13 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		c.egraphMu.Unlock()
 		return nil, false, 0, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
+	if mode == sharedResultLookupCanonicalEquivalent {
+		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix())
+		if res == nil {
+			c.egraphMu.Unlock()
+			return nil, false, 0, fmt.Errorf("resolve result %d: canonical shared result missing", resultID)
+		}
+	}
 
 	trackedCount := 0
 	alreadyTracked := false
@@ -73,10 +91,10 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	if c.sessionResultIDsBySession[sessionID] == nil {
 		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
 	}
-	if _, found := c.sessionResultIDsBySession[sessionID][resultID]; found {
+	if _, found := c.sessionResultIDsBySession[sessionID][res.id]; found {
 		alreadyTracked = true
 	} else {
-		c.sessionResultIDsBySession[sessionID][resultID] = struct{}{}
+		c.sessionResultIDsBySession[sessionID][res.id] = struct{}{}
 		c.incrementIncomingOwnershipLocked(ctx, res)
 	}
 	trackedCount = len(c.sessionResultIDsBySession[sessionID])
@@ -87,10 +105,16 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 }
 
 func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
-	res, alreadyTracked, trackedCount, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID))
+	mode := sharedResultLookupExact
+	if sessionID != "" {
+		mode = sharedResultLookupCanonicalEquivalent
+	}
+
+	res, alreadyTracked, trackedCount, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID), mode)
 	if err != nil {
 		return nil, err
 	}
+
 	wrapped := Result[Typed]{
 		shared:   res,
 		hitCache: true,
@@ -119,7 +143,7 @@ func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag 
 		return nil, err
 	}
 	if sessionID != "" && c.traceEnabled() {
-		c.traceSessionResultTracked(ctx, sessionID, loaded, true, trackedCount)
+		c.traceSessionResultTracked(ctx, sessionID, loaded, alreadyTracked, trackedCount)
 	}
 	return loaded, nil
 }
