@@ -120,16 +120,9 @@ func newGhcpClient(endpoint *LLMEndpoint, cliVersion string) *GhcpClient {
 	}
 }
 
-// ensureConnected starts the sidecar service and connects the SDK client.
-// It is idempotent: subsequent calls return immediately once connected.
-func (c *GhcpClient) ensureConnected(ctx context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.client != nil {
-		return nil
-	}
-
+// connect starts the sidecar service and connects the SDK client.
+// Must be called with c.mu held. Use ensureConnected for the public entry point.
+func (c *GhcpClient) connect(ctx context.Context) error {
 	svc := copilotSidecar(c.endpoint.Key, c.cliVersion)
 	startedSvc, err := svc.Start(ctx)
 	if err != nil {
@@ -150,6 +143,44 @@ func (c *GhcpClient) ensureConnected(ctx context.Context) error {
 		return fmt.Errorf("start copilot SDK client: %w", err)
 	}
 	c.client = sdkClient
+	return nil
+}
+
+// reconnect tears down the existing connection and re-establishes it.
+// Called when the sidecar is detected to have crashed or disconnected.
+// Must be called with c.mu held.
+func (c *GhcpClient) reconnect(ctx context.Context) error {
+	if c.session != nil {
+		c.session.Disconnect() //nolint:errcheck
+		c.session = nil
+		c.sentMsgCount = 0
+		c.toolsHash = ""
+	}
+	if c.client != nil {
+		c.client.Stop() //nolint:errcheck
+		c.client = nil
+	}
+	c.svc = nil
+	return c.connect(ctx)
+}
+
+// ensureConnected starts the sidecar service and connects the SDK client on
+// first use, then pings the sidecar on subsequent calls to detect crashes.
+// If the ping fails, a full reconnect is triggered.
+func (c *GhcpClient) ensureConnected(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.client == nil {
+		return c.connect(ctx)
+	}
+
+	// Liveness check — detect crashed sidecar.
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if _, err := c.client.Ping(pingCtx, "health"); err != nil {
+		return c.reconnect(ctx)
+	}
 	return nil
 }
 
