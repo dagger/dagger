@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"dagger.io/dagger"
+	"dagger.io/dagger/dag"
 	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -58,64 +60,22 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	if mcpSseAddr != "" || !mcpStdio {
 		return errors.New("currently MCP only works with stdio")
 	}
-	// -m modules are loaded at engine connect time as extra modules.
+
 	modDef, err := initializeWorkspace(ctx, engineClient.Dagger())
 	if err != nil {
 		return err
-	}
-	if modDef != nil && !modDef.HasModule() {
-		if modName, err := engineClient.Dagger().CurrentWorkspace().DefaultModule(ctx); err == nil && modName != "" {
-			modDef = focusRootModule(modDef, modName)
-		}
-		if modDef != nil && !modDef.HasModule() {
-			// When -m is used, modDef.Name is "" but the module constructor
-			// is at Query root. Find it.
-			modDef = findAutoAliasedModule(modDef)
-		}
 	}
 
 	if modDef == nil && !envPrivileged {
 		return fmt.Errorf("no module found and --env-privileged not specified")
 	}
 
-	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
-	var logMsg string
-	if modDef != nil {
-		// TODO: parse user args and pass them to constructor
-		modName := modDef.MainObject.AsObject.Constructor.Name
-		q = q.Root().Select(modName).Select("id")
-
-		var modID string
-		if err := makeRequest(ctx, q, &modID); err != nil {
-			return fmt.Errorf("error instantiating module: %w", err)
-		}
-
-		q = q.Root().Select("env")
-
-		extraCore := ""
-		if envPrivileged {
-			q = q.Arg("privileged", envPrivileged)
-			extraCore = " and Dagger core"
-		}
-
-		q = q.Select("with"+modDef.MainObject.AsObject.Name+"Input").
-			Arg("name", modName).
-			Arg("value", modID).
-			Arg("description", modDef.MainObject.Description()).
-			Select("id")
-
-		logMsg = fmt.Sprintf("Exposing module %q%s as an MCP server on standard input/output", modName, extraCore)
-	} else {
-		q = q.Root().Select("env").Arg("privileged", envPrivileged).Select("id")
-		logMsg = "Exposing Dagger core as an MCP server"
-	}
-
-	var envID string
-	if err := makeRequest(ctx, q, &envID); err != nil {
+	envID, err := dag.Env(dagger.EnvOpts{Privileged: envPrivileged}).ID(ctx)
+	if err != nil {
 		return fmt.Errorf("error making environment: %w", err)
 	}
 
-	fmt.Fprintln(stderr, logMsg)
+	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 	q = q.Root().
 		Select("llm").
 		Select("withStaticTools").
@@ -128,57 +88,4 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	}
 
 	return nil
-}
-
-// findAutoAliasedModule detects a module loaded with auto-alias at Query root.
-// When -m is used, the module's constructor appears as a Query root function
-// whose return type has a non-empty SourceModuleName. If exactly one such
-// constructor is found, return a moduleDef pointing to it as the main object.
-func findAutoAliasedModule(def *moduleDef) *moduleDef {
-	if def == nil || def.MainObject == nil {
-		return nil
-	}
-	fp := def.MainObject.AsFunctionProvider()
-	if fp == nil {
-		return nil
-	}
-	for _, fn := range fp.GetFunctions() {
-		if fn.ReturnType != nil &&
-			fn.ReturnType.AsObject != nil &&
-			fn.ReturnType.AsObject.SourceModuleName != "" &&
-			fn.Name == gqlFieldName(fn.ReturnType.AsObject.SourceModuleName) {
-			return focusRootModule(def, fn.ReturnType.AsObject.SourceModuleName)
-		}
-	}
-	return nil
-}
-
-func focusRootModule(def *moduleDef, modName string) *moduleDef {
-	if def == nil || def.MainObject == nil {
-		return nil
-	}
-	fp := def.MainObject.AsFunctionProvider()
-	if fp == nil {
-		return nil
-	}
-	for _, fn := range fp.GetFunctions() {
-		if fn.ReturnType == nil || fn.ReturnType.AsObject == nil {
-			continue
-		}
-		if fn.ReturnType.AsObject.SourceModuleName != modName {
-			continue
-		}
-		if fn.Name != gqlFieldName(modName) {
-			continue
-		}
-		return &moduleDef{
-			Name:       modName,
-			MainObject: fn.ReturnType,
-			Objects:    def.Objects,
-			Interfaces: def.Interfaces,
-			Enums:      def.Enums,
-			Inputs:     def.Inputs,
-		}
-	}
-	return def
 }
