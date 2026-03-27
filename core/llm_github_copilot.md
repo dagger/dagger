@@ -16,8 +16,6 @@ GitHub Copilot acts as a **unified gateway** to multiple frontier models (OpenAI
 - **Enterprise licensing** — organizations with GitHub Copilot Enterprise can route Dagger LLM calls through their existing seat licenses
 - **Model flexibility** — switch between GPT-4.1, Claude Sonnet, Gemini, etc. by changing the model name, without managing multiple API accounts
 
-The tradeoff is the [CLI-based execution model](#the-cli-container-requirement) described below.
-
 ---
 
 ## Configuration
@@ -26,13 +24,14 @@ Set these environment variables before running Dagger:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GITHUB_TOKEN` | ✅ Yes | GitHub personal access token or GitHub Actions token with Copilot access |
-| `GITHUB_CLI_VERSION` | ✅ Yes | Version of `@github/copilot` npm package to install (e.g. `1.0.0`) |
+| `GITHUB_TOKEN` | ✅ Yes | GitHub personal access token or Actions token with Copilot access |
 | `GITHUB_MODEL` | No | Model to use (default: `github-gpt-5`). See model names below. |
+| `GITHUB_CLI_VERSION` | No | Copilot CLI binary version to embed in the sidecar (default: `1.0.10`) |
+| `GITHUB_COPILOT_CLI_URL` | No | Override the tarball URL (for air-gapped or internal registry use) |
 
 ### Model names
 
-The provider recognises these prefixes and strips them before passing to the CLI:
+The provider recognises these prefixes and strips them before passing to the SDK:
 
 | Prefix | Example |
 |--------|---------|
@@ -47,127 +46,71 @@ The alias `"github"` resolves to `"github-gpt-5"`.
 
 ---
 
-## How it works
+## Architecture
 
-### The CLI-container requirement
+### Container-on-demand sidecar pattern
 
-**There is no official Go SDK for GitHub Copilot that calls the API directly.** What exists today is a set of language-specific SDKs (TypeScript, Python, etc.) that are thin wrappers around the **GitHub Copilot CLI** (`@github/copilot` npm package). The CLI itself communicates with the Copilot API endpoint.
-
-As a result, this provider cannot make direct HTTP calls. Instead, it:
-
-1. **Spins up a Dagger container** based on `node:24-bookworm-slim`
-2. **Installs the GHCP CLI** via `npm install -g @github/copilot@{version}` inside the container
-3. **Executes each query** by running `copilot --model {model} --prompt {content} --stream off --continue`
-4. **Captures stdout** for the response and **stderr** for token usage metadata
-
-This is unconventional — every LLM call shells out to a CLI inside a container rather than making an SDK/HTTP call. It works, but carries implications for latency and dependency management (see [Limitations](#limitations-and-gaps)).
-
-### Session and state caching
-
-The GHCP CLI stores session state in `/root/.copilot`. The provider mounts a **Dagger cache volume** keyed on the first 8 characters of the token (`copilot-session-{token[:8]}`) at that path, so session state persists across queries within a Dagger run.
-
-The `--continue` flag is passed to the CLI to enable continuation of an existing session.
-
-> **Note:** This caching is a best-effort approach. Multi-turn conversation history is not truly supported — see [Multi-turn conversations](#multi-turn-conversations) below.
-
-### Token usage parsing
-
-The GHCP CLI emits token usage on stderr in a format like:
+This provider uses the **[github.com/github/copilot-sdk/go](https://github.com/github/copilot-sdk) Go SDK (v0.2.0)** via a TCP JSON-RPC connection to a lightweight Dagger sidecar service:
 
 ```
-claude-sonnet-4.5    7.5k input, 52 output, 3.6k cache read, 3.7k cache write (Est. 1 Premium request)
+Dagger Engine (GhcpClient)
+  └── copilot.NewClient(&ClientOptions{CLIUrl: "host:3000"})
+        └── TCP JSON-RPC → *dagger.Service (built on-demand)
+              └── debian:bookworm-slim + copilot binary
+                    └── copilot --headless --no-auto-update --port 3000
 ```
 
-The provider parses this with a regex and emits the values as OpenTelemetry metrics:
-- `telemetry.LLMInputTokens`
-- `telemetry.LLMOutputTokens`
-- `telemetry.LLMInputTokensCacheReads`
+**No Node.js. No pre-published image.** The sidecar container is built at runtime by:
 
-The `k` multiplier is handled (e.g. `3.5k` → `3500`). Cache write tokens are parsed but not currently recorded as a separate OTel metric.
+1. Fetching the Copilot CLI npm tarball via `dag.HTTP()` (content-addressable — downloaded once, cached forever)
+2. Extracting the binary into a minimal `debian:bookworm-slim` base
+3. Starting it as a Dagger service in headless mode on port 3000
+4. Connecting the Go SDK via `CLIUrl` TCP option
+
+The `GITHUB_TOKEN` is injected as an env var into the sidecar only — it is deliberately **not** passed to `ClientOptions.GitHubToken`, which would panic when combined with `CLIUrl`.
+
+### Lazy initialisation
+
+The sidecar is started on the **first `SendQuery` call**, not at client creation. `newGhcpClient` is synchronous and cheap; the Dagger service starts when there is an actual request to serve. `ensureConnected` is idempotent — subsequent calls return immediately.
+
+### Session lifecycle
+
+A single `copilot.Session` is created on first use and reused for the lifetime of the `GhcpClient`. The session is created with `Streaming: true` and `PermissionHandler.ApproveAll`.
 
 ---
 
-## Limitations and gaps
+## What works now (Phase 1)
 
-### The CLI-container requirement
-
-The most significant architectural constraint. Every query requires:
-- A running container with Node.js 24+
-- npm install of `@github/copilot` at a specific version
-- CLI execution overhead per query
-
-This adds latency compared to SDK-based providers (Anthropic, OpenAI) and introduces a hard dependency on the npm registry and a specific CLI version. The `GITHUB_CLI_VERSION` variable must be pinned to a known-good version.
-
-**Roadmap:** Migrate to direct API calls once the GitHub Copilot API is publicly documented or a first-class Go SDK is available. See [Future work](#future-work).
-
-### Multi-turn conversations
-
-The GHCP CLI only accepts `--prompt` (a single string). The provider passes only the **last message** from the `history` slice:
-
-```go
-prompt := history[len(history)-1]
-```
-
-All prior messages in the conversation are discarded. Although the CLI stores state as a `.jsonl` file and the `--continue` flag is used, it does not replay or reference prior messages in the session — it only continues the CLI session context, not the LLM conversation history.
-
-**Impact:** Dagger LLM pipelines that rely on multi-turn context will not work correctly with this provider today.
-
-### Tool / function calling
-
-The `tools []LLMTool` parameter is **completely ignored**. The provider always returns an empty `toolCalls` slice:
-
-```go
-var toolCalls []LLMToolCall  // always empty
-```
-
-The GHCP CLI has no native support for function/tool calling schemas. This means Dagger's tool-use features (e.g. calling container methods from within an LLM loop) are not available with the GHCP provider.
-
-**Impact:** Any Dagger pipeline that uses `WithTool` or expects the LLM to call Dagger GraphQL methods will fail silently — the model will respond with text but never invoke tools.
-
-### Retry logic
-
-`IsRetryable()` always returns `false`. There is no backoff or retry on transient failures (rate limits, network errors, CLI crashes).
-
-### Streaming
-
-The CLI is invoked with `--stream off`. Streaming output is not parsed or forwarded. All responses are buffered.
+| Feature | Status |
+|---------|--------|
+| Text responses (single-turn) | ✅ Working |
+| Token usage tracking (OTel metrics) | ✅ Working — from SDK `assistant.usage` events |
+| Transient error retry detection | ✅ Working — connection refused, EOF, transport errors |
+| `GITHUB_CLI_VERSION` version pinning | ✅ Working |
+| `GITHUB_COPILOT_CLI_URL` tarball override | ✅ Working |
+| Multi-turn conversation history | 🔜 Phase 2 |
+| Full tool / function calling | 🔜 Phase 3 |
+| Streaming deltas | 🔜 Phase 4 |
 
 ---
 
-## Future work
+## Limitations
 
-### 1. Migrate to GitHub Copilot SDK
+### Multi-turn conversations (Phase 2)
 
-The language-specific GitHub Copilot SDKs (TypeScript: `@github/copilot-sdk`, Python: `copilot-sdk`) are thin wrappers around the CLI — they are **not** direct API clients. However, they do expose a slightly higher-level interface and may be more stable than shelling out to the CLI directly.
+Phase 1 sends only the **last user message** from the `history` slice as the prompt. All prior messages are discarded — the model has no context from previous turns.
 
-A more impactful improvement would be to call the **GitHub Copilot API endpoint directly** once:
-- The API is publicly documented (currently undocumented/private)
-- A Go client library is available, or the REST contract is stable enough to implement manually
+Phase 2 will thread the full history by converting `ModelMessage` entries to SDK message format and replaying them into the session before each new user turn.
 
-This would eliminate the container/npm dependency entirely and align the provider with how OpenAI, Anthropic, and Google providers work.
+### Tool / function calling (Phase 3)
 
-> **Note:** When evaluating "GitHub Copilot SDK" options, be aware that today's SDKs wrap the CLI, not the API. True API-level SDKs do not yet exist as of this writing.
+Tools passed to `SendQuery` are registered as SDK `Tool` definitions with **stub handlers** that return an error. The model receives tool schemas and may attempt to call them, but the stub handlers prevent actual execution.
 
-### 2. Multi-turn conversation history
+Phase 3 will wire the handlers to `tool.Call(ctx, inv.Arguments)` and complete the Dagger tool execution loop.
 
-Options to explore:
-- Accumulate prior messages into a system prompt prefix (prompt injection)
-- Use the GHCP CLI's `.jsonl` history format if/when documented
-- Wait for API-level access which natively supports conversation history
+### Streaming (Phase 4)
 
-### 3. Tool calling
-
-Options to explore:
-- Prompt injection: describe available tools in the system prompt, parse structured responses
-- Wait for API-level access with native function calling support
-
-### 4. Retry / backoff
-
-Implement `IsRetryable()` with pattern matching on error strings (rate limit, network timeout). Add exponential backoff.
-
-### 5. Streaming
-
-Replace `--stream off` with `--stream on` and parse chunked stdout. Token metadata may arrive at the end of the stream rather than after completion.
+`SendAndWait` is used instead of `session.On + session.Send`. This buffers the complete response before returning. Phase 4 will switch to streaming deltas via `session.On(SessionEventTypeAssistantMessageDelta)`.
 
 ---
 
@@ -175,21 +118,20 @@ Replace `--stream off` with `--stream on` and parse chunked stdout. Token metada
 
 | File | Purpose |
 |------|---------|
-| `core/llm_github_copilot.go` | Provider implementation: `GhcpClient`, `GhcpClientContainer`, `StripGitHubModelPrefix`, `parseCopilotTokenMetadata` |
-| `core/llm.go` | Router integration: `isGitHubModel`, `routeGitHubModel`, config loading, model alias |
+| `core/llm_github_copilot.go` | Provider implementation |
+| `core/llm.go` | Router integration: `isGitHubModel`, `routeGitHubModel`, config loading |
 
 ### Key types
 
 ```go
-// Provider client — satisfies LLMClient interface
 type GhcpClient struct {
-    client   *dagger.Container  // Node.js container with GHCP CLI installed
-    endpoint *LLMEndpoint       // Config: token, model
+    endpoint   *LLMEndpoint     // token, model name
+    cliVersion string           // CLI binary version for sidecar
+    svc        *dagger.Service  // copilot CLI sidecar
+    client     *copilot.Client  // SDK client connected via CLIUrl
+    session    *copilot.Session // persistent session (multi-turn in Phase 2)
+    mu         sync.Mutex       // protects svc, client, session
 }
-
-// LLMClient interface methods implemented
-func (c *GhcpClient) SendQuery(ctx, history, tools) (*LLMResponse, error)
-func (c *GhcpClient) IsRetryable(err error) bool
 ```
 
 ### Environment variable loading (in `LLMRouter`)
@@ -199,3 +141,4 @@ GitHubToken      string  // GITHUB_TOKEN
 GitHubModel      string  // GITHUB_MODEL
 GitHubCliVersion string  // GITHUB_CLI_VERSION
 ```
+

@@ -3,13 +3,17 @@ package core
 import (
 	"context"
 	"fmt"
-	"regexp"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
-	"dagger.io/dagger/telemetry"
+
+	copilot "github.com/github/copilot-sdk/go"
+	telemetry "github.com/dagger/otel-go"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -17,21 +21,20 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const (
+	// ghcpDefaultCLIVersion is the Copilot CLI version bundled with SDK v0.2.0.
+	// Bump this alongside go.mod when upgrading the SDK.
+	ghcpDefaultCLIVersion = "1.0.10"
+	ghcpDefaultCLIPort    = 3000
+)
+
 type GhcpClient struct {
-	client   *dagger.Container
-	endpoint *LLMEndpoint
-}
-
-func newGhcpClient(endpoint *LLMEndpoint, cliVersion string) *GhcpClient {
-	ctx := context.Background()
-
-	// Since there is no official Go SDK for GitHub Copilot at the moment, we will use the GitHub Copilot CLI via a Dagger container.
-	var container = GhcpClientContainer(ctx, endpoint.Key, cliVersion)
-
-	return &GhcpClient{
-		client:   container,
-		endpoint: endpoint,
-	}
+	endpoint   *LLMEndpoint
+	cliVersion string
+	svc        *dagger.Service  // the copilot CLI sidecar
+	client     *copilot.Client  // SDK client connected via CLIUrl
+	session    *copilot.Session // persistent session (multi-turn, Phase 2)
+	mu         sync.Mutex       // protects svc, client, session
 }
 
 var _ LLMClient = (*GhcpClient)(nil)
@@ -45,10 +48,8 @@ var gitHubModelPrefixes = []string{
 	"ghcp/",
 }
 
-// Strip Model Prefix from GitHub Model Names
-// E.g "github-gpt-5" -> "gpt-5"
-// Since GitHub uses various models we want to avoid model name collisions with other providers
-// we default to "github-gpt-5" for now but will update this in future to allow the GHCP CLI to fall back to its own default model
+// StripGitHubModelPrefix strips provider-specific prefixes from GitHub model names.
+// E.g. "github-gpt-5" -> "gpt-5". Called from core/llm.go.
 func StripGitHubModelPrefix(model string) string {
 	for _, prefix := range gitHubModelPrefixes {
 		if strings.HasPrefix(model, prefix) {
@@ -58,28 +59,122 @@ func StripGitHubModelPrefix(model string) string {
 	return model
 }
 
-func GhcpClientContainer(
-	ctx context.Context,
-	token string,
-	cliVersion string,
-) *dagger.Container {
-	// Use a cache volume to persist the copilot session state across calls
-	ghcpSessionCache := dag.CacheVolume("copilot-session-" + token[:8]) // Use token prefix as cache key
+// copilotSidecar builds the Copilot CLI as an on-demand Dagger service.
+// The tarball is fetched via dag.HTTP so Dagger's content-addressable cache
+// ensures it is downloaded only once per version.
+func copilotSidecar(token, cliVersion string) *dagger.Service {
+	version := cliVersion
+	if v := os.Getenv("GITHUB_CLI_VERSION"); v != "" {
+		version = v
+	}
+	if version == "" {
+		version = ghcpDefaultCLIVersion
+	}
 
+	tarballURL := os.Getenv("GITHUB_COPILOT_CLI_URL")
+	if tarballURL == "" {
+		platform := "linux-x64"
+		if runtime.GOARCH == "arm64" {
+			platform = "linux-arm64"
+		}
+		tarballURL = fmt.Sprintf(
+			"https://registry.npmjs.org/@github/copilot-%s/-/copilot-%s-%s.tgz",
+			platform, platform, version,
+		)
+	}
+
+	tarball := dag.HTTP(tarballURL)
 	return dag.Container().
-		From("node:24-bookworm-slim").
-		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("@github/copilot@%s", cliVersion)}).
+		From("debian:bookworm-slim").
+		WithMountedFile("/tmp/copilot.tgz", tarball).
+		WithExec([]string{"sh", "-c",
+			"tar -xzf /tmp/copilot.tgz -C /tmp && " +
+				"mv /tmp/package/copilot /usr/local/bin/copilot && " +
+				"chmod +x /usr/local/bin/copilot && " +
+				"rm -rf /tmp/copilot.tgz /tmp/package"}).
 		WithEnvVariable("GITHUB_TOKEN", token).
-		WithMountedCache("/root/.copilot", ghcpSessionCache). // Mount cache at copilot config directory
-		WithWorkdir("/workspace")
+		WithExposedPort(ghcpDefaultCLIPort).
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{
+				"copilot", "--headless", "--no-auto-update",
+				"--port", strconv.Itoa(ghcpDefaultCLIPort),
+			},
+		})
 }
 
-// Satisfy the LLMClient interface with SendQuery and IsRetryable
-func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+// newGhcpClient creates a GhcpClient. The sidecar and SDK connection are
+// established lazily on the first SendQuery call.
+func newGhcpClient(endpoint *LLMEndpoint, cliVersion string) *GhcpClient {
+	if cliVersion == "" {
+		cliVersion = ghcpDefaultCLIVersion
+	}
+	return &GhcpClient{
+		endpoint:   endpoint,
+		cliVersion: cliVersion,
+	}
+}
 
-	var copilotModel = StripGitHubModelPrefix(c.endpoint.Model)
-	// instrument the call with telemetry
-	// todo: moving to setup function to clean this up
+// ensureConnected starts the sidecar service and connects the SDK client.
+// It is idempotent: subsequent calls return immediately once connected.
+func (c *GhcpClient) ensureConnected(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.client != nil {
+		return nil
+	}
+
+	svc := copilotSidecar(c.endpoint.Key, c.cliVersion)
+	startedSvc, err := svc.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("start copilot sidecar: %w", err)
+	}
+	c.svc = startedSvc
+
+	// Endpoint returns host:port accessible from the engine process.
+	addr, err := startedSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: ghcpDefaultCLIPort})
+	if err != nil {
+		return fmt.Errorf("get copilot sidecar endpoint: %w", err)
+	}
+
+	// NOTE: GitHubToken must NOT be set here with CLIUrl — the SDK panics.
+	// Auth is handled by the sidecar via its GITHUB_TOKEN env var.
+	sdkClient := copilot.NewClient(&copilot.ClientOptions{CLIUrl: addr})
+	if err := sdkClient.Start(ctx); err != nil {
+		return fmt.Errorf("start copilot SDK client: %w", err)
+	}
+	c.client = sdkClient
+	return nil
+}
+
+// getOrCreateSession returns the persistent session, creating it if needed.
+// Phase 2 will add session reuse with proper history threading.
+func (c *GhcpClient) getOrCreateSession(ctx context.Context, tools []copilot.Tool) (*copilot.Session, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.session != nil {
+		return c.session, nil
+	}
+
+	session, err := c.client.CreateSession(ctx, &copilot.SessionConfig{
+		Streaming:           true, // required for message_delta events
+		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
+		Tools:               tools,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create copilot session: %w", err)
+	}
+	c.session = session
+	return session, nil
+}
+
+// SendQuery sends the last user message in history to Copilot and returns the
+// response. Phase 1 sends only the final user message; Phase 2 will thread the
+// full history through session.Send.
+func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+	copilotModel := StripGitHubModelPrefix(c.endpoint.Model)
+
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
@@ -94,111 +189,157 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 		attribute.String("provider", string(c.endpoint.Provider)),
 	}
 
-	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
+	inputTokensGauge, err := m.Int64Gauge(telemetry.LLMInputTokens)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get inputTokens gauge: %w", err)
 	}
-
-	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
+	inputTokensCacheReadsGauge, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get inputTokensCacheReads gauge: %w", err)
 	}
-
-	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
+	outputTokensGauge, err := m.Int64Gauge(telemetry.LLMOutputTokens)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get outputTokens gauge: %w", err)
 	}
 
-	// Ensure there is at least one message in history
 	if len(history) == 0 {
 		return nil, fmt.Errorf("prompt/chat history cannot be empty - run with-prompt to add a prompt/message")
 	}
 
-	// Get the last message as the prompt
-	// This is presumed to be the user prompt at the moment
-	// Since GitHub Copilot CLI currently only supports single prompt input when running from a command line (--prompt)
-	// Also note that GHCP CLI does not currently support chat history or multi-turn conversations, even though it stores state/history as a jsonl file
-	prompt := history[len(history)-1]
-	if prompt.Role != "user" {
-		return nil, fmt.Errorf("the last message in history must be from the user")
+	if err := c.ensureConnected(ctx); err != nil {
+		return nil, err
 	}
 
-	var copilot = c.client.WithExec([]string{
-		"copilot",
-		"--model", copilotModel,
-		"--prompt", prompt.Content,
-		"--stream", "off",
-		"--continue",
+	sdkTools := buildSDKTools(tools)
+	session, err := c.getOrCreateSession(ctx, sdkTools)
+	if err != nil {
+		return nil, err
+	}
+
+	// Capture token usage from assistant.usage events, which fire before session.idle.
+	var usage LLMTokenUsage
+	var usageMu sync.Mutex
+	unsubscribe := session.On(func(event copilot.SessionEvent) {
+		if event.Type != copilot.SessionEventTypeAssistantUsage {
+			return
+		}
+		usageMu.Lock()
+		defer usageMu.Unlock()
+		if event.Data.InputTokens != nil {
+			usage.InputTokens = int64(*event.Data.InputTokens)
+		}
+		if event.Data.OutputTokens != nil {
+			usage.OutputTokens = int64(*event.Data.OutputTokens)
+		}
+		if event.Data.CacheReadTokens != nil {
+			usage.CachedTokenReads = int64(*event.Data.CacheReadTokens)
+		}
+		if event.Data.CacheWriteTokens != nil {
+			usage.CachedTokenWrites = int64(*event.Data.CacheWriteTokens)
+		}
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 	})
+	defer unsubscribe()
 
-	// We aren't implement tool calls for GHCP at the moment
-	var toolCalls []LLMToolCall
+	// Phase 1: send last user message only. Phase 2 will thread full history.
+	prompt := ghcpLastUserMessage(history)
 
-	content, err := copilot.Stdout(ctx)
+	resp, err := session.SendAndWait(ctx, copilot.MessageOptions{Prompt: prompt})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("copilot send: %w", err)
 	}
 
-	ghcpResponseMetadata, err := copilot.Stderr(ctx)
-	if err != nil {
-		return nil, err
+	content := ""
+	if resp != nil && resp.Data.Content != nil {
+		content = *resp.Data.Content
 	}
 
-	llmTokenUsage := parseCopilotTokenMetadata(ghcpResponseMetadata)
+	// Phase 3 will implement full tool call execution.
+	toolCalls := ghcpExtractToolCalls(resp)
 
-	// Record metrics for token usage with attributes in OTel
-	inputTokens.Record(ctx, llmTokenUsage.InputTokens, metric.WithAttributes(attrs...))
-	outputTokens.Record(ctx, llmTokenUsage.OutputTokens, metric.WithAttributes(attrs...))
-	inputTokensCacheReads.Record(ctx, llmTokenUsage.CachedTokenReads, metric.WithAttributes(attrs...))
+	usageMu.Lock()
+	finalUsage := usage
+	usageMu.Unlock()
+
+	inputTokensGauge.Record(ctx, finalUsage.InputTokens, metric.WithAttributes(attrs...))
+	outputTokensGauge.Record(ctx, finalUsage.OutputTokens, metric.WithAttributes(attrs...))
+	inputTokensCacheReadsGauge.Record(ctx, finalUsage.CachedTokenReads, metric.WithAttributes(attrs...))
 
 	return &LLMResponse{
 		Content:    content,
 		ToolCalls:  toolCalls,
-		TokenUsage: llmTokenUsage,
+		TokenUsage: finalUsage,
 	}, nil
 }
 
-// We're not implementing any retries at the moment
+// IsRetryable returns true for transient network and connection errors.
 func (c *GhcpClient) IsRetryable(err error) bool {
-	// There is no auto retry at GHCP CLI That I know of at the moment
-	return false
-}
-
-// parseCopilotTokenMetadata parses the stderr output (GHCP CLI Meatdata) from GitHub Copilot CLI to extract token usage information
-func parseCopilotTokenMetadata(copilotclimetadata string) LLMTokenUsage {
-	var tokenUsage LLMTokenUsage
-
-	// Parse the usage line that contains model-specific token information
-	// Example: "claude-sonnet-4.5    7.5k input, 52 output, 3.6k cache read, 3.7k cache write (Est. 1 Premium request)"
-	// Note: cache write is optional and may not always be present
-
-	// Look for the pattern: #k input, #k output, #k cache read, and optionally #k cache write
-	re := regexp.MustCompile(`(\d+(?:\.\d+)?)(k?)\s+input,\s*(\d+(?:\.\d+)?)(k?)\s+output,\s*(\d+(?:\.\d+)?)(k?)\s+cache read(?:,\s*(\d+(?:\.\d+)?)(k?)\s+cache write)?`)
-	matches := re.FindStringSubmatch(copilotclimetadata)
-
-	if len(matches) > 7 {
-		tokenUsage.InputTokens = parseTokenValue(matches[1], matches[2])
-		tokenUsage.OutputTokens = parseTokenValue(matches[3], matches[4])
-		tokenUsage.CachedTokenReads = parseTokenValue(matches[5], matches[6])
-
-		// Note: cache write tokens are optional and may not always be present
-		tokenUsage.CachedTokenWrites = parseTokenValue(matches[7], matches[8])
-
-		tokenUsage.TotalTokens = tokenUsage.InputTokens + tokenUsage.OutputTokens
+	if err == nil {
+		return false
 	}
-
-	return tokenUsage
+	errStr := err.Error()
+	return strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "EOF") ||
+		strings.Contains(errStr, "transport")
 }
 
-// parseTokenValue converts a string token value from GitHub Copilot CLI Metadata with an optional 'k' multiplier into an int64
-func parseTokenValue(valueStr string, multiplierStr string) int64 {
-	// Convert string to a float first to handle decimal values
-	if inputVal, err := strconv.ParseFloat(valueStr, 64); err == nil {
-		//  Apply multiplier if 'k' is present (e.g 3.5k = 3500)
-		if strings.ToLower(multiplierStr) == "k" {
-			inputVal *= 1000
+// ghcpLastUserMessage returns the content of the last user-role message.
+func ghcpLastUserMessage(history []*ModelMessage) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			return history[i].Content
 		}
-		return int64(inputVal)
 	}
-	return int64(0)
+	return ""
+}
+
+// buildSDKTools converts Dagger LLMTools to Copilot SDK Tool definitions.
+// Phase 1: stub handlers return an error; Phase 3 will wire to tool.Call.
+func buildSDKTools(tools []LLMTool) []copilot.Tool {
+	if len(tools) == 0 {
+		return nil
+	}
+	sdkTools := make([]copilot.Tool, 0, len(tools))
+	for _, t := range tools {
+		sdkTools = append(sdkTools, copilot.Tool{
+			Name:           t.Name,
+			Description:    t.Description,
+			Parameters:     t.Schema,
+			SkipPermission: true,
+			Handler: func(inv copilot.ToolInvocation) (copilot.ToolResult, error) {
+				// Phase 3: replace with t.Call(inv.TraceContext, inv.Arguments)
+				return copilot.ToolResult{
+					Error:      "tool execution not yet implemented (Phase 3)",
+					ResultType: "error",
+				}, nil
+			},
+		})
+	}
+	return sdkTools
+}
+
+// ghcpExtractToolCalls converts SDK ToolRequests to Dagger LLMToolCall values.
+// Phase 3 will complete the tool calling loop.
+func ghcpExtractToolCalls(event *copilot.SessionEvent) []LLMToolCall {
+	if event == nil || len(event.Data.ToolRequests) == 0 {
+		return nil
+	}
+	calls := make([]LLMToolCall, 0, len(event.Data.ToolRequests))
+	for _, req := range event.Data.ToolRequests {
+		var args map[string]any
+		if req.Arguments != nil {
+			if m, ok := req.Arguments.(map[string]any); ok {
+				args = m
+			}
+		}
+		calls = append(calls, LLMToolCall{
+			ID:   req.ToolCallID,
+			Type: "function",
+			Function: FuncCall{
+				Name:      req.Name,
+				Arguments: args,
+			},
+		})
+	}
+	return calls
 }

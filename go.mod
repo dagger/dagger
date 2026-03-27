@@ -75,6 +75,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776
 	github.com/frioux/shellquote v0.0.2
+	github.com/github/copilot-sdk/go v0.2.0
 	github.com/go-git/go-git/v5 v5.16.3
 	github.com/gofrs/flock v0.13.0
 	github.com/gogo/googleapis v1.4.1
@@ -101,7 +102,7 @@ require (
 	github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f
 	github.com/joho/godotenv v1.5.1
 	github.com/juju/ansiterm v1.0.0
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.3
 	github.com/koron-go/prefixw v1.0.2
 	github.com/lmittmann/tint v1.1.2
 	github.com/mackerelio/go-osstat v0.2.6
