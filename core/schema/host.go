@@ -371,6 +371,13 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 		return inst, fmt.Errorf("failed to get SSH auth socket fingerprints: %w", err)
 	}
 	handle := core.ScopedSSHAuthSocketHandle(query.SecretSalt(), fingerprints)
+	mainClientMetadata, err := query.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get main client metadata: %w", err)
+	}
+	if clientMetadata.ClientID != mainClientMetadata.ClientID {
+		handle = core.ScopedNestedSSHAuthSocketHandle(query.SecretSalt(), fingerprints, clientMetadata.ClientID)
+	}
 	if handle == "" {
 		return inst, fmt.Errorf("failed to derive SSH auth socket handle")
 	}
