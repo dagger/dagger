@@ -48,10 +48,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
-			Doc(`The TypeDef representations of the objects currently being served in the session.`).
-			Args(
-				dagql.Arg("includeCore").Doc(`Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.`),
-			),
+			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
 		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
@@ -757,9 +754,7 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 	return void, query.ServeModule(ctx, modMeta, includeDependencies)
 }
 
-func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args struct {
-	IncludeCore dagql.Optional[dagql.Boolean]
-}) (dagql.Array[*core.TypeDef], error) {
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args struct{}) (dagql.Array[*core.TypeDef], error) {
 	served, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
@@ -771,17 +766,6 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 	typeDefs, err := served.TypeDefs(ctx, dag)
 	if err != nil {
 		return nil, err
-	}
-
-	includeCore := !args.IncludeCore.Valid || args.IncludeCore.Value.Bool()
-	if !includeCore {
-		filtered := make([]*core.TypeDef, 0, len(typeDefs))
-		for _, td := range typeDefs {
-			if !isCoreTypeDef(td) {
-				filtered = append(filtered, td)
-			}
-		}
-		typeDefs = filtered
 	}
 
 	// When HideCoreAPI is set (by the CLI/shell), strip core Query-root
