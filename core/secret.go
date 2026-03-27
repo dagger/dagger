@@ -105,21 +105,17 @@ func resolveSessionSecret(ctx context.Context, secret *Secret) (*Secret, error) 
 	if clientMetadata.SessionID == "" {
 		return nil, fmt.Errorf("resolve session secret %q: empty session ID", secret.Handle)
 	}
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve session secret %q: current dagql server: %w", secret.Handle, err)
-	}
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolve session secret %q: current dagql cache: %w", secret.Handle, err)
 	}
-	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, dag, secret.Handle)
+	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, secret.Handle)
 	if err != nil {
 		return nil, err
 	}
-	resolved, ok := dagql.UnwrapAs[*Secret](resolvedAny)
+	resolved, ok := resolvedAny.(*Secret)
 	if !ok {
-		return nil, fmt.Errorf("resolve session secret %q: bound result is %T", secret.Handle, resolvedAny.Unwrap())
+		return nil, fmt.Errorf("resolve session secret %q: bound value is %T", secret.Handle, resolvedAny)
 	}
 	if resolved.Handle != "" {
 		return nil, fmt.Errorf("resolve session secret %q: bound secret is still a handle", secret.Handle)

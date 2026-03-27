@@ -249,7 +249,7 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error
 	return nil
 }
 
-func (c *Cache) BindSessionResource(ctx context.Context, sessionID string, handle SessionResourceHandle, concrete AnyResult) error {
+func (c *Cache) BindSessionResource(ctx context.Context, sessionID string, handle SessionResourceHandle, value any) error {
 	if c == nil {
 		return errors.New("bind session resource: nil cache")
 	}
@@ -259,28 +259,23 @@ func (c *Cache) BindSessionResource(ctx context.Context, sessionID string, handl
 	if handle == "" {
 		return errors.New("bind session resource: empty handle")
 	}
-	if concrete == nil {
-		return errors.New("bind session resource: nil concrete result")
+	if value == nil {
+		return errors.New("bind session resource: nil concrete value")
 	}
-	shared := concrete.cacheSharedResult()
-	if shared == nil || shared.id == 0 {
-		return fmt.Errorf("bind session resource %q: concrete result %T is not attached", handle, concrete)
-	}
-
-	c.trackSessionResult(ctx, sessionID, concrete, false)
 
 	c.sessionMu.Lock()
 	if c.sessionResourcesBySession == nil {
-		c.sessionResourcesBySession = make(map[string]map[SessionResourceHandle]*set.TreeSet[*sharedResult])
+		c.sessionResourcesBySession = make(map[string]map[SessionResourceHandle]any)
 	}
 	if c.sessionResourcesBySession[sessionID] == nil {
-		c.sessionResourcesBySession[sessionID] = make(map[SessionResourceHandle]*set.TreeSet[*sharedResult])
+		c.sessionResourcesBySession[sessionID] = make(map[SessionResourceHandle]any)
 	}
 	bindings := c.sessionResourcesBySession[sessionID]
-	if bindings[handle] == nil {
-		bindings[handle] = set.NewTreeSet(compareSharedResults)
+	if _, found := bindings[handle]; found {
+		c.sessionMu.Unlock()
+		return nil
 	}
-	bindings[handle].Insert(shared)
+	bindings[handle] = value
 	if c.sessionHandlesBySession == nil {
 		c.sessionHandlesBySession = make(map[string]*set.TreeSet[SessionResourceHandle])
 	}
@@ -296,17 +291,13 @@ func (c *Cache) BindSessionResource(ctx context.Context, sessionID string, handl
 func (c *Cache) ResolveSessionResource(
 	ctx context.Context,
 	sessionID string,
-	resolver TypeResolver,
 	handle SessionResourceHandle,
-) (AnyResult, error) {
+) (any, error) {
 	if c == nil {
 		return nil, errors.New("resolve session resource: nil cache")
 	}
 	if sessionID == "" {
 		return nil, errors.New("resolve session resource: empty session ID")
-	}
-	if resolver == nil {
-		return nil, errors.New("resolve session resource: type resolver is nil")
 	}
 	if handle == "" {
 		return nil, errors.New("resolve session resource: empty handle")
@@ -314,26 +305,12 @@ func (c *Cache) ResolveSessionResource(
 
 	c.sessionMu.Lock()
 	bindings := c.sessionResourcesBySession[sessionID]
-	var shared *sharedResult
-	if bindingSet := bindings[handle]; bindingSet != nil {
-		for candidate := range bindingSet.Items() {
-			shared = candidate
-			break
-		}
-	}
+	value := bindings[handle]
 	c.sessionMu.Unlock()
-	if shared == nil {
+	if value == nil {
 		return nil, fmt.Errorf("resolve session resource %q: no bound resource for session %q", handle, sessionID)
 	}
-
-	touchSharedResultLastUsed(shared, time.Now().UnixNano())
-	if !shared.loadPayloadState().hasValue {
-		return Result[Typed]{shared: shared}, nil
-	}
-	if !shared.loadPayloadState().isObject {
-		return Result[Typed]{shared: shared}, nil
-	}
-	return wrapSharedResultWithResolver(shared, false, resolver)
+	return value, nil
 }
 
 func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID string, res AnyResult) {
@@ -835,7 +812,7 @@ type Cache struct {
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
-	sessionResourcesBySession         map[string]map[SessionResourceHandle]*set.TreeSet[*sharedResult]
+	sessionResourcesBySession         map[string]map[SessionResourceHandle]any
 	sessionHandlesBySession           map[string]*set.TreeSet[SessionResourceHandle]
 
 	sqlDB *sql.DB

@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -25,7 +26,7 @@ import (
 type SocketKind string
 
 const (
-	SocketKindSSHHandle SocketKind = "ssh_handle"
+	SocketKindSSHHandle  SocketKind = "ssh_handle"
 	SocketKindUnixOpaque SocketKind = "unix_opaque"
 	SocketKindHostIP     SocketKind = "host_ip"
 )
@@ -49,6 +50,14 @@ func (*Socket) Type() *ast.Type {
 
 func (*Socket) TypeDescription() string {
 	return "A Unix or TCP/IP socket that can be mounted into a container."
+}
+
+func HostUnixSocketHandle(ctx context.Context, query *Query, path string) (dagql.SessionResourceHandle, error) {
+	accessor, err := GetClientResourceAccessor(ctx, query, path)
+	if err != nil {
+		return "", err
+	}
+	return dagql.SessionResourceHandle(hashutil.HashStrings(accessor)), nil
 }
 
 func (socket *Socket) PersistedResultID() uint64 {
@@ -98,7 +107,7 @@ func (*Socket) DecodePersistedObject(ctx context.Context, dag *dagql.Server, res
 	}, nil
 }
 
-func resolveSessionSocket(ctx context.Context, socket *Socket) (*Socket, error) {
+func ResolveSessionSocket(ctx context.Context, socket *Socket) (*Socket, error) {
 	if socket == nil {
 		return nil, nil
 	}
@@ -113,21 +122,17 @@ func resolveSessionSocket(ctx context.Context, socket *Socket) (*Socket, error) 
 	if clientMetadata.SessionID == "" {
 		return nil, fmt.Errorf("resolve session socket %q: empty session ID", socket.Handle)
 	}
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve session socket %q: current dagql server: %w", socket.Handle, err)
-	}
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolve session socket %q: current dagql cache: %w", socket.Handle, err)
 	}
-	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, dag, socket.Handle)
+	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, socket.Handle)
 	if err != nil {
 		return nil, err
 	}
-	resolved, ok := dagql.UnwrapAs[*Socket](resolvedAny)
+	resolved, ok := resolvedAny.(*Socket)
 	if !ok {
-		return nil, fmt.Errorf("resolve session socket %q: bound result is %T", socket.Handle, resolvedAny.Unwrap())
+		return nil, fmt.Errorf("resolve session socket %q: bound value is %T", socket.Handle, resolvedAny)
 	}
 	if resolved.Handle != "" {
 		return nil, fmt.Errorf("resolve session socket %q: bound socket is still a handle", socket.Handle)
@@ -136,7 +141,7 @@ func resolveSessionSocket(ctx context.Context, socket *Socket) (*Socket, error) 
 }
 
 func (socket *Socket) URL(ctx context.Context) (string, error) {
-	resolved, err := resolveSessionSocket(ctx, socket)
+	resolved, err := ResolveSessionSocket(ctx, socket)
 	if err != nil {
 		return "", err
 	}
@@ -147,7 +152,7 @@ func (socket *Socket) URL(ctx context.Context) (string, error) {
 }
 
 func (socket *Socket) PortForward(ctx context.Context) (PortForward, error) {
-	resolved, err := resolveSessionSocket(ctx, socket)
+	resolved, err := ResolveSessionSocket(ctx, socket)
 	if err != nil {
 		return PortForward{}, err
 	}
@@ -158,7 +163,7 @@ func (socket *Socket) PortForward(ctx context.Context) (PortForward, error) {
 }
 
 func (socket *Socket) ForwardAgentClient(ctx context.Context) (sshforward.SSH_ForwardAgentClient, error) {
-	resolved, err := resolveSessionSocket(ctx, socket)
+	resolved, err := ResolveSessionSocket(ctx, socket)
 	if err != nil {
 		return nil, err
 	}

@@ -91,11 +91,6 @@ func (s *secretSchema) secret(
 		URIVal:         args.URI,
 		SourceClientID: clientMetadata.ClientID,
 	}
-	concrete, err := dagql.NewObjectResultForCurrentCall(ctx, srv, concreteVal)
-	if err != nil {
-		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to create concrete secret result: %w", err)
-	}
-
 	var handle dagql.SessionResourceHandle
 	if args.CacheKey.Valid {
 		handle = core.SecretHandleFromCacheKey(string(args.CacheKey.Value))
@@ -130,16 +125,8 @@ func (s *secretSchema) secret(
 		return dagql.ObjectResult[*core.Secret]{}, err
 	}
 
-	attachedConcreteAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, concrete)
-	if err != nil {
-		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to attach concrete secret result: %w", err)
-	}
-	attachedConcrete, ok := attachedConcreteAny.(dagql.ObjectResult[*core.Secret])
-	if !ok {
-		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("attached concrete secret result had unexpected type %T", attachedConcreteAny)
-	}
-	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, attachedConcrete); err != nil {
-		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to bind concrete secret result: %w", err)
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, concreteVal); err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to bind concrete secret: %w", err)
 	}
 
 	return handleRes, nil
@@ -197,10 +184,6 @@ func (s *secretSchema) setSecret(
 		NameVal:      args.Name,
 		PlaintextVal: []byte(args.Plaintext),
 	}
-	concrete, err := dagql.NewObjectResultForCall(concreteVal, srv, &sanitizedCall)
-	if err != nil {
-		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to create concrete setSecret result: %w", err)
-	}
 	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self(), args.Name)
 	if err != nil {
 		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to get client resource accessor: %w", err)
@@ -226,16 +209,8 @@ func (s *secretSchema) setSecret(
 		return dagql.ObjectResult[*core.Secret]{}, err
 	}
 
-	attachedConcreteAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, concrete)
-	if err != nil {
-		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to attach concrete setSecret result: %w", err)
-	}
-	attachedConcrete, ok := attachedConcreteAny.(dagql.ObjectResult[*core.Secret])
-	if !ok {
-		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("attached concrete setSecret result had unexpected type %T", attachedConcreteAny)
-	}
-	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, attachedConcrete); err != nil {
-		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to bind concrete setSecret result: %w", err)
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, concreteVal); err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to bind concrete setSecret value: %w", err)
 	}
 
 	return handleRes, nil

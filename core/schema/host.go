@@ -300,19 +300,54 @@ type hostSocketArgs struct {
 }
 
 func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostSocketArgs) (inst dagql.Result[*core.Socket], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql cache: %w", err)
+	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	sock := &core.Socket{
+
+	concreteVal := &core.Socket{
 		Kind:           core.SocketKindUnixOpaque,
 		URLVal:         (&url.URL{Scheme: "unix", Path: args.Path}).String(),
 		SourceClientID: clientMetadata.ClientID,
 	}
-	inst, err = dagql.NewResultForCurrentCall(ctx, sock)
+
+	handle, err := core.HostUnixSocketHandle(ctx, query, args.Path)
 	if err != nil {
-		return inst, fmt.Errorf("failed to create instance: %w", err)
+		return inst, fmt.Errorf("failed to derive unix socket handle: %w", err)
 	}
+	if handle == "" {
+		return inst, fmt.Errorf("failed to derive unix socket handle")
+	}
+
+	handleVal := &core.Socket{
+		Kind:   core.SocketKindUnixOpaque,
+		Handle: handle,
+	}
+	inst, err = dagql.NewResultForCurrentCall(ctx, handleVal)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create unix socket handle result: %w", err)
+	}
+	inst, err = inst.WithContentDigest(ctx, digest.Digest(handle))
+	if err != nil {
+		return inst, err
+	}
+	inst, err = inst.WithSessionResourceHandle(ctx, handle)
+	if err != nil {
+		return inst, err
+	}
+
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, concreteVal); err != nil {
+		return inst, err
+	}
+
 	return inst, nil
 }
 
@@ -339,16 +374,22 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-	var concrete dagql.AnyResult
 	var concreteSelf *core.Socket
 	if args.Source.Valid {
-		concrete, err = args.Source.Value.Load(ctx, srv)
+		concrete, err := args.Source.Value.Load(ctx, srv)
 		if err != nil {
 			return inst, fmt.Errorf("failed to load source socket: %w", err)
 		}
 		concreteSelf, _ = dagql.UnwrapAs[*core.Socket](concrete)
 		if concreteSelf == nil {
 			return inst, errors.New("source socket is nil")
+		}
+		concreteSelf, err = core.ResolveSessionSocket(ctx, concreteSelf)
+		if err != nil {
+			return inst, fmt.Errorf("failed to resolve source socket: %w", err)
+		}
+		if concreteSelf == nil {
+			return inst, errors.New("resolved source socket is nil")
 		}
 	} else {
 		if clientMetadata.SSHAuthSocketPath == "" {
@@ -358,10 +399,6 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 			Kind:           core.SocketKindUnixOpaque,
 			URLVal:         (&url.URL{Scheme: "unix", Path: clientMetadata.SSHAuthSocketPath}).String(),
 			SourceClientID: clientMetadata.ClientID,
-		}
-		concrete, err = dagql.NewResultForCurrentCall(ctx, concreteVal)
-		if err != nil {
-			return inst, fmt.Errorf("failed to create source SSH auth socket: %w", err)
 		}
 		concreteSelf = concreteVal
 	}
@@ -398,11 +435,7 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 	if err != nil {
 		return inst, err
 	}
-	attachedConcreteAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, concrete)
-	if err != nil {
-		return inst, fmt.Errorf("failed to attach concrete SSH auth socket: %w", err)
-	}
-	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, attachedConcreteAny); err != nil {
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, concreteSelf); err != nil {
 		return inst, err
 	}
 
