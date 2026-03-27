@@ -37,7 +37,7 @@ type Module struct {
 	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK config used by this module."`
 
 	// Deps contains the module's dependency DAG.
-	Deps *ModDeps
+	Deps *SchemaBuilder
 
 	// Runtime is the execution environment that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime ModuleRuntime

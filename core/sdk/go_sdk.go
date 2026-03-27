@@ -179,7 +179,7 @@ func (sdk *goSDK) GenerateClient(
 
 func (sdk *goSDK) Codegen(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
@@ -227,7 +227,7 @@ func (sdk *goSDK) Codegen(
 
 func (sdk *goSDK) ModuleTypes(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	src dagql.ObjectResult[*core.ModuleSource],
 	currentModuleID *call.ID,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
@@ -384,7 +384,7 @@ func (sdk *goSDK) ModuleTypes(
 
 func (sdk *goSDK) Runtime(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ core.ModuleRuntime, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
@@ -469,7 +469,7 @@ func (sdk *goSDK) Runtime(
 
 func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	src dagql.ObjectResult[*core.ModuleSource],
 ) (dagql.ObjectResult[*core.Container], error) {
 	var ctr dagql.ObjectResult[*core.Container]

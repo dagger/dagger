@@ -73,7 +73,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 		if err != nil {
 			return nil, fmt.Errorf("failed to get deps for DynamicID: %w", err)
 		}
-		dag, err := deps.Schema(ctx)
+		dag, err := deps.Server(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("schema: %w", err)
 		}

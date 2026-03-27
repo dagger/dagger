@@ -3251,7 +3251,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 }
 
 // load the given module source's dependencies as modules
-func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.ModDeps, rerr error) {
+func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.SchemaBuilder, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -3299,7 +3299,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	for _, depMod := range depMods {
 		mods = append(mods, depMod.Self())
 	}
-	return core.NewModDeps(query, mods), nil
+	return core.NewSchemaBuilder(query, mods), nil
 }
 
 func (s *moduleSourceSchema) moduleSourceWithClient(

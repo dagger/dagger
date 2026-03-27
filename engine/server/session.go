@@ -153,9 +153,9 @@ type daggerClient struct {
 
 	// the set of modules being served to this client, with per-module
 	// install policy (constructor vs type-only)
-	servedMods *core.ModDeps
+	servedMods *core.SchemaBuilder
 	// the default deps that each client/module starts out with (currently just core)
-	defaultDeps *core.ModDeps
+	defaultDeps *core.SchemaBuilder
 
 	// If the client is itself from a function call in a user module, this is set with the
 	// metadata of that ongoing function call
@@ -641,8 +641,8 @@ func (srv *Server) initializeDaggerClient(
 	if err := coreMod.Install(ctx, client.dag); err != nil {
 		return fmt.Errorf("failed to install core module: %w", err)
 	}
-	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-	client.servedMods = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
+	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 	coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
 	if opts.EncodedModuleID != "" {
@@ -670,7 +670,7 @@ func (srv *Server) initializeDaggerClient(
 		// }
 		// client.mod = modInst.Self
 
-		client.servedMods = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+		client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 		for _, dep := range client.mod.Deps.Mods() {
 			client.servedMods = client.servedMods.With(dep, core.InstallOpts{})
 		}
@@ -678,7 +678,7 @@ func (srv *Server) initializeDaggerClient(
 		if len(client.mod.ObjectDefs) > 0 {
 			client.servedMods = client.servedMods.With(client.mod, core.InstallOpts{})
 		}
-		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 	}
 
 	// Mark non-module clients for deferred workspace + extra module loading.
@@ -1299,7 +1299,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	}
 
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
-	schema, err := client.servedMods.Schema(ctx)
+	schema, err := client.servedMods.Server(ctx)
 	if err != nil {
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
@@ -2505,7 +2505,7 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 }
 
 // Return the modules being served to the current client
-func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error) {
+func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.SchemaBuilder, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -2571,7 +2571,7 @@ func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.C
 }
 
 // The default deps of every user module (currently just core)
-func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
+func (srv *Server) DefaultDeps(ctx context.Context) (*core.SchemaBuilder, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err

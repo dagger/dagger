@@ -51,7 +51,7 @@ func (sdk *dangSDK) GenerateClient(
 
 func (sdk *dangSDK) Codegen(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	return &core.GeneratedCode{
@@ -62,7 +62,7 @@ func (sdk *dangSDK) Codegen(
 
 func (sdk *dangSDK) Runtime(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (core.ModuleRuntime, error) {
 	return &DangRuntime{

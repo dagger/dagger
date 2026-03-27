@@ -60,7 +60,7 @@ type Server interface {
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
 
 	// Return the modules being served to the current client
-	CurrentServedDeps(context.Context) (*ModDeps, error)
+	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
 
 	// The Client metadata of the main client caller (i.e. the one who created
 	// the session, typically the CLI invoked by the user)
@@ -82,7 +82,7 @@ type Server interface {
 	SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error)
 
 	// The default deps of every user module (currently just core)
-	DefaultDeps(context.Context) (*ModDeps, error)
+	DefaultDeps(context.Context) (*SchemaBuilder, error)
 
 	// The DagQL query cache for the current client's session
 	Cache(context.Context) (*dagql.SessionCache, error)
@@ -260,13 +260,13 @@ func (q *Query) NewModule() *Module {
 //
 // The returned ModDeps extends the inner DefaultDeps with all modules found in
 // the ID, loaded by using the DefaultDeps schema.
-func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
+func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*SchemaBuilder, error) {
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("default deps: %w", err)
 	}
 
-	bootstrap, err := defaultDeps.Schema(ctx)
+	bootstrap, err := defaultDeps.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap schema: %w", err)
 	}

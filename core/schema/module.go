@@ -764,7 +764,7 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	dag, err := served.Schema(ctx)
+	dag, err := served.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current schema: %w", err)
 	}

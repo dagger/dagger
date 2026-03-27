@@ -122,7 +122,7 @@ type CodeGenerator interface {
 		context.Context,
 
 		// Current module dependencies.
-		*ModDeps,
+		*SchemaBuilder,
 
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
@@ -346,7 +346,7 @@ type Runtime interface {
 		context.Context,
 
 		// Current module dependencies.
-		*ModDeps,
+		*SchemaBuilder,
 
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
@@ -378,7 +378,7 @@ type ModuleTypes interface {
 		context.Context,
 
 		// Current module dependencies.
-		*ModDeps,
+		*SchemaBuilder,
 
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
