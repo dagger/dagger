@@ -153,6 +153,38 @@ func (c *GhcpClient) ensureConnected(ctx context.Context) error {
 	return nil
 }
 
+// providerConfig returns a ProviderConfig for BYOK if endpoint.BaseURL is set,
+// or if GITHUB_COPILOT_PROVIDER_URL env var is set.
+// Returns nil if using the default GitHub Copilot backend.
+func (c *GhcpClient) providerConfig() *copilot.ProviderConfig {
+	baseURL := c.endpoint.BaseURL
+	if baseURL == "" {
+		baseURL = os.Getenv("GITHUB_COPILOT_PROVIDER_URL")
+	}
+	if baseURL == "" {
+		return nil
+	}
+
+	cfg := &copilot.ProviderConfig{
+		BaseURL: baseURL,
+	}
+
+	switch {
+	case strings.Contains(baseURL, ".openai.azure.com"):
+		cfg.Type = "azure"
+	case strings.Contains(baseURL, "anthropic"):
+		cfg.Type = "anthropic"
+	default:
+		cfg.Type = "openai" // covers OpenAI, Ollama, LM Studio, etc.
+	}
+
+	if c.endpoint.Key != "" {
+		cfg.APIKey = c.endpoint.Key
+	}
+
+	return cfg
+}
+
 // getOrCreateSession returns the persistent session, creating it if needed.
 // systemPrompt is passed to SessionConfig.SystemMessage on first creation only.
 // If the registered tool set changes (by name fingerprint), the old session is
@@ -182,6 +214,8 @@ func (c *GhcpClient) getOrCreateSession(ctx context.Context, systemPrompt string
 		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
 		Tools:               tools,
 		SystemMessage:       sysMsg,
+		Provider:            c.providerConfig(),
+		Model:               StripGitHubModelPrefix(c.endpoint.Model),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create copilot session: %w", err)
