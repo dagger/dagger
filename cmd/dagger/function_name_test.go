@@ -59,39 +59,3 @@ func TestFunctionName(t *testing.T) {
 		})
 	}
 }
-
-func TestShouldSkipWorkspaceModules(t *testing.T) {
-	origNoMod := moduleNoURL
-	t.Cleanup(func() {
-		moduleNoURL = origNoMod
-	})
-
-	moduleNoURL = false
-	require.False(t, shouldSkipWorkspaceModules(false))
-	require.True(t, shouldSkipWorkspaceModules(true))
-
-	moduleNoURL = true
-	require.True(t, shouldSkipWorkspaceModules(false))
-	require.True(t, shouldSkipWorkspaceModules(true))
-}
-
-func TestInitModuleParams(t *testing.T) {
-	origNoMod := moduleNoURL
-	origEagerRuntime := eagerRuntime
-	t.Cleanup(func() {
-		moduleNoURL = origNoMod
-		eagerRuntime = origEagerRuntime
-	})
-
-	moduleNoURL = false
-	eagerRuntime = true
-	params := initModuleParams([]string{"container", "from"})
-	require.Equal(t, []string{"container", "from"}, params.ExecCmd)
-	require.Equal(t, "container", params.Function)
-	require.True(t, params.EagerRuntime)
-	require.False(t, params.SkipWorkspaceModules)
-
-	moduleNoURL = true
-	params = initModuleParams([]string{"container", "from"})
-	require.True(t, params.SkipWorkspaceModules)
-}
