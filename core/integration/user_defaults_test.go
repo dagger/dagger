@@ -602,6 +602,50 @@ func tempDirWithEnvFile(t *testctx.T, environ ...string) string {
 	return tmp
 }
 
+// Test that .env user defaults override module defaults for object types.
+// Regression test: when a constructor arg has a module default (e.g. Python's
+// "= None"), the schema default was incorrectly treated as an explicit user
+// input, preventing .env values from being applied.
+func (UserDefaultsSuite) TestObjectDefaultOverride(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := daggerCliBase(t, c).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"}).
+		With(daggerInitPython()).
+		WithNewFile("src/test/main.py", `import dagger
+from dagger import dag, function, object_type
+
+@object_type
+class Test:
+    secret_with_default: dagger.Secret | None = None
+
+    @function
+    async def check(self) -> str:
+        if self.secret_with_default is None:
+            return "secret is None"
+        val = await self.secret_with_default.plaintext()
+        return f"secret is: {val}"
+`).
+		WithEnvVariable("MY_SECRET", "hello-from-env")
+
+	// Without .env, should get None
+	out, err := base.
+		With(daggerCall("check")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "secret is None", out)
+
+	// FIXME: With .env providing a Secret via env://, should get the secret value.
+	// User defaults currently match the constructor arg's GraphQL name
+	// (`secretWithDefault`), not snake_case env-style names.
+	out, err = base.
+		WithNewFile(".env", "secretWithDefault=env://MY_SECRET").
+		With(daggerCall("check")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "secret is: hello-from-env", out)
+}
+
 func (UserDefaultsSuite) TestSimple(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := nestedDaggerContainer(t, c, "go", "defaults")
