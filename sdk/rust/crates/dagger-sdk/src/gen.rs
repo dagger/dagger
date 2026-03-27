@@ -12032,6 +12032,13 @@ pub struct QueryContainerOpts {
     pub platform: Option<Platform>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryCurrentTypeDefsOpts {
+    /// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+    /// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+    #[builder(setter(into, strip_option), default)]
+    pub hide_core: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryEnvOpts {
     /// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
     #[builder(setter(into, strip_option), default)]
@@ -12228,8 +12235,28 @@ impl Query {
         }
     }
     /// The TypeDef representations of the objects currently being served in the session.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn current_type_defs(&self) -> Vec<TypeDef> {
         let query = self.selection.select("currentTypeDefs");
+        vec![TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// The TypeDef representations of the objects currently being served in the session.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn current_type_defs_opts(&self, opts: QueryCurrentTypeDefsOpts) -> Vec<TypeDef> {
+        let mut query = self.selection.select("currentTypeDefs");
+        if let Some(hide_core) = opts.hide_core {
+            query = query.arg("hideCore", hide_core);
+        }
         vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,

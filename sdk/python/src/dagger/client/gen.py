@@ -11897,11 +11897,23 @@ class Query(Root):
         _ctx = self._select("currentModule", _args)
         return CurrentModule(_ctx)
 
-    async def current_type_defs(self) -> list["TypeDef"]:
+    async def current_type_defs(
+        self, *, hide_core: bool | None = None
+    ) -> list["TypeDef"]:
         """The TypeDef representations of the objects currently being served in
         the session.
+
+        Parameters
+        ----------
+        hide_core:
+            Strip core API functions from the Query type, leaving only module-
+            sourced functions (constructors, entrypoint proxies, etc.).
+            Core types (Container, Directory, etc.) are kept so return types
+            and method chaining still work.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("hideCore", hide_core, None),
+        ]
         _ctx = self._select("currentTypeDefs", _args)
         return await _ctx.execute_object_list(TypeDef)
 

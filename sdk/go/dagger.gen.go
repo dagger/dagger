@@ -11684,9 +11684,23 @@ func (r *Query) CurrentModule() *CurrentModule {
 	}
 }
 
+// CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
+type CurrentTypeDefsOpts struct {
+	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+	//
+	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+	HideCore bool
+}
+
 // The TypeDef representations of the objects currently being served in the session.
-func (r *Query) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `hideCore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HideCore) {
+			q = q.Arg("hideCore", opts[i].HideCore)
+		}
+	}
 
 	q = q.Select("id")
 

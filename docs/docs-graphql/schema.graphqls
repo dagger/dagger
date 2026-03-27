@@ -4780,7 +4780,15 @@ type Query {
   """
   The TypeDef representations of the objects currently being served in the session.
   """
-  currentTypeDefs: [TypeDef!]!
+  currentTypeDefs(
+    """
+    Strip core API functions from the Query type, leaving only module-sourced
+    functions (constructors, entrypoint proxies, etc.).
+
+    Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+    """
+    hideCore: Boolean
+  ): [TypeDef!]!
 
   """Detect and return the current workspace."""
   currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")

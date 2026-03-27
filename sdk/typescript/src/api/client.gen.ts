@@ -2132,6 +2132,15 @@ export type ClientContainerOpts = {
   platform?: Platform
 }
 
+export type ClientCurrentTypeDefsOpts = {
+  /**
+   * Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   *
+   * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+   */
+  hideCore?: boolean
+}
+
 export type ClientEnvOpts = {
   /**
    * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
@@ -11805,13 +11814,18 @@ export class Client extends BaseClient {
 
   /**
    * The TypeDef representations of the objects currently being served in the session.
+   * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   *
+   * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
-  currentTypeDefs = async (): Promise<TypeDef[]> => {
+  currentTypeDefs = async (
+    opts?: ClientCurrentTypeDefsOpts,
+  ): Promise<TypeDef[]> => {
     type currentTypeDefs = {
       id: TypeDefID
     }
 
-    const ctx = this._ctx.select("currentTypeDefs").select("id")
+    const ctx = this._ctx.select("currentTypeDefs", { ...opts }).select("id")
 
     const response: Awaited<currentTypeDefs[]> = await ctx.execute()
 

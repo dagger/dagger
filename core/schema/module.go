@@ -50,10 +50,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The TypeDef representations of the objects currently being served in the session.`).
 			Args(
 				dagql.Arg("hideCore").Doc(
-					`Strip core API functions from the Query type, leaving only`,
-					`module-sourced functions (constructors, entrypoint proxies, etc.).`,
-					`Core types (Container, Directory, etc.) are kept so return types`,
-					`and method chaining still work.`,
+					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
+					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,
 				),
 			),
 
