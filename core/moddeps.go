@@ -278,10 +278,10 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 		return nil, loadedSchemaJSONFile, err
 	}
 
-	// Wire up delegation: outer server delegates ID loading to inner server,
-	// and proxy resolvers use the inner server for Select calls.
-	outer.IDLoader = inner.Load
-	outer.Inner = inner
+	// Wire up delegation: the outer server's Load, LoadType, and
+	// Canonical() all route to the inner server, ensuring IDs are
+	// canonical and proxy resolvers can reach the real constructors.
+	outer.SetCanonical(inner)
 
 	return outer, schemaJSONFile, nil
 }

@@ -58,18 +58,36 @@ type Server struct {
 	// TODO: copy-on-write
 	Cache *SessionCache
 
-	// IDLoader, if set, is used by Load and LoadType to delegate ID
-	// evaluation to another server. This is the mechanism by which the
-	// outer (client-facing) server delegates ID loading to the inner
-	// (canonical) server, ensuring IDs are always evaluated against a
-	// schema where no entrypoint proxy can shadow a core field.
-	IDLoader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)
+	// canonical, if set, is the server without entrypoint sugar.
+	// Entrypoint proxies flatten a module's methods onto the Query root
+	// as syntactic convenience; the canonical server preserves the real
+	// namespace where constructors and core fields live unshadowed.
+	//
+	// Load, LoadType, and callers that need to bypass proxies (proxy
+	// resolvers, SDK plumbing) use Canonical() to reach it.
+	canonical *Server
+}
 
-	// Inner, if set, is the canonical server that entrypoint proxy
-	// resolvers should use for dag.Select calls. This prevents infinite
-	// recursion when a proxy field shadows the constructor it needs to
-	// call through.
-	Inner *Server
+// Canonical returns the server without entrypoint sugar. For servers
+// with entrypoint proxies, this is the underlying server where
+// constructors and core fields live unshadowed. For all other servers,
+// it returns the receiver itself.
+//
+// Use Canonical() when you need to bypass proxy fields: in entrypoint
+// proxy resolvers (to call the real constructor), in SDK plumbing (to
+// reach core fields like "directory"), and for ID evaluation (so IDs
+// always encode the real call path, not the sugared one).
+func (s *Server) Canonical() *Server {
+	if s.canonical != nil {
+		return s.canonical
+	}
+	return s
+}
+
+// SetCanonical sets the canonical (un-sugared) server. This is called
+// by SchemaBuilder when constructing the outer/inner server pair.
+func (s *Server) SetCanonical(canonical *Server) {
+	s.canonical = canonical
 }
 
 type ServerSchema struct {
@@ -676,8 +694,10 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
-	if s.IDLoader != nil {
-		return s.IDLoader(ctx, id)
+	// Delegate to the canonical server so IDs are always evaluated
+	// against the real schema, not the sugared one.
+	if c := s.canonical; c != nil {
+		return c.Load(ctx, id)
 	}
 	res, err := s.LoadType(ctx, id)
 	if err != nil {
@@ -687,8 +707,8 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
-	if s.IDLoader != nil {
-		return s.IDLoader(ctx, id)
+	if c := s.canonical; c != nil {
+		return c.LoadType(ctx, id)
 	}
 	var base AnyResult
 	var err error

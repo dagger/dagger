@@ -452,12 +452,9 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				// and method calls as internal — they are the real
 				// user-facing calls and should appear in telemetry.
 				ctx = dagql.WithNonInternalTelemetry(ctx)
-				// Use the inner server for Select to avoid infinite
-				// recursion when the proxy shadows the constructor.
-				target := dag
-				if dag.Inner != nil {
-					target = dag.Inner
-				}
+				// Desugar through the canonical server where the real
+				// constructor lives (not shadowed by proxy fields).
+				canonical := dag.Canonical()
 				// Read constructor args from the Query (set by `with`).
 				query, _ := dagql.UnwrapAs[*Query](self)
 				var ctorNamedArgs []dagql.NamedInput
@@ -465,7 +462,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
 				}
 				var result dagql.AnyResult
-				if err := target.Select(ctx, target.Root(), &result,
+				if err := canonical.Select(ctx, canonical.Root(), &result,
 					dagql.Selector{
 						Field: constructorName,
 						Args:  ctorNamedArgs,
@@ -499,12 +496,9 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			proxySpec,
 			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 				ctx = dagql.WithNonInternalTelemetry(ctx)
-				// Use the inner server for Select to avoid infinite
-				// recursion when the proxy shadows the constructor.
-				target := dag
-				if dag.Inner != nil {
-					target = dag.Inner
-				}
+				// Desugar through the canonical server where the real
+				// constructor lives (not shadowed by proxy fields).
+				canonical := dag.Canonical()
 				// Read constructor args from the Query (set by `with`).
 				query, _ := dagql.UnwrapAs[*Query](self)
 				var ctorNamedArgs []dagql.NamedInput
@@ -512,7 +506,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
 				}
 				var result dagql.AnyResult
-				if err := target.Select(ctx, target.Root(), &result,
+				if err := canonical.Select(ctx, canonical.Root(), &result,
 					dagql.Selector{
 						Field: constructorName,
 						Args:  ctorNamedArgs,
