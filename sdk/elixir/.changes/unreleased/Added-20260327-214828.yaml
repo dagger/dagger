@@ -1,0 +1,7 @@
+kind: Added
+body: |
+    elixir: support Enum
+time: 2026-03-27T21:48:28.927220168+01:00
+custom:
+    Author: Nero-F
+    PR: "12862"
