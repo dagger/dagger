@@ -331,8 +331,8 @@ func (Other) Version() string {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "A git helper")
-		require.Contains(t, out, "ENTRYPOINT")
-		require.Contains(t, out, "AVAILABLE FUNCTIONS")
+		// git is a function on Query; .help shows function-style docs.
+		require.Contains(t, out, "RETURNS")
 	})
 
 	t.Run("other module function", func(ctx context.Context, t *testctx.T) {

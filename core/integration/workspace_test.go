@@ -232,9 +232,17 @@ type Greeter {
 }
 `))
 
-	out, err := ctr.With(daggerCall("greeter", "read")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+	t.Run("dagger call", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCall("greeter", "read")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+	})
+
+	t.Run("dagger shell", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerShell("greeter | read")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from workspace", out)
+	})
 }
 
 // TestWorkspaceDirectoryEntries verifies that Workspace.directory returns the
@@ -879,6 +887,25 @@ type Test {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"build":"built!","lint":{"check":"lint passed"},"test":{"run":"tests passed"}}`, out)
 	})
+
+	t.Run("dagger shell blueprint function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "built!", out)
+	})
+
+	t.Run("dagger shell sibling module function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("lint | check")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "lint passed", out)
+	})
+
+	t.Run("dagger shell multiple sibling modules", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("lint | check; test | run")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "lint passed")
+		require.Contains(t, out, "tests passed")
+	})
 }
 
 func (WorkspaceSuite) TestEntrypointProxyShadowsCoreFields(ctx context.Context, t *testctx.T) {
@@ -1259,5 +1286,17 @@ type HelloWorld {
 		out, err := base.With(daggerFunctions()).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "greeter")
+	})
+
+	t.Run("dagger shell renamed alias", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("greeter | greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, world!", out)
+	})
+
+	t.Run("dagger shell renamed alias with args", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("greeter | greet --name dagger")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, dagger!", out)
 	})
 }

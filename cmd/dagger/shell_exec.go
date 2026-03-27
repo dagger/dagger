@@ -397,16 +397,12 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 
 	// Module-specific lookups
 	if def.HasModule() {
-		// 2. Is it the current module's name?
-		if def.Name == name {
-			st := h.newModState(def.SourceDigest)
+		// 2. Is it the current module's name (or ".")?
+		// In proxy mode the constructor is Query.with; an empty state
+		// causes entrypointCall to invoke constructorCall which uses it.
+		if def.Name == name || name == "." {
+			st := h.NewState()
 			return &st, nil
-		}
-
-		// 3. Dependency short name
-		if dep := def.GetDependency(name); dep != nil {
-			depSt, _, err := h.GetDependency(ctx, name)
-			return depSt, err
 		}
 	}
 

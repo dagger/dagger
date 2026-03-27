@@ -75,7 +75,7 @@ func (h *shellCallHandler) MainHelp() string {
 	constr := def.MainObject.AsObject.Constructor
 	if !constr.HasRequiredArgs() {
 		for _, fn := range def.MainObject.AsFunctionProvider().GetFunctions() {
-			if isLoadFromIDFunction(fn.CmdName()) {
+			if isHiddenFunction(fn.CmdName()) {
 				continue
 			}
 			src := fn.SourceModuleName
@@ -451,8 +451,12 @@ func shellTypeDoc(t *modTypeDef) string {
 	return doc.String()
 }
 
-// isLoadFromIDFunction returns true for internal "load-<type>-from-id"
-// functions that are callable but should not clutter .help output.
-func isLoadFromIDFunction(name string) bool {
+// isHiddenFunction returns true for internal functions that are callable
+// but should not clutter .help output: load-<type>-from-id helpers and
+// the synthetic "with" constructor mechanism.
+func isHiddenFunction(name string) bool {
+	if name == "with" {
+		return true
+	}
 	return strings.HasPrefix(name, "load-") && strings.HasSuffix(name, "-from-id")
 }

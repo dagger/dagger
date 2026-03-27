@@ -372,14 +372,10 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 		}
 	}
 
-	// Strip "with" from the visible functions list — it's an entrypoint
-	// constructor mechanism exposed as constructor flags, not a
-	// user-facing sub-command. (Constructor detection above has already
-	// captured it.)
-	rootType.AsObject.Functions = slices.DeleteFunc(
-		rootType.AsObject.Functions,
-		func(fn *modFunction) bool { return fn.Name == "with" },
-	)
+	// NOTE: "with" stays in the functions list so that shell states
+	// containing a with() constructor call can be resolved by
+	// GetObjectFunction. Help/completion filter it out via
+	// isHiddenFunction.
 
 	return nil
 }
@@ -544,24 +540,16 @@ func (m *moduleDef) HasMainFunction(name string) bool {
 	return m.GetMainFunction(name) != nil
 }
 
-// GetMainFunction returns a function from the main object that belongs to
-// the module itself (not a dependency constructor). When entrypoint proxying
-// promotes methods onto Query, dep constructors also live on Query but must
-// not be treated as "main" functions.
+// GetMainFunction returns a function from the main object. When entrypoint
+// proxying is active, MainObject is Query and all Query fields — entrypoint
+// proxy functions, installed module constructors, and core functions — are
+// treated uniformly.
 func (m *moduleDef) GetMainFunction(name string) *modFunction {
 	fp := m.MainObject.AsFunctionProvider()
 	if fp == nil {
 		return nil
 	}
 	fn, _ := m.GetFunction(fp, name)
-	if fn == nil {
-		return nil
-	}
-	// A function belongs to this module if it has no source module (core or
-	// non-proxied) or its source module matches our own name.
-	if fn.SourceModuleName != "" && fn.SourceModuleName != m.Name {
-		return nil
-	}
 	return fn
 }
 

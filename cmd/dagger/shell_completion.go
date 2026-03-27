@@ -228,6 +228,9 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 	case ctx.root:
 		def := ctx.Completer.GetDef(nil)
 		for _, fn := range def.MainObject.AsFunctionProvider().GetFunctions() {
+			if isHiddenFunction(fn.CmdName()) {
+				continue
+			}
 			results = append(results, fn.CmdName())
 		}
 		for _, dep := range def.Dependencies {

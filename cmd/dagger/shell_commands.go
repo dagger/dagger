@@ -322,6 +322,11 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						return h.Print(ctx, shellTypeDoc(t))
 					}
 
+					// "." and the current module name refer to this module.
+					if def := h.GetDef(nil); def.HasModule() && (args[0] == "." || args[0] == def.Name) {
+						return h.Print(ctx, h.ModuleDoc(def))
+					}
+
 					// Use the same function lookup as when executing
 					// so that `> .help wolfi` documents `> wolfi`.
 					st, err = h.StateLookup(ctx, args[0])
