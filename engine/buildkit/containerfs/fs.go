@@ -576,13 +576,29 @@ func ReadHostCustomCADir(path string) (
 		dirEntPath := filepath.Join(path, dirEnt.Name())
 		switch dirEnt.Type() {
 		case os.ModeSymlink:
-			linkPath, err := os.Readlink(dirEntPath)
+			// Resolve symlinks and read the target file contents rather than
+			// preserving the symlink. This handles Kubernetes Secret mounts
+			// where files are symlinked through a ..data/ subdirectory that
+			// won't exist inside containers.
+			resolved, err := filepath.EvalSymlinks(dirEntPath)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to resolve symlink %s: %w", dirEntPath, err)
+			}
+			info, err := os.Stat(resolved)
 			if err != nil {
 				return nil, nil, err
 			}
-			symlinks[dirEnt.Name()] = linkPath
+			if info.IsDir() {
+				// skip directories (e.g. ..data itself)
+				continue
+			}
+			bs, err := os.ReadFile(resolved)
+			if err != nil {
+				return nil, nil, err
+			}
+			certsToFileName[strings.TrimSpace(string(bs))] = dirEnt.Name()
 		case os.ModeDir:
-			// TODO: handle subdirs
+			// skip hidden/internal directories (e.g. K8s ..data, ..2025_xx_xx)
 		default:
 			// TODO: only read .pem/.crt files?
 			bs, err := os.ReadFile(dirEntPath)
