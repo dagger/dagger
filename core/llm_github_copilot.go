@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
@@ -244,13 +245,15 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 
 	// Phase 2: send only new messages, retry once on session expiry.
 	var (
-		resp    *copilot.SessionEvent
 		sendErr error
 		usage   LLMTokenUsage
 		usageMu sync.Mutex
 
 		toolCallsMu   sync.Mutex
 		capturedCalls []LLMToolCall
+
+		contentMu   sync.Mutex
+		fullContent strings.Builder
 	)
 
 	for attempt := 0; attempt < 2; attempt++ {
@@ -278,6 +281,7 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 
 		// Reset per-attempt state.
 		usage = LLMTokenUsage{}
+		fullContent.Reset()
 		toolCallsMu.Lock()
 		capturedCalls = capturedCalls[:0]
 		toolCallsMu.Unlock()
@@ -337,9 +341,57 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 			})
 		})
 
-		resp, sendErr = session.SendAndWait(ctx, copilot.MessageOptions{Prompt: prompt})
+		idleCh := make(chan struct{}, 1)
+		streamErrCh := make(chan error, 1)
+
+		unsubStream := session.On(func(event copilot.SessionEvent) {
+			switch event.Type {
+			case copilot.SessionEventTypeAssistantMessageDelta:
+				if event.Data.DeltaContent != nil {
+					delta := *event.Data.DeltaContent
+					contentMu.Lock()
+					fullContent.WriteString(delta)
+					contentMu.Unlock()
+					fmt.Fprint(stdio.Stdout, delta)
+				}
+			case copilot.SessionEventTypeSessionIdle:
+				select {
+				case idleCh <- struct{}{}:
+				default:
+				}
+			case copilot.SessionEventTypeSessionError:
+				errMsg := "session error"
+				if event.Data.Message != nil {
+					errMsg = *event.Data.Message
+				}
+				select {
+				case streamErrCh <- fmt.Errorf("copilot session error: %s", errMsg):
+				default:
+				}
+			}
+		})
+
+		_, sendErr = session.Send(ctx, copilot.MessageOptions{Prompt: prompt})
+		if sendErr == nil {
+			waitCtx := ctx
+			if _, ok := ctx.Deadline(); !ok {
+				var cancel context.CancelFunc
+				waitCtx, cancel = context.WithTimeout(ctx, 120*time.Second)
+				defer cancel()
+			}
+			select {
+			case <-idleCh:
+				// done
+			case streamErr := <-streamErrCh:
+				sendErr = streamErr
+			case <-waitCtx.Done():
+				sendErr = waitCtx.Err()
+			}
+		}
+
 		unsubUsage()
 		unsubTools()
+		unsubStream()
 
 		if sendErr != nil && isSessionExpired(sendErr) && attempt == 0 {
 			// Session gone server-side — clear state and retry with a fresh session.
@@ -363,10 +415,9 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 	c.sentMsgCount = len(history)
 	c.mu.Unlock()
 
-	content := ""
-	if resp != nil && resp.Data.Content != nil {
-		content = *resp.Data.Content
-	}
+	contentMu.Lock()
+	content := fullContent.String()
+	contentMu.Unlock()
 
 	toolCallsMu.Lock()
 	toolCalls := make([]LLMToolCall, len(capturedCalls))
