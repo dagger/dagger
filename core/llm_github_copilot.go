@@ -135,6 +135,7 @@ func (c *GhcpClient) connect(ctx context.Context) error {
 	// Endpoint returns host:port accessible from the engine process.
 	addr, err := startedSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: ghcpDefaultCLIPort})
 	if err != nil {
+		_ = startedSvc.Stop(ctx, dagger.ServiceStopOpts{})
 		return fmt.Errorf("get copilot sidecar endpoint: %w", err)
 	}
 
@@ -142,6 +143,7 @@ func (c *GhcpClient) connect(ctx context.Context) error {
 	// Auth is handled by the sidecar via its GITHUB_TOKEN env var.
 	sdkClient := copilot.NewClient(&copilot.ClientOptions{CLIUrl: addr})
 	if err := sdkClient.Start(ctx); err != nil {
+		_ = startedSvc.Stop(ctx, dagger.ServiceStopOpts{})
 		return fmt.Errorf("start copilot SDK client: %w", err)
 	}
 	c.client = sdkClient
@@ -351,7 +353,7 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 		usage = LLMTokenUsage{}
 		fullContent.Reset()
 		toolCallsMu.Lock()
-		capturedCalls = capturedCalls[:0]
+		capturedCalls = nil
 		toolCallsMu.Unlock()
 
 		// Capture token usage from assistant.usage events, which fire before session.idle.
@@ -466,6 +468,7 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 			c.mu.Lock()
 			c.session = nil
 			c.sentMsgCount = 0
+			c.toolsHash = ""
 			c.mu.Unlock()
 			continue
 		}
