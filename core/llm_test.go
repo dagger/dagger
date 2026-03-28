@@ -50,6 +50,9 @@ func TestLlmConfig(t *testing.T) {
 		"env://GEMINI_API_KEY":           "gemini-api-key",
 		"env://GEMINI_BASE_URL":          "gemini-base-url",
 		"env://GEMINI_MODEL":             "gemini-model",
+		"env://GITHUB_TOKEN":                "github-token",
+		"env://GITHUB_MODEL":                "github-model",
+		"env://GITHUB_COPILOT_CLI_VERSION":  "1.0.10",
 	}
 
 	dagql.Fields[LLMTestQuery]{
@@ -83,6 +86,9 @@ func TestLlmConfig(t *testing.T) {
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
+	assert.Equal(t, "github-token", r.GitHubToken)
+	assert.Equal(t, "github-model", r.GitHubModel)
+	assert.Equal(t, "1.0.10", r.GitHubCliVersion)
 }
 
 func TestLlmConfigDisableStreaming(t *testing.T) {
