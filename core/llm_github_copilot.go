@@ -135,7 +135,7 @@ func (c *GhcpClient) connect(ctx context.Context) error {
 	// Endpoint returns host:port accessible from the engine process.
 	addr, err := startedSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: ghcpDefaultCLIPort})
 	if err != nil {
-		_ = startedSvc.Stop(ctx, dagger.ServiceStopOpts{})
+		_, _ = startedSvc.Stop(ctx, dagger.ServiceStopOpts{})
 		return fmt.Errorf("get copilot sidecar endpoint: %w", err)
 	}
 
@@ -143,7 +143,7 @@ func (c *GhcpClient) connect(ctx context.Context) error {
 	// Auth is handled by the sidecar via its GITHUB_TOKEN env var.
 	sdkClient := copilot.NewClient(&copilot.ClientOptions{CLIUrl: addr})
 	if err := sdkClient.Start(ctx); err != nil {
-		_ = startedSvc.Stop(ctx, dagger.ServiceStopOpts{})
+		_, _ = startedSvc.Stop(ctx, dagger.ServiceStopOpts{})
 		return fmt.Errorf("start copilot SDK client: %w", err)
 	}
 	c.client = sdkClient
