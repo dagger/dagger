@@ -17,8 +17,8 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
 
-	copilot "github.com/github/copilot-sdk/go"
 	telemetry "github.com/dagger/otel-go"
+	copilot "github.com/github/copilot-sdk/go"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -264,6 +264,8 @@ func (c *GhcpClient) getOrCreateSession(ctx context.Context, systemPrompt string
 // returns the response. The Copilot CLI maintains full conversation history
 // server-side within the session, so we track a cursor (sentMsgCount) and
 // send only the delta each time.
+//
+//nolint:gocyclo // SendQuery handles streaming, tool-calling, retries, session expiry, and legacy fallback in one place; splitting would harm readability without reducing actual complexity
 func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	copilotModel := StripGitHubModelPrefix(c.endpoint.Model)
 
@@ -599,6 +601,7 @@ func buildSDKTools(tools []LLMTool) []copilot.Tool {
 				// inv.TraceContext carries W3C trace propagation from the CLI span.
 				result, err := tool.Call(inv.TraceContext, args)
 				if err != nil {
+					//nolint:nilerr // tool errors are surfaced in ToolResult.Error, not as Go errors
 					return copilot.ToolResult{
 						Error:      err.Error(),
 						ResultType: "error",
@@ -613,6 +616,7 @@ func buildSDKTools(tools []LLMTool) []copilot.Tool {
 				default:
 					b, err := json.Marshal(result)
 					if err != nil {
+						//nolint:nilerr // json.Marshal failure falls back to fmt.Sprintf; marshal error not useful to caller
 						return copilot.ToolResult{TextResultForLLM: fmt.Sprintf("%v", result), ResultType: "success"}, nil
 					}
 					return copilot.ToolResult{TextResultForLLM: string(b), ResultType: "success"}, nil
@@ -656,12 +660,11 @@ func newGhcpLegacyClient(endpoint *LLMEndpoint, cliVersion string) *GhcpLegacyCl
 	if cliVersion == "" {
 		cliVersion = ghcpDefaultCLIVersion
 	}
-	ctx := context.Background()
-	container := ghcpLegacyContainer(ctx, endpoint.Key, cliVersion)
+	container := ghcpLegacyContainer(endpoint.Key, cliVersion)
 	return &GhcpLegacyClient{client: container, endpoint: endpoint}
 }
 
-func ghcpLegacyContainer(ctx context.Context, token, cliVersion string) *dagger.Container {
+func ghcpLegacyContainer(token, cliVersion string) *dagger.Container {
 	ghcpSessionCache := dag.CacheVolume("copilot-session-" + token[:8])
 	return dag.Container().
 		From("node:24-bookworm-slim").

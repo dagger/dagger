@@ -38,21 +38,21 @@ func TestLlmConfig(t *testing.T) {
 	srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
 
 	vars := map[string]string{
-		"file://.env":                    "",
-		"env://ANTHROPIC_API_KEY":        "anthropic-api-key",
-		"env://ANTHROPIC_BASE_URL":       "anthropic-base-url",
-		"env://ANTHROPIC_MODEL":          "anthropic-model",
-		"env://OPENAI_API_KEY":           "openai-api-key",
-		"env://OPENAI_AZURE_VERSION":     "openai-azure-version",
-		"env://OPENAI_BASE_URL":          "openai-base-url",
-		"env://OPENAI_MODEL":             "openai-model",
-		"env://OPENAI_DISABLE_STREAMING": "t",
-		"env://GEMINI_API_KEY":           "gemini-api-key",
-		"env://GEMINI_BASE_URL":          "gemini-base-url",
-		"env://GEMINI_MODEL":             "gemini-model",
-		"env://GITHUB_TOKEN":                "github-token",
-		"env://GITHUB_MODEL":                "github-model",
-		"env://GITHUB_COPILOT_CLI_VERSION":  "1.0.10",
+		"file://.env":                      "",
+		"env://ANTHROPIC_API_KEY":          "anthropic-api-key",
+		"env://ANTHROPIC_BASE_URL":         "anthropic-base-url",
+		"env://ANTHROPIC_MODEL":            "anthropic-model",
+		"env://OPENAI_API_KEY":             "openai-api-key",
+		"env://OPENAI_AZURE_VERSION":       "openai-azure-version",
+		"env://OPENAI_BASE_URL":            "openai-base-url",
+		"env://OPENAI_MODEL":               "openai-model",
+		"env://OPENAI_DISABLE_STREAMING":   "t",
+		"env://GEMINI_API_KEY":             "gemini-api-key",
+		"env://GEMINI_BASE_URL":            "gemini-base-url",
+		"env://GEMINI_MODEL":               "gemini-model",
+		"env://GITHUB_TOKEN":               "github-token",
+		"env://GITHUB_MODEL":               "github-model",
+		"env://GITHUB_COPILOT_CLI_VERSION": "1.0.10",
 	}
 
 	dagql.Fields[LLMTestQuery]{
