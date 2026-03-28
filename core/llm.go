@@ -414,7 +414,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		return save("GITHUB_MODEL", &r.GitHubModel)
 	})
 	eg.Go(func() error {
-		return save("GITHUB_CLI_VERSION", &r.GitHubCliVersion)
+		return save("GITHUB_COPILOT_CLI_VERSION", &r.GitHubCliVersion)
 	})
 
 	var (
@@ -440,7 +440,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 
 	// Set defaults for fields that weren't populated
 	if r.GitHubCliVersion == "" {
-		r.GitHubCliVersion = "latest" // or whatever default you want
+		// leave empty so the implementation default (ghcpDefaultCLIVersion) takes effect
 	}
 
 	return nil
