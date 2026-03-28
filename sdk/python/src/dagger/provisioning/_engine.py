@@ -92,6 +92,7 @@ class Engine:
         conn = await self.stack.enter_async_context(conn)
 
         client = dagger.Client.from_connection(conn)
+        self.stack.push_async_callback(self.progress.stop)
         self.stack.push_async_callback(self.progress.update, "Disconnecting")
 
         return await self.verify(client)
