@@ -27,8 +27,8 @@ import (
 )
 
 const (
-	// ghcpDefaultCLIVersion is the Copilot CLI version bundled with SDK v0.2.0.
-	// Bump this alongside go.mod when upgrading the SDK.
+	// ghcpDefaultCLIVersion is the npm package version of @github/copilot-{platform}.
+	// Bump this when upgrading to a newer @github/copilot npm release.
 	ghcpDefaultCLIVersion = "1.0.10"
 	ghcpDefaultCLIPort    = 3000
 )
@@ -71,9 +71,6 @@ func StripGitHubModelPrefix(model string) string {
 // ensures it is downloaded only once per version.
 func copilotSidecar(token, cliVersion string) *dagger.Service {
 	version := cliVersion
-	if v := os.Getenv("GITHUB_CLI_VERSION"); v != "" {
-		version = v
-	}
 	if version == "" {
 		version = ghcpDefaultCLIVersion
 	}
