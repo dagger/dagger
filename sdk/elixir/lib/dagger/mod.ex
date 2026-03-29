@@ -15,6 +15,18 @@ defmodule Dagger.Mod do
     end
   end
 
+  @doc """
+  Register a module by writing its type definition ID to DAGGER_MODULE_FILE.
+  """
+  def register(module) when is_atom(module) do
+    case Dagger.Global.start_link() do
+      {:ok, _} -> do_register(Dagger.Global.dag(), module)
+      otherwise -> otherwise
+    end
+  after
+    Dagger.Global.close()
+  end
+
   def invoke(dag, module) do
     fn_call = Dagger.Client.current_function_call(dag)
 
@@ -64,6 +76,23 @@ defmodule Dagger.Mod do
     return_type = fun_def.return
 
     execute_function(module, fun_name, args, return_type)
+  end
+
+  defp do_register(dag, module) do
+    output_file =
+      System.get_env("DAGGER_MODULE_FILE") ||
+        raise "DAGGER_MODULE_FILE environment variable is not set"
+
+    dag_module = Dagger.Mod.Module.define(dag, module)
+
+    case Dagger.Module.id(dag_module) do
+      {:ok, module_id} ->
+        File.write!(output_file, Jason.encode!(module_id))
+
+      {:error, reason} ->
+        IO.puts(:stderr, format_error(reason))
+        exit({:shutdown, 2})
+    end
   end
 
   defp execute_function(module, fun_name, args, return_type) do
