@@ -1,0 +1,10 @@
+{
+  "name": "self-calls",
+  "engineVersion": "v0.18.3",
+  "sdk": {
+    "source": "../../sdk/elixir",
+    "experimental": {
+      "SELF_CALLS": true
+    }
+  }
+}
