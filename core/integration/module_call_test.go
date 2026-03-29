@@ -1411,11 +1411,11 @@ import (
 type Test struct{}
 
 type SocketIDResponse struct {
-	Host struct{ 
-		UnixSocket struct{ 
-			Id string 
-		} 
-	} 
+	Host struct{
+		UnixSocket struct{
+			Id string
+		}
+	}
 }
 
 func (m *Test) Fn(ctx context.Context, sockPath string, runContainerQuery string) error {
@@ -2628,7 +2628,7 @@ from dagger import dag
 
 @dagger.enum_type
 class Language(enum.Enum):
-    GO = "GO" 
+    GO = "GO"
     PYTHON = "PYTHON"
     TYPESCRIPT = "TYPESCRIPT"
     PHP = "PHP"

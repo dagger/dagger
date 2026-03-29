@@ -89,7 +89,7 @@ func (d DocsDev) LintMarkdown(
 		From("tmknom/markdownlint:"+markdownlintVersion).
 		WithWorkdir("/src").
 		WithMountedDirectory(".", markdownFiles).
-		WithExec([]string{"markdownlint"}).
+		WithExec([]string{"markdownlint", "docs"}).
 		Sync(ctx)
 	return err
 }
