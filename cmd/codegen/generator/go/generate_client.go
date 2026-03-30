@@ -148,6 +148,22 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	} else if readErr == nil {
 		// Preserve the existing go.mod verbatim so that `require` entries
 		// previously added by `go mod tidy` are not lost.
+		// We only bump dagger.io/dagger if needed
+		existingGoMod, err := modfile.Parse("go.mod", existingClientGoModData, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse client go.mod: %w", err)
+		}
+
+		engineVersion := g.Config.ClientConfig.EngineVersion
+		if engineVersion != "" && !strings.Contains(engineVersion, "-dev") && !isDaggerPkgCustomReplaced(existingGoMod.Replace) {
+			existingGoMod.AddRequire("dagger.io/dagger", engineVersion)
+		}
+
+		existingClientGoModData, err := existingGoMod.Format()
+		if err != nil {
+			return nil, fmt.Errorf("failed to format client go.mod: %w", err)
+		}
+
 		if err := mfs.WriteFile(clientGoModFilePath, existingClientGoModData, 0600); err != nil {
 			return nil, fmt.Errorf("failed to preserve client go.mod: %w", err)
 		}
