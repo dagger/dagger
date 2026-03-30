@@ -532,6 +532,17 @@ func (m *moduleDef) HasModule() bool {
 	return m.Name != ""
 }
 
+// ModuleConstructor returns the constructor function for the module's
+// named main object. This is the module-specific constructor (e.g.
+// Query.myMod()), as opposed to MainObject.AsObject.Constructor which
+// is Query's synthetic "with" or no-op constructor.
+func (m *moduleDef) ModuleConstructor() *modFunction {
+	if obj := m.GetObject(m.Name); obj != nil && obj.Constructor != nil {
+		return obj.Constructor
+	}
+	return m.MainObject.AsObject.Constructor
+}
+
 func (m *moduleDef) HasMainFunction(name string) bool {
 	return m.GetMainFunction(name) != nil
 }
