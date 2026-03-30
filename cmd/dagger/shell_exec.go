@@ -44,7 +44,7 @@ const (
 // `set -eo pipefail` to make it fatal.
 //
 // The discrepancy is due to the interpreter library considering errors
-// without `interp.ExitStatus“ to be unexpected and thus fatal by default
+// without `interp.ExitStatus" to be unexpected and thus fatal by default
 // (opt-out, not opt-in), to avoid going unnoticed.
 type HandlerError struct {
 	// Err is the original error
@@ -356,7 +356,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 	// Command is a function in current context (module or core)
 	if h.isCurrentContextFunction(cmd) {
 		// When MainObject is Query (entrypoint proxy or core-only),
-		// functions are already on Query — no constructor needed.
+		// functions are already on Query - no constructor needed.
 		if def.MainObject.AsObject != nil && def.MainObject.AsObject.Name == "Query" {
 			newSt := h.NewState()
 			return h.functionCall(ctx, &newSt, cmd, args)
@@ -369,9 +369,9 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 		return h.functionCall(ctx, st, cmd, args)
 	}
 
-	// Command is a dependency or module ref, so this is the constructor call
+	// Command is a module ref — invoke its named constructor on Query.
 	if def.HasModule() && st.IsEmpty() {
-		return h.constructorCall(ctx, def, st, args)
+		return h.functionCall(ctx, st, def.Name, args)
 	}
 
 	return st, nil
@@ -398,8 +398,7 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 	// Module-specific lookups
 	if def.HasModule() {
 		// 2. Is it the current module's name (or ".")?
-		// In proxy mode the constructor is Query.with; an empty state
-		// causes entrypointCall to invoke constructorCall which uses it.
+		// Treat as the module's named constructor function on Query.
 		if def.Name == name || name == "." {
 			st := h.NewState()
 			return &st, nil
@@ -861,11 +860,14 @@ func (h *shellCallHandler) StateResult(ctx context.Context, st *ShellState) (*Re
 	var err error
 
 	// Example: `build` (i.e., omitted constructor)
+	// Call the module's named constructor on Query.
 	if def.HasModule() && st.IsEmpty() {
-		st, err = h.constructorCall(ctx, def, st, nil)
+		fn, err := st.Function().GetNextDef(def, def.Name)
 		if err != nil {
 			return nil, err
 		}
+		newSt := st.WithCall(fn, nil)
+		st = &newSt
 	}
 
 	fn, err := st.Function().GetDef(def)

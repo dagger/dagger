@@ -336,10 +336,6 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 			// name.
 			if obj.SourceModuleName != "" && fn.Name == gqlFieldName(obj.SourceModuleName) {
 				obj.Constructor = fn
-				// module that corresponds to this moduleDef
-				if obj.SourceModuleName == m.Name {
-					m.MainObject = fn.ReturnType
-				}
 			}
 		}
 	}
@@ -348,22 +344,15 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 	// Default to a no-op identity constructor that returns Query itself.
 	rootType.AsObject.Constructor = &modFunction{ReturnType: rootType}
 
-	// For core API only, main object is the Query type.
-	if m.Name == "" {
-		m.MainObject = rootType
-	}
+	// MainObject is always Query — all served module constructors and
+	// entrypoint proxy functions live on Query uniformly.
+	m.MainObject = rootType
 
-	// When entrypoint proxying is active, the module's named constructor is
-	// not on Query — its methods are promoted directly and constructor args
-	// go through Query.with. Treat Query as the main object, same as
-	// initializeWorkspace does for `dagger call`.
-	if m.Name != "" && m.MainObject == nil {
-		m.MainObject = rootType
-
-		// Use Query.with as the constructor so that constructor flags
-		// (e.g. --model) are recognized. If there's no `with` function
-		// (no constructor args), the no-op identity constructor above
-		// is kept.
+	// Use Query.with as the constructor so that constructor flags
+	// (e.g. --model) are recognized. If there's no `with` function
+	// (no constructor args), the no-op identity constructor above
+	// is kept.
+	if m.Name != "" {
 		for _, fn := range rootType.AsObject.Functions {
 			if fn.Name == "with" {
 				rootType.AsObject.Constructor = fn
