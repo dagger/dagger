@@ -370,7 +370,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 	}
 
 	// Command is a module ref — invoke its named constructor on Query.
-	if def.HasModule() && st.IsEmpty() {
+	if def.HasModule() && st.IsEmpty() && def.ModuleConstructor() != nil {
 		return h.constructorCall(ctx, def, st, args)
 	}
 
@@ -862,9 +862,10 @@ func (h *shellCallHandler) StateResult(ctx context.Context, st *ShellState) (*Re
 	// Example: `build` (i.e., omitted constructor)
 	// Call the module's named constructor on Query.
 	if def.HasModule() && st.IsEmpty() {
-		fn := def.ModuleConstructor()
-		newSt := st.WithCall(fn, nil)
-		st = &newSt
+		if fn := def.ModuleConstructor(); fn != nil {
+			newSt := st.WithCall(fn, nil)
+			st = &newSt
+		}
 	}
 
 	fn, err := st.Function().GetDef(def)

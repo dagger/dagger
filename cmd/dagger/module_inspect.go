@@ -536,11 +536,18 @@ func (m *moduleDef) HasModule() bool {
 // named main object. This is the module-specific constructor (e.g.
 // Query.myMod()), as opposed to MainObject.AsObject.Constructor which
 // is Query's synthetic "with" or no-op constructor.
+// Returns nil if no named constructor is available.
 func (m *moduleDef) ModuleConstructor() *modFunction {
 	if obj := m.GetObject(m.Name); obj != nil && obj.Constructor != nil {
 		return obj.Constructor
 	}
-	return m.MainObject.AsObject.Constructor
+	// Only fall back to MainObject's constructor if it's a real one
+	// (non-empty name). The no-op identity constructor can't produce
+	// a valid GraphQL call.
+	if c := m.MainObject.AsObject.Constructor; c != nil && c.Name != "" {
+		return c
+	}
+	return nil
 }
 
 func (m *moduleDef) HasMainFunction(name string) bool {
