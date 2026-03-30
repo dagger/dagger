@@ -146,26 +146,8 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 			return nil, fmt.Errorf("failed to write client go.mod: %w", err)
 		}
 	} else if readErr == nil {
-		// Preserve the existing go.mod verbatim so that `require` entries
-		// previously added by `go mod tidy` are not lost.
-		// We only bump dagger.io/dagger if needed
-		existingGoMod, err := modfile.Parse("go.mod", existingClientGoModData, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse client go.mod: %w", err)
-		}
-
-		engineVersion := g.Config.ClientConfig.EngineVersion
-		if engineVersion != "" && !strings.Contains(engineVersion, "-dev") && !isDaggerPkgCustomReplaced(existingGoMod.Replace) {
-			existingGoMod.AddRequire("dagger.io/dagger", engineVersion)
-		}
-
-		existingClientGoModData, err := existingGoMod.Format()
-		if err != nil {
-			return nil, fmt.Errorf("failed to format client go.mod: %w", err)
-		}
-
-		if err := mfs.WriteFile(clientGoModFilePath, existingClientGoModData, 0600); err != nil {
-			return nil, fmt.Errorf("failed to preserve client go.mod: %w", err)
+		if err := g.writeClientGoMod(mfs, clientGoModFilePath, existingClientGoModData); err != nil {
+			return nil, fmt.Errorf("failed to write client go.mod: %w", err)
 		}
 	}
 
@@ -219,6 +201,32 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	}
 
 	return genSt, nil
+}
+
+func (g *GoGenerator) writeClientGoMod(mfs *memfs.FS, clientGoModFilePath string, existingClientGoModData []byte) error {
+	// Preserve the existing go.mod verbatim so that `require` entries
+	// previously added by `go mod tidy` are not lost.
+	// We only bump dagger.io/dagger if needed
+	existingGoMod, err := modfile.Parse("go.mod", existingClientGoModData, nil)
+	if err != nil {
+		return fmt.Errorf("failed to parse client go.mod: %w", err)
+	}
+
+	engineVersion := g.Config.ClientConfig.EngineVersion
+	if engineVersion != "" && !strings.Contains(engineVersion, "-dev") && !isDaggerPkgCustomReplaced(existingGoMod.Replace) {
+		existingGoMod.AddRequire("dagger.io/dagger", engineVersion)
+	}
+
+	existingClientGoModData, err = existingGoMod.Format()
+	if err != nil {
+		return fmt.Errorf("failed to format client go.mod: %w", err)
+	}
+
+	if err := mfs.WriteFile(clientGoModFilePath, existingClientGoModData, 0600); err != nil {
+		return fmt.Errorf("failed to preserve client go.mod: %w", err)
+	}
+
+	return nil
 }
 
 // findParentGoModDir walks up from OutputDir to find the parent go.mod directory
