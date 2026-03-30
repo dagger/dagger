@@ -404,7 +404,6 @@ ADD archive.tar /downloads/
 	attemptUnpack := withDir.Arg("attemptUnpackDockerCompatibility")
 	require.NotNil(t, attemptUnpack)
 	require.Equal(t, true, attemptUnpack.Value().ToInput())
-
 }
 
 func TestDefinitionToIDDockerfileAddGit(t *testing.T) {
