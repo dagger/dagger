@@ -388,6 +388,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\DiffStat",
+			"p": "Dagger/DiffStat.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\DiffStatId",
+			"p": "Dagger/DiffStatId.html",
+			"d": "<p>The <code>DiffStatID</code> scalar type represents an identifier for an object of type DiffStat.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Directory",
 			"p": "Dagger/Directory.html",
 			"d": "<p>A directory.</p>",
@@ -1595,12 +1615,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Binding::asChangesetDiffStatEntry",
-			"p": "Dagger/Binding.html#method_asChangesetDiffStatEntry",
-			"d": "<p>Retrieve the binding value, as type ChangesetDiffStatEntry</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Binding::asCheck",
 			"p": "Dagger/Binding.html#method_asCheck",
 			"d": "<p>Retrieve the binding value, as type Check</p>"
@@ -1622,6 +1636,12 @@
 			"n": "Dagger\\Binding::asContainer",
 			"p": "Dagger/Binding.html#method_asContainer",
 			"d": "<p>Retrieve the binding value, as type Container</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asDiffStat",
+			"p": "Dagger/Binding.html#method_asDiffStat",
+			"d": "<p>Retrieve the binding value, as type DiffStat</p>"
 		},
 		{
 			"t": "M",
@@ -1829,8 +1849,8 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Changeset::diffStat",
-			"p": "Dagger/Changeset.html#method_diffStat",
+			"n": "Dagger\\Changeset::diffStats",
+			"p": "Dagger/Changeset.html#method_diffStats",
 			"d": "<p>Structured per-path diff statistics (kind and line counts) for this changeset.</p>"
 		},
 		{
@@ -2183,12 +2203,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::loadChangesetDiffStatEntryFromID",
-			"p": "Dagger/Client.html#method_loadChangesetDiffStatEntryFromID",
-			"d": "<p>Load a ChangesetDiffStatEntry from its ID.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Client::loadChangesetFromID",
 			"p": "Dagger/Client.html#method_loadChangesetFromID",
 			"d": "<p>Load a Changeset from its ID.</p>"
@@ -2222,6 +2236,12 @@
 			"n": "Dagger\\Client::loadCurrentModuleFromID",
 			"p": "Dagger/Client.html#method_loadCurrentModuleFromID",
 			"d": "<p>Load a CurrentModule from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadDiffStatFromID",
+			"p": "Dagger/Client.html#method_loadDiffStatFromID",
+			"d": "<p>Load a DiffStat from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -3257,6 +3277,42 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\DiffStat::addedLines",
+			"p": "Dagger/DiffStat.html#method_addedLines",
+			"d": "<p>Number of added lines for this path.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::id",
+			"p": "Dagger/DiffStat.html#method_id",
+			"d": "<p>A unique identifier for this DiffStat.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::kind",
+			"p": "Dagger/DiffStat.html#method_kind",
+			"d": "<p>Type of change.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::oldPath",
+			"p": "Dagger/DiffStat.html#method_oldPath",
+			"d": "<p>Previous path of the file, set only for renames.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::path",
+			"p": "Dagger/DiffStat.html#method_path",
+			"d": "<p>Path of the changed file or directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::removedLines",
+			"p": "Dagger/DiffStat.html#method_removedLines",
+			"d": "<p>Number of removed lines for this path.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::asGit",
 			"p": "Dagger/Directory.html#method_asGit",
 			"d": "<p>Converts this directory to a local git repository</p>"
@@ -3755,18 +3811,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Env::withChangesetDiffStatEntryInput",
-			"p": "Dagger/Env.html#method_withChangesetDiffStatEntryInput",
-			"d": "<p>Create or update a binding of type ChangesetDiffStatEntry in the environment</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Env::withChangesetDiffStatEntryOutput",
-			"p": "Dagger/Env.html#method_withChangesetDiffStatEntryOutput",
-			"d": "<p>Declare a desired ChangesetDiffStatEntry output to be assigned in the environment</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Env::withChangesetInput",
 			"p": "Dagger/Env.html#method_withChangesetInput",
 			"d": "<p>Create or update a binding of type Changeset in the environment</p>"
@@ -3830,6 +3874,18 @@
 			"n": "Dagger\\Env::withCurrentModule",
 			"p": "Dagger/Env.html#method_withCurrentModule",
 			"d": "<p>Installs the current module into the environment, exposing its functions to the model</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withDiffStatInput",
+			"p": "Dagger/Env.html#method_withDiffStatInput",
+			"d": "<p>Create or update a binding of type DiffStat in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withDiffStatOutput",
+			"p": "Dagger/Env.html#method_withDiffStatOutput",
+			"d": "<p>Declare a desired DiffStat output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",

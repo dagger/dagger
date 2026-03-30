@@ -373,17 +373,6 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
-     * Load a ChangesetDiffStatEntry from its ID.
-     */
-    public function loadChangesetDiffStatEntryFromID(
-        ChangesetDiffStatEntryId|ChangesetDiffStatEntry $id,
-    ): ChangesetDiffStatEntry {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadChangesetDiffStatEntryFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\ChangesetDiffStatEntry($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Load a Changeset from its ID.
      */
     public function loadChangesetFromID(ChangesetId|Changeset $id): Changeset
@@ -441,6 +430,16 @@ class Client extends Client\AbstractClient implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCurrentModuleFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\CurrentModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a DiffStat from its ID.
+     */
+    public function loadDiffStatFromID(DiffStatId|DiffStat $id): DiffStat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDiffStatFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\DiffStat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

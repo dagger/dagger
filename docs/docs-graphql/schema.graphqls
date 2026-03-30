@@ -82,9 +82,6 @@ type Binding {
   """Retrieve the binding value, as type Changeset"""
   asChangeset: Changeset!
 
-  """Retrieve the binding value, as type ChangesetDiffStatEntry"""
-  asChangesetDiffStatEntry: ChangesetDiffStatEntry!
-
   """Retrieve the binding value, as type Check"""
   asCheck: Check!
 
@@ -96,6 +93,9 @@ type Binding {
 
   """Retrieve the binding value, as type Container"""
   asContainer: Container!
+
+  """Retrieve the binding value, as type DiffStat"""
+  asDiffStat: DiffStat!
 
   """Retrieve the binding value, as type Directory"""
   asDirectory: Directory!
@@ -237,7 +237,7 @@ type Changeset {
   """
   Structured per-path diff statistics (kind and line counts) for this changeset.
   """
-  diffStat: [ChangesetDiffStatEntry!]!
+  diffStats: [DiffStat!]!
 
   """Applies the diff represented by this changeset to a path on the host."""
   export(
@@ -297,43 +297,6 @@ type Changeset {
     """What to do on a merge conflict"""
     onConflict: ChangesetsMergeConflict = FAIL
   ): Changeset!
-}
-
-type ChangesetDiffStatEntry {
-  """Number of added lines for this path."""
-  addedLines: Int!
-
-  """A unique identifier for this ChangesetDiffStatEntry."""
-  id: ChangesetDiffStatEntryID!
-
-  """Type of change."""
-  kind: ChangesetDiffStatKind!
-
-  """Path of the changed file or directory."""
-  path: String!
-
-  """Number of removed lines for this path."""
-  removedLines: Int!
-}
-
-"""
-The `ChangesetDiffStatEntryID` scalar type represents an identifier for an object of type ChangesetDiffStatEntry.
-"""
-scalar ChangesetDiffStatEntryID
-
-"""The type of change for a diff stat entry."""
-enum ChangesetDiffStatKind {
-  """A file or directory was added."""
-  ADDED
-
-  """A file was modified."""
-  MODIFIED
-
-  """A file or directory was removed."""
-  REMOVED
-
-  """A file was renamed."""
-  RENAMED
 }
 
 """
@@ -1739,6 +1702,46 @@ The `CurrentModuleID` scalar type represents an identifier for an object of type
 """
 scalar CurrentModuleID
 
+type DiffStat {
+  """Number of added lines for this path."""
+  addedLines: Int!
+
+  """A unique identifier for this DiffStat."""
+  id: DiffStatID!
+
+  """Type of change."""
+  kind: DiffStatKind!
+
+  """Previous path of the file, set only for renames."""
+  oldPath: String!
+
+  """Path of the changed file or directory."""
+  path: String!
+
+  """Number of removed lines for this path."""
+  removedLines: Int!
+}
+
+"""
+The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
+"""
+scalar DiffStatID
+
+"""The type of change for a diff stat entry."""
+enum DiffStatKind {
+  """A file or directory was added."""
+  ADDED
+
+  """A file was modified."""
+  MODIFIED
+
+  """A file or directory was removed."""
+  REMOVED
+
+  """A file was renamed."""
+  RENAMED
+}
+
 """A directory."""
 type Directory {
   """Converts this directory to a local git repository"""
@@ -2454,31 +2457,6 @@ type Env {
     description: String!
   ): Env!
 
-  """
-  Create or update a binding of type ChangesetDiffStatEntry in the environment
-  """
-  withChangesetDiffStatEntryInput(
-    """The name of the binding"""
-    name: String!
-
-    """The ChangesetDiffStatEntry value to assign to the binding"""
-    value: ChangesetDiffStatEntryID!
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired ChangesetDiffStatEntry output to be assigned in the environment
-  """
-  withChangesetDiffStatEntryOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
   """Create or update a binding of type Changeset in the environment"""
   withChangesetInput(
     """The name of the binding"""
@@ -2590,6 +2568,27 @@ type Env {
   Contextual path arguments will be populated using the environment's workspace.
   """
   withCurrentModule: Env!
+
+  """Create or update a binding of type DiffStat in the environment"""
+  withDiffStatInput(
+    """The name of the binding"""
+    name: String!
+
+    """The DiffStat value to assign to the binding"""
+    value: DiffStatID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired DiffStat output to be assigned in the environment"""
+  withDiffStatOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
 
   """Create or update a binding of type Directory in the environment"""
   withDirectoryInput(
@@ -5081,9 +5080,6 @@ type Query {
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
 
-  """Load a ChangesetDiffStatEntry from its ID."""
-  loadChangesetDiffStatEntryFromID(id: ChangesetDiffStatEntryID!): ChangesetDiffStatEntry!
-
   """Load a Changeset from its ID."""
   loadChangesetFromID(id: ChangesetID!): Changeset!
 
@@ -5101,6 +5097,9 @@ type Query {
 
   """Load a CurrentModule from its ID."""
   loadCurrentModuleFromID(id: CurrentModuleID!): CurrentModule!
+
+  """Load a DiffStat from its ID."""
+  loadDiffStatFromID(id: DiffStatID!): DiffStat!
 
   """Load a Directory from its ID."""
   loadDirectoryFromID(id: DirectoryID!): Directory!

@@ -26,11 +26,6 @@ class CacheVolumeID(Scalar):
     object of type CacheVolume."""
 
 
-class ChangesetDiffStatEntryID(Scalar):
-    """The `ChangesetDiffStatEntryID` scalar type represents an identifier
-    for an object of type ChangesetDiffStatEntry."""
-
-
 class ChangesetID(Scalar):
     """The `ChangesetID` scalar type represents an identifier for an
     object of type Changeset."""
@@ -59,6 +54,11 @@ class ContainerID(Scalar):
 class CurrentModuleID(Scalar):
     """The `CurrentModuleID` scalar type represents an identifier for an
     object of type CurrentModule."""
+
+
+class DiffStatID(Scalar):
+    """The `DiffStatID` scalar type represents an identifier for an object
+    of type DiffStat."""
 
 
 class DirectoryID(Scalar):
@@ -349,22 +349,6 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
-class ChangesetDiffStatKind(Enum):
-    """The type of change for a diff stat entry."""
-
-    ADDED = "ADDED"
-    """A file or directory was added."""
-
-    MODIFIED = "MODIFIED"
-    """A file was modified."""
-
-    REMOVED = "REMOVED"
-    """A file or directory was removed."""
-
-    RENAMED = "RENAMED"
-    """A file was renamed."""
-
-
 class ChangesetMergeConflict(Enum):
     """Strategy to use when merging changesets with conflicting
     changes."""
@@ -394,6 +378,22 @@ class ChangesetsMergeConflict(Enum):
 
     FAIL_EARLY = "FAIL_EARLY"
     """Fail before attempting merge if file-level conflicts are detected between any changesets"""
+
+
+class DiffStatKind(Enum):
+    """The type of change for a diff stat entry."""
+
+    ADDED = "ADDED"
+    """A file or directory was added."""
+
+    MODIFIED = "MODIFIED"
+    """A file was modified."""
+
+    REMOVED = "REMOVED"
+    """A file or directory was removed."""
+
+    RENAMED = "RENAMED"
+    """A file was renamed."""
 
 
 class ExistsType(Enum):
@@ -780,12 +780,6 @@ class Binding(Type):
         _ctx = self._select("asChangeset", _args)
         return Changeset(_ctx)
 
-    def as_changeset_diff_stat_entry(self) -> "ChangesetDiffStatEntry":
-        """Retrieve the binding value, as type ChangesetDiffStatEntry"""
-        _args: list[Arg] = []
-        _ctx = self._select("asChangesetDiffStatEntry", _args)
-        return ChangesetDiffStatEntry(_ctx)
-
     def as_check(self) -> "Check":
         """Retrieve the binding value, as type Check"""
         _args: list[Arg] = []
@@ -809,6 +803,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asContainer", _args)
         return Container(_ctx)
+
+    def as_diff_stat(self) -> "DiffStat":
+        """Retrieve the binding value, as type DiffStat"""
+        _args: list[Arg] = []
+        _ctx = self._select("asDiffStat", _args)
+        return DiffStat(_ctx)
 
     def as_directory(self) -> "Directory":
         """Retrieve the binding value, as type Directory"""
@@ -1137,13 +1137,13 @@ class Changeset(Type):
         _ctx = self._select("before", _args)
         return Directory(_ctx)
 
-    async def diff_stat(self) -> list["ChangesetDiffStatEntry"]:
+    async def diff_stats(self) -> list["DiffStat"]:
         """Structured per-path diff statistics (kind and line counts) for this
         changeset.
         """
         _args: list[Arg] = []
-        _ctx = self._select("diffStat", _args)
-        return await _ctx.execute_object_list(ChangesetDiffStatEntry)
+        _ctx = self._select("diffStats", _args)
+        return await _ctx.execute_object_list(DiffStat)
 
     async def export(self, path: str) -> str:
         """Applies the diff represented by this changeset to a path on the host.
@@ -1342,115 +1342,6 @@ class Changeset(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
-
-
-@typecheck
-class ChangesetDiffStatEntry(Type):
-    async def added_lines(self) -> int:
-        """Number of added lines for this path.
-
-        Returns
-        -------
-        int
-            The `Int` scalar type represents non-fractional signed whole
-            numeric values. Int can represent values between -(2^31) and 2^31
-            - 1.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("addedLines", _args)
-        return await _ctx.execute(int)
-
-    async def id(self) -> ChangesetDiffStatEntryID:
-        """A unique identifier for this ChangesetDiffStatEntry.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        ChangesetDiffStatEntryID
-            The `ChangesetDiffStatEntryID` scalar type represents an
-            identifier for an object of type ChangesetDiffStatEntry.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(ChangesetDiffStatEntryID)
-
-    async def kind(self) -> ChangesetDiffStatKind:
-        """Type of change.
-
-        Returns
-        -------
-        ChangesetDiffStatKind
-            The type of change for a diff stat entry.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("kind", _args)
-        return await _ctx.execute(ChangesetDiffStatKind)
-
-    async def path(self) -> str:
-        """Path of the changed file or directory.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("path", _args)
-        return await _ctx.execute(str)
-
-    async def removed_lines(self) -> int:
-        """Number of removed lines for this path.
-
-        Returns
-        -------
-        int
-            The `Int` scalar type represents non-fractional signed whole
-            numeric values. Int can represent values between -(2^31) and 2^31
-            - 1.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("removedLines", _args)
-        return await _ctx.execute(int)
 
 
 @typecheck
@@ -4000,6 +3891,136 @@ class CurrentModule(Type):
 
 
 @typecheck
+class DiffStat(Type):
+    async def added_lines(self) -> int:
+        """Number of added lines for this path.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedLines", _args)
+        return await _ctx.execute(int)
+
+    async def id(self) -> DiffStatID:
+        """A unique identifier for this DiffStat.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        DiffStatID
+            The `DiffStatID` scalar type represents an identifier for an
+            object of type DiffStat.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(DiffStatID)
+
+    async def kind(self) -> DiffStatKind:
+        """Type of change.
+
+        Returns
+        -------
+        DiffStatKind
+            The type of change for a diff stat entry.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(DiffStatKind)
+
+    async def old_path(self) -> str:
+        """Previous path of the file, set only for renames.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("oldPath", _args)
+        return await _ctx.execute(str)
+
+    async def path(self) -> str:
+        """Path of the changed file or directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
+
+    async def removed_lines(self) -> int:
+        """Number of removed lines for this path.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedLines", _args)
+        return await _ctx.execute(int)
+
+
+@typecheck
 class Directory(Type):
     """A directory."""
 
@@ -5815,52 +5836,6 @@ class Env(Type):
         _ctx = self._select("withCacheVolumeOutput", _args)
         return Env(_ctx)
 
-    def with_changeset_diff_stat_entry_input(
-        self,
-        name: str,
-        value: ChangesetDiffStatEntry,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type ChangesetDiffStatEntry in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The ChangesetDiffStatEntry value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withChangesetDiffStatEntryInput", _args)
-        return Env(_ctx)
-
-    def with_changeset_diff_stat_entry_output(
-        self, name: str, description: str
-    ) -> Self:
-        """Declare a desired ChangesetDiffStatEntry output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withChangesetDiffStatEntryOutput", _args)
-        return Env(_ctx)
-
     def with_changeset_input(
         self,
         name: str,
@@ -6080,6 +6055,48 @@ class Env(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("withCurrentModule", _args)
+        return Env(_ctx)
+
+    def with_diff_stat_input(
+        self,
+        name: str,
+        value: DiffStat,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type DiffStat in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The DiffStat value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDiffStatInput", _args)
+        return Env(_ctx)
+
+    def with_diff_stat_output(self, name: str, description: str) -> Self:
+        """Declare a desired DiffStat output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDiffStatOutput", _args)
         return Env(_ctx)
 
     def with_directory_input(
@@ -12603,16 +12620,6 @@ class Query(Root):
         _ctx = self._select("loadCacheVolumeFromID", _args)
         return CacheVolume(_ctx)
 
-    def load_changeset_diff_stat_entry_from_id(
-        self, id: ChangesetDiffStatEntryID
-    ) -> ChangesetDiffStatEntry:
-        """Load a ChangesetDiffStatEntry from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadChangesetDiffStatEntryFromID", _args)
-        return ChangesetDiffStatEntry(_ctx)
-
     def load_changeset_from_id(self, id: ChangesetID) -> Changeset:
         """Load a Changeset from its ID."""
         _args = [
@@ -12660,6 +12667,14 @@ class Query(Root):
         ]
         _ctx = self._select("loadCurrentModuleFromID", _args)
         return CurrentModule(_ctx)
+
+    def load_diff_stat_from_id(self, id: DiffStatID) -> DiffStat:
+        """Load a DiffStat from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadDiffStatFromID", _args)
+        return DiffStat(_ctx)
 
     def load_directory_from_id(self, id: DirectoryID) -> Directory:
         """Load a Directory from its ID."""
@@ -15094,9 +15109,6 @@ __all__ = [
     "CacheVolume",
     "CacheVolumeID",
     "Changeset",
-    "ChangesetDiffStatEntry",
-    "ChangesetDiffStatEntryID",
-    "ChangesetDiffStatKind",
     "ChangesetID",
     "ChangesetMergeConflict",
     "ChangesetsMergeConflict",
@@ -15111,6 +15123,9 @@ __all__ = [
     "ContainerID",
     "CurrentModule",
     "CurrentModuleID",
+    "DiffStat",
+    "DiffStatID",
+    "DiffStatKind",
     "Directory",
     "DirectoryID",
     "Engine",
