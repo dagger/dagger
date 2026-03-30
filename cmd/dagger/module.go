@@ -1209,7 +1209,8 @@ func optionalModCmdWrapper(
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, cmdArgs []string) error {
 		return withEngine(cmd.Context(), client.Params{
-			SecretToken: presetSecretToken,
+			SecretToken:          presetSecretToken,
+			SkipWorkspaceModules: moduleNoURL,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			_, explicitModRefSet := getExplicitModuleSourceRef()
 
