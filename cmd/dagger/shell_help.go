@@ -306,7 +306,13 @@ func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 
 	description := m.Description
 	if description == "" {
-		description = m.MainObject.AsObject.Description
+		// Prefer the module's named main object description over Query's.
+		if mainObj := m.GetObject(m.Name); mainObj != nil {
+			description = mainObj.Description
+		}
+		if description == "" {
+			description = m.MainObject.AsObject.Description
+		}
 	}
 	if description != "" {
 		meta.WriteString("\n\n")
