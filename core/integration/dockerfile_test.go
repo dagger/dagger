@@ -776,6 +776,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 	})
 }
 
+// TestUnpack tests that an ADD ./some/archive.tar.gz automatically unpacks the archive, but only when it's a file from the local filesystem
 func (DockerfileSuite) TestUnpack(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -797,4 +798,43 @@ RUN test -f the-dir/mydir/data
 	s, err := dir.DockerBuild().File("the-dir/mydir/data").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, s, "bigbigbigbig\n")
+}
+
+// TestAddHTTPDoesNotUnpack tests that ADD http://.../archive.tar.gz does not unpack automatically
+// docker only does automatic unpacking when ADD is called on a local file, weird right? But we need to maintain this decision
+func (DockerfileSuite) TestAddHTTPDoesNotUnpack(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srv := c.Container().
+		From(busyboxImage).
+		WithWorkdir("/srv").
+		WithExec([]string{"sh", "-c", "mkdir mydir && echo remotedata > mydir/data && tar czf remotedir.tar.gz mydir"}).
+		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("fileserver")
+
+	_, err := srv.Start(ctx)
+	require.NoError(t, err)
+
+	dir := c.Container().
+		From(alpineImage).
+		Directory(".").
+		WithNewFile("Dockerfile",
+			`FROM `+golangImage+`
+WORKDIR /work
+ADD http://fileserver/remotedir.tar.gz this-should-not-unpack
+`)
+
+	ctr, err := dir.DockerBuild().Sync(ctx)
+	require.NoError(t, err)
+
+	// test it is in fact a file (and not a dir)
+	_, err = ctr.WithExec([]string{"test", "-f", "this-should-not-unpack"}).Sync(ctx)
+	require.NoError(t, err)
+
+	// make sure the file is the tar.gz
+	s, err := ctr.WithExec([]string{"sh", "-c", "mkdir the-dir && tar xzf this-should-not-unpack -C the-dir"}).File("the-dir/mydir/data").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, s, "remotedata\n")
 }
