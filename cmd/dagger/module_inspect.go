@@ -58,6 +58,7 @@ func initializeModule(
 	dag *dagger.Client,
 	modRef string,
 	modSrc *dagger.ModuleSource,
+	opts ...dagger.ModuleServeOpts,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module: "+modRef)
 	defer telemetry.EndWithCause(span, &rerr)
@@ -74,7 +75,13 @@ func initializeModule(
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	err = modSrc.AsModule().Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true, Entrypoint: true})
+	serveOpts := dagger.ModuleServeOpts{IncludeDependencies: true}
+	for _, o := range opts {
+		if o.Entrypoint {
+			serveOpts.Entrypoint = true
+		}
+	}
+	err = modSrc.AsModule().Serve(serveCtx, serveOpts)
 	telemetry.EndWithCause(serveSpan, &err)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serve module: %w", err)

@@ -217,7 +217,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	var cfg *configuredModule
 
 	if !h.noModule {
-		def, cfg, err = h.maybeLoadModule(ctx, h.moduleURL)
+		def, cfg, err = h.maybeLoadModule(ctx, h.moduleURL, dagger.ModuleServeOpts{Entrypoint: true})
 		if err != nil {
 			return err
 		}
