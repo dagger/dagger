@@ -838,3 +838,26 @@ ADD http://fileserver/remotedir.tar.gz this-should-not-unpack
 	require.NoError(t, err)
 	require.Equal(t, s, "remotedata\n")
 }
+
+func (DockerfileSuite) TestMissingSocketIsAllowed(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := c.Container().
+		From(alpineImage).
+		WithWorkdir("/src").
+		WithExec([]string{"true"}). // FIXME currently an exec is required to create the workdir, without this Directory(".") fails
+		Directory(".")
+
+	baseDir := contextDir
+
+	dir := baseDir.
+		WithNewFile("Dockerfile",
+			`FROM `+alpineImage+`
+FROM alpine:3.19
+RUN --mount=type=ssh,id=missing,target=/tmp/agent.sock \
+    touch /its-ok
+`)
+	fileExists, err := dir.DockerBuild().Exists(ctx, "its-ok")
+	require.NoError(t, err)
+	require.True(t, fileExists)
+}
