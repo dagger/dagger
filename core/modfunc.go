@@ -30,8 +30,10 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-const MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
-const MinFunctionCacheTTLSeconds = 1
+const (
+	MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
+	MinFunctionCacheTTLSeconds = 1
+)
 
 type ModuleFunction struct {
 	mod    *Module
@@ -231,7 +233,8 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 			uiFnName += "." + fn.metadata.Name
 		}
 		console(ctx, "user default: %s(%s=%q)", uiFnName, argName, argDefault.UserInput)
-		if argDefault.IsObject() {
+		if argDefault.IsObject() ||
+			(argDefault.IsList() && arg.metadata.TypeDef.AsList.Value.ElementTypeDef.Kind == TypeDefKindObject) {
 			// FIXME (cosmetic): expose the user default value to the client, without
 			// breaking other things
 			arg.metadata.TypeDef.Optional = true
@@ -293,6 +296,8 @@ func (udp *UserDefaultPrimitive) Value() (any, error) {
 	switch udp.Arg.TypeDef.Kind {
 	case TypeDefKindString:
 		return udp.UserInput, nil
+	case TypeDefKindList:
+		return strings.Split(udp.UserInput, ","), nil
 	case TypeDefKindInteger:
 		v, err := strconv.Atoi(udp.UserInput)
 		if err != nil {
@@ -350,8 +355,16 @@ func (ud *UserDefault) IsObject() bool {
 	return ud.Arg.TypeDef.Kind == TypeDefKindObject
 }
 
+func (ud *UserDefault) IsList() bool {
+	return ud.Arg.TypeDef.Kind == TypeDefKindList
+}
+
 func (ud *UserDefault) Value(ctx context.Context) (any, error) {
-	if !ud.IsObject() {
+	if !ud.IsObject() && !ud.IsList() {
+		return ud.UserDefaultPrimitive.Value()
+	}
+	// List of non-object elements (e.g. []string) is handled by the primitive path
+	if ud.IsList() && ud.Arg.TypeDef.AsList.Value.ElementTypeDef.Kind != TypeDefKindObject {
 		return ud.UserDefaultPrimitive.Value()
 	}
 	query, err := CurrentQuery(ctx)
@@ -365,56 +378,88 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
 	// Resolve object from user-supplied "address"
 	srv := dagql.CurrentDagqlServer(mainCtx)
+
+	resolveOne := func(userInput, typename string) (any, error) {
+		var result dagql.AnyObjectResult
+		if err := srv.Select(mainCtx, srv.Root(), &result,
+			dagql.Selector{
+				Field: "address",
+				Args: []dagql.NamedInput{{
+					Name:  "value",
+					Value: dagql.NewString(userInput),
+				}},
+			},
+			dagql.Selector{
+				Field: strings.ToLower(typename),
+			},
+		); err != nil {
+			return nil, ud.errorf(err, "resolve object (%q)", typename)
+		}
+
+		if secret, ok := dagql.UnwrapAs[dagql.ObjectResult[*Secret]](result); ok {
+			secretStore, err := query.Secrets(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get secret store: %w", err)
+			}
+			if err := secretStore.AddSecret(secret); err != nil {
+				return nil, fmt.Errorf("failed to add secret: %w", err)
+			}
+		}
+
+		id, err := result.Select(mainCtx, srv, dagql.Selector{
+			Field: "id",
+		})
+		if err != nil {
+			return nil, ud.errorf(err, "get object ID")
+		}
+		return id.Unwrap(), nil
+	}
+
+	if ud.IsList() {
+		// "Secret" -> "secret", "GitRef" -> "gitRef", etc (from the element type)
+		typename := ud.Arg.TypeDef.AsList.Value.ElementTypeDef.ToType().Name()
+		elements := strings.Split(ud.UserInput, ",")
+		ids := make([]any, 0, len(elements))
+		for _, elem := range elements {
+			id, err := resolveOne(strings.TrimSpace(elem), typename)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		return ids, nil
+	}
+
 	// "Secret" -> "secret", "GitRef" -> "gitRef", etc
 	typename := ud.Arg.TypeDef.ToType().Name()
-	typename = strings.ToLower(typename[0:1]) + typename[1:]
-	var result dagql.AnyObjectResult
-	if err := srv.Select(mainCtx, srv.Root(), &result,
-		dagql.Selector{
-			Field: "address",
-			Args: []dagql.NamedInput{{
-				Name:  "value",
-				Value: dagql.NewString(ud.UserInput),
-			}},
-		},
-		dagql.Selector{
-			Field: strings.ToLower(typename),
-		},
-	); err != nil {
-		return nil, ud.errorf(err, "resolve object (%q)", typename)
-	}
-
-	if secret, ok := dagql.UnwrapAs[dagql.ObjectResult[*Secret]](result); ok {
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		if err := secretStore.AddSecret(secret); err != nil {
-			return nil, fmt.Errorf("failed to add secret: %w", err)
-		}
-	}
-
-	id, err := result.Select(mainCtx, srv, dagql.Selector{
-		Field: "id",
-	})
-	if err != nil {
-		return nil, ud.errorf(err, "get object ID")
-	}
-
-	return id.Unwrap(), nil
+	return resolveOne(ud.UserInput, typename)
 }
 
-func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.IDType, error) {
-	if !ud.IsObject() {
-		return nil, ud.errorf(nil, "DagqlID(): primitive type has not ID")
+func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.Input, error) {
+	if !ud.IsObject() && !ud.IsList() {
+		return nil, ud.errorf(nil, "DagqlID(): primitive type has no ID")
 	}
 	value, err := ud.Value(ctx)
 	if err != nil {
 		return nil, ud.errorf(err, "DagqlInput(): decode value")
 	}
-	id, isID := value.(dagql.IDType)
-	if isID {
+	// Object case: single ID
+	if id, isID := value.(dagql.IDType); isID {
 		return id, nil
+	}
+	// List of objects case: build a DynamicArrayInput from the resolved IDs
+	if ids, isList := value.([]any); isList {
+		arr := dagql.DynamicArrayInput{
+			Elem: ud.Arg.TypeDef.AsList.Value.ElementTypeDef.ToInput(),
+		}
+		for _, rawID := range ids {
+			input, ok := rawID.(dagql.Input)
+			if !ok {
+				return nil, ud.errorf(nil, "DagqlID(): list element is not an input: %T", rawID)
+			}
+			arr.Values = append(arr.Values, input)
+		}
+		return arr, nil
 	}
 	return nil, ud.errorf(nil, "DagqlID(): not an id: %q", value)
 }
@@ -503,6 +548,7 @@ func (fn *ModuleFunction) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	return objDefaults.Namespace(ctx, fn.metadata.OriginalName)
 }
 
+//nolint:gocyclo
 func (fn *ModuleFunction) CacheConfigForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,
@@ -533,7 +579,8 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			// was explicitly set by the user, skip
 			continue
 		}
-		if argMetadata.TypeDef.Kind != TypeDefKindObject {
+		if argMetadata.TypeDef.Kind != TypeDefKindObject &&
+			(argMetadata.TypeDef.Kind != TypeDefKindList || argMetadata.TypeDef.AsList.Value.ElementTypeDef.Kind != TypeDefKindObject) {
 			// Only default objects need processing at this time.
 			// Primitive default values were already processes earlier
 			//  in the flow.
@@ -612,19 +659,24 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			})
 		}
 
-		// Process user-defined user defaults for objects
-		userDefaultVals := make([]*argInput, len(userDefaults))
+		// Process user-defined user defaults for objects (and lists of objects)
+		type userDefaultArgInput struct {
+			argName  string
+			origName string
+			val      dagql.Input // IDType for single objects, DynamicArrayInput for lists
+		}
+		userDefaultVals := make([]*userDefaultArgInput, len(userDefaults))
 		for i, userDefault := range userDefaults {
 			eg.Go(func() error {
-				id, err := userDefault.DagqlID(ctx)
+				input, err := userDefault.DagqlID(ctx)
 				if err != nil {
 					return err
 				}
 				arg := userDefault.Arg
-				userDefaultVals[i] = &argInput{
+				userDefaultVals[i] = &userDefaultArgInput{
 					argName:  arg.Name,
 					origName: arg.OriginalName,
-					val:      id,
+					val:      input,
 				}
 				return nil
 			})
@@ -669,12 +721,28 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					dagql.Opt(arg.val).ToLiteral(),
 					false,
 				))
-				id := arg.val.ID()
-				dgst := id.ContentDigest()
-				if dgst == "" {
-					dgst = id.Digest()
+				switch v := arg.val.(type) {
+				case dagql.IDType:
+					id := v.ID()
+					dgst := id.ContentDigest()
+					if dgst == "" {
+						dgst = id.Digest()
+					}
+					dgstInputs = append(dgstInputs, arg.origName, dgst.String())
+				case dagql.DynamicArrayInput:
+					elemDgsts := make([]string, 0, len(v.Values))
+					for _, elem := range v.Values {
+						if idElem, ok := elem.(dagql.IDType); ok {
+							id := idElem.ID()
+							dgst := id.ContentDigest()
+							if dgst == "" {
+								dgst = id.Digest()
+							}
+							elemDgsts = append(elemDgsts, dgst.String())
+						}
+					}
+					dgstInputs = append(dgstInputs, arg.origName, hashutil.HashStrings(elemDgsts...).String())
 				}
-				dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 			}
 		}
 	}

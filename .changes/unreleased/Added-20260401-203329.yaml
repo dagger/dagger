@@ -1,0 +1,6 @@
+kind: Added
+body: add support to set primitive values and secret arrays in user defaults
+time: 2026-04-01T20:33:29.991796358-03:00
+custom:
+    Author: marcosnils
+    PR: "12898"
