@@ -1941,6 +1941,11 @@ export type ModuleServeOpts = {
    * Expose the dependencies of this module to the client
    */
   includeDependencies?: boolean
+
+  /**
+   * Install the module as the entrypoint, promoting its main-object methods onto the Query root
+   */
+  entrypoint?: boolean
 }
 
 /**
@@ -10599,6 +10604,7 @@ export class Module_ extends BaseClient {
    *
    * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
    * @param opts.includeDependencies Expose the dependencies of this module to the client
+   * @param opts.entrypoint Install the module as the entrypoint, promoting its main-object methods onto the Query root
    */
   serve = async (opts?: ModuleServeOpts): Promise<void> => {
     if (this._serve) {

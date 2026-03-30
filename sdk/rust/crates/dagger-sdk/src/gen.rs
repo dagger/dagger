@@ -11072,6 +11072,9 @@ pub struct ModuleGeneratorsOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleServeOpts {
+    /// Install the module as the entrypoint, promoting its main-object methods onto the Query root
+    #[builder(setter(into, strip_option), default)]
+    pub entrypoint: Option<bool>,
     /// Expose the dependencies of this module to the client
     #[builder(setter(into, strip_option), default)]
     pub include_dependencies: Option<bool>,
@@ -11272,6 +11275,9 @@ impl Module {
         let mut query = self.selection.select("serve");
         if let Some(include_dependencies) = opts.include_dependencies {
             query = query.arg("includeDependencies", include_dependencies);
+        }
+        if let Some(entrypoint) = opts.entrypoint {
+            query = query.arg("entrypoint", entrypoint);
         }
         query.execute(self.graphql_client.clone()).await
     }

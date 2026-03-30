@@ -4286,6 +4286,11 @@ type Module {
   serve(
     """Expose the dependencies of this module to the client"""
     includeDependencies: Boolean
+
+    """
+    Install the module as the entrypoint, promoting its main-object methods onto the Query root
+    """
+    entrypoint: Boolean
   ): Void
 
   """The source for the module."""

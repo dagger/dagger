@@ -10575,6 +10575,7 @@ class Module(Type):
         self,
         *,
         include_dependencies: bool | None = None,
+        entrypoint: bool | None = None,
     ) -> Void | None:
         """Serve a module's API in the current session.
 
@@ -10585,6 +10586,9 @@ class Module(Type):
         ----------
         include_dependencies:
             Expose the dependencies of this module to the client
+        entrypoint:
+            Install the module as the entrypoint, promoting its main-object
+            methods onto the Query root
 
         Returns
         -------
@@ -10601,6 +10605,7 @@ class Module(Type):
         """
         _args = [
             Arg("includeDependencies", include_dependencies, None),
+            Arg("entrypoint", entrypoint, None),
         ]
         _ctx = self._select("serve", _args)
         await _ctx.execute()
