@@ -145,6 +145,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
+				dagql.Arg("entrypoint").Doc("Install the module as the entrypoint, promoting its main-object methods onto the Query root"),
 			),
 	}.Install(dag)
 
@@ -747,6 +748,7 @@ func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ st
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, args struct {
 	IncludeDependencies dagql.Optional[dagql.Boolean]
+	Entrypoint          dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 
@@ -756,7 +758,8 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 	}
 
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
-	return void, query.ServeModule(ctx, modMeta, includeDependencies)
+	entrypoint := args.Entrypoint.Valid && args.Entrypoint.Value.Bool()
+	return void, query.ServeModule(ctx, modMeta, includeDependencies, entrypoint)
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args struct {

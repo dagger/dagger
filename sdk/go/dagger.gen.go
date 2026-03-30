@@ -10386,6 +10386,8 @@ func (r *Module) SDK() *SDKConfig {
 type ModuleServeOpts struct {
 	// Expose the dependencies of this module to the client
 	IncludeDependencies bool
+	// Install the module as the entrypoint, promoting its main-object methods onto the Query root
+	Entrypoint bool
 }
 
 // Serve a module's API in the current session.
@@ -10400,6 +10402,10 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 		// `includeDependencies` optional argument
 		if !querybuilder.IsZeroValue(opts[i].IncludeDependencies) {
 			q = q.Arg("includeDependencies", opts[i].IncludeDependencies)
+		}
+		// `entrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
+			q = q.Arg("entrypoint", opts[i].Entrypoint)
 		}
 	}
 

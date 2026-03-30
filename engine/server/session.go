@@ -1401,7 +1401,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 // Stitch in the given module to the list being served to the current client.
 // When includeDependencies is true, dependency modules and toolchains are
 // also served with their constructors on the Query root.
-func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
+// When entrypoint is true, the module's main-object methods are promoted
+// onto the Query root.
+func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool, entrypoint bool) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return err
@@ -1410,7 +1412,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
-	if err := srv.serveModule(client, mod, core.InstallOpts{}); err != nil {
+	if err := srv.serveModule(client, mod, core.InstallOpts{Entrypoint: entrypoint}); err != nil {
 		return err
 	}
 	if includeDependencies {

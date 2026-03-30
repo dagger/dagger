@@ -74,7 +74,7 @@ func initializeModule(
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	err = modSrc.AsModule().Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true})
+	err = modSrc.AsModule().Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true, Entrypoint: true})
 	telemetry.EndWithCause(serveSpan, &err)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serve module: %w", err)

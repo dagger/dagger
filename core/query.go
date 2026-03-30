@@ -48,7 +48,7 @@ type Server interface {
 	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata)
 
 	// Stitch in the given module to the list being served to the current client
-	ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error
+	ServeModule(ctx context.Context, mod *Module, includeDependencies bool, entrypoint bool) error
 
 	// If the current client is coming from a function, return the module that function is from
 	CurrentModule(context.Context) (*Module, error)

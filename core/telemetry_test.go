@@ -35,7 +35,7 @@ type mockServer struct {
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata) {
 }
 
-func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error {
+func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDependencies bool, entrypoint bool) error {
 	return nil
 }
 
