@@ -200,29 +200,14 @@ class JSONValueID(Scalar):
     object of type JSONValue."""
 
 
-class LLMContentBlockID(Scalar):
-    """The `LLMContentBlockID` scalar type represents an identifier for an
-    object of type LLMContentBlock."""
-
-
 class LLMID(Scalar):
     """The `LLMID` scalar type represents an identifier for an object of
     type LLM."""
 
 
-class LLMMessageID(Scalar):
-    """The `LLMMessageID` scalar type represents an identifier for an
-    object of type LLMMessage."""
-
-
 class LLMTokenUsageID(Scalar):
     """The `LLMTokenUsageID` scalar type represents an identifier for an
     object of type LLMTokenUsage."""
-
-
-class LLMToolCallID(Scalar):
-    """The `LLMToolCallID` scalar type represents an identifier for an
-    object of type LLMToolCall."""
 
 
 class LabelID(Scalar):
@@ -446,35 +431,6 @@ class ImageMediaTypes(Enum):
     OCI = "OCIMediaTypes"
 
 
-class LLMContentBlockKind(Enum):
-    """The kind of content in a message block."""
-
-    TEXT = "TEXT"
-    """Plain text content."""
-
-    THINKING = "THINKING"
-    """Model thinking/reasoning content (e.g. Anthropic extended thinking)."""
-
-    TOOL_CALL = "TOOL_CALL"
-    """A tool/function call from the model."""
-
-    TOOL_RESULT = "TOOL_RESULT"
-    """A tool/function result."""
-
-
-class LLMMessageRole(Enum):
-    """The role that generated a message."""
-
-    ASSISTANT = "ASSISTANT"
-    """A reply from the model."""
-
-    SYSTEM = "SYSTEM"
-    """A system prompt."""
-
-    USER = "USER"
-    """A user prompt or tool response."""
-
-
 class ModuleSourceExperimentalFeature(Enum):
     """Experimental features of a module"""
 
@@ -615,33 +571,6 @@ class BuildArg(Input):
 
     value: str
     """The build argument value."""
-
-
-@typecheck
-@dataclass(slots=True)
-class LLMContentBlockInput(Input):
-    """A content block within an LLM message."""
-
-    arguments: JSON
-    """The arguments to pass to the tool (for TOOL_CALL kind)."""
-
-    kind: LLMContentBlockKind
-    """The kind of content block."""
-
-    call_id: str | None = ""
-    """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
-
-    errored: bool | None = False
-    """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
-
-    signature: str | None = ""
-    """Provider-specific opaque data (e.g. Anthropic thinking signature)."""
-
-    text: str | None = ""
-    """Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."""
-
-    tool_name: str | None = ""
-    """The name of the tool to call (for TOOL_CALL kind)."""
 
 
 @typecheck
@@ -892,24 +821,6 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asJSONValue", _args)
         return JSONValue(_ctx)
-
-    def as_llm_content_block(self) -> "LLMContentBlock":
-        """Retrieve the binding value, as type LLMContentBlock"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLMContentBlock", _args)
-        return LLMContentBlock(_ctx)
-
-    def as_llm_message(self) -> "LLMMessage":
-        """Retrieve the binding value, as type LLMMessage"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLMMessage", _args)
-        return LLMMessage(_ctx)
-
-    def as_llm_tool_call(self) -> "LLMToolCall":
-        """Retrieve the binding value, as type LLMToolCall"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLMToolCall", _args)
-        return LLMToolCall(_ctx)
 
     def as_module(self) -> "Module":
         """Retrieve the binding value, as type Module"""
@@ -6304,133 +6215,6 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
-    def with_llm_content_block_input(
-        self,
-        name: str,
-        value: "LLMContentBlock",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLMContentBlock in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLMContentBlock value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMContentBlockInput", _args)
-        return Env(_ctx)
-
-    def with_llm_content_block_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLMContentBlock output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMContentBlockOutput", _args)
-        return Env(_ctx)
-
-    def with_llm_message_input(
-        self,
-        name: str,
-        value: "LLMMessage",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLMMessage in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLMMessage value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMMessageInput", _args)
-        return Env(_ctx)
-
-    def with_llm_message_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLMMessage output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMMessageOutput", _args)
-        return Env(_ctx)
-
-    def with_llm_tool_call_input(
-        self,
-        name: str,
-        value: "LLMToolCall",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLMToolCall in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLMToolCall value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMToolCallInput", _args)
-        return Env(_ctx)
-
-    def with_llm_tool_call_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLMToolCall output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMToolCallOutput", _args)
-        return Env(_ctx)
-
     def with_main_module(self, module: "Module") -> Self:
         """Sets the main module for this environment (the project being worked
         on)
@@ -10080,30 +9864,13 @@ class LLM(Type):
         _ctx = self._select("lastReply", _args)
         return await _ctx.execute(str)
 
-    def loop(
-        self,
-        *,
-        max_api_calls: int | None = None,
-    ) -> Self:
+    def loop(self) -> Self:
         """Submit the queued prompt, evaluate any tool calls, queue their
         results, and keep going until the model ends its turn
-
-        Parameters
-        ----------
-        max_api_calls:
-            Cap the number of API calls
         """
-        _args = [
-            Arg("maxAPICalls", max_api_calls, None),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
-
-    async def messages(self) -> list["LLMMessage"]:
-        """The full message history."""
-        _args: list[Arg] = []
-        _ctx = self._select("messages", _args)
-        return await _ctx.execute_object_list(LLMMessage)
 
     async def model(self) -> str:
         """return the model used by the llm
@@ -10176,27 +9943,6 @@ class LLM(Type):
 
     def __await__(self):
         return self.sync().__await__()
-
-    async def system_prompt(self) -> str:
-        """A system prompt to send.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("systemPrompt", _args)
-        return await _ctx.execute(str)
 
     def token_usage(self) -> "LLMTokenUsage":
         """returns the token usage of the current state"""
@@ -10311,44 +10057,6 @@ class LLM(Type):
         _ctx = self._select("withPromptFile", _args)
         return LLM(_ctx)
 
-    def with_response(
-        self,
-        content: list[LLMContentBlockInput],
-        *,
-        input_tokens: int | None = 0,
-        output_tokens: int | None = 0,
-        cached_token_reads: int | None = 0,
-        cached_token_writes: int | None = 0,
-        total_tokens: int | None = 0,
-    ) -> Self:
-        """Append an assistant response to the message history
-
-        Parameters
-        ----------
-        content:
-            The response content
-        input_tokens:
-            Uncached input tokens sent
-        output_tokens:
-            Tokens received from the model, including text and tool calls
-        cached_token_reads:
-            Cached input tokens read
-        cached_token_writes:
-            Cached input tokens written
-        total_tokens:
-            Total tokens consumed by this response
-        """
-        _args = [
-            Arg("content", content),
-            Arg("inputTokens", input_tokens, 0),
-            Arg("outputTokens", output_tokens, 0),
-            Arg("cachedTokenReads", cached_token_reads, 0),
-            Arg("cachedTokenWrites", cached_token_writes, 0),
-            Arg("totalTokens", total_tokens, 0),
-        ]
-        _ctx = self._select("withResponse", _args)
-        return LLM(_ctx)
-
     def with_static_tools(self) -> Self:
         """Use a static set of tools for method calls, e.g. for MCP clients that
         do not support dynamic tool registration
@@ -10369,56 +10077,6 @@ class LLM(Type):
             Arg("prompt", prompt),
         ]
         _ctx = self._select("withSystemPrompt", _args)
-        return LLM(_ctx)
-
-    def with_tool_call(
-        self,
-        call: str,
-        tool: str,
-        arguments: JSON,
-    ) -> Self:
-        """Append a tool call to the last assistant message
-
-        Parameters
-        ----------
-        call:
-            The unique ID for this tool call
-        tool:
-            The name of the tool to call
-        arguments:
-            The arguments to pass to the tool
-        """
-        _args = [
-            Arg("call", call),
-            Arg("tool", tool),
-            Arg("arguments", arguments),
-        ]
-        _ctx = self._select("withToolCall", _args)
-        return LLM(_ctx)
-
-    def with_tool_response(
-        self,
-        call: str,
-        content: str,
-        errored: bool,
-    ) -> Self:
-        """Append a tool response to the message history
-
-        Parameters
-        ----------
-        call:
-            The ID of the tool call this is responding to
-        content:
-            The response content from the tool
-        errored:
-            Whether the tool call resulted in an error
-        """
-        _args = [
-            Arg("call", call),
-            Arg("content", content),
-            Arg("errored", errored),
-        ]
-        _ctx = self._select("withToolResponse", _args)
         return LLM(_ctx)
 
     def without_default_system_prompt(self) -> Self:
@@ -10445,190 +10103,6 @@ class LLM(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
-
-
-@typecheck
-class LLMContentBlock(Type):
-    async def arguments(self) -> JSON:
-        """Returns
-        -------
-        JSON
-            An arbitrary JSON-encoded value.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("arguments", _args)
-        return await _ctx.execute(JSON)
-
-    async def call_id(self) -> str:
-        """Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("callId", _args)
-        return await _ctx.execute(str)
-
-    async def errored(self) -> bool:
-        """Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("errored", _args)
-        return await _ctx.execute(bool)
-
-    async def id(self) -> LLMContentBlockID:
-        """A unique identifier for this LLMContentBlock.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        LLMContentBlockID
-            The `LLMContentBlockID` scalar type represents an identifier for
-            an object of type LLMContentBlock.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(LLMContentBlockID)
-
-    async def kind(self) -> LLMContentBlockKind:
-        """Returns
-        -------
-        LLMContentBlockKind
-            The kind of content in a message block.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("kind", _args)
-        return await _ctx.execute(LLMContentBlockKind)
-
-    async def text(self) -> str:
-        """Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("text", _args)
-        return await _ctx.execute(str)
-
-    async def tool_name(self) -> str:
-        """Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("toolName", _args)
-        return await _ctx.execute(str)
-
-
-@typecheck
-class LLMMessage(Type):
-    async def content(self) -> list[LLMContentBlock]:
-        _args: list[Arg] = []
-        _ctx = self._select("content", _args)
-        return await _ctx.execute_object_list(LLMContentBlock)
-
-    async def id(self) -> LLMMessageID:
-        """A unique identifier for this LLMMessage.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        LLMMessageID
-            The `LLMMessageID` scalar type represents an identifier for an
-            object of type LLMMessage.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(LLMMessageID)
-
-    async def role(self) -> LLMMessageRole:
-        """Returns
-        -------
-        LLMMessageRole
-            The role that generated a message.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("role", _args)
-        return await _ctx.execute(LLMMessageRole)
 
 
 @typecheck
@@ -10751,33 +10225,6 @@ class LLMTokenUsage(Type):
         _args: list[Arg] = []
         _ctx = self._select("totalTokens", _args)
         return await _ctx.execute(int)
-
-
-@typecheck
-class LLMToolCall(Type):
-    async def id(self) -> LLMToolCallID:
-        """A unique identifier for this LLMToolCall.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        LLMToolCallID
-            The `LLMToolCallID` scalar type represents an identifier for an
-            object of type LLMToolCall.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(LLMToolCallID)
 
 
 @typecheck
@@ -12694,7 +12141,12 @@ class Client(Root):
         _ctx = self._select("json", _args)
         return JSONValue(_ctx)
 
-    def llm(self, *, model: str | None = None) -> LLM:
+    def llm(
+        self,
+        *,
+        model: str | None = None,
+        max_api_calls: int | None = None,
+    ) -> LLM:
         """Initialize a Large Language Model (LLM)
 
         .. caution::
@@ -12704,9 +12156,12 @@ class Client(Root):
         ----------
         model:
             Model to use
+        max_api_calls:
+            Cap the number of API calls for this LLM
         """
         _args = [
             Arg("model", model, None),
+            Arg("maxAPICalls", max_api_calls, None),
         ]
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
@@ -13019,14 +12474,6 @@ class Client(Root):
         _ctx = self._select("loadJSONValueFromID", _args)
         return JSONValue(_ctx)
 
-    def load_llm_content_block_from_id(self, id: LLMContentBlockID) -> LLMContentBlock:
-        """Load a LLMContentBlock from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMContentBlockFromID", _args)
-        return LLMContentBlock(_ctx)
-
     def load_llm_from_id(self, id: LLMID) -> LLM:
         """Load a LLM from its ID."""
         _args = [
@@ -13035,14 +12482,6 @@ class Client(Root):
         _ctx = self._select("loadLLMFromID", _args)
         return LLM(_ctx)
 
-    def load_llm_message_from_id(self, id: LLMMessageID) -> LLMMessage:
-        """Load a LLMMessage from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMMessageFromID", _args)
-        return LLMMessage(_ctx)
-
     def load_llm_token_usage_from_id(self, id: LLMTokenUsageID) -> LLMTokenUsage:
         """Load a LLMTokenUsage from its ID."""
         _args = [
@@ -13050,14 +12489,6 @@ class Client(Root):
         ]
         _ctx = self._select("loadLLMTokenUsageFromID", _args)
         return LLMTokenUsage(_ctx)
-
-    def load_llm_tool_call_from_id(self, id: LLMToolCallID) -> LLMToolCall:
-        """Load a LLMToolCall from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMToolCallFromID", _args)
-        return LLMToolCall(_ctx)
 
     def load_label_from_id(self, id: LabelID) -> Label:
         """Load a Label from its ID."""
@@ -14727,27 +14158,6 @@ class TypeDef(Type):
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory."""
 
-    async def branch(self) -> str:
-        """The Git branch this workspace is on.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("branch", _args)
-        return await _ctx.execute(str)
-
     async def client_id(self) -> str:
         """The client ID that owns this workspace's host filesystem.
 
@@ -14767,36 +14177,6 @@ class Workspace(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("clientId", _args)
-        return await _ctx.execute(str)
-
-    async def commit(self, message: str) -> str:
-        """Commit whatever is currently staged in the workspace's git index.
-
-        Returns the commit hash. Fails if there is nothing staged.
-
-        Parameters
-        ----------
-        message:
-            The commit message.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("message", message),
-        ]
-        _ctx = self._select("commit", _args)
         return await _ctx.execute(str)
 
     def directory(
@@ -14833,47 +14213,6 @@ class Workspace(Type):
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
-
-    async def exists(
-        self,
-        path: str,
-        *,
-        expected_type: ExistsType | None = None,
-        do_not_follow_symlinks: bool | None = False,
-    ) -> bool:
-        """Check if a file or directory exists at the given path in the
-        workspace.
-
-        Parameters
-        ----------
-        path:
-            Path to check, relative to the workspace root (e.g.,
-            "src/main.go").
-        expected_type:
-            If specified, also validate the type of file (e.g. "REGULAR_TYPE",
-            "DIRECTORY_TYPE", or "SYMLINK_TYPE").
-        do_not_follow_symlinks:
-            If specified, do not follow symlinks.
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("path", path),
-            Arg("expectedType", expected_type, None),
-            Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
-        ]
-        _ctx = self._select("exists", _args)
-        return await _ctx.execute(bool)
 
     def file(self, path: str) -> File:
         """Returns a File from the workspace.
@@ -14934,34 +14273,6 @@ class Workspace(Type):
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)
 
-    async def glob(self, pattern: str) -> list[str]:
-        """Returns a list of files and directories that match the given pattern.
-
-        Parameters
-        ----------
-        pattern:
-            Pattern to match (e.g., "*.md").
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("pattern", pattern),
-        ]
-        _ctx = self._select("glob", _args)
-        return await _ctx.execute(list[str])
-
     async def id(self) -> WorkspaceID:
         """A unique identifier for this Workspace.
 
@@ -15006,135 +14317,6 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("root", _args)
         return await _ctx.execute(str)
-
-    async def search(
-        self,
-        pattern: str,
-        *,
-        paths: list[str] | None = None,
-        globs: list[str] | None = None,
-        literal: bool | None = False,
-        multiline: bool | None = False,
-        dotall: bool | None = False,
-        insensitive: bool | None = False,
-        skip_ignored: bool | None = False,
-        skip_hidden: bool | None = False,
-        files_only: bool | None = False,
-        limit: int | None = None,
-    ) -> list[SearchResult]:
-        """Searches for content matching the given regular expression or literal
-        string.
-
-        Uses Rust regex syntax; escape literal ., [, ], {, }, | with
-        backslashes.
-
-        Runs ripgrep on the client host, falling back to grep if unavailable.
-
-        Parameters
-        ----------
-        pattern:
-            The text to match.
-        paths:
-            Directory or file paths to search
-        globs:
-            Glob patterns to match (e.g., "*.md")
-        literal:
-            Interpret the pattern as a literal string instead of a regular
-            expression.
-        multiline:
-            Enable searching across multiple lines.
-        dotall:
-            Allow the . pattern to match newlines in multiline mode.
-        insensitive:
-            Enable case-insensitive matching.
-        skip_ignored:
-            Honor .gitignore, .ignore, and .rgignore files.
-        skip_hidden:
-            Skip hidden files (files starting with .).
-        files_only:
-            Only return matching files, not lines and content
-        limit:
-            Limit the number of results to return
-        """
-        _args = [
-            Arg("pattern", pattern),
-            Arg("paths", [] if paths is None else paths, []),
-            Arg("globs", [] if globs is None else globs, []),
-            Arg("literal", literal, False),
-            Arg("multiline", multiline, False),
-            Arg("dotall", dotall, False),
-            Arg("insensitive", insensitive, False),
-            Arg("skipIgnored", skip_ignored, False),
-            Arg("skipHidden", skip_hidden, False),
-            Arg("filesOnly", files_only, False),
-            Arg("limit", limit, None),
-        ]
-        _ctx = self._select("search", _args)
-        return await _ctx.execute_object_list(SearchResult)
-
-    async def stage(self, changes: Changeset) -> bool:
-        """Apply a Changeset to the workspace and stage the affected paths in
-        git.
-
-        Files are written (added/modified) and removed on disk, then precisely
-
-        the changed paths are staged via git add / git rm. Any pre-existing
-
-        unstaged user edits are preserved as unstaged changes.
-
-        Returns true if any changes were staged, false if the changeset was
-        empty.
-
-        Parameters
-        ----------
-        changes:
-            The changes to apply and stage.
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("changes", changes),
-        ]
-        _ctx = self._select("stage", _args)
-        return await _ctx.execute(bool)
-
-    def with_branch(self, branch: str) -> Self:
-        """Return a Workspace for the given branch. If the branch is different
-        from
-
-        the currently checked-out branch, a git worktree is created on the
-        host.
-
-        If the branch does not exist, it is created from the current branch
-        tip.
-
-        Parameters
-        ----------
-        branch:
-            The branch name (e.g. "agent/auth").
-        """
-        _args = [
-            Arg("branch", branch),
-        ]
-        _ctx = self._select("withBranch", _args)
-        return Workspace(_ctx)
-
-    def with_(self, cb: Callable[["Workspace"], "Workspace"]) -> "Workspace":
-        """Call the provided callable with current Workspace.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
 
 
 dag = Client()
@@ -15228,17 +14410,8 @@ __all__ = [
     "InterfaceTypeDefID",
     "JSONValue",
     "JSONValueID",
-    "LLMContentBlock",
-    "LLMContentBlockID",
-    "LLMContentBlockInput",
-    "LLMContentBlockKind",
-    "LLMMessage",
-    "LLMMessageID",
-    "LLMMessageRole",
     "LLMTokenUsage",
     "LLMTokenUsageID",
-    "LLMToolCall",
-    "LLMToolCallID",
     "Label",
     "LabelID",
     "ListTypeDef",

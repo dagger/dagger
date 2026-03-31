@@ -43,7 +43,7 @@ func (sdk *dangSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Arra
 func (sdk *dangSDK) GenerateClient(
 	ctx context.Context,
 	modSource dagql.ObjectResult[*core.ModuleSource],
-	deps *core.ModDeps,
+	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
 	return inst, fmt.Errorf("dang SDK does not have a client to generate")
@@ -51,7 +51,7 @@ func (sdk *dangSDK) GenerateClient(
 
 func (sdk *dangSDK) Codegen(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	return &core.GeneratedCode{
@@ -62,7 +62,7 @@ func (sdk *dangSDK) Codegen(
 
 func (sdk *dangSDK) Runtime(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (core.ModuleRuntime, error) {
 	return &DangRuntime{

@@ -16,7 +16,7 @@ import (
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
-	env      dagql.ObjectResult[*Env]
+	env  dagql.ObjectResult[*Env]
 	objs *LLMObjects
 
 	// Expose a static toolset for calling methods, rather than directly exposing
@@ -39,7 +39,7 @@ func newMCPEmpty() *MCP {
 		blocked[typeName] = slices.Clone(methods)
 	}
 	return &MCP{
-		objs:        NewLLMObjects(),
+		objs:            NewLLMObjects(),
 		selectedMethods: map[string]bool{},
 		blockedMethods:  blocked,
 		mcpServers:      make(map[string]*MCPServerConfig),
@@ -87,7 +87,7 @@ func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
 
 func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
 	if m.env.ID() != nil {
-		return m.env.Self().deps.Schema(ctx)
+		return m.env.Self().deps.Server(ctx)
 	}
 	return CurrentDagqlServer(ctx)
 }

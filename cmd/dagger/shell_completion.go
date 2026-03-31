@@ -191,13 +191,6 @@ func (h *shellAutoComplete) root() *CompletionContext {
 type CompletionContext struct {
 	Completer *shellAutoComplete
 
-	// CmdType indicates the completions should be performed in the new
-	// namespace set by a namespace-setting command.
-	CmdType string
-	// CmdFunction indicates the completions should be performed on the
-	// arguments of the namespace-setting command.
-	CmdFunction string
-
 	// ModType indicates the completions should be performed on an
 	// object/interface/etc.
 	ModType functionProvider
@@ -232,34 +225,16 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 			results = append(results, builtin.Name())
 		}
 
-	case ctx.CmdType == shellStdlibCmdName:
-		for _, cmd := range ctx.Completer.Stdlib() {
-			results = append(results, cmd.Name())
-		}
-
-	case ctx.CmdType == shellDepsCmdName:
-		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
-			for _, dep := range md.Dependencies {
-				results = append(results, dep.Name)
+	case ctx.root:
+		def := ctx.Completer.GetDef(nil)
+		for _, fn := range def.MainObject.AsFunctionProvider().GetFunctions() {
+			if isHiddenFunction(fn.CmdName()) {
+				continue
 			}
-		}
-
-	case ctx.CmdType == shellCoreCmdName:
-		for _, fn := range ctx.Completer.GetDef(nil).GetCoreFunctions() {
 			results = append(results, fn.CmdName())
 		}
-
-	case ctx.root:
-		for _, cmd := range ctx.stdlib() {
-			results = append(results, cmd.Name())
-		}
-		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
-			for _, fn := range md.MainObject.AsFunctionProvider().GetFunctions() {
-				results = append(results, fn.CmdName())
-			}
-			for _, dep := range md.Dependencies {
-				results = append(results, dep.Name)
-			}
+		for _, dep := range def.Dependencies {
+			results = append(results, dep.Name)
 		}
 		results = append(results, ctx.Completer.LoadedModulePaths()...)
 	}
@@ -282,25 +257,6 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 		return &CompletionContext{
 			Completer:   ctx.Completer,
 			ModFunction: next,
-		}
-	}
-
-	// Limit options for these namespace-setting commands
-	switch ctx.CmdType {
-	case shellStdlibCmdName:
-		if cmd := ctx.stdlibCmd(field); cmd != nil {
-			return cmd.Complete(ctx, args)
-		}
-	case shellDepsCmdName:
-		// TODO: loading other modules isn't supported yet
-		return nil
-
-	case shellCoreCmdName:
-		if fn := def.GetCoreFunction(field); fn != nil {
-			return &CompletionContext{
-				Completer:   ctx.Completer,
-				ModFunction: fn,
-			}
 		}
 	}
 
@@ -328,12 +284,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 		return nil
 	}
 
-	// 3. Stdlib
-	if cmd := ctx.stdlibCmd(field); cmd != nil {
-		return cmd.Complete(ctx, args)
-	}
-
-	// 4. Module reference
+	// 3. Module reference
 	// TODO: loading other modules isn't supported yet
 	if ctx.Completer.IsDefaultModule(field) {
 		return &CompletionContext{
@@ -354,12 +305,6 @@ func (ctx *CompletionContext) lookupType() *CompletionContext {
 			ModType:   next,
 		}
 	}
-	if ctx.CmdFunction != "" {
-		return &CompletionContext{
-			Completer: ctx.Completer,
-			CmdType:   ctx.CmdFunction,
-		}
-	}
 	return nil
 }
 
@@ -373,24 +318,8 @@ func (ctx *CompletionContext) builtins() []*ShellCommand {
 	return cmds
 }
 
-func (ctx *CompletionContext) stdlib() []*ShellCommand {
-	return ctx.Completer.Stdlib()
-}
-
 func (ctx *CompletionContext) builtinCmd(name string) *ShellCommand {
 	for _, cmd := range ctx.builtins() {
-		if cmd.Name() == name {
-			if cmd.Complete == nil {
-				return nil
-			}
-			return cmd
-		}
-	}
-	return nil
-}
-
-func (ctx *CompletionContext) stdlibCmd(name string) *ShellCommand {
-	for _, cmd := range ctx.stdlib() {
 		if cmd.Name() == name {
 			if cmd.Complete == nil {
 				return nil

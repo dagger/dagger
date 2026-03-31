@@ -58,6 +58,37 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache *SessionCache
+
+	// canonical, if set, is the server without entrypoint sugar.
+	// Entrypoint proxies flatten a module's methods onto the Query root
+	// as syntactic convenience; the canonical server preserves the real
+	// namespace where constructors and core fields live unshadowed.
+	//
+	// Load, LoadType, and callers that need to bypass proxies (proxy
+	// resolvers, SDK plumbing) use Canonical() to reach it.
+	canonical *Server
+}
+
+// Canonical returns the server without entrypoint sugar. For servers
+// with entrypoint proxies, this is the underlying server where
+// constructors and core fields live unshadowed. For all other servers,
+// it returns the receiver itself.
+//
+// Use Canonical() when you need to bypass proxy fields: in entrypoint
+// proxy resolvers (to call the real constructor), in SDK plumbing (to
+// reach core fields like "directory"), and for ID evaluation (so IDs
+// always encode the real call path, not the sugared one).
+func (s *Server) Canonical() *Server {
+	if s.canonical != nil {
+		return s.canonical
+	}
+	return s
+}
+
+// SetCanonical sets the canonical (un-sugared) server. This is called
+// by SchemaBuilder when constructing the outer/inner server pair.
+func (s *Server) SetCanonical(canonical *Server) {
+	s.canonical = canonical
 }
 
 type ServerSchema struct {
@@ -121,12 +152,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		schemaOnces:   make(map[call.View]*sync.Once),
 		schemaLock:    &sync.Mutex{},
 	}
-	rootClass := NewClass(srv, ClassOpts[T]{
-		// NB: there's nothing actually stopping this from being a thing, except it
-		// currently confuses the Dagger Go SDK. could be a nifty way to pass
-		// around global config I suppose.
-		NoIDs: true,
-	})
+	rootClass := NewClass(srv, ClassOpts[T]{})
 	srv.root = ObjectResult[T]{
 		Result: newDetachedResult(nil, root),
 		class:  rootClass,
@@ -718,6 +744,11 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
+	// Delegate to the canonical server so IDs are always evaluated
+	// against the real schema, not the sugared one.
+	if c := s.canonical; c != nil {
+		return c.Load(ctx, id)
+	}
 	res, err := s.LoadType(ctx, id)
 	if err != nil {
 		return nil, err
@@ -726,6 +757,9 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	if c := s.canonical; c != nil {
+		return c.LoadType(ctx, id)
+	}
 	var base AnyResult
 	var err error
 	if id.Receiver() != nil {
@@ -773,7 +807,14 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
-	if !isNonInternal(ctx) {
+	if isNonInternal(ctx) {
+		// We only want "non internal" to apply to the immediate call, so flip it
+		// from here on; it already did its job in avoiding the withInternal below.
+		//
+		// FIXME: this is an absurd dance, we should maybe just remove the
+		// auto-Internaling, but that'll be a game of wack-a-mole
+		ctx = withoutNonInternalTelemetry(ctx)
+	} else {
 		// Annotate ctx with the internal flag so we can distinguish self-calls from
 		// user-calls in the UI.
 		//
@@ -1148,6 +1189,16 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	}
 
 	if len(sel.Subselections) == 0 {
+		// Check if the value is an object type that requires sub-selections.
+		// Without this check, returning an object without sub-selections
+		// leads to a cryptic JSON marshal error because object values
+		// contain function closures that can't be serialized.
+		if _, ok := val.(AnyObjectResult); ok {
+			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
+		}
+		if _, ok := s.ObjectType(val.Type().Name()); ok {
+			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
+		}
 		return val.Unwrap(), nil
 	}
 

@@ -186,8 +186,8 @@ func (g *GraphEvaluator) expandWord(w *syntax.Word) (string, error) {
 				return value
 			}
 
-			// Fall back to system lookup
-			if g.systemLookup != nil {
+			// Fall back to system lookup only when value is not literal
+			if g.systemLookup != nil && w.Lit() == "" {
 				// Don't apply $IFS from the host system
 				if name == "IFS" {
 					return " \t\n"

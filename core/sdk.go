@@ -76,8 +76,8 @@ type ClientGenerator interface {
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
 
-		// Current module dependencies.
-		*ModDeps,
+		// Introspection JSON file for the schema visible to the client.
+		dagql.Result[*File],
 
 		// Output directory of the generated client.
 		string,
@@ -122,7 +122,7 @@ type CodeGenerator interface {
 		context.Context,
 
 		// Current module dependencies.
-		*ModDeps,
+		*SchemaBuilder,
 
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
@@ -170,8 +170,12 @@ func (r *ContainerRuntime) Call(
 ) ([]byte, string, error) {
 	srv := dagql.CurrentDagqlServer(ctx)
 
+	// Desugar to the canonical server for core API plumbing so that
+	// entrypoint proxies cannot shadow core fields like "directory".
+	coreSrv := srv.Canonical()
+
 	var metaDir dagql.ObjectResult[*Directory]
-	err := srv.Select(ctx, srv.Root(), &metaDir,
+	err := coreSrv.Select(ctx, coreSrv.Root(), &metaDir,
 		dagql.Selector{
 			Field: "directory",
 		},
@@ -338,7 +342,7 @@ type Runtime interface {
 		context.Context,
 
 		// Current module dependencies.
-		*ModDeps,
+		*SchemaBuilder,
 
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
@@ -370,7 +374,7 @@ type ModuleTypes interface {
 		context.Context,
 
 		// Current module dependencies.
-		*ModDeps,
+		*SchemaBuilder,
 
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],

@@ -14,33 +14,12 @@ namespace Dagger;
 class Workspace extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The Git branch this workspace is on.
-     */
-    public function branch(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('branch');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'branch');
-    }
-
-    /**
      * The client ID that owns this workspace's host filesystem.
      */
     public function clientId(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clientId');
         return (string)$this->queryLeaf($leafQueryBuilder, 'clientId');
-    }
-
-    /**
-     * Commit whatever is currently staged in the workspace's git index.
-     *
-     * Returns the commit hash. Fails if there is nothing staged.
-     */
-    public function commit(string $message): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
-        $leafQueryBuilder->setArgument('message', $message);
-        return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
     }
 
     /**
@@ -66,22 +45,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Check if a file or directory exists at the given path in the workspace.
-     */
-    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
-        $leafQueryBuilder->setArgument('path', $path);
-        if (null !== $expectedType) {
-        $leafQueryBuilder->setArgument('expectedType', $expectedType);
-        }
-        if (null !== $doNotFollowSymlinks) {
-        $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
-        }
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
     }
 
     /**
@@ -114,16 +77,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Returns a list of files and directories that match the given pattern.
-     */
-    public function glob(string $pattern): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('glob');
-        $leafQueryBuilder->setArgument('pattern', $pattern);
-        return (array)$this->queryLeaf($leafQueryBuilder, 'glob');
-    }
-
-    /**
      * A unique identifier for this Workspace.
      */
     public function id(): WorkspaceId
@@ -139,92 +92,5 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('root');
         return (string)$this->queryLeaf($leafQueryBuilder, 'root');
-    }
-
-    /**
-     * Searches for content matching the given regular expression or literal string.
-     *
-     * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-     *
-     * Runs ripgrep on the client host, falling back to grep if unavailable.
-     */
-    public function search(
-        string $pattern,
-        ?array $paths = null,
-        ?array $globs = null,
-        ?bool $literal = false,
-        ?bool $multiline = false,
-        ?bool $dotall = false,
-        ?bool $insensitive = false,
-        ?bool $skipIgnored = false,
-        ?bool $skipHidden = false,
-        ?bool $filesOnly = false,
-        ?int $limit = null,
-    ): array {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
-        $leafQueryBuilder->setArgument('pattern', $pattern);
-        if (null !== $paths) {
-        $leafQueryBuilder->setArgument('paths', $paths);
-        }
-        if (null !== $globs) {
-        $leafQueryBuilder->setArgument('globs', $globs);
-        }
-        if (null !== $literal) {
-        $leafQueryBuilder->setArgument('literal', $literal);
-        }
-        if (null !== $multiline) {
-        $leafQueryBuilder->setArgument('multiline', $multiline);
-        }
-        if (null !== $dotall) {
-        $leafQueryBuilder->setArgument('dotall', $dotall);
-        }
-        if (null !== $insensitive) {
-        $leafQueryBuilder->setArgument('insensitive', $insensitive);
-        }
-        if (null !== $skipIgnored) {
-        $leafQueryBuilder->setArgument('skipIgnored', $skipIgnored);
-        }
-        if (null !== $skipHidden) {
-        $leafQueryBuilder->setArgument('skipHidden', $skipHidden);
-        }
-        if (null !== $filesOnly) {
-        $leafQueryBuilder->setArgument('filesOnly', $filesOnly);
-        }
-        if (null !== $limit) {
-        $leafQueryBuilder->setArgument('limit', $limit);
-        }
-        return (array)$this->queryLeaf($leafQueryBuilder, 'search');
-    }
-
-    /**
-     * Apply a Changeset to the workspace and stage the affected paths in git.
-     *
-     * Files are written (added/modified) and removed on disk, then precisely
-     *
-     * the changed paths are staged via git add / git rm. Any pre-existing
-     *
-     * unstaged user edits are preserved as unstaged changes.
-     *
-     * Returns true if any changes were staged, false if the changeset was empty.
-     */
-    public function stage(ChangesetId|Changeset $changes): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stage');
-        $leafQueryBuilder->setArgument('changes', $changes);
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'stage');
-    }
-
-    /**
-     * Return a Workspace for the given branch. If the branch is different from
-     *
-     * the currently checked-out branch, a git worktree is created on the host.
-     *
-     * If the branch does not exist, it is created from the current branch tip.
-     */
-    public function withBranch(string $branch): Workspace
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBranch');
-        $innerQueryBuilder->setArgument('branch', $branch);
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

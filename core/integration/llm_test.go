@@ -139,7 +139,7 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctrFn := func(llmFlags string) dagger.WithContainerFunc {
-		return daggerShell(fmt.Sprintf(`llm %s | with-env $(.core | env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop | with-prompt "now tell me the value of TERM" | loop --max-api-calls=1 | historyJSON`, llmFlags))
+		return daggerShell(fmt.Sprintf(`llm %s | with-env $(env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop | with-prompt "now tell me the value of TERM" | loop --max-api-calls=1 | historyJSON`, llmFlags))
 	}
 
 	recording := "llmtest/api-limit.golden"

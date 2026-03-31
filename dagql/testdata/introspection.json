@@ -630,6 +630,21 @@
             "directives": []
           },
           {
+            "name": "id",
+            "description": "A unique identifier for this Query.",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "QueryID"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
+          },
+          {
             "name": "impureField",
             "description": "",
             "type": {
@@ -738,6 +753,37 @@
             "directives": []
           },
           {
+            "name": "loadQueryFromID",
+            "description": "Load a Query from its ID.",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "Query"
+              }
+            },
+            "args": [
+              {
+                "name": "id",
+                "description": "",
+                "defaultValue": null,
+                "type": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "QueryID"
+                  }
+                },
+                "isDeprecated": false,
+                "deprecationReason": "",
+                "directives": []
+              }
+            ],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
+          },
+          {
             "name": "point",
             "description": "",
             "type": {
@@ -778,6 +824,12 @@
             "directives": []
           }
         ],
+        "directives": []
+      },
+      {
+        "kind": "SCALAR",
+        "name": "QueryID",
+        "description": "The `QueryID` scalar type represents an identifier for an object of type Query.",
         "directives": []
       },
       {

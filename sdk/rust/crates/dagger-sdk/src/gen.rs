@@ -1298,41 +1298,6 @@ impl JsonValueId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct LlmContentBlockId(pub String);
-impl From<&str> for LlmContentBlockId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for LlmContentBlockId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<LlmContentBlockId> for LlmContentBlock {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<LlmContentBlockId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<LlmContentBlockId> for LlmContentBlockId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<LlmContentBlockId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { Ok::<LlmContentBlockId, DaggerError>(self) })
-    }
-}
-impl LlmContentBlockId {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Llmid(pub String);
 impl From<&str> for Llmid {
     fn from(value: &str) -> Self {
@@ -1361,41 +1326,6 @@ impl IntoID<Llmid> for Llmid {
     }
 }
 impl Llmid {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct LlmMessageId(pub String);
-impl From<&str> for LlmMessageId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for LlmMessageId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<LlmMessageId> for LlmMessage {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<LlmMessageId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<LlmMessageId> for LlmMessageId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<LlmMessageId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { Ok::<LlmMessageId, DaggerError>(self) })
-    }
-}
-impl LlmMessageId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -1431,41 +1361,6 @@ impl IntoID<LlmTokenUsageId> for LlmTokenUsageId {
     }
 }
 impl LlmTokenUsageId {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct LlmToolCallId(pub String);
-impl From<&str> for LlmToolCallId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for LlmToolCallId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<LlmToolCallId> for LlmToolCall {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<LlmToolCallId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<LlmToolCallId> for LlmToolCallId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<LlmToolCallId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { Ok::<LlmToolCallId, DaggerError>(self) })
-    }
-}
-impl LlmToolCallId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -2157,16 +2052,6 @@ pub struct BuildArg {
     pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct LlmContentBlockInput {
-    pub arguments: Json,
-    pub call_id: String,
-    pub errored: bool,
-    pub kind: LlmContentBlockKind,
-    pub signature: String,
-    pub text: String,
-    pub tool_name: String,
-}
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
     pub name: String,
     pub value: String,
@@ -2493,33 +2378,6 @@ impl Binding {
     pub fn as_json_value(&self) -> JsonValue {
         let query = self.selection.select("asJSONValue");
         JsonValue {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve the binding value, as type LLMContentBlock
-    pub fn as_llm_content_block(&self) -> LlmContentBlock {
-        let query = self.selection.select("asLLMContentBlock");
-        LlmContentBlock {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve the binding value, as type LLMMessage
-    pub fn as_llm_message(&self) -> LlmMessage {
-        let query = self.selection.select("asLLMMessage");
-        LlmMessage {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve the binding value, as type LLMToolCall
-    pub fn as_llm_tool_call(&self) -> LlmToolCall {
-        let query = self.selection.select("asLLMToolCall");
-        LlmToolCall {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -8085,153 +7943,6 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create or update a binding of type LLMContentBlock in the environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the binding
-    /// * `value` - The LLMContentBlock value to assign to the binding
-    /// * `description` - The purpose of the input
-    pub fn with_llm_content_block_input(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<LlmContentBlockId>,
-        description: impl Into<String>,
-    ) -> Env {
-        let mut query = self.selection.select("withLLMContentBlockInput");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        query = query.arg("description", description.into());
-        Env {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Declare a desired LLMContentBlock output to be assigned in the environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the binding
-    /// * `description` - A description of the desired value of the binding
-    pub fn with_llm_content_block_output(
-        &self,
-        name: impl Into<String>,
-        description: impl Into<String>,
-    ) -> Env {
-        let mut query = self.selection.select("withLLMContentBlockOutput");
-        query = query.arg("name", name.into());
-        query = query.arg("description", description.into());
-        Env {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Create or update a binding of type LLMMessage in the environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the binding
-    /// * `value` - The LLMMessage value to assign to the binding
-    /// * `description` - The purpose of the input
-    pub fn with_llm_message_input(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<LlmMessageId>,
-        description: impl Into<String>,
-    ) -> Env {
-        let mut query = self.selection.select("withLLMMessageInput");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        query = query.arg("description", description.into());
-        Env {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Declare a desired LLMMessage output to be assigned in the environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the binding
-    /// * `description` - A description of the desired value of the binding
-    pub fn with_llm_message_output(
-        &self,
-        name: impl Into<String>,
-        description: impl Into<String>,
-    ) -> Env {
-        let mut query = self.selection.select("withLLMMessageOutput");
-        query = query.arg("name", name.into());
-        query = query.arg("description", description.into());
-        Env {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Create or update a binding of type LLMToolCall in the environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the binding
-    /// * `value` - The LLMToolCall value to assign to the binding
-    /// * `description` - The purpose of the input
-    pub fn with_llm_tool_call_input(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<LlmToolCallId>,
-        description: impl Into<String>,
-    ) -> Env {
-        let mut query = self.selection.select("withLLMToolCallInput");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        query = query.arg("description", description.into());
-        Env {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Declare a desired LLMToolCall output to be assigned in the environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the binding
-    /// * `description` - A description of the desired value of the binding
-    pub fn with_llm_tool_call_output(
-        &self,
-        name: impl Into<String>,
-        description: impl Into<String>,
-    ) -> Env {
-        let mut query = self.selection.select("withLLMToolCallOutput");
-        query = query.arg("name", name.into());
-        query = query.arg("description", description.into());
-        Env {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Sets the main module for this environment (the project being worked on)
     /// Contextual path arguments will be populated using the environment's workspace.
     pub fn with_main_module(&self, module: impl IntoID<ModuleId>) -> Env {
@@ -10968,30 +10679,6 @@ pub struct Llm {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct LlmLoopOpts {
-    /// Cap the number of API calls
-    #[builder(setter(into, strip_option), default)]
-    pub max_api_calls: Option<isize>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct LlmWithResponseOpts {
-    /// Cached input tokens read
-    #[builder(setter(into, strip_option), default)]
-    pub cached_token_reads: Option<isize>,
-    /// Cached input tokens written
-    #[builder(setter(into, strip_option), default)]
-    pub cached_token_writes: Option<isize>,
-    /// Uncached input tokens sent
-    #[builder(setter(into, strip_option), default)]
-    pub input_tokens: Option<isize>,
-    /// Tokens received from the model, including text and tool calls
-    #[builder(setter(into, strip_option), default)]
-    pub output_tokens: Option<isize>,
-    /// Total tokens consumed by this response
-    #[builder(setter(into, strip_option), default)]
-    pub total_tokens: Option<isize>,
-}
 impl Llm {
     /// create a branch in the LLM's history
     pub fn attempt(&self, number: isize) -> Llm {
@@ -11048,10 +10735,6 @@ impl Llm {
         query.execute(self.graphql_client.clone()).await
     }
     /// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#loop(&self) -> Llm {
         let query = self.selection.select("loop");
         Llm {
@@ -11059,31 +10742,6 @@ impl Llm {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
-    }
-    /// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn r#loop_opts(&self, opts: LlmLoopOpts) -> Llm {
-        let mut query = self.selection.select("loop");
-        if let Some(max_api_calls) = opts.max_api_calls {
-            query = query.arg("maxAPICalls", max_api_calls);
-        }
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// The full message history.
-    pub fn messages(&self) -> Vec<LlmMessage> {
-        let query = self.selection.select("messages");
-        vec![LlmMessage {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }]
     }
     /// return the model used by the llm
     pub async fn model(&self) -> Result<String, DaggerError> {
@@ -11103,11 +10761,6 @@ impl Llm {
     /// synchronize LLM state
     pub async fn sync(&self) -> Result<Llmid, DaggerError> {
         let query = self.selection.select("sync");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A system prompt to send.
-    pub async fn system_prompt(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("systemPrompt");
         query.execute(self.graphql_client.clone()).await
     }
     /// returns the token usage of the current state
@@ -11232,55 +10885,6 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Append an assistant response to the message history
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The response content
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_response(&self, content: Vec<LlmContentBlockInput>) -> Llm {
-        let mut query = self.selection.select("withResponse");
-        query = query.arg("content", content);
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Append an assistant response to the message history
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The response content
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_response_opts(
-        &self,
-        content: Vec<LlmContentBlockInput>,
-        opts: LlmWithResponseOpts,
-    ) -> Llm {
-        let mut query = self.selection.select("withResponse");
-        query = query.arg("content", content);
-        if let Some(input_tokens) = opts.input_tokens {
-            query = query.arg("inputTokens", input_tokens);
-        }
-        if let Some(output_tokens) = opts.output_tokens {
-            query = query.arg("outputTokens", output_tokens);
-        }
-        if let Some(cached_token_reads) = opts.cached_token_reads {
-            query = query.arg("cachedTokenReads", cached_token_reads);
-        }
-        if let Some(cached_token_writes) = opts.cached_token_writes {
-            query = query.arg("cachedTokenWrites", cached_token_writes);
-        }
-        if let Some(total_tokens) = opts.total_tokens {
-            query = query.arg("totalTokens", total_tokens);
-        }
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
     pub fn with_static_tools(&self) -> Llm {
         let query = self.selection.select("withStaticTools");
@@ -11298,52 +10902,6 @@ impl Llm {
     pub fn with_system_prompt(&self, prompt: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withSystemPrompt");
         query = query.arg("prompt", prompt.into());
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Append a tool call to the last assistant message
-    ///
-    /// # Arguments
-    ///
-    /// * `call` - The unique ID for this tool call
-    /// * `tool` - The name of the tool to call
-    /// * `arguments` - The arguments to pass to the tool
-    pub fn with_tool_call(
-        &self,
-        call: impl Into<String>,
-        tool: impl Into<String>,
-        arguments: Json,
-    ) -> Llm {
-        let mut query = self.selection.select("withToolCall");
-        query = query.arg("call", call.into());
-        query = query.arg("tool", tool.into());
-        query = query.arg("arguments", arguments);
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Append a tool response to the message history
-    ///
-    /// # Arguments
-    ///
-    /// * `call` - The ID of the tool call this is responding to
-    /// * `content` - The response content from the tool
-    /// * `errored` - Whether the tool call resulted in an error
-    pub fn with_tool_response(
-        &self,
-        call: impl Into<String>,
-        content: impl Into<String>,
-        errored: bool,
-    ) -> Llm {
-        let mut query = self.selection.select("withToolResponse");
-        query = query.arg("call", call.into());
-        query = query.arg("content", content.into());
-        query = query.arg("errored", errored);
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -11379,68 +10937,6 @@ impl Llm {
     }
 }
 #[derive(Clone)]
-pub struct LlmContentBlock {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl LlmContentBlock {
-    pub async fn arguments(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("arguments");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn call_id(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("callId");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn errored(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("errored");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this LLMContentBlock.
-    pub async fn id(&self) -> Result<LlmContentBlockId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn kind(&self) -> Result<LlmContentBlockKind, DaggerError> {
-        let query = self.selection.select("kind");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn text(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("text");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn tool_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("toolName");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
-pub struct LlmMessage {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl LlmMessage {
-    pub fn content(&self) -> Vec<LlmContentBlock> {
-        let query = self.selection.select("content");
-        vec![LlmContentBlock {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }]
-    }
-    /// A unique identifier for this LLMMessage.
-    pub async fn id(&self) -> Result<LlmMessageId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn role(&self) -> Result<LlmMessageRole, DaggerError> {
-        let query = self.selection.select("role");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
 pub struct LlmTokenUsage {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -11470,19 +10966,6 @@ impl LlmTokenUsage {
     }
     pub async fn total_tokens(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("totalTokens");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
-pub struct LlmToolCall {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl LlmToolCall {
-    /// A unique identifier for this LLMToolCall.
-    pub async fn id(&self) -> Result<LlmToolCallId, DaggerError> {
-        let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -12578,6 +12061,9 @@ pub struct QueryHttpOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryLlmOpts<'a> {
+    /// Cap the number of API calls for this LLM
+    #[builder(setter(into, strip_option), default)]
+    pub max_api_calls: Option<isize>,
     /// Model to use
     #[builder(setter(into, strip_option), default)]
     pub model: Option<&'a str>,
@@ -13070,6 +12556,9 @@ impl Query {
         let mut query = self.selection.select("llm");
         if let Some(model) = opts.model {
             query = query.arg("model", model);
+        }
+        if let Some(max_api_calls) = opts.max_api_calls {
+            query = query.arg("maxAPICalls", max_api_calls);
         }
         Llm {
             proc: self.proc.clone(),
@@ -13690,25 +13179,6 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Load a LLMContentBlock from its ID.
-    pub fn load_llm_content_block_from_id(
-        &self,
-        id: impl IntoID<LlmContentBlockId>,
-    ) -> LlmContentBlock {
-        let mut query = self.selection.select("loadLLMContentBlockFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        LlmContentBlock {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Load a LLM from its ID.
     pub fn load_llm_from_id(&self, id: impl IntoID<Llmid>) -> Llm {
         let mut query = self.selection.select("loadLLMFromID");
@@ -13725,22 +13195,6 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Load a LLMMessage from its ID.
-    pub fn load_llm_message_from_id(&self, id: impl IntoID<LlmMessageId>) -> LlmMessage {
-        let mut query = self.selection.select("loadLLMMessageFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        LlmMessage {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Load a LLMTokenUsage from its ID.
     pub fn load_llm_token_usage_from_id(&self, id: impl IntoID<LlmTokenUsageId>) -> LlmTokenUsage {
         let mut query = self.selection.select("loadLLMTokenUsageFromID");
@@ -13752,22 +13206,6 @@ impl Query {
             }),
         );
         LlmTokenUsage {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a LLMToolCall from its ID.
-    pub fn load_llm_tool_call_from_id(&self, id: impl IntoID<LlmToolCallId>) -> LlmToolCall {
-        let mut query = self.selection.select("loadLLMToolCallFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        LlmToolCall {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -15198,73 +14636,15 @@ pub struct WorkspaceDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceExistsOpts {
-    /// If specified, do not follow symlinks.
-    #[builder(setter(into, strip_option), default)]
-    pub do_not_follow_symlinks: Option<bool>,
-    /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
-    #[builder(setter(into, strip_option), default)]
-    pub expected_type: Option<ExistsType>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindUpOpts<'a> {
     /// Path to start the search from, relative to the workspace root.
     #[builder(setter(into, strip_option), default)]
     pub from: Option<&'a str>,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceSearchOpts<'a> {
-    /// Allow the . pattern to match newlines in multiline mode.
-    #[builder(setter(into, strip_option), default)]
-    pub dotall: Option<bool>,
-    /// Only return matching files, not lines and content
-    #[builder(setter(into, strip_option), default)]
-    pub files_only: Option<bool>,
-    /// Glob patterns to match (e.g., "*.md")
-    #[builder(setter(into, strip_option), default)]
-    pub globs: Option<Vec<&'a str>>,
-    /// Enable case-insensitive matching.
-    #[builder(setter(into, strip_option), default)]
-    pub insensitive: Option<bool>,
-    /// Limit the number of results to return
-    #[builder(setter(into, strip_option), default)]
-    pub limit: Option<isize>,
-    /// Interpret the pattern as a literal string instead of a regular expression.
-    #[builder(setter(into, strip_option), default)]
-    pub literal: Option<bool>,
-    /// Enable searching across multiple lines.
-    #[builder(setter(into, strip_option), default)]
-    pub multiline: Option<bool>,
-    /// Directory or file paths to search
-    #[builder(setter(into, strip_option), default)]
-    pub paths: Option<Vec<&'a str>>,
-    /// Skip hidden files (files starting with .).
-    #[builder(setter(into, strip_option), default)]
-    pub skip_hidden: Option<bool>,
-    /// Honor .gitignore, .ignore, and .rgignore files.
-    #[builder(setter(into, strip_option), default)]
-    pub skip_ignored: Option<bool>,
-}
 impl Workspace {
-    /// The Git branch this workspace is on.
-    pub async fn branch(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("branch");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// The client ID that owns this workspace's host filesystem.
     pub async fn client_id(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("clientId");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Commit whatever is currently staged in the workspace's git index.
-    /// Returns the commit hash. Fails if there is nothing staged.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The commit message.
-    pub async fn commit(&self, message: impl Into<String>) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("commit");
-        query = query.arg("message", message.into());
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a Directory from the workspace.
@@ -15311,38 +14691,6 @@ impl Workspace {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
-    }
-    /// Check if a file or directory exists at the given path in the workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to check, relative to the workspace root (e.g., "src/main.go").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
-        let mut query = self.selection.select("exists");
-        query = query.arg("path", path.into());
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Check if a file or directory exists at the given path in the workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to check, relative to the workspace root (e.g., "src/main.go").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn exists_opts(
-        &self,
-        path: impl Into<String>,
-        opts: WorkspaceExistsOpts,
-    ) -> Result<bool, DaggerError> {
-        let mut query = self.selection.select("exists");
-        query = query.arg("path", path.into());
-        if let Some(expected_type) = opts.expected_type {
-            query = query.arg("expectedType", expected_type);
-        }
-        if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
-            query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
-        }
-        query.execute(self.graphql_client.clone()).await
     }
     /// Returns a File from the workspace.
     /// Path is relative to workspace root.
@@ -15392,16 +14740,6 @@ impl Workspace {
         }
         query.execute(self.graphql_client.clone()).await
     }
-    /// Returns a list of files and directories that match the given pattern.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - Pattern to match (e.g., "*.md").
-    pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, DaggerError> {
-        let mut query = self.selection.select("glob");
-        query = query.arg("pattern", pattern.into());
-        query.execute(self.graphql_client.clone()).await
-    }
     /// A unique identifier for this Workspace.
     pub async fn id(&self) -> Result<WorkspaceId, DaggerError> {
         let query = self.selection.select("id");
@@ -15411,110 +14749,6 @@ impl Workspace {
     pub async fn root(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("root");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// Searches for content matching the given regular expression or literal string.
-    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-    /// Runs ripgrep on the client host, falling back to grep if unavailable.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn search(&self, pattern: impl Into<String>) -> Vec<SearchResult> {
-        let mut query = self.selection.select("search");
-        query = query.arg("pattern", pattern.into());
-        vec![SearchResult {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }]
-    }
-    /// Searches for content matching the given regular expression or literal string.
-    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-    /// Runs ripgrep on the client host, falling back to grep if unavailable.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn search_opts<'a>(
-        &self,
-        pattern: impl Into<String>,
-        opts: WorkspaceSearchOpts<'a>,
-    ) -> Vec<SearchResult> {
-        let mut query = self.selection.select("search");
-        query = query.arg("pattern", pattern.into());
-        if let Some(paths) = opts.paths {
-            query = query.arg("paths", paths);
-        }
-        if let Some(globs) = opts.globs {
-            query = query.arg("globs", globs);
-        }
-        if let Some(literal) = opts.literal {
-            query = query.arg("literal", literal);
-        }
-        if let Some(multiline) = opts.multiline {
-            query = query.arg("multiline", multiline);
-        }
-        if let Some(dotall) = opts.dotall {
-            query = query.arg("dotall", dotall);
-        }
-        if let Some(insensitive) = opts.insensitive {
-            query = query.arg("insensitive", insensitive);
-        }
-        if let Some(skip_ignored) = opts.skip_ignored {
-            query = query.arg("skipIgnored", skip_ignored);
-        }
-        if let Some(skip_hidden) = opts.skip_hidden {
-            query = query.arg("skipHidden", skip_hidden);
-        }
-        if let Some(files_only) = opts.files_only {
-            query = query.arg("filesOnly", files_only);
-        }
-        if let Some(limit) = opts.limit {
-            query = query.arg("limit", limit);
-        }
-        vec![SearchResult {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }]
-    }
-    /// Apply a Changeset to the workspace and stage the affected paths in git.
-    /// Files are written (added/modified) and removed on disk, then precisely
-    /// the changed paths are staged via git add / git rm. Any pre-existing
-    /// unstaged user edits are preserved as unstaged changes.
-    /// Returns true if any changes were staged, false if the changeset was empty.
-    ///
-    /// # Arguments
-    ///
-    /// * `changes` - The changes to apply and stage.
-    pub async fn stage(&self, changes: impl IntoID<ChangesetId>) -> Result<bool, DaggerError> {
-        let mut query = self.selection.select("stage");
-        query = query.arg_lazy(
-            "changes",
-            Box::new(move || {
-                let changes = changes.clone();
-                Box::pin(async move { changes.into_id().await.unwrap().quote() })
-            }),
-        );
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Return a Workspace for the given branch. If the branch is different from
-    /// the currently checked-out branch, a git worktree is created on the host.
-    /// If the branch does not exist, it is created from the current branch tip.
-    ///
-    /// # Arguments
-    ///
-    /// * `branch` - The branch name (e.g. "agent/auth").
-    pub fn with_branch(&self, branch: impl Into<String>) -> Workspace {
-        let mut query = self.selection.select("withBranch");
-        query = query.arg("branch", branch.into());
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
     }
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -15604,26 +14838,6 @@ pub enum ImageMediaTypes {
     Oci,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
-}
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub enum LlmContentBlockKind {
-    #[serde(rename = "TEXT")]
-    Text,
-    #[serde(rename = "THINKING")]
-    Thinking,
-    #[serde(rename = "TOOL_CALL")]
-    ToolCall,
-    #[serde(rename = "TOOL_RESULT")]
-    ToolResult,
-}
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub enum LlmMessageRole {
-    #[serde(rename = "ASSISTANT")]
-    Assistant,
-    #[serde(rename = "SYSTEM")]
-    System,
-    #[serde(rename = "USER")]
-    User,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceExperimentalFeature {

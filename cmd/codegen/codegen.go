@@ -69,9 +69,14 @@ func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err e
 		}
 
 		for _, cmd := range generated.PostCommands {
-			cmd.Dir = cfg.OutputDir
-			if cfg.ModuleConfig != nil && cfg.ModuleConfig.ModuleName != "" {
-				cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleConfig.ModuleSourcePath)
+			// Only set cmd.Dir if the command hasn't already specified one.
+			// This allows generators to target a specific sub-directory (e.g.
+			// the client module directory) without being overridden here.
+			if cmd.Dir == "" {
+				cmd.Dir = cfg.OutputDir
+				if cfg.ModuleConfig != nil && cfg.ModuleConfig.ModuleName != "" {
+					cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleConfig.ModuleSourcePath)
+				}
 			}
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr

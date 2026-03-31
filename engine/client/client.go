@@ -97,8 +97,6 @@ type Params struct {
 
 	RunnerHost string // host of dagger engine runner serving buildkit apis
 
-	DisableHostRW bool
-
 	CloudURLCallback func(context.Context, string, string, bool)
 
 	EngineTrace   sdktrace.SpanExporter
@@ -127,6 +125,11 @@ type Params struct {
 	ExecCmd  []string
 
 	EagerRuntime bool
+
+	SkipWorkspaceModules bool
+
+	// Workspace explicitly declares workspace binding for this client.
+	Workspace *string
 
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
@@ -520,7 +523,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 
 	attachables := []bksession.Attachable{
 		// sockets
-		SocketProvider{EnableHostNetworkAccess: !c.DisableHostRW},
+		SocketProvider{EnableHostNetworkAccess: true},
 		// secrets
 		secretprovider.NewSecretProvider(),
 		// registry auth
@@ -539,13 +542,11 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	}
 
 	// filesync
-	if !c.DisableHostRW {
-		filesyncer, err := NewFilesyncer()
-		if err != nil {
-			return fmt.Errorf("new filesyncer: %w", err)
-		}
-		attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
+	filesyncer, err := NewFilesyncer()
+	if err != nil {
+		return fmt.Errorf("new filesyncer: %w", err)
 	}
+	attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 	if c.Params.PromptHandler != nil {
 		attachables = append(attachables, prompt.NewPromptAttachable(c.Params.PromptHandler))
 	}
@@ -1386,7 +1387,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		remoteEngineID = c.connector.EngineID()
 	}
 
-	return engine.ClientMetadata{
+	md := engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
 		SessionID:                 c.SessionID,
@@ -1409,6 +1410,19 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,
 	}
+
+	if c.Module != "" {
+		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Entrypoint: true}}
+		md.SkipWorkspaceModules = true
+	}
+	if c.SkipWorkspaceModules {
+		md.SkipWorkspaceModules = true
+	}
+	if c.Workspace != nil {
+		md.Workspace = c.Workspace
+	}
+
+	return md
 }
 
 // loadLLMEnvConfig packages LLM-related environment variables into an

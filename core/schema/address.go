@@ -51,7 +51,8 @@ func (s *addressSchema) value(ctx context.Context, parent *core.Address, args st
 
 func (s *addressSchema) address(ctx context.Context, root *core.Query, args struct {
 	Value dagql.String
-}) (*core.Address, error) {
+},
+) (*core.Address, error) {
 	addr := args.Value.String()
 	if addr == "" {
 		return nil, fmt.Errorf("resource cannot have empty address")

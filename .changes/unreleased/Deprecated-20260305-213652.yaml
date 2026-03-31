@@ -1,0 +1,7 @@
+kind: Deprecated
+body: |
+     set secrets via seguments without schemes. In future version, the scheme will be always required
+time: 2026-03-05T21:36:52.741056822-03:00
+custom:
+    Author: marcosnils
+    PR: "11957"

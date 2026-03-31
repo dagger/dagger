@@ -93,17 +93,17 @@ func CurrentModule() *dagger.CurrentModule {
 }
 
 // The TypeDef representations of the objects currently being served in the session.
-func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
+func CurrentTypeDefs(ctx context.Context, opts ...dagger.CurrentTypeDefsOpts) ([]dagger.TypeDef, error) {
 	client := initClient()
-	return client.CurrentTypeDefs(ctx)
+	return client.CurrentTypeDefs(ctx, opts...)
 }
 
 // Detect and return the current workspace.
 //
 // Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
-func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
+func CurrentWorkspace() *dagger.Workspace {
 	client := initClient()
-	return client.CurrentWorkspace(opts...)
+	return client.CurrentWorkspace()
 }
 
 // The default platform of the engine.
@@ -178,6 +178,12 @@ func Host() *dagger.Host {
 func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 	client := initClient()
 	return client.HTTP(url, opts...)
+}
+
+// A unique identifier for this Query.
+func ID(ctx context.Context) (dagger.ID, error) {
+	client := initClient()
+	return client.ID(ctx)
 }
 
 // Initialize a JSON value
@@ -486,6 +492,12 @@ func LoadObjectTypeDefFromID(id dagger.ObjectTypeDefID) *dagger.ObjectTypeDef {
 func LoadPortFromID(id dagger.PortID) *dagger.Port {
 	client := initClient()
 	return client.LoadPortFromID(id)
+}
+
+// Load a Query from its ID.
+func LoadQueryFromID(id dagger.QueryID) *dagger.Query {
+	client := initClient()
+	return client.LoadQueryFromID(id)
 }
 
 // Load a SDKConfig from its ID.

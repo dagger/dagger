@@ -30,6 +30,11 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
+
+	// ConstructorArgs stores arguments to pass to the entrypoint module's
+	// constructor. Set by the `with` field on Query so that entrypoint
+	// proxy resolvers can forward them to the constructor.
+	ConstructorArgs map[string]dagql.Input
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -40,7 +45,7 @@ type Server interface {
 	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata)
 
 	// Stitch in the given module to the list being served to the current client
-	ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error
+	ServeModule(ctx context.Context, mod *Module, includeDependencies bool, entrypoint bool) error
 
 	// If the current client is coming from a function, return the module that function is from
 	CurrentModule(context.Context) (*Module, error)
@@ -51,8 +56,8 @@ type Server interface {
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
 
-	// Return the list of deps being served to the current client
-	CurrentServedDeps(context.Context) (*ModDeps, error)
+	// Return the modules being served to the current client
+	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
 
 	// The Client metadata of the main client caller (i.e. the one who created
 	// the session, typically the CLI invoked by the user)
@@ -66,12 +71,15 @@ type Server interface {
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
+	// The cached workspace result from ensureWorkspaceLoaded.
+	CurrentWorkspace(context.Context) (*Workspace, error)
+
 	// The Client metadata of a specific client ID within the same session as the
 	// current client.
 	SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error)
 
 	// The default deps of every user module (currently just core)
-	DefaultDeps(context.Context) (*ModDeps, error)
+	DefaultDeps(context.Context) (*SchemaBuilder, error)
 
 	// The DagQL query cache for the current client's session
 	Cache(context.Context) (*dagql.SessionCache, error)
@@ -229,7 +237,14 @@ func (*Query) TypeDescription() string {
 }
 
 func (q Query) Clone() *Query {
-	return &q
+	cp := q
+	if q.ConstructorArgs != nil {
+		cp.ConstructorArgs = make(map[string]dagql.Input, len(q.ConstructorArgs))
+		for k, v := range q.ConstructorArgs {
+			cp.ConstructorArgs[k] = v
+		}
+	}
+	return &cp
 }
 
 func (q *Query) WithPipeline(name, desc string) *Query {
@@ -248,13 +263,13 @@ func (q *Query) NewModule() *Module {
 //
 // The returned ModDeps extends the inner DefaultDeps with all modules found in
 // the ID, loaded by using the DefaultDeps schema.
-func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
+func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*SchemaBuilder, error) {
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("default deps: %w", err)
 	}
 
-	bootstrap, err := defaultDeps.Schema(ctx)
+	bootstrap, err := defaultDeps.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap schema: %w", err)
 	}

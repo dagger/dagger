@@ -53,6 +53,8 @@ type ObjectType interface {
 	Extend(spec FieldSpec, fun FieldFunc)
 	// FieldSpec looks up a field spec by name.
 	FieldSpec(name string, view call.View) (FieldSpec, bool)
+	// FieldSpecs returns all field specs visible under the given view.
+	FieldSpecs(view call.View) []FieldSpec
 }
 
 type IDType interface {

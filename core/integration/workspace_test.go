@@ -47,6 +47,16 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 	}
 }
 
+// initStandaloneDangModule creates a standalone Dang module in the current
+// working directory and overwrites main.dang with the provided source.
+func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			With(daggerExec("init", "--sdk=dang", "--source=.", "--name="+name)).
+			WithNewFile("main.dang", source)
+	}
+}
+
 // initDangBlueprint creates a Dang blueprint module and an app module that
 // uses it. The blueprint source is written to blueprints/<name>/ and the app
 // module is initialized at the workspace root with --blueprint pointing to it.
@@ -91,7 +101,7 @@ type Greeter {
 }
 
 // TestWorkspaceFindUp verifies that Workspace.findUp searches up from the
-// start path and stops at the workspace root.
+// start path and stops at the workspace boundary.
 func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -103,7 +113,7 @@ func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 		WithNewFile("a/b/c/leaf.txt", "leaf").
 		WithExec([]string{"mkdir", "-p", "a/somedir"}).
 		WithNewFile("a/somedir/hi.txt", "hi").
-		With(initDangModule("finder", `
+		With(initStandaloneDangModule("finder", `
 type Finder {
   pub result: String!
 
@@ -115,40 +125,90 @@ type Finder {
 `))
 
 	t.Run("find file in start directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/b/other.txt", strings.TrimSpace(out))
+		require.Equal(t, "/a/b/other.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=target.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("--name=target.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/target.txt", strings.TrimSpace(out))
+		require.Equal(t, "/a/target.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file at workspace root", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=root.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("--name=root.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "root.txt", strings.TrimSpace(out))
+		require.Equal(t, "/root.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find directory in parent", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=somedir", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("--name=somedir", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/somedir", strings.TrimSpace(out))
+		require.Equal(t, "/a/somedir", strings.TrimSpace(out))
 	})
 
 	t.Run("do not find file in child directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=leaf.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("--name=leaf.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
 
 	t.Run("do not find non-existent file", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=nonexistent.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("--name=nonexistent.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
+}
+
+// TestNestedWorkspacePaths verifies that relative paths use the workspace
+// directory while absolute paths and upward search use the workspace boundary.
+func (WorkspaceSuite) TestNestedWorkspacePaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithExec([]string{"mkdir", "-p", "app"}).
+		WithNewFile("repo.txt", "hello from boundary").
+		WithNewFile("app/app.txt", "hello from workspace").
+		WithWorkdir("/work/app").
+		With(initStandaloneDangModule("paths", `
+type Paths {
+  pub workspaceValue: String!
+  pub boundaryValue: String!
+  pub foundValue: String!
+  pub workspacePath: String!
+  pub workspaceAddress: String!
+
+  new(ws: Workspace!) {
+    self.workspaceValue = ws.file("app.txt").contents
+    self.boundaryValue = ws.file("/repo.txt").contents
+    self.foundValue = ws.findUp(name: "repo.txt", from: ".") ?? ""
+    self.workspacePath = ws.path
+    self.workspaceAddress = ws.address
+    self
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("workspace-value")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("boundary-value")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from boundary", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("found-value")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/repo.txt", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("workspace-path")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "app", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("workspace-address")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "file:///work/app", strings.TrimSpace(out))
 }
 
 // TestWorkspaceArg verifies that a module function accepting a Workspace
@@ -173,9 +233,17 @@ type Greeter {
 }
 `))
 
-	out, err := ctr.With(daggerCall("greeter", "read")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+	t.Run("dagger call", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCall("greeter", "read")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+	})
+
+	t.Run("dagger shell", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerShell("greeter | read")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from workspace", out)
+	})
 }
 
 // TestWorkspaceDirectoryEntries verifies that Workspace.directory returns the
@@ -551,7 +619,7 @@ func (WorkspaceSuite) TestWorkspacePathTraversal(ctx context.Context, t *testctx
 		WithNewFile("legit.txt", "legit")
 
 	t.Run("directory traversal with ..", func(ctx context.Context, t *testctx.T) {
-		ctr := base.With(initDangModule("escape-dir", `
+		ctr := base.With(initStandaloneDangModule("escape-dir", `
 type EscapeDir {
   pub source: Directory!
 
@@ -565,13 +633,13 @@ type EscapeDir {
   }
 }
 `))
-		_, err := ctr.With(daggerCall("escape-dir", "ls")).Stdout(ctx)
+		_, err := ctr.With(daggerCall("ls")).Stdout(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "resolves outside root")
 	})
 
 	t.Run("file traversal with ..", func(ctx context.Context, t *testctx.T) {
-		ctr := base.With(initDangModule("escape-file", `
+		ctr := base.With(initStandaloneDangModule("escape-file", `
 type EscapeFile {
   pub content: String!
 
@@ -585,17 +653,15 @@ type EscapeFile {
   }
 }
 `))
-		_, err := ctr.With(daggerCall("escape-file", "read")).Stdout(ctx)
+		_, err := ctr.With(daggerCall("read")).Stdout(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "resolves outside root")
 	})
 
-	t.Run("absolute path treated as relative", func(ctx context.Context, t *testctx.T) {
-		// Absolute paths are relative to workspace root, not the host root.
-		// /sub should resolve to <workspace>/sub, not /sub on the host.
+	t.Run("absolute path resolves from workspace boundary", func(ctx context.Context, t *testctx.T) {
 		ctr := base.
 			WithNewFile("sub/inner.txt", "inner").
-			With(initDangModule("abs-rel", `
+			With(initStandaloneDangModule("abs-rel", `
 type AbsRel {
   pub source: Directory!
 
@@ -609,7 +675,7 @@ type AbsRel {
   }
 }
 `))
-		out, err := ctr.With(daggerCall("abs-rel", "ls")).Stdout(ctx)
+		out, err := ctr.With(daggerCall("ls")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "inner.txt")
 	})
@@ -2047,27 +2113,493 @@ type Cacheme {
 	})
 }
 
-// TestDangCurrentWorkspace verifies that a Dang module function can
-// call currentWorkspace transitively (e.g. via llm()). This exercises
-// the Dang SDK's in-process nested client, which historically lacked a
-// buildkit filesync session and failed with "session not found".
-func (WorkspaceSuite) TestDangCurrentWorkspace(ctx context.Context, t *testctx.T) {
+// TestBlueprintFunctionsIncludesOtherModules verifies that `dagger functions`
+// in a workspace with a blueprint module shows both the blueprint's own
+// functions AND entrypoint functions for the other (non-blueprint) workspace
+// modules.
+func (WorkspaceSuite) TestBlueprintFunctionsIncludesOtherModules(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := workspaceBase(t, c).
-		WithNewFile("hello.txt", "workspace content").
-		With(initDangModule("wstest", `
-type Wstest {
-  """
-  Read a file from the workspace obtained via currentWorkspace.
-  """
-  pub read(ws: Workspace!): String! {
-    ws.file("hello.txt").contents
+	// Set up a workspace with:
+	// - a blueprint module ("ci") whose functions should be promoted
+	// - two regular modules ("lint" and "test") whose constructors should
+	//   appear as entrypoint functions alongside the blueprint's functions
+	base := workspaceBase(t, c).
+		// Create the blueprint module
+		With(initDangBlueprint("ci", `
+type Ci {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub build: String! {
+    "built!"
+  }
+
+  pub deploy: String! {
+    "deployed!"
+  }
+}
+`)).
+		// Create two additional non-blueprint modules
+		With(initDangModule("lint", `
+type Lint {
+  pub check: String! {
+    "lint passed"
+  }
+}
+`)).
+		With(initDangModule("test", `
+type Test {
+  pub run: String! {
+    "tests passed"
   }
 }
 `))
 
-	out, err := ctr.With(daggerCall("wstest", "read")).Stdout(ctx)
+	t.Run("dagger functions shows all modules", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+
+		// Blueprint functions should be promoted to the top level.
+		require.Contains(t, out, "build")
+		require.Contains(t, out, "deploy")
+
+		// Non-blueprint modules should appear as entrypoint functions.
+		require.Contains(t, out, "lint")
+		require.Contains(t, out, "test")
+	})
+
+	t.Run("dagger call blueprint function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "built!", strings.TrimSpace(out))
+	})
+
+	t.Run("dagger call sibling module function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("lint", "check")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "lint passed", strings.TrimSpace(out))
+	})
+
+	t.Run("query root exposes blueprint entrypoint methods", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{build,lint{check},test{run}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"build":"built!","lint":{"check":"lint passed"},"test":{"run":"tests passed"}}`, out)
+	})
+
+	t.Run("dagger shell blueprint function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "built!", out)
+	})
+
+	t.Run("dagger shell sibling module function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("lint | check")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "lint passed", out)
+	})
+
+	t.Run("dagger shell multiple sibling modules", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("lint | check; test | run")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "lint passed")
+		require.Contains(t, out, "tests passed")
+	})
+}
+
+func (WorkspaceSuite) TestEntrypointProxyShadowsCoreFields(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initDangBlueprint("ci", `
+type Ci {
+  pub build: String! {
+    "built!"
+  }
+
+  pub container: String! {
+    "custom container"
+  }
+}
+`))
+
+	t.Run("both proxies appear in functions", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "build")
+		require.Contains(t, out, "container")
+	})
+
+	t.Run("proxy shadows core field", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "custom container", strings.TrimSpace(out))
+	})
+}
+
+func (WorkspaceSuite) TestEntrypointProxyConstructorArgOverlap(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initDangBlueprint("ci", `
+type Ci {
+  pub prefix: String!
+
+  new(prefix: String! = "ctor") {
+    self.prefix = prefix
+    self
+  }
+
+  pub echo(prefix: String! = "method"): String! {
+    self.prefix + ":" + prefix
+  }
+}
+`))
+
+	t.Run("proxy works with overlapping arg names", func(ctx context.Context, t *testctx.T) {
+		// Constructor args are set via `with`, method args are on the proxy.
+		// No collision even though both use "prefix".
+		out, err := base.With(daggerCall("--prefix", "ctor", "echo", "--prefix", "method")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ctor:method", strings.TrimSpace(out))
+	})
+
+	t.Run("graphql with works for constructor args", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{with(prefix:"ctor"){echo(prefix:"method")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"with":{"echo":"ctor:method"}}`, out)
+	})
+}
+
+// TestEntrypointProxyCoreAPIShadow verifies that when a module provides
+// functions whose names collide with core API fields (e.g. "container",
+// "file", "directory"), the proxies shadow the core fields on the outer
+// server. The core API remains functional for engine-internal plumbing
+// because it uses the inner server. Both proxy and namespaced paths work.
+func (WorkspaceSuite) TestEntrypointProxyCoreAPIShadow(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initStandaloneDangModule("shadows", `
+type Shadows {
+  pub container: String! {
+    "my-container"
+  }
+
+  pub file: String! {
+    "my-file"
+  }
+
+  pub directory: String! {
+    "my-directory"
+  }
+
+  pub hello: String! {
+    "hello!"
+  }
+}
+`))
+
+	t.Run("non-conflicting proxy works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello!", strings.TrimSpace(out))
+	})
+
+	t.Run("proxy shadows core field", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-container", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-file", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("directory")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-directory", strings.TrimSpace(out))
+	})
+}
+
+// TestEntrypointProxySelfNamedMethod verifies that a module whose main object
+// has a method with the same name as the module itself (e.g. module "test"
+// with method "test") doesn't cause infinite recursion. The proxy for "test"
+// would shadow the constructor; the inner server prevents the loop.
+func (WorkspaceSuite) TestEntrypointProxySelfNamedMethod(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initStandaloneDangModule("test", `
+type Test {
+  pub test: String! {
+    "test-result"
+  }
+
+  pub other: String! {
+    "other-result"
+  }
+}
+`))
+
+	t.Run("self-named proxy works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("test")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test-result", strings.TrimSpace(out))
+	})
+
+	t.Run("other proxy works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("other")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "other-result", strings.TrimSpace(out))
+	})
+}
+
+// TestEntrypointProxyCoreAPIShadowWithCoreReturnTypes verifies that a module
+// returning core types (Directory, File, Container) from methods whose names
+// collide with core API fields works correctly. The proxies shadow the core
+// fields on the outer server but engine-internal plumbing uses the inner
+// server, so there's no breakage.
+func (WorkspaceSuite) TestEntrypointProxyCoreAPIShadowWithCoreReturnTypes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initStandaloneDangModule("dirs", `
+type Dirs {
+  """
+  Returns a directory — same name as the core API field.
+  """
+  pub directory: Directory! {
+    Dagger.directory.withNewFile("hello.txt", "hello from dirs")
+  }
+
+  """
+  Returns a file — same name as the core API field.
+  """
+  pub file: File! {
+    Dagger.file("greeting.txt", "hi")
+  }
+
+  """
+  Returns a container — same name as the core API field.
+  """
+  pub container: Container! {
+    Dagger.container.from("alpine:3.20")
+  }
+
+  pub greet: String! {
+    "greetings!"
+  }
+}
+`))
+
+	t.Run("non-conflicting proxy works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "greetings!", strings.TrimSpace(out))
+	})
+
+	t.Run("proxy directory returns custom dir", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("directory", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("proxy file returns custom file", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("file", "contents")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi", strings.TrimSpace(out))
+	})
+
+	t.Run("proxy container runs", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("container", "with-exec", "--args=cat,/etc/alpine-release", "stdout")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, strings.TrimSpace(out), "3.20")
+	})
+}
+
+// TestEntrypointProxyDirectoryField verifies that a container-based module
+// with a Directory field can be constructed without triggering infinite
+// recursion in the engine's ContainerRuntime.Call.
+//
+// ContainerRuntime.Call selects "directory" from the Query root to create a
+// metadata directory. When the module has a "directory" field, the entrypoint
+// proxy shadows the core field on the outer server. A raw GraphQL query
+// resolves the constructor on the outer server directly, so
+// ContainerRuntime.Call must use the inner server for its plumbing to avoid
+// hitting the proxy.
+//
+// This test uses Go (a container-based SDK) and daggerQuery (raw GraphQL)
+// because both are required to trigger the bug:
+//   - Dang has a native runtime that doesn't use ContainerRuntime.Call
+//   - daggerCall routes through proxy resolvers that delegate to the inner
+//     server, masking the issue
+func (WorkspaceSuite) TestEntrypointProxyDirectoryField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=playground", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", `package main
+
+import (
+	"dagger/playground/internal/dagger"
+)
+
+type Playground struct {
+	*dagger.Directory
+}
+
+func New() Playground {
+	return Playground{Directory: dag.Directory()}
+}
+
+func (p *Playground) SayHello() string {
+	return "hello!"
+}
+`)
+
+	// Query through entrypoint proxies — exercises ContainerRuntime.Call
+	// because the proxy resolver delegates to the inner server, which
+	// calls the container-based SDK. The "directory" proxy shadows the
+	// core field on the outer server, but the inner server resolves
+	// the core "directory" for engine plumbing.
+	out, err := base.With(daggerQuery(`{sayHello, directory{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "workspace content", strings.TrimSpace(out))
+	require.JSONEq(t, `{"sayHello":"hello!", "directory":{"entries": []}}`, out)
+}
+
+// TestMainObjectWithPrefixedChildren mirrors the Elixir TestReturnChildObject
+// test: module "objects" has main object Objects and children ObjectsA,
+// ObjectsB.
+//
+// The child names are important: because ObjectsA already starts with
+// "Objects" (the module name), namespaceObject is a no-op for it — it
+// produces Name == gqlObjectName(OriginalName). A prior heuristic in
+// mergeModuleQueryFields used that equality to identify main objects, which
+// falsely matched ObjectsA and overwrote the real main object Objects.
+// Children whose names don't carry the module prefix (e.g. "Child") would
+// be namespaced to "ObjectsChild" and wouldn't trigger the bug.
+func (WorkspaceSuite) TestMainObjectWithPrefixedChildren(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	source := `
+type Objects {
+  pub objectA: ObjectsA! {
+    ObjectsA()
+  }
+}
+
+type ObjectsA {
+  pub message: String! {
+    "Hello from A"
+  }
+
+  pub objectB: ObjectsB! {
+    ObjectsB()
+  }
+}
+
+type ObjectsB {
+  pub message: String! {
+    "Hello from B"
+  }
+}
+`
+
+	t.Run("standalone module", func(ctx context.Context, t *testctx.T) {
+		base := workspaceBase(t, c).
+			With(initStandaloneDangModule("objects", source))
+
+		out, err := base.With(daggerCall("object-a", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from A", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("object-a", "object-b", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from B", strings.TrimSpace(out))
+	})
+
+	t.Run("toolchain module", func(ctx context.Context, t *testctx.T) {
+		base := workspaceBase(t, c).
+			With(initDangModule("objects", source))
+
+		out, err := base.With(daggerCall("objects", "object-a", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from A", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("objects", "object-a", "object-b", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from B", strings.TrimSpace(out))
+	})
+}
+
+// TestRenamedToolchainModule verifies that a toolchain module renamed via the
+// workspace config "name" field still has its constructor correctly
+// synthesized on Query. The SDK type keeps its original name (e.g.
+// "HelloWorld") but the module is installed under the alias (e.g. "greeter").
+// The namespaceObject function rewrites the main object's Name to match the
+// alias, so this has always worked, but this test makes the coverage explicit.
+func (WorkspaceSuite) TestRenamedToolchainModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create a module named "hello-world" but install it as "greeter".
+	base := workspaceBase(t, c).
+		WithWorkdir("toolchains/hello-world").
+		With(daggerExec("init", "--sdk=dang", "--name=hello-world")).
+		WithNewFile("main.dang", `
+type HelloWorld {
+  pub greet(name: String! = "world"): String! {
+    "hello, " + name + "!"
+  }
+}
+`).
+		WithWorkdir("../../").
+		With(daggerExec("init")).
+		WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "greeter",
+      "source": "./toolchains/hello-world"
+    }
+  ]
+}
+`)
+
+	t.Run("constructor appears under renamed alias", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("greeter", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, world!", strings.TrimSpace(out))
+	})
+
+	t.Run("constructor accepts args", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("greeter", "greet", "--name", "dagger")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, dagger!", strings.TrimSpace(out))
+	})
+
+	t.Run("functions list shows renamed alias", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "greeter")
+	})
+
+	t.Run("dagger shell renamed alias", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("greeter | greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, world!", out)
+	})
+
+	t.Run("dagger shell renamed alias with args", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell("greeter | greet --name dagger")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, dagger!", out)
+	})
 }

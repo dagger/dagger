@@ -19,7 +19,7 @@ type Env struct {
 
 	// The full module dependency chain for the environment, including the core
 	// module and any dependencies from the environment's creator
-	deps *ModDeps
+	deps *SchemaBuilder
 
 	// The main module for this environment (the project being worked on)
 	MainModule *Module
@@ -45,7 +45,7 @@ func (*Env) Type() *ast.Type {
 	}
 }
 
-func NewEnv(workspace dagql.ObjectResult[*Workspace], deps *ModDeps) *Env {
+func NewEnv(workspace dagql.ObjectResult[*Workspace], deps *SchemaBuilder) *Env {
 	return &Env{
 		Workspace:     workspace,
 		deps:          deps,

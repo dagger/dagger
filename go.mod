@@ -3,8 +3,8 @@ module github.com/dagger/dagger
 go 1.25.8
 
 require (
-	dagger.io/dagger v0.20.1
-	github.com/dagger/dagger/engine/distconsts v0.20.1
+	dagger.io/dagger v0.20.3
+	github.com/dagger/dagger/engine/distconsts v0.20.3
 )
 
 replace (
@@ -153,12 +153,12 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.30
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang v0.0.0-20260320195931-d325c43e06f2
+	github.com/vito/dang v0.0.0-20260323053027-352d057a4d4c
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea
 	github.com/vito/tuist v0.0.6-0.20260317030317-5530ade64acd
-	github.com/vito/tuist/teav1 v0.0.0-20260317015559-89e9190f7454
+	github.com/vito/tuist/teav1 v0.0.0-20260317030317-5530ade64acd
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
@@ -192,7 +192,7 @@ require (
 	google.golang.org/api v0.247.0
 	google.golang.org/genai v1.50.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
@@ -244,7 +244,7 @@ require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

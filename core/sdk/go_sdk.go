@@ -24,6 +24,12 @@ const (
 	goSDKIntrospectionJSONPath  = "/schema.json"
 	goSDKDependenciesConfigPath = "/dependencies.json"
 	GoSDKModuleIDPath           = "typedefs.json"
+
+	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
+	// change is needed in the generated library.
+	// Otherwise, update it to the latest known commit during release.
+	// CURRENT commit: v0.20.3
+	goSDKLibVersion = "9fc3f2f9bef863b0d4a8cab58ee012300f4e608f"
 )
 
 /*
@@ -67,18 +73,12 @@ func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[
 func (sdk *goSDK) GenerateClient(
 	ctx context.Context,
 	modSource dagql.ObjectResult[*core.ModuleSource],
-	deps *core.ModDeps,
+	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk client generation: %w", err)
-	}
-
-	// For standalone clients, we want to include Engine and other types that are hidden from module SDKs
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForClient(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
 
 	ctr, err := sdk.base(ctx)
@@ -179,7 +179,7 @@ func (sdk *goSDK) GenerateClient(
 
 func (sdk *goSDK) Codegen(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
@@ -227,7 +227,7 @@ func (sdk *goSDK) Codegen(
 
 func (sdk *goSDK) ModuleTypes(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	src dagql.ObjectResult[*core.ModuleSource],
 	currentModuleID *call.ID,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
@@ -329,6 +329,7 @@ func (sdk *goSDK) ModuleTypes(
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
 						"--introspection-json-path", goSDKIntrospectionJSONPath,
+						"--lib-version", dagql.String(goSDKLibVersion),
 						"--output", GoSDKModuleIDPath,
 					},
 				},
@@ -383,7 +384,7 @@ func (sdk *goSDK) ModuleTypes(
 
 func (sdk *goSDK) Runtime(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ core.ModuleRuntime, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
@@ -468,7 +469,7 @@ func (sdk *goSDK) Runtime(
 
 func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	src dagql.ObjectResult[*core.ModuleSource],
 ) (dagql.ObjectResult[*core.Container], error) {
 	var ctr dagql.ObjectResult[*core.Container]
@@ -516,17 +517,11 @@ func (sdk *goSDK) baseWithCodegen(
 		"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
+		"--lib-version", dagql.String(goSDKLibVersion),
 	}
 	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
-
-	/* FIXME: dev version handling is broken because it requires changing imports in code
-	if !engine.IsDevVersion(engine.Version) {
-		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engine.Version))
-	}
-	*/
-	codegenArgs = append(codegenArgs, "--lib-version", dagql.String("v0.19.11"))
 
 	selectors := []dagql.Selector{
 		{

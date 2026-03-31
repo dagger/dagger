@@ -79,7 +79,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	if err != nil {
 		return nil, fmt.Errorf("schema: %w", err)
 	}
-	dag, err := deps.Schema(ctx)
+	dag, err := deps.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("schema: %w", err)
 	}

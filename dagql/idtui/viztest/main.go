@@ -139,6 +139,13 @@ func (*Viztest) Terminal() *dagger.Container {
 }
 
 // +cache="session"
+func (*Viztest) Changeset() *dagger.Changeset {
+	return dag.Directory().
+		WithNewFile("test", "hello").
+		Changes(dag.Directory())
+}
+
+// +cache="session"
 func (*Viztest) PrimaryLines(n int) string {
 	buf := new(strings.Builder)
 	for i := 1; i <= n; i++ {

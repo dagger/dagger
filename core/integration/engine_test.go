@@ -519,11 +519,7 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 				devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 					return c.
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.engineVersion).
-						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.moduleMinVersion).
-						// Required to use the bundled go SDK instead of the remote one
-						// This avoid breaking that test because of a breaking change on
-						// the generated files.
-						WithEnvVariable("_EXPERIMENTAL_DAGGER_DEV_ENGINE", "1")
+						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.moduleMinVersion)
 				})
 				devEngineSvc = devEngineContainerAsService(devEngine)
 				engines[devEngineSvcKey] = devEngineSvc
@@ -541,7 +537,7 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 
 			clientCtr = clientCtr.
 				WithNewFile("/work/dagger.json", `{"name": "bare", "sdk": "go", "engineVersion": "`+tc.moduleVersion+`"}`).
-				WithNewFile("/query.graphql", `{bare{containerEcho(stringArg:"hello"){stdout}}}`)
+				WithNewFile("/query.graphql", `{containerEcho(stringArg:"hello"){stdout}}`)
 
 			if tc.errs == nil {
 				clientCtr = clientCtr.
@@ -573,7 +569,7 @@ func (EngineSuite) TestModuleVersionCompatInvalid(ctx context.Context, t *testct
 		With(daggerExec("init", "--name=bare", "--sdk=go")).
 		WithNewFile("dagger.json", `{ "name": "bare", "engineVersion": "v100.0.0", "sdk": 123 }`)
 	_, err := modGen.
-		With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+		With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 		Stdout(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, `module requires dagger v100.0.0, but you have`)

@@ -89,11 +89,8 @@
               <li><a href="#query-loadInputTypeDefFromID">loadInputTypeDefFromID</a></li>
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
               <li><a href="#query-loadJSONValueFromID">loadJSONValueFromID</a></li>
-              <li><a href="#query-loadLLMContentBlockFromID">loadLLMContentBlockFromID</a></li>
               <li><a href="#query-loadLLMFromID">loadLLMFromID</a></li>
-              <li><a href="#query-loadLLMMessageFromID">loadLLMMessageFromID</a></li>
               <li><a href="#query-loadLLMTokenUsageFromID">loadLLMTokenUsageFromID</a></li>
-              <li><a href="#query-loadLLMToolCallFromID">loadLLMToolCallFromID</a></li>
               <li><a href="#query-loadLabelFromID">loadLabelFromID</a></li>
               <li><a href="#query-loadListTypeDefFromID">loadListTypeDefFromID</a></li>
               <li><a href="#query-loadModuleConfigClientFromID">loadModuleConfigClientFromID</a></li>
@@ -212,18 +209,9 @@
               <li><a href="#definition-JSONValue">JSONValue</a></li>
               <li><a href="#definition-JSONValueID">JSONValueID</a></li>
               <li><a href="#definition-LLM">LLM</a></li>
-              <li><a href="#definition-LLMContentBlock">LLMContentBlock</a></li>
-              <li><a href="#definition-LLMContentBlockID">LLMContentBlockID</a></li>
-              <li><a href="#definition-LLMContentBlockInput">LLMContentBlockInput</a></li>
-              <li><a href="#definition-LLMContentBlockKind">LLMContentBlockKind</a></li>
               <li><a href="#definition-LLMID">LLMID</a></li>
-              <li><a href="#definition-LLMMessage">LLMMessage</a></li>
-              <li><a href="#definition-LLMMessageID">LLMMessageID</a></li>
-              <li><a href="#definition-LLMMessageRole">LLMMessageRole</a></li>
               <li><a href="#definition-LLMTokenUsage">LLMTokenUsage</a></li>
               <li><a href="#definition-LLMTokenUsageID">LLMTokenUsageID</a></li>
-              <li><a href="#definition-LLMToolCall">LLMToolCall</a></li>
-              <li><a href="#definition-LLMToolCallID">LLMToolCallID</a></li>
               <li><a href="#definition-Label">Label</a></li>
               <li><a href="#definition-LabelID">LabelID</a></li>
               <li><a href="#definition-ListTypeDef">ListTypeDef</a></li>
@@ -1496,6 +1484,12 @@
                           <span class="property-name"><code>model</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
                         </td>
                         <td> Model to use </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>maxAPICalls</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span>
+                        </td>
+                        <td> Cap the number of API calls for this LLM </td>
                       </tr>
                     </tbody>
                   </table>
@@ -3471,59 +3465,6 @@
               </div>
             </div>
           </section>
-          <section id="query-loadLLMContentBlockFromID" class="operation operation-query" data-traverse-target="query-loadLLMContentBlockFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadLLMContentBlockFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a LLMContentBlock from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-LLMContentBlock"><code>LLMContentBlock!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMContentBlockID"><code>LLMContentBlockID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-loadLLMFromID" class="operation operation-query" data-traverse-target="query-loadLLMFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3577,59 +3518,6 @@
               </div>
             </div>
           </section>
-          <section id="query-loadLLMMessageFromID" class="operation operation-query" data-traverse-target="query-loadLLMMessageFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadLLMMessageFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a LLMMessage from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-LLMMessage"><code>LLMMessage!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMMessageID"><code>LLMMessageID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-loadLLMTokenUsageFromID" class="operation operation-query" data-traverse-target="query-loadLLMTokenUsageFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3666,59 +3554,6 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMTokenUsageID"><code>LLMTokenUsageID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadLLMToolCallFromID" class="operation operation-query" data-traverse-target="query-loadLLMToolCallFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadLLMToolCallFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a LLMToolCall from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-LLMToolCall"><code>LLMToolCall!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMToolCallID"><code>LLMToolCallID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -5310,18 +5145,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asJSONValue" href="#Binding-asJSONValue"><code>asJSONValue</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
                         <td> Retrieve the binding value, as type JSONValue </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asLLMContentBlock" href="#Binding-asLLMContentBlock"><code>asLLMContentBlock</code></a> - <span class="property-type"><a href="#definition-LLMContentBlock"><code>LLMContentBlock!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type LLMContentBlock </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asLLMMessage" href="#Binding-asLLMMessage"><code>asLLMMessage</code></a> - <span class="property-type"><a href="#definition-LLMMessage"><code>LLMMessage!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type LLMMessage </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asLLMToolCall" href="#Binding-asLLMToolCall"><code>asLLMToolCall</code></a> - <span class="property-type"><a href="#definition-LLMToolCall"><code>LLMToolCall!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type LLMToolCall </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asModule" href="#Binding-asModule"><code>asModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
@@ -9797,144 +9620,6 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMContentBlockInput" href="#Env-withLLMContentBlockInput"><code>withLLMContentBlockInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update a binding of type LLMContentBlock in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMContentBlockID"><code>LLMContentBlockID!</code></a></span></h6>
-                                <p>The LLMContentBlock value to assign to the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The purpose of the input</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMContentBlockOutput" href="#Env-withLLMContentBlockOutput"><code>withLLMContentBlockOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Declare a desired LLMContentBlock output to be assigned in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>A description of the desired value of the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMMessageInput" href="#Env-withLLMMessageInput"><code>withLLMMessageInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update a binding of type LLMMessage in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMMessageID"><code>LLMMessageID!</code></a></span></h6>
-                                <p>The LLMMessage value to assign to the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The purpose of the input</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMMessageOutput" href="#Env-withLLMMessageOutput"><code>withLLMMessageOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Declare a desired LLMMessage output to be assigned in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>A description of the desired value of the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMToolCallInput" href="#Env-withLLMToolCallInput"><code>withLLMToolCallInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update a binding of type LLMToolCall in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMToolCallID"><code>LLMToolCallID!</code></a></span></h6>
-                                <p>The LLMToolCall value to assign to the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The purpose of the input</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMToolCallOutput" href="#Env-withLLMToolCallOutput"><code>withLLMToolCallOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Declare a desired LLMToolCall output to be assigned in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>A description of the desired value of the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withMainModule" href="#Env-withMainModule"><code>withMainModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td>
                           <p>Sets the main module for this environment (the project being worked on)</p>
@@ -13152,26 +12837,9 @@
                         <td data-property-name=""><a class="property-name" id="LLM-lastReply" href="#LLM-lastReply"><code>lastReply</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> return the last llm reply from the history </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-loop" href="#LLM-loop"><code>loop</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
                         <td> Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>maxAPICalls</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Cap the number of API calls</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLM-messages" href="#LLM-messages"><code>messages</code></a> - <span class="property-type"><a href="#definition-LLMMessage"><code>[LLMMessage!]!</code></a></span> </td>
-                        <td> The full message history. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-model" href="#LLM-model"><code>model</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -13188,10 +12856,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-sync" href="#LLM-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span> </td>
                         <td> synchronize LLM state </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLM-systemPrompt" href="#LLM-systemPrompt"><code>systemPrompt</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> A system prompt to send. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-tokenUsage" href="#LLM-tokenUsage"><code>tokenUsage</code></a> - <span class="property-type"><a href="#definition-LLMTokenUsage"><code>LLMTokenUsage!</code></a></span> </td>
@@ -13311,43 +12975,6 @@
                           </div>
                         </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="LLM-withResponse" href="#LLM-withResponse"><code>withResponse</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
-                        <td> Append an assistant response to the message history </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>content</code></span> - <span class="property-type"><a href="#definition-LLMContentBlockInput"><code>[LLMContentBlockInput!]!</code></a></span></h6>
-                                <p>The response content</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>inputTokens</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Uncached input tokens sent</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>outputTokens</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Tokens received from the model, including text and tool calls</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>cachedTokenReads</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Cached input tokens read</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>cachedTokenWrites</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Cached input tokens written</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>totalTokens</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Total tokens consumed by this response</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-withStaticTools" href="#LLM-withStaticTools"><code>withStaticTools</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
                         <td> Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration </td>
@@ -13364,56 +12991,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>prompt</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The system prompt to send</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="LLM-withToolCall" href="#LLM-withToolCall"><code>withToolCall</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
-                        <td> Append a tool call to the last assistant message </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>call</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The unique ID for this tool call</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>tool</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the tool to call</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>arguments</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span></h6>
-                                <p>The arguments to pass to the tool</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="LLM-withToolResponse" href="#LLM-withToolResponse"><code>withToolResponse</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
-                        <td> Append a tool response to the message history </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>call</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The ID of the tool call this is responding to</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>content</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The response content from the tool</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>errored</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span></h6>
-                                <p>Whether the tool call resulted in an error</p>
                               </div>
                             </div>
                           </div>
@@ -13437,219 +13014,6 @@
               </div>
             </div>
           </section>
-          <section id="definition-LLMContentBlock" class="definition definition-object" data-traverse-target="definition-LLMContentBlock">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMContentBlock</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMContentBlock-arguments" href="#LLMContentBlock-arguments"><code>arguments</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMContentBlock-callId" href="#LLMContentBlock-callId"><code>callId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMContentBlock-errored" href="#LLMContentBlock-errored"><code>errored</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMContentBlock-id" href="#LLMContentBlock-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LLMContentBlockID"><code>LLMContentBlockID!</code></a></span> </td>
-                        <td> A unique identifier for this LLMContentBlock. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMContentBlock-kind" href="#LLMContentBlock-kind"><code>kind</code></a> - <span class="property-type"><a href="#definition-LLMContentBlockKind"><code>LLMContentBlockKind!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMContentBlock-text" href="#LLMContentBlock-text"><code>text</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMContentBlock-toolName" href="#LLMContentBlock-toolName"><code>toolName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMContentBlockID" class="definition definition-scalar" data-traverse-target="definition-LLMContentBlockID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMContentBlockID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>LLMContentBlockID</code> scalar type represents an identifier for an object of type LLMContentBlock.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMContentBlockInput" class="definition definition-input-object" data-traverse-target="definition-LLMContentBlockInput">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMContentBlockInput</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>A content block within an LLM message.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Input Field</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>kind</code></span> - <span class="property-type"><a href="#definition-LLMContentBlockKind"><code>LLMContentBlockKind!</code></a></span>
-                        </td>
-                        <td> The kind of content block. </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>text</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
-                        </td>
-                        <td> Text content (for TEXT, THINKING, or TOOL_RESULT kinds). </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>callId</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
-                        </td>
-                        <td> The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds). </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>toolName</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
-                        </td>
-                        <td> The name of the tool to call (for TOOL_CALL kind). </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>arguments</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span>
-                        </td>
-                        <td> The arguments to pass to the tool (for TOOL_CALL kind). </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>errored</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
-                        </td>
-                        <td> Whether the tool call resulted in an error (for TOOL_RESULT kind). </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>signature</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
-                        </td>
-                        <td> Provider-specific opaque data (e.g. Anthropic thinking signature). </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <div class="example-section example-section-is-code">
-                  <h5>Example</h5>
-                  <pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"kind"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TEXT"</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"text"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"callId"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"toolName"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"arguments"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span><span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"errored"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">true</span></span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"signature"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span>
-<span class="hljs-punctuation">}</span>
-</code></pre>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMContentBlockKind" class="definition definition-enum" data-traverse-target="definition-LLMContentBlockKind">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMContentBlockKind</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The kind of content in a message block.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Values</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Enum Value</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <p><code>TEXT</code></p>
-                        </td>
-                        <td> Plain text content. </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <p><code>THINKING</code></p>
-                        </td>
-                        <td> Model thinking/reasoning content (e.g. Anthropic extended thinking). </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <p><code>TOOL_CALL</code></p>
-                        </td>
-                        <td> A tool/function call from the model. </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <p><code>TOOL_RESULT</code></p>
-                        </td>
-                        <td> A tool/function result. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <div class="example-section example-section-is-code">
-                  <h5>Example</h5>
-                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"TEXT"</span>
-</code></pre>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="definition-LLMID" class="definition definition-scalar" data-traverse-target="definition-LLMID">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -13660,109 +13024,6 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>LLMID</code> scalar type represents an identifier for an object of type LLM.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMMessage" class="definition definition-object" data-traverse-target="definition-LLMMessage">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMMessage</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMMessage-content" href="#LLMMessage-content"><code>content</code></a> - <span class="property-type"><a href="#definition-LLMContentBlock"><code>[LLMContentBlock!]!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMMessage-id" href="#LLMMessage-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LLMMessageID"><code>LLMMessageID!</code></a></span> </td>
-                        <td> A unique identifier for this LLMMessage. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMMessage-role" href="#LLMMessage-role"><code>role</code></a> - <span class="property-type"><a href="#definition-LLMMessageRole"><code>LLMMessageRole!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMMessageID" class="definition definition-scalar" data-traverse-target="definition-LLMMessageID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMMessageID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>LLMMessageID</code> scalar type represents an identifier for an object of type LLMMessage.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMMessageRole" class="definition definition-enum" data-traverse-target="definition-LLMMessageRole">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMMessageRole</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The role that generated a message.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Values</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Enum Value</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <p><code>USER</code></p>
-                        </td>
-                        <td> A user prompt or tool response. </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <p><code>ASSISTANT</code></p>
-                        </td>
-                        <td> A reply from the model. </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <p><code>SYSTEM</code></p>
-                        </td>
-                        <td> A system prompt. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <div class="example-section example-section-is-code">
-                  <h5>Example</h5>
-                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"USER"</span>
-</code></pre>
                 </div>
               </div>
             </div>
@@ -13829,47 +13090,6 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>LLMTokenUsageID</code> scalar type represents an identifier for an object of type LLMTokenUsage.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMToolCall" class="definition definition-object" data-traverse-target="definition-LLMToolCall">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMToolCall</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMToolCall-id" href="#LLMToolCall-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LLMToolCallID"><code>LLMToolCallID!</code></a></span> </td>
-                        <td> A unique identifier for this LLMToolCall. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMToolCallID" class="definition definition-scalar" data-traverse-target="definition-LLMToolCallID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMToolCallID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>LLMToolCallID</code> scalar type represents an identifier for an object of type LLMToolCall.</p>
                 </div>
               </div>
             </div>
@@ -16503,32 +15723,8 @@
                     </thead>
                     <tbody>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-branch" href="#Workspace-branch"><code>branch</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The Git branch this workspace is on. </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-clientId" href="#Workspace-clientId"><code>clientId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The client ID that owns this workspace's host filesystem. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Workspace-commit" href="#Workspace-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                          <p>Commit whatever is currently staged in the workspace&#39;s git index.</p>
-                          <p>Returns the commit hash. Fails if there is nothing staged.</p>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>message</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The commit message.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
@@ -16557,31 +15753,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Apply .gitignore filter rules inside the directory.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Workspace-exists" href="#Workspace-exists"><code>exists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Check if a file or directory exists at the given path in the workspace. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Path to check, relative to the workspace root (e.g., &quot;src/main.go&quot;).</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>expectedType</code></span> - <span class="property-type"><a href="#definition-ExistsType"><code>ExistsType</code></a></span></h6>
-                                <p>If specified, also validate the type of file (e.g. &quot;REGULAR_TYPE&quot;, &quot;DIRECTORY_TYPE&quot;, or &quot;SYMLINK_TYPE&quot;).</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>doNotFollowSymlinks</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>If specified, do not follow symlinks.</p>
                               </div>
                             </div>
                           </div>
@@ -16632,23 +15803,6 @@
                           </div>
                         </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Workspace-glob" href="#Workspace-glob"><code>glob</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
-                        <td> Returns a list of files and directories that match the given pattern. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>pattern</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Pattern to match (e.g., &quot;*.md&quot;).</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-id" href="#Workspace-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceID"><code>WorkspaceID!</code></a></span> </td>
                         <td> A unique identifier for this Workspace. </td>
@@ -16656,111 +15810,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-root" href="#Workspace-root"><code>root</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Absolute path to the workspace root directory. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Workspace-search" href="#Workspace-search"><code>search</code></a> - <span class="property-type"><a href="#definition-SearchResult"><code>[SearchResult!]!</code></a></span> </td>
-                        <td>
-                          <p>Searches for content matching the given regular expression or literal string.</p>
-                          <p>Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.</p>
-                          <p>Runs ripgrep on the client host, falling back to grep if unavailable.</p>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>paths</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
-                                <p>Directory or file paths to search</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>globs</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
-                                <p>Glob patterns to match (e.g., &quot;*.md&quot;)</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>pattern</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The text to match.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>literal</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Interpret the pattern as a literal string instead of a regular expression.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>multiline</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Enable searching across multiple lines.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>dotall</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Allow the . pattern to match newlines in multiline mode.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>insensitive</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Enable case-insensitive matching.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>skipIgnored</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Honor .gitignore, .ignore, and .rgignore files.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>skipHidden</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Skip hidden files (files starting with .).</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>filesOnly</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Only return matching files, not lines and content</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>limit</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Limit the number of results to return</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Workspace-stage" href="#Workspace-stage"><code>stage</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td>
-                          <p>Apply a Changeset to the workspace and stage the affected paths in git.</p>
-                          <p>Files are written (added/modified) and removed on disk, then precisely</p>
-                          <p>the changed paths are staged via git add / git rm. Any pre-existing</p>
-                          <p>unstaged user edits are preserved as unstaged changes.</p>
-                          <p>Returns true if any changes were staged, false if the changeset was empty.</p>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>changes</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span></h6>
-                                <p>The changes to apply and stage.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Workspace-withBranch" href="#Workspace-withBranch"><code>withBranch</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
-                        <td>
-                          <p>Return a Workspace for the given branch. If the branch is different from</p>
-                          <p>the currently checked-out branch, a git worktree is created on the host.</p>
-                          <p>If the branch does not exist, it is created from the current branch tip.</p>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>branch</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The branch name (e.g. &quot;agent/auth&quot;).</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
                       </tr>
                     </tbody>
                   </table>

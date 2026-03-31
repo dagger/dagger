@@ -19,14 +19,15 @@ type EngineConn interface {
 }
 
 type Config struct {
-	Workdir         string
-	ConfigPath      string
-	LogOutput       io.Writer
-	RunnerHost      string
-	Conn            EngineConn
-	VersionOverride string
-	Verbosity       int
-	ExtraEnv        []string
+	Workdir              string
+	ConfigPath           string
+	LogOutput            io.Writer
+	RunnerHost           string
+	Conn                 EngineConn
+	VersionOverride      string
+	Verbosity            int
+	ExtraEnv             []string
+	SkipWorkspaceModules bool
 }
 
 type ConnectParams struct {
