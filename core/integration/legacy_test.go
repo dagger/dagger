@@ -638,10 +638,10 @@ func (m *Test) Inactive(ctx context.Context) (string, error) {
 	require.Contains(t, wrapperContents, "type DepStatus = dagger.DepStatus")
 	require.Contains(t, wrapperContents, "DepStatusHere DepStatus = dagger.DepStatusHere")
 
-	out, err := mod.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
+	out, err := mod.With(daggerQuery(`{active inactive}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "here", gjson.Get(out, "test.active").String())
-	require.Equal(t, "there", gjson.Get(out, "test.inactive").String())
+	require.Equal(t, "here", gjson.Get(out, "active").String())
+	require.Equal(t, "there", gjson.Get(out, "inactive").String())
 }
 
 func (LegacySuite) TestGoCodegenOptionals(ctx context.Context, t *testctx.T) {
