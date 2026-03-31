@@ -450,6 +450,17 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		})
 	})
 
+	t.Run("missing secret fails when required is set", func(ctx context.Context, t *testctx.T) {
+		dockerfile := `FROM ` + alpineImage + `
+RUN --mount=type=secret,id=my-secret,required=true echo this should not run
+`
+		dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+		_, err := dir.DockerBuild().Sync(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, `secret "my-secret" is required but no secret mappings were provided`)
+	})
+
 	t.Run("with unknown build secrets", func(ctx context.Context, t *testctx.T) {
 		dockerfile := `FROM ` + alpineImage + `
 WORKDIR /src
