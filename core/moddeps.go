@@ -1,3 +1,5 @@
+// DESIGN DOC: hack/designs/entrypoint-proxy.md
+
 package core
 
 import (
