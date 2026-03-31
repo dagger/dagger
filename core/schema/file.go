@@ -126,6 +126,9 @@ func (s *fileSchema) file(
 	if dir, _ := filepath.Split(args.Name); dir != "" {
 		return inst, fmt.Errorf("file name %q must not contain a directory", args.Name)
 	}
+	if err := core.ValidateFileName(args.Name); err != nil {
+		return inst, err
+	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -230,9 +233,11 @@ func (s *fileSchema) withName(ctx context.Context, parent dagql.ObjectResult[*co
 	}
 
 	file := core.NewFileChild(parent)
-	file.LazyInit, err = file.WithName(ctx, parent, args.Name)
-	if err != nil {
-		return inst, err
+	file.File = args.Name
+	file.Lazy = &core.FileWithNameLazy{
+		LazyState:  core.NewLazyState(),
+		Parent:     parent,
+		SourcePath: parent.Self().File,
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
@@ -268,9 +273,13 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 	}
 
 	file := core.NewFileChild(parent)
-	file.LazyInit, err = file.WithReplaced(ctx, parent, args.Search, args.Replacement, args.FirstFrom, args.All)
-	if err != nil {
-		return inst, err
+	file.Lazy = &core.FileWithReplacedLazy{
+		LazyState:   core.NewLazyState(),
+		Parent:      parent,
+		Search:      args.Search,
+		Replacement: args.Replacement,
+		FirstFrom:   args.FirstFrom,
+		All:         args.All,
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
@@ -322,9 +331,10 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	f := core.NewFileChild(parent)
-	f.LazyInit, err = f.WithTimestamps(ctx, parent, args.Timestamp)
-	if err != nil {
-		return inst, err
+	f.Lazy = &core.FileWithTimestampsLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Timestamp: args.Timestamp,
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
@@ -343,10 +353,15 @@ func (s *fileSchema) chown(
 		return inst, err
 	}
 
+	if _, err := core.ParseFileOwner(args.Owner); err != nil {
+		return inst, fmt.Errorf("failed to parse ownership %s: %w", args.Owner, err)
+	}
+
 	f := core.NewFileChild(parent)
-	f.LazyInit, err = f.Chown(ctx, parent, args.Owner)
-	if err != nil {
-		return inst, err
+	f.Lazy = &core.FileChownLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Owner:     args.Owner,
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }

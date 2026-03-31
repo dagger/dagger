@@ -158,19 +158,12 @@ func (s *querySchema) schemaJSONFile(
 	}
 
 	file := &core.File{
-		File:      schemaJSONFilename,
-		Platform:  parent.Self().Platform(),
-		LazyState: core.NewLazyState(),
+		File:     schemaJSONFilename,
+		Platform: parent.Self().Platform(),
 	}
 
-	initFn, err := file.WithContents(ctx, dirInst, moduleSchemaJSON, perm, nil)
-	if err != nil {
+	if err := file.WithContents(ctx, dirInst, moduleSchemaJSON, perm, nil); err != nil {
 		return inst, err
-	}
-	if initFn != nil {
-		if err := initFn(ctx); err != nil {
-			return inst, err
-		}
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, file)

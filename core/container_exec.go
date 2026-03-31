@@ -3,10 +3,11 @@ package core
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -82,6 +83,63 @@ type ContainerExecOpts struct {
 	// Skip the init process injected into containers by default so that the
 	// user's process is PID 1
 	NoInit bool `default:"false"`
+}
+
+type ContainerExecState struct {
+	LazyState
+
+	Parent             dagql.ObjectResult[*Container]
+	Opts               ContainerExecOpts
+	ExecMD             *buildkit.ExecutionMetadata
+	ExtractModuleError bool
+
+	Container *Container
+}
+
+type ContainerExecLazy struct {
+	State *ContainerExecState
+}
+
+type persistedContainerExecLazy struct {
+	ParentResultID     uint64                      `json:"parentResultID"`
+	Opts               ContainerExecOpts           `json:"opts"`
+	ExecMD             *buildkit.ExecutionMetadata `json:"execMD,omitempty"`
+	ExtractModuleError bool                        `json:"extractModuleError,omitempty"`
+}
+
+func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) error {
+	if lazy == nil || lazy.State == nil {
+		return nil
+	}
+	return lazy.State.Evaluate(ctx)
+}
+
+func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	if lazy == nil || lazy.State == nil {
+		return nil, nil
+	}
+	parent, err := attachContainerResult(attach, lazy.State.Parent, "attach container withExec parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.State.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if lazy == nil || lazy.State == nil {
+		return nil, fmt.Errorf("encode persisted container withExec lazy: nil state")
+	}
+	parentID, err := encodePersistedObjectRef(cache, lazy.State.Parent, "container withExec parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerExecLazy{
+		ParentResultID:     parentID,
+		Opts:               lazy.State.Opts,
+		ExecMD:             lazy.State.ExecMD,
+		ExtractModuleError: lazy.State.ExtractModuleError,
+	})
 }
 
 func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts, parent *buildkit.ExecutionMetadata) (*buildkit.ExecutionMetadata, error) {
@@ -307,9 +365,9 @@ type execMountState struct {
 
 	SourceRef bkcache.Ref
 
-	TmpfsOpt  *pb.TmpfsOpt
-	Secret *execSecretMountConfig
-	SSH    *execSSHMountConfig
+	TmpfsOpt *pb.TmpfsOpt
+	Secret   *execSecretMountConfig
+	SSH      *execSSHMountConfig
 
 	ApplyOutput func(bkcache.ImmutableRef) error
 
@@ -431,17 +489,17 @@ func prepareMounts(
 		case pb.MountType_TMPFS:
 			mountable = execTmpFSMountable(cache, state.TmpfsOpt)
 
-			case pb.MountType_SECRET:
-				mountable, err = prepareExecSecretMount(ctx, cache, state.Secret)
-				if err != nil {
-					return err
-				}
+		case pb.MountType_SECRET:
+			mountable, err = prepareExecSecretMount(ctx, cache, state.Secret)
+			if err != nil {
+				return err
+			}
 
-			case pb.MountType_SSH:
-				mountable, err = prepareExecSSHMount(ctx, cache, state.SSH)
-				if err != nil {
-					return err
-				}
+		case pb.MountType_SSH:
+			mountable, err = prepareExecSSHMount(ctx, cache, state.SSH)
+			if err != nil {
+				return err
+			}
 
 		default:
 			return fmt.Errorf("mount type %s not implemented", state.MountType)
@@ -619,18 +677,18 @@ func prepareMounts(
 		if secret.Owner != nil {
 			uid, gid = secret.Owner.UID, secret.Owner.GID
 		}
-			secretState := &execMountState{
-				Dest:      secret.MountPath,
-				MountType: pb.MountType_SECRET,
-				Secret: &execSecretMountConfig{
-					Secret: secret.Secret,
-					UID:    uid,
-					GID:    gid,
-					Mode:   secret.Mode,
-				},
-			}
-			if err := materializeState(secretState); err != nil {
-				return materialized, err
+		secretState := &execMountState{
+			Dest:      secret.MountPath,
+			MountType: pb.MountType_SECRET,
+			Secret: &execSecretMountConfig{
+				Secret: secret.Secret,
+				UID:    uid,
+				GID:    gid,
+				Mode:   secret.Mode,
+			},
+		}
+		if err := materializeState(secretState); err != nil {
+			return materialized, err
 		}
 	}
 
@@ -743,8 +801,8 @@ func prepareExecSecretMount(ctx context.Context, cache bkcache.SnapshotManager, 
 		uid:   cfg.UID,
 		gid:   cfg.GID,
 		mode:  cfg.Mode,
-		data:   data,
-		idmap:  cache.IdentityMapping(),
+		data:  data,
+		idmap: cache.IdentityMapping(),
 	}, nil
 }
 
@@ -752,8 +810,8 @@ type execSecretMount struct {
 	uid   int
 	gid   int
 	mode  fs.FileMode
-	data   []byte
-	idmap  *idtools.IdentityMapping
+	data  []byte
+	idmap *idtools.IdentityMapping
 }
 
 func (secret *execSecretMount) Mount(_ context.Context, _ bool, _ bksession.Group) (snapshot.Mountable, error) {
@@ -942,52 +1000,40 @@ func (ssh *execSSHMountInstance) IdentityMapping() *idtools.IdentityMapping {
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithExec(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	opts ContainerExecOpts,
 	execMD *buildkit.ExecutionMetadata,
 	extractModuleError bool,
 ) error {
-	gate := NewLazyState()
-	gateRun := func(ctx context.Context) error {
-		return gate.Evaluate(ctx, "container exec")
+	state := &ContainerExecState{
+		LazyState:          NewLazyState(),
+		Parent:             parent,
+		Opts:               opts,
+		ExecMD:             execMD,
+		ExtractModuleError: extractModuleError,
+		Container:          container,
 	}
-	inputContainerLazyInit := container.LazyInit
-	container.LazyInit = gateRun
-
-	inputRootFS := container.FS
-	inputMounts := slices.Clone(container.Mounts)
-	// withExec mutates container filesystem state, so imageRef is no longer valid.
+	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
-
-	rootfsOutput := &Directory{
-		Dir:       "/",
-		Platform:  container.Platform,
-		Services:  container.Services,
-		LazyState: NewLazyState(),
-	}
-	rootfsOutput.LazyInit = gateRun
-	if inputRootFS != nil && inputRootFS.self() != nil {
-		rootfsOutput.Dir = inputRootFS.self().Dir
-		rootfsOutput.Platform = inputRootFS.self().Platform
-		rootfsOutput.Services = inputRootFS.self().Services
-	}
-	container.FS = newContainerDirectoryValueSource(rootfsOutput)
-
 	container.MetaSnapshot = nil
 
-	rootOutputBinding := func(ref bkcache.ImmutableRef) error {
-		return rootfsOutput.setSnapshot(ref)
+	rootfsOutput := &Directory{
+		Dir:      "/",
+		Platform: container.Platform,
+		Services: slices.Clone(container.Services),
+		Lazy:     &DirectoryFromContainerLazy{Container: container},
 	}
-	metaOutputBinding := func(ref bkcache.ImmutableRef) error {
-		container.MetaSnapshot = ref
-		return nil
+	if container.FS != nil && container.FS.self() != nil {
+		rootfsOutput.Dir = container.FS.self().Dir
+		rootfsOutput.Platform = container.FS.self().Platform
+		rootfsOutput.Services = slices.Clone(container.FS.self().Services)
 	}
-	mountOutputBindings := make([]func(bkcache.ImmutableRef) error, len(container.Mounts))
+	container.FS = newContainerDirectoryValueSource(rootfsOutput)
 
 	for i, ctrMount := range container.Mounts {
 		if ctrMount.Readonly {
 			continue
 		}
-
 		switch {
 		case ctrMount.DirectorySource != nil:
 			if ctrMount.DirectorySource.self() == nil {
@@ -995,41 +1041,56 @@ func (container *Container) WithExec(
 			}
 			dirMnt := ctrMount.DirectorySource.self()
 			outputDir := &Directory{
-				Dir:       dirMnt.Dir,
-				Platform:  dirMnt.Platform,
-				Services:  dirMnt.Services,
-				LazyState: NewLazyState(),
+				Dir:      dirMnt.Dir,
+				Platform: dirMnt.Platform,
+				Services: slices.Clone(dirMnt.Services),
+				Lazy:     &DirectoryFromContainerLazy{Container: container},
 			}
-			outputDir.LazyInit = gateRun
 			ctrMount.DirectorySource = newContainerDirectoryValueSource(outputDir)
 			container.Mounts[i] = ctrMount
-			dirOutput := outputDir
-			mountOutputBindings[i] = func(ref bkcache.ImmutableRef) error {
-				return dirOutput.setSnapshot(ref)
-			}
-
 		case ctrMount.FileSource != nil:
 			if ctrMount.FileSource.self() == nil {
 				return fmt.Errorf("mount %d has nil file source", i)
 			}
 			fileMnt := ctrMount.FileSource.self()
 			outputFile := &File{
-				File:      fileMnt.File,
-				Platform:  fileMnt.Platform,
-				Services:  fileMnt.Services,
-				LazyState: NewLazyState(),
+				File:     fileMnt.File,
+				Platform: fileMnt.Platform,
+				Services: slices.Clone(fileMnt.Services),
+				Lazy:     &FileFromContainerLazy{Container: container},
 			}
-			outputFile.LazyInit = gateRun
 			ctrMount.FileSource = newContainerFileValueSource(outputFile)
 			container.Mounts[i] = ctrMount
-			fileOutput := outputFile
-			mountOutputBindings[i] = func(ref bkcache.ImmutableRef) error {
-				return fileOutput.setSnapshot(ref)
-			}
 		}
 	}
+	return nil
+}
 
-	gate.LazyInit = func(ctx context.Context) (rerr error) {
+func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
+	if state == nil {
+		return nil
+	}
+
+	return state.LazyState.Evaluate(ctx, "Container.withExec", func(ctx context.Context) (rerr error) {
+		dagCache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := dagCache.Evaluate(ctx, state.Parent); err != nil {
+			return err
+		}
+
+		parent := state.Parent.Self()
+		if parent == nil {
+			return fmt.Errorf("exec parent is nil")
+		}
+		container := state.Container
+		if container == nil {
+			return fmt.Errorf("exec output container is nil")
+		}
+		inputRootFS := parent.FS
+		inputMounts := slices.Clone(parent.Mounts)
+
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return fmt.Errorf("get current query: %w", err)
@@ -1040,14 +1101,15 @@ func (container *Container) WithExec(
 			return err
 		}
 
-		execMD, err = container.execMeta(ctx, opts, execMD)
+		execMD, err := container.execMeta(ctx, state.Opts, state.ExecMD)
 		if err != nil {
 			return err
 		}
+		state.ExecMD = execMD
 
 		cache := query.BuildkitCache()
 
-		metaSpec, err := container.metaSpec(ctx, opts)
+		metaSpec, err := container.metaSpec(ctx, state.Opts)
 		if err != nil {
 			return err
 		}
@@ -1056,16 +1118,41 @@ func (container *Container) WithExec(
 		if err != nil {
 			return fmt.Errorf("failed to get buildkit client: %w", err)
 		}
-		if inputContainerLazyInit != nil {
-			if err := inputContainerLazyInit(ctx); err != nil {
-				return err
-			}
-		}
 		bkSessionGroup := NewSessionGroup(bkClient.ID())
 		opWorker := bkClient.Worker
 		causeCtx := trace.SpanContextFromContext(ctx)
 		if opWorker == nil {
 			return fmt.Errorf("missing buildkit worker")
+		}
+
+		rootfsOutput := container.FS.Value
+		rootOutputBinding := func(ref bkcache.ImmutableRef) error {
+			if rootfsOutput == nil {
+				return fmt.Errorf("exec rootfs output is nil")
+			}
+			return rootfsOutput.setSnapshot(ref)
+		}
+		metaOutputBinding := func(ref bkcache.ImmutableRef) error {
+			container.MetaSnapshot = ref
+			return nil
+		}
+		mountOutputBindings := make([]func(bkcache.ImmutableRef) error, len(container.Mounts))
+		for i, ctrMount := range container.Mounts {
+			if ctrMount.Readonly {
+				continue
+			}
+			switch {
+			case ctrMount.DirectorySource != nil && ctrMount.DirectorySource.Value != nil:
+				outputDir := ctrMount.DirectorySource.Value
+				mountOutputBindings[i] = func(ref bkcache.ImmutableRef) error {
+					return outputDir.setSnapshot(ref)
+				}
+			case ctrMount.FileSource != nil && ctrMount.FileSource.Value != nil:
+				outputFile := ctrMount.FileSource.Value
+				mountOutputBindings[i] = func(ref bkcache.ImmutableRef) error {
+					return outputFile.setSnapshot(ref)
+				}
+			}
 		}
 
 		var rootMount executor.Mount
@@ -1245,31 +1332,6 @@ func (container *Container) WithExec(
 			_ = releaseOutputRefs()
 			return fmt.Errorf("failed to prepare mounts: %w", err)
 		}
-		retryBareDirectorySnapshot := func(dir *Directory) (bkcache.ImmutableRef, error) {
-			ref, err := dir.getSnapshot()
-			if err != nil && dir.LazyInit != nil {
-				if evalErr := dir.LazyState.Evaluate(ctx, "Directory"); evalErr != nil {
-					return nil, evalErr
-				}
-				ref, err = dir.getSnapshot()
-			}
-			return ref, err
-		}
-		retryBareFileSnapshot := func(file *File) (bkcache.ImmutableRef, error) {
-			ref, err := file.getSnapshot()
-			if err != nil && file.LazyInit != nil {
-				if evalErr := file.LazyState.Evaluate(ctx, "File"); evalErr != nil {
-					return nil, evalErr
-				}
-				ref, err = file.getSnapshot()
-			}
-			return ref, err
-		}
-
-		dagCache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return failPrepare(err)
-		}
 
 		rootState := &execMountState{
 			Dest:        pb.RootMount,
@@ -1287,9 +1349,9 @@ func (container *Container) WithExec(
 			if rootState.Selector == "" {
 				rootState.Selector = "/"
 			}
-			ref, err := retryBareDirectorySnapshot(inputRootFS.self())
+			ref, err := inputRootFS.self().getSnapshot()
 			if err != nil {
-				return failPrepare(fmt.Errorf("failed to get rootfs snapshot: %w", err))
+				return failPrepare(fmt.Errorf("parent rootfs should already be materialized after parent evaluation: %w", err))
 			}
 			rootState.SourceRef = ref
 		}
@@ -1325,9 +1387,9 @@ func (container *Container) WithExec(
 					}
 				}
 				mountState.Selector = ctrMount.DirectorySource.self().Dir
-				ref, err := retryBareDirectorySnapshot(ctrMount.DirectorySource.self())
+				ref, err := ctrMount.DirectorySource.self().getSnapshot()
 				if err != nil {
-					return failPrepare(fmt.Errorf("failed to get directory snapshot for mount %d: %w", i, err))
+					return failPrepare(fmt.Errorf("parent directory mount %d should already be materialized after parent evaluation: %w", i, err))
 				}
 				mountState.SourceRef = ref
 
@@ -1341,9 +1403,9 @@ func (container *Container) WithExec(
 					}
 				}
 				mountState.Selector = ctrMount.FileSource.self().File
-				ref, err := retryBareFileSnapshot(ctrMount.FileSource.self())
+				ref, err := ctrMount.FileSource.self().getSnapshot()
 				if err != nil {
-					return failPrepare(fmt.Errorf("failed to get file snapshot for mount %d: %w", i, err))
+					return failPrepare(fmt.Errorf("parent file mount %d should already be materialized after parent evaluation: %w", i, err))
 				}
 				mountState.SourceRef = ref
 
@@ -1495,15 +1557,15 @@ func (container *Container) WithExec(
 				}
 				return ref, nil
 			}
-			for _, state := range mountStates {
-				keepRef := state.Dest == buildkit.MetaMountDestPath
-				if extractModuleError && state.Dest == modMetaDirPath {
+			for _, mountState := range mountStates {
+				keepRef := mountState.Dest == buildkit.MetaMountDestPath
+				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
 					keepRef = true
 				}
 				if !keepRef {
 					continue
 				}
-				ref, err := resolveAndTrackFailureRef(state)
+				ref, err := resolveAndTrackFailureRef(mountState)
 				if err != nil {
 					rerr = errors.Join(rerr, err)
 					continue
@@ -1511,15 +1573,15 @@ func (container *Container) WithExec(
 				if ref == nil {
 					continue
 				}
-				if state.Dest == buildkit.MetaMountDestPath {
+				if mountState.Dest == buildkit.MetaMountDestPath {
 					metaRef = ref
 				}
-				if extractModuleError && state.Dest == modMetaDirPath {
+				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
 					moduleRef = ref
 				}
 			}
 
-			if extractModuleError && moduleRef != nil {
+			if state.ExtractModuleError && moduleRef != nil {
 				errID, ok, err := moduleErrorIDFromRef(ctx, bkClient, moduleRef)
 				if err != nil {
 					rerr = errors.Join(rerr, fmt.Errorf("extract module error: %w", err))
@@ -1571,15 +1633,14 @@ func (container *Container) WithExec(
 					callDig = callID.ContentPreferredDigest()
 				}
 				meta := *metaSpec
-				meta.Args = []string{"/bin/sh"}
-				if len(bkClient.InteractiveCommand) > 0 {
-					meta.Args = bkClient.InteractiveCommand
-				}
-				terminalContainer := cloneContainerForTerminal(container)
-				terminalContainer.LazyState = NewLazyState()
-				terminalContainer.FS = inputRootFS
-				terminalContainer.Mounts = slices.Clone(inputMounts)
-				terminalContainer.MetaSnapshot = metaRef
+					meta.Args = []string{"/bin/sh"}
+					if len(bkClient.InteractiveCommand) > 0 {
+						meta.Args = bkClient.InteractiveCommand
+					}
+					terminalContainer := cloneContainerForTerminal(container)
+					terminalContainer.FS = cloneTerminalDirectorySource(inputRootFS)
+					terminalContainer.Mounts = cloneTerminalMounts(inputMounts)
+					terminalContainer.MetaSnapshot = metaRef
 				if len(mountStates) >= 1 {
 					rootRef, err := resolveAndTrackFailureRef(mountStates[0])
 					if err != nil {
@@ -1588,10 +1649,9 @@ func (container *Container) WithExec(
 					}
 					if rootRef != nil {
 						rootDir := &Directory{
-							Dir:       "/",
-							Platform:  terminalContainer.Platform,
-							Services:  terminalContainer.Services,
-							LazyState: NewLazyState(),
+							Dir:      "/",
+							Platform: terminalContainer.Platform,
+							Services: terminalContainer.Services,
 						}
 						if inputRootFS != nil && inputRootFS.self() != nil {
 							rootDir.Dir = inputRootFS.self().Dir
@@ -1621,10 +1681,9 @@ func (container *Container) WithExec(
 					switch {
 					case ctrMount.DirectorySource != nil && ctrMount.DirectorySource.self() != nil && !ctrMount.Readonly:
 						outputDir := &Directory{
-							Dir:       ctrMount.DirectorySource.self().Dir,
-							Platform:  ctrMount.DirectorySource.self().Platform,
-							Services:  ctrMount.DirectorySource.self().Services,
-							LazyState: NewLazyState(),
+							Dir:      ctrMount.DirectorySource.self().Dir,
+							Platform: ctrMount.DirectorySource.self().Platform,
+							Services: ctrMount.DirectorySource.self().Services,
 						}
 						if err := outputDir.setSnapshot(mountRef); err != nil {
 							rerr = fmt.Errorf("rebuild failed directory mount %d for terminal: %w", i, err)
@@ -1634,10 +1693,9 @@ func (container *Container) WithExec(
 						terminalContainer.Mounts[i] = ctrMount
 					case ctrMount.FileSource != nil && ctrMount.FileSource.self() != nil && !ctrMount.Readonly:
 						outputFile := &File{
-							File:      ctrMount.FileSource.self().File,
-							Platform:  ctrMount.FileSource.self().Platform,
-							Services:  ctrMount.FileSource.self().Services,
-							LazyState: NewLazyState(),
+							File:     ctrMount.FileSource.self().File,
+							Platform: ctrMount.FileSource.self().Platform,
+							Services: ctrMount.FileSource.self().Services,
 						}
 						if err := outputFile.setSnapshot(mountRef); err != nil {
 							rerr = fmt.Errorf("rebuild failed file mount %d for terminal: %w", i, err)
@@ -1707,9 +1765,8 @@ func (container *Container) WithExec(
 
 		execWorker := opWorker.ExecWorker(causeCtx, *execMD)
 		procInfo := executor.ProcessInfo{Meta: meta}
-		if opts.Stdin != "" {
-			// Stdin/Stdout/Stderr can be setup in Worker.setupStdio
-			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
+		if state.Opts.Stdin != "" {
+			procInfo.Stdin = io.NopCloser(strings.NewReader(state.Opts.Stdin))
 		}
 		_, execErr := execWorker.Run(ctx, "", rootMount, execMounts, procInfo, nil)
 
@@ -1732,18 +1789,59 @@ func (container *Container) WithExec(
 			}
 			return execErr
 		}
-
 		if invalidateErr != nil {
 			return invalidateErr
 		}
-
 		if err := applyOutputs(); err != nil {
 			return err
 		}
 
+		container.Lazy = nil
 		return nil
-	}
+	})
+}
 
+func decodePersistedContainerExecLazy(
+	ctx context.Context,
+	dag *dagql.Server,
+	container *Container,
+	payload json.RawMessage,
+	decodedRootFS decodedContainerDirectoryValue,
+	decodedMounts []decodedContainerMount,
+) error {
+	var persisted persistedContainerExecLazy
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return fmt.Errorf("decode persisted container withExec lazy payload: %w", err)
+	}
+	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container exec parent")
+	if err != nil {
+		return err
+	}
+	state := &ContainerExecState{
+		LazyState:          NewLazyState(),
+		Parent:             parent,
+		Opts:               persisted.Opts,
+		ExecMD:             persisted.ExecMD,
+		ExtractModuleError: persisted.ExtractModuleError,
+		Container:          container,
+	}
+	container.Lazy = &ContainerExecLazy{State: state}
+	container.ImageRef = ""
+	container.MetaSnapshot = nil
+	if container.FS != nil && container.FS.Value != nil && decodedRootFS.Kind == persistedContainerValueFormOutputPending {
+		container.FS.Value.Lazy = &DirectoryFromContainerLazy{Container: container}
+	}
+	for i, decodedMount := range decodedMounts {
+		if container.Mounts[i].Readonly || decodedMount.Kind != persistedContainerValueFormOutputPending {
+			continue
+		}
+		switch {
+		case container.Mounts[i].DirectorySource != nil && container.Mounts[i].DirectorySource.Value != nil:
+			container.Mounts[i].DirectorySource.Value.Lazy = &DirectoryFromContainerLazy{Container: container}
+		case container.Mounts[i].FileSource != nil && container.Mounts[i].FileSource.Value != nil:
+			container.Mounts[i].FileSource.Value.Lazy = &FileFromContainerLazy{Container: container}
+		}
+	}
 	return nil
 }
 

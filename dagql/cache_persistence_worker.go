@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func (c *Cache) persistCurrentState(ctx context.Context) error {
@@ -362,7 +363,36 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	shared.storeResultCall(snapshot.frame)
 	persistCtx := context.WithoutCancel(ctx)
 	persistCtx = ContextWithCall(persistCtx, snapshot.frame)
-	return DefaultPersistedSelfCodec.EncodeResult(persistCtx, c, Result[Typed]{shared: shared})
+	env, err := DefaultPersistedSelfCodec.EncodeResult(persistCtx, c, Result[Typed]{shared: shared})
+	if err != nil {
+		field := snapshot.frame.Field
+		if field == "" {
+			field = snapshot.frame.SyntheticOp
+		}
+		typeName := ""
+		if snapshot.frame.Type != nil {
+			typeName = snapshot.frame.Type.NamedType
+		}
+		selfType := ""
+		if snapshot.self != nil {
+			selfType = snapshot.self.Type().Name()
+		}
+		slog.Error(
+			"persist result envelope encode failed",
+			"resultID", snapshot.resultID,
+			"recordType", snapshot.row.RecordType,
+			"description", snapshot.row.Description,
+			"field", field,
+			"kind", snapshot.frame.Kind,
+			"typeName", typeName,
+			"selfType", selfType,
+			"hasValue", snapshot.hasValue,
+			"sessionResourceHandle", snapshot.sessionResourceHandle,
+			"err", err,
+		)
+		return PersistedResultEnvelope{}, err
+	}
+	return env, nil
 }
 
 func (c *Cache) persistedSnapshotLinksForResultLocked(res *sharedResult) []PersistedSnapshotRefLink {

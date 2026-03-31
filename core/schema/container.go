@@ -953,27 +953,15 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		ctr.Platform = core.Platform(platforms.Normalize(imgSpec.Platform))
 
 		rootfsDir := &core.Directory{
-			Dir:       "/",
-			Platform:  ctr.Platform,
-			Services:  ctr.Services,
-			LazyState: core.NewLazyState(),
+			Dir:      "/",
+			Platform: ctr.Platform,
+			Services: ctr.Services,
+			Lazy:     &core.DirectoryFromContainerLazy{Container: ctr},
 		}
 		ctr.FS = &core.ContainerDirectorySource{Value: rootfsDir}
-		rootfsDir.LazyInit, err = ctr.FromCanonicalRef(ctx, refName)
-		if err != nil {
-			return inst, err
-		}
-		preservedLazyInit := ctr.LazyInit
-		ctr.LazyInit = func(ctx context.Context) error {
-			if preservedLazyInit != nil {
-				if err := preservedLazyInit(ctx); err != nil {
-					return err
-				}
-			}
-			if err := rootfsDir.LazyState.Evaluate(ctx, "Directory"); err != nil {
-				return err
-			}
-			return nil
+		ctr.Lazy = &core.ContainerFromLazy{
+			LazyState:    core.NewLazyState(),
+			CanonicalRef: refStr,
 		}
 
 		inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -1128,7 +1116,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, err
 	}
-	err = ctr.WithExec(ctx, args.ContainerExecOpts, md, false)
+	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, false)
 	if err != nil {
 		return inst, err
 	}

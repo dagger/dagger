@@ -2240,6 +2240,11 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 
 func (c *Cache) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
+		slog.Info(
+			"starting dagql cache close",
+			"hasSQLDB", c.sqlDB != nil,
+			"hasPersistDB", c.pdb != nil,
+		)
 		if err := c.persistCurrentState(ctx); err != nil {
 			slog.Error("failed to persist dagql cache during close", "err", err)
 			c.closeErr = errors.Join(c.closeErr, err)
@@ -2251,9 +2256,11 @@ func (c *Cache) Close(ctx context.Context) error {
 			}
 			c.sqlDB = nil
 			c.pdb = nil
+			slog.Error("dagql cache close exiting with error", "err", c.closeErr)
 			return
 		}
 		if c.pdb != nil {
+			slog.Info("marking dagql cache clean shutdown")
 			if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"); err != nil {
 				slog.Warn("failed to mark clean shutdown in persistence metadata", "err", err)
 			}
@@ -2265,6 +2272,7 @@ func (c *Cache) Close(ctx context.Context) error {
 		}
 		c.sqlDB = nil
 		c.pdb = nil
+		slog.Info("completed dagql cache close successfully")
 	})
 	return c.closeErr
 }

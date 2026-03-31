@@ -805,7 +805,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("clone exec container: %w", err)
 	}
-	err = execCtr.WithExec(hideCtx, ContainerExecOpts{
+	err = execCtr.WithExec(hideCtx, ctr, ContainerExecOpts{
 		Args:                          []string{},
 		UseEntrypoint:                 true,
 		ExperimentalPrivilegedNesting: true,

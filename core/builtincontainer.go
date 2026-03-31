@@ -65,9 +65,8 @@ func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string)
 	}
 	container := NewContainer(platform)
 	rootfsDir := &Directory{
-		Dir:       "/",
-		Platform:  platform,
-		LazyState: NewLazyState(),
+		Dir:      "/",
+		Platform: platform,
 	}
 	if err := rootfsDir.setSnapshot(ref); err != nil {
 		return nil, fmt.Errorf("failed to initialize builtin rootfs: %w", err)

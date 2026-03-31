@@ -38,13 +38,109 @@ func cloneContainerForTerminal(ctr *Container) *Container {
 	cp.Config.Cmd = slices.Clone(cp.Config.Cmd)
 	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
 	cp.Config.Labels = maps.Clone(cp.Config.Labels)
-	cp.Mounts = slices.Clone(cp.Mounts)
+	cp.Lazy = nil
+	if cp.MetaSnapshot != nil {
+		cp.MetaSnapshot = cp.MetaSnapshot.Clone()
+	}
+	cp.FS = cloneTerminalDirectorySource(ctr.FS)
+	cp.Mounts = cloneTerminalMounts(ctr.Mounts)
 	cp.Secrets = slices.Clone(cp.Secrets)
 	cp.Sockets = slices.Clone(cp.Sockets)
 	cp.Ports = slices.Clone(cp.Ports)
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	return &cp
+}
+
+func cloneTerminalMounts(mounts ContainerMounts) ContainerMounts {
+	if mounts == nil {
+		return nil
+	}
+	cp := make(ContainerMounts, len(mounts))
+	for i, mnt := range mounts {
+		cp[i] = mnt
+		cp[i].DirectorySource = cloneTerminalDirectorySource(mnt.DirectorySource)
+		cp[i].FileSource = cloneTerminalFileSource(mnt.FileSource)
+	}
+	return cp
+}
+
+func cloneTerminalDirectorySource(src *ContainerDirectorySource) *ContainerDirectorySource {
+	if src == nil {
+		return nil
+	}
+	if src.isResultBacked() {
+		return newContainerDirectoryResultSource(*src.Result)
+	}
+	if src.Value == nil {
+		return nil
+	}
+	return newContainerDirectoryValueSource(cloneTerminalDirectory(src.Value))
+}
+
+func cloneTerminalFileSource(src *ContainerFileSource) *ContainerFileSource {
+	if src == nil {
+		return nil
+	}
+	if src.isResultBacked() {
+		return newContainerFileResultSource(*src.Result)
+	}
+	if src.Value == nil {
+		return nil
+	}
+	return newContainerFileValueSource(cloneTerminalFile(src.Value))
+}
+
+func cloneTerminalDirectory(dir *Directory) *Directory {
+	if dir == nil {
+		return nil
+	}
+	cp := &Directory{
+		Dir:      dir.Dir,
+		Platform: dir.Platform,
+		Services: slices.Clone(dir.Services),
+	}
+	dir.snapshotMu.RLock()
+	ready := dir.snapshotReady
+	source := dir.snapshotSource
+	snapshot := dir.Snapshot
+	dir.snapshotMu.RUnlock()
+	if snapshot != nil {
+		cp.Snapshot = snapshot.Clone()
+		cp.snapshotReady = true
+		return cp
+	}
+	if ready {
+		cp.snapshotReady = true
+		cp.snapshotSource = source
+	}
+	return cp
+}
+
+func cloneTerminalFile(file *File) *File {
+	if file == nil {
+		return nil
+	}
+	cp := &File{
+		File:     file.File,
+		Platform: file.Platform,
+		Services: slices.Clone(file.Services),
+	}
+	file.snapshotMu.RLock()
+	ready := file.snapshotReady
+	source := file.snapshotSource
+	snapshot := file.Snapshot
+	file.snapshotMu.RUnlock()
+	if snapshot != nil {
+		cp.Snapshot = snapshot.Clone()
+		cp.snapshotReady = true
+		return cp
+	}
+	if ready {
+		cp.snapshotReady = true
+		cp.snapshotSource = source
+	}
+	return cp
 }
 
 func newSyntheticTerminalContainerResult(
@@ -253,6 +349,30 @@ func (dir *Directory) Terminal(
 		if err != nil {
 			return fmt.Errorf("failed to attach terminal container: %w", err)
 		}
+	}
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cache for terminal container: %w", err)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return fmt.Errorf("directory terminal attach container: empty session ID")
+	}
+	attachedAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, ctr)
+	if err != nil {
+		return fmt.Errorf("failed to attach terminal base container: %w", err)
+	}
+	attachedCtr, ok := attachedAny.(dagql.ObjectResult[*Container])
+	if !ok {
+		return fmt.Errorf("failed to attach terminal base container: expected %T, got %T", ctr, attachedAny)
+	}
+	ctr = attachedCtr
+	if err := cache.Evaluate(ctx, ctr); err != nil {
+		return fmt.Errorf("failed to evaluate terminal base container: %w", err)
 	}
 
 	termCtr := cloneContainerForTerminal(ctr.Self())
