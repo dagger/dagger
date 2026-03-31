@@ -399,6 +399,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withFile", s.withFile).
+			IsPersistable().
 			Doc(`Return a container snapshot with a file added`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the new file. Example: "/path/to/new-file.txt"`),
@@ -412,6 +413,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withoutFile", s.withoutFile).
+			IsPersistable().
 			Doc(`Retrieves this container with the file at the given path removed.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to remove (e.g., "/file.txt").`),
@@ -420,6 +422,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withoutFiles", s.withoutFiles).
+			IsPersistable().
 			Doc(`Return a new container spanshot with specified files removed`).
 			Args(
 				dagql.Arg("paths").Doc(`Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"`),
@@ -428,6 +431,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withFiles", s.withFiles).
+			IsPersistable().
 			Doc(`Retrieves this container plus the contents of the given files copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location where copied files should be placed (e.g., "/src").`),
@@ -441,6 +445,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withNewFile", s.withNewFile).
+			IsPersistable().
 			View(AllVersion).
 			Doc(`Return a new container snapshot, with a file added to its filesystem with text content`).
 			Args(
@@ -468,6 +473,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withDirectory", s.withDirectory).
+			IsPersistable().
 			View(AllVersion).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
 			Args(
@@ -485,6 +491,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withoutDirectory", s.withoutDirectory).
+			IsPersistable().
 			Doc(`Return a new container snapshot, with a directory removed from its filesystem`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to remove (e.g., ".github/").`),
@@ -583,6 +590,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				`Returns an error if no command was executed`),
 
 		dagql.NodeFunc("withSymlink", s.withSymlink).
+			IsPersistable().
 			Doc(`Return a snapshot with a symlink`).
 			Args(
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"runtime/debug"
 	"slices"
 	"sync/atomic"
@@ -150,6 +151,9 @@ type CacheDebugSessionResults struct {
 }
 
 func newTraceBootID() string {
+	if bootID := os.Getenv("_DAGGER_EGRAPH_BOOT_ID"); bootID != "" {
+		return bootID
+	}
 	return fmt.Sprintf("boot-%d", time.Now().UnixNano())
 }
 
@@ -274,6 +278,75 @@ func (c *Cache) tracePersistStoreWipedUncleanShutdown(ctx context.Context, clean
 func (c *Cache) tracePersistStoreWipedImportFailure(ctx context.Context, err error) {
 	c.traceLazy(ctx, "persist_store_wiped_import_failure", func() []any {
 		return []any{"phase", "startup", "error", err.Error()}
+	})
+}
+
+func (c *Cache) tracePruneCandidateSkipped(ctx context.Context, policyIndex int, reason string, res pruneSnapshotResult) {
+	c.traceLazy(ctx, "prune_candidate_skipped", func() []any {
+		return []any{
+			"phase", "prune",
+			"policy_index", policyIndex,
+			"reason", reason,
+			"shared_result_id", res.resultID,
+			"record_type", res.entry.RecordType,
+			"description", res.entry.Description,
+			"usage_identity", res.usageIdentity,
+			"incoming_ownership_count", res.incomingCount,
+			"has_persisted_edge", res.hasPersistedEdge,
+			"persisted_edge_unpruneable", res.persistedEdgeUnpruneable,
+			"expires_at_unix", res.expiresAtUnix,
+			"created_time_unix_nano", res.entry.CreatedTimeUnixNano,
+			"most_recent_use_time_unix_nano", res.entry.MostRecentUseTimeUnixNano,
+			"size_bytes", res.entry.SizeBytes,
+			"dep_count", len(res.deps),
+			"actively_used", res.entry.ActivelyUsed,
+		}
+	})
+}
+
+func (c *Cache) tracePruneCandidateSelected(ctx context.Context, policyIndex int, candidate pruneCandidate, res pruneSnapshotResult, reclaimBytes int64) {
+	c.traceLazy(ctx, "prune_candidate_selected", func() []any {
+		return []any{
+			"phase", "prune",
+			"policy_index", policyIndex,
+			"shared_result_id", candidate.resultID,
+			"record_type", res.entry.RecordType,
+			"description", res.entry.Description,
+			"usage_identity", res.usageIdentity,
+			"incoming_ownership_count", res.incomingCount,
+			"has_persisted_edge", res.hasPersistedEdge,
+			"persisted_edge_unpruneable", res.persistedEdgeUnpruneable,
+			"expires_at_unix", candidate.expiresAtUnix,
+			"created_time_unix_nano", res.entry.CreatedTimeUnixNano,
+			"most_recent_use_time_unix_nano", res.entry.MostRecentUseTimeUnixNano,
+			"size_bytes", res.entry.SizeBytes,
+			"dep_count", len(res.deps),
+			"reclaim_bytes", reclaimBytes,
+			"actively_used", res.entry.ActivelyUsed,
+		}
+	})
+}
+
+func (c *Cache) tracePrunePersistedEdgeRemoved(ctx context.Context, policyIndex int, candidate pruneCandidate, res pruneSnapshotResult, reclaimBytes int64) {
+	c.traceLazy(ctx, "prune_persisted_edge_removed", func() []any {
+		return []any{
+			"phase", "prune",
+			"policy_index", policyIndex,
+			"shared_result_id", candidate.resultID,
+			"record_type", res.entry.RecordType,
+			"description", res.entry.Description,
+			"usage_identity", res.usageIdentity,
+			"incoming_ownership_count", res.incomingCount,
+			"has_persisted_edge", res.hasPersistedEdge,
+			"persisted_edge_unpruneable", res.persistedEdgeUnpruneable,
+			"expires_at_unix", candidate.expiresAtUnix,
+			"created_time_unix_nano", res.entry.CreatedTimeUnixNano,
+			"most_recent_use_time_unix_nano", res.entry.MostRecentUseTimeUnixNano,
+			"size_bytes", res.entry.SizeBytes,
+			"dep_count", len(res.deps),
+			"reclaim_bytes", reclaimBytes,
+			"actively_used", res.entry.ActivelyUsed,
+		}
 	})
 }
 

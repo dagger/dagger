@@ -1311,14 +1311,6 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 		if err := dir.setSnapshot(snapshot); err != nil {
 			return decodedContainerDirectoryValue{}, err
 		}
-	case persistedDirectoryFormSource:
-		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container directory snapshot source")
-		if err != nil {
-			return decodedContainerDirectoryValue{}, err
-		}
-		if err := dir.setSnapshotSource(source); err != nil {
-			return decodedContainerDirectoryValue{}, err
-		}
 	default:
 		return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory payload: unsupported form %q", persisted.Form)
 	}
@@ -1399,29 +1391,6 @@ func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, c
 		}
 		if err := file.setSnapshot(snapshot); err != nil {
 			return decodedContainerFileValue{}, err
-		}
-	case persistedFileFormSource:
-		switch {
-		case persisted.DirectorySourceResultID != 0 && persisted.FileSourceResultID != 0:
-			return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file payload: both source result IDs set")
-		case persisted.DirectorySourceResultID != 0:
-			source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.DirectorySourceResultID, "container file directory source")
-			if err != nil {
-				return decodedContainerFileValue{}, err
-			}
-			if err := file.setSnapshotSource(FileSnapshotSource{Directory: source}); err != nil {
-				return decodedContainerFileValue{}, err
-			}
-		case persisted.FileSourceResultID != 0:
-			source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.FileSourceResultID, "container file source")
-			if err != nil {
-				return decodedContainerFileValue{}, err
-			}
-			if err := file.setSnapshotSource(FileSnapshotSource{File: source}); err != nil {
-				return decodedContainerFileValue{}, err
-			}
-		default:
-			return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file payload: missing source result ID")
 		}
 	default:
 		return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file payload: unsupported form %q", persisted.Form)

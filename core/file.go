@@ -273,9 +273,10 @@ func (file *File) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
 	if file == nil {
 		return nil
 	}
-	file.snapshotMu.RLock()
-	snapshot := file.Snapshot
-	file.snapshotMu.RUnlock()
+	snapshot, err := file.getSnapshot()
+	if err != nil || snapshot == nil {
+		return nil
+	}
 	if snapshot == nil {
 		return nil
 	}
@@ -289,7 +290,6 @@ func (file *File) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
 
 const (
 	persistedFileFormSnapshot = "snapshot"
-	persistedFileFormSource   = "source"
 	persistedFileFormLazy     = "lazy"
 )
 
@@ -298,8 +298,6 @@ type persistedFilePayload struct {
 	File                    string          `json:"file,omitempty"`
 	Platform                Platform        `json:"platform"`
 	Services                ServiceBindings `json:"services,omitempty"`
-	DirectorySourceResultID uint64          `json:"directorySourceResultID,omitempty"`
-	FileSourceResultID      uint64          `json:"fileSourceResultID,omitempty"`
 	LazyJSON                json.RawMessage `json:"lazyJSON,omitempty"`
 }
 
@@ -314,8 +312,6 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 	}
 	file.snapshotMu.RLock()
 	ready := file.snapshotReady
-	snapshot := file.Snapshot
-	source := file.snapshotSource
 	lazy := file.Lazy
 	file.snapshotMu.RUnlock()
 	if !ready {
@@ -334,26 +330,14 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 		}
 		return payloadJSON, nil
 	}
-	switch {
-	case snapshot != nil:
-		payload.Form = persistedFileFormSnapshot
-	case source.Directory.Self() != nil:
-		sourceID, err := encodePersistedObjectRef(cache, source.Directory, "file directory snapshot source")
-		if err != nil {
-			return nil, err
-		}
-		payload.Form = persistedFileFormSource
-		payload.DirectorySourceResultID = sourceID
-	case source.File.Self() != nil:
-		sourceID, err := encodePersistedObjectRef(cache, source.File, "file snapshot source")
-		if err != nil {
-			return nil, err
-		}
-		payload.Form = persistedFileFormSource
-		payload.FileSourceResultID = sourceID
-	default:
+	resolvedSnapshot, err := file.getSnapshot()
+	if err != nil {
+		return nil, fmt.Errorf("%w: encode persisted file snapshot: %w", dagql.ErrPersistStateNotReady, err)
+	}
+	if resolvedSnapshot == nil {
 		return nil, fmt.Errorf("%w: encode persisted file: invalid snapshot state", dagql.ErrPersistStateNotReady)
 	}
+	payload.Form = persistedFileFormSnapshot
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal persisted file payload: %w", err)
@@ -380,30 +364,6 @@ func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resul
 		}
 		if err := file.setSnapshot(snapshot); err != nil {
 			return nil, err
-		}
-		return file, nil
-	case persistedFileFormSource:
-		switch {
-		case persisted.DirectorySourceResultID != 0 && persisted.FileSourceResultID != 0:
-			return nil, fmt.Errorf("decode persisted file payload: both source result IDs set")
-		case persisted.DirectorySourceResultID != 0:
-			source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.DirectorySourceResultID, "file directory snapshot source")
-			if err != nil {
-				return nil, err
-			}
-			if err := file.setSnapshotSource(FileSnapshotSource{Directory: source}); err != nil {
-				return nil, err
-			}
-		case persisted.FileSourceResultID != 0:
-			source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.FileSourceResultID, "file snapshot source")
-			if err != nil {
-				return nil, err
-			}
-			if err := file.setSnapshotSource(FileSnapshotSource{File: source}); err != nil {
-				return nil, err
-			}
-		default:
-			return nil, fmt.Errorf("decode persisted file payload: missing source result ID")
 		}
 		return file, nil
 	case persistedFileFormLazy:

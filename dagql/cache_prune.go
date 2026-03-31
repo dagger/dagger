@@ -75,7 +75,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 		}
 
 		activeClosure := pruneActiveClosure(snapshot, activeRoots)
-		candidates := collectPruneCandidates(snapshot, activeClosure, policy, now)
+		candidates := c.collectPruneCandidates(ctx, policyIdx, snapshot, activeClosure, policy, now)
 		if len(candidates) == 0 {
 			continue
 		}
@@ -88,12 +88,19 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 		policyReclaimed := int64(0)
 		policyApplied := 0
 		for _, planEntry := range plan {
+			snapRes, ok := snapshot.results[planEntry.candidate.resultID]
+			if ok {
+				c.tracePruneCandidateSelected(ctx, policyIdx, planEntry.candidate, snapRes, planEntry.reclaimBytes)
+			}
 			removed, err := c.removePersistedEdge(ctx, planEntry.candidate.resultID)
 			if err != nil {
 				return report, err
 			}
 			if !removed {
 				continue
+			}
+			if ok {
+				c.tracePrunePersistedEdgeRemoved(ctx, policyIdx, planEntry.candidate, snapRes, planEntry.reclaimBytes)
 			}
 			compactedNeeded = true
 			policyApplied++
@@ -251,7 +258,7 @@ func pruneActiveClosure(snapshot pruneSnapshot, activeRoots map[sharedResultID]s
 	return closure
 }
 
-func collectPruneCandidates(snapshot pruneSnapshot, activeClosure map[sharedResultID]struct{}, policy CachePrunePolicy, now time.Time) []pruneCandidate {
+func (c *Cache) collectPruneCandidates(ctx context.Context, policyIndex int, snapshot pruneSnapshot, activeClosure map[sharedResultID]struct{}, policy CachePrunePolicy, now time.Time) []pruneCandidate {
 	cutoffUnixNano := int64(0)
 	if policy.KeepDuration > 0 {
 		cutoffUnixNano = now.Add(-policy.KeepDuration).UnixNano()
@@ -259,15 +266,23 @@ func collectPruneCandidates(snapshot pruneSnapshot, activeClosure map[sharedResu
 
 	candidates := make([]pruneCandidate, 0, len(snapshot.results))
 	for resultID, res := range snapshot.results {
-		if !res.hasPersistedEdge || res.persistedEdgeUnpruneable {
+		if !res.hasPersistedEdge {
+			c.tracePruneCandidateSkipped(ctx, policyIndex, "no_persisted_edge", res)
+			continue
+		}
+		if res.persistedEdgeUnpruneable {
+			c.tracePruneCandidateSkipped(ctx, policyIndex, "unpruneable", res)
 			continue
 		}
 		switch {
 		case resultInActiveClosure(activeClosure, resultID):
+			c.tracePruneCandidateSkipped(ctx, policyIndex, "active_closure", res)
 			continue
 		case cutoffUnixNano > 0 && entryRecentlyUsed(res.entry, cutoffUnixNano) && !persistedEdgeExpired(now, persistedEdge{expiresAtUnix: res.expiresAtUnix}):
+			c.tracePruneCandidateSkipped(ctx, policyIndex, "recently_used_and_not_expired", res)
 			continue
 		case !cachePrunePolicyMatchesEntry(policy, res.entry):
+			c.tracePruneCandidateSkipped(ctx, policyIndex, "policy_filter", res)
 			continue
 		}
 		candidates = append(candidates, pruneCandidate{

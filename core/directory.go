@@ -258,9 +258,10 @@ func (dir *Directory) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLi
 	if dir == nil {
 		return nil
 	}
-	dir.snapshotMu.RLock()
-	snapshot := dir.Snapshot
-	dir.snapshotMu.RUnlock()
+	snapshot, err := dir.getSnapshot()
+	if err != nil || snapshot == nil {
+		return nil
+	}
 	if snapshot == nil {
 		return nil
 	}
@@ -274,7 +275,6 @@ func (dir *Directory) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLi
 
 const (
 	persistedDirectoryFormSnapshot = "snapshot"
-	persistedDirectoryFormSource   = "source"
 	persistedDirectoryFormLazy     = "lazy"
 )
 
@@ -283,7 +283,6 @@ type persistedDirectoryPayload struct {
 	Dir            string          `json:"dir,omitempty"`
 	Platform       Platform        `json:"platform"`
 	Services       ServiceBindings `json:"services,omitempty"`
-	SourceResultID uint64          `json:"sourceResultID,omitempty"`
 	LazyJSON       json.RawMessage `json:"lazyJSON,omitempty"`
 }
 
@@ -347,19 +346,14 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 		}
 		return payloadJSON, nil
 	}
-	switch {
-	case snapshot != nil:
-		payload.Form = persistedDirectoryFormSnapshot
-	case source.Self() != nil:
-		sourceID, err := encodePersistedObjectRef(cache, source, "directory snapshot source")
-		if err != nil {
-			return nil, err
-		}
-		payload.Form = persistedDirectoryFormSource
-		payload.SourceResultID = sourceID
-	default:
+	resolvedSnapshot, err := dir.getSnapshot()
+	if err != nil {
+		return nil, fmt.Errorf("%w: encode persisted directory snapshot: %w", dagql.ErrPersistStateNotReady, err)
+	}
+	if resolvedSnapshot == nil {
 		return nil, fmt.Errorf("%w: encode persisted directory: invalid snapshot state", dagql.ErrPersistStateNotReady)
 	}
+	payload.Form = persistedDirectoryFormSnapshot
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal persisted directory payload: %w", err)
@@ -385,15 +379,6 @@ func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			return nil, err
 		}
 		if err := dir.setSnapshot(snapshot); err != nil {
-			return nil, err
-		}
-		return dir, nil
-	case persistedDirectoryFormSource:
-		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "directory snapshot source")
-		if err != nil {
-			return nil, err
-		}
-		if err := dir.setSnapshotSource(source); err != nil {
 			return nil, err
 		}
 		return dir, nil

@@ -17,6 +17,23 @@ import (
 )
 
 func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *testctx.T) {
+	const persistenceTestGCThresholdBytes = "1000000000000000"
+
+	engineWithPersistenceTestGC := func(ctx context.Context, t *testctx.T) func(*dagger.Container) *dagger.Container {
+		t.Helper()
+		return engineWithConfig(
+			ctx,
+			t,
+			engineConfigWithEnabled(true),
+			engineConfigWithGC(
+				persistenceTestGCThresholdBytes,
+				"0",
+				persistenceTestGCThresholdBytes,
+				"0",
+			),
+		)
+	}
+
 	startEngine := func(
 		client *dagger.Client,
 		ctx context.Context,
@@ -68,7 +85,7 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		c := connect(ctx, t)
 		stateKey := "phase7-local-cache-state-" + identity.NewID()
 
-		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		_, err := engineClientA.
@@ -87,7 +104,7 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		engineSvcA = nil
 		engineClientA = nil
 
-		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
 		entryCount, err := engineClientB.Engine().LocalCache().EntrySet().EntryCount(ctx)
@@ -109,7 +126,7 @@ func (m *Test) TestAlwaysCache() string {
 }
 `
 
-		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		modA := modInit(t, engineClientA, "go", moduleSrc)
@@ -123,7 +140,7 @@ func (m *Test) TestAlwaysCache() string {
 		engineSvcA = nil
 		engineClientA = nil
 
-		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
 		modB := modInit(t, engineClientB, "go", moduleSrc)
@@ -222,7 +239,7 @@ func (m *Test) ContextGitRef(
 			return outputs
 		}
 
-		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		outA := runCalls(ctx, t, engineClientA)
@@ -231,7 +248,7 @@ func (m *Test) ContextGitRef(
 		engineSvcA = nil
 		engineClientA = nil
 
-		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
 		outB := runCalls(ctx, t, engineClientB)
@@ -266,7 +283,7 @@ func (m *Test) ContextGitRef(
 			return strings.TrimSpace(randomContents)
 		}
 
-		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		randomA := runChain(ctx, t, engineClientA, hostDirA)
@@ -275,7 +292,7 @@ func (m *Test) ContextGitRef(
 		engineSvcA = nil
 		engineClientA = nil
 
-		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
 		randomB := runChain(ctx, t, engineClientB, hostDirB)
@@ -374,7 +391,7 @@ printf 'layered\n' > /work/layered.txt
 			return out
 		}
 
-		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		outA := runChain(ctx, t, engineClientA, false)
@@ -383,7 +400,7 @@ printf 'layered\n' > /work/layered.txt
 		engineSvcA = nil
 		engineClientA = nil
 
-		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
 		outB := runChain(ctx, t, engineClientB, true)
@@ -407,10 +424,17 @@ printf 'layered\n' > /work/layered.txt
 			endpoint string
 		}
 
-		startDevEngine := func(ctx context.Context, t *testctx.T) *startedDevEngine {
+		startDevEngine := func(ctx context.Context, t *testctx.T, bootID string) *startedDevEngine {
 			t.Helper()
 
-			engineCtr := devEngineContainerWithStateKey(c, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+			engineCtr := devEngineContainerWithStateKey(
+				c,
+				stateKey,
+				engineWithPersistenceTestGC(ctx, t),
+				func(ctr *dagger.Container) *dagger.Container {
+					return ctr.WithEnvVariable("_DAGGER_EGRAPH_BOOT_ID", bootID)
+				},
+			)
 			service := devEngineContainerAsService(engineCtr)
 
 			endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
@@ -453,7 +477,10 @@ printf 'layered\n' > /work/layered.txt
 			return strings.TrimSpace(stdout)
 		}
 
-		engineA := startDevEngine(ctx, t)
+		engineABootID := "phase7-engine-dev-build-engine-a"
+		engineBBootID := "phase7-engine-dev-build-engine-b"
+
+		engineA := startDevEngine(ctx, t, engineABootID)
 		t.Cleanup(func() { stopDevEngine(ctx, t, engineA) })
 
 		randomA := runCLI(
@@ -469,10 +496,23 @@ printf 'layered\n' > /work/layered.txt
 		)
 		require.NotEmpty(t, randomA)
 
+		randomASecondSession := runCLI(
+			ctx,
+			t,
+			engineA,
+			"call", "engine-dev", "container",
+			"with-exec", "--args", "true",
+			"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
+			"with-exec", "--args", "sh,/tmp/write-random.sh",
+			"file", "--path", "/tmp/random",
+			"contents",
+		)
+		require.Equal(t, randomA, randomASecondSession, "engine-dev container build result should survive a new session on the same engine before restart")
+
 		stopDevEngine(ctx, t, engineA)
 		engineA = nil
 
-		engineB := startDevEngine(ctx, t)
+		engineB := startDevEngine(ctx, t, engineBBootID)
 		t.Cleanup(func() { stopDevEngine(ctx, t, engineB) })
 
 		randomB := runCLI(
@@ -510,7 +550,7 @@ printf 'layered\n' > /work/layered.txt
 		cacheKey := "phase7-cache-volume-data-" + identity.NewID()
 		cacheValue := identity.NewID()
 
-		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		cacheA := engineClientA.CacheVolume(cacheKey)
@@ -529,7 +569,7 @@ printf 'layered\n' > /work/layered.txt
 		engineSvcA = nil
 		engineClientA = nil
 
-		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(true)))
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
 		cacheB := engineClientB.CacheVolume(cacheKey)
