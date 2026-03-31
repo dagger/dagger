@@ -586,7 +586,13 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 			}
 			payload.FSResultID = encoded
 		case container.FS.Value != nil:
-			encoded, err := encodePersistedContainerDirectoryValue(ctx, cache, container.FS.Value)
+			encoded, err := encodePersistedContainerDirectoryValue(
+				ctx,
+				cache,
+				container.FS.Value,
+				persistedContainerDirectorySourceOriginRootFS,
+				"",
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -607,7 +613,13 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 			}
 			encoded.DirectorySourceResultID = id
 		case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil:
-			val, err := encodePersistedContainerDirectoryValue(ctx, cache, mnt.DirectorySource.Value)
+			val, err := encodePersistedContainerDirectoryValue(
+				ctx,
+				cache,
+				mnt.DirectorySource.Value,
+				persistedContainerDirectorySourceOriginDirectoryMount,
+				mnt.Target,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -619,7 +631,13 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 			}
 			encoded.FileSourceResultID = id
 		case mnt.FileSource != nil && mnt.FileSource.Value != nil:
-			val, err := encodePersistedContainerFileValue(ctx, cache, mnt.FileSource.Value)
+			val, err := encodePersistedContainerFileValue(
+				ctx,
+				cache,
+				mnt.FileSource.Value,
+				persistedContainerFileSourceOriginFileMount,
+				mnt.Target,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -663,7 +681,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		}
 		rootfs = newContainerDirectoryResultSource(rootfsRes)
 	} else if len(persisted.FSValue) > 0 {
-		rootfsDir, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, "fs", persisted.FSValue)
+		rootfsDir, err := decodePersistedContainerDirectoryValue(ctx, dag, call, resultID, "fs", persisted.FSValue)
 		if err != nil {
 			return nil, err
 		}
@@ -687,7 +705,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			}
 			mnt.DirectorySource = newContainerDirectoryResultSource(dirRes)
 		case len(persistedMount.DirectorySourceValue) > 0:
-			dirVal, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, fmt.Sprintf("mount_dir:%d", len(mounts)), persistedMount.DirectorySourceValue)
+			dirVal, err := decodePersistedContainerDirectoryValue(ctx, dag, call, resultID, fmt.Sprintf("mount_dir:%d", len(mounts)), persistedMount.DirectorySourceValue)
 			if err != nil {
 				return nil, err
 			}
@@ -700,7 +718,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			}
 			mnt.FileSource = newContainerFileResultSource(fileRes)
 		case len(persistedMount.FileSourceValue) > 0:
-			fileVal, err := decodePersistedContainerFileValue(ctx, dag, resultID, fmt.Sprintf("mount_file:%d", len(mounts)), persistedMount.FileSourceValue)
+			fileVal, err := decodePersistedContainerFileValue(ctx, dag, call, resultID, fmt.Sprintf("mount_file:%d", len(mounts)), persistedMount.FileSourceValue)
 			if err != nil {
 				return nil, err
 			}
@@ -855,8 +873,15 @@ type persistedContainerMountPayload struct {
 
 const (
 	persistedContainerValueFormPlain         = "plain"
+	persistedContainerValueFormSourceReady   = "sourceReady"
 	persistedContainerValueFormSourcePending = "sourcePending"
 	persistedContainerValueFormOutputPending = "outputPending"
+)
+
+const (
+	persistedContainerDirectorySourceOriginRootFS         = "rootfs"
+	persistedContainerDirectorySourceOriginDirectoryMount = "directoryMount"
+	persistedContainerFileSourceOriginFileMount           = "fileMount"
 )
 
 type persistedContainerDirectoryValue struct {
@@ -879,6 +904,22 @@ type persistedContainerFileOutputValue struct {
 	File     string          `json:"file,omitempty"`
 	Platform Platform        `json:"platform"`
 	Services ServiceBindings `json:"services,omitempty"`
+}
+
+type persistedContainerDirectorySourceValue struct {
+	Dir        string          `json:"dir,omitempty"`
+	Platform   Platform        `json:"platform"`
+	Services   ServiceBindings `json:"services,omitempty"`
+	OriginKind string          `json:"originKind"`
+	OriginPath string          `json:"originPath,omitempty"`
+}
+
+type persistedContainerFileSourceValue struct {
+	File       string          `json:"file,omitempty"`
+	Platform   Platform        `json:"platform"`
+	Services   ServiceBindings `json:"services,omitempty"`
+	OriginKind string          `json:"originKind"`
+	OriginPath string          `json:"originPath,omitempty"`
 }
 
 type decodedContainerDirectoryValue struct {
@@ -1002,14 +1043,18 @@ func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapsho
 	return links
 }
 
-func encodePersistedContainerDirectoryValue(ctx context.Context, cache dagql.PersistedObjectCache, dir *Directory) (json.RawMessage, error) {
+func encodePersistedContainerDirectoryValue(
+	ctx context.Context,
+	cache dagql.PersistedObjectCache,
+	dir *Directory,
+	originKind string,
+	originPath string,
+) (json.RawMessage, error) {
 	if dir == nil {
 		return nil, fmt.Errorf("encode persisted container directory value: nil directory")
 	}
 	form := persistedContainerValueFormPlain
 	switch dir.Lazy.(type) {
-	case *DirectoryFromSourceLazy:
-		form = persistedContainerValueFormSourcePending
 	case *DirectoryFromContainerLazy:
 		value, err := json.Marshal(persistedContainerDirectoryOutputValue{
 			Dir:      dir.Dir,
@@ -1017,10 +1062,35 @@ func encodePersistedContainerDirectoryValue(ctx context.Context, cache dagql.Per
 			Services: slices.Clone(dir.Services),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("marshal persisted container directory shell: %w", err)
+			return nil, fmt.Errorf("marshal persisted container directory output value: %w", err)
 		}
 		return json.Marshal(persistedContainerDirectoryValue{
 			Form:  persistedContainerValueFormOutputPending,
+			Value: value,
+		})
+	}
+	dir.snapshotMu.RLock()
+	source := dir.snapshotSource
+	dir.snapshotMu.RUnlock()
+	if source.Self() != nil {
+		switch dir.Lazy.(type) {
+		case *DirectoryFromSourceLazy:
+			form = persistedContainerValueFormSourcePending
+		default:
+			form = persistedContainerValueFormSourceReady
+		}
+		value, err := json.Marshal(persistedContainerDirectorySourceValue{
+			Dir:        dir.Dir,
+			Platform:   dir.Platform,
+			Services:   slices.Clone(dir.Services),
+			OriginKind: originKind,
+			OriginPath: originPath,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal persisted container directory source value: %w", err)
+		}
+		return json.Marshal(persistedContainerDirectoryValue{
+			Form:  form,
 			Value: value,
 		})
 	}
@@ -1034,14 +1104,18 @@ func encodePersistedContainerDirectoryValue(ctx context.Context, cache dagql.Per
 	})
 }
 
-func encodePersistedContainerFileValue(ctx context.Context, cache dagql.PersistedObjectCache, file *File) (json.RawMessage, error) {
+func encodePersistedContainerFileValue(
+	ctx context.Context,
+	cache dagql.PersistedObjectCache,
+	file *File,
+	originKind string,
+	originPath string,
+) (json.RawMessage, error) {
 	if file == nil {
 		return nil, fmt.Errorf("encode persisted container file value: nil file")
 	}
 	form := persistedContainerValueFormPlain
 	switch file.Lazy.(type) {
-	case *FileFromSourceLazy:
-		form = persistedContainerValueFormSourcePending
 	case *FileFromContainerLazy:
 		value, err := json.Marshal(persistedContainerFileOutputValue{
 			File:     file.File,
@@ -1049,10 +1123,35 @@ func encodePersistedContainerFileValue(ctx context.Context, cache dagql.Persiste
 			Services: slices.Clone(file.Services),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("marshal persisted container file shell: %w", err)
+			return nil, fmt.Errorf("marshal persisted container file output value: %w", err)
 		}
 		return json.Marshal(persistedContainerFileValue{
 			Form:  persistedContainerValueFormOutputPending,
+			Value: value,
+		})
+	}
+	file.snapshotMu.RLock()
+	source := file.snapshotSource
+	file.snapshotMu.RUnlock()
+	if source.File.Self() != nil || source.Directory.Self() != nil {
+		switch file.Lazy.(type) {
+		case *FileFromSourceLazy:
+			form = persistedContainerValueFormSourcePending
+		default:
+			form = persistedContainerValueFormSourceReady
+		}
+		value, err := json.Marshal(persistedContainerFileSourceValue{
+			File:       file.File,
+			Platform:   file.Platform,
+			Services:   slices.Clone(file.Services),
+			OriginKind: originKind,
+			OriginPath: originPath,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal persisted container file source value: %w", err)
+		}
+		return json.Marshal(persistedContainerFileValue{
+			Form:  form,
 			Value: value,
 		})
 	}
@@ -1066,7 +1165,84 @@ func encodePersistedContainerFileValue(ctx context.Context, cache dagql.Persiste
 	})
 }
 
-func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerDirectoryValue, error) {
+func loadPersistedContainerReceiverByCall(
+	ctx context.Context,
+	dag *dagql.Server,
+	call *dagql.ResultCall,
+	label string,
+) (dagql.ObjectResult[*Container], error) {
+	if call == nil || call.Receiver == nil {
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("%s: missing call receiver", label)
+	}
+	if call.Receiver.ResultID == 0 {
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("%s: receiver result missing result ID", label)
+	}
+	return loadPersistedObjectResultByResultID[*Container](ctx, dag, call.Receiver.ResultID, label)
+}
+
+func loadPersistedContainerDirectorySourceByOrigin(
+	ctx context.Context,
+	dag *dagql.Server,
+	call *dagql.ResultCall,
+	originKind string,
+	originPath string,
+	label string,
+) (dagql.ObjectResult[*Directory], error) {
+	parent, err := loadPersistedContainerReceiverByCall(ctx, dag, call, label+" parent")
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	var source dagql.ObjectResult[*Directory]
+	switch originKind {
+	case persistedContainerDirectorySourceOriginRootFS:
+		if err := dag.Select(ctx, parent, &source, dagql.Selector{Field: "rootfs"}); err != nil {
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("%s rootfs select: %w", label, err)
+		}
+	case persistedContainerDirectorySourceOriginDirectoryMount:
+		if err := dag.Select(ctx, parent, &source, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(originPath)},
+			},
+		}); err != nil {
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("%s directory select %q: %w", label, originPath, err)
+		}
+	default:
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("%s: unsupported directory origin kind %q", label, originKind)
+	}
+	return source, nil
+}
+
+func loadPersistedContainerFileSourceByOrigin(
+	ctx context.Context,
+	dag *dagql.Server,
+	call *dagql.ResultCall,
+	originKind string,
+	originPath string,
+	label string,
+) (dagql.ObjectResult[*File], error) {
+	parent, err := loadPersistedContainerReceiverByCall(ctx, dag, call, label+" parent")
+	if err != nil {
+		return dagql.ObjectResult[*File]{}, err
+	}
+	var source dagql.ObjectResult[*File]
+	switch originKind {
+	case persistedContainerFileSourceOriginFileMount:
+		if err := dag.Select(ctx, parent, &source, dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(originPath)},
+			},
+		}); err != nil {
+			return dagql.ObjectResult[*File]{}, fmt.Errorf("%s file select %q: %w", label, originPath, err)
+		}
+	default:
+		return dagql.ObjectResult[*File]{}, fmt.Errorf("%s: unsupported file origin kind %q", label, originKind)
+	}
+	return source, nil
+}
+
+func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Server, call *dagql.ResultCall, resultID uint64, role string, payload json.RawMessage) (decodedContainerDirectoryValue, error) {
 	var wrapped persistedContainerDirectoryValue
 	if err := json.Unmarshal(payload, &wrapped); err != nil {
 		return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory value: %w", err)
@@ -1089,6 +1265,32 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 			},
 			Kind: wrapped.Form,
 		}, nil
+	}
+
+	if wrapped.Form == persistedContainerValueFormSourceReady || wrapped.Form == persistedContainerValueFormSourcePending {
+		var sourceVal persistedContainerDirectorySourceValue
+		if err := json.Unmarshal(wrapped.Value, &sourceVal); err != nil {
+			return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory source value: %w", err)
+		}
+		source, err := loadPersistedContainerDirectorySourceByOrigin(ctx, dag, call, sourceVal.OriginKind, sourceVal.OriginPath, "container directory source")
+		if err != nil {
+			return decodedContainerDirectoryValue{}, err
+		}
+		dir := &Directory{
+			Dir:      sourceVal.Dir,
+			Platform: sourceVal.Platform,
+			Services: slices.Clone(sourceVal.Services),
+		}
+		if err := dir.setSnapshotSource(source); err != nil {
+			return decodedContainerDirectoryValue{}, err
+		}
+		if wrapped.Form == persistedContainerValueFormSourcePending {
+			dir.Lazy = &DirectoryFromSourceLazy{
+				LazyState: NewLazyState(),
+				Source:    source,
+			}
+		}
+		return decodedContainerDirectoryValue{Dir: dir, Kind: wrapped.Form}, nil
 	}
 
 	var persisted persistedDirectoryPayload
@@ -1129,7 +1331,7 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 	return decodedContainerDirectoryValue{Dir: dir, Kind: wrapped.Form}, nil
 }
 
-func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerFileValue, error) {
+func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, call *dagql.ResultCall, resultID uint64, role string, payload json.RawMessage) (decodedContainerFileValue, error) {
 	var wrapped persistedContainerFileValue
 	if err := json.Unmarshal(payload, &wrapped); err != nil {
 		return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file value: %w", err)
@@ -1152,6 +1354,32 @@ func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, r
 			},
 			Kind: wrapped.Form,
 		}, nil
+	}
+
+	if wrapped.Form == persistedContainerValueFormSourceReady || wrapped.Form == persistedContainerValueFormSourcePending {
+		var sourceVal persistedContainerFileSourceValue
+		if err := json.Unmarshal(wrapped.Value, &sourceVal); err != nil {
+			return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file source value: %w", err)
+		}
+		source, err := loadPersistedContainerFileSourceByOrigin(ctx, dag, call, sourceVal.OriginKind, sourceVal.OriginPath, "container file source")
+		if err != nil {
+			return decodedContainerFileValue{}, err
+		}
+		file := &File{
+			File:     sourceVal.File,
+			Platform: sourceVal.Platform,
+			Services: slices.Clone(sourceVal.Services),
+		}
+		if err := file.setSnapshotSource(FileSnapshotSource{File: source}); err != nil {
+			return decodedContainerFileValue{}, err
+		}
+		if wrapped.Form == persistedContainerValueFormSourcePending {
+			file.Lazy = &FileFromSourceLazy{
+				LazyState: NewLazyState(),
+				Source:    FileSnapshotSource{File: source},
+			}
+		}
+		return decodedContainerFileValue{File: file, Kind: wrapped.Form}, nil
 	}
 
 	var persisted persistedFilePayload
