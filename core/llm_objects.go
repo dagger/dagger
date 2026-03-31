@@ -21,8 +21,8 @@ import (
 // like "Container#3".
 type LLMObjects struct {
 	byLLMID  map[string]*call.ID                   // "Foo#1" -> ID
-	byType   map[string]map[digest.Digest]*call.ID  // "Foo" -> {digest: ID}
-	byDigest map[digest.Digest]string               // digest -> "Foo#1"
+	byType   map[string]map[digest.Digest]*call.ID // "Foo" -> {digest: ID}
+	byDigest map[digest.Digest]string              // digest -> "Foo#1"
 	mu       sync.Mutex
 }
 

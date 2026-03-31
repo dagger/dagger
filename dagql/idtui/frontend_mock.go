@@ -5,8 +5,6 @@ package idtui
 
 import (
 	"context"
-	"sync"
-
 	"dagger.io/dagger"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -14,6 +12,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"sync"
 )
 
 // Ensure, that FrontendMock does implement Frontend.
@@ -67,6 +66,9 @@ var _ Frontend = &FrontendMock{}
 //			},
 //			SetSidebarContentFunc: func(sidebarSection SidebarSection)  {
 //				panic("mock out the SetSidebarContent method")
+//			},
+//			SetStatusLineFunc: func(statusLineData StatusLineData)  {
+//				panic("mock out the SetStatusLine method")
 //			},
 //			SetTelemetryErrorFunc: func(err error)  {
 //				panic("mock out the SetTelemetryError method")
@@ -130,7 +132,7 @@ type FrontendMock struct {
 	SetSidebarContentFunc func(sidebarSection SidebarSection)
 
 	// SetStatusLineFunc mocks the SetStatusLine method.
-	SetStatusLineFunc func(data StatusLineData)
+	SetStatusLineFunc func(statusLineData StatusLineData)
 
 	// SetTelemetryErrorFunc mocks the SetTelemetryError method.
 	SetTelemetryErrorFunc func(err error)
@@ -226,8 +228,8 @@ type FrontendMock struct {
 		}
 		// SetStatusLine holds details about calls to the SetStatusLine method.
 		SetStatusLine []struct {
-			// Data is the data argument value.
-			Data StatusLineData
+			// StatusLineData is the statusLineData argument value.
+			StatusLineData StatusLineData
 		}
 		// SetTelemetryError holds details about calls to the SetTelemetryError method.
 		SetTelemetryError []struct {
@@ -730,19 +732,19 @@ func (mock *FrontendMock) SetSidebarContentCalls() []struct {
 }
 
 // SetStatusLine calls SetStatusLineFunc.
-func (mock *FrontendMock) SetStatusLine(data StatusLineData) {
+func (mock *FrontendMock) SetStatusLine(statusLineData StatusLineData) {
 	if mock.SetStatusLineFunc == nil {
 		panic("FrontendMock.SetStatusLineFunc: method is nil but Frontend.SetStatusLine was just called")
 	}
 	callInfo := struct {
-		Data StatusLineData
+		StatusLineData StatusLineData
 	}{
-		Data: data,
+		StatusLineData: statusLineData,
 	}
 	mock.lockSetStatusLine.Lock()
 	mock.calls.SetStatusLine = append(mock.calls.SetStatusLine, callInfo)
 	mock.lockSetStatusLine.Unlock()
-	mock.SetStatusLineFunc(data)
+	mock.SetStatusLineFunc(statusLineData)
 }
 
 // SetStatusLineCalls gets all the calls that were made to SetStatusLine.
@@ -750,10 +752,10 @@ func (mock *FrontendMock) SetStatusLine(data StatusLineData) {
 //
 //	len(mockedFrontend.SetStatusLineCalls())
 func (mock *FrontendMock) SetStatusLineCalls() []struct {
-	Data StatusLineData
+	StatusLineData StatusLineData
 } {
 	var calls []struct {
-		Data StatusLineData
+		StatusLineData StatusLineData
 	}
 	mock.lockSetStatusLine.RLock()
 	calls = mock.calls.SetStatusLine

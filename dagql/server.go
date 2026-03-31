@@ -1247,8 +1247,6 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 		}
 	}
 
-
-
 	return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 }
 

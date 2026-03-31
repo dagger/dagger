@@ -106,7 +106,7 @@ func TestLlmConfigMerge(t *testing.T) {
 	}
 	overlay := &llmconfig.LLMConfig{
 		Providers: map[string]llmconfig.Provider{
-			"anthropic": {APIKey: "env-key"},          // override APIKey only
+			"anthropic": {APIKey: "env-key"},                 // override APIKey only
 			"google":    {APIKey: "env-gem", Model: "gem-2"}, // new provider from env
 		},
 	}

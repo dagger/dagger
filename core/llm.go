@@ -24,7 +24,6 @@ import (
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
-
 	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"

@@ -49,7 +49,7 @@ type Address {
   gitRepository: GitRepository!
 
   """A unique identifier for this Address."""
-  id: AddressID!
+  id: ID!
 
   """Load a secret from the address."""
   secret: Secret!
@@ -118,6 +118,15 @@ type Binding {
   """Retrieve the binding value, as type JSONValue"""
   asJSONValue: JSONValue!
 
+  """Retrieve the binding value, as type LLMContentBlock"""
+  asLLMContentBlock: LLMContentBlock!
+
+  """Retrieve the binding value, as type LLMMessage"""
+  asLLMMessage: LLMMessage!
+
+  """Retrieve the binding value, as type LLMToolCall"""
+  asLLMToolCall: LLMToolCall!
+
   """Retrieve the binding value, as type Module"""
   asModule: Module!
 
@@ -155,7 +164,7 @@ type Binding {
   digest: String!
 
   """A unique identifier for this Binding."""
-  id: BindingID!
+  id: ID!
 
   """Returns true if the binding is null"""
   isNull: Boolean!
@@ -198,7 +207,7 @@ enum CacheSharingMode {
 """A directory whose contents persist across runs."""
 type CacheVolume {
   """A unique identifier for this CacheVolume."""
-  id: CacheVolumeID!
+  id: ID!
 }
 
 """
@@ -229,7 +238,7 @@ type Changeset {
   ): String!
 
   """A unique identifier for this Changeset."""
-  id: ChangesetID!
+  id: ID!
 
   """Returns true if the changeset is empty (i.e. there are no changes)."""
   isEmpty: Boolean!
@@ -336,7 +345,7 @@ type Check {
   error: Error
 
   """A unique identifier for this Check."""
-  id: CheckID!
+  id: ID!
 
   """Return the fully qualified name of the check"""
   name: String!
@@ -359,7 +368,7 @@ type Check {
 
 type CheckGroup {
   """A unique identifier for this CheckGroup."""
-  id: CheckGroupID!
+  id: ID!
 
   """Return a list of individual checks and their details"""
   list: [Check!]!
@@ -384,7 +393,7 @@ scalar CheckID
 """Dagger Cloud configuration and state"""
 type Cloud {
   """A unique identifier for this Cloud."""
-  id: CloudID!
+  id: ID!
 
   """The trace URL for the current session"""
   traceURL: String!
@@ -667,7 +676,7 @@ type Container {
   ): Container!
 
   """A unique identifier for this Container."""
-  id: ContainerID!
+  id: ID!
 
   """
   The unique image reference which can only be retrieved immediately after the 'Container.From' call.
@@ -1632,7 +1641,7 @@ type CurrentModule {
   ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this CurrentModule."""
-  id: CurrentModuleID!
+  id: ID!
 
   """The name of the module being executed in"""
   name: String!
@@ -1878,7 +1887,7 @@ type Directory {
   ): [String!]!
 
   """A unique identifier for this Directory."""
-  id: DirectoryID!
+  id: ID!
 
   """Returns the name of the directory."""
   name: String!
@@ -2142,7 +2151,7 @@ type Engine {
   clients: [String!]!
 
   """A unique identifier for this Engine."""
-  id: EngineID!
+  id: ID!
 
   """The local (on-disk) cache for the Dagger engine"""
   localCache: EngineCache!
@@ -2157,7 +2166,7 @@ type EngineCache {
   entrySet(key: String = ""): EngineCacheEntrySet!
 
   """A unique identifier for this EngineCache."""
-  id: EngineCacheID!
+  id: ID!
 
   """The maximum bytes to keep in the cache without pruning."""
   maxUsedSpace: Int!
@@ -2217,7 +2226,7 @@ type EngineCacheEntry {
   diskSpaceBytes: Int!
 
   """A unique identifier for this EngineCacheEntry."""
-  id: EngineCacheEntryID!
+  id: ID!
 
   """The most recent time the cache entry was used, in Unix nanoseconds."""
   mostRecentUseTimeUnixNano: Int!
@@ -2245,7 +2254,7 @@ type EngineCacheEntrySet {
   entryCount: Int!
 
   """A unique identifier for this EngineCacheEntrySet."""
-  id: EngineCacheEntrySetID!
+  id: ID!
 }
 
 """
@@ -2269,7 +2278,7 @@ type EnumTypeDef {
   description: String!
 
   """A unique identifier for this EnumTypeDef."""
-  id: EnumTypeDefID!
+  id: ID!
 
   """The members of the enum."""
   members: [EnumValueTypeDef!]!
@@ -2302,7 +2311,7 @@ type EnumValueTypeDef {
   description: String!
 
   """A unique identifier for this EnumValueTypeDef."""
-  id: EnumValueTypeDefID!
+  id: ID!
 
   """The name of the enum member."""
   name: String!
@@ -2335,7 +2344,7 @@ type Env {
   ): CheckGroup! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Env."""
-  id: EnvID!
+  id: ID!
 
   """Retrieves an input binding by name"""
   input(name: String!): Binding!
@@ -2696,6 +2705,71 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type LLMContentBlock in the environment"""
+  withLLMContentBlockInput(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMContentBlock value to assign to the binding"""
+    value: LLMContentBlockID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired LLMContentBlock output to be assigned in the environment
+  """
+  withLLMContentBlockOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type LLMMessage in the environment"""
+  withLLMMessageInput(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMMessage value to assign to the binding"""
+    value: LLMMessageID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired LLMMessage output to be assigned in the environment"""
+  withLLMMessageOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type LLMToolCall in the environment"""
+  withLLMToolCallInput(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMToolCall value to assign to the binding"""
+    value: LLMToolCallID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired LLMToolCall output to be assigned in the environment"""
+  withLLMToolCallOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """
   Sets the main module for this environment (the project being worked on)
 
@@ -2932,8 +3006,8 @@ type Env {
 
   """Returns a new environment with the provided workspace"""
   withWorkspace(
-    """The directory to set as the host filesystem"""
-    workspace: DirectoryID!
+    """The workspace to use"""
+    workspace: WorkspaceID!
   ): Env!
 
   """Create or update a binding of type Workspace in the environment"""
@@ -2960,7 +3034,7 @@ type Env {
   """Returns a new environment without any outputs"""
   withoutOutputs: Env!
 
-  workspace: Directory!
+  workspace: Workspace!
 }
 
 """A collection of environment variables."""
@@ -2988,7 +3062,7 @@ type EnvFile {
   ): String!
 
   """A unique identifier for this EnvFile."""
-  id: EnvFileID!
+  id: ID!
 
   """
   Filters variables by prefix and removes the pref from keys. Variables without
@@ -3038,7 +3112,7 @@ scalar EnvID
 """An environment variable name and value."""
 type EnvVariable {
   """A unique identifier for this EnvVariable."""
-  id: EnvVariableID!
+  id: ID!
 
   """The environment variable name."""
   name: String!
@@ -3054,7 +3128,7 @@ scalar EnvVariableID
 
 type Error {
   """A unique identifier for this Error."""
-  id: ErrorID!
+  id: ID!
 
   """A description of the error."""
   message: String!
@@ -3079,7 +3153,7 @@ scalar ErrorID
 
 type ErrorValue {
   """A unique identifier for this ErrorValue."""
-  id: ErrorValueID!
+  id: ID!
 
   """The name of the value."""
   name: String!
@@ -3119,7 +3193,7 @@ type FieldTypeDef {
   description: String!
 
   """A unique identifier for this FieldTypeDef."""
-  id: FieldTypeDefID!
+  id: ID!
 
   """The name of the field in lowerCamelCase format."""
   name: String!
@@ -3191,7 +3265,7 @@ type File {
   ): String!
 
   """A unique identifier for this File."""
-  id: FileID!
+  id: ID!
 
   """Retrieves the name of the file."""
   name: String!
@@ -3334,7 +3408,7 @@ type Function {
   description: String!
 
   """A unique identifier for this Function."""
-  id: FunctionID!
+  id: ID!
 
   """The name of the function."""
   name: String!
@@ -3344,6 +3418,11 @@ type Function {
 
   """The location of this function declaration."""
   sourceMap: SourceMap
+
+  """
+  If this function is provided by a module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String!
 
   """Returns the function with the provided argument"""
   withArg(
@@ -3444,7 +3523,7 @@ type FunctionArg {
   description: String!
 
   """A unique identifier for this FunctionArg."""
-  id: FunctionArgID!
+  id: ID!
 
   """
   Only applies to arguments of type Directory. The ignore patterns are applied
@@ -3478,7 +3557,7 @@ enum FunctionCachePolicy {
 """An active function call."""
 type FunctionCall {
   """A unique identifier for this FunctionCall."""
-  id: FunctionCallID!
+  id: ID!
 
   """The argument values the function is being invoked with."""
   inputArgs: [FunctionCallArgValue!]!
@@ -3514,7 +3593,7 @@ type FunctionCall {
 """A value passed as a named argument to a function call."""
 type FunctionCallArgValue {
   """A unique identifier for this FunctionCallArgValue."""
-  id: FunctionCallArgValueID!
+  id: ID!
 
   """The name of the argument."""
   name: String!
@@ -3544,7 +3623,7 @@ type GeneratedCode {
   code: Directory!
 
   """A unique identifier for this GeneratedCode."""
-  id: GeneratedCodeID!
+  id: ID!
 
   """
   List of paths to mark generated in version control (i.e. .gitattributes).
@@ -3577,7 +3656,7 @@ type Generator {
   description: String!
 
   """A unique identifier for this Generator."""
-  id: GeneratorID!
+  id: ID!
 
   """Wether changeset from the generator execution is empty or not"""
   isEmpty: Boolean!
@@ -3611,7 +3690,7 @@ type GeneratorGroup {
   ): Changeset!
 
   """A unique identifier for this GeneratorGroup."""
-  id: GeneratorGroupID!
+  id: ID!
 
   """Whether the generated changeset is empty or not"""
   isEmpty: Boolean!
@@ -3645,7 +3724,7 @@ type GitRef {
   ): GitRef!
 
   """A unique identifier for this GitRef."""
-  id: GitRefID!
+  id: ID!
 
   """The resolved ref name at this ref."""
   ref: String!
@@ -3694,7 +3773,7 @@ type GitRepository {
   head: GitRef!
 
   """A unique identifier for this GitRepository."""
-  id: GitRepositoryID!
+  id: ID!
 
   """Returns details for the latest semver tag."""
   latestVersion: GitRef!
@@ -3737,7 +3816,7 @@ type HealthcheckConfig {
   args: [String!]!
 
   """A unique identifier for this HealthcheckConfig."""
-  id: HealthcheckConfigID!
+  id: ID!
 
   """Interval between running healthcheck. Example:30s"""
   interval: String!
@@ -3821,7 +3900,7 @@ type Host {
   ): String
 
   """A unique identifier for this Host."""
-  id: HostID!
+  id: ID!
 
   """
   Creates a service that forwards traffic to a specified address via the host.
@@ -3882,7 +3961,7 @@ scalar HostID
 enum ImageLayerCompression {
   Gzip
   Zstd
-  EStarGZ
+  EStargz
   Uncompressed
   GZIP
   ZSTD
@@ -3909,7 +3988,7 @@ type InputTypeDef {
   fields: [FieldTypeDef!]!
 
   """A unique identifier for this InputTypeDef."""
-  id: InputTypeDefID!
+  id: ID!
 
   """The name of the input object."""
   name: String!
@@ -3929,7 +4008,7 @@ type InterfaceTypeDef {
   functions: [Function!]!
 
   """A unique identifier for this InterfaceTypeDef."""
-  id: InterfaceTypeDefID!
+  id: ID!
 
   """The name of the interface."""
   name: String!
@@ -3983,7 +4062,7 @@ type JSONValue {
   fields: [String!]!
 
   """A unique identifier for this JSONValue."""
-  id: JSONValueID!
+  id: ID!
 
   """Encode a boolean to json"""
   newBoolean(
@@ -4046,7 +4125,7 @@ type LLM {
   historyJSON: JSON!
 
   """A unique identifier for this LLM."""
-  id: LLMID!
+  id: ID!
 
   """return the last llm reply from the history"""
   lastReply: String!
@@ -4054,7 +4133,13 @@ type LLM {
   """
   Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
   """
-  loop: LLM!
+  loop(
+    """Cap the number of API calls"""
+    maxAPICalls: Int
+  ): LLM!
+
+  """The full message history."""
+  messages: [LLMMessage!]!
 
   """return the model used by the llm"""
   model: String!
@@ -4063,12 +4148,25 @@ type LLM {
   provider: String!
 
   """
+  Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+  """
+  replay: LLMID!
+
+  """
+  return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)
+  """
+  serializeHistory: String!
+
+  """
   Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
   """
   step: LLMID!
 
   """synchronize LLM state"""
   sync: LLMID!
+
+  """A system prompt to send."""
+  systemPrompt: String!
 
   """returns the token usage of the current state"""
   tokenUsage: LLMTokenUsage!
@@ -4103,10 +4201,32 @@ type LLM {
     service: ServiceID!
   ): LLM!
 
+  """
+  Set the maximum number of output tokens the model may generate per API call
+  """
+  withMaxTokens(
+    """The maximum number of output tokens (0 to use provider defaults)"""
+    tokens: Int!
+  ): LLM!
+
   """swap out the llm model"""
   withModel(
     """The model to use"""
     model: String!
+  ): LLM!
+
+  """
+  Track an object so the LLM can reference it in subsequent tool calls. Returns
+  the tag assigned to the object, typically in TypeName#Number format.
+  """
+  withObject(
+    """
+    Arbitrary string tag for the object, typically in TypeName#Number format
+    """
+    tag: String!
+
+    """The object to track, as a generic ID"""
+    object: ID!
   ): LLM!
 
   """append a prompt to the llm context"""
@@ -4121,6 +4241,27 @@ type LLM {
     file: FileID!
   ): LLM!
 
+  """Append an assistant response to the message history"""
+  withResponse(
+    """The response content"""
+    content: [LLMContentBlockInput!]!
+
+    """Uncached input tokens sent"""
+    inputTokens: Int = 0
+
+    """Tokens received from the model, including text and tool calls"""
+    outputTokens: Int = 0
+
+    """Cached input tokens read"""
+    cachedTokenReads: Int = 0
+
+    """Cached input tokens written"""
+    cachedTokenWrites: Int = 0
+
+    """Total tokens consumed by this response"""
+    totalTokens: Int = 0
+  ): LLM!
+
   """
   Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
   """
@@ -4130,6 +4271,30 @@ type LLM {
   withSystemPrompt(
     """The system prompt to send"""
     prompt: String!
+  ): LLM!
+
+  """Append a tool call to the last assistant message"""
+  withToolCall(
+    """The unique ID for this tool call"""
+    call: String!
+
+    """The name of the tool to call"""
+    tool: String!
+
+    """The arguments to pass to the tool"""
+    arguments: JSON!
+  ): LLM!
+
+  """Append a tool response to the message history"""
+  withToolResponse(
+    """The ID of the tool call this is responding to"""
+    call: String!
+
+    """The response content from the tool"""
+    content: String!
+
+    """Whether the tool call resulted in an error"""
+    errored: Boolean!
   ): LLM!
 
   """Disable the default system prompt"""
@@ -4142,10 +4307,97 @@ type LLM {
   withoutSystemPrompts: LLM!
 }
 
+type LLMContentBlock {
+  arguments: JSON!
+
+  callId: String!
+
+  errored: Boolean!
+
+  """A unique identifier for this LLMContentBlock."""
+  id: ID!
+
+  kind: LLMContentBlockKind!
+
+  text: String!
+
+  toolName: String!
+}
+
+"""
+The `LLMContentBlockID` scalar type represents an identifier for an object of type LLMContentBlock.
+"""
+scalar LLMContentBlockID
+
+"""A content block within an LLM message."""
+input LLMContentBlockInput {
+  """The kind of content block."""
+  kind: LLMContentBlockKind!
+
+  """Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."""
+  text: String
+
+  """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
+  callId: String
+
+  """The name of the tool to call (for TOOL_CALL kind)."""
+  toolName: String
+
+  """The arguments to pass to the tool (for TOOL_CALL kind)."""
+  arguments: JSON!
+
+  """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
+  errored: Boolean
+
+  """Provider-specific opaque data (e.g. Anthropic thinking signature)."""
+  signature: String
+}
+
+"""The kind of content in a message block."""
+enum LLMContentBlockKind {
+  """Plain text content."""
+  TEXT
+
+  """Model thinking/reasoning content (e.g. Anthropic extended thinking)."""
+  THINKING
+
+  """A tool/function call from the model."""
+  TOOL_CALL
+
+  """A tool/function result."""
+  TOOL_RESULT
+}
+
 """
 The `LLMID` scalar type represents an identifier for an object of type LLM.
 """
 scalar LLMID
+
+type LLMMessage {
+  content: [LLMContentBlock!]!
+
+  """A unique identifier for this LLMMessage."""
+  id: ID!
+
+  role: LLMMessageRole!
+}
+
+"""
+The `LLMMessageID` scalar type represents an identifier for an object of type LLMMessage.
+"""
+scalar LLMMessageID
+
+"""The role that generated a message."""
+enum LLMMessageRole {
+  """A user prompt or tool response."""
+  USER
+
+  """A reply from the model."""
+  ASSISTANT
+
+  """A system prompt."""
+  SYSTEM
+}
 
 type LLMTokenUsage {
   cachedTokenReads: Int!
@@ -4153,7 +4405,7 @@ type LLMTokenUsage {
   cachedTokenWrites: Int!
 
   """A unique identifier for this LLMTokenUsage."""
-  id: LLMTokenUsageID!
+  id: ID!
 
   inputTokens: Int!
 
@@ -4167,10 +4419,20 @@ The `LLMTokenUsageID` scalar type represents an identifier for an object of type
 """
 scalar LLMTokenUsageID
 
+type LLMToolCall {
+  """A unique identifier for this LLMToolCall."""
+  id: ID!
+}
+
+"""
+The `LLMToolCallID` scalar type represents an identifier for an object of type LLMToolCall.
+"""
+scalar LLMToolCallID
+
 """A simple key value object that represents a label."""
 type Label {
   """A unique identifier for this Label."""
-  id: LabelID!
+  id: ID!
 
   """The label name."""
   name: String!
@@ -4190,7 +4452,7 @@ type ListTypeDef {
   elementTypeDef: TypeDef!
 
   """A unique identifier for this ListTypeDef."""
-  id: ListTypeDefID!
+  id: ID!
 }
 
 """
@@ -4243,7 +4505,7 @@ type Module {
   ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Module."""
-  id: ModuleID!
+  id: ID!
 
   """Interfaces served by this module."""
   interfaces: [TypeDef!]!
@@ -4281,6 +4543,11 @@ type Module {
   serve(
     """Expose the dependencies of this module to the client"""
     includeDependencies: Boolean
+
+    """
+    Install the module as the entrypoint, promoting its main-object methods onto the Query root
+    """
+    entrypoint: Boolean
   ): Void
 
   """The source for the module."""
@@ -4319,7 +4586,7 @@ type ModuleConfigClient {
   generator: String!
 
   """A unique identifier for this ModuleConfigClient."""
-  id: ModuleConfigClientID!
+  id: ID!
 }
 
 """
@@ -4408,7 +4675,7 @@ type ModuleSource {
   htmlURL: String!
 
   """A unique identifier for this ModuleSource."""
-  id: ModuleSourceID!
+  id: ID!
 
   """
   The introspection schema JSON file for this module source.
@@ -4644,7 +4911,7 @@ type ObjectTypeDef {
   functions: [Function!]!
 
   """A unique identifier for this ObjectTypeDef."""
-  id: ObjectTypeDefID!
+  id: ID!
 
   """The name of the object."""
   name: String!
@@ -4688,7 +4955,7 @@ type Port {
   experimentalSkipHealthcheck: Boolean!
 
   """A unique identifier for this Port."""
-  id: PortID!
+  id: ID!
 
   """The port number."""
   port: Int!
@@ -4748,21 +5015,6 @@ type Query {
   ): Container!
 
   """
-  Returns the current environment
-
-  When called from a function invoked via an LLM tool call, this will be the
-  LLM's current environment, including any modifications made through calling
-  tools. Env values returned by functions become the new environment for
-  subsequent calls, and Changeset values returned by functions are applied to
-  the environment's workspace.
-
-  When called from a module function outside of an LLM, this returns an Env with
-  the current module installed, and with the current module's source directory
-  as its workspace.
-  """
-  currentEnv: Env! @experimental(reason: "Programmatic env access is speculative and might be replaced.")
-
-  """
   The FunctionCall context that the SDK caller is currently executing in.
 
   If the caller is not currently executing in a function, this will return an error.
@@ -4775,13 +5027,18 @@ type Query {
   """
   The TypeDef representations of the objects currently being served in the session.
   """
-  currentTypeDefs: [TypeDef!]!
+  currentTypeDefs(
+    """
+    Strip core API functions from the Query type, leaving only module-sourced
+    functions (constructors, entrypoint proxies, etc.).
+
+    Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+    """
+    hideCore: Boolean
+  ): [TypeDef!]!
 
   """Detect and return the current workspace."""
-  currentWorkspace(
-    """If true, skip legacy dagger.json migration checks."""
-    skipMigrationCheck: Boolean = false
-  ): Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
+  currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
 
   """The default platform of the engine."""
   defaultPlatform: Platform!
@@ -4901,6 +5158,9 @@ type Query {
     experimentalServiceHost: ServiceID
   ): File!
 
+  """A unique identifier for this Query."""
+  id: ID!
+
   """Initialize a JSON value"""
   json: JSONValue!
 
@@ -4908,9 +5168,6 @@ type Query {
   llm(
     """Model to use"""
     model: String
-
-    """Cap the number of API calls for this LLM"""
-    maxAPICalls: Int
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
 
   """Load a Address from its ID."""
@@ -5024,11 +5281,20 @@ type Query {
   """Load a JSONValue from its ID."""
   loadJSONValueFromID(id: JSONValueID!): JSONValue!
 
+  """Load a LLMContentBlock from its ID."""
+  loadLLMContentBlockFromID(id: LLMContentBlockID!): LLMContentBlock!
+
   """Load a LLM from its ID."""
   loadLLMFromID(id: LLMID!): LLM!
 
+  """Load a LLMMessage from its ID."""
+  loadLLMMessageFromID(id: LLMMessageID!): LLMMessage!
+
   """Load a LLMTokenUsage from its ID."""
   loadLLMTokenUsageFromID(id: LLMTokenUsageID!): LLMTokenUsage!
+
+  """Load a LLMToolCall from its ID."""
+  loadLLMToolCallFromID(id: LLMToolCallID!): LLMToolCall!
 
   """Load a Label from its ID."""
   loadLabelFromID(id: LabelID!): Label!
@@ -5050,6 +5316,9 @@ type Query {
 
   """Load a Port from its ID."""
   loadPortFromID(id: PortID!): Port!
+
+  """Load a Query from its ID."""
+  loadQueryFromID(id: QueryID!): Query!
 
   """Load a SDKConfig from its ID."""
   loadSDKConfigFromID(id: SDKConfigID!): SDKConfig
@@ -5170,6 +5439,11 @@ type Query {
   version: String!
 }
 
+"""
+The `QueryID` scalar type represents an identifier for an object of type Query.
+"""
+scalar QueryID
+
 """Expected return type of an execution"""
 enum ReturnType {
   """A successful execution (exit code 0)"""
@@ -5190,7 +5464,7 @@ type SDKConfig {
   debug: Boolean!
 
   """A unique identifier for this SDKConfig."""
-  id: SDKConfigID!
+  id: ID!
 
   """
   Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
@@ -5209,7 +5483,7 @@ type ScalarTypeDef {
   description: String!
 
   """A unique identifier for this ScalarTypeDef."""
-  id: ScalarTypeDefID!
+  id: ID!
 
   """The name of the scalar."""
   name: String!
@@ -5233,7 +5507,7 @@ type SearchResult {
   filePath: String!
 
   """A unique identifier for this SearchResult."""
-  id: SearchResultID!
+  id: ID!
 
   """The first line that matched."""
   lineNumber: Int!
@@ -5255,7 +5529,7 @@ type SearchSubmatch {
   end: Int!
 
   """A unique identifier for this SearchSubmatch."""
-  id: SearchSubmatchID!
+  id: ID!
 
   """The match's start offset within the matched lines."""
   start: Int!
@@ -5274,7 +5548,7 @@ A reference to a secret value, which can be handled more safely than the value i
 """
 type Secret {
   """A unique identifier for this Secret."""
-  id: SecretID!
+  id: ID!
 
   """The name of this secret."""
   name: String!
@@ -5314,7 +5588,7 @@ type Service {
   hostname: String!
 
   """A unique identifier for this Service."""
-  id: ServiceID!
+  id: ID!
 
   """Retrieves the list of ports provided by the service."""
   ports: [Port!]!
@@ -5369,7 +5643,7 @@ scalar ServiceID
 """A Unix or TCP/IP socket that can be mounted into a container."""
 type Socket {
   """A unique identifier for this Socket."""
-  id: SocketID!
+  id: ID!
 }
 
 """
@@ -5386,7 +5660,7 @@ type SourceMap {
   filename: String!
 
   """A unique identifier for this SourceMap."""
-  id: SourceMapID!
+  id: ID!
 
   """The line number within the filename."""
   line: Int!
@@ -5411,7 +5685,7 @@ type Stat {
   fileType: FileType
 
   """A unique identifier for this Stat."""
-  id: StatID!
+  id: ID!
 
   """file name"""
   name: String!
@@ -5431,7 +5705,7 @@ scalar StatID
 """An interactive terminal that clients can connect to."""
 type Terminal {
   """A unique identifier for this Terminal."""
-  id: TerminalID!
+  id: ID!
 
   """
   Forces evaluation of the pipeline in the engine.
@@ -5479,7 +5753,7 @@ type TypeDef {
   asScalar: ScalarTypeDef
 
   """A unique identifier for this TypeDef."""
-  id: TypeDefID!
+  id: ID!
 
   """The kind of type this is (e.g. primitive, list, object)."""
   kind: TypeDefKind!
@@ -5730,17 +6004,67 @@ scalar Void
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {
+  """Canonical Dagger address of the workspace directory."""
+  address: String!
+
+  """
+  Export a Changeset to the workspace directory without staging in git.
+
+  Use this for files that should not be tracked by git (e.g. build
+
+  artifacts, binary files). Added and modified files are written to
+
+  disk; removed files are deleted.
+
+  Returns true if any files were changed, false if the changeset was empty.
+  """
+  apply(
+    """The changes to apply."""
+    changes: ChangesetID!
+  ): Boolean!
+
+  """The Git branch this workspace is on."""
+  branch: String!
+
+  """Return all checks from modules loaded in the workspace."""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup!
+
   """The client ID that owns this workspace's host filesystem."""
   clientId: String!
 
   """
+  Commit whatever is currently staged in the workspace's git index.
+
+  Returns the commit hash. Fails if there is nothing staged.
+  """
+  commit(
+    """The commit message."""
+    message: String!
+  ): String!
+
+  """
+  Path to config.toml relative to the workspace boundary (empty if not initialized).
+  """
+  configPath: String!
+
+  """
+  The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+  """
+  defaultModule: String!
+
+  """
   Returns a Directory from the workspace.
 
-  Path is relative to workspace root. Use "." for the root directory.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   directory(
     """
-    Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    Location of the directory to retrieve. Relative paths (e.g., "src") resolve
+    from the workspace directory; absolute paths (e.g., "/src") resolve from the
+    workspace boundary.
     """
     path: String!
 
@@ -5759,13 +6083,31 @@ type Workspace {
   ): Directory!
 
   """
+  Check if a file or directory exists at the given path in the workspace.
+  """
+  exists(
+    """Path to check, relative to the workspace root (e.g., "src/main.go")."""
+    path: String!
+
+    """
+    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    """
+    expectedType: ExistsType
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Boolean!
+
+  """
   Returns a File from the workspace.
 
-  Path is relative to workspace root.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   file(
     """
-    Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+    Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
+    from the workspace directory; absolute paths (e.g., "/go.mod") resolve from
+    the workspace boundary.
     """
     path: String!
   ): File!
@@ -5773,23 +6115,129 @@ type Workspace {
   """
   Search for a file or directory by walking up from the start path within the workspace.
 
-  Returns the path relative to the workspace root if found, or null if not found.
+  Returns the absolute workspace path if found, or null if not found.
 
-  The search stops at the workspace root and will not traverse above it.
+  Relative start paths resolve from the workspace directory.
+
+  The search stops at the workspace boundary and will not traverse above it.
   """
   findUp(
     """The name of the file or directory to search for."""
     name: String!
 
-    """Path to start the search from, relative to the workspace root."""
+    """
+    Path to start the search from. Relative paths resolve from the workspace
+    directory; absolute paths resolve from the workspace boundary.
+    """
     from: String = "."
   ): String
 
-  """A unique identifier for this Workspace."""
-  id: WorkspaceID!
+  """Return all generators from modules loaded in the workspace."""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup!
 
-  """Absolute path to the workspace root directory."""
-  root: String!
+  """Returns a list of files and directories that match the given pattern."""
+  glob(
+    """Pattern to match (e.g., "*.md")."""
+    pattern: String!
+  ): [String!]!
+
+  """Whether a config.toml file exists in the workspace."""
+  hasConfig: Boolean!
+
+  """A unique identifier for this Workspace."""
+  id: ID!
+
+  """Whether .dagger/config.toml exists."""
+  initialized: Boolean!
+
+  """Workspace directory path relative to the workspace boundary."""
+  path: String!
+
+  """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+
+  Runs ripgrep on the client host, falling back to grep if unavailable.
+  """
+  search(
+    """Directory or file paths to search"""
+    paths: [String!] = []
+
+    """Glob patterns to match (e.g., "*.md")"""
+    globs: [String!] = []
+
+    """The text to match."""
+    pattern: String!
+
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
+
+    """Allow the . pattern to match newlines in multiline mode."""
+    dotall: Boolean = false
+
+    """Enable case-insensitive matching."""
+    insensitive: Boolean = false
+
+    """Honor .gitignore, .ignore, and .rgignore files."""
+    skipIgnored: Boolean = false
+
+    """Skip hidden files (files starting with .)."""
+    skipHidden: Boolean = false
+
+    """Only return matching files, not lines and content"""
+    filesOnly: Boolean = false
+
+    """Limit the number of results to return"""
+    limit: Int
+  ): [SearchResult!]!
+
+  """
+  Apply a Changeset to the workspace and stage the affected paths in git.
+
+  Files are written (added/modified) and removed on disk, then precisely
+
+  the changed paths are staged via git add / git rm. Any pre-existing
+
+  unstaged user edits are preserved as unstaged changes.
+
+  Returns true if any changes were staged, false if the changeset was empty.
+  """
+  stage(
+    """The changes to apply and stage."""
+    changes: ChangesetID!
+
+    """
+    Skip the 3-way merge for modified files and overwrite the working
+
+    tree directly. Use this to recover from merge conflicts or when
+
+    the changeset already contains the complete desired file content.
+    """
+    force: Boolean = false
+  ): Boolean!
+
+  """
+  Return a Workspace for the given branch. If the branch is different from
+
+  the currently checked-out branch, a git worktree is created on the host.
+
+  If the branch does not exist, it is created from the current branch tip.
+  """
+  withBranch(
+    """The branch name (e.g. "agent/auth")."""
+    branch: String!
+
+    base: String
+  ): Workspace!
 }
 
 """

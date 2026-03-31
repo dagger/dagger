@@ -636,7 +636,7 @@
               "kind": "NON_NULL",
               "ofType": {
                 "kind": "SCALAR",
-                "name": "QueryID"
+                "name": "ID"
               }
             },
             "args": [],
