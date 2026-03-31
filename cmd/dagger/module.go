@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/go-git/go-git/v5"
@@ -441,6 +442,10 @@ var moduleDepInstallCmd = &cobra.Command{
 				DisableFindUp: true,
 			})
 
+			origDepName, err := depSrc.ModuleName(ctx)
+			if err != nil {
+				return err
+			}
 			if installName != "" {
 				depSrc = depSrc.WithName(installName)
 			}
@@ -465,6 +470,56 @@ var moduleDepInstallCmd = &cobra.Command{
 				depName = installName
 			}
 
+			sdk, err := depSrc.SDK().Source(ctx)
+			if err != nil {
+				return err
+			}
+			depRootSubpath, err := depSrc.SourceRootSubpath(ctx)
+			if err != nil {
+				return err
+			}
+			depSrcKind, err := depSrc.Kind(ctx)
+			if err != nil {
+				return err
+			}
+
+			switch depSrcKind {
+			case dagger.ModuleSourceKindLocalSource:
+				analyticsType := "module_install"
+				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
+					"module_name":   origDepName,
+					"install_name":  installName,
+					"module_sdk":    sdk,
+					"source_kind":   "local",
+					"local_subpath": depRootSubpath,
+				})
+			case dagger.ModuleSourceKindGitSource:
+				gitURL, err := depSrc.CloneRef(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get git clone URL: %w", err)
+				}
+				gitVersion, err := depSrc.Version(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get git version: %w", err)
+				}
+				gitCommit, err := depSrc.Commit(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get git commit: %w", err)
+				}
+
+				analyticsType := "module_install"
+				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
+					"module_name":   origDepName,
+					"install_name":  installName,
+					"module_sdk":    sdk,
+					"source_kind":   "git",
+					"git_subpath":   depRootSubpath,
+					"git_symbolic":  filepath.Join(gitURL, depRootSubpath),
+					"git_clone_url": gitURL,
+					"git_version":   gitVersion,
+					"git_commit":    gitCommit,
+				})
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Installed module dependency %q\n", depName)
 			return nil
 		})
