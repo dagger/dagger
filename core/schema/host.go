@@ -277,6 +277,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return inst, fmt.Errorf("failed to get snapshot: %w", err)
 	}
+	dagql.TraceEGraphDebug(ctx, "host_directory_snapshot", "phase", "runtime", "path", args.Path, "abs_root_copy_path", absRootCopyPath, "relative_path_from_root", relPathFromRoot, "no_cache", args.NoCache, "cache_buster", snapshotOpts.CacheBuster != "", "content_digest", contentDgst, "snapshot_ref_id", ref.ID(), "include_patterns", includePatterns, "exclude_patterns", excludePatterns, "follow_paths", followPaths, "gitignore", args.Gitignore)
 
 	dir, err := core.NewDirectoryWithSnapshot("/", query.Platform(), nil, ref)
 	if err != nil {

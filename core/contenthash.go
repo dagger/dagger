@@ -29,8 +29,19 @@ func MakeDirectoryContentHashed(
 	if err != nil {
 		return retInst, err
 	}
+	dirPath := ""
+	if dirInst.Self() != nil {
+		dirPath = dirInst.Self().Dir
+	}
+	dagql.TraceEGraphDebug(ctx, "directory_content_hash_computed", "phase", "runtime", "path", dirPath, "content_digest", dgst)
 
 	if _, err := dirInst.ID(); err == nil {
+		frame, frameErr := dirInst.ResultCall()
+		oldContentDigest := ""
+		if frameErr == nil && frame != nil {
+			oldContentDigest = frame.ContentDigest().String()
+		}
+		dagql.TraceEGraphDebug(ctx, "directory_content_hash_teach_attempt", "phase", "runtime", "path", dirPath, "old_content_digest", oldContentDigest, "new_content_digest", dgst)
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return retInst, err
@@ -38,9 +49,11 @@ func MakeDirectoryContentHashed(
 		if err := cache.TeachContentDigest(ctx, dirInst, dgst); err != nil {
 			return retInst, fmt.Errorf("teach directory content digest: %w", err)
 		}
+		dagql.TraceEGraphDebug(ctx, "directory_content_hash_taught", "phase", "runtime", "path", dirPath, "content_digest", dgst)
 		return dirInst, nil
 	}
 
+	dagql.TraceEGraphDebug(ctx, "directory_content_hash_detached_result", "phase", "runtime", "path", dirPath, "content_digest", dgst)
 	return dirInst.WithContentDigest(ctx, dgst)
 }
 
@@ -78,6 +91,7 @@ func GetContentHashFromDirectory(
 	if err != nil {
 		return "", fmt.Errorf("failed to get content hash: %w", err)
 	}
+	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", dirInst.Self().Dir, "snapshot_ref_id", snapshot.ID(), "content_digest", dgst)
 
 	return dgst, nil
 }

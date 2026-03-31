@@ -457,7 +457,7 @@ printf 'layered\n' > /work/layered.txt
 			}
 		}
 
-		runCLI := func(ctx context.Context, t *testctx.T, engine *startedDevEngine, args ...string) string {
+		runCLI := func(ctx context.Context, t *testctx.T, engine *startedDevEngine, sourceMutation string, args ...string) (string, error) {
 			t.Helper()
 
 			daggerCli := daggerCliFile(t, c)
@@ -467,46 +467,53 @@ printf 'layered\n' > /work/layered.txt
 				WithMountedFile("/bin/dagger", daggerCli).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine.endpoint).
-				WithMountedDirectory("/app", repoDir).
+				WithDirectory("/app", repoDir).
 				WithWorkdir("/app").
-				WithEnvVariable("CACHE_BUST", rand.Text()).
-				WithExec(execArgs)
+				WithEnvVariable("CACHE_BUST", rand.Text())
+
+			if sourceMutation != "" {
+				ctr = ctr.WithEnvVariable("SOURCE_MUTATION", sourceMutation).WithExec([]string{
+					"sh",
+					"-ec",
+					"printf '%s' \"$SOURCE_MUTATION\" >> /app/dagql/cache.go",
+				})
+			}
+
+			ctr = ctr.WithExec(execArgs)
 
 			stdout, err := ctr.Stdout(ctx)
-			require.NoError(t, err)
-			return strings.TrimSpace(stdout)
+			return strings.TrimSpace(stdout), err
+		}
+
+		runEngineDevRandom := func(ctx context.Context, t *testctx.T, engine *startedDevEngine, sourceMutation string) (string, error) {
+			t.Helper()
+			return runCLI(
+				ctx,
+				t,
+				engine,
+				sourceMutation,
+				"call", "engine-dev", "container",
+				"with-exec", "--args", "true",
+				"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
+				"with-exec", "--args", "sh,/tmp/write-random.sh",
+				"file", "--path", "/tmp/random",
+				"contents",
+			)
 		}
 
 		engineABootID := "phase7-engine-dev-build-engine-a"
 		engineBBootID := "phase7-engine-dev-build-engine-b"
+		engineCBootID := "phase7-engine-dev-build-engine-c"
 
 		engineA := startDevEngine(ctx, t, engineABootID)
 		t.Cleanup(func() { stopDevEngine(ctx, t, engineA) })
 
-		randomA := runCLI(
-			ctx,
-			t,
-			engineA,
-			"call", "engine-dev", "container",
-			"with-exec", "--args", "true",
-			"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
-			"with-exec", "--args", "sh,/tmp/write-random.sh",
-			"file", "--path", "/tmp/random",
-			"contents",
-		)
+		randomA, err := runEngineDevRandom(ctx, t, engineA, "")
+		require.NoError(t, err)
 		require.NotEmpty(t, randomA)
 
-		randomASecondSession := runCLI(
-			ctx,
-			t,
-			engineA,
-			"call", "engine-dev", "container",
-			"with-exec", "--args", "true",
-			"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
-			"with-exec", "--args", "sh,/tmp/write-random.sh",
-			"file", "--path", "/tmp/random",
-			"contents",
-		)
+		randomASecondSession, err := runEngineDevRandom(ctx, t, engineA, "")
+		require.NoError(t, err)
 		require.Equal(t, randomA, randomASecondSession, "engine-dev container build result should survive a new session on the same engine before restart")
 
 		stopDevEngine(ctx, t, engineA)
@@ -515,23 +522,15 @@ printf 'layered\n' > /work/layered.txt
 		engineB := startDevEngine(ctx, t, engineBBootID)
 		t.Cleanup(func() { stopDevEngine(ctx, t, engineB) })
 
-		randomB := runCLI(
-			ctx,
-			t,
-			engineB,
-			"call", "engine-dev", "container",
-			"with-exec", "--args", "true",
-			"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
-			"with-exec", "--args", "sh,/tmp/write-random.sh",
-			"file", "--path", "/tmp/random",
-			"contents",
-		)
+		randomB, err := runEngineDevRandom(ctx, t, engineB, "")
+		require.NoError(t, err)
 		require.Equal(t, randomA, randomB, "engine-dev container build result should survive engine restart")
 
-		layered := runCLI(
+		layered, err := runCLI(
 			ctx,
 			t,
 			engineB,
+			"",
 			"call", "engine-dev", "container",
 			"with-exec", "--args", "true",
 			"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
@@ -541,7 +540,27 @@ printf 'layered\n' > /work/layered.txt
 			"file", "--path", "/tmp/summary",
 			"contents",
 		)
+		require.NoError(t, err)
 		require.Equal(t, randomB+"|layered", layered, "new withExec should still apply on top of the cached engine-dev container build")
+
+		cacheGoMutation := "\n// TestDiskPersistenceAcrossRestart mutation\n"
+		randomBChanged, err := runEngineDevRandom(ctx, t, engineB, cacheGoMutation)
+		require.NoError(t, err)
+		require.NotEqual(t, randomB, randomBChanged, "engine-dev container build result should miss after the repo source changes")
+
+		stopDevEngine(ctx, t, engineB)
+		engineB = nil
+
+		engineC := startDevEngine(ctx, t, engineCBootID)
+		t.Cleanup(func() { stopDevEngine(ctx, t, engineC) })
+
+		randomCChanged, err := runEngineDevRandom(ctx, t, engineC, cacheGoMutation)
+		require.NoError(t, err)
+		require.Equal(t, randomBChanged, randomCChanged, "engine-dev container build result should survive engine restart with the repo source change in place")
+
+		randomCRestored, err := runEngineDevRandom(ctx, t, engineC, "")
+		require.NoError(t, err)
+		require.Equal(t, randomB, randomCRestored, "engine-dev container build result should survive engine restart without the repo source change")
 	})
 
 	t.Run("cache volume survives restart", func(ctx context.Context, t *testctx.T) {

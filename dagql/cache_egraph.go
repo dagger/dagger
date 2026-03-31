@@ -1061,6 +1061,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		if baseFrame == nil {
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
+		oldContentDigest := baseFrame.ContentDigest()
 		frame := baseFrame.fork()
 
 		replaced := false
@@ -1110,6 +1111,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			c.egraphMu.Unlock()
 			continue
 		}
+		c.traceTeachContentDigest(ctx, shared, oldContentDigest.String(), contentDigest.String(), requestDigest.String(), requestSelf.String(), requestInputs, frame)
 		if err := c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 			c.egraphMu.Unlock()
 			return err
@@ -1361,6 +1363,7 @@ func (c *Cache) teachResultIdentityLocked(
 	if len(mergeIDs) == 0 {
 		return nil
 	}
+	c.traceTeachResultIdentityRootSet(ctx, res, requestDigest.String(), requestSelf.String(), requestInputs, requestFrame, mergeIDs)
 	outputEqID := c.mergeEqClassesLocked(ctx, mergeIDs...)
 	if outputEqID == 0 {
 		return nil

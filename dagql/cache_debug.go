@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
@@ -228,6 +229,17 @@ func (c *Cache) nextImportRunID() string {
 
 func (c *Cache) traceEnabled() bool {
 	return debugEGraphTrace && c != nil
+}
+
+func TraceEGraphDebug(ctx context.Context, event string, args ...any) {
+	if !debugEGraphTrace {
+		return
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil || cache == nil {
+		return
+	}
+	cache.trace(ctx, event, args...)
 }
 
 func (c *Cache) trace(ctx context.Context, event string, args ...any) {
@@ -485,7 +497,128 @@ func (c *Cache) traceEqClassCreated(ctx context.Context, classID eqClassID, dig 
 
 func (c *Cache) traceEqClassMerged(ctx context.Context, ids []eqClassID, root eqClassID) {
 	c.traceLazy(ctx, "eq_class_merged", func() []any {
-		return []any{"phase", "runtime", "merge_ids", ids, "root_eq_class_id", root}
+		return []any{
+			"phase", "runtime",
+			"merge_ids", ids,
+			"root_eq_class_id", root,
+			"merge_eq_class_details", c.debugEqClassMergeDetails(ids),
+		}
+	})
+}
+
+func debugExtraDigestsForTrace(extras map[call.ExtraDigest]struct{}) []string {
+	if len(extras) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(extras))
+	for extra := range extras {
+		label := extra.Label
+		if label == "" {
+			label = "unlabeled"
+		}
+		out = append(out, fmt.Sprintf("%s=%s", label, extra.Digest))
+	}
+	slices.Sort(out)
+	return out
+}
+
+func (c *Cache) debugEqClassMergeDetails(ids []eqClassID) []map[string]any {
+	if c == nil || len(ids) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		root := c.findEqClassLocked(id)
+		if root == 0 {
+			continue
+		}
+		digests := make([]string, 0, len(c.eqClassToDigests[root]))
+		for dig := range c.eqClassToDigests[root] {
+			digests = append(digests, dig)
+		}
+		slices.Sort(digests)
+		out = append(out, map[string]any{
+			"eq_class_id":     root,
+			"digests":         digests,
+			"extra_digests":   debugExtraDigestsForTrace(c.eqClassExtraDigests[root]),
+			"input_term_ids":  c.debugEqClassTermIDs(c.inputEqClassToTerms[root]),
+			"output_term_ids": c.debugEqClassTermIDs(c.outputEqClassToTerms[root]),
+		})
+	}
+	return out
+}
+
+func (c *Cache) debugEqClassTermIDs(terms map[egraphTermID]struct{}) []uint64 {
+	if len(terms) == 0 {
+		return nil
+	}
+	out := make([]uint64, 0, len(terms))
+	for termID := range terms {
+		out = append(out, uint64(termID))
+	}
+	slices.Sort(out)
+	return out
+}
+
+func (c *Cache) traceTeachContentDigest(ctx context.Context, res *sharedResult, oldContentDigest, newContentDigest, requestDigest, requestSelf string, requestInputs []digest.Digest, frame *ResultCall) {
+	c.traceLazy(ctx, "teach_content_digest", func() []any {
+		args := []any{
+			"phase", "runtime",
+			"shared_result_id", res.id,
+			"record_type", res.recordType,
+			"description", res.description,
+			"old_content_digest", oldContentDigest,
+			"new_content_digest", newContentDigest,
+			"request_digest", requestDigest,
+			"request_self_digest", requestSelf,
+			"request_input_digests", requestInputs,
+		}
+		if frame != nil {
+			field, kind, typeName := debugResultCallSummary(frame)
+			args = append(args,
+				"result_call_field", field,
+				"result_call_kind", kind,
+				"result_call_type", typeName,
+			)
+			if len(frame.ExtraDigests) > 0 {
+				extras := make([]string, 0, len(frame.ExtraDigests))
+				for _, extra := range frame.ExtraDigests {
+					label := extra.Label
+					if label == "" {
+						label = "unlabeled"
+					}
+					extras = append(extras, fmt.Sprintf("%s=%s", label, extra.Digest))
+				}
+				slices.Sort(extras)
+				args = append(args, "request_extra_digests", extras)
+			}
+		}
+		return args
+	})
+}
+
+func (c *Cache) traceTeachResultIdentityRootSet(ctx context.Context, res *sharedResult, requestDigest, requestSelf string, requestInputs []digest.Digest, requestFrame *ResultCall, mergeIDs []eqClassID) {
+	c.traceLazy(ctx, "teach_result_identity_root_set", func() []any {
+		args := []any{
+			"phase", "runtime",
+			"shared_result_id", res.id,
+			"record_type", res.recordType,
+			"description", res.description,
+			"request_digest", requestDigest,
+			"request_self_digest", requestSelf,
+			"request_input_digests", requestInputs,
+			"merge_eq_class_ids", mergeIDs,
+			"merge_eq_class_details", c.debugEqClassMergeDetails(mergeIDs),
+		}
+		if requestFrame != nil {
+			field, kind, typeName := debugResultCallSummary(requestFrame)
+			args = append(args,
+				"result_call_field", field,
+				"result_call_kind", kind,
+				"result_call_type", typeName,
+			)
+		}
+		return args
 	})
 }
 
