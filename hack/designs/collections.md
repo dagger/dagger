@@ -233,11 +233,11 @@ Example public projection:
 """Root object exposing the projected public collection."""
 type Go {
   """Projected collection of Go modules."""
-  modules: _GoModuleCollection!
+  modules: GoModules!
 }
 
 """Synthetic public projection of a Go module collection."""
-type _GoModuleCollection {
+type GoModules {
   """Keys in the current subset, in stable collection order."""
   keys: [WorkspacePath!]!
 
@@ -254,14 +254,14 @@ type _GoModuleCollection {
   subset(
     """Keys to retain from the current subset."""
     keys: [WorkspacePath!]!
-  ): _GoModuleCollection!
+  ): GoModules!
 
   """Type-specific efficient operations over the current subset."""
-  batch: _GoModuleCollectionBatch!
+  batch: GoModules_Batch!
 }
 
 """Type-specific batch operations over the current subset."""
-type _GoModuleCollectionBatch {
+type GoModules_Batch {
   """Illustrative only: efficiently evaluate checks over the current subset."""
   checks: CheckGroup!
 }
@@ -577,7 +577,7 @@ door.
 ### Planned
 
 - [x] Add collection metadata and validation to module typedefs
-- [ ] Implement schema projection for public collection and batch types
+- [x] Implement schema projection for public collection and batch types
 - [ ] Support explicit collection traversal in `dagger call`, `dagger shell`, and discoverability surfaces
 - [ ] Add collection-aware filtering and batch shadowing to `dagger check` and `dagger generate`
 - [ ] Add module authoring support across supported SDKs and runtimes
@@ -596,3 +596,4 @@ door.
 - [x] Locked the design decision that load time checks structure and runtime checks behavior
 - [x] Locked the design decision that collection filters accept repeated flags and comma-separated input, with repeated flags preferred
 - [x] Engine implementation has started with collection typedef metadata and validation
+- [x] Engine implementation now projects synthetic public collection and batch schema types

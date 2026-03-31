@@ -571,9 +571,14 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server, opts ...Insta
 			}
 		}
 
+		var collection *CollectionTypeDef
+		if def.AsCollection.Valid {
+			collection = def.AsCollection.Value
+		}
 		obj := &ModuleObject{
-			Module:  mod,
-			TypeDef: objDef,
+			Module:     mod,
+			TypeDef:    objDef,
+			Collection: collection,
 		}
 
 		if err := obj.Install(ctx, dag, opts...); err != nil {
@@ -614,11 +619,12 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef,
 	// TODO: use dag arg to reflect dynamic updates (if/when we support that)
 
 	mainObj, _ := mod.MainObject()
+	projector := newCollectionProjector(mod)
 
 	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
 
 	for _, def := range mod.ObjectDefs {
-		typeDef := def.Clone()
+		typeDef := projector.projectObjectDef(def)
 		if typeDef.AsObject.Valid {
 			typeDef.AsObject.Value.SourceModuleName = mod.Name()
 			if mainObj != nil && typeDef.AsObject.Value.OriginalName == mainObj.OriginalName {
@@ -626,10 +632,16 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef,
 			}
 		}
 		typeDefs = append(typeDefs, typeDef)
+		if def.AsCollection.Valid {
+			if batchTypeDef := projector.projectCollectionBatchTypeDef(def); batchTypeDef != nil {
+				batchTypeDef.AsObject.Value.SourceModuleName = mod.Name()
+				typeDefs = append(typeDefs, batchTypeDef)
+			}
+		}
 	}
 
 	for _, def := range mod.InterfaceDefs {
-		typeDef := def.Clone()
+		typeDef := projector.projectTypeDef(def)
 		if typeDef.AsInterface.Valid {
 			typeDef.AsInterface.Value.SourceModuleName = mod.Name()
 		}
@@ -767,9 +779,14 @@ func (mod *Module) modTypeForList(ctx context.Context, typedef *TypeDef, checkDi
 func (mod *Module) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
 	for _, obj := range mod.ObjectDefs {
 		if obj.AsObject.Value.Name == typeDef.AsObject.Value.Name {
+			var collection *CollectionTypeDef
+			if obj.AsCollection.Valid {
+				collection = obj.AsCollection.Value
+			}
 			return &ModuleObjectType{
-				typeDef: obj.AsObject.Value,
-				mod:     mod,
+				typeDef:    obj.AsObject.Value,
+				collection: collection,
+				mod:        mod,
 			}, true
 		}
 	}
