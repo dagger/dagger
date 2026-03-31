@@ -6083,12 +6083,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::defaultModule",
-			"p": "Dagger/Workspace.html#method_defaultModule",
-			"d": "<p>The default module to focus on (blueprint or standalone module name). Empty when ambiguous.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::directory",
 			"p": "Dagger/Workspace.html#method_directory",
 			"d": "<p>Returns a Directory from the workspace.</p>"

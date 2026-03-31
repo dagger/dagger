@@ -13777,7 +13777,6 @@ export class Workspace extends BaseClient {
   private readonly _address?: string = undefined
   private readonly _clientId?: string = undefined
   private readonly _configPath?: string = undefined
-  private readonly _defaultModule?: string = undefined
   private readonly _findUp?: string = undefined
   private readonly _hasConfig?: boolean = undefined
   private readonly _initialized?: boolean = undefined
@@ -13792,7 +13791,6 @@ export class Workspace extends BaseClient {
     _address?: string,
     _clientId?: string,
     _configPath?: string,
-    _defaultModule?: string,
     _findUp?: string,
     _hasConfig?: boolean,
     _initialized?: boolean,
@@ -13804,7 +13802,6 @@ export class Workspace extends BaseClient {
     this._address = _address
     this._clientId = _clientId
     this._configPath = _configPath
-    this._defaultModule = _defaultModule
     this._findUp = _findUp
     this._hasConfig = _hasConfig
     this._initialized = _initialized
@@ -13874,21 +13871,6 @@ export class Workspace extends BaseClient {
     }
 
     const ctx = this._ctx.select("configPath")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
-   */
-  defaultModule = async (): Promise<string> => {
-    if (this._defaultModule) {
-      return this._defaultModule
-    }
-
-    const ctx = this._ctx.select("defaultModule")
 
     const response: Awaited<string> = await ctx.execute()
 

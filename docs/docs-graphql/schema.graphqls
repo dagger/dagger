@@ -5774,11 +5774,6 @@ type Workspace {
   configPath: String!
 
   """
-  The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
-  """
-  defaultModule: String!
-
-  """
   Returns a Directory from the workspace.
 
   Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.

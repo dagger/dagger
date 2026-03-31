@@ -14764,11 +14764,6 @@ impl Workspace {
         let query = self.selection.select("configPath");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
-    pub async fn default_module(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("defaultModule");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Returns a Directory from the workspace.
     /// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
     ///

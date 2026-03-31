@@ -375,17 +375,6 @@ type resolvedServedModule struct {
 
 const maxParallelModuleResolves = 8
 
-// findEntrypoint returns the index of the first entrypoint module in pending,
-// or -1 if none exists.
-func findEntrypoint(pending []pendingModule) int {
-	for i, m := range pending {
-		if m.Entrypoint {
-			return i
-		}
-	}
-	return -1
-}
-
 // cwdModuleName reads the module name from the dagger.json in moduleDir.
 func cwdModuleName(ctx context.Context, readFile func(context.Context, string) ([]byte, error), moduleDir string) string {
 	data, err := readFile(ctx, filepath.Join(moduleDir, workspace.ModuleConfigFileName))
@@ -561,12 +550,6 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	//     They go through the same loadModule chokepoint in ensureModulesLoaded.
 
 	client.pendingModules = pending
-
-	// Set the workspace's default module so the CLI knows which module
-	// to focus on without heuristics.
-	if idx := findEntrypoint(pending); idx >= 0 {
-		client.workspace.DefaultModule = pending[idx].Name
-	}
 
 	return nil
 }

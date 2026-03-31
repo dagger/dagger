@@ -53,15 +53,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
-     */
-    public function defaultModule(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultModule');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultModule');
-    }
-
-    /**
      * Returns a Directory from the workspace.
      *
      * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
