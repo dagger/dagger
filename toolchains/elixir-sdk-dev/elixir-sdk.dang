@@ -68,7 +68,7 @@ type ElixirSdkDev {
   """
   pub sdkTest: Void! @check {
     devContainer
-      .withExec(["mix", "test"])
+      .withExec(["mix", "test"], experimentalPrivilegedNesting: true)
       .sync
 
     null
