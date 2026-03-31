@@ -605,6 +605,17 @@ func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 		if typeDef.AsList != nil {
 			m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
 		}
+		if typeDef.AsCollection != nil {
+			if typeDef.AsCollection.KeyType != nil {
+				m.LoadTypeDef(typeDef.AsCollection.KeyType)
+			}
+			if typeDef.AsCollection.ValueType != nil {
+				m.LoadTypeDef(typeDef.AsCollection.ValueType)
+			}
+			if typeDef.AsCollection.BatchType != nil {
+				m.LoadTypeDef(typeDef.AsCollection.BatchType)
+			}
+		}
 	})
 }
 
@@ -619,14 +630,15 @@ func (m *moduleDef) LoadFunctionTypeDefs(fn *modFunction) {
 
 // modTypeDef is a representation of dagger.TypeDef.
 type modTypeDef struct {
-	Kind        dagger.TypeDefKind
-	Optional    bool
-	AsObject    *modObject
-	AsInterface *modInterface
-	AsInput     *modInput
-	AsList      *modList
-	AsScalar    *modScalar
-	AsEnum      *modEnum
+	Kind         dagger.TypeDefKind
+	Optional     bool
+	AsCollection *modCollection
+	AsObject     *modObject
+	AsInterface  *modInterface
+	AsInput      *modInput
+	AsList       *modList
+	AsScalar     *modScalar
+	AsEnum       *modEnum
 
 	// once protects concurrent update from LoadTypeDef
 	once sync.Once
@@ -678,6 +690,9 @@ func (t *modTypeDef) KindDisplay() string {
 	case dagger.TypeDefKindInputKind:
 		return "Input"
 	case dagger.TypeDefKindObjectKind:
+		if t.AsCollection != nil {
+			return "Collection"
+		}
 		return "Object"
 	case dagger.TypeDefKindInterfaceKind:
 		return "Interface"
@@ -907,6 +922,12 @@ type modInput struct {
 // modList is a representation of dagger.ListTypeDef.
 type modList struct {
 	ElementTypeDef *modTypeDef
+}
+
+type modCollection struct {
+	KeyType   *modTypeDef
+	ValueType *modTypeDef
+	BatchType *modTypeDef
 }
 
 // modField is a representation of dagger.FieldTypeDef.

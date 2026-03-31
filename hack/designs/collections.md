@@ -578,7 +578,7 @@ door.
 
 - [x] Add collection metadata and validation to module typedefs
 - [x] Implement schema projection for public collection and batch types
-- [ ] Support explicit collection traversal in `dagger call`, `dagger shell`, and discoverability surfaces
+- [x] Support explicit collection traversal in `dagger call`, `dagger shell`, and discoverability surfaces
 - [ ] Add collection-aware filtering and batch shadowing to `dagger check` and `dagger generate`
 - [ ] Add module authoring support across supported SDKs and runtimes
 - [ ] Add integration, CLI, and codegen coverage
@@ -597,3 +597,4 @@ door.
 - [x] Locked the design decision that collection filters accept repeated flags and comma-separated input, with repeated flags preferred
 - [x] Engine implementation has started with collection typedef metadata and validation
 - [x] Engine implementation now projects synthetic public collection and batch schema types
+- [x] CLI type inspection now recognizes projected collections and `dagger call` treats collection leaves as explicit traversal points
