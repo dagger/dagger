@@ -1,6 +1,6 @@
 # Collections
 
-## Status: Draft
+## Status: Implemented
 
 ## Table of Contents
 
