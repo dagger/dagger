@@ -140,6 +140,8 @@ func (l *Loader) namedSDK(
 		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	case sdkElixir:
 		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
+	case sdkRust:
+		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/rust" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	}
 
 	return nil, errUnknownBuiltinSDK
@@ -231,7 +233,7 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 	}
 
 	// for php, elixir we point them to github ref, so default the version to engine's tag
-	if slices.Contains([]sdk{sdkPHP, sdkElixir, sdkJava}, sdk(sdkNameParsed)) && sdkVersion == "" {
+	if slices.Contains([]sdk{sdkPHP, sdkElixir, sdkJava, sdkRust}, sdk(sdkNameParsed)) && sdkVersion == "" {
 		sdkVersion = engine.Tag
 	}
 

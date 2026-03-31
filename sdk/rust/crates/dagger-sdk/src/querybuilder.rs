@@ -160,6 +160,27 @@ impl Selection {
         Ok(resp.unwrap())
     }
 
+    /// Like `execute`, but returns `Option<D>` for nullable fields.
+    /// Returns `Ok(None)` when the API returns null instead of failing.
+    pub async fn execute_opt<D>(
+        &self,
+        gql_client: DynGraphQLClient,
+    ) -> Result<Option<D>, DaggerError>
+    where
+        D: for<'de> Deserialize<'de>,
+    {
+        let query = self.build().await?;
+
+        tracing::trace!(query = query.as_str(), "dagger-query-opt");
+
+        let resp: Option<serde_json::Value> = match gql_client.query(&query).await {
+            Ok(r) => r,
+            Err(e) => return Err(DaggerError::Query(e)),
+        };
+
+        self.unpack_resp(resp)
+    }
+
     fn path(&self) -> Vec<Selection> {
         let mut selections: Vec<Selection> = vec![];
         let mut cur = self;
@@ -204,8 +225,12 @@ impl Selection {
             return self.unpack_resp_value(o.get(first).unwrap().clone());
         }
 
+        let field_name = self.name.clone().unwrap_or_else(|| "unknown".to_string());
         serde_json::from_value::<D>(r)
-            .map_err(DaggerUnpackError::Deserialize)
+            .map_err(|e| DaggerUnpackError::Deserialize {
+                field: field_name,
+                source: e,
+            })
             .map_err(DaggerError::Unpack)
     }
 }

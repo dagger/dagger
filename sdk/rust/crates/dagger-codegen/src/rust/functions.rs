@@ -236,8 +236,15 @@ fn render_output_type(funcs: &CommonFunctions, type_ref: &TypeRef) -> rust::Toke
 
     let dagger_error = rust::import("crate::errors", "DaggerError");
 
-    quote! {
-        Result<$output_type, $dagger_error>
+    // Nullable scalar fields return Option<T> inside Result
+    if type_ref.is_optional() {
+        quote! {
+            Result<Option<$output_type>, $dagger_error>
+        }
+    } else {
+        quote! {
+            Result<$output_type, $dagger_error>
+        }
     }
 }
 
@@ -276,8 +283,20 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
         };
     }
 
-    quote! {
-        query.execute(self.graphql_client.clone()).await
+    // For nullable scalar fields, use execute_opt which handles null
+    if field
+        .type_
+        .as_ref()
+        .map(|t| t.type_ref.is_optional())
+        .unwrap_or(false)
+    {
+        quote! {
+            query.execute_opt(self.graphql_client.clone()).await
+        }
+    } else {
+        quote! {
+            query.execute(self.graphql_client.clone()).await
+        }
     }
 }
 

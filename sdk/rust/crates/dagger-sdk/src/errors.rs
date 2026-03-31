@@ -30,6 +30,10 @@ pub enum DaggerError {
 pub enum DaggerUnpackError {
     #[error("Too many nested objects inside graphql response")]
     TooManyNestedObjects,
-    #[error("failed to deserialize response")]
-    Deserialize(#[source] serde_json::Error),
+    #[error("failed to deserialize response for field '{field}': {source}")]
+    Deserialize {
+        field: String,
+        #[source]
+        source: serde_json::Error,
+    },
 }

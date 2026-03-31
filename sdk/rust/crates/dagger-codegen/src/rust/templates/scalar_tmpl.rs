@@ -14,6 +14,45 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
     let name = name.as_ref();
 
     if let Some(original_name) = &t.name {
+        // Void represents "no value" — the API returns null for void operations.
+        if original_name == "Void" {
+            return Ok(quote! {
+                #[derive($serialize, PartialEq, Debug, Clone)]
+                pub struct Void(pub Option<String>);
+
+                impl<'de> serde::Deserialize<'de> for Void {
+                    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                    where
+                        D: serde::Deserializer<'de>,
+                    {
+                        let opt = Option::<String>::deserialize(deserializer)?;
+                        Ok(Void(opt))
+                    }
+                }
+
+                impl From<&str> for Void {
+                    fn from(value: &str) -> Self {
+                        Self(Some(value.to_string()))
+                    }
+                }
+
+                impl From<String> for Void {
+                    fn from(value: String) -> Self {
+                        Self(Some(value))
+                    }
+                }
+
+                impl Void {
+                    fn quote(&self) -> String {
+                        match &self.0 {
+                            Some(s) => format!(r#""{}""#, s),
+                            None => "null".to_string(),
+                        }
+                    }
+                }
+            });
+        }
+
         if original_name.ends_with("ID") {
             let name_without_id = &name.expect("Name should be available")
                 [..name.expect("Name should be available").len() - 2];
