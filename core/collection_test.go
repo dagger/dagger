@@ -9,7 +9,7 @@ import (
 
 func TestValidateCollectionTypeDefDefaultMembers(t *testing.T) {
 	ctx := context.Background()
-	mod := &Module{Deps: NewModDeps(nil, nil)}
+	mod := &Module{Deps: NewSchemaBuilder(nil, nil)}
 
 	itemType := (&TypeDef{}).WithObject("GoTest", "", nil, nil)
 	getFn := NewFunction("Get", itemType).
@@ -35,7 +35,6 @@ func TestValidateCollectionTypeDefDefaultMembers(t *testing.T) {
 
 	collection := collectionType.AsCollection.Value
 	require.Equal(t, "keys", collection.KeysFieldName)
-	require.Empty(t, collection.KeysFunctionName)
 	require.Equal(t, "get", collection.GetFunctionName)
 	require.Equal(t, "name", collection.GetArgName)
 	require.NotNil(t, collection.KeyType)
@@ -47,7 +46,7 @@ func TestValidateCollectionTypeDefDefaultMembers(t *testing.T) {
 
 func TestValidateCollectionTypeDefExplicitOverrides(t *testing.T) {
 	ctx := context.Background()
-	mod := &Module{Deps: NewModDeps(nil, nil)}
+	mod := &Module{Deps: NewSchemaBuilder(nil, nil)}
 
 	itemType := (&TypeDef{}).WithObject("GoModule", "", nil, nil)
 	getFn := NewFunction("Module", itemType).
@@ -82,7 +81,7 @@ func TestValidateCollectionTypeDefExplicitOverrides(t *testing.T) {
 
 func TestValidateCollectionTypeDefErrors(t *testing.T) {
 	ctx := context.Background()
-	mod := &Module{Deps: NewModDeps(nil, nil)}
+	mod := &Module{Deps: NewSchemaBuilder(nil, nil)}
 
 	tests := []struct {
 		name     string
@@ -90,12 +89,12 @@ func TestValidateCollectionTypeDefErrors(t *testing.T) {
 		contains string
 	}{
 		{
-			name:     "missing keys member",
+			name:     "missing keys field",
 			typeDef:  collectionTypeWithMembers(t, false, true, nil),
-			contains: `must define exactly one effective keys member`,
+			contains: `must define exactly one effective keys field`,
 		},
 		{
-			name: "keys function with args",
+			name: "keys function unsupported",
 			typeDef: collectionTypeWithMembers(t, false, true, func(def *TypeDef) *TypeDef {
 				keysFn := NewFunction("Keys", (&TypeDef{}).WithListOf((&TypeDef{}).WithKind(TypeDefKindString))).
 					WithArg("prefix", (&TypeDef{}).WithKind(TypeDefKindString), "", nil, "", "", nil, nil, nil)
@@ -103,7 +102,7 @@ func TestValidateCollectionTypeDefErrors(t *testing.T) {
 				require.NoError(t, err)
 				return def
 			}),
-			contains: `must not accept arguments`,
+			contains: `must define exactly one effective keys field`,
 		},
 		{
 			name: "get key type mismatch",
@@ -115,7 +114,7 @@ func TestValidateCollectionTypeDefErrors(t *testing.T) {
 				require.NoError(t, err)
 				return def
 			}),
-			contains: `must match keys member type`,
+			contains: `must match keys field type`,
 		},
 		{
 			name:     "get returns non object",

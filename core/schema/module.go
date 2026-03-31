@@ -260,9 +260,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Marks an Object TypeDef as a collection.`),
 
 		dagql.Func("withCollectionKeys", s.typeDefWithCollectionKeys).
-			Doc(`Overrides the effective keys member used by a collection TypeDef.`).
+			Doc(`Overrides the effective keys field used by a collection TypeDef.`).
 			Args(
-				dagql.Arg("name").Doc(`The name of the field or no-arg function that enumerates collection keys.`),
+				dagql.Arg("name").Doc(`The name of the field that enumerates collection keys.`),
 			),
 
 		dagql.Func("withCollectionGet", s.typeDefWithCollectionGet).
@@ -402,7 +402,7 @@ func (s *moduleSchema) typeDefWithCollectionKeys(ctx context.Context, def *core.
 	Name string
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
-		return nil, fmt.Errorf("collection keys member name must not be empty")
+		return nil, fmt.Errorf("collection keys field name must not be empty")
 	}
 	return def.WithCollectionKeys(args.Name), nil
 }

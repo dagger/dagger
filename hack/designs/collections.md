@@ -79,13 +79,13 @@ Collections are defined on ordinary object types by annotating the type itself
 as a collection.
 
 Each collection type has:
-- one effective `keys` member
+- one effective `keys` field
 - one effective `get` function
 
 The type annotation is required. Member annotations are optional.
 
-- If a collection type exposes a member named `keys`, that member is the
-  effective `keys` member by default.
+- If a collection type exposes a field named `keys`, that field is the
+  effective `keys` field by default.
 - If a collection type exposes a function named `get`, that function is the
   effective `get` function by default.
 - `@keys` and `@get` are only needed to override those default names.
@@ -124,27 +124,27 @@ type GoModules @collection {
 
 Rules:
 - `@collection` / `+collection` is required on the type itself
-- the effective `keys` member enumerates the collection keyspace
+- the effective `keys` field enumerates the collection keyspace
 - the effective `get` function resolves one item by key
-- `keys` may be an exposed field or an exposed no-arg function
+- `keys` must be an exposed field
 - `get` must be an exposed function
-- if `@keys` is absent, the exposed member named `keys` is used
+- if `@keys` is absent, the exposed field named `keys` is used
 - if `@get` is absent, the exposed function named `get` is used
 - if `@keys` or `@get` is present, it overrides the default name-based
   convention
 - only scalar and enum input types are valid as collection keys; this includes
   builtin scalars, custom scalars, and enums; object, input-object, interface,
   and list types are not valid collection key types
-- the effective `keys` member returns `[KeyType!]!`
+- the effective `keys` field returns `[KeyType!]!`
 - the effective `get` function accepts exactly one non-null `KeyType` argument
   and returns a non-null object
-- a collection must have exactly one effective `keys` member and exactly one
+- a collection must have exactly one effective `keys` field and exactly one
   effective `get` function
 - keys should be unique within a collection
 
 Collection validity is enforced in two stages. At module load time, the engine
 validates structure: whether the type is marked as a collection, whether there
-is exactly one effective `keys` member and one effective `get` function, and
+is exactly one effective `keys` field and one effective `get` function, and
 whether their signatures are valid. At runtime, the engine validates behavior
 when the collection is used: if `keys` advertises a key that `get` cannot
 resolve, collection operations fail at the point of use.
@@ -152,7 +152,7 @@ resolve, collection operations fail at the point of use.
 Collections describe how a dynamic set is addressed and traversed. They do not
 by themselves add mutation, execution, or other higher-level behavior.
 
-Any exposed function on the collection type beyond the effective `keys` and
+Any exposed function on the collection type beyond the effective `keys` field and
 `get` is automatically re-homed under the synthetic `batch` namespace (see
 [Batch Namespace](#batch-namespace)). Module authors define batch operations
 as ordinary functions on the collection type; the engine handles projection.
@@ -161,11 +161,7 @@ Illustrative authoring examples:
 
 ```dang
 type GoTests @collection {
-  pub testNames: [String!]
-
-  pub keys: [String!] {
-    testNames
-  }
+  pub keys: [String!]
 
   pub get(name: String!): GoTest! {
     GoTest(name: name)
@@ -176,11 +172,7 @@ type GoTests @collection {
 ```go
 // +collection
 type GoTests struct {
-	TestNames []string
-}
-
-func (tests *GoTests) Keys() []string {
-	return tests.TestNames
+	Keys []string
 }
 
 func (tests *GoTests) Get(name string) *GoTest {
@@ -194,12 +186,7 @@ import { collection, func, object } from "@dagger.io/dagger";
 @object()
 @collection()
 class GoTests {
-  constructor(private readonly testNames: string[]) {}
-
-  @func()
-  keys(): string[] {
-    return this.testNames;
-  }
+  keys: string[] = [];
 
   @func()
   get(name: string): GoTest {
@@ -215,11 +202,7 @@ from dagger import collection, function, object_type
 @object_type
 @collection
 class GoTests:
-    test_names: list[str]
-
-    @function
-    def keys(self) -> list[str]:
-        return self.test_names
+    keys: list[str]
 
     @function
     def get(self, name: str) -> "GoTest":
@@ -290,7 +273,7 @@ Rules:
 - public collection types are synthetic and engine-defined
 - item types are unchanged; collection-relative identity stays on the
   collection, not the item
-- list order preserves the order of the effective `keys` member
+- list order preserves the order of the effective `keys` field
 - `get` errors on an unknown key
 - `subset` is exact key selection, not a predicate language; it preserves
   parent key order and errors on unknown or duplicate keys
@@ -323,10 +306,10 @@ over the current subset than invoking the equivalent item-level operation one
 item at a time.
 
 The synthetic `batch` type is derived from the backing collection type. The
-engine identifies the effective `keys` member and effective `get` function;
+engine identifies the effective `keys` field and effective `get` function;
 every other exposed function on the collection type is re-homed under `batch`.
 Non-function fields are not projected publicly, except for the effective `keys`
-member.
+field.
 
 For example, a collection of test definitions may expose a `runTests` function
 alongside `keys` and `get`. The engine projects `runTests` under `batch`,
@@ -604,7 +587,8 @@ door.
 
 - [x] Locked the design decision that `dagger call` and `dagger shell` use explicit collection traversal only
 - [x] Locked the design decision that collection-aware filtering sugar belongs only to `dagger check` and `dagger generate`
-- [x] Locked the design decision that any exposed collection function beyond effective `keys` and `get` is re-homed under `batch`
+- [x] Locked the design decision that any exposed collection function beyond the effective `keys` field and `get` is re-homed under `batch`
+- [x] Locked the design decision that collection `keys` are always authored as a field
 - [x] Locked the design decision that the public projected collection type keeps the author-defined collection type name
 - [x] Locked the design decision that the synthetic batch type is named `<CollectionType>_Batch`
 - [x] Locked the design decision that collection keys may be builtin scalars, custom scalars, or enums, but not object-like or list types

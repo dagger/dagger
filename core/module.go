@@ -926,39 +926,21 @@ func (mod *Module) validateCollectionTypeDef(typeDef *TypeDef) error {
 	obj := typeDef.AsObject.Value
 	collection := typeDef.AsCollection.Value
 
-	keysMemberName := collection.KeysMemberNameOverride
-	if keysMemberName == "" {
-		keysMemberName = "keys"
+	keysFieldName := collection.KeysFieldNameOverride
+	if keysFieldName == "" {
+		keysFieldName = "keys"
 	}
 
-	keysField, hasKeysField := obj.FieldByName(keysMemberName)
-	keysFn, hasKeysFn := obj.FunctionByName(keysMemberName)
-	switch {
-	case hasKeysField && hasKeysFn:
-		return fmt.Errorf("collection object %q has multiple effective keys members named %q", obj.OriginalName, keysMemberName)
-	case !hasKeysField && !hasKeysFn:
-		return fmt.Errorf("collection object %q must define exactly one effective keys member", obj.OriginalName)
+	keysField, hasKeysField := obj.FieldByName(keysFieldName)
+	if !hasKeysField {
+		return fmt.Errorf("collection object %q must define exactly one effective keys field", obj.OriginalName)
 	}
 
-	var keysTypeDef *TypeDef
-	collection.KeysFieldName = ""
-	collection.KeysFunctionName = ""
-	switch {
-	case hasKeysField:
-		keysTypeDef = keysField.TypeDef
-		collection.KeysFieldName = keysField.Name
-	case hasKeysFn:
-		if len(keysFn.Args) != 0 {
-			return fmt.Errorf("collection object %q keys member %q must not accept arguments", obj.OriginalName, keysFn.OriginalName)
-		}
-		keysTypeDef = keysFn.ReturnType
-		collection.KeysFunctionName = keysFn.Name
-	}
-
-	keyType, err := validateCollectionKeysType(obj, keysMemberName, keysTypeDef)
+	keyType, err := validateCollectionKeysType(obj, keysFieldName, keysField.TypeDef)
 	if err != nil {
 		return err
 	}
+	collection.KeysFieldName = keysField.Name
 
 	getFunctionName := collection.GetFunctionNameOverride
 	if getFunctionName == "" {
@@ -981,7 +963,7 @@ func (mod *Module) validateCollectionTypeDef(typeDef *TypeDef) error {
 		return fmt.Errorf("collection object %q get function %q argument %q must use a scalar, custom scalar, or enum key type", obj.OriginalName, getFn.OriginalName, getArg.OriginalName)
 	}
 	if !typeDefsEqual(keyType, getArg.TypeDef) {
-		return fmt.Errorf("collection object %q get function %q argument %q must match keys member type", obj.OriginalName, getFn.OriginalName, getArg.OriginalName)
+		return fmt.Errorf("collection object %q get function %q argument %q must match keys field type", obj.OriginalName, getFn.OriginalName, getArg.OriginalName)
 	}
 
 	if getFn.ReturnType.Optional {
@@ -999,20 +981,20 @@ func (mod *Module) validateCollectionTypeDef(typeDef *TypeDef) error {
 	return nil
 }
 
-func validateCollectionKeysType(obj *ObjectTypeDef, keysMemberName string, keysTypeDef *TypeDef) (*TypeDef, error) {
+func validateCollectionKeysType(obj *ObjectTypeDef, keysFieldName string, keysTypeDef *TypeDef) (*TypeDef, error) {
 	if keysTypeDef.Optional {
-		return nil, fmt.Errorf("collection object %q keys member %q must return a non-null list", obj.OriginalName, keysMemberName)
+		return nil, fmt.Errorf("collection object %q keys field %q must be a non-null list", obj.OriginalName, keysFieldName)
 	}
 	if keysTypeDef.Kind != TypeDefKindList || !keysTypeDef.AsList.Valid {
-		return nil, fmt.Errorf("collection object %q keys member %q must return a list", obj.OriginalName, keysMemberName)
+		return nil, fmt.Errorf("collection object %q keys field %q must be a list", obj.OriginalName, keysFieldName)
 	}
 
 	keyType := keysTypeDef.AsList.Value.ElementTypeDef
 	if keyType.Optional {
-		return nil, fmt.Errorf("collection object %q keys member %q must return a list of non-null keys", obj.OriginalName, keysMemberName)
+		return nil, fmt.Errorf("collection object %q keys field %q must be a list of non-null keys", obj.OriginalName, keysFieldName)
 	}
 	if !isValidCollectionKeyType(keyType) {
-		return nil, fmt.Errorf("collection object %q keys member %q must use a scalar, custom scalar, or enum key type", obj.OriginalName, keysMemberName)
+		return nil, fmt.Errorf("collection object %q keys field %q must use a scalar, custom scalar, or enum key type", obj.OriginalName, keysFieldName)
 	}
 
 	return keyType, nil

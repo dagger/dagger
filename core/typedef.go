@@ -688,7 +688,7 @@ func (typeDef *TypeDef) WithCollection() *TypeDef {
 
 func (typeDef *TypeDef) WithCollectionKeys(name string) *TypeDef {
 	typeDef = typeDef.WithCollection()
-	typeDef.AsCollection.Value.KeysMemberNameOverride = gqlFieldName(name)
+	typeDef.AsCollection.Value.KeysFieldNameOverride = gqlFieldName(name)
 	return typeDef
 }
 
@@ -898,13 +898,12 @@ type CollectionTypeDef struct {
 	BatchType *TypeDef `field:"true" doc:"The synthetic batch type exposed for collection-level operations, if any."`
 
 	// Below are not in public API.
-	KeysMemberNameOverride  string
+	KeysFieldNameOverride   string
 	GetFunctionNameOverride string
 
-	KeysFieldName    string
-	KeysFunctionName string
-	GetFunctionName  string
-	GetArgName       string
+	KeysFieldName   string
+	GetFunctionName string
+	GetArgName      string
 }
 
 func (*CollectionTypeDef) Type() *ast.Type {
