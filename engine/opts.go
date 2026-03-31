@@ -86,6 +86,10 @@ type ClientMetadata struct {
 	// SSH auth socket path
 	SSHAuthSocketPath string `json:"ssh_auth_socket_path"`
 
+	// Path to the dagger config file on the client's filesystem.
+	// Used for writing back OAuth token refreshes.
+	CredentialsPath string `json:"config_path,omitempty"`
+
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
 

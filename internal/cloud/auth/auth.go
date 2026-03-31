@@ -51,6 +51,10 @@ var authConfig = &oauth2.Config{
 	},
 }
 
+func CredentialsFile() string {
+	return credentialsFile
+}
+
 // Login logs the user in and stores the credentials for later use.
 // Interactive messages are printed to w.
 func Login(ctx context.Context, out io.Writer) error {
