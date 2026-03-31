@@ -21,16 +21,6 @@ type ElixirSdkDev {
   }
 
   """
-  Test the SDK
-  """
-  pub test: Void! {
-    # Run SDK and codegen tests in parallel
-    let sdkResult = sdkTest
-    let codegenResult = codegenTest
-    null
-  }
-
-  """
   Lint the SDK
   """
   pub lint: Void! @check {
