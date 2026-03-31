@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -1601,6 +1602,49 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 		_, err := dir.WithPatch(invalidPatch).Sync(ctx)
 		require.Error(t, err)
 	})
+}
+
+func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Context, t *testctx.T) {
+	// Regression: WithPatchFile should not require loading patch contents into memory.
+	// A patch larger than MaxFileContentsSize must still apply successfully.
+	c := connect(ctx, t)
+	largeFile := c.Container().
+		From(alpineImage).
+		WithExec([]string{
+			"sh",
+			"-c",
+			fmt.Sprintf("head -c %d /dev/zero | tr '\\000' 'a' > /large.txt", buildkit.MaxFileContentsSize+1),
+		}).
+		File("/large.txt")
+
+	patchFile := c.Directory().
+		WithFile("large.txt", largeFile).
+		Changes(c.Directory()).
+		AsPatch()
+
+	patchSize, err := patchFile.Size(ctx)
+	require.NoError(t, err)
+	require.Greater(t, patchSize, buildkit.MaxFileContentsSize)
+
+	patchID, err := patchFile.ID(ctx)
+	require.NoError(t, err)
+
+	loadedPatch := c.LoadFileFromID(patchID)
+	loadedPatchID, err := loadedPatch.ID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, patchID, loadedPatchID)
+
+	loadedPatchSize, err := loadedPatch.Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, patchSize, loadedPatchSize)
+
+	patchedDir := c.Directory().WithPatchFile(loadedPatch)
+	_, err = patchedDir.Sync(ctx)
+	require.NoError(t, err)
+
+	size, err := patchedDir.File("large.txt").Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, buildkit.MaxFileContentsSize+1, size)
 }
 
 func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {

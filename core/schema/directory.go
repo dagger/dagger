@@ -290,6 +290,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
+	dagql.Fields[*core.DiffStat]{}.Install(srv)
 
 	dagql.Fields[*core.Changeset]{
 		Syncer[*core.Changeset]().
@@ -313,6 +314,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Files and directories that existed before and were updated in the newer directory.`),
 		dagql.NodeFunc("removedPaths", DagOpWrapper(srv, s.changesetRemovedPaths)).
 			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
+		dagql.NodeFunc("diffStats", DagOpWrapper(srv, s.changesetDiffStats)).
+			Doc(`Structured per-path diff statistics (kind and line counts) for this changeset.`),
 		dagql.NodeFunc("withChangeset", DagOpChangesetWrapper(srv, s.changesetWithChangeset)).
 			Doc(`Add changes to an existing changeset`,
 				`By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument`).
@@ -341,6 +344,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	ChangesetMergeConflictEnum.Install(srv)
 	ChangesetsMergeConflictEnum.Install(srv)
+	core.DiffStatKindEnum.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -600,6 +604,34 @@ type withPatchFileArgs struct {
 	FSDagOpInternalArgs
 }
 
+var _ core.Inputs = withPatchFileArgs{}
+
+func (args withPatchFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
+	deps := []llb.State{}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	if args.Patch.ID() == nil {
+		return nil, nil
+	}
+
+	patchRes, err := args.Patch.Load(ctx, srv)
+	if err != nil {
+		return nil, fmt.Errorf("load patch: %w", err)
+	}
+	patchOp, err := llb.NewDefinitionOp(patchRes.Self().LLB)
+	if err != nil {
+		return nil, fmt.Errorf("patch op: %w", err)
+	}
+	if patchOp.Output() != nil {
+		deps = append(deps, llb.NewState(patchOp))
+	}
+
+	return deps, nil
+}
+
 func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchFileArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -610,13 +642,7 @@ func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return inst, err
 	}
-	// FIXME: would be nice to avoid reading into memory, need to adjust WithPatch
-	// for that
-	patch, err := patchFile.Self().Contents(ctx, nil, nil)
-	if err != nil {
-		return inst, err
-	}
-	dir, err := parent.Self().WithPatch(ctx, string(patch))
+	dir, err := parent.Self().WithPatchFile(ctx, patchFile.Self())
 	if err != nil {
 		return inst, err
 	}
@@ -1105,6 +1131,14 @@ func (s *directorySchema) changesetRemovedPaths(ctx context.Context, parent dagq
 		return nil, err
 	}
 	return dagql.NewStringArray(paths.Removed...), nil
+}
+
+type changesetDiffStatsArgs struct {
+	RawDagOpInternalArgs
+}
+
+func (s *directorySchema) changesetDiffStats(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], _ changesetDiffStatsArgs) (dagql.Array[*core.DiffStat], error) {
+	return parent.Self().DiffStats(ctx)
 }
 
 type dirExportArgs struct {
