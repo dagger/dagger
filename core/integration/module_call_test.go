@@ -85,6 +85,47 @@ func (m *Test) Conflict(ctx context.Context, mod *dagger.Module) (string, error)
 	})
 }
 
+func (CallSuite) TestCollections(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := modInit(t, c, "go", goCollectionModuleSource)
+
+	t.Run("keys", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("tests", "keys")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, collectionKeysOutput, out)
+	})
+
+	t.Run("list", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("tests", "list", "name")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, collectionKeysOutput, out)
+	})
+
+	t.Run("subset preserves parent order", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(
+			daggerCall("tests", "subset", "--keys", "integration", "--keys", "unit", "keys"),
+		).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, collectionSubsetKeysOutput, out)
+	})
+
+	t.Run("batch reads the current subset", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(
+			daggerCall("tests", "subset", "--keys", "integration", "--keys", "unit", "batch", "names"),
+		).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, collectionBatchOutput, out)
+	})
+
+	t.Run("get rejects keys outside the current subset", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.With(
+			daggerCall("tests", "subset", "--keys", "integration", "--keys", "unit", "get", "--name", "lint", "name"),
+		).Sync(ctx)
+		requireErrOut(t, err, `does not contain key "lint" in the current subset`)
+	})
+}
+
 func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 	t.Run("service args", func(ctx context.Context, t *testctx.T) {
 		t.Run("used as service binding", func(ctx context.Context, t *testctx.T) {
