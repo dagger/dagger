@@ -154,6 +154,7 @@ func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "ERROR")
+	require.Contains(t, out, "context canceled")
 }
 
 func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
