@@ -41,12 +41,13 @@ type File struct {
 	// Services necessary to provision the file.
 	Services ServiceBindings
 
-	Lazy              Lazy[*File]
-	snapshotMu        sync.RWMutex
-	snapshotReady     bool
-	snapshotSource    FileSnapshotSource
-	Snapshot          bkcache.ImmutableRef
-	persistedResultID uint64
+	Lazy                          Lazy[*File]
+	snapshotMu                    sync.RWMutex
+	snapshotReady                 bool
+	snapshotSource                FileSnapshotSource
+	Snapshot                      bkcache.ImmutableRef
+	persistedResultID             uint64
+	containerSourceParentResultID uint64
 }
 
 type FileSnapshotSource struct {
@@ -148,6 +149,7 @@ func (file *File) AttachDependencyResults(
 		file.snapshotMu.Lock()
 		file.snapshotSource.Directory = typed
 		file.snapshotMu.Unlock()
+		deps = append(deps, typed)
 	}
 	if source.File.Self() != nil {
 		attached, err := attach(source.File)
@@ -161,6 +163,7 @@ func (file *File) AttachDependencyResults(
 		file.snapshotMu.Lock()
 		file.snapshotSource.File = typed
 		file.snapshotMu.Unlock()
+		deps = append(deps, typed)
 	}
 	if lazy == nil {
 		return deps, nil
@@ -294,11 +297,11 @@ const (
 )
 
 type persistedFilePayload struct {
-	Form                    string          `json:"form"`
-	File                    string          `json:"file,omitempty"`
-	Platform                Platform        `json:"platform"`
-	Services                ServiceBindings `json:"services,omitempty"`
-	LazyJSON                json.RawMessage `json:"lazyJSON,omitempty"`
+	Form     string          `json:"form"`
+	File     string          `json:"file,omitempty"`
+	Platform Platform        `json:"platform"`
+	Services ServiceBindings `json:"services,omitempty"`
+	LazyJSON json.RawMessage `json:"lazyJSON,omitempty"`
 }
 
 func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {

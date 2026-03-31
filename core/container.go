@@ -253,7 +253,7 @@ func NewContainer(platform Platform) *Container {
 	}
 }
 
-func cloneBareDirectoryForContainerChild(src *Directory, source dagql.ObjectResult[*Directory]) *Directory {
+func cloneBareDirectoryForContainerChild(src *Directory, source dagql.ObjectResult[*Directory], sourceParentResultID uint64) *Directory {
 	if src == nil {
 		return nil
 	}
@@ -267,10 +267,11 @@ func cloneBareDirectoryForContainerChild(src *Directory, source dagql.ObjectResu
 		LazyState: NewLazyState(),
 		Source:    source,
 	}
+	cp.containerSourceParentResultID = sourceParentResultID
 	return &cp
 }
 
-func cloneBareFileForContainerChild(src *File, source FileSnapshotSource) *File {
+func cloneBareFileForContainerChild(src *File, source FileSnapshotSource, sourceParentResultID uint64) *File {
 	if src == nil {
 		return nil
 	}
@@ -284,6 +285,7 @@ func cloneBareFileForContainerChild(src *File, source FileSnapshotSource) *File 
 		LazyState: NewLazyState(),
 		Source:    source,
 	}
+	cp.containerSourceParentResultID = sourceParentResultID
 	return &cp
 }
 
@@ -325,7 +327,11 @@ func newContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container
 			if err := srv.Select(ctx, parent, &source, dagql.Selector{Field: "rootfs"}); err != nil {
 				return nil, err
 			}
-			cp.FS = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(cp.FS.Value, source))
+			sourceParentResultID, err := persistedContainerParentResultIDFromDirectorySource(source, persistedContainerDirectorySourceOriginRootFS, "")
+			if err != nil {
+				return nil, err
+			}
+			cp.FS = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(cp.FS.Value, source, sourceParentResultID))
 		}
 	} else {
 		cp.FS = nil
@@ -346,7 +352,11 @@ func newContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container
 				}); err != nil {
 					return nil, err
 				}
-				cp.Mounts[i].DirectorySource = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(mnt.DirectorySource.Value, source))
+				sourceParentResultID, err := persistedContainerParentResultIDFromDirectorySource(source, persistedContainerDirectorySourceOriginDirectoryMount, mnt.Target)
+				if err != nil {
+					return nil, err
+				}
+				cp.Mounts[i].DirectorySource = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(mnt.DirectorySource.Value, source, sourceParentResultID))
 			}
 		}
 		if mnt.FileSource != nil {
@@ -362,7 +372,11 @@ func newContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container
 				}); err != nil {
 					return nil, err
 				}
-				cp.Mounts[i].FileSource = newContainerFileValueSource(cloneBareFileForContainerChild(mnt.FileSource.Value, FileSnapshotSource{File: source}))
+				sourceParentResultID, err := persistedContainerParentResultIDFromFileSource(FileSnapshotSource{File: source}, persistedContainerFileSourceOriginFileMount, mnt.Target)
+				if err != nil {
+					return nil, err
+				}
+				cp.Mounts[i].FileSource = newContainerFileValueSource(cloneBareFileForContainerChild(mnt.FileSource.Value, FileSnapshotSource{File: source}, sourceParentResultID))
 			}
 		}
 	}
@@ -681,7 +695,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		}
 		rootfs = newContainerDirectoryResultSource(rootfsRes)
 	} else if len(persisted.FSValue) > 0 {
-		rootfsDir, err := decodePersistedContainerDirectoryValue(ctx, dag, call, resultID, "fs", persisted.FSValue)
+		rootfsDir, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, "fs", persisted.FSValue)
 		if err != nil {
 			return nil, err
 		}
@@ -705,7 +719,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			}
 			mnt.DirectorySource = newContainerDirectoryResultSource(dirRes)
 		case len(persistedMount.DirectorySourceValue) > 0:
-			dirVal, err := decodePersistedContainerDirectoryValue(ctx, dag, call, resultID, fmt.Sprintf("mount_dir:%d", len(mounts)), persistedMount.DirectorySourceValue)
+			dirVal, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, fmt.Sprintf("mount_dir:%d", len(mounts)), persistedMount.DirectorySourceValue)
 			if err != nil {
 				return nil, err
 			}
@@ -718,7 +732,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			}
 			mnt.FileSource = newContainerFileResultSource(fileRes)
 		case len(persistedMount.FileSourceValue) > 0:
-			fileVal, err := decodePersistedContainerFileValue(ctx, dag, call, resultID, fmt.Sprintf("mount_file:%d", len(mounts)), persistedMount.FileSourceValue)
+			fileVal, err := decodePersistedContainerFileValue(ctx, dag, resultID, fmt.Sprintf("mount_file:%d", len(mounts)), persistedMount.FileSourceValue)
 			if err != nil {
 				return nil, err
 			}
@@ -907,19 +921,21 @@ type persistedContainerFileOutputValue struct {
 }
 
 type persistedContainerDirectorySourceValue struct {
-	Dir        string          `json:"dir,omitempty"`
-	Platform   Platform        `json:"platform"`
-	Services   ServiceBindings `json:"services,omitempty"`
-	OriginKind string          `json:"originKind"`
-	OriginPath string          `json:"originPath,omitempty"`
+	Dir                     string          `json:"dir,omitempty"`
+	Platform                Platform        `json:"platform"`
+	Services                ServiceBindings `json:"services,omitempty"`
+	ParentContainerResultID uint64          `json:"parentContainerResultID"`
+	OriginKind              string          `json:"originKind"`
+	OriginPath              string          `json:"originPath,omitempty"`
 }
 
 type persistedContainerFileSourceValue struct {
-	File       string          `json:"file,omitempty"`
-	Platform   Platform        `json:"platform"`
-	Services   ServiceBindings `json:"services,omitempty"`
-	OriginKind string          `json:"originKind"`
-	OriginPath string          `json:"originPath,omitempty"`
+	File                    string          `json:"file,omitempty"`
+	Platform                Platform        `json:"platform"`
+	Services                ServiceBindings `json:"services,omitempty"`
+	ParentContainerResultID uint64          `json:"parentContainerResultID"`
+	OriginKind              string          `json:"originKind"`
+	OriginPath              string          `json:"originPath,omitempty"`
 }
 
 type decodedContainerDirectoryValue struct {
@@ -1079,12 +1095,21 @@ func encodePersistedContainerDirectoryValue(
 		default:
 			form = persistedContainerValueFormSourceReady
 		}
+		parentContainerResultID := dir.containerSourceParentResultID
+		var err error
+		if parentContainerResultID == 0 {
+			parentContainerResultID, err = persistedContainerParentResultIDFromDirectorySource(source, originKind, originPath)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("encode persisted container directory source provenance: %w", err)
+		}
 		value, err := json.Marshal(persistedContainerDirectorySourceValue{
-			Dir:        dir.Dir,
-			Platform:   dir.Platform,
-			Services:   slices.Clone(dir.Services),
-			OriginKind: originKind,
-			OriginPath: originPath,
+			Dir:                     dir.Dir,
+			Platform:                dir.Platform,
+			Services:                slices.Clone(dir.Services),
+			ParentContainerResultID: parentContainerResultID,
+			OriginKind:              originKind,
+			OriginPath:              originPath,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("marshal persisted container directory source value: %w", err)
@@ -1140,12 +1165,21 @@ func encodePersistedContainerFileValue(
 		default:
 			form = persistedContainerValueFormSourceReady
 		}
+		parentContainerResultID := file.containerSourceParentResultID
+		var err error
+		if parentContainerResultID == 0 {
+			parentContainerResultID, err = persistedContainerParentResultIDFromFileSource(source, originKind, originPath)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("encode persisted container file source provenance: %w", err)
+		}
 		value, err := json.Marshal(persistedContainerFileSourceValue{
-			File:       file.File,
-			Platform:   file.Platform,
-			Services:   slices.Clone(file.Services),
-			OriginKind: originKind,
-			OriginPath: originPath,
+			File:                    file.File,
+			Platform:                file.Platform,
+			Services:                slices.Clone(file.Services),
+			ParentContainerResultID: parentContainerResultID,
+			OriginKind:              originKind,
+			OriginPath:              originPath,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("marshal persisted container file source value: %w", err)
@@ -1165,30 +1199,145 @@ func encodePersistedContainerFileValue(
 	})
 }
 
-func loadPersistedContainerReceiverByCall(
-	ctx context.Context,
-	dag *dagql.Server,
-	call *dagql.ResultCall,
-	label string,
-) (dagql.ObjectResult[*Container], error) {
-	if call == nil || call.Receiver == nil {
-		return dagql.ObjectResult[*Container]{}, fmt.Errorf("%s: missing call receiver", label)
+func persistedContainerSourcePathArg(frame *dagql.ResultCall) (string, error) {
+	if frame == nil {
+		return "", fmt.Errorf("missing source result call")
 	}
-	if call.Receiver.ResultID == 0 {
-		return dagql.ObjectResult[*Container]{}, fmt.Errorf("%s: receiver result missing result ID", label)
+	for _, arg := range frame.Args {
+		if arg == nil || arg.Name != "path" || arg.Value == nil {
+			continue
+		}
+		if arg.Value.Kind != dagql.ResultCallLiteralKindString {
+			return "", fmt.Errorf("path arg has kind %q, not string", arg.Value.Kind)
+		}
+		return arg.Value.StringValue, nil
 	}
-	return loadPersistedObjectResultByResultID[*Container](ctx, dag, call.Receiver.ResultID, label)
+	return "", fmt.Errorf("missing path arg")
+}
+
+func persistedContainerDirectorySourceWithCall(source dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
+	cur := source
+	for {
+		if cur.Self() == nil {
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("directory source is nil")
+		}
+		if _, err := cur.ResultCall(); err == nil {
+			return cur, nil
+		}
+		cur.Self().snapshotMu.RLock()
+		next := cur.Self().snapshotSource
+		cur.Self().snapshotMu.RUnlock()
+		if next.Self() == nil {
+			_, err := cur.ResultCall()
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("directory source result call: %w", err)
+		}
+		cur = next
+	}
+}
+
+func persistedContainerFileSourceWithCall(source FileSnapshotSource) (dagql.ObjectResult[*File], error) {
+	cur := source
+	for {
+		if cur.File.Self() == nil {
+			return dagql.ObjectResult[*File]{}, fmt.Errorf("file source is not file-backed")
+		}
+		if _, err := cur.File.ResultCall(); err == nil {
+			return cur.File, nil
+		}
+		cur.File.Self().snapshotMu.RLock()
+		next := cur.File.Self().snapshotSource
+		cur.File.Self().snapshotMu.RUnlock()
+		if next.File.Self() == nil && next.Directory.Self() == nil {
+			_, err := cur.File.ResultCall()
+			return dagql.ObjectResult[*File]{}, fmt.Errorf("file source result call: %w", err)
+		}
+		cur = next
+	}
+}
+
+func persistedContainerSourceParentResultID(
+	frame *dagql.ResultCall,
+	expectedField string,
+	expectedPath string,
+) (uint64, error) {
+	if frame == nil {
+		return 0, fmt.Errorf("missing source result call")
+	}
+	if frame.Field != expectedField {
+		return 0, fmt.Errorf("expected source field %q, got %q", expectedField, frame.Field)
+	}
+	if frame.Receiver == nil || frame.Receiver.ResultID == 0 {
+		return 0, fmt.Errorf("source result missing container receiver result ID")
+	}
+	if expectedField == "rootfs" {
+		return frame.Receiver.ResultID, nil
+	}
+	gotPath, err := persistedContainerSourcePathArg(frame)
+	if err != nil {
+		return 0, err
+	}
+	if gotPath != expectedPath {
+		return 0, fmt.Errorf("source path %q does not match expected path %q", gotPath, expectedPath)
+	}
+	return frame.Receiver.ResultID, nil
+}
+
+func persistedContainerParentResultIDFromDirectorySource(
+	source dagql.ObjectResult[*Directory],
+	originKind string,
+	originPath string,
+) (uint64, error) {
+	sourceWithCall, err := persistedContainerDirectorySourceWithCall(source)
+	if err != nil {
+		return 0, err
+	}
+	frame, err := sourceWithCall.ResultCall()
+	if err != nil {
+		return 0, fmt.Errorf("directory source result call: %w", err)
+	}
+	switch originKind {
+	case persistedContainerDirectorySourceOriginRootFS:
+		return persistedContainerSourceParentResultID(frame, "rootfs", "")
+	case persistedContainerDirectorySourceOriginDirectoryMount:
+		return persistedContainerSourceParentResultID(frame, "directory", originPath)
+	default:
+		return 0, fmt.Errorf("unsupported directory origin kind %q", originKind)
+	}
+}
+
+func persistedContainerParentResultIDFromFileSource(
+	source FileSnapshotSource,
+	originKind string,
+	originPath string,
+) (uint64, error) {
+	switch originKind {
+	case persistedContainerFileSourceOriginFileMount:
+		sourceWithCall, err := persistedContainerFileSourceWithCall(source)
+		if err != nil {
+			return 0, err
+		}
+		frame, err := sourceWithCall.ResultCall()
+		if err != nil {
+			return 0, fmt.Errorf("file source result call: %w", err)
+		}
+		return persistedContainerSourceParentResultID(frame, "file", originPath)
+	default:
+		return 0, fmt.Errorf("unsupported file origin kind %q", originKind)
+	}
 }
 
 func loadPersistedContainerDirectorySourceByOrigin(
 	ctx context.Context,
 	dag *dagql.Server,
-	call *dagql.ResultCall,
+	parentContainerResultID uint64,
 	originKind string,
 	originPath string,
 	label string,
 ) (dagql.ObjectResult[*Directory], error) {
-	parent, err := loadPersistedContainerReceiverByCall(ctx, dag, call, label+" parent")
+	if parentContainerResultID == 0 {
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("%s: missing parent container result ID", label)
+	}
+	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, parentContainerResultID, label+" parent")
 	if err != nil {
 		return dagql.ObjectResult[*Directory]{}, err
 	}
@@ -1216,12 +1365,15 @@ func loadPersistedContainerDirectorySourceByOrigin(
 func loadPersistedContainerFileSourceByOrigin(
 	ctx context.Context,
 	dag *dagql.Server,
-	call *dagql.ResultCall,
+	parentContainerResultID uint64,
 	originKind string,
 	originPath string,
 	label string,
 ) (dagql.ObjectResult[*File], error) {
-	parent, err := loadPersistedContainerReceiverByCall(ctx, dag, call, label+" parent")
+	if parentContainerResultID == 0 {
+		return dagql.ObjectResult[*File]{}, fmt.Errorf("%s: missing parent container result ID", label)
+	}
+	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, parentContainerResultID, label+" parent")
 	if err != nil {
 		return dagql.ObjectResult[*File]{}, err
 	}
@@ -1242,7 +1394,7 @@ func loadPersistedContainerFileSourceByOrigin(
 	return source, nil
 }
 
-func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Server, call *dagql.ResultCall, resultID uint64, role string, payload json.RawMessage) (decodedContainerDirectoryValue, error) {
+func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerDirectoryValue, error) {
 	var wrapped persistedContainerDirectoryValue
 	if err := json.Unmarshal(payload, &wrapped); err != nil {
 		return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory value: %w", err)
@@ -1272,14 +1424,15 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 		if err := json.Unmarshal(wrapped.Value, &sourceVal); err != nil {
 			return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory source value: %w", err)
 		}
-		source, err := loadPersistedContainerDirectorySourceByOrigin(ctx, dag, call, sourceVal.OriginKind, sourceVal.OriginPath, "container directory source")
+		source, err := loadPersistedContainerDirectorySourceByOrigin(ctx, dag, sourceVal.ParentContainerResultID, sourceVal.OriginKind, sourceVal.OriginPath, "container directory source")
 		if err != nil {
 			return decodedContainerDirectoryValue{}, err
 		}
 		dir := &Directory{
-			Dir:      sourceVal.Dir,
-			Platform: sourceVal.Platform,
-			Services: slices.Clone(sourceVal.Services),
+			Dir:                           sourceVal.Dir,
+			Platform:                      sourceVal.Platform,
+			Services:                      slices.Clone(sourceVal.Services),
+			containerSourceParentResultID: sourceVal.ParentContainerResultID,
 		}
 		if err := dir.setSnapshotSource(source); err != nil {
 			return decodedContainerDirectoryValue{}, err
@@ -1323,7 +1476,7 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 	return decodedContainerDirectoryValue{Dir: dir, Kind: wrapped.Form}, nil
 }
 
-func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, call *dagql.ResultCall, resultID uint64, role string, payload json.RawMessage) (decodedContainerFileValue, error) {
+func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerFileValue, error) {
 	var wrapped persistedContainerFileValue
 	if err := json.Unmarshal(payload, &wrapped); err != nil {
 		return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file value: %w", err)
@@ -1353,14 +1506,15 @@ func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, c
 		if err := json.Unmarshal(wrapped.Value, &sourceVal); err != nil {
 			return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file source value: %w", err)
 		}
-		source, err := loadPersistedContainerFileSourceByOrigin(ctx, dag, call, sourceVal.OriginKind, sourceVal.OriginPath, "container file source")
+		source, err := loadPersistedContainerFileSourceByOrigin(ctx, dag, sourceVal.ParentContainerResultID, sourceVal.OriginKind, sourceVal.OriginPath, "container file source")
 		if err != nil {
 			return decodedContainerFileValue{}, err
 		}
 		file := &File{
-			File:     sourceVal.File,
-			Platform: sourceVal.Platform,
-			Services: slices.Clone(sourceVal.Services),
+			File:                          sourceVal.File,
+			Platform:                      sourceVal.Platform,
+			Services:                      slices.Clone(sourceVal.Services),
+			containerSourceParentResultID: sourceVal.ParentContainerResultID,
 		}
 		if err := file.setSnapshotSource(FileSnapshotSource{File: source}); err != nil {
 			return decodedContainerFileValue{}, err
@@ -1539,7 +1693,7 @@ func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container 
 		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
 			return err
 		}
-			targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.Path)
+		targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.Path)
 		if err != nil {
 			return err
 		}
@@ -1613,7 +1767,7 @@ func (lazy *ContainerWithFileLazy) Evaluate(ctx context.Context, container *Cont
 		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
 			return err
 		}
-			targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.Path)
+		targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.Path)
 		if err != nil {
 			return err
 		}
@@ -1683,7 +1837,7 @@ func (lazy *ContainerWithoutPathLazy) Evaluate(ctx context.Context, container *C
 		if err := cache.Evaluate(ctx, lazy.Parent); err != nil {
 			return err
 		}
-			targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.Path)
+		targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.Path)
 		if err != nil {
 			return err
 		}
@@ -1739,7 +1893,7 @@ func (lazy *ContainerWithSymlinkLazy) Evaluate(ctx context.Context, container *C
 		if err := cache.Evaluate(ctx, lazy.Parent); err != nil {
 			return err
 		}
-			targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.LinkPath)
+		targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.LinkPath)
 		if err != nil {
 			return err
 		}

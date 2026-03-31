@@ -48,12 +48,13 @@ type Directory struct {
 	// Services necessary to provision the directory.
 	Services ServiceBindings
 
-	Lazy              Lazy[*Directory]
-	snapshotMu        sync.RWMutex
-	snapshotReady     bool
-	snapshotSource    dagql.ObjectResult[*Directory]
-	Snapshot          bkcache.ImmutableRef
-	persistedResultID uint64
+	Lazy                          Lazy[*Directory]
+	snapshotMu                    sync.RWMutex
+	snapshotReady                 bool
+	snapshotSource                dagql.ObjectResult[*Directory]
+	Snapshot                      bkcache.ImmutableRef
+	persistedResultID             uint64
+	containerSourceParentResultID uint64
 }
 
 func (*Directory) Type() *ast.Type {
@@ -156,6 +157,7 @@ func (dir *Directory) AttachDependencyResults(
 		dir.snapshotMu.Lock()
 		dir.snapshotSource = typed
 		dir.snapshotMu.Unlock()
+		deps = append(deps, typed)
 	}
 	if lazy == nil {
 		return deps, nil
@@ -279,11 +281,11 @@ const (
 )
 
 type persistedDirectoryPayload struct {
-	Form           string          `json:"form"`
-	Dir            string          `json:"dir,omitempty"`
-	Platform       Platform        `json:"platform"`
-	Services       ServiceBindings `json:"services,omitempty"`
-	LazyJSON       json.RawMessage `json:"lazyJSON,omitempty"`
+	Form     string          `json:"form"`
+	Dir      string          `json:"dir,omitempty"`
+	Platform Platform        `json:"platform"`
+	Services ServiceBindings `json:"services,omitempty"`
+	LazyJSON json.RawMessage `json:"lazyJSON,omitempty"`
 }
 
 func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
