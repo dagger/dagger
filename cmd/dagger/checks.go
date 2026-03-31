@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
@@ -20,7 +22,10 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-var checksListMode bool
+var (
+	checksListMode  bool
+	checksNeedsHelp bool
+)
 
 //go:embed checks.graphql
 var loadChecksQuery string
@@ -30,10 +35,12 @@ func init() {
 }
 
 var checksCmd = &cobra.Command{
-	Hidden:  true,
-	Aliases: []string{"checks"},
-	Use:     "check [options] [pattern...]",
-	Short:   "Check the state of your project by running tests, linters, etc.",
+	Hidden:                true,
+	Aliases:               []string{"checks"},
+	Use:                   "check [options] [pattern...]",
+	Short:                 "Check the state of your project by running tests, linters, etc.",
+	DisableFlagParsing:    true,
+	DisableFlagsInUseLine: true,
 	Long: `Check the state of your project by running tests, linters, etc.
 
 Examples:
@@ -42,6 +49,9 @@ Examples:
   dagger check go:lint            # Run the go:lint check and any subchecks
 `,
 	Args: cobra.ArbitraryArgs,
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		return preparseDynamicFlags(cmd, args, &checksNeedsHelp)
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
 			EnableCloudScaleOut: enableScaleOut,
@@ -51,12 +61,51 @@ Examples:
 			params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
+				def, err := initializeWorkspace(ctx, dag)
+				if err != nil {
+					return err
+				}
+				collectionFlags := discoverCollectionFilterFlags(def)
+				addCollectionFilterFlags(cmd, collectionFlags)
+				if err := cmd.ParseFlags(args); err != nil {
+					if checksNeedsHelp && errors.Is(err, pflag.ErrHelp) {
+						return cmd.Help()
+					}
+					return cmd.FlagErrorFunc()(cmd, err)
+				}
+
+				activeFilters, listFlags, err := activeCollectionFilters(cmd, collectionFlags)
+				if err != nil {
+					return err
+				}
+				if checksListMode && len(activeFilters) > 0 {
+					if flagName, ok := firstActiveCollectionFilterFlag(cmd, collectionFlags); ok {
+						return fmt.Errorf("can't use -l with --%s; use --list-%s instead", flagName, flagName)
+					}
+				}
+				if checksListMode && len(listFlags) > 0 {
+					return fmt.Errorf("can't use -l with --%s; choose one listing mode", listFlags[0].ListName)
+				}
+
+				patterns := cmd.Flags().Args()
 				ws := dag.CurrentWorkspace()
 				var checks *dagger.CheckGroup
-				if len(args) > 0 {
-					checks = ws.Checks(dagger.WorkspaceChecksOpts{Include: args})
+				if len(patterns) > 0 || len(activeFilters) > 0 {
+					checks = ws.Checks(dagger.WorkspaceChecksOpts{
+						Include: patterns,
+						Filters: activeFilters,
+					})
 				} else {
 					checks = ws.Checks()
+				}
+
+				if len(listFlags) > 0 {
+					values, err := loadCheckCollectionFilterValues(ctx, dag, checks, collectionFilterTypeNames(listFlags))
+					if err != nil {
+						return err
+					}
+					printCollectionFilterValues(cmd, values)
+					return nil
 				}
 				if checksListMode {
 					return listChecks(ctx, dag, checks, cmd)

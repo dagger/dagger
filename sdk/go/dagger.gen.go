@@ -14384,6 +14384,8 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 type WorkspaceChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing checks
+	Filters []CollectionFilterInput
 }
 
 // Return all checks from modules loaded in the workspace.
@@ -14393,6 +14395,10 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 
@@ -14513,6 +14519,8 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 type WorkspaceGeneratorsOpts struct {
 	// Only include generators matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing generators
+	Filters []CollectionFilterInput
 }
 
 // Return all generators from modules loaded in the workspace.
@@ -14522,6 +14530,10 @@ func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup 
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 

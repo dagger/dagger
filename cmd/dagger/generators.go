@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -18,7 +20,8 @@ import (
 )
 
 var (
-	generateListMode bool
+	generateListMode  bool
+	generateNeedsHelp bool
 )
 
 //go:embed generators.graphql
@@ -29,9 +32,11 @@ func init() {
 }
 
 var generateCmd = &cobra.Command{
-	Hidden: true,
-	Use:    "generate [options] [pattern...]",
-	Short:  "Generate assets of your project",
+	Hidden:                true,
+	Use:                   "generate [options] [pattern...]",
+	Short:                 "Generate assets of your project",
+	DisableFlagParsing:    true,
+	DisableFlagsInUseLine: true,
 	Long: `Generate assets of your project
 
 Examples:
@@ -40,6 +45,9 @@ Examples:
   dagger generate go:bin                     # Generate by selecting the generator function
 `,
 	Args: cobra.ArbitraryArgs,
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		return preparseDynamicFlags(cmd, args, &generateNeedsHelp)
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
 			EnableCloudScaleOut: enableScaleOut,
@@ -49,12 +57,51 @@ Examples:
 			params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
+				def, err := initializeWorkspace(ctx, dag)
+				if err != nil {
+					return err
+				}
+				collectionFlags := discoverCollectionFilterFlags(def)
+				addCollectionFilterFlags(cmd, collectionFlags)
+				if err := cmd.ParseFlags(args); err != nil {
+					if generateNeedsHelp && errors.Is(err, pflag.ErrHelp) {
+						return cmd.Help()
+					}
+					return cmd.FlagErrorFunc()(cmd, err)
+				}
+
+				activeFilters, listFlags, err := activeCollectionFilters(cmd, collectionFlags)
+				if err != nil {
+					return err
+				}
+				if generateListMode && len(activeFilters) > 0 {
+					if flagName, ok := firstActiveCollectionFilterFlag(cmd, collectionFlags); ok {
+						return fmt.Errorf("can't use -l with --%s; use --list-%s instead", flagName, flagName)
+					}
+				}
+				if generateListMode && len(listFlags) > 0 {
+					return fmt.Errorf("can't use -l with --%s; choose one listing mode", listFlags[0].ListName)
+				}
+
+				patterns := cmd.Flags().Args()
 				ws := dag.CurrentWorkspace()
 				var generators *dagger.GeneratorGroup
-				if len(args) > 0 {
-					generators = ws.Generators(dagger.WorkspaceGeneratorsOpts{Include: args})
+				if len(patterns) > 0 || len(activeFilters) > 0 {
+					generators = ws.Generators(dagger.WorkspaceGeneratorsOpts{
+						Include: patterns,
+						Filters: activeFilters,
+					})
 				} else {
 					generators = ws.Generators()
+				}
+
+				if len(listFlags) > 0 {
+					values, err := loadGeneratorCollectionFilterValues(ctx, dag, generators, collectionFilterTypeNames(listFlags))
+					if err != nil {
+						return err
+					}
+					printCollectionFilterValues(cmd, values)
+					return nil
 				}
 				if generateListMode {
 					return listGenerators(ctx, dag, generators, cmd)
