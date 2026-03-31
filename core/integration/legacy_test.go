@@ -546,7 +546,7 @@ import "context"
 type Test struct {}
 
 func (m *Test) Fn(ctx context.Context) (string, error) {
-	return dag.ModuleSource("https://github.com/dagger/dagger.git@v0.12.6").CloneURL(ctx)
+	return dag.ModuleSource("https://github.com/vito/dang.git@1388f958295ad1dac7a02149547d741092edca4b").CloneURL(ctx)
 }
 `,
 		).
@@ -554,7 +554,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, "https://github.com/dagger/dagger.git", out)
+	require.Equal(t, "https://github.com/vito/dang.git", out)
 }
 
 func (LegacySuite) TestGoCodegenOptionals(ctx context.Context, t *testctx.T) {

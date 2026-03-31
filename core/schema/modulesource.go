@@ -751,7 +751,8 @@ func (s *moduleSourceSchema) gitModuleSource(
 func (s *moduleSourceSchema) loadBlueprintModule(
 	ctx context.Context,
 	bk *buildkit.Client,
-	src *core.ModuleSource) error {
+	src *core.ModuleSource,
+) error {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get dag server: %w", err)
@@ -1615,13 +1616,15 @@ func (s *moduleSourceSchema) moduleSourceLocalContextDirectoryPath(
 
 func (s *moduleSourceSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-}) (*core.GeneratedCode, error) {
+},
+) (*core.GeneratedCode, error) {
 	return code.WithVCSGeneratedPaths(args.Paths), nil
 }
 
 func (s *moduleSourceSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-}) (*core.GeneratedCode, error) {
+},
+) (*core.GeneratedCode, error) {
 	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
@@ -2211,6 +2214,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutBlueprint(
 	parentSrc.ConfigBlueprint = nil
 	return parentSrc, nil
 }
+
 func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
@@ -2940,7 +2944,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		if err != nil {
 			return nil, fmt.Errorf("failed to get module runtime: %w", err)
 		}
-		mod.Runtime = dagql.NonNull(runtime)
+		mod.Runtime = runtime
 
 		// construct a special function with no object or function name, which tells
 		// the SDK to return the module's definition (in terms of objects, fields and
@@ -3025,19 +3029,21 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-	if clientMetadata.EagerRuntime && !mod.Runtime.Valid {
+	if clientMetadata.EagerRuntime && mod.Runtime == nil {
 		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
 			return nil, err
 		}
-		mod.Runtime = dagql.NonNull(runtime)
+		mod.Runtime = runtime
 
-		// Force load the runtime to fill the cache
-		var runtimeRes dagql.ID[*core.Container]
-		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
-			Field: "sync",
-		}); err != nil {
-			return nil, err
+		// Force load the runtime to fill the cache (only for container-based runtimes)
+		if ctr, ok := mod.Runtime.AsContainer(); ok {
+			var runtimeRes dagql.ID[*core.Container]
+			if err = dag.Select(ctx, ctr, &runtimeRes, dagql.Selector{
+				Field: "sync",
+			}); err != nil {
+				return nil, err
+			}
 		}
 	}
 

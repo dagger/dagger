@@ -24,6 +24,12 @@ const (
 	goSDKIntrospectionJSONPath  = "/schema.json"
 	goSDKDependenciesConfigPath = "/dependencies.json"
 	GoSDKModuleIDPath           = "typedefs.json"
+
+	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
+	// change is needed in the generated library.
+	// Otherwise, update it to the latest known commit during release.
+	// CURRENT commit: v0.20.3
+	goSDKLibVersion = "9fc3f2f9bef863b0d4a8cab58ee012300f4e608f"
 )
 
 /*
@@ -329,6 +335,7 @@ func (sdk *goSDK) ModuleTypes(
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
 						"--introspection-json-path", goSDKIntrospectionJSONPath,
+						"--lib-version", dagql.String(goSDKLibVersion),
 						"--output", GoSDKModuleIDPath,
 					},
 				},
@@ -385,18 +392,18 @@ func (sdk *goSDK) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.ObjectResult[*core.ModuleSource],
-) (inst dagql.ObjectResult[*core.Container], rerr error) {
+) (_ core.ModuleRuntime, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
 	defer telemetry.EndWithCause(span, &rerr)
 
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
+		return nil, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
 	}
 
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
-		return inst, err
+		return nil, err
 	}
 	if err := dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
@@ -454,16 +461,16 @@ func (sdk *goSDK) Runtime(
 			},
 		},
 	); err != nil {
-		return inst, fmt.Errorf("failed to build go runtime binary: %w", err)
+		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
 
 	if cfg := source.Self().SDK; cfg != nil && cfg.Debug {
 		if err := dag.Select(ctx, ctr, &ctr, dagql.Selector{Field: "terminal"}); err != nil {
-			return inst, fmt.Errorf("failed to enable go sdk runtime terminal: %w", err)
+			return nil, fmt.Errorf("failed to enable go sdk runtime terminal: %w", err)
 		}
 	}
 
-	return ctr, nil
+	return &core.ContainerRuntime{Container: ctr}, nil
 }
 
 func (sdk *goSDK) baseWithCodegen(
@@ -516,17 +523,11 @@ func (sdk *goSDK) baseWithCodegen(
 		"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
+		"--lib-version", dagql.String(goSDKLibVersion),
 	}
 	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
-
-	/* FIXME: dev version handling is broken because it requires changing imports in code
-	if !engine.IsDevVersion(engine.Version) {
-		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engine.Version))
-	}
-	*/
-	codegenArgs = append(codegenArgs, "--lib-version", dagql.String("v0.19.11"))
 
 	selectors := []dagql.Selector{
 		{

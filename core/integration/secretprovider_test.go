@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -135,6 +136,13 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "myroot").
 		WithEnvVariable("VAULT_DEV_LISTEN_ADDRESS", "0.0.0.0:8200").
 		WithEnvVariable("SKIP_SETCAP", "1").
+		WithDockerHealthcheck([]string{"vault", "status", "-address=http://127.0.0.1:8200"}, dagger.ContainerWithDockerHealthcheckOpts{
+			Interval:      "1s",
+			Timeout:       "5s",
+			StartPeriod:   "30s",
+			StartInterval: "1s",
+			Retries:       30,
+		}).
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{"vault", "server", "-dev"},
 		}).Start(ctx)
@@ -148,7 +156,6 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
 		WithEnvVariable("VAULT_TOKEN", "myroot").
 		WithEnvVariable("NOCACHE", time.Now().String()).
-		WithExec([]string{"sleep", "5"}). // Wait for server to be ready
 		WithExec([]string{"vault", "kv", "put", "/secret/testsecret", "foo=" + secretValue}).
 		Sync(ctx)
 	require.NoError(t, err)
@@ -186,6 +193,138 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `secret not found`)
+}
+
+func (SecretProvider) TestVaultOIDCFallbackError(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "testsecret", "foo", "secret"+identity.NewID())
+
+	ctr := newVaultQueryContainer(c, t, vaultServer).
+		WithEnvVariable("VAULT_OIDC_SKIP_BROWSER", "1")
+
+	_, err := fetchSecret(
+		ctx,
+		ctr,
+		"vault://testsecret.foo",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	requireErrRegexp(t, err, `(?i)vault oidc login failed`)
+	requireErrRegexp(t, err, `(?i)(oidc/auth_url|OIDC auth URL)`)
+	requireErrRegexp(t, err, `(?i)permission denied`)
+}
+
+func (SecretProvider) TestVaultOIDCMissingVaultAddr(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+	_, err := fetchSecret(
+		ctx,
+		ctr,
+		"vault://testsecret.foo",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	requireErrOut(t, err, "VAULT_ADDR must be set when using Vault OIDC fallback auth")
+}
+
+func (SecretProvider) TestVaultOIDCTokenPriority(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
+	secretValue := "secret" + identity.NewID()
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "testsecret", "foo", secretValue)
+
+	ctr := newVaultQueryContainer(c, t, vaultServer).
+		WithEnvVariable("VAULT_TOKEN", "myroot").
+		WithEnvVariable("VAULT_OIDC_SKIP_BROWSER", "1").
+		WithEnvVariable("VAULT_OIDC_ROLE", "unused-test-role")
+
+	out, err := fetchSecret(
+		ctx,
+		ctr,
+		"vault://testsecret.foo",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, secretValue, out)
+}
+
+func (SecretProvider) TestVaultOIDCCachedToken(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
+	secretValue := "secret" + identity.NewID()
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "testsecret", "foo", secretValue)
+
+	ctr := newVaultQueryContainer(c, t, vaultServer).
+		WithEnvVariable("VAULT_OIDC_SKIP_BROWSER", "1")
+	ctr = withCachedVaultToken(ctr, "myroot", time.Now().Add(1*time.Hour))
+
+	out, err := fetchSecret(
+		ctx,
+		ctr,
+		"vault://testsecret.foo",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, secretValue, out)
+}
+
+func (SecretProvider) TestVaultOIDCExpiredCachedToken(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "testsecret", "foo", "secret"+identity.NewID())
+
+	ctr := newVaultQueryContainer(c, t, vaultServer).
+		WithEnvVariable("VAULT_OIDC_SKIP_BROWSER", "1")
+	ctr = withCachedVaultToken(ctr, "myroot", time.Now().Add(-1*time.Hour))
+
+	_, err := fetchSecret(
+		ctx,
+		ctr,
+		"vault://testsecret.foo",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	requireErrRegexp(t, err, `(?i)vault oidc login failed`)
+	requireErrRegexp(t, err, `(?i)(oidc/auth_url|OIDC auth URL)`)
+	requireErrRegexp(t, err, `(?i)permission denied`)
+}
+
+func (SecretProvider) TestVaultOIDCEndToEnd(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dex := startDexOIDCProvider(ctx, t, c)
+	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, map[string]*dagger.Service{"dex": dex})
+
+	secretValue := "secret" + identity.NewID()
+	configureVaultOIDC(ctx, t, vaultImage, vaultServer, dex, secretValue)
+
+	ctr := c.Container().
+		From("alpine:3.20").
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		With(nonNestedDevEngine(c)).
+		WithExec([]string{"apk", "add", "--no-cache", "curl"}).
+		WithServiceBinding("vault", vaultServer).
+		WithServiceBinding("dex", dex).
+		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
+		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
+		WithEnvVariable("VAULT_OIDC_CALLBACK_PORT", "8250")
+
+	queryCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+
+	out, err := querySecretWithOIDCBrowserSimulation(
+		queryCtx,
+		ctr,
+		"vault://oidctest.foo",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, secretValue, out)
 }
 
 func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
@@ -284,6 +423,13 @@ func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *d
 				From("hashicorp/vault").
 				WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "vault-root-token").
 				WithEnvVariable("VAULT_LOG_LEVEL", "debug").
+				WithDockerHealthcheck([]string{"vault", "status", "-address=http://127.0.0.1:8200"}, dagger.ContainerWithDockerHealthcheckOpts{
+					Interval:      "1s",
+					Timeout:       "5s",
+					StartPeriod:   "30s",
+					StartInterval: "1s",
+					Retries:       30,
+				}).
 				WithExposedPort(8200).
 				AsService(dagger.ContainerAsServiceOpts{
 					UseEntrypoint:                 true,
@@ -351,24 +497,63 @@ sleep 5 # wait for gnome-keyring-daemon to be ready
 func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// Start LocalStack container for testing AWS services
-	localstack, err := c.Container().
-		From("localstack/localstack:latest").
-		WithEnvVariable("SERVICES", "secretsmanager,ssm").
-		WithEnvVariable("DEBUG", "1").
+	// Start floci container for testing AWS services
+	fakeAws, err := c.Container().
+		From("hectorvent/floci:1.0.4@sha256:70733770e91ea387a4812fa2e9526df02d934aeb5057a760296fc4fb05345a9a").
+		WithNewFile("src/main/resources/application.yml", `
+floci:
+  services:
+    ssm:
+      enabled: true
+    sqs:
+      enabled: false
+    s3:
+      enabled: false
+    dynamodb:
+      enabled: false
+    sns:
+      enabled: false
+    lambda:
+      enabled: false
+    apigateway:
+      enabled: false
+    iam:
+      enabled: false
+    elasticache:
+      enabled: false
+    rds:
+      enabled: false
+    eventbridge:
+      enabled: false
+    cloudwatchlogs:
+      enabled: false
+    cloudwatchmetrics:
+      enabled: false
+    secretsmanager:
+      enabled: true
+    kinesis:
+      enabled: false
+    kms:
+      enabled: false
+    cognito:
+      enabled: false
+    stepfunctions:
+      enabled: false
+    cloudformation:
+      enabled: false
+`).
 		WithExposedPort(4566).
 		AsService().Start(ctx)
 	require.NoError(t, err)
 
-	// Wait for LocalStack to be ready and set up AWS CLI base container
+	// Wait for the fake AWS to be ready and set up AWS CLI base container
 	awsCLI := c.Container().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "--no-cache", "aws-cli", "curl"}).
-		WithServiceBinding("localstack", localstack).
+		WithServiceBinding("fakeaws", fakeAws).
 		WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
 		WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
 		WithEnvVariable("AWS_REGION", "us-east-1").
-		WithExec([]string{"sh", "-c", "sleep 10 && curl -v http://localstack:4566/_localstack/health || true"}). // Wait and test LocalStack
 		WithEnvVariable("NOCACHE", time.Now().String())
 
 	// Create test secrets in Secrets Manager
@@ -376,7 +561,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	_, err = awsCLI.
 		WithExec([]string{
 			"aws", "secretsmanager", "create-secret",
-			"--endpoint-url", "http://localstack:4566",
+			"--endpoint-url", "http://fakeaws:4566",
 			"--name", "test/string-secret",
 			"--secret-string", secretValue,
 		}).Sync(ctx)
@@ -387,7 +572,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	_, err = awsCLI.
 		WithExec([]string{
 			"aws", "secretsmanager", "create-secret",
-			"--endpoint-url", "http://localstack:4566",
+			"--endpoint-url", "http://fakeaws:4566",
 			"--name", "test/json-secret",
 			"--secret-string", jsonSecret,
 		}).Sync(ctx)
@@ -398,7 +583,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	_, err = awsCLI.
 		WithExec([]string{
 			"aws", "ssm", "put-parameter",
-			"--endpoint-url", "http://localstack:4566",
+			"--endpoint-url", "http://fakeaws:4566",
 			"--name", "/test/parameter",
 			"--value", paramValue,
 			"--type", "SecureString",
@@ -409,11 +594,11 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithServiceBinding("localstack", localstack).
+		WithServiceBinding("fakeaws", fakeAws).
 		WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
 		WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
 		WithEnvVariable("AWS_REGION", "us-east-1").
-		WithEnvVariable("AWS_ENDPOINT_URL", "http://localstack:4566").
+		WithEnvVariable("AWS_ENDPOINT_URL", "http://fakeaws:4566").
 		WithEnvVariable("NOCACHE", time.Now().String())
 
 	// Test 1: Secrets Manager string secret
@@ -497,6 +682,280 @@ func fetchSecret(ctx context.Context, ctr *dagger.Container, url string, opts da
 
 	out, err := ctr.WithExec([]string{"dagger", "query"}, opts).Stdout(ctx)
 	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		Secret struct {
+			Plaintext string `json:"plaintext"`
+		} `json:"secret"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		return "", fmt.Errorf("failed to decode %q: %w", out, err)
+	}
+
+	return result.Secret.Plaintext, nil
+}
+
+func startVaultDevServer(ctx context.Context, t *testctx.T, c *dagger.Client, bindings map[string]*dagger.Service) (*dagger.Container, *dagger.Service) {
+	vaultImage := c.Container().From("hashicorp/vault:1.18")
+	for alias, svc := range bindings {
+		vaultImage = vaultImage.WithServiceBinding(alias, svc)
+	}
+
+	vaultServer, err := vaultImage.
+		WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "myroot").
+		WithEnvVariable("VAULT_DEV_LISTEN_ADDRESS", "0.0.0.0:8200").
+		WithEnvVariable("SKIP_SETCAP", "1").
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{"vault", "server", "-dev"},
+		}).Start(ctx)
+	require.NoError(t, err)
+
+	return vaultImage, vaultServer
+}
+
+func seedVaultSecret(ctx context.Context, t *testctx.T, vaultImage *dagger.Container, vaultServer *dagger.Service, path string, field string, value string) {
+	_, err := vaultImage.
+		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
+		WithServiceBinding("vault", vaultServer).
+		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
+		WithEnvVariable("VAULT_TOKEN", "myroot").
+		WithEnvVariable("NOCACHE", time.Now().String()).
+		WithExec([]string{"vault", "kv", "put", "/secret/" + path, field + "=" + value}).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
+func newVaultQueryContainer(c *dagger.Client, t *testctx.T, vaultServer *dagger.Service) *dagger.Container {
+	return c.Container().
+		From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
+		WithServiceBinding("vault", vaultServer).
+		WithEnvVariable("VAULT_SKIP_VERIFY", "1")
+}
+
+func withCachedVaultToken(ctr *dagger.Container, token string, expiresAt time.Time) *dagger.Container {
+	payload := fmt.Sprintf(`{"token":%q,"expires_at":%q}`, token, expiresAt.UTC().Format(time.RFC3339Nano))
+	return ctr.WithNewFile("/root/.config/dagger/vault-token", payload, dagger.ContainerWithNewFileOpts{Permissions: 0o600})
+}
+
+func startDexOIDCProvider(ctx context.Context, t *testctx.T, c *dagger.Client) *dagger.Service {
+	const dexConfig = `issuer: http://dex:5556/dex
+storage:
+  type: memory
+web:
+  http: 0.0.0.0:5556
+oauth2:
+  skipApprovalScreen: true
+staticClients:
+- id: dagger-test
+  name: Dagger Test
+  secret: dagger-secret
+  redirectURIs:
+  - http://localhost:8250/oidc/callback
+enablePasswordDB: true
+staticPasswords:
+- email: test@example.com
+  # bcrypt hash for "password"
+  hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+  username: test
+  userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+`
+
+	dex, err := c.Container().
+		From("dexidp/dex:v2.37.0").
+		WithNewFile("/etc/dex/config.yaml", dexConfig).
+		WithExposedPort(5556).
+		WithDockerHealthcheck([]string{"wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/.well-known/openid-configuration"}, dagger.ContainerWithDockerHealthcheckOpts{
+			Interval:      "1s",
+			Timeout:       "5s",
+			StartPeriod:   "30s",
+			StartInterval: "1s",
+			Retries:       30,
+		}).
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{"dex", "serve", "/etc/dex/config.yaml"},
+		}).Start(ctx)
+	require.NoError(t, err)
+
+	return dex
+}
+
+func configureVaultOIDC(ctx context.Context, t *testctx.T, vaultImage *dagger.Container, vaultServer *dagger.Service, dex *dagger.Service, secretValue string) {
+	_, err := vaultImage.
+		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
+		WithEnvVariable("VAULT_TOKEN", "myroot").
+		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
+		WithServiceBinding("vault", vaultServer).
+		WithServiceBinding("dex", dex).
+		WithExec([]string{"vault", "auth", "enable", "oidc"}).
+		WithExec([]string{"sh", "-c", `cat >/tmp/oidc-read.hcl <<'EOF'
+path "secret/data/oidctest" {
+  capabilities = ["read"]
+}
+EOF
+vault policy write oidc-read /tmp/oidc-read.hcl`}).
+		WithExec([]string{
+			"vault", "write", "auth/oidc/config",
+			"oidc_discovery_url=http://dex:5556/dex",
+			"oidc_client_id=dagger-test",
+			"oidc_client_secret=dagger-secret",
+			"default_role=test-role",
+		}).
+		WithExec([]string{
+			"vault", "write", "auth/oidc/role/test-role",
+			"bound_audiences=dagger-test",
+			"user_claim=sub",
+			"policies=oidc-read",
+			"allowed_redirect_uris=http://localhost:8250/oidc/callback",
+		}).
+		WithExec([]string{"vault", "kv", "put", "/secret/oidctest", "foo=" + secretValue}).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
+func querySecretWithOIDCBrowserSimulation(ctx context.Context, ctr *dagger.Container, url string, opts dagger.ContainerWithExecOpts) (string, error) {
+	script := fmt.Sprintf(`set -eu
+
+query=%q
+secret_out=$(mktemp)
+dagger_err=$(mktemp)
+
+cat >/usr/local/bin/xdg-open <<'EOF'
+#!/bin/sh
+set -eu
+
+auth_url="$1"
+cookie_jar=$(mktemp)
+login_page=$(mktemp)
+auth_status=$(curl -sSL -w '%%{http_code}' -c "$cookie_jar" -b "$cookie_jar" "$auth_url" -o "$login_page")
+if [ "$auth_status" -ge 400 ]; then
+	echo "dex auth url returned HTTP $auth_status" >&2
+	exit 1
+fi
+
+login_action=$(grep -oE 'action="[^"]+"' "$login_page" | head -n 1 | sed 's/action="//;s/"$//;s/&amp;/\&/g')
+if [ -z "$login_action" ]; then
+	local_auth_path=$(grep -oE 'href="/dex/auth/local[^"]*"' "$login_page" | head -n 1 | sed 's/href="//;s/"$//;s/&amp;/\&/g')
+	if [ -z "$local_auth_path" ]; then
+		echo "failed to find dex local auth link" >&2
+		exit 1
+	fi
+
+	curl -sSL -c "$cookie_jar" -b "$cookie_jar" "http://dex:5556$local_auth_path" >"$login_page"
+	login_action=$(grep -oE 'action="[^"]+"' "$login_page" | head -n 1 | sed 's/action="//;s/"$//;s/&amp;/\&/g')
+fi
+
+login_req=$(sed -n 's/.*name="req" value="\([^"]*\)".*/\1/p' "$login_page" | head -n 1)
+if [ -z "$login_action" ]; then
+	login_action="/dex/auth/local"
+fi
+
+case "$login_action" in
+	http://*|https://*)
+		login_url="$login_action"
+		;;
+	/*)
+		login_url="http://dex:5556$login_action"
+		;;
+	*)
+		login_url="http://dex:5556/$login_action"
+		;;
+esac
+
+post_data="login=test@example.com&password=password"
+if [ -n "$login_req" ]; then
+	post_data="$post_data&req=$login_req"
+fi
+
+post_login_page=$(mktemp)
+curl -sSL -L -c "$cookie_jar" -b "$cookie_jar" \
+	--data "$post_data" \
+	"$login_url" >"$post_login_page"
+
+if grep -q 'Authentication successful\. You can close this tab\.' "$post_login_page"; then
+	exit 0
+fi
+
+if grep -q 'name="approval"' "$post_login_page"; then
+	approval_action=$(grep -oE 'action="[^"]+"' "$post_login_page" | head -n 1 | sed 's/action="//;s/"$//;s/&amp;/\&/g')
+	approval_req=$(sed -n 's/.*name="req" value="\([^"]*\)".*/\1/p' "$post_login_page" | head -n 1)
+	if [ -z "$approval_action" ]; then
+		approval_action="/dex/approval"
+	fi
+
+	case "$approval_action" in
+		http://*|https://*)
+			approval_url="$approval_action"
+			;;
+		/*)
+			approval_url="http://dex:5556$approval_action"
+			;;
+		*)
+			approval_url="http://dex:5556/$approval_action"
+			;;
+	esac
+
+	approval_data="approval=approve"
+	if [ -n "$approval_req" ]; then
+		approval_data="$approval_data&req=$approval_req"
+	fi
+
+	approval_result=$(mktemp)
+	curl -sSL -L -c "$cookie_jar" -b "$cookie_jar" \
+		--data "$approval_data" \
+		"$approval_url" >"$approval_result"
+
+	if grep -q 'Authentication successful\. You can close this tab\.' "$approval_result"; then
+		exit 0
+	fi
+fi
+
+echo "dex flow did not reach Vault callback" >&2
+exit 1
+EOF
+chmod +x /usr/local/bin/xdg-open
+
+(printf '%%s' "$query" | dagger query --silent >"$secret_out" 2>"$dagger_err") &
+dagger_pid=$!
+
+for _ in $(seq 1 120); do
+	if ! kill -0 "$dagger_pid" 2>/dev/null; then
+		break
+	fi
+	sleep 1
+done
+
+if kill -0 "$dagger_pid" 2>/dev/null; then
+	echo "timed out waiting for dagger query to finish OIDC flow" >&2
+	echo "---- dagger stderr ----" >&2
+	cat "$dagger_err" >&2
+	kill "$dagger_pid" 2>/dev/null || true
+	wait "$dagger_pid" || true
+	exit 1
+fi
+
+if ! wait "$dagger_pid"; then
+	echo "dagger query failed during OIDC flow" >&2
+	echo "---- dagger stderr ----" >&2
+	cat "$dagger_err" >&2
+	exit 1
+fi
+
+cat "$secret_out"
+`, fmt.Sprintf(`{secret(uri: %q) {plaintext}}`, url))
+
+	out, err := ctr.
+		WithNewFile("/tmp/run-vault-oidc-flow.sh", script, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
+		WithExec([]string{"sh", "/tmp/run-vault-oidc-flow.sh"}, opts).
+		Stdout(ctx)
+	if err != nil {
+		var execErr *dagger.ExecError
+		if errors.As(err, &execErr) {
+			return "", fmt.Errorf("oidc browser simulation failed: %w\nstdout:\n%s\nstderr:\n%s", err, execErr.Stdout, execErr.Stderr)
+		}
 		return "", err
 	}
 

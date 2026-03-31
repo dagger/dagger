@@ -360,7 +360,10 @@ For example, to mirror the default Docker Hub `docker.io` registry to `mirror.gc
 To test the configuration:
 
 ```shell
-dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
+dagger -M call --progress=plain container \
+  from --address=hello-world \
+  with-exec --args=/hello \
+  stdout
 ```
 
 The specified `hello-world` container will now be pulled from the mirror
@@ -400,7 +403,10 @@ The configuration can be repeated for multiple registries and mirrors if needed:
 To test the configuration:
 
 ```shell
-dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
+dagger -M call --progress=plain container \
+  from --address=hello-world \
+  with-exec --args=/hello \
+  stdout
 ```
 
 The specified `hello-world` container will now be pulled from the mirror
@@ -408,6 +414,13 @@ instead of from Docker Hub.
 
 </TabItem>
 </Tabs>
+
+:::note
+Verbose output may still show the canonical image reference (`docker.io/...`).
+That's expected: the mirror is used by the registry resolver, but Dagger
+reports the original image name. To verify that the mirror was contacted,
+check the mirror registry's access logs.
+:::
 
 ## Custom proxy
 
