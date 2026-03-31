@@ -161,6 +161,33 @@ type Go struct {
 	Exclude []string
 }
 
+// A collection of discovered Go modules.
+//
+// +collection
+type GoModules struct {
+	Project *Go // +private
+
+	// Module paths in the current collection.
+	// +keys
+	Keys []string `json:"keys"`
+}
+
+// Resolve one discovered Go module by path.
+func (mods *GoModules) Get(path string) *GoModule {
+	return &GoModule{
+		Project: mods.Project,
+		Path:    path,
+	}
+}
+
+// A discovered Go module.
+type GoModule struct {
+	Project *Go // +private
+
+	// Path to this module within the source tree.
+	Path string `json:"path"`
+}
+
 type AssociativeArray[T any] []struct {
 	Key   string
 	Value T
@@ -465,11 +492,26 @@ func (p *Go) findParentDirs(ctx context.Context, dir *dagger.Directory, filename
 	return dirs, skipped, nil
 }
 
-// Scan the source for go modules, and return their paths
+// Discover Go modules in the source tree.
 func (p *Go) Modules(
 	ctx context.Context,
 	include []string, // +optional
 	exclude []string, // +optional
+) (*GoModules, error) {
+	mods, err := p.modulePaths(ctx, include, exclude)
+	if err != nil {
+		return nil, err
+	}
+	return &GoModules{
+		Project: p,
+		Keys:    mods,
+	}, nil
+}
+
+func (p *Go) modulePaths(
+	ctx context.Context,
+	include []string,
+	exclude []string,
 ) ([]string, error) {
 	mods, _, err := p.findParentDirs(ctx, p.Source, "go.mod", include, exclude)
 	if err != nil {
@@ -478,18 +520,38 @@ func (p *Go) Modules(
 	return mods, nil
 }
 
-func (p *Go) TidyModule(ctx context.Context, mod string) (*dagger.Changeset, error) {
-	p, err := p.GenerateDaggerRuntime(ctx, mod)
+// Run go mod tidy across the selected modules.
+func (mods *GoModules) Tidy(ctx context.Context) (*dagger.Changeset, error) {
+	tidyModules := make([]*dagger.Changeset, len(mods.Keys))
+	jobs := parallel.New()
+	for i, modPath := range mods.Keys {
+		i := i
+		modPath := modPath
+		jobs = jobs.WithJob(modPath, func(ctx context.Context) error {
+			var err error
+			tidyModules[i], err = mods.Get(modPath).Tidy(ctx)
+			return err
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return nil, err
+	}
+	return changesetMerge(tidyModules...), nil
+}
+
+// Run go mod tidy for one module.
+func (mod *GoModule) Tidy(ctx context.Context) (*dagger.Changeset, error) {
+	p, err := mod.Project.GenerateDaggerRuntime(ctx, mod.Path)
 	if err != nil {
 		return nil, err
 	}
 	tidyModDir := p.Env(defaultPlatform).
-		WithWorkdir(mod).
+		WithWorkdir(mod.Path).
 		WithExec([]string{"go", "mod", "tidy"}).
 		Directory(".")
 	return p.Source.
-		WithFile(path.Join(mod, "/go.mod"), tidyModDir.File("go.mod")).
-		WithFile(path.Join(mod, "/go.sum"), tidyModDir.File("go.sum")).
+		WithFile(path.Join(mod.Path, "/go.mod"), tidyModDir.File("go.mod")).
+		WithFile(path.Join(mod.Path, "/go.sum"), tidyModDir.File("go.sum")).
 		Changes(p.Source), nil
 }
 
@@ -502,19 +564,7 @@ func (p *Go) Tidy(
 	if err != nil {
 		return nil, err
 	}
-	tidyModules := make([]*dagger.Changeset, len(modules))
-	jobs := parallel.New()
-	for i, mod := range modules {
-		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
-			var err error
-			tidyModules[i], err = p.TidyModule(ctx, mod)
-			return err
-		})
-	}
-	if err := jobs.Run(ctx); err != nil {
-		return nil, err
-	}
-	return changesetMerge(tidyModules...), nil
+	return modules.Tidy(ctx)
 }
 
 // Merge Changesets together
@@ -544,6 +594,11 @@ func (p *Go) CheckTidy(
 	if err != nil {
 		return err
 	}
+	return modules.CheckTidy(ctx)
+}
+
+// Check whether go mod tidy is up-to-date for the selected modules.
+func (mods *GoModules) CheckTidy(ctx context.Context) error {
 	jobs := parallel.New().
 		// On a large repo this can run dozens of parallel golangci-lint jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
@@ -555,25 +610,31 @@ func (p *Go) CheckTidy(
 		// For better display in 'dagger checks': we get a cool activity bar in our sub-checks
 		// TODO: remove this when dagger has a sub-checks API
 		WithRollupSpans(true)
-	for _, mod := range modules {
-		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
-			diffTidy, err := p.TidyModule(ctx, mod)
-			if err != nil {
-				return err
-			}
-			changes, err := diffTidy.AsPatch().Contents(ctx)
-			if err != nil {
-				return err
-			}
-			if len(changes) > 0 {
-				stdio := telemetry.SpanStdio(ctx, "")
-				fmt.Fprint(stdio.Stderr, changes)
-				return fmt.Errorf("%s: 'go mod tidy' must be run", mod)
-			}
-			return nil
+	for _, modPath := range mods.Keys {
+		modPath := modPath
+		jobs = jobs.WithJob(modPath, func(ctx context.Context) error {
+			return mods.Get(modPath).CheckTidy(ctx)
 		})
 	}
 	return jobs.Run(ctx)
+}
+
+// Check whether go mod tidy is up-to-date for one module.
+func (mod *GoModule) CheckTidy(ctx context.Context) error {
+	diffTidy, err := mod.Tidy(ctx)
+	if err != nil {
+		return err
+	}
+	changes, err := diffTidy.AsPatch().Contents(ctx)
+	if err != nil {
+		return err
+	}
+	if len(changes) > 0 {
+		stdio := telemetry.SpanStdio(ctx, "")
+		fmt.Fprint(stdio.Stderr, changes)
+		return fmt.Errorf("%s: 'go mod tidy' must be run", mod.Path)
+	}
+	return nil
 }
 
 func filterPath(path string, include, exclude []string) (bool, error) {
@@ -614,6 +675,11 @@ func (p *Go) Lint(
 	if err != nil {
 		return err
 	}
+	return mods.Lint(ctx)
+}
+
+// Lint the selected modules.
+func (mods *GoModules) Lint(ctx context.Context) error {
 	jobs := parallel.New().
 		// On a large repo this can run dozens of parallel golangci-lint jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
@@ -625,20 +691,22 @@ func (p *Go) Lint(
 		// For better display in 'dagger checks': we get a cool activity bar in our sub-checks
 		// TODO: remove this when dagger has a sub-checks API
 		WithRollupSpans(true)
-	for _, mod := range mods {
-		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
-			return p.LintModule(ctx, mod)
+	for _, modPath := range mods.Keys {
+		modPath := modPath
+		jobs = jobs.WithJob(modPath, func(ctx context.Context) error {
+			return mods.Get(modPath).Lint(ctx)
 		})
 	}
 	return jobs.Run(ctx)
 }
 
-func (p *Go) LintModule(ctx context.Context, mod string) error {
+// Lint one module.
+func (mod *GoModule) Lint(ctx context.Context) error {
 	lintImageRepo := "docker.io/golangci/golangci-lint"
 	lintImageTag := "v2.5.0-alpine"
 	lintImageDigest := "sha256:ac072ef3a8a6aa52c04630c68a7514e06be6f634d09d5975be60f2d53b484106"
 	lintImage := lintImageRepo + ":" + lintImageTag + "@" + lintImageDigest
-	p, err := p.GenerateDaggerRuntime(ctx, mod)
+	p, err := mod.Project.GenerateDaggerRuntime(ctx, mod.Path)
 	if err != nil {
 		return err
 	}
@@ -650,10 +718,10 @@ func (p *Go) LintModule(ctx context.Context, mod string) error {
 			WithMountedCache("/root/.cache/golangci-lint", dag.CacheVolume("golangci-lint")).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", p.Source).
-			WithWorkdir(mod).
+			WithWorkdir(mod.Path).
 			WithExec([]string{
 				"golangci-lint", "run",
-				"--path-prefix", mod + "/",
+				"--path-prefix", mod.Path + "/",
 				"--output.tab.path=stderr",
 				"--output.tab.print-linter-name=true",
 				"--output.tab.colors=false",

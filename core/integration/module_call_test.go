@@ -126,6 +126,63 @@ func (CallSuite) TestCollections(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (CallSuite) TestGoToolchainCollections(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	repo := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{
+			"toolchains/go",
+			"modules/alpine",
+			"modules/wolfi",
+			"util/parallel",
+			"go.mod",
+			"go.sum",
+		},
+	})
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithDirectory(".", repo)
+
+	t.Run("keys", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(
+			daggerCallAt("./toolchains/go", "--source=.", "modules", "--include=./toolchains/go", "keys"),
+		).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "./toolchains/go\n", out)
+	})
+
+	t.Run("get", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(
+			daggerCallAt("./toolchains/go", "--source=.", "modules", "--include=./toolchains/go", "get", "--path=./toolchains/go", "path"),
+		).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "./toolchains/go\n", out)
+	})
+
+	t.Run("subset", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(
+			daggerCallAt("./toolchains/go", "--source=.", "modules", "--include=./toolchains/go", "subset", "--keys=./toolchains/go", "keys"),
+		).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "./toolchains/go\n", out)
+	})
+
+	t.Run("batch help", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(
+			daggerCallAt("./toolchains/go", "--source=.", "modules", "--include=./toolchains/go", "batch", "--help"),
+		).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "check-tidy")
+		require.Contains(t, out, "lint")
+		require.Contains(t, out, "tidy")
+	})
+}
+
 func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 	t.Run("service args", func(ctx context.Context, t *testctx.T) {
 		t.Run("used as service binding", func(ctx context.Context, t *testctx.T) {
