@@ -104,12 +104,6 @@ type ExecutionMetadata struct {
 	// any value of "all" bypasses restrictions, a nil slice imposes them
 	AllowedLLMModules []string
 
-	// SessionProxyClientID, when set, tells the server to register a
-	// session alias so that the new client's filesync lookups resolve
-	// to the specified client's session. Used by in-process SDKs (e.g.
-	// Dang) that don't establish their own gRPC session.
-	SessionProxyClientID string
-
 	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
 	// to be at the specified version. Currently only used for integ testing.
 	ClientVersionOverride string

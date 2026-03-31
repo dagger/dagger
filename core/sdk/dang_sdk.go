@@ -114,11 +114,6 @@ func (r *DangRuntime) Call(
 	}
 	execMD.ClientStableID = identity.NewID()
 
-	// Tell the server to proxy session lookups for this client to the
-	// main (CLI) client's session, which has filesync support. The Dang
-	// SDK runs in-process and only makes HTTP requests — it never
-	// establishes a gRPC session of its own.
-	execMD.SessionProxyClientID = clientMetadata.ClientID // will be resolved to the main client via parent chain
 	if execMD.EncodedModuleID == "" {
 		mod := fnCall.Module
 		if mod.ResultID == nil {
