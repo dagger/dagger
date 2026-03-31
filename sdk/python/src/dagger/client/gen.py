@@ -14129,6 +14129,40 @@ class TypeDef(Type):
         _ctx = self._select("withField", _args)
         return TypeDef(_ctx)
 
+    def with_collection(self) -> Self:
+        """Marks an Object TypeDef as a collection."""
+        _args: list[Arg] = []
+        _ctx = self._select("withCollection", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_keys(self, name: str) -> Self:
+        """Overrides the effective keys field for a collection Object TypeDef.
+
+        Parameters
+        ----------
+        name:
+            The field name to use as the effective keys field
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionKeys", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_get(self, name: str) -> Self:
+        """Overrides the effective get function for a collection Object TypeDef.
+
+        Parameters
+        ----------
+        name:
+            The function name to use as the effective get function
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionGet", _args)
+        return TypeDef(_ctx)
+
     def with_function(self, function: Function) -> Self:
         """Adds a function for an Object or Interface TypeDef, failing if the
         type is not one of those kinds.

@@ -14222,6 +14222,35 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 	}
 }
 
+// Marks an Object TypeDef as a collection.
+func (r *TypeDef) WithCollection() *TypeDef {
+	q := r.query.Select("withCollection")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Overrides the effective keys field for a collection Object TypeDef.
+func (r *TypeDef) WithCollectionKeys(name string) *TypeDef {
+	q := r.query.Select("withCollectionKeys")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Overrides the effective get function for a collection Object TypeDef.
+func (r *TypeDef) WithCollectionGet(name string) *TypeDef {
+	q := r.query.Select("withCollectionGet")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
 // Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
 func (r *TypeDef) WithFunction(function *Function) *TypeDef {
 	assertNotNil("function", function)
