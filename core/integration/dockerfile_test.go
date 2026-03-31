@@ -620,6 +620,39 @@ RUN ls -l /out/owned/f > ls-output
 		require.NoError(t, err)
 		require.Regexp(t, `auser +agroup`, out)
 	})
+
+	t.Run("healthcheck", func(ctx context.Context, t *testctx.T) {
+		dockerfile := `FROM ` + alpineImage + `
+HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --retries=5 CMD ["sh","-c","test -d /"]
+`
+		dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+		healthcheck := dir.DockerBuild().DockerHealthcheck()
+
+		healthcheckInterval, err := healthcheck.Interval(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "21s", healthcheckInterval)
+
+		healthcheckTimeout, err := healthcheck.Timeout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "4s", healthcheckTimeout)
+
+		healthcheckStartPeriod, err := healthcheck.StartPeriod(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "9s", healthcheckStartPeriod)
+
+		healthcheckStartInterval, err := healthcheck.StartInterval(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "2s", healthcheckStartInterval)
+
+		healthcheckRetries, err := healthcheck.Retries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 5, healthcheckRetries)
+
+		healthcheckArgs, err := healthcheck.Args(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"sh", "-c", "test -d /"}, healthcheckArgs)
+	})
 }
 
 func (DockerfileSuite) TestBuildMergesWithParent(ctx context.Context, t *testctx.T) {
