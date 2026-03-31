@@ -853,11 +853,76 @@ func (DockerfileSuite) TestMissingSocketIsAllowed(ctx context.Context, t *testct
 	dir := baseDir.
 		WithNewFile("Dockerfile",
 			`FROM `+alpineImage+`
-FROM alpine:3.19
 RUN --mount=type=ssh,id=missing,target=/tmp/agent.sock \
     touch /its-ok
 `)
 	fileExists, err := dir.DockerBuild().Exists(ctx, "its-ok")
 	require.NoError(t, err)
 	require.True(t, fileExists)
+}
+
+func (DockerfileSuite) TestCopyChmod(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := c.Container().
+		From(alpineImage).
+		WithWorkdir("/src").
+		WithNewFile("foo", "foo-contents").
+		Directory(".")
+
+	baseDir := contextDir
+
+	dir := baseDir.
+		WithNewFile("Dockerfile",
+			`FROM scratch
+COPY --chmod=751 . /app/
+`)
+	perm, err := dir.DockerBuild().File("/app/foo").Stat().Permissions(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0751, perm)
+}
+
+func (DockerfileSuite) TestUserCommand(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := c.Container().
+		From(alpineImage).
+		WithWorkdir("/src").
+		WithNewFile("foo", "foo-contents").
+		Directory(".")
+
+	baseDir := contextDir
+
+	dir := baseDir.
+		WithNewFile("Dockerfile",
+			`FROM `+alpineImage+`
+RUN addgroup -g 4321 testgroup && adduser -D -u 1234 -G testgroup testuser
+USER testuser:testgroup
+WORKDIR /work
+RUN ls -l /work > ls-output
+`)
+	out, err := dir.DockerBuild().File("ls-output").Contents(ctx)
+	require.NoError(t, err)
+	require.Regexp(t, `testuser +testgroup`, out)
+}
+
+func (DockerfileSuite) TestAddGitClone(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := c.Container().
+		From(alpineImage).
+		WithWorkdir("/src").
+		WithExec([]string{"true"}). // FIXME currently an exec is required to create the workdir, without this Directory(".") fails
+		Directory(".")
+
+	baseDir := contextDir
+
+	dir := baseDir.
+		WithNewFile("Dockerfile",
+			`FROM `+alpineImage+`
+ADD https://github.com/dagger/dagger.git dagger-git-repo
+`)
+	ok, err := dir.DockerBuild().Exists(ctx, "dagger-git-repo/README.md")
+	require.NoError(t, err)
+	require.True(t, ok)
 }
