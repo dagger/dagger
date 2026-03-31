@@ -20,12 +20,14 @@ type Check struct {
 }
 
 type CheckGroup struct {
-	Node   *ModTreeNode `json:"node"`
-	Checks []*Check     `json:"checks"`
+	Node    *ModTreeNode `json:"node"`
+	Checks  []*Check     `json:"checks"`
+	include []string
+	exclude []string
 }
 
-func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGroup, error) {
-	rootNode, err := NewModTree(ctx, mod)
+func NewCheckGroup(ctx context.Context, mod *Module, include []string, filters []CollectionFilterInput) (*CheckGroup, error) {
+	rootNode, err := NewModTree(ctx, mod, NewCollectionFilterSet(filters))
 	if err != nil {
 		return nil, err
 	}
@@ -40,8 +42,9 @@ func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGr
 		checks = append(checks, &Check{Node: checkNode})
 	}
 	return &CheckGroup{
-		Node:   rootNode,
-		Checks: checks,
+		Node:    rootNode,
+		Checks:  checks,
+		include: append([]string(nil), include...),
 	}, nil
 }
 
@@ -140,10 +143,19 @@ func (r *CheckGroup) Clone() *CheckGroup {
 		cp.Node = cp.Node.Clone()
 	}
 	cp.Checks = make([]*Check, len(r.Checks))
+	cp.include = append([]string(nil), r.include...)
+	cp.exclude = append([]string(nil), r.exclude...)
 	for i := range cp.Checks {
 		cp.Checks[i] = r.Checks[i].Clone()
 	}
 	return &cp
+}
+
+func (r *CheckGroup) CollectionFilterValues(ctx context.Context, typeNames []string) ([]*CollectionFilterValues, error) {
+	if r.Node == nil {
+		return collectionFilterValuesFromWorkspaceRoots(ctx, typeNames, r.include, r.exclude, workspaceCheckRoots(r.Checks))
+	}
+	return r.Node.CollectionFilterValues(ctx, typeNames, r.include, r.exclude)
 }
 
 func (c *Check) Path() []string {

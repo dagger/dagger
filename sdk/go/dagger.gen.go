@@ -350,6 +350,15 @@ type PortForward struct {
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
+// Collection-aware filter input for check and generator traversal.
+type CollectionFilterInput struct {
+	// Collection type name.
+	TypeName string `json:"typeName"`
+
+	// Exact filter values to retain within matching collections.
+	Values []string `json:"values"`
+}
+
 // A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
 type Address struct {
 	query *querybuilder.Selection
@@ -3529,6 +3538,8 @@ func (r *CurrentModule) GeneratedContextDirectory() *Directory {
 type CurrentModuleGeneratorsOpts struct {
 	// Only include generators matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing generators
+	Filters []CollectionFilterInput
 }
 
 // Return all generators defined by the module
@@ -3540,6 +3551,10 @@ func (r *CurrentModule) Generators(opts ...CurrentModuleGeneratorsOpts) *Generat
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 
@@ -10090,6 +10105,8 @@ func (r *Module) Check(name string) *Check {
 type ModuleChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing checks
+	Filters []CollectionFilterInput
 }
 
 // Return all checks defined by the module
@@ -10101,6 +10118,10 @@ func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 
@@ -10213,6 +10234,8 @@ func (r *Module) Generator(name string) *Generator {
 type ModuleGeneratorsOpts struct {
 	// Only include generators matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing generators
+	Filters []CollectionFilterInput
 }
 
 // Return all generators defined by the module
@@ -10224,6 +10247,10 @@ func (r *Module) Generators(opts ...ModuleGeneratorsOpts) *GeneratorGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 

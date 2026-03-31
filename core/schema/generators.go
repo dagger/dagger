@@ -12,6 +12,8 @@ type generatorsSchema struct{}
 var _ SchemaResolvers = &generatorsSchema{}
 
 func (s generatorsSchema) Install(srv *dagql.Server) {
+	dagql.Fields[*core.CollectionFilterValues]{}.Install(srv)
+
 	dagql.Fields[*core.GeneratorGroup]{
 		dagql.Func("list", s.list).
 			Doc("Return a list of individual generators and their details"),
@@ -29,6 +31,12 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 				`Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.`).
 			Args(
 				dagql.Arg("onConflict").Doc(`Strategy to apply on conflicts between generators`),
+			),
+
+		dagql.Func("collectionFilterValues", s.collectionFilterValues).
+			Doc("List the available values for the requested collection-aware filters within the current generator scope").
+			Args(
+				dagql.Arg("typeNames").Doc("Collection type names to list values for"),
 			),
 	}.Install(srv)
 
@@ -59,6 +67,12 @@ func (s generatorsSchema) list(ctx context.Context, parent *core.GeneratorGroup,
 
 func (s generatorsSchema) run(ctx context.Context, parent *core.GeneratorGroup, args struct{}) (*core.GeneratorGroup, error) {
 	return parent.Run(ctx)
+}
+
+func (s generatorsSchema) collectionFilterValues(ctx context.Context, parent *core.GeneratorGroup, args struct {
+	TypeNames []string
+}) ([]*core.CollectionFilterValues, error) {
+	return parent.CollectionFilterValues(ctx, args.TypeNames)
 }
 
 type generatorsGroupIsEmptyArgs struct {

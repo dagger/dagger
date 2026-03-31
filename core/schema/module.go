@@ -84,6 +84,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all checks defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("filters").Doc("Collection-aware filters to apply while traversing checks"),
 			),
 
 		dagql.Func("check", s.moduleCheck).
@@ -98,6 +99,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all generators defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+				dagql.Arg("filters").Doc("Collection-aware filters to apply while traversing generators"),
 			),
 
 		dagql.Func("generator", s.moduleGenerator).
@@ -182,6 +184,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all generators defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+				dagql.Arg("filters").Doc("Collection-aware filters to apply while traversing generators"),
 			),
 	}.Install(dag)
 
@@ -901,6 +904,7 @@ func (s *moduleSchema) moduleChecks(
 	mod *core.Module,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Filters dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.CollectionFilterInput]]]
 	},
 ) (*core.CheckGroup, error) {
 	var include []string
@@ -909,7 +913,13 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Checks(ctx, include)
+	var filters []core.CollectionFilterInput
+	if args.Filters.Valid {
+		for _, filter := range args.Filters.Value {
+			filters = append(filters, filter.Value)
+		}
+	}
+	return mod.Checks(ctx, include, filters)
 }
 
 func (s *moduleSchema) moduleCheck(
@@ -919,7 +929,7 @@ func (s *moduleSchema) moduleCheck(
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := mod.Checks(ctx, []string{args.Name})
+	checkGroup, err := mod.Checks(ctx, []string{args.Name}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -939,6 +949,7 @@ func (s *moduleSchema) moduleGenerators(
 	mod *core.Module,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Filters dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.CollectionFilterInput]]]
 	},
 ) (*core.GeneratorGroup, error) {
 	var include []string
@@ -947,7 +958,13 @@ func (s *moduleSchema) moduleGenerators(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Generators(ctx, include)
+	var filters []core.CollectionFilterInput
+	if args.Filters.Valid {
+		for _, filter := range args.Filters.Value {
+			filters = append(filters, filter.Value)
+		}
+	}
+	return mod.Generators(ctx, include, filters)
 }
 
 func (s *moduleSchema) currentModuleGenerators(
@@ -955,6 +972,7 @@ func (s *moduleSchema) currentModuleGenerators(
 	mod *core.CurrentModule,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Filters dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.CollectionFilterInput]]]
 	},
 ) (*core.GeneratorGroup, error) {
 	var include []string
@@ -963,7 +981,13 @@ func (s *moduleSchema) currentModuleGenerators(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Module.Generators(ctx, include)
+	var filters []core.CollectionFilterInput
+	if args.Filters.Valid {
+		for _, filter := range args.Filters.Value {
+			filters = append(filters, filter.Value)
+		}
+	}
+	return mod.Module.Generators(ctx, include, filters)
 }
 
 func (s *moduleSchema) moduleGenerator(
@@ -973,7 +997,7 @@ func (s *moduleSchema) moduleGenerator(
 		Name string
 	},
 ) (*core.Generator, error) {
-	generatorGroup, err := mod.Generators(ctx, []string{args.Name})
+	generatorGroup, err := mod.Generators(ctx, []string{args.Name}, nil)
 	if err != nil {
 		return nil, err
 	}

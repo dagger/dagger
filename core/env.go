@@ -199,7 +199,7 @@ func (env *Env) Checks(ctx context.Context, include []string) (*CheckGroup, erro
 	if env.MainModule == nil {
 		return nil, fmt.Errorf("no main module set on environment")
 	}
-	return env.MainModule.Checks(ctx, include)
+	return env.MainModule.Checks(ctx, include, nil)
 }
 
 // Check returns a single check by name from the main module

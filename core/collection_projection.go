@@ -712,7 +712,7 @@ func (obj *ModuleObject) collectionSubsetKeys(subsetKeys []any) ([]any, error) {
 
 func (obj *ModuleObject) callCollectionGet(
 	ctx context.Context,
-	parent dagql.ObjectResult[*ModuleObject],
+	parent dagql.AnyResult,
 	getModFun *ModuleFunction,
 	dag *dagql.Server,
 	keyInput dagql.Input,
@@ -723,7 +723,7 @@ func (obj *ModuleObject) callCollectionGet(
 			Value: keyInput,
 		}},
 		ParentTyped:  parent,
-		ParentFields: parent.Self().Fields,
+		ParentFields: obj.Fields,
 		Server:       dag,
 	})
 }
