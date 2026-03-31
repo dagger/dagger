@@ -23,15 +23,15 @@ const (
 // while still carrying enough structured data to decode common SDK-return
 // shapes (scalars, object IDs, lists, nested combinations).
 type PersistedResultEnvelope struct {
-	Version      int                       `json:"version"`
-	Kind         string                    `json:"kind"`
-	TypeName     string                    `json:"typeName,omitempty"`
-	ResultID     uint64                    `json:"resultID,omitempty"`
-	SessionResourceHandle SessionResourceHandle `json:"sessionResourceHandle,omitempty"`
-	ObjectJSON   json.RawMessage           `json:"objectJSON,omitempty"`
-	ScalarJSON   json.RawMessage           `json:"scalarJSON,omitempty"`
-	ElemTypeName string                    `json:"elemTypeName,omitempty"`
-	Items        []PersistedResultEnvelope `json:"items,omitempty"`
+	Version               int                       `json:"version"`
+	Kind                  string                    `json:"kind"`
+	TypeName              string                    `json:"typeName,omitempty"`
+	ResultID              uint64                    `json:"resultID,omitempty"`
+	SessionResourceHandle SessionResourceHandle     `json:"sessionResourceHandle,omitempty"`
+	ObjectJSON            json.RawMessage           `json:"objectJSON,omitempty"`
+	ScalarJSON            json.RawMessage           `json:"scalarJSON,omitempty"`
+	ElemTypeName          string                    `json:"elemTypeName,omitempty"`
+	Items                 []PersistedResultEnvelope `json:"items,omitempty"`
 }
 
 type PersistedResultIDHolder interface {
@@ -132,9 +132,14 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 	}
 
 	if enumerable, ok := res.Unwrap().(Enumerable); ok {
+		shared := res.cacheSharedResult()
+		if shared == nil || shared.loadResultCall() == nil {
+			return PersistedResultEnvelope{}, fmt.Errorf("encode persisted list: missing authoritative call")
+		}
+		parentCall := shared.loadResultCall()
 		itemEnvs := make([]PersistedResultEnvelope, 0, enumerable.Len())
 		for i := 1; i <= enumerable.Len(); i++ {
-			item, err := res.NthValue(ctx, i)
+			item, err := enumerable.NthValue(i, parentCall)
 			if err != nil {
 				return PersistedResultEnvelope{}, fmt.Errorf("encode persisted list item %d: %w", i, err)
 			}
