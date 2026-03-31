@@ -13,7 +13,11 @@ func (m *Test) Tests() *GoTests {
 }
 
 type GoTest struct {
-	Name string ` + "`json:\"name\"`" + `
+	Label string ` + "`json:\"label\"`" + `
+}
+
+func (test *GoTest) Name() string {
+	return test.Label
 }
 
 // +collection
@@ -23,7 +27,7 @@ type GoTests struct {
 }
 
 func (tests *GoTests) Get(name string) *GoTest {
-	return &GoTest{Name: name}
+	return &GoTest{Label: name}
 }
 
 func (tests *GoTests) Names() string {

@@ -913,7 +913,6 @@ func (node *ModTreeNode) collectionItemResolver(ctx context.Context, name string
 		}
 
 		results := make([]dagql.AnyResult, 0)
-		nextID := 1
 		for _, collectionValue := range collectionValues {
 			collectionObj, ok := dagql.UnwrapAs[*ModuleObject](collectionValue)
 			if !ok {
@@ -936,11 +935,11 @@ func (node *ModTreeNode) collectionItemResolver(ctx context.Context, name string
 				if err != nil {
 					return nil, err
 				}
-				itemCtx := ctx
-				if curID := dagql.CurrentID(ctx); curID != nil {
-					itemCtx = dagql.ContextWithID(ctx, curID.SelectNth(nextID))
+				itemID, err := collectionObj.collectionGetID(parentResult, keyInput)
+				if err != nil {
+					return nil, err
 				}
-				nextID++
+				itemCtx := dagql.ContextWithID(ctx, itemID)
 				itemValue, err := collectionObj.callCollectionGet(itemCtx, parentResult, getModFun, node.DagqlServer, keyInput)
 				if err != nil {
 					return nil, err

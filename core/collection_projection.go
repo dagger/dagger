@@ -534,12 +534,16 @@ func (obj *ModuleObject) collectionListField(getModFun *ModuleFunction, dag *dag
 				Elem: obj.Collection.ValueType.ToTyped(),
 			}
 			result.Values = make([]dagql.AnyResult, 0, len(keys))
-			for i, key := range keys {
+			for _, key := range keys {
 				keyInput, err := self.Self().collectionKeyInput(key)
 				if err != nil {
 					return nil, err
 				}
-				itemCtx := dagql.ContextWithID(ctx, dagql.CurrentID(ctx).SelectNth(i+1))
+				itemID, err := self.Self().collectionGetID(self, keyInput)
+				if err != nil {
+					return nil, err
+				}
+				itemCtx := dagql.ContextWithID(ctx, itemID)
 				item, err := self.Self().callCollectionGet(itemCtx, self, getModFun, dag, keyInput)
 				if err != nil {
 					return nil, err
@@ -726,6 +730,27 @@ func (obj *ModuleObject) callCollectionGet(
 		ParentFields: obj.Fields,
 		Server:       dag,
 	})
+}
+
+func (obj *ModuleObject) collectionGetID(parent dagql.AnyResult, keyInput dagql.Input) (*call.ID, error) {
+	parentID := parent.ID()
+	if parentID == nil {
+		return nil, fmt.Errorf("collection %q get call has no parent ID", obj.TypeDef.Name)
+	}
+	// Collection items have a canonical identity: the raw projected get(key) call.
+	// Using that ID keeps list elements equivalent to get(key) results instead of
+	// anonymous nth selections from the enclosing list.
+	getID := parentID.Append(
+		obj.Collection.ValueType.ToType(),
+		collectionGetFunctionName,
+		call.WithView(parentID.View()),
+		call.WithModule(parentID.Module()),
+	)
+	return getID.WithArgument(call.NewArgument(
+		obj.Collection.GetArgName,
+		keyInput.ToLiteral(),
+		false,
+	)), nil
 }
 
 func collectionSliceValues(value any) ([]any, error) {
