@@ -907,7 +907,128 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			}
 		}
 	}
+
+	if err := mod.validateCollectionTypeDef(typeDef); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (mod *Module) validateCollectionTypeDef(typeDef *TypeDef) error {
+	if !typeDef.AsCollection.Valid {
+		return nil
+	}
+	if typeDef.Kind != TypeDefKindObject || !typeDef.AsObject.Valid {
+		return fmt.Errorf("only object types can be marked as collections")
+	}
+
+	obj := typeDef.AsObject.Value
+	collection := typeDef.AsCollection.Value
+
+	keysMemberName := collection.KeysMemberNameOverride
+	if keysMemberName == "" {
+		keysMemberName = "keys"
+	}
+
+	keysField, hasKeysField := obj.FieldByName(keysMemberName)
+	keysFn, hasKeysFn := obj.FunctionByName(keysMemberName)
+	switch {
+	case hasKeysField && hasKeysFn:
+		return fmt.Errorf("collection object %q has multiple effective keys members named %q", obj.OriginalName, keysMemberName)
+	case !hasKeysField && !hasKeysFn:
+		return fmt.Errorf("collection object %q must define exactly one effective keys member", obj.OriginalName)
+	}
+
+	var keysTypeDef *TypeDef
+	collection.KeysFieldName = ""
+	collection.KeysFunctionName = ""
+	switch {
+	case hasKeysField:
+		keysTypeDef = keysField.TypeDef
+		collection.KeysFieldName = keysField.Name
+	case hasKeysFn:
+		if len(keysFn.Args) != 0 {
+			return fmt.Errorf("collection object %q keys member %q must not accept arguments", obj.OriginalName, keysFn.OriginalName)
+		}
+		keysTypeDef = keysFn.ReturnType
+		collection.KeysFunctionName = keysFn.Name
+	}
+
+	keyType, err := validateCollectionKeysType(obj, keysMemberName, keysTypeDef)
+	if err != nil {
+		return err
+	}
+
+	getFunctionName := collection.GetFunctionNameOverride
+	if getFunctionName == "" {
+		getFunctionName = "get"
+	}
+
+	getFn, hasGetFn := obj.FunctionByName(getFunctionName)
+	if !hasGetFn {
+		return fmt.Errorf("collection object %q must define exactly one effective get function", obj.OriginalName)
+	}
+	if len(getFn.Args) != 1 {
+		return fmt.Errorf("collection object %q get function %q must accept exactly one argument", obj.OriginalName, getFn.OriginalName)
+	}
+
+	getArg := getFn.Args[0]
+	if getArg.TypeDef.Optional {
+		return fmt.Errorf("collection object %q get function %q argument %q must be non-null", obj.OriginalName, getFn.OriginalName, getArg.OriginalName)
+	}
+	if !isValidCollectionKeyType(getArg.TypeDef) {
+		return fmt.Errorf("collection object %q get function %q argument %q must use a scalar, custom scalar, or enum key type", obj.OriginalName, getFn.OriginalName, getArg.OriginalName)
+	}
+	if !typeDefsEqual(keyType, getArg.TypeDef) {
+		return fmt.Errorf("collection object %q get function %q argument %q must match keys member type", obj.OriginalName, getFn.OriginalName, getArg.OriginalName)
+	}
+
+	if getFn.ReturnType.Optional {
+		return fmt.Errorf("collection object %q get function %q must return a non-null object", obj.OriginalName, getFn.OriginalName)
+	}
+	if getFn.ReturnType.Kind != TypeDefKindObject || !getFn.ReturnType.AsObject.Valid {
+		return fmt.Errorf("collection object %q get function %q must return an object", obj.OriginalName, getFn.OriginalName)
+	}
+
+	collection.KeyType = keyType.Clone()
+	collection.ValueType = getFn.ReturnType.Clone()
+	collection.GetFunctionName = getFn.Name
+	collection.GetArgName = getArg.Name
+
+	return nil
+}
+
+func validateCollectionKeysType(obj *ObjectTypeDef, keysMemberName string, keysTypeDef *TypeDef) (*TypeDef, error) {
+	if keysTypeDef.Optional {
+		return nil, fmt.Errorf("collection object %q keys member %q must return a non-null list", obj.OriginalName, keysMemberName)
+	}
+	if keysTypeDef.Kind != TypeDefKindList || !keysTypeDef.AsList.Valid {
+		return nil, fmt.Errorf("collection object %q keys member %q must return a list", obj.OriginalName, keysMemberName)
+	}
+
+	keyType := keysTypeDef.AsList.Value.ElementTypeDef
+	if keyType.Optional {
+		return nil, fmt.Errorf("collection object %q keys member %q must return a list of non-null keys", obj.OriginalName, keysMemberName)
+	}
+	if !isValidCollectionKeyType(keyType) {
+		return nil, fmt.Errorf("collection object %q keys member %q must use a scalar, custom scalar, or enum key type", obj.OriginalName, keysMemberName)
+	}
+
+	return keyType, nil
+}
+
+func isValidCollectionKeyType(typeDef *TypeDef) bool {
+	switch typeDef.Kind {
+	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindScalar, TypeDefKindEnum:
+		return true
+	default:
+		return false
+	}
+}
+
+func typeDefsEqual(a, b *TypeDef) bool {
+	return a != nil && b != nil && a.IsSubtypeOf(b) && b.IsSubtypeOf(a)
 }
 
 func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef *TypeDef) error {
@@ -980,6 +1101,25 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 					return err
 				}
 				arg.SourceMap = mod.namespaceSourceMap(modPath, arg.SourceMap)
+			}
+		}
+
+		if typeDef.AsCollection.Valid {
+			collection := typeDef.AsCollection.Value
+			if collection.KeyType != nil {
+				if err := mod.namespaceTypeDef(ctx, modPath, collection.KeyType); err != nil {
+					return err
+				}
+			}
+			if collection.ValueType != nil {
+				if err := mod.namespaceTypeDef(ctx, modPath, collection.ValueType); err != nil {
+					return err
+				}
+			}
+			if collection.BatchType != nil {
+				if err := mod.namespaceTypeDef(ctx, modPath, collection.BatchType); err != nil {
+					return err
+				}
 			}
 		}
 

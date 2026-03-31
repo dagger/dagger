@@ -593,7 +593,7 @@ door.
 
 ### Planned
 
-- [ ] Add collection metadata and validation to module typedefs
+- [x] Add collection metadata and validation to module typedefs
 - [ ] Implement schema projection for public collection and batch types
 - [ ] Support explicit collection traversal in `dagger call`, `dagger shell`, and discoverability surfaces
 - [ ] Add collection-aware filtering and batch shadowing to `dagger check` and `dagger generate`
@@ -611,4 +611,4 @@ door.
 - [x] Locked the design decision that effective `get` takes exactly one non-null key argument and returns a non-null object
 - [x] Locked the design decision that load time checks structure and runtime checks behavior
 - [x] Locked the design decision that collection filters accept repeated flags and comma-separated input, with repeated flags preferred
-- [x] No engine, CLI, or SDK implementation has started yet
+- [x] Engine implementation has started with collection typedef metadata and validation

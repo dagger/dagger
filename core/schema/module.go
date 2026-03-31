@@ -256,6 +256,21 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				intent is only to refer to an object. This is how functions are able to
 				return their own object, or any other circular reference.`),
 
+		dagql.Func("withCollection", s.typeDefWithCollection).
+			Doc(`Marks an Object TypeDef as a collection.`),
+
+		dagql.Func("withCollectionKeys", s.typeDefWithCollectionKeys).
+			Doc(`Overrides the effective keys member used by a collection TypeDef.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the field or no-arg function that enumerates collection keys.`),
+			),
+
+		dagql.Func("withCollectionGet", s.typeDefWithCollectionGet).
+			Doc(`Overrides the effective get function used by a collection TypeDef.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the function that resolves one collection item by key.`),
+			),
+
 		dagql.Func("withInterface", s.typeDefWithInterface).
 			Doc(`Returns a TypeDef of kind Interface with the provided name.`),
 
@@ -307,6 +322,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 	}.Install(dag)
 
+	dagql.Fields[*core.CollectionTypeDef]{}.Install(dag)
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(dag)
 	dagql.Fields[*core.InterfaceTypeDef]{}.Install(dag)
 	dagql.Fields[*core.InputTypeDef]{}.Install(dag)
@@ -376,6 +392,28 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 		return nil, err
 	}
 	return def.WithObject(args.Name, args.Description, args.Deprecated, sourceMap), nil
+}
+
+func (s *moduleSchema) typeDefWithCollection(ctx context.Context, def *core.TypeDef, args struct{}) (*core.TypeDef, error) {
+	return def.WithCollection(), nil
+}
+
+func (s *moduleSchema) typeDefWithCollectionKeys(ctx context.Context, def *core.TypeDef, args struct {
+	Name string
+}) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("collection keys member name must not be empty")
+	}
+	return def.WithCollectionKeys(args.Name), nil
+}
+
+func (s *moduleSchema) typeDefWithCollectionGet(ctx context.Context, def *core.TypeDef, args struct {
+	Name string
+}) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("collection get function name must not be empty")
+	}
+	return def.WithCollectionGet(args.Name), nil
 }
 
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
