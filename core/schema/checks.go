@@ -66,6 +66,7 @@ func (s checksSchema) list(_ context.Context, parent *core.CheckGroup, args stru
 }
 
 func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args struct {
+	// If true, stop running checks as soon as any check fails.
 	FailFast dagql.Optional[dagql.Boolean]
 }) (*core.CheckGroup, error) {
 	return parent.Run(ctx, args.FailFast.GetOr(false).Bool())
