@@ -150,7 +150,7 @@ func (CallSuite) TestGoToolchainCollections(ctx context.Context, t *testctx.T) {
 
 	t.Run("keys", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(
-			daggerCallAt("./toolchains/go", "--source=.", "modules", "--include=./toolchains/go", "keys"),
+			daggerCallAt("./toolchains/go", "modules", "--include=./toolchains/go", "keys"),
 		).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "./toolchains/go\n", out)
@@ -158,7 +158,7 @@ func (CallSuite) TestGoToolchainCollections(ctx context.Context, t *testctx.T) {
 
 	t.Run("get", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(
-			daggerCallAt("./toolchains/go", "--source=.", "modules", "--include=./toolchains/go", "get", "--path=./toolchains/go", "path"),
+			daggerCallAt("./toolchains/go", "modules", "--include=./toolchains/go", "get", "--path=./toolchains/go", "path"),
 		).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "./toolchains/go\n", out)
@@ -166,7 +166,7 @@ func (CallSuite) TestGoToolchainCollections(ctx context.Context, t *testctx.T) {
 
 	t.Run("subset", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(
-			daggerCallAt("./toolchains/go", "--source=.", "modules", "--include=./toolchains/go", "subset", "--keys=./toolchains/go", "keys"),
+			daggerCallAt("./toolchains/go", "modules", "--include=./toolchains/go", "subset", "--keys=./toolchains/go", "keys"),
 		).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "./toolchains/go\n", out)
@@ -174,12 +174,20 @@ func (CallSuite) TestGoToolchainCollections(ctx context.Context, t *testctx.T) {
 
 	t.Run("batch help", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(
-			daggerCallAt("./toolchains/go", "--source=.", "modules", "--include=./toolchains/go", "batch", "--help"),
+			daggerCallAt("./toolchains/go", "modules", "--include=./toolchains/go", "batch", "--help"),
 		).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "check-tidy")
 		require.Contains(t, out, "lint")
 		require.Contains(t, out, "tidy")
+	})
+
+	t.Run("explicit source override", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(
+			daggerCallAt("./toolchains/go", "--source=.", "modules", "--include=./toolchains/go", "keys"),
+		).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "./toolchains/go\n", out)
 	})
 }
 

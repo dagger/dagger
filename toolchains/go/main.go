@@ -22,8 +22,16 @@ const (
 )
 
 func New(
-	// Project source directory
-	// +defaultPath="/"
+	// The current workspace containing the project source.
+	// +optional
+	workspace *dagger.Workspace,
+	// Project source path relative to the workspace root.
+	// Ignored when source is provided explicitly.
+	// +optional
+	// +default="."
+	sourcePath string,
+	// Project source directory override.
+	// +optional
 	source *dagger.Directory,
 	// Go version
 	// +optional
@@ -68,9 +76,7 @@ func New(
 	// +optional
 	extraPackages []string,
 ) *Go {
-	if source == nil {
-		source = dag.Directory()
-	}
+	source = resolveSource(workspace, sourcePath, source)
 	if moduleCache == nil {
 		// Cache volumes should be namespaced by module, but they aren't (yet).
 		// For now, we namespace them explicitly here.
@@ -122,6 +128,16 @@ func New(
 		Race:        race,
 		Experiment:  experiment,
 	}
+}
+
+func resolveSource(workspace *dagger.Workspace, sourcePath string, source *dagger.Directory) *dagger.Directory {
+	if source != nil {
+		return source
+	}
+	if workspace != nil {
+		return workspace.Directory(sourcePath)
+	}
+	return dag.Directory()
 }
 
 // A Go project
