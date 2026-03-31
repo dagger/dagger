@@ -548,7 +548,6 @@ func (args WithDirectoryDockerfileCompatArgs) Inputs(ctx context.Context) ([]llb
 }
 
 func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryDockerfileCompatArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
-	fmt.Printf("ACB dir.withDirectoryDockerfileCompat %+v\n", args)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
@@ -578,7 +577,6 @@ func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, par
 	if err != nil {
 		return res, fmt.Errorf("WithDirectoryDockerfileCompat %q failed: %w", args.Path, err)
 	}
-	fmt.Printf("ACB WithDirectoryDockerfileCompat ok!\n")
 	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 

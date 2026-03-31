@@ -1491,7 +1491,6 @@ func dispatchCopy(d *dispatchState, cfg copyConfig) error {
 				return errors.Wrap(err, "removing drive letter")
 			}
 
-			fmt.Printf("ACB setting AllowWildcard to true; src=%s pattern=%v dst=%s\n", src, patterns, dest)
 			opts := append([]llb.CopyOption{&llb.CopyInfo{
 				Mode:                mode,
 				FollowSymlinks:      true,

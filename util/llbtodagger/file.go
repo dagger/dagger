@@ -229,7 +229,6 @@ func (c *converter) applyFileAction(
 		nextID, err := applyRm(baseID, x.Rm)
 		return nextID, baseContainerID, err
 	case *pb.FileAction_Copy:
-		fmt.Printf("ACB applyFileAction on %+v\n", action)
 		srcID, err := resolveFileActionInput(action.SecondaryInput, opInputIDs, actionOutputs)
 		if err != nil {
 			return nil, nil, err
@@ -378,7 +377,6 @@ func applyCopy(
 		return nil, nil, fmt.Errorf("alwaysReplaceExistingDestPaths is unsupported")
 	}
 
-	fmt.Printf("ACB applyCopy src=%s (%s) dst=%s (%s)\n", cp.Src, cleanPath(cp.Src), cp.Dest, cleanPath(cp.Dest))
 	args := []*call.Argument{
 		argString("srcPath", cleanPath(cp.Src)),
 		argString("path", cleanPath(cp.Dest)),
@@ -421,11 +419,9 @@ func applyCopy(
 		return nil, nil, err
 	}
 	if owner != "" {
-		fmt.Printf("ACB adding owner %d\n", cp.Mode)
 		args = append(args, argString("owner", owner))
 	}
 	if cp.Mode >= 0 {
-		fmt.Printf("ACB adding perm %d\n", cp.Mode)
 		args = append(args, argInt("permissions", int64(cp.Mode)))
 	}
 

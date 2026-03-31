@@ -93,7 +93,6 @@ func (c *copier) copyFile(source, target string) (didHardlink bool, rerr error) 
 			return false, fmt.Errorf("failed to resolve target path %s: %w", target, err)
 		}
 
-		fmt.Printf("ACB os.Link %s, %s\n", realSource, realTarget)
 		err = os.Link(realSource, realTarget)
 		switch {
 		case err == nil:
