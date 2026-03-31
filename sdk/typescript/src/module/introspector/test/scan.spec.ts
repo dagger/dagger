@@ -100,6 +100,10 @@ describe("scan by reference TypeScript", function () {
       directory: "alias",
     },
     {
+      name: "Should correctly scan collections",
+      directory: "collection",
+    },
+    {
       name: "Should correctly scan minimal",
       directory: "minimal",
     },

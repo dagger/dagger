@@ -1,0 +1,80 @@
+{
+  "name": "Collection",
+  "objects": {
+    "Collection": {
+      "name": "Collection",
+      "description": "",
+      "methods": {
+        "tests": {
+          "name": "tests",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "GoTests"
+          }
+        }
+      },
+      "properties": {}
+    },
+    "GoTest": {
+      "name": "GoTest",
+      "description": "",
+      "methods": {},
+      "properties": {
+        "name": {
+          "name": "name",
+          "description": "",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        }
+      }
+    },
+    "GoTests": {
+      "name": "GoTests",
+      "description": "",
+      "isCollection": true,
+      "collectionGet": "lookup",
+      "methods": {
+        "lookup": {
+          "name": "lookup",
+          "description": "",
+          "isCollectionGet": true,
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "GoTest"
+          }
+        }
+      },
+      "properties": {
+        "keys": {
+          "name": "keys",
+          "description": "",
+          "type": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "STRING_KIND"
+            }
+          },
+          "isExposed": true
+        }
+      }
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}

@@ -55,6 +55,9 @@ export class Register {
 
       // Register the class Typedef object in Dagger
       let typeDef = dag.typeDef().withObject(object.name, objectOpts)
+      if (object.isCollection) {
+        typeDef = typeDef.withCollection()
+      }
 
       // Register all functions (methods) to this object
       Object.values(object.methods).forEach((method) => {
@@ -77,6 +80,24 @@ export class Register {
           )
         }
       })
+
+      const collectionKeys = Object.values(object.properties).find(
+        (property) => property.isCollectionKeys,
+      )
+      if (collectionKeys) {
+        typeDef = typeDef.withCollectionKeys(
+          collectionKeys.alias ?? collectionKeys.name,
+        )
+      }
+
+      const collectionGet = Object.values(object.methods).find(
+        (method) => method.isCollectionGet,
+      )
+      if (collectionGet) {
+        typeDef = typeDef.withCollectionGet(
+          collectionGet.alias ?? collectionGet.name,
+        )
+      }
 
       if (object._constructor) {
         typeDef = typeDef.withConstructor(

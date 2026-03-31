@@ -11,6 +11,11 @@ import { registry } from "./registry.js"
 export const object = registry.object
 
 /**
+ * The definition of the `@collection` decorator that marks an object as a collection.
+ */
+export const collection = registry.collection
+
+/**
  * The definition of @func decorator that should be on top of any
  * class' method that must be exposed to the Dagger API.
  *
@@ -18,6 +23,11 @@ export const object = registry.object
  * @param cache The cache setting to use for that function.
  */
 export const func = registry.func
+
+/**
+ * The definition of @get decorator that marks a method as the effective get function.
+ */
+export const get = registry.get
 
 /**
  * The definition of @check decorator that marks a function as a check.
@@ -39,6 +49,11 @@ export const generate = registry.generate
  * @param alias The alias to use for the field when exposed on the API.
  */
 export const field = registry.field
+
+/**
+ * The definition of @keys decorator that marks a field as the effective keys field.
+ */
+export const keys = registry.keys
 
 /**
  * The definition of the `@enumType` decorator that should be on top of any

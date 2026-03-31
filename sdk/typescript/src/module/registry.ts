@@ -64,6 +64,8 @@ export type FunctionOptions = {
   alias?: string
 }
 
+export type ObjectOptions = Record<string, never>
+
 /**
  * Registry stores class and method that have the @object decorator.
  *
@@ -104,6 +106,15 @@ export class Registry {
   }
 
   /**
+   * The definition of the @collection decorator that marks an object as a collection.
+   */
+  collection = (): (<T extends Class>(constructor: T) => T) => {
+    return <T extends Class>(constructor: T): T => {
+      return constructor
+    }
+  }
+
+  /**
    * The definition of @field decorator that should be on top of any
    * class' property that must be exposed to the Dagger API.
    *
@@ -117,12 +128,34 @@ export class Registry {
   }
 
   /**
+   * The definition of @keys decorator that marks a field as the effective keys field.
+   */
+  keys = (): ((target: object, propertyKey: string) => void) => {
+    return (target: object, propertyKey: string) => {}
+  }
+
+  /**
    * The definition of @func decorator that should be on top of any
    * class' method that must be exposed to the Dagger API.
    */
   func = (
     opts?: FunctionOptions | string,
   ): ((
+    target: object,
+    propertyKey: string | symbol,
+    descriptor?: PropertyDescriptor,
+  ) => void) => {
+    return (
+      target: object,
+      propertyKey: string | symbol,
+      descriptor?: PropertyDescriptor,
+    ) => {}
+  }
+
+  /**
+   * The definition of @get decorator that marks a function as the effective get function.
+   */
+  get = (): ((
     target: object,
     propertyKey: string | symbol,
     descriptor?: PropertyDescriptor,
