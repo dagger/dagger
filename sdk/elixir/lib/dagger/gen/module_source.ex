@@ -182,6 +182,20 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+  """
+  @spec generated_context_changeset(t()) :: Dagger.Changeset.t()
+  def generated_context_changeset(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("generatedContextChangeset")
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The generated files and directories made on top of the module source's context directory.
   """
   @spec generated_context_directory(t()) :: Dagger.Directory.t()

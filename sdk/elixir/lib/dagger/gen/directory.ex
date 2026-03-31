@@ -142,7 +142,8 @@ defmodule Dagger.Directory do
           {:build_args, [Dagger.BuildArg.t()]},
           {:target, String.t() | nil},
           {:secrets, [Dagger.SecretID.t()]},
-          {:no_init, boolean() | nil}
+          {:no_init, boolean() | nil},
+          {:ssh, Dagger.SocketID.t() | nil}
         ]) :: Dagger.Container.t()
   def docker_build(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =
@@ -160,6 +161,7 @@ defmodule Dagger.Directory do
         )
       )
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
+      |> QB.maybe_put_arg("ssh", optional_args[:ssh])
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -342,6 +344,24 @@ defmodule Dagger.Directory do
          }
        end}
     end
+  end
+
+  @doc """
+  Return file status
+  """
+  @spec stat(t(), String.t(), [{:do_not_follow_symlinks, boolean() | nil}]) ::
+          Dagger.Stat.t() | nil
+  def stat(%__MODULE__{} = directory, path, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("stat")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+
+    %Dagger.Stat{
+      query_builder: query_builder,
+      client: directory.client
+    }
   end
 
   @doc """

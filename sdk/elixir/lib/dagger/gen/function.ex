@@ -112,6 +112,17 @@ defmodule Dagger.Function do
   end
 
   @doc """
+  If this function is provided by a module, the name of the module. Unset otherwise.
+  """
+  @spec source_module_name(t()) :: {:ok, String.t()} | {:error, term()}
+  def source_module_name(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("sourceModuleName")
+
+    Client.execute(function.client, query_builder)
+  end
+
+  @doc """
   Returns the function with the provided argument
   """
   @spec with_arg(t(), String.t(), Dagger.TypeDef.t(), [
@@ -120,7 +131,8 @@ defmodule Dagger.Function do
           {:default_path, String.t() | nil},
           {:ignore, [String.t()]},
           {:source_map, Dagger.SourceMapID.t() | nil},
-          {:deprecated, String.t() | nil}
+          {:deprecated, String.t() | nil},
+          {:default_address, String.t() | nil}
         ]) :: Dagger.Function.t()
   def with_arg(%__MODULE__{} = function, name, type_def, optional_args \\ []) do
     query_builder =
@@ -134,6 +146,7 @@ defmodule Dagger.Function do
       |> QB.maybe_put_arg("ignore", optional_args[:ignore])
       |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
       |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
+      |> QB.maybe_put_arg("defaultAddress", optional_args[:default_address])
 
     %Dagger.Function{
       query_builder: query_builder,
@@ -206,6 +219,20 @@ defmodule Dagger.Function do
   end
 
   @doc """
+  Returns the function with a flag indicating it's a generator.
+  """
+  @spec with_generator(t()) :: Dagger.Function.t()
+  def with_generator(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("withGenerator")
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc """
   Returns the function with the given source map.
   """
   @spec with_source_map(t(), Dagger.SourceMap.t()) :: Dagger.Function.t()
@@ -214,6 +241,20 @@ defmodule Dagger.Function do
       function.query_builder
       |> QB.select("withSourceMap")
       |> QB.put_arg("sourceMap", Dagger.ID.id!(source_map))
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc """
+  Returns the function with a flag indicating it returns a service for dagger up.
+  """
+  @spec with_up(t()) :: Dagger.Function.t()
+  def with_up(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("withUp")
 
     %Dagger.Function{
       query_builder: query_builder,

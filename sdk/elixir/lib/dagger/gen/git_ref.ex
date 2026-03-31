@@ -67,14 +67,18 @@ defmodule Dagger.GitRef do
   @doc """
   The filesystem tree at this ref.
   """
-  @spec tree(t(), [{:discard_git_dir, boolean() | nil}, {:depth, integer() | nil}]) ::
-          Dagger.Directory.t()
+  @spec tree(t(), [
+          {:discard_git_dir, boolean() | nil},
+          {:depth, integer() | nil},
+          {:include_tags, boolean() | nil}
+        ]) :: Dagger.Directory.t()
   def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
     query_builder =
       git_ref.query_builder
       |> QB.select("tree")
       |> QB.maybe_put_arg("discardGitDir", optional_args[:discard_git_dir])
       |> QB.maybe_put_arg("depth", optional_args[:depth])
+      |> QB.maybe_put_arg("includeTags", optional_args[:include_tags])
 
     %Dagger.Directory{
       query_builder: query_builder,
