@@ -1034,7 +1034,10 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 
 func (mod *Module) namespaceSourceMap(modPath string, sourceMap dagql.Nullable[*SourceMap]) dagql.Nullable[*SourceMap] {
 	if !sourceMap.Valid {
-		return sourceMap
+		// Even if the SDK didn't provide a source map, record the
+		// module name so consumers (CLI, shell) can identify which
+		// module a type/function belongs to.
+		return dagql.NonNull(&SourceMap{Module: mod.Name()})
 	}
 
 	sourceMap.Value.Module = mod.Name()
