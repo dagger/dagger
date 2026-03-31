@@ -580,7 +580,7 @@ door.
 - [x] Implement schema projection for public collection and batch types
 - [x] Support explicit collection traversal in `dagger call`, `dagger shell`, and discoverability surfaces
 - [x] Add collection-aware filtering and batch shadowing to `dagger check` and `dagger generate`
-- [ ] Add module authoring support across supported SDKs and runtimes
+- [x] Add module authoring support across supported SDKs and runtimes
 - [ ] Add integration, CLI, and codegen coverage
 
 ### Accomplished
@@ -599,3 +599,4 @@ door.
 - [x] Engine implementation now projects synthetic public collection and batch schema types
 - [x] CLI type inspection now recognizes projected collections and `dagger call` treats collection leaves as explicit traversal points
 - [x] Check and generator traversal now apply collection-aware filters, batch shadowing, and raw filter-value listing
+- [x] Go, TypeScript, Python, and Java module authoring paths now register collection backing objects and explicit keys/get overrides

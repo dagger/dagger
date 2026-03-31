@@ -26,10 +26,13 @@ import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Enum;
 import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Get;
 import io.dagger.module.annotation.Generate;
 import io.dagger.module.annotation.Ignore;
+import io.dagger.module.annotation.Keys;
 import io.dagger.module.annotation.Module;
 import io.dagger.module.annotation.Object;
+import io.dagger.module.annotation.Collection;
 import io.dagger.module.info.EnumInfo;
 import io.dagger.module.info.EnumValueInfo;
 import io.dagger.module.info.FieldInfo;
@@ -71,10 +74,13 @@ import javax.lang.model.util.Elements;
 @SupportedAnnotationTypes({
   "io.dagger.module.annotation.Module",
   "io.dagger.module.annotation.Object",
+  "io.dagger.module.annotation.Collection",
   "io.dagger.module.annotation.Enum",
   "io.dagger.module.annotation.Function",
+  "io.dagger.module.annotation.Get",
   "io.dagger.module.annotation.Check",
   "io.dagger.module.annotation.Generate",
+  "io.dagger.module.annotation.Keys",
   "io.dagger.module.annotation.Optional",
   "io.dagger.module.annotation.Default",
   "io.dagger.module.annotation.DefaultPath"
@@ -97,6 +103,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     String moduleDescription = null;
     Set<ObjectInfo> annotatedObjects = new HashSet<>();
     boolean hasModuleAnnotation = false;
+    Set<String> processedObjects = new HashSet<>();
 
     Map<String, EnumInfo> enumInfos = new HashMap<>();
 
@@ -133,6 +140,16 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           case CLASS, RECORD -> {
             TypeElement typeElement = (TypeElement) element;
             String qName = typeElement.getQualifiedName().toString();
+            boolean isObject = element.getAnnotation(Object.class) != null;
+            boolean isCollection = element.getAnnotation(Collection.class) != null;
+            if (isCollection && !isObject) {
+              throw new RuntimeException(
+                  "The class %s must also be annotated with @Object when using @Collection"
+                      .formatted(qName));
+            }
+            if (!isObject || !processedObjects.add(qName)) {
+              continue;
+            }
             String name = typeElement.getAnnotation(Object.class).value();
             if (name.isEmpty()) {
               name = typeElement.getSimpleName().toString();
@@ -180,7 +197,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                 ((ExecutableElement) elt).getReturnType().getKind().name()),
                             parseParameters((ExecutableElement) elt).toArray(new ParameterInfo[0]),
                             false, // constructors are never checks
-                            false)); // constructors are never generators
+                            false, // constructors are never generators
+                            false)); // constructors are never collection gets
               } else if (constructorDefs.size() > 1) {
                 // There's more than one non-empty constructor, but Dagger only supports to expose a
                 // single one
@@ -198,7 +216,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                     .filter(
                         elt ->
                             elt.getModifiers().contains(Modifier.PUBLIC)
-                                || elt.getAnnotation(Function.class) != null)
+                                || elt.getAnnotation(Function.class) != null
+                                || elt.getAnnotation(Keys.class) != null)
                     .map(
                         elt -> {
                           String fieldName = elt.getSimpleName().toString();
@@ -208,18 +227,22 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               new FieldInfo(
                                   fieldName,
                                   parseSimpleDescription(elt),
-                                  new TypeInfo(tm.toString(), tk.name()));
+                                  new TypeInfo(tm.toString(), tk.name()),
+                                  elt.getAnnotation(Keys.class) != null);
                           return f;
                         })
                     .toList();
             List<FunctionInfo> functionInfos =
                 typeElement.getEnclosedElements().stream()
                     .filter(elt -> elt.getKind() == ElementKind.METHOD)
-                    .filter(elt -> elt.getAnnotation(Function.class) != null)
+                    .filter(
+                        elt ->
+                            elt.getAnnotation(Function.class) != null
+                                || elt.getAnnotation(Get.class) != null)
                     .map(
                         elt -> {
                           Function moduleFunction = elt.getAnnotation(Function.class);
-                          String fName = moduleFunction.value();
+                          String fName = moduleFunction != null ? moduleFunction.value() : "";
                           String fqName = elt.getSimpleName().toString();
                           if (fName.isEmpty()) {
                             fName = fqName;
@@ -237,6 +260,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                           TypeKind tk = tm.getKind();
                           boolean isCheck = elt.getAnnotation(Check.class) != null;
                           boolean isGenerate = elt.getAnnotation(Generate.class) != null;
+                          boolean isCollectionGet = elt.getAnnotation(Get.class) != null;
                           FunctionInfo functionInfo =
                               new FunctionInfo(
                                   fName,
@@ -245,7 +269,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                   new TypeInfo(tm.toString(), tk.name()),
                                   parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]),
                                   isCheck,
-                                  isGenerate);
+                                  isGenerate,
+                                  isCollectionGet);
                           return functionInfo;
                         })
                     .toList();
@@ -254,6 +279,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                     name,
                     qName,
                     parseObjectDescription(typeElement),
+                    isCollection,
                     fieldInfoInfos.toArray(new FieldInfo[fieldInfoInfos.size()]),
                     functionInfos.toArray(new FunctionInfo[functionInfos.size()]),
                     constructorInfo));
@@ -393,6 +419,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               objectInfo.description());
         }
         rm.addCode(")"); // end of dag().TypeDef().withObject(
+        if (objectInfo.collection()) {
+          rm.addCode("\n            .withCollection()");
+        }
         for (var fnInfo : objectInfo.functions()) {
           rm.addCode("\n            .withFunction(")
               .addCode(withFunction(moduleInfo.enumInfos().keySet(), objectInfo, fnInfo))
@@ -407,6 +436,18 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                 .addCode(".withDescription($S)", fieldInfo.description());
           }
           rm.addCode(")");
+        }
+        for (var fieldInfo : objectInfo.fields()) {
+          if (fieldInfo.isCollectionKeys()) {
+            rm.addCode("\n            .withCollectionKeys($S)", fieldInfo.name());
+            break;
+          }
+        }
+        for (var fnInfo : objectInfo.functions()) {
+          if (fnInfo.isCollectionGet()) {
+            rm.addCode("\n            .withCollectionGet($S)", fnInfo.name());
+            break;
+          }
         }
         if (objectInfo.constructor().isPresent()) {
           rm.addCode("\n            .withConstructor(")
