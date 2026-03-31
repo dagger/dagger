@@ -50,6 +50,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/engine/client/imageload"
@@ -96,8 +97,6 @@ type Params struct {
 
 	RunnerHost string // host of dagger engine runner serving buildkit apis
 
-	DisableHostRW bool
-
 	CloudURLCallback func(context.Context, string, string, bool)
 
 	EngineTrace   sdktrace.SpanExporter
@@ -126,6 +125,11 @@ type Params struct {
 	ExecCmd  []string
 
 	EagerRuntime bool
+
+	SkipWorkspaceModules bool
+
+	// Workspace explicitly declares workspace binding for this client.
+	Workspace *string
 
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
@@ -254,6 +258,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 			return nil, fmt.Errorf("failed to connect to dagger: %w", err)
 		}
 		return c, nil
+	}
+
+	// Refresh any expired OAuth tokens before connecting to the engine.
+	// This ensures the engine always gets a valid token.
+	if err := llmconfig.RefreshOAuthTokensIfNeeded(); err != nil {
+		slog.Warn("failed to refresh OAuth tokens", "error", err)
 	}
 
 	// Check if any of the upstream cache importers/exporters are enabled.
@@ -513,7 +523,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 
 	attachables := []bksession.Attachable{
 		// sockets
-		SocketProvider{EnableHostNetworkAccess: !c.DisableHostRW},
+		SocketProvider{EnableHostNetworkAccess: true},
 		// secrets
 		secretprovider.NewSecretProvider(),
 		// registry auth
@@ -532,13 +542,11 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	}
 
 	// filesync
-	if !c.DisableHostRW {
-		filesyncer, err := NewFilesyncer()
-		if err != nil {
-			return fmt.Errorf("new filesyncer: %w", err)
-		}
-		attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
+	filesyncer, err := NewFilesyncer()
+	if err != nil {
+		return fmt.Errorf("new filesyncer: %w", err)
 	}
+	attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 	if c.Params.PromptHandler != nil {
 		attachables = append(attachables, prompt.NewPromptAttachable(c.Params.PromptHandler))
 	}
@@ -1379,7 +1387,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		remoteEngineID = c.connector.EngineID()
 	}
 
-	return engine.ClientMetadata{
+	md := engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
 		SessionID:                 c.SessionID,
@@ -1394,12 +1402,38 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
+		ConfigPath:                llmconfig.ConfigFile,
+		LLMConfig:                 loadLLMEnvConfig(),
 		AllowedLLMModules:         c.AllowedLLMModules,
 		EagerRuntime:              c.EagerRuntime,
 		CloudAuth:                 c.CloudAuth,
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,
 	}
+
+	if c.Module != "" {
+		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Entrypoint: true}}
+		md.SkipWorkspaceModules = true
+	}
+	if c.SkipWorkspaceModules {
+		md.SkipWorkspaceModules = true
+	}
+	if c.Workspace != nil {
+		md.Workspace = c.Workspace
+	}
+
+	return md
+}
+
+// loadLLMEnvConfig packages LLM-related environment variables into an
+// LLMConfig.  Returns nil when no env vars are set.  The engine merges
+// this on top of the config file read via ConfigPath.
+func loadLLMEnvConfig() *llmconfig.LLMConfig {
+	cfg := llmconfig.MergeEnvVars(nil)
+	if len(cfg.LLM.Providers) == 0 && cfg.LLM.DefaultModel == "" {
+		return nil
+	}
+	return &cfg.LLM
 }
 
 func (c *Client) AppendHTTPRequestHeaders(headers http.Header) http.Header {

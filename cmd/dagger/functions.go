@@ -110,6 +110,10 @@ type FuncCommand struct {
 	q   *querybuilder.Selection
 	c   *client.Client
 	ctx context.Context
+
+	// withFn is the `with` function on Query root, if present.
+	// Used to forward constructor args from the root command.
+	withFn *modFunction
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -172,14 +176,27 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
 
-				return withEngine(c.Context(), initModuleParams(a), func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				execArgs := a
+				// With DisableFlagParsing enabled, --help can remain in args when it
+				// appears after the first positional token. Strip it once we know help
+				// mode was requested, so dynamic command traversal doesn't treat it as a
+				// function segment.
+				if fc.needsHelp {
+					execArgs = stripHelpArgs(execArgs)
+				}
+
+				coreOnly := shouldSkipWorkspaceModules(fc.DisableModuleLoad)
+				params := initModuleParams(execArgs)
+				params.SkipWorkspaceModules = coreOnly
+
+				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 
 					// withEngine changes the context.
 					c.SetContext(ctx)
 
-					if err := fc.execute(c, a); err != nil {
+					if err := fc.execute(c, execArgs); err != nil {
 						// We've already handled printing the error in `fc.execute`
 						// because we want to show the usage for the right sub-command.
 						// Returning ExitError here will prevent the error from being printed
@@ -231,6 +248,17 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	}
 	return fc.cmd
+}
+
+func stripHelpArgs(args []string) []string {
+	filtered := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered
 }
 
 func (fc *FuncCommand) Help(cmd *cobra.Command) error {
@@ -291,7 +319,8 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	if fc.DisableModuleLoad || moduleNoURL {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
-		mod, err = initializeDefaultModule(ctx, fc.c.Dagger())
+		// -m modules are loaded at engine connect time as extra modules.
+		mod, err = initializeWorkspace(ctx, fc.c.Dagger(), loadTypeDefsOpts{HideCore: true})
 	}
 	if err != nil {
 		return err
@@ -371,6 +400,21 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return err
 		}
 
+		// When the root type is Query and the constructor is the no-op
+		// identity (name == ""), discover `with` from the type's functions
+		// and register its args as local flags. When the constructor IS
+		// `with` (entrypoint proxying), its args are already registered
+		// by addFlagsForFunction above, but we still need to collect
+		// constructor flags from other modules sharing the Query root.
+		isQueryConstructor := fn.ReturnType != nil &&
+			fn.ReturnType.AsObject != nil &&
+			fn.ReturnType.AsObject.Name == "Query"
+		if isQueryConstructor && fn.Name == "" {
+			fc.addConstructorLocalFlags(c, fn.ReturnType)
+		} else if isQueryConstructor && fn.Name == "with" {
+			fc.withFn = fn
+		}
+
 		// Even if just for --help, parsing flags is needed to clean up the
 		// args while traversing sub-commands.
 		if err := c.ParseFlags(a); err != nil {
@@ -396,12 +440,11 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return err
 		}
 
-		// The function name can be empty if it's the mocked constructor for
-		// the root type (Query). That constructor has `fn.ReturnType` set to
-		// the root type itself, but empty name so we can exclude a selection
-		// in the query builder here.
-		if fn.Name == "" {
-			return nil
+		// For Query constructors (both no-op and `with`), only add the
+		// `with(args...)` selection if constructor flags were actually set.
+		// This avoids an empty `with()` selection when no args are provided.
+		if isQueryConstructor {
+			return fc.selectWith(c)
 		}
 
 		// Easier to add query builder selections as we traverse the command tree.
@@ -409,7 +452,70 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 	}
 }
 
+// addConstructorLocalFlags looks for a `with` field on the Query root and
+// registers its args as local flags on the root command. This lets users
+// write `dagger call --foo=abc build` — the root command consumes the
+// flag, and selectWith adds `with(foo: "abc")` to the query builder.
+func (fc *FuncCommand) addConstructorLocalFlags(cmd *cobra.Command, rootType *modTypeDef) {
+	fp := rootType.AsFunctionProvider()
+	if fp == nil {
+		return
+	}
+	for _, fn := range fp.GetFunctions() {
+		if fn.Name != "with" {
+			continue
+		}
+		// Found the `with` field — register its args as local flags.
+		fc.withFn = fn
+		for _, arg := range fn.SupportedArgs() {
+			if cmd.Flags().Lookup(arg.FlagName()) != nil {
+				continue // already registered
+			}
+			fc.mod.LoadTypeDef(arg.TypeDef)
+			if err := arg.AddFlag(cmd.Flags()); err != nil {
+				continue // skip unsupported flags
+			}
+			cmd.Flags().SetAnnotation(
+				arg.FlagName(),
+				"help:group",
+				[]string{"Arguments"},
+			)
+		}
+		break
+	}
+}
+
+// selectWith adds a `with(args...)` selection to the query builder if any
+// constructor flags were set.
+func (fc *FuncCommand) selectWith(cmd *cobra.Command) error {
+	if fc.withFn == nil {
+		return nil
+	}
+	// Check if any with-args flags were changed.
+	anyChanged := false
+	for _, a := range fc.withFn.SupportedArgs() {
+		flag, err := a.GetFlag(cmd.Flags())
+		if err != nil {
+			continue
+		}
+		if flag.Changed {
+			anyChanged = true
+			break
+		}
+	}
+	if !anyChanged {
+		return nil
+	}
+	return fc.selectFunc(fc.withFn, cmd)
+}
+
 // addFlagsForFunction creates the flags for a function's arguments.
+//
+// Function arg flags are added to cmd.Flags() before mergePersistentFlags
+// runs (triggered by the subsequent ParseFlags call in cobraBuilder).
+// This means that if a function arg has the same name as an inherited
+// persistent flag (e.g. --model), AddFlagSet during the merge will skip
+// the parent's flag and the function arg's flag wins.
 func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) error {
 	var skipped []string
 
@@ -424,7 +530,17 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 				skipped = append(skipped, arg.FlagName())
 				continue
 			}
-			return err
+			// If the collision is with an inherited persistent flag
+			// (e.g. --model from the root command), silently reuse
+			// the existing flag — ParseFlags will store the value in
+			// the same *pflag.Flag either way.
+			if cmd.InheritedFlags().Lookup(arg.FlagName()) != nil {
+				// Flag exists but only because it was inherited.
+				// The inherited flag will receive the CLI value,
+				// and GetFlag will read it back; no action needed.
+			} else {
+				return err
+			}
 		}
 		if arg.IsRequired() {
 			cmd.MarkFlagRequired(arg.FlagName())
@@ -870,6 +986,11 @@ func printID(w io.Writer, response any, typeDef *modTypeDef) error {
 }
 
 func printEncodedID(w io.Writer, encodedID string) error {
+	if encodedID == "" {
+		// special case: return value was the root object (Query itself)
+		fmt.Fprintln(w, "Query")
+		return nil
+	}
 	var id call.ID
 	if err := id.Decode(encodedID); err != nil {
 		return fmt.Errorf("failed to decode ID: %w", err)

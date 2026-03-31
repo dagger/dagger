@@ -28,6 +28,12 @@ var _ Frontend = &FrontendMock{}
 //			BackgroundFunc: func(cmd ExecCommand, raw bool) error {
 //				panic("mock out the Background method")
 //			},
+//			CloseFunc: func() error {
+//				panic("mock out the Close method")
+//			},
+//			GetLLMTokenMetricsFunc: func() *dagui.LLMTokenMetrics {
+//				panic("mock out the GetLLMTokenMetrics method")
+//			},
 //			HandleFormFunc: func(ctx context.Context, form *huh.Form) error {
 //				panic("mock out the HandleForm method")
 //			},
@@ -61,6 +67,9 @@ var _ Frontend = &FrontendMock{}
 //			SetSidebarContentFunc: func(sidebarSection SidebarSection)  {
 //				panic("mock out the SetSidebarContent method")
 //			},
+//			SetStatusLineFunc: func(statusLineData StatusLineData)  {
+//				panic("mock out the SetStatusLine method")
+//			},
 //			SetTelemetryErrorFunc: func(err error)  {
 //				panic("mock out the SetTelemetryError method")
 //			},
@@ -82,6 +91,12 @@ var _ Frontend = &FrontendMock{}
 type FrontendMock struct {
 	// BackgroundFunc mocks the Background method.
 	BackgroundFunc func(cmd ExecCommand, raw bool) error
+
+	// CloseFunc mocks the Close method.
+	CloseFunc func() error
+
+	// GetLLMTokenMetricsFunc mocks the GetLLMTokenMetrics method.
+	GetLLMTokenMetricsFunc func() *dagui.LLMTokenMetrics
 
 	// HandleFormFunc mocks the HandleForm method.
 	HandleFormFunc func(ctx context.Context, form *huh.Form) error
@@ -116,6 +131,9 @@ type FrontendMock struct {
 	// SetSidebarContentFunc mocks the SetSidebarContent method.
 	SetSidebarContentFunc func(sidebarSection SidebarSection)
 
+	// SetStatusLineFunc mocks the SetStatusLine method.
+	SetStatusLineFunc func(statusLineData StatusLineData)
+
 	// SetTelemetryErrorFunc mocks the SetTelemetryError method.
 	SetTelemetryErrorFunc func(err error)
 
@@ -136,6 +154,12 @@ type FrontendMock struct {
 			Cmd ExecCommand
 			// Raw is the raw argument value.
 			Raw bool
+		}
+		// Close holds details about calls to the Close method.
+		Close []struct {
+		}
+		// GetLLMTokenMetrics holds details about calls to the GetLLMTokenMetrics method.
+		GetLLMTokenMetrics []struct {
 		}
 		// HandleForm holds details about calls to the HandleForm method.
 		HandleForm []struct {
@@ -202,6 +226,11 @@ type FrontendMock struct {
 			// SidebarSection is the sidebarSection argument value.
 			SidebarSection SidebarSection
 		}
+		// SetStatusLine holds details about calls to the SetStatusLine method.
+		SetStatusLine []struct {
+			// StatusLineData is the statusLineData argument value.
+			StatusLineData StatusLineData
+		}
 		// SetTelemetryError holds details about calls to the SetTelemetryError method.
 		SetTelemetryError []struct {
 			// Err is the err argument value.
@@ -223,22 +252,25 @@ type FrontendMock struct {
 		SpanExporter []struct {
 		}
 	}
-	lockBackground        sync.RWMutex
-	lockHandleForm        sync.RWMutex
-	lockHandlePrompt      sync.RWMutex
-	lockLogExporter       sync.RWMutex
-	lockMetricExporter    sync.RWMutex
-	lockOpts              sync.RWMutex
-	lockRevealAllSpans    sync.RWMutex
-	lockRun               sync.RWMutex
-	lockSetClient         sync.RWMutex
-	lockSetCloudURL       sync.RWMutex
-	lockSetPrimary        sync.RWMutex
-	lockSetSidebarContent sync.RWMutex
-	lockSetTelemetryError sync.RWMutex
-	lockSetVerbosity      sync.RWMutex
-	lockShell             sync.RWMutex
-	lockSpanExporter      sync.RWMutex
+	lockBackground         sync.RWMutex
+	lockClose              sync.RWMutex
+	lockGetLLMTokenMetrics sync.RWMutex
+	lockHandleForm         sync.RWMutex
+	lockHandlePrompt       sync.RWMutex
+	lockLogExporter        sync.RWMutex
+	lockMetricExporter     sync.RWMutex
+	lockOpts               sync.RWMutex
+	lockRevealAllSpans     sync.RWMutex
+	lockRun                sync.RWMutex
+	lockSetClient          sync.RWMutex
+	lockSetCloudURL        sync.RWMutex
+	lockSetPrimary         sync.RWMutex
+	lockSetSidebarContent  sync.RWMutex
+	lockSetStatusLine      sync.RWMutex
+	lockSetTelemetryError  sync.RWMutex
+	lockSetVerbosity       sync.RWMutex
+	lockShell              sync.RWMutex
+	lockSpanExporter       sync.RWMutex
 }
 
 // Background calls BackgroundFunc.
@@ -274,6 +306,60 @@ func (mock *FrontendMock) BackgroundCalls() []struct {
 	mock.lockBackground.RLock()
 	calls = mock.calls.Background
 	mock.lockBackground.RUnlock()
+	return calls
+}
+
+// Close calls CloseFunc.
+func (mock *FrontendMock) Close() error {
+	if mock.CloseFunc == nil {
+		panic("FrontendMock.CloseFunc: method is nil but Frontend.Close was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockClose.Lock()
+	mock.calls.Close = append(mock.calls.Close, callInfo)
+	mock.lockClose.Unlock()
+	return mock.CloseFunc()
+}
+
+// CloseCalls gets all the calls that were made to Close.
+// Check the length with:
+//
+//	len(mockedFrontend.CloseCalls())
+func (mock *FrontendMock) CloseCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockClose.RLock()
+	calls = mock.calls.Close
+	mock.lockClose.RUnlock()
+	return calls
+}
+
+// GetLLMTokenMetrics calls GetLLMTokenMetricsFunc.
+func (mock *FrontendMock) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	if mock.GetLLMTokenMetricsFunc == nil {
+		panic("FrontendMock.GetLLMTokenMetricsFunc: method is nil but Frontend.GetLLMTokenMetrics was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockGetLLMTokenMetrics.Lock()
+	mock.calls.GetLLMTokenMetrics = append(mock.calls.GetLLMTokenMetrics, callInfo)
+	mock.lockGetLLMTokenMetrics.Unlock()
+	return mock.GetLLMTokenMetricsFunc()
+}
+
+// GetLLMTokenMetricsCalls gets all the calls that were made to GetLLMTokenMetrics.
+// Check the length with:
+//
+//	len(mockedFrontend.GetLLMTokenMetricsCalls())
+func (mock *FrontendMock) GetLLMTokenMetricsCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockGetLLMTokenMetrics.RLock()
+	calls = mock.calls.GetLLMTokenMetrics
+	mock.lockGetLLMTokenMetrics.RUnlock()
 	return calls
 }
 
@@ -642,6 +728,38 @@ func (mock *FrontendMock) SetSidebarContentCalls() []struct {
 	mock.lockSetSidebarContent.RLock()
 	calls = mock.calls.SetSidebarContent
 	mock.lockSetSidebarContent.RUnlock()
+	return calls
+}
+
+// SetStatusLine calls SetStatusLineFunc.
+func (mock *FrontendMock) SetStatusLine(statusLineData StatusLineData) {
+	if mock.SetStatusLineFunc == nil {
+		panic("FrontendMock.SetStatusLineFunc: method is nil but Frontend.SetStatusLine was just called")
+	}
+	callInfo := struct {
+		StatusLineData StatusLineData
+	}{
+		StatusLineData: statusLineData,
+	}
+	mock.lockSetStatusLine.Lock()
+	mock.calls.SetStatusLine = append(mock.calls.SetStatusLine, callInfo)
+	mock.lockSetStatusLine.Unlock()
+	mock.SetStatusLineFunc(statusLineData)
+}
+
+// SetStatusLineCalls gets all the calls that were made to SetStatusLine.
+// Check the length with:
+//
+//	len(mockedFrontend.SetStatusLineCalls())
+func (mock *FrontendMock) SetStatusLineCalls() []struct {
+	StatusLineData StatusLineData
+} {
+	var calls []struct {
+		StatusLineData StatusLineData
+	}
+	mock.lockSetStatusLine.RLock()
+	calls = mock.calls.SetStatusLine
+	mock.lockSetStatusLine.RUnlock()
 	return calls
 }
 

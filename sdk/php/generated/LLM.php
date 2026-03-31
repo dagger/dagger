@@ -87,10 +87,22 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
      */
-    public function loop(): LLM
+    public function loop(?int $maxAPICalls = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loop');
+        if (null !== $maxAPICalls) {
+        $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
+        }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The full message history.
+     */
+    public function messages(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('messages');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'messages');
     }
 
     /**
@@ -127,6 +139,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+    }
+
+    /**
+     * A system prompt to send.
+     */
+    public function systemPrompt(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('systemPrompt');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'systemPrompt');
     }
 
     /**
@@ -210,6 +231,37 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Append an assistant response to the message history
+     */
+    public function withResponse(
+        array $content,
+        ?int $inputTokens = 0,
+        ?int $outputTokens = 0,
+        ?int $cachedTokenReads = 0,
+        ?int $cachedTokenWrites = 0,
+        ?int $totalTokens = 0,
+    ): LLM {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withResponse');
+        $innerQueryBuilder->setArgument('content', $content);
+        if (null !== $inputTokens) {
+        $innerQueryBuilder->setArgument('inputTokens', $inputTokens);
+        }
+        if (null !== $outputTokens) {
+        $innerQueryBuilder->setArgument('outputTokens', $outputTokens);
+        }
+        if (null !== $cachedTokenReads) {
+        $innerQueryBuilder->setArgument('cachedTokenReads', $cachedTokenReads);
+        }
+        if (null !== $cachedTokenWrites) {
+        $innerQueryBuilder->setArgument('cachedTokenWrites', $cachedTokenWrites);
+        }
+        if (null !== $totalTokens) {
+        $innerQueryBuilder->setArgument('totalTokens', $totalTokens);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
      */
     public function withStaticTools(): LLM
@@ -225,6 +277,30 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSystemPrompt');
         $innerQueryBuilder->setArgument('prompt', $prompt);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Append a tool call to the last assistant message
+     */
+    public function withToolCall(string $call, string $tool, Json $arguments): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolCall');
+        $innerQueryBuilder->setArgument('call', $call);
+        $innerQueryBuilder->setArgument('tool', $tool);
+        $innerQueryBuilder->setArgument('arguments', $arguments);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Append a tool response to the message history
+     */
+    public function withToolResponse(string $call, string $content, bool $errored): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolResponse');
+        $innerQueryBuilder->setArgument('call', $call);
+        $innerQueryBuilder->setArgument('content', $content);
+        $innerQueryBuilder->setArgument('errored', $errored);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

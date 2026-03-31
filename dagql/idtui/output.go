@@ -73,5 +73,8 @@ func HasDarkBackground() bool {
 }
 
 func hl(st termenv.Style) termenv.Style {
-	return st.Reverse()
+	return st.Foreground(AdaptiveColor{
+		Dark:  termenv.ANSI256Color(255),
+		Light: termenv.ANSI256Color(0),
+	})
 }

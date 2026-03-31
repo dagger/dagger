@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/muesli/termenv"
 	"github.com/vito/midterm"
@@ -32,6 +33,10 @@ type Vterm struct {
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
 	needsRedraw bool
+
+	// Thinking mode: when true, rendered Markdown is styled dim+italic
+	// to visually distinguish LLM thinking/reasoning output.
+	Thinking bool
 
 	// Search highlight state. When SearchQuery is non-empty, matching
 	// substrings in rendered lines are highlighted. SearchCurrentRow
@@ -248,16 +253,79 @@ func (term *Vterm) View() string {
 
 var MarkdownStyle = styles.LightStyleConfig
 
+// ThinkingMarkdownStyle is used for LLM thinking/reasoning output.
+// All text is rendered in a dim gray (ANSIBrightBlack equivalent)
+// and italic to visually distinguish it from normal assistant output.
+var ThinkingMarkdownStyle ansi.StyleConfig
+
 func init() {
 	if HasDarkBackground() {
 		MarkdownStyle = styles.DarkStyleConfig
 	}
 
+	t := true
+	noMargin := uint(0)
+
 	// We don't need any extra margin.
-	MarkdownStyle.Document.Margin = nil
+	MarkdownStyle.Document.Margin = &noMargin
 
 	// No real point setting a custom foreground, it just looks weird.
 	MarkdownStyle.Document.Color = nil
+
+	// Tone down headings: use bold with ANSI colors, no backgrounds.
+	h1Color := "15" // bright white
+	MarkdownStyle.H1 = ansi.StyleBlock{
+		StylePrimitive: ansi.StylePrimitive{
+			Bold:   &t,
+			Color:  &h1Color,
+			Prefix: "# ",
+		},
+	}
+	h2Color := "15"
+	MarkdownStyle.H2 = ansi.StyleBlock{
+		StylePrimitive: ansi.StylePrimitive{
+			Bold:   &t,
+			Color:  &h2Color,
+			Prefix: "## ",
+		},
+	}
+
+	// Inline code: subtle, no red, no background, no padding.
+	codeColor := "14" // bright cyan
+	MarkdownStyle.Code = ansi.StyleBlock{
+		StylePrimitive: ansi.StylePrimitive{
+			Color: &codeColor,
+		},
+	}
+
+	// Code blocks: no chroma, no margin, just dim text.
+	codeBlockColor := "7" // white (normal)
+	MarkdownStyle.CodeBlock = ansi.StyleCodeBlock{
+		StyleBlock: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				Color: &codeBlockColor,
+			},
+			Margin: &noMargin,
+		},
+		Chroma: &ansi.Chroma{},
+	}
+
+	// Links: use ANSI blue.
+	linkColor := "4" // blue
+	MarkdownStyle.Link = ansi.StylePrimitive{
+		Color:     &linkColor,
+		Underline: &t,
+	}
+
+	// Build thinking style: clone the base style and set all text to
+	// a dim gray + italic. We use ANSI 90 which is "bright black" —
+	// the same color as termenv.ANSIBrightBlack.
+	ThinkingMarkdownStyle = MarkdownStyle
+	dimColor := "8" // ANSI color index 8 = termenv.ANSIBrightBlack
+	ThinkingMarkdownStyle.Document.StylePrimitive.Color = &dimColor
+	ThinkingMarkdownStyle.Document.StylePrimitive.Italic = &t
+	ThinkingMarkdownStyle.Paragraph.Color = &dimColor
+	ThinkingMarkdownStyle.Paragraph.Italic = &t
 }
 
 func (term *Vterm) redraw() {
@@ -265,9 +333,14 @@ func (term *Vterm) redraw() {
 
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
+		style := MarkdownStyle
+		if term.Thinking {
+			style = ThinkingMarkdownStyle
+		}
+
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
-			glamour.WithStyles(MarkdownStyle),
+			glamour.WithStyles(style),
 			glamour.WithPreservedNewLines(),
 			glamour.WithEmoji(),
 		)

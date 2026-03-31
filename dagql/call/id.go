@@ -72,6 +72,13 @@ func (id *ID) Receiver() *ID {
 	return id.receiver
 }
 
+func (id *ID) String() string {
+	if id == nil {
+		return "<nil>"
+	}
+	return id.Call().String()
+}
+
 // The root Call of the ID, with its Digest set. Exposed so that Calls can be
 // streamed over the wire one-by-one, rather than emitting full DAGs, which
 // would involve a ton of duplication.
@@ -264,6 +271,15 @@ func (id *ID) Path() string {
 		fmt.Fprintf(buf, "%s.", id.receiver.Path())
 	}
 	fmt.Fprint(buf, id.DisplaySelf())
+	return buf.String()
+}
+
+func (id *ID) DisplayShort() string {
+	buf := new(strings.Builder)
+	if id.Receiver() != nil {
+		fmt.Fprintf(buf, "%s@%s.", id.Receiver().Type().NamedType(), id.Receiver().Digest())
+	}
+	buf.WriteString(id.DisplaySelf())
 	return buf.String()
 }
 

@@ -30,15 +30,7 @@ func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGr
 		return nil, err
 	}
 
-	var exclude []string
-	if mod.Toolchains != nil {
-		for _, entry := range mod.Toolchains.Entries() {
-			for _, ignorePattern := range entry.IgnoreChecks {
-				exclude = append(exclude, entry.FieldName+":"+ignorePattern)
-			}
-		}
-	}
-	checkNodes, err := rootNode.RollupChecks(ctx, include, exclude)
+	checkNodes, err := rootNode.RollupChecks(ctx, include, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +79,10 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			} else {
 				check.Passed = true
 			}
-			return err
+			// Don't propagate check failures as job errors;
+			// the failure is captured in the Check itself so
+			// callers can query .passed, .error, and .report.
+			return nil
 		})
 	}
 	if err := jobs.Run(ctx); err != nil {
@@ -97,16 +92,69 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 }
 
 func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
-	headers := []string{"check", "description", "success"}
-	rows := [][]string{}
+	var passed, failed, pending int
 	for _, check := range r.Checks {
-		rows = append(rows, []string{
-			check.Name(),
-			check.Description(),
-			check.ResultEmoji(),
-		})
+		switch {
+		case !check.Completed:
+			pending++
+		case check.Passed:
+			passed++
+		default:
+			failed++
+		}
 	}
-	contents := markdownTable(headers, rows...)
+
+	var sb strings.Builder
+	total := len(r.Checks)
+	fmt.Fprintf(&sb, "%d/%d checks passed", passed, total)
+	if failed > 0 {
+		fmt.Fprintf(&sb, ", %d failed", failed)
+	}
+	if pending > 0 {
+		fmt.Fprintf(&sb, ", %d pending", pending)
+	}
+	sb.WriteString("\n")
+
+	// List failures first with error details
+	for _, check := range r.Checks {
+		if !check.Completed || check.Passed {
+			continue
+		}
+		fmt.Fprintf(&sb, "\nFAIL %s", check.Name())
+		if desc := check.Description(); desc != "" {
+			fmt.Fprintf(&sb, " - %s", desc)
+		}
+		sb.WriteString("\n")
+		if check.Error.Valid {
+			fmt.Fprintf(&sb, "  error: %s\n", check.Error.Value.Self().Message)
+		}
+	}
+
+	// Then list passing checks
+	for _, check := range r.Checks {
+		if !check.Completed || !check.Passed {
+			continue
+		}
+		fmt.Fprintf(&sb, "\nPASS %s", check.Name())
+		if desc := check.Description(); desc != "" {
+			fmt.Fprintf(&sb, " - %s", desc)
+		}
+		sb.WriteString("\n")
+	}
+
+	// Then list pending checks
+	for _, check := range r.Checks {
+		if check.Completed {
+			continue
+		}
+		fmt.Fprintf(&sb, "\nPEND %s", check.Name())
+		if desc := check.Description(); desc != "" {
+			fmt.Fprintf(&sb, " - %s", desc)
+		}
+		sb.WriteString("\n")
+	}
+
+	contents := sb.String()
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -118,7 +166,7 @@ func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
 		dagql.Selector{
 			Field: "file",
 			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String("checks.md")},
+				{Name: "name", Value: dagql.String("checks.txt")},
 				{Name: "contents", Value: dagql.String(contents)},
 			},
 		},
@@ -129,22 +177,11 @@ func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
 	return file, nil
 }
 
-func markdownTable(headers []string, rows ...[]string) string {
-	var sb strings.Builder
-	sb.WriteString("| " + strings.Join(headers, " | ") + " |\n")
-	for range headers {
-		sb.WriteString("| -- ")
-	}
-	sb.WriteString("|\n")
-	for _, row := range rows {
-		sb.WriteString("|" + strings.Join(row, " | ") + " |\n")
-	}
-	return sb.String()
-}
-
 func (r *CheckGroup) Clone() *CheckGroup {
 	cp := *r
-	cp.Node = cp.Node.Clone()
+	if cp.Node != nil {
+		cp.Node = cp.Node.Clone()
+	}
 	cp.Checks = make([]*Check, len(r.Checks))
 	for i := range cp.Checks {
 		cp.Checks[i] = r.Checks[i].Clone()

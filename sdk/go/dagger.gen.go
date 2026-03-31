@@ -232,6 +232,9 @@ type HealthcheckConfigID string
 // The `HostID` scalar type represents an identifier for an object of type Host.
 type HostID string
 
+// A unique identifier for an object.
+type ID string
+
 // The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
 type InputTypeDefID string
 
@@ -244,11 +247,20 @@ type JSON string
 // The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
 type JSONValueID string
 
+// The `LLMContentBlockID` scalar type represents an identifier for an object of type LLMContentBlock.
+type LLMContentBlockID string
+
 // The `LLMID` scalar type represents an identifier for an object of type LLM.
 type LLMID string
 
+// The `LLMMessageID` scalar type represents an identifier for an object of type LLMMessage.
+type LLMMessageID string
+
 // The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
 type LLMTokenUsageID string
+
+// The `LLMToolCallID` scalar type represents an identifier for an object of type LLMToolCall.
+type LLMToolCallID string
 
 // The `LabelID` scalar type represents an identifier for an object of type Label.
 type LabelID string
@@ -275,6 +287,9 @@ type Platform string
 
 // The `PortID` scalar type represents an identifier for an object of type Port.
 type PortID string
+
+// The `QueryID` scalar type represents an identifier for an object of type Query.
+type QueryID string
 
 // The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
 type SDKConfigID string
@@ -326,6 +341,30 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
+// A content block within an LLM message.
+type LLMContentBlockInput struct {
+	// The arguments to pass to the tool (for TOOL_CALL kind).
+	Arguments JSON `json:"arguments"`
+
+	// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+	CallID string `json:"callId,omitempty"`
+
+	// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+	Errored bool `json:"errored,omitempty"`
+
+	// The kind of content block.
+	Kind LLMContentBlockKind `json:"kind"`
+
+	// Provider-specific opaque data (e.g. Anthropic thinking signature).
+	Signature string `json:"signature,omitempty"`
+
+	// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+	Text string `json:"text,omitempty"`
+
+	// The name of the tool to call (for TOOL_CALL kind).
+	ToolName string `json:"toolName,omitempty"`
+}
+
 // Key value object that represents a pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -351,7 +390,7 @@ type PortForward struct {
 type Address struct {
 	query *querybuilder.Selection
 
-	id    *AddressID
+	id    *ID
 	value *string
 }
 
@@ -465,13 +504,13 @@ func (r *Address) GitRepository() *GitRepository {
 }
 
 // A unique identifier for this Address.
-func (r *Address) ID(ctx context.Context) (AddressID, error) {
+func (r *Address) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response AddressID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -549,7 +588,7 @@ type Binding struct {
 
 	asString *string
 	digest   *string
-	id       *BindingID
+	id       *ID
 	isNull   *bool
 	name     *string
 	typeName *string
@@ -705,6 +744,33 @@ func (r *Binding) AsJSONValue() *JSONValue {
 	}
 }
 
+// Retrieve the binding value, as type LLMContentBlock
+func (r *Binding) AsLLMContentBlock() *LLMContentBlock {
+	q := r.query.Select("asLLMContentBlock")
+
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMMessage
+func (r *Binding) AsLLMMessage() *LLMMessage {
+	q := r.query.Select("asLLMMessage")
+
+	return &LLMMessage{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMToolCall
+func (r *Binding) AsLLMToolCall() *LLMToolCall {
+	q := r.query.Select("asLLMToolCall")
+
+	return &LLMToolCall{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type Module
 func (r *Binding) AsModule() *Module {
 	q := r.query.Select("asModule")
@@ -822,13 +888,13 @@ func (r *Binding) Digest(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Binding.
-func (r *Binding) ID(ctx context.Context) (BindingID, error) {
+func (r *Binding) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response BindingID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -904,7 +970,7 @@ func (r *Binding) TypeName(ctx context.Context) (string, error) {
 type CacheVolume struct {
 	query *querybuilder.Selection
 
-	id *CacheVolumeID
+	id *ID
 }
 
 func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
@@ -914,13 +980,13 @@ func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
 }
 
 // A unique identifier for this CacheVolume.
-func (r *CacheVolume) ID(ctx context.Context) (CacheVolumeID, error) {
+func (r *CacheVolume) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CacheVolumeID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -958,7 +1024,7 @@ type Changeset struct {
 	query *querybuilder.Selection
 
 	export  *string
-	id      *ChangesetID
+	id      *ID
 	isEmpty *bool
 	sync    *ChangesetID
 }
@@ -1029,13 +1095,13 @@ func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
 }
 
 // A unique identifier for this Changeset.
-func (r *Changeset) ID(ctx context.Context) (ChangesetID, error) {
+func (r *Changeset) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ChangesetID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1183,7 +1249,7 @@ type Check struct {
 
 	completed   *bool
 	description *string
-	id          *CheckID
+	id          *ID
 	name        *string
 	passed      *bool
 	resultEmoji *string
@@ -1239,13 +1305,13 @@ func (r *Check) Error() *Error {
 }
 
 // A unique identifier for this Check.
-func (r *Check) ID(ctx context.Context) (CheckID, error) {
+func (r *Check) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CheckID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1348,7 +1414,7 @@ func (r *Check) Run() *Check {
 type CheckGroup struct {
 	query *querybuilder.Selection
 
-	id *CheckGroupID
+	id *ID
 }
 type WithCheckGroupFunc func(r *CheckGroup) *CheckGroup
 
@@ -1366,13 +1432,13 @@ func (r *CheckGroup) WithGraphQLQuery(q *querybuilder.Selection) *CheckGroup {
 }
 
 // A unique identifier for this CheckGroup.
-func (r *CheckGroup) ID(ctx context.Context) (CheckGroupID, error) {
+func (r *CheckGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CheckGroupID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1412,7 +1478,7 @@ func (r *CheckGroup) List(ctx context.Context) ([]Check, error) {
 	q = q.Select("id")
 
 	type list struct {
-		Id CheckID
+		Id ID
 	}
 
 	convert := func(fields []list) []Check {
@@ -1460,7 +1526,7 @@ func (r *CheckGroup) Run() *CheckGroup {
 type Cloud struct {
 	query *querybuilder.Selection
 
-	id       *CloudID
+	id       *ID
 	traceURL *string
 }
 
@@ -1471,13 +1537,13 @@ func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
 }
 
 // A unique identifier for this Cloud.
-func (r *Cloud) ID(ctx context.Context) (CloudID, error) {
+func (r *Cloud) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CloudID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1533,7 +1599,7 @@ type Container struct {
 	exitCode       *int
 	export         *string
 	exportImage    *Void
-	id             *ContainerID
+	id             *ID
 	imageRef       *string
 	label          *string
 	platform       *Platform
@@ -1747,7 +1813,7 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	q = q.Select("id")
 
 	type envVariables struct {
-		Id EnvVariableID
+		Id ID
 	}
 
 	convert := func(fields []envVariables) []EnvVariable {
@@ -1953,7 +2019,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q = q.Select("id")
 
 	type exposedPorts struct {
-		Id PortID
+		Id ID
 	}
 
 	convert := func(fields []exposedPorts) []Port {
@@ -2014,13 +2080,13 @@ func (r *Container) From(address string) *Container {
 }
 
 // A unique identifier for this Container.
-func (r *Container) ID(ctx context.Context) (ContainerID, error) {
+func (r *Container) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ContainerID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2110,7 +2176,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	q = q.Select("id")
 
 	type labels struct {
-		Id LabelID
+		Id ID
 	}
 
 	convert := func(fields []labels) []Label {
@@ -3470,7 +3536,7 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 type CurrentModule struct {
 	query *querybuilder.Selection
 
-	id   *CurrentModuleID
+	id   *ID
 	name *string
 }
 
@@ -3487,7 +3553,7 @@ func (r *CurrentModule) Dependencies(ctx context.Context) ([]Module, error) {
 	q = q.Select("id")
 
 	type dependencies struct {
-		Id ModuleID
+		Id ID
 	}
 
 	convert := func(fields []dependencies) []Module {
@@ -3546,13 +3612,13 @@ func (r *CurrentModule) Generators(opts ...CurrentModuleGeneratorsOpts) *Generat
 }
 
 // A unique identifier for this CurrentModule.
-func (r *CurrentModule) ID(ctx context.Context) (CurrentModuleID, error) {
+func (r *CurrentModule) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CurrentModuleID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -3659,7 +3725,7 @@ type Directory struct {
 	exists *bool
 	export *string
 	findUp *string
-	id     *DirectoryID
+	id     *ID
 	name   *string
 	sync   *DirectoryID
 }
@@ -4012,13 +4078,13 @@ func (r *Directory) Glob(ctx context.Context, pattern string) ([]string, error) 
 }
 
 // A unique identifier for this Directory.
-func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
+func (r *Directory) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DirectoryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4140,7 +4206,7 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 	q = q.Select("id")
 
 	type search struct {
-		Id SearchResultID
+		Id ID
 	}
 
 	convert := func(fields []search) []SearchResult {
@@ -4493,7 +4559,7 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 type Engine struct {
 	query *querybuilder.Selection
 
-	id   *EngineID
+	id   *ID
 	name *string
 }
 
@@ -4514,13 +4580,13 @@ func (r *Engine) Clients(ctx context.Context) ([]string, error) {
 }
 
 // A unique identifier for this Engine.
-func (r *Engine) ID(ctx context.Context) (EngineID, error) {
+func (r *Engine) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4579,7 +4645,7 @@ func (r *Engine) Name(ctx context.Context) (string, error) {
 type EngineCache struct {
 	query *querybuilder.Selection
 
-	id            *EngineCacheID
+	id            *ID
 	maxUsedSpace  *int
 	minFreeSpace  *int
 	prune         *Void
@@ -4614,13 +4680,13 @@ func (r *EngineCache) EntrySet(opts ...EngineCacheEntrySetOpts) *EngineCacheEntr
 }
 
 // A unique identifier for this EngineCache.
-func (r *EngineCache) ID(ctx context.Context) (EngineCacheID, error) {
+func (r *EngineCache) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineCacheID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4759,7 +4825,7 @@ type EngineCacheEntry struct {
 	createdTimeUnixNano       *int
 	description               *string
 	diskSpaceBytes            *int
-	id                        *EngineCacheEntryID
+	id                        *ID
 	mostRecentUseTimeUnixNano *int
 	recordType                *string
 }
@@ -4823,13 +4889,13 @@ func (r *EngineCacheEntry) DiskSpaceBytes(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this EngineCacheEntry.
-func (r *EngineCacheEntry) ID(ctx context.Context) (EngineCacheEntryID, error) {
+func (r *EngineCacheEntry) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineCacheEntryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4894,7 +4960,7 @@ type EngineCacheEntrySet struct {
 
 	diskSpaceBytes *int
 	entryCount     *int
-	id             *EngineCacheEntrySetID
+	id             *ID
 }
 
 func (r *EngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntrySet {
@@ -4923,7 +4989,7 @@ func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]EngineCacheEntry, 
 	q = q.Select("id")
 
 	type entries struct {
-		Id EngineCacheEntryID
+		Id ID
 	}
 
 	convert := func(fields []entries) []EngineCacheEntry {
@@ -4963,13 +5029,13 @@ func (r *EngineCacheEntrySet) EntryCount(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this EngineCacheEntrySet.
-func (r *EngineCacheEntrySet) ID(ctx context.Context) (EngineCacheEntrySetID, error) {
+func (r *EngineCacheEntrySet) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineCacheEntrySetID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5007,7 +5073,7 @@ type EnumTypeDef struct {
 	query *querybuilder.Selection
 
 	description      *string
-	id               *EnumTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -5032,13 +5098,13 @@ func (r *EnumTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this EnumTypeDef.
-func (r *EnumTypeDef) ID(ctx context.Context) (EnumTypeDefID, error) {
+func (r *EnumTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnumTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5078,7 +5144,7 @@ func (r *EnumTypeDef) Members(ctx context.Context) ([]EnumValueTypeDef, error) {
 	q = q.Select("id")
 
 	type members struct {
-		Id EnumValueTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []members) []EnumValueTypeDef {
@@ -5146,7 +5212,7 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 	q = q.Select("id")
 
 	type values struct {
-		Id EnumValueTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []values) []EnumValueTypeDef {
@@ -5178,7 +5244,7 @@ type EnumValueTypeDef struct {
 
 	deprecated  *string
 	description *string
-	id          *EnumValueTypeDefID
+	id          *ID
 	name        *string
 	value       *string
 }
@@ -5216,13 +5282,13 @@ func (r *EnumValueTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this EnumValueTypeDef.
-func (r *EnumValueTypeDef) ID(ctx context.Context) (EnumValueTypeDefID, error) {
+func (r *EnumValueTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnumValueTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5293,7 +5359,7 @@ func (r *EnumValueTypeDef) Value(ctx context.Context) (string, error) {
 type Env struct {
 	query *querybuilder.Selection
 
-	id *EnvID
+	id *ID
 }
 type WithEnvFunc func(r *Env) *Env
 
@@ -5346,13 +5412,13 @@ func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
 }
 
 // A unique identifier for this Env.
-func (r *Env) ID(ctx context.Context) (EnvID, error) {
+func (r *Env) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnvID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5402,7 +5468,7 @@ func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 	q = q.Select("id")
 
 	type inputs struct {
-		Id BindingID
+		Id ID
 	}
 
 	convert := func(fields []inputs) []Binding {
@@ -5445,7 +5511,7 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	q = q.Select("id")
 
 	type outputs struct {
-		Id BindingID
+		Id ID
 	}
 
 	convert := func(fields []outputs) []Binding {
@@ -5866,6 +5932,78 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type LLMContentBlock in the environment
+func (r *Env) WithLLMContentBlockInput(name string, value *LLMContentBlock, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMContentBlockInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMContentBlock output to be assigned in the environment
+func (r *Env) WithLLMContentBlockOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMContentBlockOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLMMessage in the environment
+func (r *Env) WithLLMMessageInput(name string, value *LLMMessage, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMMessageInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMMessage output to be assigned in the environment
+func (r *Env) WithLLMMessageOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMMessageOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLMToolCall in the environment
+func (r *Env) WithLLMToolCallInput(name string, value *LLMToolCall, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMToolCallInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMToolCall output to be assigned in the environment
+func (r *Env) WithLLMToolCallOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMToolCallOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Sets the main module for this environment (the project being worked on)
 //
 // Contextual path arguments will be populated using the environment's workspace.
@@ -6134,7 +6272,7 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 }
 
 // Returns a new environment with the provided workspace
-func (r *Env) WithWorkspace(workspace *Directory) *Env {
+func (r *Env) WithWorkspace(workspace *Workspace) *Env {
 	assertNotNil("workspace", workspace)
 	q := r.query.Select("withWorkspace")
 	q = q.Arg("workspace", workspace)
@@ -6177,10 +6315,10 @@ func (r *Env) WithoutOutputs() *Env {
 	}
 }
 
-func (r *Env) Workspace() *Directory {
+func (r *Env) Workspace() *Workspace {
 	q := r.query.Select("workspace")
 
-	return &Directory{
+	return &Workspace{
 		query: q,
 	}
 }
@@ -6191,7 +6329,7 @@ type EnvFile struct {
 
 	exists *bool
 	get    *string
-	id     *EnvFileID
+	id     *ID
 }
 type WithEnvFileFunc func(r *EnvFile) *EnvFile
 
@@ -6258,13 +6396,13 @@ func (r *EnvFile) Get(ctx context.Context, name string, opts ...EnvFileGetOpts) 
 }
 
 // A unique identifier for this EnvFile.
-func (r *EnvFile) ID(ctx context.Context) (EnvFileID, error) {
+func (r *EnvFile) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnvFileID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6326,7 +6464,7 @@ func (r *EnvFile) Variables(ctx context.Context, opts ...EnvFileVariablesOpts) (
 	q = q.Select("id")
 
 	type variables struct {
-		Id EnvVariableID
+		Id ID
 	}
 
 	convert := func(fields []variables) []EnvVariable {
@@ -6377,7 +6515,7 @@ func (r *EnvFile) WithoutVariable(name string) *EnvFile {
 type EnvVariable struct {
 	query *querybuilder.Selection
 
-	id    *EnvVariableID
+	id    *ID
 	name  *string
 	value *string
 }
@@ -6389,13 +6527,13 @@ func (r *EnvVariable) WithGraphQLQuery(q *querybuilder.Selection) *EnvVariable {
 }
 
 // A unique identifier for this EnvVariable.
-func (r *EnvVariable) ID(ctx context.Context) (EnvVariableID, error) {
+func (r *EnvVariable) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnvVariableID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6457,7 +6595,7 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 type Error struct {
 	query *querybuilder.Selection
 
-	id      *ErrorID
+	id      *ID
 	message *string
 }
 type WithErrorFunc func(r *Error) *Error
@@ -6476,13 +6614,13 @@ func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 }
 
 // A unique identifier for this Error.
-func (r *Error) ID(ctx context.Context) (ErrorID, error) {
+func (r *Error) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ErrorID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6535,7 +6673,7 @@ func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
 	q = q.Select("id")
 
 	type values struct {
-		Id ErrorValueID
+		Id ID
 	}
 
 	convert := func(fields []values) []ErrorValue {
@@ -6575,7 +6713,7 @@ func (r *Error) WithValue(name string, value JSON) *Error {
 type ErrorValue struct {
 	query *querybuilder.Selection
 
-	id    *ErrorValueID
+	id    *ID
 	name  *string
 	value *JSON
 }
@@ -6587,13 +6725,13 @@ func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
 }
 
 // A unique identifier for this ErrorValue.
-func (r *ErrorValue) ID(ctx context.Context) (ErrorValueID, error) {
+func (r *ErrorValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ErrorValueID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6660,7 +6798,7 @@ type FieldTypeDef struct {
 
 	deprecated  *string
 	description *string
-	id          *FieldTypeDefID
+	id          *ID
 	name        *string
 }
 
@@ -6697,13 +6835,13 @@ func (r *FieldTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this FieldTypeDef.
-func (r *FieldTypeDef) ID(ctx context.Context) (FieldTypeDefID, error) {
+func (r *FieldTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FieldTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6774,7 +6912,7 @@ type File struct {
 	contents *string
 	digest   *string
 	export   *string
-	id       *FileID
+	id       *ID
 	name     *string
 	size     *int
 	sync     *FileID
@@ -6918,13 +7056,13 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 }
 
 // A unique identifier for this File.
-func (r *File) ID(ctx context.Context) (FileID, error) {
+func (r *File) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FileID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7046,7 +7184,7 @@ func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpt
 	q = q.Select("id")
 
 	type search struct {
-		Id SearchResultID
+		Id ID
 	}
 
 	convert := func(fields []search) []SearchResult {
@@ -7170,10 +7308,11 @@ func (r *File) WithTimestamps(timestamp int) *File {
 type Function struct {
 	query *querybuilder.Selection
 
-	deprecated  *string
-	description *string
-	id          *FunctionID
-	name        *string
+	deprecated       *string
+	description      *string
+	id               *ID
+	name             *string
+	sourceModuleName *string
 }
 type WithFunctionFunc func(r *Function) *Function
 
@@ -7197,7 +7336,7 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	q = q.Select("id")
 
 	type args struct {
-		Id FunctionArgID
+		Id ID
 	}
 
 	convert := func(fields []args) []FunctionArg {
@@ -7250,13 +7389,13 @@ func (r *Function) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Function.
-func (r *Function) ID(ctx context.Context) (FunctionID, error) {
+func (r *Function) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7318,6 +7457,19 @@ func (r *Function) SourceMap() *SourceMap {
 	return &SourceMap{
 		query: q,
 	}
+}
+
+// If this function is provided by a module, the name of the module. Unset otherwise.
+func (r *Function) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // FunctionWithArgOpts contains options for Function.WithArg
@@ -7473,7 +7625,7 @@ type FunctionArg struct {
 	defaultValue   *JSON
 	deprecated     *string
 	description    *string
-	id             *FunctionArgID
+	id             *ID
 	name           *string
 }
 
@@ -7549,13 +7701,13 @@ func (r *FunctionArg) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this FunctionArg.
-func (r *FunctionArg) ID(ctx context.Context) (FunctionArgID, error) {
+func (r *FunctionArg) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionArgID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7633,7 +7785,7 @@ func (r *FunctionArg) TypeDef() *TypeDef {
 type FunctionCall struct {
 	query *querybuilder.Selection
 
-	id          *FunctionCallID
+	id          *ID
 	name        *string
 	parent      *JSON
 	parentName  *string
@@ -7648,13 +7800,13 @@ func (r *FunctionCall) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCall
 }
 
 // A unique identifier for this FunctionCall.
-func (r *FunctionCall) ID(ctx context.Context) (FunctionCallID, error) {
+func (r *FunctionCall) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionCallID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7694,7 +7846,7 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 	q = q.Select("id")
 
 	type inputArgs struct {
-		Id FunctionCallArgValueID
+		Id ID
 	}
 
 	convert := func(fields []inputArgs) []FunctionCallArgValue {
@@ -7786,7 +7938,7 @@ func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) error {
 type FunctionCallArgValue struct {
 	query *querybuilder.Selection
 
-	id    *FunctionCallArgValueID
+	id    *ID
 	name  *string
 	value *JSON
 }
@@ -7798,13 +7950,13 @@ func (r *FunctionCallArgValue) WithGraphQLQuery(q *querybuilder.Selection) *Func
 }
 
 // A unique identifier for this FunctionCallArgValue.
-func (r *FunctionCallArgValue) ID(ctx context.Context) (FunctionCallArgValueID, error) {
+func (r *FunctionCallArgValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionCallArgValueID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7867,7 +8019,7 @@ func (r *FunctionCallArgValue) Value(ctx context.Context) (JSON, error) {
 type GeneratedCode struct {
 	query *querybuilder.Selection
 
-	id *GeneratedCodeID
+	id *ID
 }
 type WithGeneratedCodeFunc func(r *GeneratedCode) *GeneratedCode
 
@@ -7894,13 +8046,13 @@ func (r *GeneratedCode) Code() *Directory {
 }
 
 // A unique identifier for this GeneratedCode.
-func (r *GeneratedCode) ID(ctx context.Context) (GeneratedCodeID, error) {
+func (r *GeneratedCode) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GeneratedCodeID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7978,7 +8130,7 @@ type Generator struct {
 
 	completed   *bool
 	description *string
-	id          *GeneratorID
+	id          *ID
 	isEmpty     *bool
 	name        *string
 }
@@ -8033,13 +8185,13 @@ func (r *Generator) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Generator.
-func (r *Generator) ID(ctx context.Context) (GeneratorID, error) {
+func (r *Generator) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GeneratorID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8129,7 +8281,7 @@ func (r *Generator) Run() *Generator {
 type GeneratorGroup struct {
 	query *querybuilder.Selection
 
-	id      *GeneratorGroupID
+	id      *ID
 	isEmpty *bool
 }
 type WithGeneratorGroupFunc func(r *GeneratorGroup) *GeneratorGroup
@@ -8175,13 +8327,13 @@ func (r *GeneratorGroup) Changes(opts ...GeneratorGroupChangesOpts) *Changeset {
 }
 
 // A unique identifier for this GeneratorGroup.
-func (r *GeneratorGroup) ID(ctx context.Context) (GeneratorGroupID, error) {
+func (r *GeneratorGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GeneratorGroupID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8234,7 +8386,7 @@ func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
 	q = q.Select("id")
 
 	type list struct {
-		Id GeneratorID
+		Id ID
 	}
 
 	convert := func(fields []list) []Generator {
@@ -8274,7 +8426,7 @@ type GitRef struct {
 	query *querybuilder.Selection
 
 	commit *string
-	id     *GitRefID
+	id     *ID
 	ref    *string
 }
 type WithGitRefFunc func(r *GitRef) *GitRef
@@ -8317,13 +8469,13 @@ func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
 }
 
 // A unique identifier for this GitRef.
-func (r *GitRef) ID(ctx context.Context) (GitRefID, error) {
+func (r *GitRef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GitRefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8408,7 +8560,7 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 type GitRepository struct {
 	query *querybuilder.Selection
 
-	id  *GitRepositoryID
+	id  *ID
 	url *string
 }
 
@@ -8470,13 +8622,13 @@ func (r *GitRepository) Head() *GitRef {
 }
 
 // A unique identifier for this GitRepository.
-func (r *GitRepository) ID(ctx context.Context) (GitRepositoryID, error) {
+func (r *GitRepository) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GitRepositoryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8586,7 +8738,7 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 type HealthcheckConfig struct {
 	query *querybuilder.Selection
 
-	id            *HealthcheckConfigID
+	id            *ID
 	interval      *string
 	retries       *int
 	shell         *bool
@@ -8612,13 +8764,13 @@ func (r *HealthcheckConfig) Args(ctx context.Context) ([]string, error) {
 }
 
 // A unique identifier for this HealthcheckConfig.
-func (r *HealthcheckConfig) ID(ctx context.Context) (HealthcheckConfigID, error) {
+func (r *HealthcheckConfig) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HealthcheckConfigID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8734,7 +8886,7 @@ type Host struct {
 	query *querybuilder.Selection
 
 	findUp *string
-	id     *HostID
+	id     *ID
 }
 
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
@@ -8841,13 +8993,13 @@ func (r *Host) FindUp(ctx context.Context, name string, opts ...HostFindUpOpts) 
 }
 
 // A unique identifier for this Host.
-func (r *Host) ID(ctx context.Context) (HostID, error) {
+func (r *Host) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HostID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8958,7 +9110,7 @@ func (r *Host) UnixSocket(path string) *Socket {
 type InputTypeDef struct {
 	query *querybuilder.Selection
 
-	id   *InputTypeDefID
+	id   *ID
 	name *string
 }
 
@@ -8975,7 +9127,7 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q = q.Select("id")
 
 	type fields struct {
-		Id FieldTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []fields) []FieldTypeDef {
@@ -9002,13 +9154,13 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 }
 
 // A unique identifier for this InputTypeDef.
-func (r *InputTypeDef) ID(ctx context.Context) (InputTypeDefID, error) {
+func (r *InputTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response InputTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9059,7 +9211,7 @@ type InterfaceTypeDef struct {
 	query *querybuilder.Selection
 
 	description      *string
-	id               *InterfaceTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -9090,7 +9242,7 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	q = q.Select("id")
 
 	type functions struct {
-		Id FunctionID
+		Id ID
 	}
 
 	convert := func(fields []functions) []Function {
@@ -9117,13 +9269,13 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 }
 
 // A unique identifier for this InterfaceTypeDef.
-func (r *InterfaceTypeDef) ID(ctx context.Context) (InterfaceTypeDefID, error) {
+func (r *InterfaceTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response InterfaceTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9198,7 +9350,7 @@ type JSONValue struct {
 	asInteger *int
 	asString  *string
 	contents  *JSON
-	id        *JSONValueID
+	id        *ID
 }
 type WithJSONValueFunc func(r *JSONValue) *JSONValue
 
@@ -9222,7 +9374,7 @@ func (r *JSONValue) AsArray(ctx context.Context) ([]JSONValue, error) {
 	q = q.Select("id")
 
 	type asArray struct {
-		Id JSONValueID
+		Id ID
 	}
 
 	convert := func(fields []asArray) []JSONValue {
@@ -9341,13 +9493,13 @@ func (r *JSONValue) Fields(ctx context.Context) ([]string, error) {
 }
 
 // A unique identifier for this JSONValue.
-func (r *JSONValue) ID(ctx context.Context) (JSONValueID, error) {
+func (r *JSONValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response JSONValueID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9435,15 +9587,18 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 type LLM struct {
 	query *querybuilder.Selection
 
-	hasPrompt   *bool
-	historyJSON *JSON
-	id          *LLMID
-	lastReply   *string
-	model       *string
-	provider    *string
-	step        *LLMID
-	sync        *LLMID
-	tools       *string
+	hasPrompt        *bool
+	historyJSON      *JSON
+	id               *ID
+	lastReply        *string
+	model            *string
+	provider         *string
+	replay           *LLMID
+	serializeHistory *string
+	step             *LLMID
+	sync             *LLMID
+	systemPrompt     *string
+	tools            *string
 }
 type WithLLMFunc func(r *LLM) *LLM
 
@@ -9526,13 +9681,13 @@ func (r *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 }
 
 // A unique identifier for this LLM.
-func (r *LLM) ID(ctx context.Context) (LLMID, error) {
+func (r *LLM) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LLMID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9578,13 +9733,58 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// LLMLoopOpts contains options for LLM.Loop
+type LLMLoopOpts struct {
+	// Cap the number of API calls
+	MaxAPICalls int
+}
+
 // Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
-func (r *LLM) Loop() *LLM {
+func (r *LLM) Loop(opts ...LLMLoopOpts) *LLM {
 	q := r.query.Select("loop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `maxAPICalls` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
+			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
+		}
+	}
 
 	return &LLM{
 		query: q,
 	}
+}
+
+// The full message history.
+func (r *LLM) Messages(ctx context.Context) ([]LLMMessage, error) {
+	q := r.query.Select("messages")
+
+	q = q.Select("id")
+
+	type messages struct {
+		Id ID
+	}
+
+	convert := func(fields []messages) []LLMMessage {
+		out := []LLMMessage{}
+
+		for i := range fields {
+			val := LLMMessage{id: &fields[i].Id}
+			val.query = q.Root().Select("loadLLMMessageFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []messages
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // return the model used by the llm
@@ -9606,6 +9806,32 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 		return *r.provider, nil
 	}
 	q := r.query.Select("provider")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+func (r *LLM) Replay(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("replay")
+
+	var id LLMID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &LLM{
+		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+	}, nil
+}
+
+// return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)
+func (r *LLM) SerializeHistory(ctx context.Context) (string, error) {
+	if r.serializeHistory != nil {
+		return *r.serializeHistory, nil
+	}
+	q := r.query.Select("serializeHistory")
 
 	var response string
 
@@ -9637,6 +9863,19 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	return &LLM{
 		query: q.Root().Select("loadLLMFromID").Arg("id", id),
 	}, nil
+}
+
+// A system prompt to send.
+func (r *LLM) SystemPrompt(ctx context.Context) (string, error) {
+	if r.systemPrompt != nil {
+		return *r.systemPrompt, nil
+	}
+	q := r.query.Select("systemPrompt")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // returns the token usage of the current state
@@ -9695,10 +9934,31 @@ func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
 	}
 }
 
+// Set the maximum number of output tokens the model may generate per API call
+func (r *LLM) WithMaxTokens(tokens int) *LLM {
+	q := r.query.Select("withMaxTokens")
+	q = q.Arg("tokens", tokens)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // swap out the llm model
 func (r *LLM) WithModel(model string) *LLM {
 	q := r.query.Select("withModel")
 	q = q.Arg("model", model)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Track an object so the LLM can reference it in subsequent tool calls. Returns the tag assigned to the object, typically in TypeName#Number format.
+func (r *LLM) WithObject(tag string, object ID) *LLM {
+	q := r.query.Select("withObject")
+	q = q.Arg("tag", tag)
+	q = q.Arg("object", object)
 
 	return &LLM{
 		query: q,
@@ -9726,6 +9986,52 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	}
 }
 
+// LLMWithResponseOpts contains options for LLM.WithResponse
+type LLMWithResponseOpts struct {
+	// Uncached input tokens sent
+	InputTokens int
+	// Tokens received from the model, including text and tool calls
+	OutputTokens int
+	// Cached input tokens read
+	CachedTokenReads int
+	// Cached input tokens written
+	CachedTokenWrites int
+	// Total tokens consumed by this response
+	TotalTokens int
+}
+
+// Append an assistant response to the message history
+func (r *LLM) WithResponse(content []LLMContentBlockInput, opts ...LLMWithResponseOpts) *LLM {
+	q := r.query.Select("withResponse")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `inputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InputTokens) {
+			q = q.Arg("inputTokens", opts[i].InputTokens)
+		}
+		// `outputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OutputTokens) {
+			q = q.Arg("outputTokens", opts[i].OutputTokens)
+		}
+		// `cachedTokenReads` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenReads) {
+			q = q.Arg("cachedTokenReads", opts[i].CachedTokenReads)
+		}
+		// `cachedTokenWrites` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenWrites) {
+			q = q.Arg("cachedTokenWrites", opts[i].CachedTokenWrites)
+		}
+		// `totalTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TotalTokens) {
+			q = q.Arg("totalTokens", opts[i].TotalTokens)
+		}
+	}
+	q = q.Arg("content", content)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
 func (r *LLM) WithStaticTools() *LLM {
 	q := r.query.Select("withStaticTools")
@@ -9739,6 +10045,30 @@ func (r *LLM) WithStaticTools() *LLM {
 func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	q := r.query.Select("withSystemPrompt")
 	q = q.Arg("prompt", prompt)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Append a tool call to the last assistant message
+func (r *LLM) WithToolCall(call string, tool string, arguments JSON) *LLM {
+	q := r.query.Select("withToolCall")
+	q = q.Arg("call", call)
+	q = q.Arg("tool", tool)
+	q = q.Arg("arguments", arguments)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Append a tool response to the message history
+func (r *LLM) WithToolResponse(call string, content string, errored bool) *LLM {
+	q := r.query.Select("withToolResponse")
+	q = q.Arg("call", call)
+	q = q.Arg("content", content)
+	q = q.Arg("errored", errored)
 
 	return &LLM{
 		query: q,
@@ -9772,12 +10102,239 @@ func (r *LLM) WithoutSystemPrompts() *LLM {
 	}
 }
 
+type LLMContentBlock struct {
+	query *querybuilder.Selection
+
+	arguments *JSON
+	callId    *string
+	errored   *bool
+	id        *ID
+	kind      *LLMContentBlockKind
+	text      *string
+	toolName  *string
+}
+
+func (r *LLMContentBlock) WithGraphQLQuery(q *querybuilder.Selection) *LLMContentBlock {
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
+func (r *LLMContentBlock) Arguments(ctx context.Context) (JSON, error) {
+	if r.arguments != nil {
+		return *r.arguments, nil
+	}
+	q := r.query.Select("arguments")
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) CallID(ctx context.Context) (string, error) {
+	if r.callId != nil {
+		return *r.callId, nil
+	}
+	q := r.query.Select("callId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) Errored(ctx context.Context) (bool, error) {
+	if r.errored != nil {
+		return *r.errored, nil
+	}
+	q := r.query.Select("errored")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMContentBlock.
+func (r *LLMContentBlock) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMContentBlock) XXX_GraphQLType() string {
+	return "LLMContentBlock"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMContentBlock) XXX_GraphQLIDType() string {
+	return "LLMContentBlockID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMContentBlock) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMContentBlock) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LLMContentBlock) Kind(ctx context.Context) (LLMContentBlockKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response LLMContentBlockKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) Text(ctx context.Context) (string, error) {
+	if r.text != nil {
+		return *r.text, nil
+	}
+	q := r.query.Select("text")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) ToolName(ctx context.Context) (string, error) {
+	if r.toolName != nil {
+		return *r.toolName, nil
+	}
+	q := r.query.Select("toolName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+type LLMMessage struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	role *LLMMessageRole
+}
+
+func (r *LLMMessage) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessage {
+	return &LLMMessage{
+		query: q,
+	}
+}
+
+func (r *LLMMessage) Content(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("content")
+
+	q = q.Select("id")
+
+	type content struct {
+		Id ID
+	}
+
+	convert := func(fields []content) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = q.Root().Select("loadLLMContentBlockFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []content
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this LLMMessage.
+func (r *LLMMessage) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMMessage) XXX_GraphQLType() string {
+	return "LLMMessage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMMessage) XXX_GraphQLIDType() string {
+	return "LLMMessageID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMMessage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMMessage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LLMMessage) Role(ctx context.Context) (LLMMessageRole, error) {
+	if r.role != nil {
+		return *r.role, nil
+	}
+	q := r.query.Select("role")
+
+	var response LLMMessageRole
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 type LLMTokenUsage struct {
 	query *querybuilder.Selection
 
 	cachedTokenReads  *int
 	cachedTokenWrites *int
-	id                *LLMTokenUsageID
+	id                *ID
 	inputTokens       *int
 	outputTokens      *int
 	totalTokens       *int
@@ -9814,13 +10371,13 @@ func (r *LLMTokenUsage) CachedTokenWrites(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this LLMTokenUsage.
-func (r *LLMTokenUsage) ID(ctx context.Context) (LLMTokenUsageID, error) {
+func (r *LLMTokenUsage) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LLMTokenUsageID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9889,11 +10446,63 @@ func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+type LLMToolCall struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *LLMToolCall) WithGraphQLQuery(q *querybuilder.Selection) *LLMToolCall {
+	return &LLMToolCall{
+		query: q,
+	}
+}
+
+// A unique identifier for this LLMToolCall.
+func (r *LLMToolCall) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMToolCall) XXX_GraphQLType() string {
+	return "LLMToolCall"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMToolCall) XXX_GraphQLIDType() string {
+	return "LLMToolCallID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMToolCall) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMToolCall) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 // A simple key value object that represents a label.
 type Label struct {
 	query *querybuilder.Selection
 
-	id    *LabelID
+	id    *ID
 	name  *string
 	value *string
 }
@@ -9905,13 +10514,13 @@ func (r *Label) WithGraphQLQuery(q *querybuilder.Selection) *Label {
 }
 
 // A unique identifier for this Label.
-func (r *Label) ID(ctx context.Context) (LabelID, error) {
+func (r *Label) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LabelID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9974,7 +10583,7 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 type ListTypeDef struct {
 	query *querybuilder.Selection
 
-	id *ListTypeDefID
+	id *ID
 }
 
 func (r *ListTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ListTypeDef {
@@ -9993,13 +10602,13 @@ func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 }
 
 // A unique identifier for this ListTypeDef.
-func (r *ListTypeDef) ID(ctx context.Context) (ListTypeDefID, error) {
+func (r *ListTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ListTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10037,7 +10646,7 @@ type Module struct {
 	query *querybuilder.Selection
 
 	description *string
-	id          *ModuleID
+	id          *ID
 	name        *string
 	serve       *Void
 	sync        *ModuleID
@@ -10099,7 +10708,7 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	q = q.Select("id")
 
 	type dependencies struct {
-		Id ModuleID
+		Id ID
 	}
 
 	convert := func(fields []dependencies) []Module {
@@ -10145,7 +10754,7 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type enums struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []enums) []TypeDef {
@@ -10216,13 +10825,13 @@ func (r *Module) Generators(opts ...ModuleGeneratorsOpts) *GeneratorGroup {
 }
 
 // A unique identifier for this Module.
-func (r *Module) ID(ctx context.Context) (ModuleID, error) {
+func (r *Module) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ModuleID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10262,7 +10871,7 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type interfaces struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []interfaces) []TypeDef {
@@ -10321,7 +10930,7 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type objects struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []objects) []TypeDef {
@@ -10369,6 +10978,8 @@ func (r *Module) SDK() *SDKConfig {
 type ModuleServeOpts struct {
 	// Expose the dependencies of this module to the client
 	IncludeDependencies bool
+	// Install the module as the entrypoint, promoting its main-object methods onto the Query root
+	Entrypoint bool
 }
 
 // Serve a module's API in the current session.
@@ -10383,6 +10994,10 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 		// `includeDependencies` optional argument
 		if !querybuilder.IsZeroValue(opts[i].IncludeDependencies) {
 			q = q.Arg("includeDependencies", opts[i].IncludeDependencies)
+		}
+		// `entrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
+			q = q.Arg("entrypoint", opts[i].Entrypoint)
 		}
 	}
 
@@ -10469,7 +11084,7 @@ type ModuleConfigClient struct {
 
 	directory *string
 	generator *string
-	id        *ModuleConfigClientID
+	id        *ID
 }
 
 func (r *ModuleConfigClient) WithGraphQLQuery(q *querybuilder.Selection) *ModuleConfigClient {
@@ -10505,13 +11120,13 @@ func (r *ModuleConfigClient) Generator(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this ModuleConfigClient.
-func (r *ModuleConfigClient) ID(ctx context.Context) (ModuleConfigClientID, error) {
+func (r *ModuleConfigClient) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ModuleConfigClientID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10556,7 +11171,7 @@ type ModuleSource struct {
 	engineVersion             *string
 	htmlRepoURL               *string
 	htmlURL                   *string
-	id                        *ModuleSourceID
+	id                        *ID
 	kind                      *ModuleSourceKind
 	localContextDirectoryPath *string
 	moduleName                *string
@@ -10648,7 +11263,7 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 	q = q.Select("id")
 
 	type configClients struct {
-		Id ModuleConfigClientID
+		Id ID
 	}
 
 	convert := func(fields []configClients) []ModuleConfigClient {
@@ -10703,7 +11318,7 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error)
 	q = q.Select("id")
 
 	type dependencies struct {
-		Id ModuleSourceID
+		Id ID
 	}
 
 	convert := func(fields []dependencies) []ModuleSource {
@@ -10810,13 +11425,13 @@ func (r *ModuleSource) HTMLURL(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this ModuleSource.
-func (r *ModuleSource) ID(ctx context.Context) (ModuleSourceID, error) {
+func (r *ModuleSource) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ModuleSourceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -11008,7 +11623,7 @@ func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	q = q.Select("id")
 
 	type toolchains struct {
-		Id ModuleSourceID
+		Id ID
 	}
 
 	convert := func(fields []toolchains) []ModuleSource {
@@ -11252,7 +11867,7 @@ type ObjectTypeDef struct {
 
 	deprecated       *string
 	description      *string
-	id               *ObjectTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -11305,7 +11920,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q = q.Select("id")
 
 	type fields struct {
-		Id FieldTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []fields) []FieldTypeDef {
@@ -11338,7 +11953,7 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	q = q.Select("id")
 
 	type functions struct {
-		Id FunctionID
+		Id ID
 	}
 
 	convert := func(fields []functions) []Function {
@@ -11365,13 +11980,13 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 }
 
 // A unique identifier for this ObjectTypeDef.
-func (r *ObjectTypeDef) ID(ctx context.Context) (ObjectTypeDefID, error) {
+func (r *ObjectTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ObjectTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -11445,7 +12060,7 @@ type Port struct {
 
 	description                 *string
 	experimentalSkipHealthcheck *bool
-	id                          *PortID
+	id                          *ID
 	port                        *int
 	protocol                    *NetworkProtocol
 }
@@ -11483,13 +12098,13 @@ func (r *Port) ExperimentalSkipHealthcheck(ctx context.Context) (bool, error) {
 }
 
 // A unique identifier for this Port.
-func (r *Port) ID(ctx context.Context) (PortID, error) {
+func (r *Port) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PortID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -11548,15 +12163,31 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	return response, q.Execute(ctx)
 }
 
-func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
-	return &Client{
-		query:  q,
-		client: r.client,
+// The root of the DAG.
+type Query struct {
+	query *querybuilder.Selection
+
+	defaultPlatform *Platform
+	id              *ID
+	version         *string
+}
+type WithQueryFunc func(r *Query) *Query
+
+// With calls the provided function with current Query.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Query) With(f WithQueryFunc) *Query {
+	return f(r)
+}
+
+func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
+	return &Query{
+		query: q,
 	}
 }
 
 // initialize an address to load directories, containers, secrets or other object types.
-func (r *Client) Address(value string) *Address {
+func (r *Query) Address(value string) *Address {
 	q := r.query.Select("address")
 	q = q.Arg("value", value)
 
@@ -11566,7 +12197,7 @@ func (r *Client) Address(value string) *Address {
 }
 
 // Constructs a cache volume for a given cache key.
-func (r *Client) CacheVolume(key string) *CacheVolume {
+func (r *Query) CacheVolume(key string) *CacheVolume {
 	q := r.query.Select("cacheVolume")
 	q = q.Arg("key", key)
 
@@ -11576,7 +12207,7 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 }
 
 // Creates an empty changeset
-func (r *Client) Changeset() *Changeset {
+func (r *Query) Changeset() *Changeset {
 	q := r.query.Select("changeset")
 
 	return &Changeset{
@@ -11585,7 +12216,7 @@ func (r *Client) Changeset() *Changeset {
 }
 
 // Dagger Cloud configuration and state
-func (r *Client) Cloud() *Cloud {
+func (r *Query) Cloud() *Cloud {
 	q := r.query.Select("cloud")
 
 	return &Cloud{
@@ -11593,7 +12224,7 @@ func (r *Client) Cloud() *Cloud {
 	}
 }
 
-// ContainerOpts contains options for Client.Container
+// ContainerOpts contains options for Query.Container
 type ContainerOpts struct {
 	// Platform to initialize the container with. Defaults to the native platform of the current engine
 	Platform Platform
@@ -11602,7 +12233,7 @@ type ContainerOpts struct {
 // Creates a scratch container, with no image or metadata.
 //
 // To pull an image, follow up with the "from" function.
-func (r *Client) Container(opts ...ContainerOpts) *Container {
+func (r *Query) Container(opts ...ContainerOpts) *Container {
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -11616,25 +12247,10 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
-// Returns the current environment
-//
-// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-//
-// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-//
-// Experimental: Programmatic env access is speculative and might be replaced.
-func (r *Client) CurrentEnv() *Env {
-	q := r.query.Select("currentEnv")
-
-	return &Env{
-		query: q,
-	}
-}
-
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
-func (r *Client) CurrentFunctionCall() *FunctionCall {
+func (r *Query) CurrentFunctionCall() *FunctionCall {
 	q := r.query.Select("currentFunctionCall")
 
 	return &FunctionCall{
@@ -11643,7 +12259,7 @@ func (r *Client) CurrentFunctionCall() *FunctionCall {
 }
 
 // The module currently being served in the session, if any.
-func (r *Client) CurrentModule() *CurrentModule {
+func (r *Query) CurrentModule() *CurrentModule {
 	q := r.query.Select("currentModule")
 
 	return &CurrentModule{
@@ -11651,14 +12267,28 @@ func (r *Client) CurrentModule() *CurrentModule {
 	}
 }
 
+// CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
+type CurrentTypeDefsOpts struct {
+	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+	//
+	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+	HideCore bool
+}
+
 // The TypeDef representations of the objects currently being served in the session.
-func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `hideCore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HideCore) {
+			q = q.Arg("hideCore", opts[i].HideCore)
+		}
+	}
 
 	q = q.Select("id")
 
 	type currentTypeDefs struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []currentTypeDefs) []TypeDef {
@@ -11684,23 +12314,11 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-// CurrentWorkspaceOpts contains options for Client.CurrentWorkspace
-type CurrentWorkspaceOpts struct {
-	// If true, skip legacy dagger.json migration checks.
-	SkipMigrationCheck bool
-}
-
 // Detect and return the current workspace.
 //
 // Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
-func (r *Client) CurrentWorkspace(opts ...CurrentWorkspaceOpts) *Workspace {
+func (r *Query) CurrentWorkspace() *Workspace {
 	q := r.query.Select("currentWorkspace")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `skipMigrationCheck` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SkipMigrationCheck) {
-			q = q.Arg("skipMigrationCheck", opts[i].SkipMigrationCheck)
-		}
-	}
 
 	return &Workspace{
 		query: q,
@@ -11708,7 +12326,7 @@ func (r *Client) CurrentWorkspace(opts ...CurrentWorkspaceOpts) *Workspace {
 }
 
 // The default platform of the engine.
-func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
+func (r *Query) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.query.Select("defaultPlatform")
 
 	var response Platform
@@ -11718,7 +12336,7 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 }
 
 // Creates an empty directory.
-func (r *Client) Directory() *Directory {
+func (r *Query) Directory() *Directory {
 	q := r.query.Select("directory")
 
 	return &Directory{
@@ -11727,7 +12345,7 @@ func (r *Client) Directory() *Directory {
 }
 
 // The Dagger engine container configuration and state
-func (r *Client) Engine() *Engine {
+func (r *Query) Engine() *Engine {
 	q := r.query.Select("engine")
 
 	return &Engine{
@@ -11735,7 +12353,7 @@ func (r *Client) Engine() *Engine {
 	}
 }
 
-// EnvOpts contains options for Client.Env
+// EnvOpts contains options for Query.Env
 type EnvOpts struct {
 	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
 	Privileged bool
@@ -11746,7 +12364,7 @@ type EnvOpts struct {
 // Initializes a new environment
 //
 // Experimental: Environments are not yet stabilized
-func (r *Client) Env(opts ...EnvOpts) *Env {
+func (r *Query) Env(opts ...EnvOpts) *Env {
 	q := r.query.Select("env")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `privileged` optional argument
@@ -11764,7 +12382,7 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 	}
 }
 
-// EnvFileOpts contains options for Client.EnvFile
+// EnvFileOpts contains options for Query.EnvFile
 type EnvFileOpts struct {
 	// Replace "${VAR}" or "$VAR" with the value of other vars
 	// Deprecated: Variable expansion is now enabled by default
@@ -11772,7 +12390,7 @@ type EnvFileOpts struct {
 }
 
 // Initialize an environment file
-func (r *Client) EnvFile(opts ...EnvFileOpts) *EnvFile {
+func (r *Query) EnvFile(opts ...EnvFileOpts) *EnvFile {
 	q := r.query.Select("envFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `expand` optional argument
@@ -11787,7 +12405,7 @@ func (r *Client) EnvFile(opts ...EnvFileOpts) *EnvFile {
 }
 
 // Create a new error.
-func (r *Client) Error(message string) *Error {
+func (r *Query) Error(message string) *Error {
 	q := r.query.Select("error")
 	q = q.Arg("message", message)
 
@@ -11796,7 +12414,7 @@ func (r *Client) Error(message string) *Error {
 	}
 }
 
-// FileOpts contains options for Client.File
+// FileOpts contains options for Query.File
 type FileOpts struct {
 	// Permissions of the new file. Example: 0600
 	//
@@ -11805,7 +12423,7 @@ type FileOpts struct {
 }
 
 // Creates a file with the specified contents.
-func (r *Client) File(name string, contents string, opts ...FileOpts) *File {
+func (r *Query) File(name string, contents string, opts ...FileOpts) *File {
 	q := r.query.Select("file")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
@@ -11822,7 +12440,7 @@ func (r *Client) File(name string, contents string, opts ...FileOpts) *File {
 }
 
 // Creates a function.
-func (r *Client) Function(name string, returnType *TypeDef) *Function {
+func (r *Query) Function(name string, returnType *TypeDef) *Function {
 	assertNotNil("returnType", returnType)
 	q := r.query.Select("function")
 	q = q.Arg("name", name)
@@ -11834,7 +12452,7 @@ func (r *Client) Function(name string, returnType *TypeDef) *Function {
 }
 
 // Create a code generation result, given a directory containing the generated code.
-func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
+func (r *Query) GeneratedCode(code *Directory) *GeneratedCode {
 	assertNotNil("code", code)
 	q := r.query.Select("generatedCode")
 	q = q.Arg("code", code)
@@ -11844,7 +12462,7 @@ func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 	}
 }
 
-// GitOpts contains options for Client.Git
+// GitOpts contains options for Query.Git
 type GitOpts struct {
 	// DEPRECATED: Set to true to keep .git directory.
 	//
@@ -11866,7 +12484,7 @@ type GitOpts struct {
 }
 
 // Queries a Git repository.
-func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
+func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	q := r.query.Select("git")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `keepGitDir` optional argument
@@ -11906,7 +12524,7 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 }
 
 // Queries the host environment.
-func (r *Client) Host() *Host {
+func (r *Query) Host() *Host {
 	q := r.query.Select("host")
 
 	return &Host{
@@ -11914,7 +12532,7 @@ func (r *Client) Host() *Host {
 	}
 }
 
-// HTTPOpts contains options for Client.HTTP
+// HTTPOpts contains options for Query.HTTP
 type HTTPOpts struct {
 	// File name to use for the file. Defaults to the last part of the URL.
 	Name string
@@ -11927,7 +12545,7 @@ type HTTPOpts struct {
 }
 
 // Returns a file containing an http remote url content.
-func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
+func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.query.Select("http")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `name` optional argument
@@ -11954,8 +12572,45 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// A unique identifier for this Query.
+func (r *Query) ID(ctx context.Context) (ID, error) {
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Query) XXX_GraphQLType() string {
+	return "Query"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Query) XXX_GraphQLIDType() string {
+	return "QueryID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Query) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Query) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 // Initialize a JSON value
-func (r *Client) JSON() *JSONValue {
+func (r *Query) JSON() *JSONValue {
 	q := r.query.Select("json")
 
 	return &JSONValue{
@@ -11963,27 +12618,21 @@ func (r *Client) JSON() *JSONValue {
 	}
 }
 
-// LLMOpts contains options for Client.LLM
+// LLMOpts contains options for Query.LLM
 type LLMOpts struct {
 	// Model to use
 	Model string
-	// Cap the number of API calls for this LLM
-	MaxAPICalls int
 }
 
 // Initialize a Large Language Model (LLM)
 //
 // Experimental: LLM support is not yet stabilized
-func (r *Client) LLM(opts ...LLMOpts) *LLM {
+func (r *Query) LLM(opts ...LLMOpts) *LLM {
 	q := r.query.Select("llm")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `model` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Model) {
 			q = q.Arg("model", opts[i].Model)
-		}
-		// `maxAPICalls` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
-			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
 		}
 	}
 
@@ -11993,7 +12642,7 @@ func (r *Client) LLM(opts ...LLMOpts) *LLM {
 }
 
 // Load a Address from its ID.
-func (r *Client) LoadAddressFromID(id AddressID) *Address {
+func (r *Query) LoadAddressFromID(id AddressID) *Address {
 	q := r.query.Select("loadAddressFromID")
 	q = q.Arg("id", id)
 
@@ -12003,7 +12652,7 @@ func (r *Client) LoadAddressFromID(id AddressID) *Address {
 }
 
 // Load a Binding from its ID.
-func (r *Client) LoadBindingFromID(id BindingID) *Binding {
+func (r *Query) LoadBindingFromID(id BindingID) *Binding {
 	q := r.query.Select("loadBindingFromID")
 	q = q.Arg("id", id)
 
@@ -12013,7 +12662,7 @@ func (r *Client) LoadBindingFromID(id BindingID) *Binding {
 }
 
 // Load a CacheVolume from its ID.
-func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
+func (r *Query) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q := r.query.Select("loadCacheVolumeFromID")
 	q = q.Arg("id", id)
 
@@ -12023,7 +12672,7 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 }
 
 // Load a Changeset from its ID.
-func (r *Client) LoadChangesetFromID(id ChangesetID) *Changeset {
+func (r *Query) LoadChangesetFromID(id ChangesetID) *Changeset {
 	q := r.query.Select("loadChangesetFromID")
 	q = q.Arg("id", id)
 
@@ -12033,7 +12682,7 @@ func (r *Client) LoadChangesetFromID(id ChangesetID) *Changeset {
 }
 
 // Load a Check from its ID.
-func (r *Client) LoadCheckFromID(id CheckID) *Check {
+func (r *Query) LoadCheckFromID(id CheckID) *Check {
 	q := r.query.Select("loadCheckFromID")
 	q = q.Arg("id", id)
 
@@ -12043,7 +12692,7 @@ func (r *Client) LoadCheckFromID(id CheckID) *Check {
 }
 
 // Load a CheckGroup from its ID.
-func (r *Client) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
+func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
 	q := r.query.Select("loadCheckGroupFromID")
 	q = q.Arg("id", id)
 
@@ -12053,7 +12702,7 @@ func (r *Client) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
 }
 
 // Load a Cloud from its ID.
-func (r *Client) LoadCloudFromID(id CloudID) *Cloud {
+func (r *Query) LoadCloudFromID(id CloudID) *Cloud {
 	q := r.query.Select("loadCloudFromID")
 	q = q.Arg("id", id)
 
@@ -12063,7 +12712,7 @@ func (r *Client) LoadCloudFromID(id CloudID) *Cloud {
 }
 
 // Load a Container from its ID.
-func (r *Client) LoadContainerFromID(id ContainerID) *Container {
+func (r *Query) LoadContainerFromID(id ContainerID) *Container {
 	q := r.query.Select("loadContainerFromID")
 	q = q.Arg("id", id)
 
@@ -12073,7 +12722,7 @@ func (r *Client) LoadContainerFromID(id ContainerID) *Container {
 }
 
 // Load a CurrentModule from its ID.
-func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
+func (r *Query) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 	q := r.query.Select("loadCurrentModuleFromID")
 	q = q.Arg("id", id)
 
@@ -12083,7 +12732,7 @@ func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 }
 
 // Load a Directory from its ID.
-func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
+func (r *Query) LoadDirectoryFromID(id DirectoryID) *Directory {
 	q := r.query.Select("loadDirectoryFromID")
 	q = q.Arg("id", id)
 
@@ -12093,7 +12742,7 @@ func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
 }
 
 // Load a EngineCacheEntry from its ID.
-func (r *Client) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
+func (r *Query) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
 	q := r.query.Select("loadEngineCacheEntryFromID")
 	q = q.Arg("id", id)
 
@@ -12103,7 +12752,7 @@ func (r *Client) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheE
 }
 
 // Load a EngineCacheEntrySet from its ID.
-func (r *Client) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
+func (r *Query) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
 	q := r.query.Select("loadEngineCacheEntrySetFromID")
 	q = q.Arg("id", id)
 
@@ -12113,7 +12762,7 @@ func (r *Client) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *Engine
 }
 
 // Load a EngineCache from its ID.
-func (r *Client) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
+func (r *Query) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
 	q := r.query.Select("loadEngineCacheFromID")
 	q = q.Arg("id", id)
 
@@ -12123,7 +12772,7 @@ func (r *Client) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
 }
 
 // Load a Engine from its ID.
-func (r *Client) LoadEngineFromID(id EngineID) *Engine {
+func (r *Query) LoadEngineFromID(id EngineID) *Engine {
 	q := r.query.Select("loadEngineFromID")
 	q = q.Arg("id", id)
 
@@ -12133,7 +12782,7 @@ func (r *Client) LoadEngineFromID(id EngineID) *Engine {
 }
 
 // Load a EnumTypeDef from its ID.
-func (r *Client) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
+func (r *Query) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
 	q := r.query.Select("loadEnumTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12143,7 +12792,7 @@ func (r *Client) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
 }
 
 // Load a EnumValueTypeDef from its ID.
-func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
+func (r *Query) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
 	q := r.query.Select("loadEnumValueTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12153,7 +12802,7 @@ func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTyp
 }
 
 // Load a EnvFile from its ID.
-func (r *Client) LoadEnvFileFromID(id EnvFileID) *EnvFile {
+func (r *Query) LoadEnvFileFromID(id EnvFileID) *EnvFile {
 	q := r.query.Select("loadEnvFileFromID")
 	q = q.Arg("id", id)
 
@@ -12163,7 +12812,7 @@ func (r *Client) LoadEnvFileFromID(id EnvFileID) *EnvFile {
 }
 
 // Load a Env from its ID.
-func (r *Client) LoadEnvFromID(id EnvID) *Env {
+func (r *Query) LoadEnvFromID(id EnvID) *Env {
 	q := r.query.Select("loadEnvFromID")
 	q = q.Arg("id", id)
 
@@ -12173,7 +12822,7 @@ func (r *Client) LoadEnvFromID(id EnvID) *Env {
 }
 
 // Load a EnvVariable from its ID.
-func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
+func (r *Query) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 	q := r.query.Select("loadEnvVariableFromID")
 	q = q.Arg("id", id)
 
@@ -12183,7 +12832,7 @@ func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 }
 
 // Load a Error from its ID.
-func (r *Client) LoadErrorFromID(id ErrorID) *Error {
+func (r *Query) LoadErrorFromID(id ErrorID) *Error {
 	q := r.query.Select("loadErrorFromID")
 	q = q.Arg("id", id)
 
@@ -12193,7 +12842,7 @@ func (r *Client) LoadErrorFromID(id ErrorID) *Error {
 }
 
 // Load a ErrorValue from its ID.
-func (r *Client) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
+func (r *Query) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
 	q := r.query.Select("loadErrorValueFromID")
 	q = q.Arg("id", id)
 
@@ -12203,7 +12852,7 @@ func (r *Client) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
 }
 
 // Load a FieldTypeDef from its ID.
-func (r *Client) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
+func (r *Query) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
 	q := r.query.Select("loadFieldTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12213,7 +12862,7 @@ func (r *Client) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
 }
 
 // Load a File from its ID.
-func (r *Client) LoadFileFromID(id FileID) *File {
+func (r *Query) LoadFileFromID(id FileID) *File {
 	q := r.query.Select("loadFileFromID")
 	q = q.Arg("id", id)
 
@@ -12223,7 +12872,7 @@ func (r *Client) LoadFileFromID(id FileID) *File {
 }
 
 // Load a FunctionArg from its ID.
-func (r *Client) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
+func (r *Query) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
 	q := r.query.Select("loadFunctionArgFromID")
 	q = q.Arg("id", id)
 
@@ -12233,7 +12882,7 @@ func (r *Client) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
 }
 
 // Load a FunctionCallArgValue from its ID.
-func (r *Client) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
+func (r *Query) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
 	q := r.query.Select("loadFunctionCallArgValueFromID")
 	q = q.Arg("id", id)
 
@@ -12243,7 +12892,7 @@ func (r *Client) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *Func
 }
 
 // Load a FunctionCall from its ID.
-func (r *Client) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
+func (r *Query) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
 	q := r.query.Select("loadFunctionCallFromID")
 	q = q.Arg("id", id)
 
@@ -12253,7 +12902,7 @@ func (r *Client) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
 }
 
 // Load a Function from its ID.
-func (r *Client) LoadFunctionFromID(id FunctionID) *Function {
+func (r *Query) LoadFunctionFromID(id FunctionID) *Function {
 	q := r.query.Select("loadFunctionFromID")
 	q = q.Arg("id", id)
 
@@ -12263,7 +12912,7 @@ func (r *Client) LoadFunctionFromID(id FunctionID) *Function {
 }
 
 // Load a GeneratedCode from its ID.
-func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
+func (r *Query) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 	q := r.query.Select("loadGeneratedCodeFromID")
 	q = q.Arg("id", id)
 
@@ -12273,7 +12922,7 @@ func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 }
 
 // Load a Generator from its ID.
-func (r *Client) LoadGeneratorFromID(id GeneratorID) *Generator {
+func (r *Query) LoadGeneratorFromID(id GeneratorID) *Generator {
 	q := r.query.Select("loadGeneratorFromID")
 	q = q.Arg("id", id)
 
@@ -12283,7 +12932,7 @@ func (r *Client) LoadGeneratorFromID(id GeneratorID) *Generator {
 }
 
 // Load a GeneratorGroup from its ID.
-func (r *Client) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
+func (r *Query) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
 	q := r.query.Select("loadGeneratorGroupFromID")
 	q = q.Arg("id", id)
 
@@ -12293,7 +12942,7 @@ func (r *Client) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
 }
 
 // Load a GitRef from its ID.
-func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
+func (r *Query) LoadGitRefFromID(id GitRefID) *GitRef {
 	q := r.query.Select("loadGitRefFromID")
 	q = q.Arg("id", id)
 
@@ -12303,7 +12952,7 @@ func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
 }
 
 // Load a GitRepository from its ID.
-func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
+func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	q := r.query.Select("loadGitRepositoryFromID")
 	q = q.Arg("id", id)
 
@@ -12313,7 +12962,7 @@ func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 }
 
 // Load a HealthcheckConfig from its ID.
-func (r *Client) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
+func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
 	q := r.query.Select("loadHealthcheckConfigFromID")
 	q = q.Arg("id", id)
 
@@ -12323,7 +12972,7 @@ func (r *Client) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *Healthchec
 }
 
 // Load a Host from its ID.
-func (r *Client) LoadHostFromID(id HostID) *Host {
+func (r *Query) LoadHostFromID(id HostID) *Host {
 	q := r.query.Select("loadHostFromID")
 	q = q.Arg("id", id)
 
@@ -12333,7 +12982,7 @@ func (r *Client) LoadHostFromID(id HostID) *Host {
 }
 
 // Load a InputTypeDef from its ID.
-func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
+func (r *Query) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
 	q := r.query.Select("loadInputTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12343,7 +12992,7 @@ func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
 }
 
 // Load a InterfaceTypeDef from its ID.
-func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
+func (r *Query) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
 	q := r.query.Select("loadInterfaceTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12353,7 +13002,7 @@ func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTyp
 }
 
 // Load a JSONValue from its ID.
-func (r *Client) LoadJSONValueFromID(id JSONValueID) *JSONValue {
+func (r *Query) LoadJSONValueFromID(id JSONValueID) *JSONValue {
 	q := r.query.Select("loadJSONValueFromID")
 	q = q.Arg("id", id)
 
@@ -12362,8 +13011,18 @@ func (r *Client) LoadJSONValueFromID(id JSONValueID) *JSONValue {
 	}
 }
 
+// Load a LLMContentBlock from its ID.
+func (r *Query) LoadLLMContentBlockFromID(id LLMContentBlockID) *LLMContentBlock {
+	q := r.query.Select("loadLLMContentBlockFromID")
+	q = q.Arg("id", id)
+
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
 // Load a LLM from its ID.
-func (r *Client) LoadLLMFromID(id LLMID) *LLM {
+func (r *Query) LoadLLMFromID(id LLMID) *LLM {
 	q := r.query.Select("loadLLMFromID")
 	q = q.Arg("id", id)
 
@@ -12372,8 +13031,18 @@ func (r *Client) LoadLLMFromID(id LLMID) *LLM {
 	}
 }
 
+// Load a LLMMessage from its ID.
+func (r *Query) LoadLLMMessageFromID(id LLMMessageID) *LLMMessage {
+	q := r.query.Select("loadLLMMessageFromID")
+	q = q.Arg("id", id)
+
+	return &LLMMessage{
+		query: q,
+	}
+}
+
 // Load a LLMTokenUsage from its ID.
-func (r *Client) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
+func (r *Query) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
 	q := r.query.Select("loadLLMTokenUsageFromID")
 	q = q.Arg("id", id)
 
@@ -12382,8 +13051,18 @@ func (r *Client) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
 	}
 }
 
+// Load a LLMToolCall from its ID.
+func (r *Query) LoadLLMToolCallFromID(id LLMToolCallID) *LLMToolCall {
+	q := r.query.Select("loadLLMToolCallFromID")
+	q = q.Arg("id", id)
+
+	return &LLMToolCall{
+		query: q,
+	}
+}
+
 // Load a Label from its ID.
-func (r *Client) LoadLabelFromID(id LabelID) *Label {
+func (r *Query) LoadLabelFromID(id LabelID) *Label {
 	q := r.query.Select("loadLabelFromID")
 	q = q.Arg("id", id)
 
@@ -12393,7 +13072,7 @@ func (r *Client) LoadLabelFromID(id LabelID) *Label {
 }
 
 // Load a ListTypeDef from its ID.
-func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
+func (r *Query) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 	q := r.query.Select("loadListTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12403,7 +13082,7 @@ func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 }
 
 // Load a ModuleConfigClient from its ID.
-func (r *Client) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
+func (r *Query) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
 	q := r.query.Select("loadModuleConfigClientFromID")
 	q = q.Arg("id", id)
 
@@ -12413,7 +13092,7 @@ func (r *Client) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleCo
 }
 
 // Load a Module from its ID.
-func (r *Client) LoadModuleFromID(id ModuleID) *Module {
+func (r *Query) LoadModuleFromID(id ModuleID) *Module {
 	q := r.query.Select("loadModuleFromID")
 	q = q.Arg("id", id)
 
@@ -12423,7 +13102,7 @@ func (r *Client) LoadModuleFromID(id ModuleID) *Module {
 }
 
 // Load a ModuleSource from its ID.
-func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
+func (r *Query) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
 	q := r.query.Select("loadModuleSourceFromID")
 	q = q.Arg("id", id)
 
@@ -12433,7 +13112,7 @@ func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
 }
 
 // Load a ObjectTypeDef from its ID.
-func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
+func (r *Query) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 	q := r.query.Select("loadObjectTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12443,7 +13122,7 @@ func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 }
 
 // Load a Port from its ID.
-func (r *Client) LoadPortFromID(id PortID) *Port {
+func (r *Query) LoadPortFromID(id PortID) *Port {
 	q := r.query.Select("loadPortFromID")
 	q = q.Arg("id", id)
 
@@ -12452,8 +13131,18 @@ func (r *Client) LoadPortFromID(id PortID) *Port {
 	}
 }
 
+// Load a Query from its ID.
+func (r *Query) LoadQueryFromID(id QueryID) *Query {
+	q := r.query.Select("loadQueryFromID")
+	q = q.Arg("id", id)
+
+	return &Query{
+		query: q,
+	}
+}
+
 // Load a SDKConfig from its ID.
-func (r *Client) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
+func (r *Query) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
 	q := r.query.Select("loadSDKConfigFromID")
 	q = q.Arg("id", id)
 
@@ -12463,7 +13152,7 @@ func (r *Client) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
 }
 
 // Load a ScalarTypeDef from its ID.
-func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
+func (r *Query) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	q := r.query.Select("loadScalarTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12473,7 +13162,7 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 }
 
 // Load a SearchResult from its ID.
-func (r *Client) LoadSearchResultFromID(id SearchResultID) *SearchResult {
+func (r *Query) LoadSearchResultFromID(id SearchResultID) *SearchResult {
 	q := r.query.Select("loadSearchResultFromID")
 	q = q.Arg("id", id)
 
@@ -12483,7 +13172,7 @@ func (r *Client) LoadSearchResultFromID(id SearchResultID) *SearchResult {
 }
 
 // Load a SearchSubmatch from its ID.
-func (r *Client) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
+func (r *Query) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
 	q := r.query.Select("loadSearchSubmatchFromID")
 	q = q.Arg("id", id)
 
@@ -12493,7 +13182,7 @@ func (r *Client) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
 }
 
 // Load a Secret from its ID.
-func (r *Client) LoadSecretFromID(id SecretID) *Secret {
+func (r *Query) LoadSecretFromID(id SecretID) *Secret {
 	q := r.query.Select("loadSecretFromID")
 	q = q.Arg("id", id)
 
@@ -12503,7 +13192,7 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 }
 
 // Load a Service from its ID.
-func (r *Client) LoadServiceFromID(id ServiceID) *Service {
+func (r *Query) LoadServiceFromID(id ServiceID) *Service {
 	q := r.query.Select("loadServiceFromID")
 	q = q.Arg("id", id)
 
@@ -12513,7 +13202,7 @@ func (r *Client) LoadServiceFromID(id ServiceID) *Service {
 }
 
 // Load a Socket from its ID.
-func (r *Client) LoadSocketFromID(id SocketID) *Socket {
+func (r *Query) LoadSocketFromID(id SocketID) *Socket {
 	q := r.query.Select("loadSocketFromID")
 	q = q.Arg("id", id)
 
@@ -12523,7 +13212,7 @@ func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 }
 
 // Load a SourceMap from its ID.
-func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
+func (r *Query) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 	q := r.query.Select("loadSourceMapFromID")
 	q = q.Arg("id", id)
 
@@ -12533,7 +13222,7 @@ func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 }
 
 // Load a Stat from its ID.
-func (r *Client) LoadStatFromID(id StatID) *Stat {
+func (r *Query) LoadStatFromID(id StatID) *Stat {
 	q := r.query.Select("loadStatFromID")
 	q = q.Arg("id", id)
 
@@ -12543,7 +13232,7 @@ func (r *Client) LoadStatFromID(id StatID) *Stat {
 }
 
 // Load a Terminal from its ID.
-func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
+func (r *Query) LoadTerminalFromID(id TerminalID) *Terminal {
 	q := r.query.Select("loadTerminalFromID")
 	q = q.Arg("id", id)
 
@@ -12553,7 +13242,7 @@ func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
 }
 
 // Load a TypeDef from its ID.
-func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
+func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q := r.query.Select("loadTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12563,7 +13252,7 @@ func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 }
 
 // Load a Workspace from its ID.
-func (r *Client) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
+func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	q := r.query.Select("loadWorkspaceFromID")
 	q = q.Arg("id", id)
 
@@ -12573,7 +13262,7 @@ func (r *Client) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 }
 
 // Create a new module.
-func (r *Client) Module() *Module {
+func (r *Query) Module() *Module {
 	q := r.query.Select("module")
 
 	return &Module{
@@ -12581,7 +13270,7 @@ func (r *Client) Module() *Module {
 	}
 }
 
-// ModuleSourceOpts contains options for Client.ModuleSource
+// ModuleSourceOpts contains options for Query.ModuleSource
 type ModuleSourceOpts struct {
 	// The pinned version of the module source
 	RefPin string
@@ -12594,7 +13283,7 @@ type ModuleSourceOpts struct {
 }
 
 // Create a new module source instance from a source ref string
-func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
+func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	q := r.query.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `refPin` optional argument
@@ -12621,7 +13310,7 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	}
 }
 
-// SecretOpts contains options for Client.Secret
+// SecretOpts contains options for Query.Secret
 type SecretOpts struct {
 	// If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
 	//
@@ -12632,7 +13321,7 @@ type SecretOpts struct {
 }
 
 // Creates a new secret.
-func (r *Client) Secret(uri string, opts ...SecretOpts) *Secret {
+func (r *Query) Secret(uri string, opts ...SecretOpts) *Secret {
 	q := r.query.Select("secret")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `cacheKey` optional argument
@@ -12650,7 +13339,7 @@ func (r *Client) Secret(uri string, opts ...SecretOpts) *Secret {
 // Sets a secret given a user defined name to its plaintext and returns the secret.
 //
 // The plaintext value is limited to a size of 128000 bytes.
-func (r *Client) SetSecret(name string, plaintext string) *Secret {
+func (r *Query) SetSecret(name string, plaintext string) *Secret {
 	q := r.query.Select("setSecret")
 	q = q.Arg("name", name)
 	q = q.Arg("plaintext", plaintext)
@@ -12661,7 +13350,7 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 }
 
 // Creates source map metadata.
-func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
+func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	q := r.query.Select("sourceMap")
 	q = q.Arg("filename", filename)
 	q = q.Arg("line", line)
@@ -12673,7 +13362,7 @@ func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
 }
 
 // Create a new TypeDef.
-func (r *Client) TypeDef() *TypeDef {
+func (r *Query) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
 	return &TypeDef{
@@ -12682,7 +13371,7 @@ func (r *Client) TypeDef() *TypeDef {
 }
 
 // Get the current Dagger Engine version.
-func (r *Client) Version(ctx context.Context) (string, error) {
+func (r *Query) Version(ctx context.Context) (string, error) {
 	q := r.query.Select("version")
 
 	var response string
@@ -12696,7 +13385,7 @@ type SDKConfig struct {
 	query *querybuilder.Selection
 
 	debug  *bool
-	id     *SDKConfigID
+	id     *ID
 	source *string
 }
 
@@ -12720,13 +13409,13 @@ func (r *SDKConfig) Debug(ctx context.Context) (bool, error) {
 }
 
 // A unique identifier for this SDKConfig.
-func (r *SDKConfig) ID(ctx context.Context) (SDKConfigID, error) {
+func (r *SDKConfig) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SDKConfigID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -12777,7 +13466,7 @@ type ScalarTypeDef struct {
 	query *querybuilder.Selection
 
 	description      *string
-	id               *ScalarTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -12802,13 +13491,13 @@ func (r *ScalarTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this ScalarTypeDef.
-func (r *ScalarTypeDef) ID(ctx context.Context) (ScalarTypeDefID, error) {
+func (r *ScalarTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ScalarTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -12872,7 +13561,7 @@ type SearchResult struct {
 
 	absoluteOffset *int
 	filePath       *string
-	id             *SearchResultID
+	id             *ID
 	lineNumber     *int
 	matchedLines   *string
 }
@@ -12910,13 +13599,13 @@ func (r *SearchResult) FilePath(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this SearchResult.
-func (r *SearchResult) ID(ctx context.Context) (SearchResultID, error) {
+func (r *SearchResult) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SearchResultID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -12982,7 +13671,7 @@ func (r *SearchResult) Submatches(ctx context.Context) ([]SearchSubmatch, error)
 	q = q.Select("id")
 
 	type submatches struct {
-		Id SearchSubmatchID
+		Id ID
 	}
 
 	convert := func(fields []submatches) []SearchSubmatch {
@@ -13012,7 +13701,7 @@ type SearchSubmatch struct {
 	query *querybuilder.Selection
 
 	end   *int
-	id    *SearchSubmatchID
+	id    *ID
 	start *int
 	text  *string
 }
@@ -13037,13 +13726,13 @@ func (r *SearchSubmatch) End(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this SearchSubmatch.
-func (r *SearchSubmatch) ID(ctx context.Context) (SearchSubmatchID, error) {
+func (r *SearchSubmatch) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SearchSubmatchID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13106,7 +13795,7 @@ func (r *SearchSubmatch) Text(ctx context.Context) (string, error) {
 type Secret struct {
 	query *querybuilder.Selection
 
-	id        *SecretID
+	id        *ID
 	name      *string
 	plaintext *string
 	uri       *string
@@ -13119,13 +13808,13 @@ func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
 }
 
 // A unique identifier for this Secret.
-func (r *Secret) ID(ctx context.Context) (SecretID, error) {
+func (r *Secret) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SecretID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13203,7 +13892,7 @@ type Service struct {
 
 	endpoint *string
 	hostname *string
-	id       *ServiceID
+	id       *ID
 	start    *ServiceID
 	stop     *ServiceID
 	sync     *ServiceID
@@ -13273,13 +13962,13 @@ func (r *Service) Hostname(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Service.
-func (r *Service) ID(ctx context.Context) (ServiceID, error) {
+func (r *Service) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ServiceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13319,7 +14008,7 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 	q = q.Select("id")
 
 	type ports struct {
-		Id PortID
+		Id ID
 	}
 
 	convert := func(fields []ports) []Port {
@@ -13461,7 +14150,7 @@ func (r *Service) WithHostname(hostname string) *Service {
 type Socket struct {
 	query *querybuilder.Selection
 
-	id *SocketID
+	id *ID
 }
 
 func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
@@ -13471,13 +14160,13 @@ func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
 }
 
 // A unique identifier for this Socket.
-func (r *Socket) ID(ctx context.Context) (SocketID, error) {
+func (r *Socket) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SocketID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13516,7 +14205,7 @@ type SourceMap struct {
 
 	column   *int
 	filename *string
-	id       *SourceMapID
+	id       *ID
 	line     *int
 	module   *string
 	url      *string
@@ -13555,13 +14244,13 @@ func (r *SourceMap) Filename(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this SourceMap.
-func (r *SourceMap) ID(ctx context.Context) (SourceMapID, error) {
+func (r *SourceMap) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SourceMapID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13638,7 +14327,7 @@ type Stat struct {
 	query *querybuilder.Selection
 
 	fileType    *FileType
-	id          *StatID
+	id          *ID
 	name        *string
 	permissions *int
 	size        *int
@@ -13664,13 +14353,13 @@ func (r *Stat) FileType(ctx context.Context) (FileType, error) {
 }
 
 // A unique identifier for this Stat.
-func (r *Stat) ID(ctx context.Context) (StatID, error) {
+func (r *Stat) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response StatID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13746,7 +14435,7 @@ func (r *Stat) Size(ctx context.Context) (int, error) {
 type Terminal struct {
 	query *querybuilder.Selection
 
-	id   *TerminalID
+	id   *ID
 	sync *TerminalID
 }
 
@@ -13757,13 +14446,13 @@ func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
 }
 
 // A unique identifier for this Terminal.
-func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
+func (r *Terminal) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response TerminalID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13815,7 +14504,7 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 type TypeDef struct {
 	query *querybuilder.Selection
 
-	id       *TypeDefID
+	id       *ID
 	kind     *TypeDefKind
 	optional *bool
 }
@@ -13889,13 +14578,13 @@ func (r *TypeDef) AsScalar() *ScalarTypeDef {
 }
 
 // A unique identifier for this TypeDef.
-func (r *TypeDef) ID(ctx context.Context) (TypeDefID, error) {
+func (r *TypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response TypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14236,14 +14925,102 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
-	clientId *string
-	findUp   *string
-	id       *WorkspaceID
-	root     *string
+	address       *string
+	apply         *bool
+	branch        *string
+	clientId      *string
+	commit        *string
+	configPath    *string
+	defaultModule *string
+	exists        *bool
+	findUp        *string
+	hasConfig     *bool
+	id            *ID
+	initialized   *bool
+	path          *string
+	stage         *bool
+}
+type WithWorkspaceFunc func(r *Workspace) *Workspace
+
+// With calls the provided function with current Workspace.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Workspace) With(f WithWorkspaceFunc) *Workspace {
+	return f(r)
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Canonical Dagger address of the workspace directory.
+func (r *Workspace) Address(ctx context.Context) (string, error) {
+	if r.address != nil {
+		return *r.address, nil
+	}
+	q := r.query.Select("address")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Export a Changeset to the workspace directory without staging in git.
+//
+// Use this for files that should not be tracked by git (e.g. build
+//
+// artifacts, binary files). Added and modified files are written to
+//
+// disk; removed files are deleted.
+//
+// Returns true if any files were changed, false if the changeset was empty.
+func (r *Workspace) Apply(ctx context.Context, changes *Changeset) (bool, error) {
+	assertNotNil("changes", changes)
+	if r.apply != nil {
+		return *r.apply, nil
+	}
+	q := r.query.Select("apply")
+	q = q.Arg("changes", changes)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The Git branch this workspace is on.
+func (r *Workspace) Branch(ctx context.Context) (string, error) {
+	if r.branch != nil {
+		return *r.branch, nil
+	}
+	q := r.query.Select("branch")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceChecksOpts contains options for Workspace.Checks
+type WorkspaceChecksOpts struct {
+	// Only include checks matching the specified patterns
+	Include []string
+}
+
+// Return all checks from modules loaded in the workspace.
+func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
+	q := r.query.Select("checks")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &CheckGroup{
 		query: q,
 	}
 }
@@ -14254,6 +15031,48 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 		return *r.clientId, nil
 	}
 	q := r.query.Select("clientId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Commit whatever is currently staged in the workspace's git index.
+//
+// Returns the commit hash. Fails if there is nothing staged.
+func (r *Workspace) Commit(ctx context.Context, message string) (string, error) {
+	if r.commit != nil {
+		return *r.commit, nil
+	}
+	q := r.query.Select("commit")
+	q = q.Arg("message", message)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Path to config.toml relative to the workspace boundary (empty if not initialized).
+func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
+	if r.configPath != nil {
+		return *r.configPath, nil
+	}
+	q := r.query.Select("configPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+func (r *Workspace) DefaultModule(ctx context.Context) (string, error) {
+	if r.defaultModule != nil {
+		return *r.defaultModule, nil
+	}
+	q := r.query.Select("defaultModule")
 
 	var response string
 
@@ -14273,7 +15092,7 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Path is relative to workspace root. Use "." for the root directory.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -14297,9 +15116,41 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	}
 }
 
+// WorkspaceExistsOpts contains options for Workspace.Exists
+type WorkspaceExistsOpts struct {
+	// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+	ExpectedType ExistsType
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Check if a file or directory exists at the given path in the workspace.
+func (r *Workspace) Exists(ctx context.Context, path string, opts ...WorkspaceExistsOpts) (bool, error) {
+	if r.exists != nil {
+		return *r.exists, nil
+	}
+	q := r.query.Select("exists")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expectedType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExpectedType) {
+			q = q.Arg("expectedType", opts[i].ExpectedType)
+		}
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Returns a File from the workspace.
 //
-// Path is relative to workspace root.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -14311,7 +15162,7 @@ func (r *Workspace) File(path string) *File {
 
 // WorkspaceFindUpOpts contains options for Workspace.FindUp
 type WorkspaceFindUpOpts struct {
-	// Path to start the search from, relative to the workspace root.
+	// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
 	//
 	// Default: "."
 	From string
@@ -14319,9 +15170,11 @@ type WorkspaceFindUpOpts struct {
 
 // Search for a file or directory by walking up from the start path within the workspace.
 //
-// Returns the path relative to the workspace root if found, or null if not found.
+// Returns the absolute workspace path if found, or null if not found.
 //
-// The search stops at the workspace root and will not traverse above it.
+// Relative start paths resolve from the workspace directory.
+//
+// The search stops at the workspace boundary and will not traverse above it.
 func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil
@@ -14341,14 +15194,59 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceGeneratorsOpts contains options for Workspace.Generators
+type WorkspaceGeneratorsOpts struct {
+	// Only include generators matching the specified patterns
+	Include []string
+}
+
+// Return all generators from modules loaded in the workspace.
+func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup {
+	q := r.query.Select("generators")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &GeneratorGroup{
+		query: q,
+	}
+}
+
+// Returns a list of files and directories that match the given pattern.
+func (r *Workspace) Glob(ctx context.Context, pattern string) ([]string, error) {
+	q := r.query.Select("glob")
+	q = q.Arg("pattern", pattern)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether a config.toml file exists in the workspace.
+func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
+	if r.hasConfig != nil {
+		return *r.hasConfig, nil
+	}
+	q := r.query.Select("hasConfig")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // A unique identifier for this Workspace.
-func (r *Workspace) ID(ctx context.Context) (WorkspaceID, error) {
+func (r *Workspace) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response WorkspaceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14381,17 +15279,198 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Absolute path to the workspace root directory.
-func (r *Workspace) Root(ctx context.Context) (string, error) {
-	if r.root != nil {
-		return *r.root, nil
+// Whether .dagger/config.toml exists.
+func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
+	if r.initialized != nil {
+		return *r.initialized, nil
 	}
-	q := r.query.Select("root")
+	q := r.query.Select("initialized")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Workspace directory path relative to the workspace boundary.
+func (r *Workspace) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
 
 	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// WorkspaceSearchOpts contains options for Workspace.Search
+type WorkspaceSearchOpts struct {
+	// Directory or file paths to search
+	Paths []string
+	// Glob patterns to match (e.g., "*.md")
+	Globs []string
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	Insensitive bool
+	// Honor .gitignore, .ignore, and .rgignore files.
+	SkipIgnored bool
+	// Skip hidden files (files starting with .).
+	SkipHidden bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+//
+// Runs ripgrep on the client host, falling back to grep if unavailable.
+func (r *Workspace) Search(ctx context.Context, pattern string, opts ...WorkspaceSearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `insensitive` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Insensitive) {
+			q = q.Arg("insensitive", opts[i].Insensitive)
+		}
+		// `skipIgnored` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipIgnored) {
+			q = q.Arg("skipIgnored", opts[i].SkipIgnored)
+		}
+		// `skipHidden` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipHidden) {
+			q = q.Arg("skipHidden", opts[i].SkipHidden)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id ID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// WorkspaceStageOpts contains options for Workspace.Stage
+type WorkspaceStageOpts struct {
+	// Skip the 3-way merge for modified files and overwrite the working
+	//
+	// tree directly. Use this to recover from merge conflicts or when
+	//
+	// the changeset already contains the complete desired file content.
+	Force bool
+}
+
+// Apply a Changeset to the workspace and stage the affected paths in git.
+//
+// Files are written (added/modified) and removed on disk, then precisely
+//
+// the changed paths are staged via git add / git rm. Any pre-existing
+//
+// unstaged user edits are preserved as unstaged changes.
+//
+// Returns true if any changes were staged, false if the changeset was empty.
+func (r *Workspace) Stage(ctx context.Context, changes *Changeset, opts ...WorkspaceStageOpts) (bool, error) {
+	assertNotNil("changes", changes)
+	if r.stage != nil {
+		return *r.stage, nil
+	}
+	q := r.query.Select("stage")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `force` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Force) {
+			q = q.Arg("force", opts[i].Force)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceWithBranchOpts contains options for Workspace.WithBranch
+type WorkspaceWithBranchOpts struct {
+	Base string
+}
+
+// Return a Workspace for the given branch. If the branch is different from
+//
+// the currently checked-out branch, a git worktree is created on the host.
+//
+// If the branch does not exist, it is created from the current branch tip.
+func (r *Workspace) WithBranch(branch string, opts ...WorkspaceWithBranchOpts) *Workspace {
+	q := r.query.Select("withBranch")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `base` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Base) {
+			q = q.Arg("base", opts[i].Base)
+		}
+	}
+	q = q.Arg("branch", branch)
+
+	return &Workspace{
+		query: q,
+	}
 }
 
 // Sharing mode of the cache volume.
@@ -14812,8 +15891,8 @@ func (v ImageLayerCompression) Name() string {
 		return "Gzip"
 	case ImageLayerCompressionZstd:
 		return "Zstd"
-	case ImageLayerCompressionEstarGz:
-		return "EStarGZ"
+	case ImageLayerCompressionEstargz:
+		return "EStargz"
 	case ImageLayerCompressionUncompressed:
 		return "Uncompressed"
 	default:
@@ -14844,9 +15923,7 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 	switch s {
 	case "":
 		*v = ""
-	case "EStarGZ":
-		*v = ImageLayerCompressionEstarGz
-	case "ESTARGZ":
+	case "EStargz":
 		*v = ImageLayerCompressionEstargz
 	case "Gzip":
 		*v = ImageLayerCompressionGzip
@@ -14865,8 +15942,7 @@ const (
 
 	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
 
-	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
-	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEstarGz
+	ImageLayerCompressionEstargz ImageLayerCompression = "EStargz"
 
 	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
 )
@@ -14930,6 +16006,141 @@ const (
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+)
+
+// The kind of content in a message block.
+type LLMContentBlockKind string
+
+func (LLMContentBlockKind) IsEnum() {}
+
+func (v LLMContentBlockKind) Name() string {
+	switch v {
+	case LLMContentBlockKindText:
+		return "TEXT"
+	case LLMContentBlockKindThinking:
+		return "THINKING"
+	case LLMContentBlockKindToolCall:
+		return "TOOL_CALL"
+	case LLMContentBlockKindToolResult:
+		return "TOOL_RESULT"
+	default:
+		return ""
+	}
+}
+
+func (v LLMContentBlockKind) Value() string {
+	return string(v)
+}
+
+func (v *LLMContentBlockKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMContentBlockKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "TEXT":
+		*v = LLMContentBlockKindText
+	case "THINKING":
+		*v = LLMContentBlockKindThinking
+	case "TOOL_CALL":
+		*v = LLMContentBlockKindToolCall
+	case "TOOL_RESULT":
+		*v = LLMContentBlockKindToolResult
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Plain text content.
+	LLMContentBlockKindText LLMContentBlockKind = "TEXT"
+
+	// Model thinking/reasoning content (e.g. Anthropic extended thinking).
+	LLMContentBlockKindThinking LLMContentBlockKind = "THINKING"
+
+	// A tool/function call from the model.
+	LLMContentBlockKindToolCall LLMContentBlockKind = "TOOL_CALL"
+
+	// A tool/function result.
+	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
+)
+
+// The role that generated a message.
+type LLMMessageRole string
+
+func (LLMMessageRole) IsEnum() {}
+
+func (v LLMMessageRole) Name() string {
+	switch v {
+	case LLMMessageRoleUser:
+		return "USER"
+	case LLMMessageRoleAssistant:
+		return "ASSISTANT"
+	case LLMMessageRoleSystem:
+		return "SYSTEM"
+	default:
+		return ""
+	}
+}
+
+func (v LLMMessageRole) Value() string {
+	return string(v)
+}
+
+func (v *LLMMessageRole) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMMessageRole) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ASSISTANT":
+		*v = LLMMessageRoleAssistant
+	case "SYSTEM":
+		*v = LLMMessageRoleSystem
+	case "USER":
+		*v = LLMMessageRoleUser
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// A user prompt or tool response.
+	LLMMessageRoleUser LLMMessageRole = "USER"
+
+	// A reply from the model.
+	LLMMessageRoleAssistant LLMMessageRole = "ASSISTANT"
+
+	// A system prompt.
+	LLMMessageRoleSystem LLMMessageRole = "SYSTEM"
 )
 
 // Experimental features of a module

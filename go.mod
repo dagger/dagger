@@ -1,6 +1,6 @@
 module github.com/dagger/dagger
 
-go 1.25.6
+go 1.25.8
 
 require (
 	dagger.io/dagger v0.20.3
@@ -25,7 +25,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/agext/levenshtein v1.2.3
 	github.com/alecthomas/chroma/v2 v2.20.0
-	github.com/anthropics/anthropic-sdk-go v1.14.0
+	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
 	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.31.13
@@ -99,7 +99,6 @@ require (
 	github.com/jackpal/gateway v1.1.1
 	github.com/jedevc/diffparser v0.0.0-20251006145221-cebbf07eb779
 	github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f
-	github.com/joho/godotenv v1.5.1
 	github.com/juju/ansiterm v1.0.0
 	github.com/klauspost/compress v1.18.0
 	github.com/koron-go/prefixw v1.0.2
@@ -123,7 +122,6 @@ require (
 	github.com/morikuni/aec v1.0.0
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
-	github.com/openai/openai-go v1.12.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runc v1.2.9
@@ -155,7 +153,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.30
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang v0.0.0-20260316153434-9d320da57ad3
+	github.com/vito/dang v0.0.0-20260323053027-352d057a4d4c
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea
@@ -192,7 +190,7 @@ require (
 	golang.org/x/time v0.14.0
 	golang.org/x/tools v0.41.0
 	google.golang.org/api v0.247.0
-	google.golang.org/genai v1.31.0
+	google.golang.org/genai v1.50.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
@@ -203,7 +201,15 @@ require (
 	resenje.org/singleflight v0.4.3
 )
 
-require github.com/mattn/go-pointer v0.0.1 // indirect
+require (
+	charm.land/catwalk v0.30.7
+	github.com/openai/openai-go/v3 v3.26.0
+)
+
+require (
+	github.com/charmbracelet/x/etag v0.2.0 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
+)
 
 require (
 	cloud.google.com/go v0.120.0 // indirect
@@ -244,9 +250,9 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 // indirect
-	github.com/charmbracelet/x/ansi v0.11.6 // indirect
+	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
-	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
+	github.com/charmbracelet/x/exp/strings v0.1.0 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
@@ -342,7 +348,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.6.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.3 // indirect
-	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
+	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect

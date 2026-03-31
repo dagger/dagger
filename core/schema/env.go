@@ -24,12 +24,6 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 				dagql.Arg("privileged").Doc("Give the environment the same privileges as the caller: core API including host access, current module, and dependencies"),
 				dagql.Arg("writable").Doc("Allow new outputs to be declared and saved in the environment"),
 			),
-		dagql.FuncWithCacheKey("currentEnv", s.currentEnvironment, dagql.CachePerClient).
-			Doc(
-				`Returns the current environment`,
-				`When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.`,
-				`When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.`,
-			).Experimental("Programmatic env access is speculative and might be replaced."),
 	}.Install(srv)
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
@@ -45,7 +39,7 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 		dagql.Func("withWorkspace", s.withWorkspace).
 			Doc("Returns a new environment with the provided workspace").
 			Args(
-				dagql.Arg("workspace").Doc("The directory to set as the host filesystem"),
+				dagql.Arg("workspace").Doc("The workspace to use"),
 			),
 		dagql.NodeFuncWithCacheKey("withCurrentModule", s.withCurrentModule, dagql.CachePerClient).
 			Doc(
@@ -116,16 +110,14 @@ type environmentArgs struct {
 }
 
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args environmentArgs) (*core.Env, error) {
-	var workspace dagql.ObjectResult[*core.Directory]
-	if mod, err := parent.CurrentModule(ctx); err == nil {
-		workspace = mod.GetSource().ContextDirectory
-	} else {
-		// FIXME: inherit from somewhere?
-		if err := s.srv.Select(ctx, s.srv.Root(), &workspace, dagql.Selector{
-			Field: "directory",
-		}); err != nil {
-			return nil, err
-		}
+	var workspace dagql.ObjectResult[*core.Workspace]
+	if err := s.srv.Select(ctx, s.srv.Root(), &workspace, dagql.Selector{
+		Field: "currentWorkspace",
+		Args: []dagql.NamedInput{
+			{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+		},
+	}); err != nil {
+		return nil, err
 	}
 	deps, err := parent.CurrentServedDeps(ctx)
 	if err != nil {
@@ -137,49 +129,6 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 	}
 	if args.Writable {
 		env = env.Writable()
-	}
-	return env, nil
-}
-
-func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.Query, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return res, err
-	}
-	if query.CurrentEnv != nil {
-		return dagql.NewID[*core.Env](query.CurrentEnv).Load(ctx, s.srv)
-	}
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return res, err
-	}
-	mod, err := query.CurrentModule(ctx)
-	if err != nil {
-		return res, err
-	}
-	var env dagql.ObjectResult[*core.Env]
-	if err := dag.Select(ctx, dag.Root(), &env, dagql.Selector{
-		Field: "env",
-	}, dagql.Selector{
-		Field: "withMainModule",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "module",
-				Value: dagql.NewID[*core.Module](mod.ResultID),
-			},
-		},
-	}, dagql.Selector{
-		Field: "withWorkspace",
-		Args: []dagql.NamedInput{
-			{
-				Name: "workspace",
-				Value: dagql.NewID[*core.Directory](
-					mod.GetSource().ContextDirectory.ID(),
-				),
-			},
-		},
-	}); err != nil {
-		return res, fmt.Errorf("failed to create env: %w", err)
 	}
 	return env, nil
 }
@@ -217,13 +166,13 @@ func (s environmentSchema) withoutOutputs(ctx context.Context, env *core.Env, ar
 }
 
 func (s environmentSchema) withWorkspace(ctx context.Context, env *core.Env, args struct {
-	Workspace core.DirectoryID
+	Workspace core.WorkspaceID
 }) (*core.Env, error) {
-	dir, err := args.Workspace.Load(ctx, s.srv)
+	ws, err := args.Workspace.Load(ctx, s.srv)
 	if err != nil {
 		return nil, err
 	}
-	return env.WithWorkspace(dir), nil
+	return env.WithWorkspace(ws), nil
 }
 
 func (s environmentSchema) withMainModule(ctx context.Context, env *core.Env, args struct {

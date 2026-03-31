@@ -129,6 +129,13 @@ func NewPlain(w io.Writer) Frontend {
 }
 
 func (fe *frontendPlain) SetSidebarContent(SidebarSection) {}
+func (fe *frontendPlain) SetStatusLine(StatusLineData)     {}
+
+func (fe *frontendPlain) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	return fe.db.LLMTokenMetrics
+}
 
 func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
 	fmt.Fprintln(fe.output.Writer(), "Shell not supported in plain mode")
@@ -218,6 +225,10 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 
 func (fe *frontendPlain) HandlePrompt(ctx context.Context, _, prompt string, dest any) error {
 	return interact.NewInteraction(prompt).Resolve(dest)
+}
+
+func (fe *frontendPlain) Close() error {
+	return nil
 }
 
 func (fe *frontendPlain) HandleForm(ctx context.Context, form *huh.Form) error {

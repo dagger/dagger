@@ -3,6 +3,7 @@ package buildkit
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,9 +15,49 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
+	telemetry "github.com/dagger/otel-go"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/dagger/dagger/engine"
 )
+
+// injectTraceContext adds W3C trace context to the gRPC outgoing metadata,
+// so that client-side session attachables can create child spans.
+func injectTraceContext(ctx context.Context) context.Context {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		md = metadata.MD{}
+	} else {
+		md = md.Copy()
+	}
+	telemetry.Propagator.Inject(ctx, metadataCarrier(md))
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+// metadataCarrier adapts gRPC metadata.MD to propagation.TextMapCarrier.
+// Unlike propagation.HeaderCarrier (which wraps http.Header and title-cases
+// keys), this keeps keys lowercase as required by gRPC metadata.
+type metadataCarrier metadata.MD
+
+func (mc metadataCarrier) Get(key string) string {
+	vals := metadata.MD(mc).Get(key)
+	if len(vals) == 0 {
+		return ""
+	}
+	return vals[0]
+}
+
+func (mc metadataCarrier) Set(key, value string) {
+	metadata.MD(mc).Set(key, value)
+}
+
+func (mc metadataCarrier) Keys() []string {
+	keys := make([]string, 0, len(mc))
+	for k := range mc {
+		keys = append(keys, k)
+	}
+	return keys
+}
 
 func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg any) error {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -26,6 +67,9 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 	defer cancel(errors.New("diff copy done"))
 
 	ctx = opts.AppendToOutgoingContext(ctx)
+
+	// Propagate OTel trace context to the client via gRPC metadata
+	ctx = injectTraceContext(ctx)
 
 	clientCaller, err := c.GetSessionCaller(ctx, false)
 	if err != nil {
@@ -71,16 +115,127 @@ func (c *Client) AbsPath(ctx context.Context, path string) (string, error) {
 }
 
 func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsPath bool) (*fsutiltypes.Stat, error) {
+	return c.StatCallerHostPathFollow(ctx, path, returnAbsPath, false)
+}
+
+func (c *Client) StatCallerHostPathFollow(ctx context.Context, path string, returnAbsPath bool, followSymlinks bool) (*fsutiltypes.Stat, error) {
 	msg := fsutiltypes.Stat{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
-		Path:              path,
-		StatPathOnly:      true,
-		StatReturnAbsPath: returnAbsPath,
+		Path:               path,
+		StatPathOnly:       true,
+		StatReturnAbsPath:  returnAbsPath,
+		StatFollowSymlinks: followSymlinks,
 	}, &msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat path: %w", err)
 	}
 	return &msg, nil
+}
+
+func (c *Client) SearchCallerHostPath(ctx context.Context, dir string, opts *engine.LocalSearchOpts) ([]engine.LocalSearchResult, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:       dir,
+		SearchOpts: opts,
+	}, &msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search path: %w", err)
+	}
+	var results []engine.LocalSearchResult
+	if err := json.Unmarshal(msg.Data, &results); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal search results: %w", err)
+	}
+	return results, nil
+}
+
+func (c *Client) GlobCallerHostPath(ctx context.Context, dir string, pattern string) ([]string, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:        dir,
+		GlobPattern: pattern,
+	}, &msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to glob path: %w", err)
+	}
+	var matches []string
+	if err := json.Unmarshal(msg.Data, &matches); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal glob results: %w", err)
+	}
+	return matches, nil
+}
+
+// GitBranch detects the current git branch in the given directory on the client host.
+func (c *Client) GitBranch(ctx context.Context, repoDir string) (string, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:            repoDir,
+		GitBranchDetect: true,
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to detect git branch: %w", err)
+	}
+	return string(msg.Data), nil
+}
+
+// GitWorktreeAdd creates a git worktree on the client host.
+func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePath, base string) (string, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path: repoDir,
+		GitWorktreeAdd: &engine.GitWorktreeAddOpts{
+			Branch:       branch,
+			WorktreePath: worktreePath,
+			Base:         base,
+		},
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to add git worktree: %w", err)
+	}
+	return string(msg.Data), nil
+}
+
+// GitStage stages the given paths in the git index and merges changes
+// into the working tree. The tempDir contains the exported changeset
+// files. For added files, they are copied to the worktree. For modified
+// files, go-git writes the blob directly to the index and git merge-file
+// 3-way merges the change into the working tree (preserving user edits).
+func (c *Client) GitStage(
+	ctx context.Context,
+	worktreeDir string,
+	tempDir string,
+	added, modified, removed []string,
+	force bool,
+) (bool, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path: path.Clean(worktreeDir),
+		GitStage: &engine.GitStageOpts{
+			Added:    added,
+			Modified: modified,
+			Removed:  removed,
+			TempDir:  tempDir,
+			Force:    force,
+		},
+	}, &msg)
+	if err != nil {
+		return false, fmt.Errorf("git stage: %w", err)
+	}
+	return string(msg.Data) == "true", nil
+}
+
+// GitCommit commits whatever is currently staged and returns the commit hash.
+func (c *Client) GitCommit(ctx context.Context, worktreeDir string, message string) (string, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path: path.Clean(worktreeDir),
+		GitCommit: &engine.GitCommitOpts{
+			Message: message,
+		},
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("git commit: %w", err)
+	}
+	return string(msg.Data), nil
 }
 
 func (c *Client) LocalDirExport(
@@ -89,9 +244,22 @@ func (c *Client) LocalDirExport(
 	destPath string,
 	merge bool,
 	removePaths []string,
+) error {
+	return c.localDirExportWithOpts(ctx, srcPath, engine.LocalExportOpts{
+		Path:        path.Clean(destPath),
+		Merge:       merge,
+		RemovePaths: removePaths,
+	})
+}
+
+func (c *Client) localDirExportWithOpts(
+	ctx context.Context,
+	srcPath string,
+	opts engine.LocalExportOpts,
 ) (rerr error) {
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", opts.Path))
 	bklog.G(ctx).Debug("exporting local dir")
+
 	defer func() {
 		lg := bklog.G(ctx)
 		if rerr != nil {
@@ -121,12 +289,7 @@ func (c *Client) LocalDirExport(
 		return err
 	}
 
-	destPath = path.Clean(destPath)
-	ctx = engine.LocalExportOpts{
-		Path:        destPath,
-		Merge:       merge,
-		RemovePaths: removePaths,
-	}.AppendToOutgoingContext(ctx)
+	ctx = opts.AppendToOutgoingContext(ctx)
 
 	if err := filesync.CopyToCaller(ctx, outputFS, 0, caller, nil); err != nil {
 		return err

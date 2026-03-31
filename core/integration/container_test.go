@@ -191,7 +191,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			{
 				container {
 					from(address: "` + alpineImage + `") {
-						withError(err: "error raised")
+						withError(err: "error raised") {
+							sync
+						}
 					}
 				}
 			}`,
@@ -203,7 +205,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			{
 				container {
 					from(address: "` + alpineImage + `") {
-						withError(err: "")
+						withError(err: "") {
+							sync
+						}
 					}
 				}
 			}`,
@@ -3077,7 +3081,7 @@ func (ContainerSuite) TestFromIDPlatform(ctx context.Context, t *testctx.T) {
 	}).From(alpineImage).ID(ctx)
 	require.NoError(t, err)
 
-	platform, err := c.LoadContainerFromID(id).Platform(ctx)
+	platform, err := c.LoadContainerFromID(dagger.ContainerID(id)).Platform(ctx)
 	require.NoError(t, err)
 	require.Equal(t, desiredPlatform, platform)
 }
@@ -3860,7 +3864,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			dagger.ImageLayerCompressionEstarGz,
+			dagger.ImageLayerCompressionEstargz,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {

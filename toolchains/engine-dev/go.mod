@@ -1,6 +1,6 @@
 module dagger/engine-dev
 
-go 1.25.6
+go 1.25.8
 
 require (
 	github.com/dagger/dagger/engine/distconsts v0.20.3

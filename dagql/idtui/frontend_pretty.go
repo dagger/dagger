@@ -99,8 +99,10 @@ type frontendPretty struct {
 	promptFg        termenv.Color
 	promptErr       error
 	promptErrLabel  *ErrorLabel
+	queuedMsgLabel  *QueuedMessageLabel
 	textInput       *tuist.TextInput
 	completionMenu  *tuist.CompletionMenu
+	statusLine      *StatusLine
 	keymapBar       *KeymapBar
 	editlineFocused bool
 	inputHistory    []string // raw encoded history entries (with mode prefix)
@@ -542,6 +544,10 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	}
 }
 
+func (fe *frontendPretty) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	return fe.db.LLMTokenMetrics
+}
+
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	fe.dispatch(func() {
 		title := section.Title
@@ -581,6 +587,16 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	})
 }
 
+func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
+	fe.dispatch(func() {
+		if fe.statusLine != nil {
+			fe.statusLine.SetData(data)
+			fe.statusLine.Update()
+		}
+		fe.Update()
+	})
+}
+
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	fe.dispatch(func() {
 		fe.startShell(ctx, handler)
@@ -614,11 +630,16 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Intercept special keys before TextInput processes them.
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
-	// Insert errorLabel + textInput before keymapBar: output → error → prompt → keymap
+	// Insert errorLabel + queuedMsg + textInput before statusLine + keymapBar:
+	// output → error → queued → prompt → statusLine → keymap
 	fe.promptErrLabel = NewErrorLabel()
+	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
+	fe.tui.RemoveChild(fe.statusLine)
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.promptErrLabel)
+	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.textInput)
+	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
 
@@ -636,6 +657,10 @@ func (fe *frontendPretty) stopShell() {
 	if fe.promptErrLabel != nil {
 		fe.tui.RemoveChild(fe.promptErrLabel)
 		fe.promptErrLabel = nil
+	}
+	if fe.queuedMsgLabel != nil {
+		fe.tui.RemoveChild(fe.queuedMsgLabel)
+		fe.queuedMsgLabel = nil
 	}
 	if fe.textInput != nil {
 		fe.tui.RemoveChild(fe.textInput)
@@ -735,10 +760,18 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 }
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
-	done := make(chan struct{}, 1)
+	type formResult struct {
+		err error
+	}
+	done := make(chan formResult, 1)
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(form, func(f *huh.Form) {
+			if f.State == huh.StateAborted {
+				done <- formResult{err: huh.ErrUserAborted}
+			} else {
+				done <- formResult{}
+			}
 			close(done)
 		})
 		fe.Update()
@@ -747,9 +780,16 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil
+	case res := <-done:
+		return res.err
 	}
+}
+
+// PrintAbove writes text into the terminal scrollback buffer above the
+// TUI content. The text is not subject to TUI word-wrapping, making it
+// suitable for clickable URLs and other content that must stay on one line.
+func (fe *frontendPretty) PrintAbove(text string) {
+	fe.tui.PrintAbove(text)
 }
 
 // blankLine is a trivial component that renders a single empty line.
@@ -774,10 +814,12 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 		fe.applyTuistFocus() // restore focus to the correct SpanTreeView
 		fe.Update()
 	})
-	// Insert before keymapBar
+	// Insert before statusLine + keymapBar
+	fe.tui.RemoveChild(fe.statusLine)
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.formWrap)
 	fe.tui.AddChild(formSpacer)
+	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe.formWrap)
 }
@@ -888,12 +930,16 @@ func (fe *frontendPretty) startTUI() {
 			fe.tui.SetDebugWriter(f)
 		}
 	}
+	fe.statusLine = &StatusLine{
+		profile: fe.profile,
+	}
 	fe.keymapBar = &KeymapBar{
 		Profile:          fe.profile,
 		UsingCloudEngine: fe.UsingCloudEngine,
 		Keys:             fe.keys,
 	}
 	fe.tui.AddChild(fe)
+	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
 	fe.tui.Start()
@@ -986,7 +1032,10 @@ func (fe *frontendPretty) handleEOF() {
 }
 
 func (fe *frontendPretty) doQuit() {
-	// Remove the keymap bar so it doesn't appear in the final frame.
+	// Remove the status line and keymap bar so they don't appear in the final frame.
+	if fe.statusLine != nil {
+		fe.tui.RemoveChild(fe.statusLine)
+	}
 	if fe.keymapBar != nil {
 		fe.tui.RemoveChild(fe.keymapBar)
 	}
@@ -1219,6 +1268,11 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
 		}
+		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" {
+			bnds = append(bnds,
+				key.NewBinding(key.WithKeys("alt+up"), key.WithHelp("alt+↑", "edit queued")),
+			)
+		}
 		if fe.shell != nil {
 			bnds = append(bnds, fe.shell.KeyBindings(out)...)
 		}
@@ -1274,6 +1328,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("t"),
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
+		),
+		key.NewBinding(key.WithKeys("b"),
+			key.WithHelp("b", "branch"),
+			KeyEnabled(focused != nil && spanLLMCallDigest(focused) != "" && fe.shell != nil),
 		),
 		key.NewBinding(key.WithKeys("/"),
 			key.WithHelp("/", "search")),
@@ -1352,12 +1410,16 @@ func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
 	logsLines := fe.renderLogsLines(progPrefix)
 
 	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
+	if fe.statusLine != nil && fe.statusLine.data.Model != "" {
+		chromeHeight += 1 // status line (1 line, sibling)
+	}
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
 	}
-	chromeHeight += fe.errorLabelHeight() // promptErrLabel is a sibling, not rendered here
-	chromeHeight += fe.editlineHeight()   // textInput is a sibling, not rendered here
-	chromeHeight += fe.formHeight()       // formWrap is a sibling, not rendered here
+	chromeHeight += fe.errorLabelHeight()    // promptErrLabel is a sibling, not rendered here
+	chromeHeight += fe.queuedMessageHeight() // queuedMsgLabel is a sibling, not rendered here
+	chromeHeight += fe.editlineHeight()      // textInput is a sibling, not rendered here
+	chromeHeight += fe.formHeight()          // formWrap is a sibling, not rendered here
 	if fe.searchInput != nil {
 		chromeHeight += 1 // searchInput is a sibling, 1 line
 	}
@@ -1407,6 +1469,14 @@ func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 // errorLabelHeight returns the line count of the error label for chrome-height budgeting.
 func (fe *frontendPretty) errorLabelHeight() int {
 	if fe.promptErrLabel == nil || fe.promptErr == nil {
+		return 0
+	}
+	return 1
+}
+
+// queuedMessageHeight returns the line count of the queued message label.
+func (fe *frontendPretty) queuedMessageHeight() int {
+	if fe.queuedMsgLabel == nil || fe.queuedMsgLabel.Message() == "" {
 		return 0
 	}
 	return 1
@@ -1833,13 +1903,14 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 // renderTreeGap renders the gap line(s) that precede a row in tree rendering,
 // using the tree prefix instead of calling fancyIndent.
 func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
+	trimmedPrefix := strings.TrimRight(gapPrefix, " ")
 	if fe.shell != nil {
 		if row.Depth == 0 && row.Previous != nil {
 			return []string{""}
 		}
 		// Gap above each LLM response to visually group RTTT sequences.
 		if row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleAssistant {
-			return []string{gapPrefix}
+			return []string{trimmedPrefix}
 		}
 		return nil
 	}
@@ -1853,7 +1924,7 @@ func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPre
 			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
 			(row.PreviousVisual.Span.Message != "" && row.Span.Message != "") ||
 			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
-		return []string{gapPrefix}
+		return []string{trimmedPrefix}
 	}
 	return nil
 }
@@ -1970,6 +2041,14 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.recalculateViewLocked()
 		fe.syncPrompt()
 		return true
+	case "alt+up":
+		// Dequeue a queued message back into the input for editing.
+		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" {
+			msg := fe.clearQueuedMessage()
+			fe.textInput.SetValue(msg)
+			return true
+		}
+		return false
 	case "up":
 		if fe.historyUp() {
 			return true
@@ -2099,6 +2178,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	case "t":
 		fe.terminal()
 		return
+	case "b":
+		fe.branch()
+		return
 	case "/":
 		fe.enterSearchMode()
 		return
@@ -2145,13 +2227,55 @@ func (fe *frontendPretty) handleInputComplete() {
 		return
 	}
 
+	value := fe.textInput.Value()
+
+	// If the shell is already running, queue the message instead of
+	// trying to run it immediately. Only one message can be queued;
+	// a second submit replaces the previous queued message.
+	if fe.shellRunning && fe.shell != nil {
+		fe.textInput.SetValue("")
+		if value != "" {
+			fe.setQueuedMessage(value)
+		}
+		return
+	}
+
+	fe.submitInput(value)
+}
+
+// setQueuedMessage stores a message on the shell handler and updates
+// the visual indicator.
+func (fe *frontendPretty) setQueuedMessage(msg string) {
+	if fe.shell != nil {
+		fe.shell.QueueMessage(msg)
+	}
+	if fe.queuedMsgLabel != nil {
+		fe.queuedMsgLabel.SetMessage(msg)
+	}
+}
+
+// clearQueuedMessage removes the queued message from the shell handler
+// and the visual indicator, returning the message.
+func (fe *frontendPretty) clearQueuedMessage() string {
+	var msg string
+	if fe.shell != nil {
+		msg = fe.shell.DequeueMessage()
+	}
+	if fe.queuedMsgLabel != nil {
+		fe.queuedMsgLabel.SetMessage("")
+	}
+	return msg
+}
+
+// submitInput processes a submitted input value: adds it to history,
+// updates the prompt, and dispatches it to the shell handler.
+func (fe *frontendPretty) submitInput(value string) {
 	// reset prompt error state
 	fe.promptErr = nil
 	if fe.promptErrLabel != nil {
 		fe.promptErrLabel.SetError(nil)
 	}
 
-	value := fe.textInput.Value()
 	// Add to history (encoded with mode prefix for round-trip fidelity)
 	if value != "" {
 		encoded := value
@@ -2197,11 +2321,20 @@ func (fe *frontendPretty) handleShellDone(err error) {
 	} else {
 		fe.promptFg = termenv.ANSIRed
 	}
+	fe.shellRunning = false
+
+	// If there's a queued message, pick it up immediately instead of
+	// returning to insert mode.
+	if queued := fe.clearQueuedMessage(); queued != "" {
+		fe.syncPrompt()
+		fe.submitInput(queued)
+		return
+	}
+
 	if fe.autoModeSwitch {
 		fe.enterInsertMode(true)
 	}
 	fe.syncPrompt()
-	fe.shellRunning = false
 }
 
 // ---------- mode switching --------------------------------------------------
@@ -2226,9 +2359,11 @@ func (fe *frontendPretty) enterSearchMode() {
 	}
 	fe.searchInput.KeyInterceptor = fe.interceptSearchKey
 
-	// Insert before keymapBar.
+	// Insert before statusLine + keymapBar.
+	fe.tui.RemoveChild(fe.statusLine)
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.searchInput)
+	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe.searchInput)
 	fe.tui.SetShowHardwareCursor(true)
@@ -2283,6 +2418,96 @@ func (fe *frontendPretty) enterInsertMode(auto bool) {
 		fe.tui.SetFocus(fe.textInput)
 		fe.recalculateViewLocked()
 		fe.keymapBar.Update()
+	}
+}
+
+func (fe *frontendPretty) branch() {
+	if !fe.FocusedSpan.IsValid() || fe.shell == nil {
+		return
+	}
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	if focused == nil || spanLLMCallDigest(focused) == "" {
+		return
+	}
+
+	encodedID := fe.llmBranchID(focused)
+	if encodedID == "" {
+		slog.Warn("could not find LLM call for branching", "digest", focused.LLMCallDigest)
+		return
+	}
+
+	// Show the summary selection form (like pi: No summary / Summarize / Summarize with custom prompt)
+	const (
+		choiceNoSummary    = "No summary"
+		choiceSummarize    = "Summarize"
+		choiceCustomPrompt = "Summarize with custom prompt"
+	)
+	var choice string
+	fe.handlePromptForm(
+		NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Branch from this point").
+					Options(
+						huh.NewOption(choiceNoSummary, choiceNoSummary),
+						huh.NewOption(choiceSummarize, choiceSummarize),
+						huh.NewOption(choiceCustomPrompt, choiceCustomPrompt),
+					).
+					Value(&choice),
+			),
+		),
+		func(f *huh.Form) {
+			if f.State == huh.StateAborted || choice == "" {
+				return
+			}
+			switch choice {
+			case choiceCustomPrompt:
+				// Show a follow-up form for the custom prompt
+				var customPrompt string
+				fe.handlePromptForm(
+					NewForm(
+						huh.NewGroup(
+							huh.NewText().
+								Title("Custom summarization instructions").
+								Value(&customPrompt),
+						),
+					),
+					func(f *huh.Form) {
+						if f.State == huh.StateAborted {
+							return
+						}
+						fe.doBranch(encodedID, BranchSummary{
+							Summarize:    true,
+							CustomPrompt: customPrompt,
+						})
+					},
+				)
+			case choiceSummarize:
+				fe.doBranch(encodedID, BranchSummary{Summarize: true})
+			default:
+				fe.doBranch(encodedID, BranchSummary{})
+			}
+		},
+	)
+	fe.Update()
+}
+
+// doBranch performs the actual branch operation asynchronously.
+func (fe *frontendPretty) doBranch(encodedID string, summary BranchSummary) {
+	work := fe.shell.BranchFromID(fe.shellCtx, encodedID, summary)
+	if work != nil {
+		fe.runShellAsync(func() {
+			work()
+			fe.dispatch(func() {
+				// After branching, switch to auto-follow mode and
+				// insert mode so the user can immediately see new
+				// spans and type a new prompt.
+				fe.goEnd()
+				fe.enterInsertMode(false)
+				fe.syncPrompt()
+				fe.Update()
+			})
+		})
 	}
 }
 
@@ -2357,6 +2582,43 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 	}
 
 	return nil
+}
+
+// spanLLMCallDigest returns the LLMCallDigest for the given span,
+// walking up the parent chain if the span itself doesn't have one.
+// This allows branching from tool result spans, tool execution spans,
+// and other children of LLM conversation spans.
+func spanLLMCallDigest(span *dagui.Span) string {
+	for s := span; s != nil; s = s.ParentSpan {
+		if s.LLMCallDigest != "" {
+			return s.LLMCallDigest
+		}
+	}
+	return ""
+}
+
+// llmBranchID returns the encoded DAG ID for branching from the focused
+// span's LLMCallDigest. Returns "" if the span (or its ancestors) don't
+// have a call digest or the call can't be found/encoded.
+func (fe *frontendPretty) llmBranchID(span *dagui.Span) string {
+	digest := spanLLMCallDigest(span)
+	if digest == "" {
+		return ""
+	}
+	// Find a span in the DB whose CallDigest matches the LLMCallDigest.
+	// This is the dagql call span (e.g., LLM.withPrompt) that produced
+	// the LLM state we want to branch from.
+	for _, s := range fe.db.Spans.Map {
+		if s.CallDigest == digest {
+			id, err := loadIDFromSpan(s)
+			if err != nil {
+				slog.Debug("failed to load ID from LLM call span", "err", err)
+				continue
+			}
+			return id
+		}
+	}
+	return ""
 }
 
 func loadIDFromSpan(span *dagui.Span) (string, error) {
@@ -2710,6 +2972,10 @@ func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row 
 	span := row.Span
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 
+	if span.LLMTool != "" {
+		fe.renderToolArgs(out, r, row, prefix)
+	}
+
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
@@ -2731,15 +2997,18 @@ func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row 
 		multi := len(row.Span.ErrorOrigins.Order) > 1
 		for _, cause := range row.Span.ErrorOrigins.Order {
 			if multi {
-				r.fancyIndent(out, row, false, false)
-				fmt.Fprintln(out, prefix)
+				var gapBuf strings.Builder
+				gapOut := NewOutput(&gapBuf, termenv.WithProfile(fe.profile))
+				r.fancyIndent(gapOut, row, false, false)
+				fmt.Fprint(&gapBuf, prefix)
+				fmt.Fprintln(out, strings.TrimRight(gapBuf.String(), " "))
 			}
 			fe.renderErrorCause(out, r, row, prefix, cause)
 		}
 	} else {
 		fe.renderStepError(out, r, row, prefix)
 	}
-	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+	fe.renderDebug(out, row.Span, prefix+Block0250+" ", false)
 }
 
 func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {
@@ -2786,6 +3055,113 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 // sync this with core.llmLogsLastLines to ensure user and LLM sees the same
 // thing
 const llmLogsLastLines = 8
+
+func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	args := fe.logs.ToolArgs[row.Span.ID]
+	if args == "" {
+		return
+	}
+
+	toolName := row.Span.LLMTool
+	fields := partialJSONFields(args)
+
+	// For edit tools with complete old+new text, render a unified diff.
+	if fe.tryRenderEditDiff(out, r, row, prefix, toolName, fields) {
+		return
+	}
+
+	// All args are now rendered inline on the title line by renderSpan.
+}
+
+// tryRenderEditDiff checks whether this is an edit tool call with complete
+// old+new text and, if so, renders a unified diff with intraline highlighting.
+// Returns true if the diff was rendered (caller should skip normal arg rendering).
+func (fe *frontendPretty) tryRenderEditDiff(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, toolName string, fields []parsedField) bool {
+	if !isEditTool(toolName) {
+		return false
+	}
+
+	// Look up the fields we need. Accept various naming conventions.
+	filePath := firstField(fields, "path", "filepath", "file_path")
+	oldField := firstFieldEntry(fields, "oldtext", "old_text")
+	newField := firstFieldEntry(fields, "newtext", "new_text")
+
+	// Need at least one of old or new to show a diff.
+	if oldField == nil && newField == nil {
+		return false
+	}
+
+	// If the fields are still streaming, fall back to the default rendering
+	// so the user sees the streaming glitch animation.
+	if (oldField != nil && !oldField.Complete) || (newField != nil && !newField.Complete) {
+		return false
+	}
+
+	oldText := ""
+	newText := ""
+	if oldField != nil {
+		oldText = oldField.Value
+	}
+	if newField != nil {
+		newText = newField.Value
+	}
+
+	// Compute available width for the diff.
+	// fancyIndent with selfBar=true uses (row.Depth+1)*2 chars,
+	// matching the existing maxWidth formula for content-style args.
+	diffWidth := fe.window.Width - row.Depth*2 - 4
+	if diffWidth < 40 {
+		diffWidth = 40
+	}
+
+	diffView := renderEditDiff(fe.profile, filePath, oldText, newText, diffWidth)
+	if diffView == "" {
+		return false
+	}
+
+	for _, line := range strings.Split(strings.TrimRight(diffView, "\n"), "\n") {
+		r.fancyIndent(out, row, true, false)
+		fmt.Fprintln(out, prefix+line)
+	}
+	return true
+}
+
+// isEditTool returns true if the tool name matches "edit" (case-insensitive,
+// handles "Type_edit" Dagger method tools).
+func isEditTool(toolName string) bool {
+	lower := strings.ToLower(toolName)
+	if lower == "edit" {
+		return true
+	}
+	if idx := strings.LastIndex(lower, "_"); idx >= 0 {
+		return lower[idx+1:] == "edit"
+	}
+	return false
+}
+
+// firstField returns the value of the first matching field name (case-insensitive).
+func firstField(fields []parsedField, names ...string) string {
+	for _, name := range names {
+		for _, f := range fields {
+			if strings.EqualFold(f.Key, name) && f.Value != "" {
+				return f.Value
+			}
+		}
+	}
+	return ""
+}
+
+// firstFieldEntry returns the parsedField pointer for the first matching name.
+func firstFieldEntry(fields []parsedField, names ...string) *parsedField {
+	for _, name := range names {
+		for i := range fields {
+			if strings.EqualFold(fields[i].Key, name) {
+				return &fields[i]
+			}
+		}
+	}
+	return nil
+}
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
 	limit := fe.window.Height / 3
@@ -3023,7 +3399,14 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 				return nil
 			}
 			r.fancyIndent(out, row, false, false)
-			bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+			var bar termenv.Style
+			if span.LLMThinking {
+				bar = LLMThinkingPrefix.Style(out)
+			} else if span.LLMRole == telemetry.LLMRoleAssistant {
+				bar = LLMResponsePrefix.Style(out)
+			} else {
+				bar = LLMUserPrefix.Style(out)
+			}
 			if isFocused {
 				bar = hl(bar)
 			}
@@ -3039,51 +3422,74 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 		if span.Name == "" {
 			empty = true
 		}
-		if err := r.renderSpan(out, span, span.Name); err != nil {
+		if err := r.renderSpan(out, span, span.Name, fe.logs.ToolArgs[span.ID]); err != nil {
 			return err
 		}
 	}
 
 	if span != nil && !abridged {
-		// TODO: when a span has child spans that have progress, do 2-d progress
-		// fe.renderVertexTasks(out, span, depth)
-		r.renderDuration(out, span, !empty)
-
-		// Render RollUp dots after status/duration for collapsed RollUp spans
-		if span.RollUpSpans {
-			dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
-			if dots != "" {
-				fmt.Fprint(out, " ")
-				fmt.Fprint(out, dots)
+		if span.LLMTool != "" {
+			// Tool call spans render duration/rollup/status on a second
+			// line beneath the tool name, similar to message spans.
+			fmt.Fprintln(out)
+			r.fancyIndent(out, row, false, false)
+			if !fe.finalRender {
+				fe.renderToggler(out, row, isFocused)
+			} else {
+				fe.renderStatusIcon(out, row)
 			}
-		}
+			r.renderDuration(out, span, true)
 
-		fe.renderStatus(out, span)
-		r.renderMetrics(out, span)
-
-		summary := map[string]int{}
-		for effect := range span.EffectSpans {
-			if effect.Passthrough {
-				// Don't show spans which are aggressively hidden.
-				continue
+			if span.RollUpSpans {
+				dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
+				if dots != "" {
+					fmt.Fprint(out, " ")
+					fmt.Fprint(out, dots)
+				}
 			}
-			icon, isInteresting := fe.statusIcon(effect)
-			if !isInteresting {
-				// summarize boring statuses, rather than showing them in full
-				summary[icon]++
-				continue
-			}
-			fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
-			r.renderSpan(out, effect, effect.Name)
-		}
 
-		for _, icon := range statusOrder {
-			count := summary[icon]
-			if count > 0 {
-				color := statusColors[icon]
-				fmt.Fprintf(out, " %s %s",
-					out.String(icon).Foreground(color).Faint(),
-					out.String(strconv.Itoa(count)).Faint())
+			fe.renderStatus(out, span)
+		} else {
+			// TODO: when a span has child spans that have progress, do 2-d progress
+			// fe.renderVertexTasks(out, span, depth)
+			r.renderDuration(out, span, !empty)
+
+			// Render RollUp dots after status/duration for collapsed RollUp spans
+			if span.RollUpSpans {
+				dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
+				if dots != "" {
+					fmt.Fprint(out, " ")
+					fmt.Fprint(out, dots)
+				}
+			}
+
+			fe.renderStatus(out, span)
+			r.renderMetrics(out, span)
+
+			summary := map[string]int{}
+			for effect := range span.EffectSpans {
+				if effect.Passthrough {
+					// Don't show spans which are aggressively hidden.
+					continue
+				}
+				icon, isInteresting := fe.statusIcon(effect)
+				if !isInteresting {
+					// summarize boring statuses, rather than showing them in full
+					summary[icon]++
+					continue
+				}
+				fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
+				r.renderSpan(out, effect, effect.Name)
+			}
+
+			for _, icon := range statusOrder {
+				count := summary[icon]
+				if count > 0 {
+					color := statusColors[icon]
+					fmt.Fprintf(out, " %s %s",
+						out.String(icon).Foreground(color).Faint(),
+						out.String(strconv.Itoa(count)).Faint())
+				}
 			}
 		}
 	}
@@ -3098,13 +3504,26 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
 
-	if row.Span.LLMRole != "" {
-		switch row.Span.LLMRole {
-		case telemetry.LLMRoleUser:
-			fmt.Fprint(out, out.String(Block).Foreground(termenv.ANSIMagenta))
-		case telemetry.LLMRoleAssistant:
-			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIMagenta))
+	if row.Span.LLMTool != "" {
+		bar := LLMToolPrefix.Style(out)
+		if isFocused {
+			bar = hl(bar)
 		}
+		fmt.Fprint(out, bar)
+		fmt.Fprint(out, " ")
+	} else if row.Span.LLMRole != "" {
+		var bar termenv.Style
+		if span.LLMThinking {
+			bar = LLMThinkingPrefix.Style(out)
+		} else if span.LLMRole == telemetry.LLMRoleAssistant {
+			bar = LLMResponsePrefix.Style(out)
+		} else {
+			bar = LLMUserPrefix.Style(out)
+		}
+		if isFocused {
+			bar = hl(bar)
+		}
+		fmt.Fprint(out, bar)
 		fmt.Fprint(out, " ")
 	} else if !fe.finalRender {
 		fe.renderToggler(out, row, isFocused)
@@ -3321,8 +3740,22 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	span := row.Span
 	depth := row.Depth
 
-	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+	// Sync thinking flag from span snapshot on every render, since the span
+	// attribute may arrive after the Vterm was first created by the log exporter.
+	logs.Thinking = span.LLMThinking
+
 	dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+
+	var pipe termenv.Style
+	if span.LLMThinking {
+		pipe = LLMThinkingPrefix.Style(out)
+	} else if span.LLMRole == telemetry.LLMRoleAssistant {
+		pipe = LLMResponsePrefix.Style(out)
+	} else if span.LLMRole == telemetry.LLMRoleUser {
+		pipe = LLMUserPrefix.Style(out)
+	} else {
+		pipe = LogsPrefix.Style(out)
+	}
 	if focused {
 		pipe = hl(pipe)
 		dashed = hl(dashed)
@@ -3372,6 +3805,16 @@ type prettyLogs struct {
 	SawEOF        map[dagui.SpanID]bool
 	Profile       termenv.Profile
 	Output        TermOutput
+
+	// ToolArgs accumulates tool call argument JSON per span, captured
+	// from verbose application/json logs on LLMTool spans.
+	ToolArgs map[dagui.SpanID]string
+
+	// PendingRollUp buffers log bodies for spans whose parent span hasn't
+	// been registered yet. When the span appears and findRollUpSpan succeeds,
+	// the buffered logs are replayed into the roll-up writer so the first
+	// few tokens aren't lost.
+	PendingRollUp map[dagui.SpanID][]string
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
@@ -3383,6 +3826,8 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 		Profile:       profile,
 		SawEOF:        make(map[dagui.SpanID]bool),
 		Output:        termenv.NewOutput(io.Discard, termenv.WithProfile(profile)),
+		ToolArgs:      make(map[dagui.SpanID]string),
+		PendingRollUp: make(map[dagui.SpanID][]string),
 	}
 }
 
@@ -3411,6 +3856,15 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			continue
 		}
 
+		// Capture tool call arguments from verbose JSON logs.
+		// These are rendered separately by renderToolArgs, so skip
+		// writing them to the vterm.
+		if verbose && contentType == "application/json" && log.SpanID().IsValid() {
+			sid := dagui.SpanID{SpanID: log.SpanID()}
+			l.ToolArgs[sid] += log.Body().AsString()
+			continue
+		}
+
 		targetID := log.SpanID()
 
 		spanID := dagui.SpanID{SpanID: targetID}
@@ -3424,7 +3878,21 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 				context = targetID.String()
 			}
 			pw.Prefix = l.Output.String("["+context+"]").Foreground(termenv.ANSICyan).String() + " "
+			// Replay any logs that arrived before the span was registered.
+			if pending, ok := l.PendingRollUp[spanID]; ok {
+				for _, body := range pending {
+					fmt.Fprint(pw, body)
+				}
+				delete(l.PendingRollUp, spanID)
+			}
 			fmt.Fprint(pw, log.Body().AsString())
+		} else if !rolledUp && !verbose && !global {
+			// The span isn't in the DB yet (arrived before its parent span
+			// was exported). Buffer the log body so we can replay it into
+			// the roll-up writer once the span is registered.
+			if _, known := l.DB.Spans.Map[spanID]; !known {
+				l.PendingRollUp[spanID] = append(l.PendingRollUp[spanID], log.Body().AsString())
+			}
 		}
 
 		vterm := l.spanLogs(spanID)
@@ -3475,6 +3943,9 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 	for {
 		span := l.DB.Spans.Map[id]
 		if span == nil {
+			break
+		}
+		if span.ID == origID {
 			break
 		}
 		if span.Boundary || span.Encapsulate || span.Internal {

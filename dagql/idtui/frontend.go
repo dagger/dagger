@@ -112,6 +112,16 @@ type Frontend interface {
 	// Populate the sidebar with content.
 	SetSidebarContent(SidebarSection)
 
+	// SetStatusLine updates the compact status line with LLM token/cost/context data.
+	SetStatusLine(StatusLineData)
+
+	// Close signals the frontend that no more data will be sent,
+	// allowing it to shut down gracefully.
+	Close() error
+
+	// GetLLMTokenMetrics returns aggregated LLM token metrics across all spans.
+	GetLLMTokenMetrics() *dagui.LLMTokenMetrics
+
 	prompt.PromptHandler
 }
 
@@ -150,6 +160,41 @@ func (sec SidebarSection) Body(width int) string {
 		return sec.ContentFunc(width)
 	}
 	return ""
+}
+
+// StatusLineData carries structured token/cost/context data for the status line.
+type StatusLineData struct {
+	// Model is the active model identifier (e.g. "claude-opus-4-6").
+	Model string
+	// SubscriptionLabel is set when using an OAuth subscription (e.g. "sub").
+	SubscriptionLabel string
+	// InputTokens is cumulative input tokens across all turns.
+	InputTokens int
+	// OutputTokens is cumulative output tokens across all turns.
+	OutputTokens int
+	// CacheReads is cumulative cache read tokens.
+	CacheReads int
+	// CacheWrites is cumulative cache write tokens.
+	CacheWrites int
+	// TotalCost is the cumulative dollar cost across all models.
+	TotalCost float64
+	// ContextPercent is the current context window usage (0-100+).
+	// Negative means unknown.
+	ContextPercent float64
+	// ContextWindow is the model's context window size in tokens.
+	ContextWindow int
+	// AutoCompact indicates whether auto-compaction is enabled.
+	AutoCompact bool
+}
+
+// BranchSummary controls how the conversation is summarized when branching.
+type BranchSummary struct {
+	// Summarize indicates whether to summarize the old conversation.
+	Summarize bool
+	// CustomPrompt is an optional custom summarization prompt. Only used
+	// when Summarize is true. If empty, the default summarization prompt
+	// is used.
+	CustomPrompt string
 }
 
 // ShellHandler defines the interface for handling shell interactions.
@@ -193,6 +238,23 @@ type ShellHandler interface {
 	SaveBeforeHistory()
 	// RestoreAfterHistory restores the mode saved before history navigation.
 	RestoreAfterHistory()
+
+	// BranchFromID branches the LLM conversation from the state
+	// identified by the given encoded DAG ID. The summary mode controls
+	// whether the old conversation is summarized before branching.
+	// Returns a function that performs any async work needed (e.g.
+	// loading the LLM state, running summarization), or nil if
+	// branching is not supported.
+	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func()
+
+	// QueueMessage queues a user message to be picked up by the
+	// currently running Handle loop at the next opportunity (e.g.
+	// between LLM steps). Safe to call from any goroutine.
+	QueueMessage(msg string)
+
+	// DequeueMessage atomically retrieves and clears a queued message.
+	// Returns "" if nothing is queued. Safe to call from any goroutine.
+	DequeueMessage() string
 }
 
 type Dump struct {
@@ -503,6 +565,7 @@ func (r *renderer) renderSpan(
 	out TermOutput,
 	span *dagui.Span,
 	name string,
+	toolArgs ...string, // optional: raw JSON tool call arguments for LLMTool spans
 ) error {
 	if name == "" {
 		return nil
@@ -519,9 +582,56 @@ func (r *renderer) renderSpan(
 				fmt.Fprint(out, " ")
 			}
 			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
-			if len(span.LLMToolArgValues) > 0 {
-				// for now, only print the first arg, the rest are likely to be noisy.
-				fmt.Fprint(out, "(", span.LLMToolArgValues[0], ")")
+			// Parse and render all args inline on the title line.
+			if len(toolArgs) > 0 && toolArgs[0] != "" {
+				fields := partialJSONFields(toolArgs[0])
+				var sawPath, sawDesc, sawContent bool
+				for _, field := range fields {
+					if field.Value == "" {
+						continue
+					}
+					switch toolArgStyle(span.LLMTool, field.Key) {
+					case argStylePath:
+						if !sawPath {
+							s := out.String(field.Value).Foreground(termenv.ANSICyan).String()
+							if !field.Complete {
+								s += out.String(Block0250).Foreground(termenv.ANSICyan).Faint().String()
+							}
+							fmt.Fprint(out, " ", s)
+							sawPath = true
+						}
+					case argStyleDesc:
+						if !sawDesc {
+							val := field.Value
+							if idx := strings.IndexByte(val, '\n'); idx >= 0 {
+								val = val[:idx] + "…"
+							}
+							s := out.String(val).Faint().String()
+							if !field.Complete {
+								s += out.String(Block0250).Faint().String()
+							}
+							fmt.Fprint(out, " ", s)
+							sawDesc = true
+						}
+					case argStyleContent:
+						if !sawContent {
+							val := field.Value
+							if idx := strings.IndexByte(val, '\n'); idx >= 0 {
+								val = val[:idx] + "…"
+							}
+							s := out.String(val).Foreground(termenv.ANSIBrightBlack).Italic().String()
+							if !field.Complete {
+								s += out.String(Block0250).Foreground(termenv.ANSIBrightBlack).String()
+							}
+							fmt.Fprint(out, " ", s)
+							sawContent = true
+						}
+					case argStyleNone:
+						// Non-conventional arg: render as key=value.
+						s := out.String(field.Key + "=" + field.Value).Foreground(termenv.ANSIBrightBlack).String()
+						fmt.Fprint(out, " ", s)
+					}
+				}
 			}
 			return nil
 		}

@@ -78,18 +78,6 @@ func Container(opts ...dagger.ContainerOpts) *dagger.Container {
 	return client.Container(opts...)
 }
 
-// Returns the current environment
-//
-// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-//
-// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-//
-// Experimental: Programmatic env access is speculative and might be replaced.
-func CurrentEnv() *dagger.Env {
-	client := initClient()
-	return client.CurrentEnv()
-}
-
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -105,17 +93,17 @@ func CurrentModule() *dagger.CurrentModule {
 }
 
 // The TypeDef representations of the objects currently being served in the session.
-func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
+func CurrentTypeDefs(ctx context.Context, opts ...dagger.CurrentTypeDefsOpts) ([]dagger.TypeDef, error) {
 	client := initClient()
-	return client.CurrentTypeDefs(ctx)
+	return client.CurrentTypeDefs(ctx, opts...)
 }
 
 // Detect and return the current workspace.
 //
 // Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
-func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
+func CurrentWorkspace() *dagger.Workspace {
 	client := initClient()
-	return client.CurrentWorkspace(opts...)
+	return client.CurrentWorkspace()
 }
 
 // The default platform of the engine.
@@ -190,6 +178,12 @@ func Host() *dagger.Host {
 func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 	client := initClient()
 	return client.HTTP(url, opts...)
+}
+
+// A unique identifier for this Query.
+func ID(ctx context.Context) (dagger.ID, error) {
+	client := initClient()
+	return client.ID(ctx)
 }
 
 // Initialize a JSON value
@@ -428,16 +422,34 @@ func LoadJSONValueFromID(id dagger.JSONValueID) *dagger.JSONValue {
 	return client.LoadJSONValueFromID(id)
 }
 
+// Load a LLMContentBlock from its ID.
+func LoadLLMContentBlockFromID(id dagger.LLMContentBlockID) *dagger.LLMContentBlock {
+	client := initClient()
+	return client.LoadLLMContentBlockFromID(id)
+}
+
 // Load a LLM from its ID.
 func LoadLLMFromID(id dagger.LLMID) *dagger.LLM {
 	client := initClient()
 	return client.LoadLLMFromID(id)
 }
 
+// Load a LLMMessage from its ID.
+func LoadLLMMessageFromID(id dagger.LLMMessageID) *dagger.LLMMessage {
+	client := initClient()
+	return client.LoadLLMMessageFromID(id)
+}
+
 // Load a LLMTokenUsage from its ID.
 func LoadLLMTokenUsageFromID(id dagger.LLMTokenUsageID) *dagger.LLMTokenUsage {
 	client := initClient()
 	return client.LoadLLMTokenUsageFromID(id)
+}
+
+// Load a LLMToolCall from its ID.
+func LoadLLMToolCallFromID(id dagger.LLMToolCallID) *dagger.LLMToolCall {
+	client := initClient()
+	return client.LoadLLMToolCallFromID(id)
 }
 
 // Load a Label from its ID.
@@ -480,6 +492,12 @@ func LoadObjectTypeDefFromID(id dagger.ObjectTypeDefID) *dagger.ObjectTypeDef {
 func LoadPortFromID(id dagger.PortID) *dagger.Port {
 	client := initClient()
 	return client.LoadPortFromID(id)
+}
+
+// Load a Query from its ID.
+func LoadQueryFromID(id dagger.QueryID) *dagger.Query {
+	client := initClient()
+	return client.LoadQueryFromID(id)
 }
 
 // Load a SDKConfig from its ID.

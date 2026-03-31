@@ -27,6 +27,10 @@ type Class[T Typed] struct {
 	fields  map[string][]*Field[T]
 	fieldsL *sync.Mutex
 
+	// interfaces records the interfaces this class implements.
+	// Uses a map (reference type) so it's shared across value copies of Class.
+	interfaces map[string]*Interface
+
 	invalidateSchemaCache func()
 
 	// The inner type sourceMap directive so additional type
@@ -35,6 +39,38 @@ type Class[T Typed] struct {
 }
 
 var _ ObjectType = Class[Typed]{}
+
+// InterfaceImplementor is implemented by object types that can declare
+// interface conformance. Class[T] satisfies this interface.
+type InterfaceImplementor interface {
+	ImplementInterface(iface *Interface)
+	// ImplementInterfaceUnchecked declares interface conformance without
+	// performing dagql's structural Satisfies check. This is used when a
+	// higher-level layer (e.g. core's IsSubtypeOf) has already validated
+	// conformance with richer semantics (covariance, contravariance, etc.).
+	ImplementInterfaceUnchecked(iface *Interface)
+}
+
+var _ InterfaceImplementor = Class[Typed]{}
+
+// ImplementInterface is the same as Implements but satisfies the
+// InterfaceImplementor interface for use via the ObjectType interface.
+func (class Class[T]) ImplementInterface(iface *Interface) {
+	class.Implements(iface)
+}
+
+// ImplementInterfaceUnchecked declares interface conformance without performing
+// the dagql structural Satisfies check. Use this when a higher-level type system
+// (e.g. core's IsSubtypeOf) has already validated conformance.
+func (class Class[T]) ImplementInterfaceUnchecked(iface *Interface) {
+	class.fieldsL.Lock()
+	class.interfaces[iface.TypeName()] = iface
+	class.fieldsL.Unlock()
+	iface.addImplementor(class.TypeName())
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
+}
 
 type ClassOpts[T Typed] struct {
 	// NoIDs disables the default "id" field and disables the IDType method.
@@ -70,10 +106,11 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 	}
 
 	class := Class[T]{
-		inner:     opts.Typed,
-		fields:    map[string][]*Field[T]{},
-		fieldsL:   new(sync.Mutex),
-		sourceMap: opts.SourceMap,
+		inner:      opts.Typed,
+		fields:     map[string][]*Field[T]{},
+		fieldsL:    new(sync.Mutex),
+		interfaces: map[string]*Interface{},
+		sourceMap:  opts.SourceMap,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
@@ -83,10 +120,10 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 				Spec: &FieldSpec{
 					Name:        "id",
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
-					Type:        ID[T]{inner: opts.Typed},
+					Type:        AnyID{},
 				},
 				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
-					id := NewDynamicID[T](self.ID(), opts.Typed)
+					id := NewAnyID(self.ID())
 					return NewResultForCurrentID(ctx, id)
 				},
 			},
@@ -120,6 +157,18 @@ func (class Class[T]) FieldSpec(name string, view call.View) (FieldSpec, bool) {
 		return FieldSpec{}, false
 	}
 	return *field.Spec, true
+}
+
+func (class Class[T]) FieldSpecs(view call.View) []FieldSpec {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	var specs []FieldSpec
+	for name := range class.fields {
+		if field, ok := class.fieldLocked(name, view); ok {
+			specs = append(specs, *field.Spec)
+		}
+	}
+	return specs
 }
 
 func (class Class[T]) fieldLocked(name string, view call.View) (Field[T], bool) {
@@ -181,6 +230,37 @@ func (class Class[T]) TypeName() string {
 	return class.inner.Type().Name()
 }
 
+// Implements declares that this class implements the given interface.
+//
+// It verifies that the class structurally satisfies the interface (has all
+// required fields with compatible types). If not, it panics — this is a
+// programming error, like a bad field type.
+//
+// The check uses the empty view ("") which sees all global fields.
+func (class Class[T]) Implements(iface *Interface) {
+	if !iface.Satisfies(class, "") {
+		panic(fmt.Sprintf("type %s does not satisfy interface %s", class.TypeName(), iface.TypeName()))
+	}
+	class.fieldsL.Lock()
+	class.interfaces[iface.TypeName()] = iface
+	class.fieldsL.Unlock()
+	iface.addImplementor(class.TypeName())
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
+}
+
+// Interfaces returns the interfaces this class implements.
+func (class Class[T]) Interfaces() []*Interface {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	result := make([]*Interface, 0, len(class.interfaces))
+	for _, iface := range class.interfaces {
+		result = append(result, iface)
+	}
+	return result
+}
+
 func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	class.fieldsL.Lock()
 	f := &Field[T]{
@@ -231,6 +311,11 @@ func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
 	sort.Slice(def.Fields, func(i, j int) bool {
 		return def.Fields[i].Name < def.Fields[j].Name
 	})
+	// Populate interface names on the definition.
+	for name := range class.interfaces {
+		def.Interfaces = append(def.Interfaces, name)
+	}
+	sort.Strings(def.Interfaces)
 	return def
 }
 
@@ -526,9 +611,16 @@ func (r ObjectResult[T]) call(
 	ctx = srvToContext(ctx, s)
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
-			return s.telemetry(ctx, r, newID)
-		}))
+		fieldName := newID.Field()
+		view := newID.View()
+		field, ok := r.class.Field(fieldName, view)
+		if ok && field.Spec.NoTelemetry {
+			// skip telemetry for this field (e.g. entrypoint proxies)
+		} else {
+			opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+				return s.telemetry(ctx, r, newID)
+			}))
+		}
 	}
 
 	res, err := s.Cache.GetOrInitCall(ctx, cacheKey, func(ctx context.Context) (AnyResult, error) {
@@ -767,6 +859,11 @@ type FieldSpec struct {
 	// If set, this GetCacheConfig will be called before ID evaluation to make
 	// any dynamic adjustments to the cache key or args
 	GetCacheConfig GenericGetCacheConfigFunc
+
+	// NoTelemetry suppresses telemetry (AroundFunc) for this field.
+	// Used for entrypoint proxies that delegate to real fields which
+	// emit their own telemetry.
+	NoTelemetry bool
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name

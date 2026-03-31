@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"dagger.io/dagger"
+	"dagger.io/dagger/dag"
 	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -58,53 +60,22 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	if mcpSseAddr != "" || !mcpStdio {
 		return errors.New("currently MCP only works with stdio")
 	}
-	modDef, err := initializeDefaultModule(ctx, engineClient.Dagger())
-	if err != nil && err != errModuleNotFound {
+
+	modDef, err := initializeWorkspace(ctx, engineClient.Dagger())
+	if err != nil {
 		return err
 	}
 
-	if err == errModuleNotFound && !envPrivileged {
-		return fmt.Errorf("%w and --core not specified", errModuleNotFound)
+	if modDef == nil && !envPrivileged {
+		return fmt.Errorf("no module found and --env-privileged not specified")
 	}
 
-	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
-	var logMsg string
-	if modDef != nil {
-		// TODO: parse user args and pass them to constructor
-		modName := modDef.MainObject.AsObject.Constructor.Name
-		q = q.Root().Select(modName).Select("id")
-
-		var modID string
-		if err := makeRequest(ctx, q, &modID); err != nil {
-			return fmt.Errorf("error instantiating module: %w", err)
-		}
-
-		q = q.Root().Select("env")
-
-		extraCore := ""
-		if envPrivileged {
-			q = q.Arg("privileged", envPrivileged)
-			extraCore = " and Dagger core"
-		}
-
-		q = q.Select("with"+modDef.MainObject.AsObject.Name+"Input").
-			Arg("name", modName).
-			Arg("value", modID).
-			Arg("description", modDef.MainObject.Description()).
-			Select("id")
-
-		logMsg = fmt.Sprintf("Exposing module %q%s as an MCP server on standard input/output", modName, extraCore)
-	} else {
-		q = q.Root().Select("env").Arg("privileged", envPrivileged).Select("id")
-		logMsg = "Exposing Dagger core as an MCP server"
-	}
-
-	var envID string
-	if err := makeRequest(ctx, q, &envID); err != nil {
+	envID, err := dag.Env(dagger.EnvOpts{Privileged: envPrivileged}).ID(ctx)
+	if err != nil {
 		return fmt.Errorf("error making environment: %w", err)
 	}
 
-	fmt.Fprintln(stderr, logMsg)
+	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 	q = q.Root().
 		Select("llm").
 		Select("withStaticTools").

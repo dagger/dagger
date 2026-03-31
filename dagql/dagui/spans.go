@@ -260,11 +260,11 @@ type SpanSnapshot struct {
 	Message     string `json:",omitempty"`
 	ContentType string `json:",omitempty"`
 
-	LLMRole          string   `json:",omitempty"`
-	LLMTool          string   `json:",omitempty"`
-	LLMToolServer    string   `json:",omitempty"`
-	LLMToolArgNames  []string `json:",omitempty"`
-	LLMToolArgValues []string `json:",omitempty"`
+	LLMRole       string `json:",omitempty"`
+	LLMThinking   bool   `json:",omitempty"`
+	LLMTool       string `json:",omitempty"`
+	LLMToolServer string `json:",omitempty"`
+	LLMCallDigest string `json:",omitempty"`
 
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
@@ -357,17 +357,17 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.LLMRoleAttr:
 		snapshot.LLMRole = val.(string)
 
+	case "llm.thinking":
+		snapshot.LLMThinking = val.(bool)
+
 	case telemetry.LLMToolAttr:
 		snapshot.LLMTool = val.(string)
 
 	case telemetry.LLMToolServerAttr:
 		snapshot.LLMToolServer = val.(string)
 
-	case telemetry.LLMToolArgNamesAttr:
-		snapshot.LLMToolArgNames = sliceOf[string](val)
-
-	case telemetry.LLMToolArgValuesAttr:
-		snapshot.LLMToolArgValues = sliceOf[string](val)
+	case "dagger.io/llm.call.digest":
+		snapshot.LLMCallDigest = val.(string)
 
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)
@@ -453,13 +453,27 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 	}
 
+	// Use a visited set to avoid re-propagating to the same span via
+	// different causal paths. In large traces with shared causal chains,
+	// this reduces O(C*D) to O(C+D).
+	visited := make(map[SpanID]bool)
 	for causal := range span.CausalSpans {
+		if visited[causal.ID] {
+			continue
+		}
+		visited[causal.ID] = true
+
 		// propagate activity and failure, since causal spans inherit both
 		if propagate(causal, true, true) {
 			span.db.update(causal)
 		}
 
 		for parent := range causal.Parents {
+			if visited[parent.ID] {
+				continue
+			}
+			visited[parent.ID] = true
+
 			// don't propagate failure, to respect encapsulation
 			// do propagate activity, since these are indirect parents
 			if propagate(parent, false, true) {

@@ -41,7 +41,8 @@ func (e *BuildMulti) Prompt(base *dagger.LLM) *dagger.LLM {
 					"The Go container to use to build Booklit.").
 				WithFileOutput("bin", "The /out/booklit binary."),
 		).
-		WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0, writing it to /out/booklit.")
+		WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0, writing it to /out/booklit.").
+		Loop()
 }
 
 func (e *BuildMulti) Check(ctx context.Context, prompt *dagger.LLM) error {

@@ -21,13 +21,13 @@ func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *resource.ID
 }
 
 func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *daggerClient, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
-	walked, err := dagql.WalkID(&id.ID, skipTopLevel)
+	walked, err := dagql.CollectIDs(&id.ID, skipTopLevel)
 	if err != nil {
 		return fmt.Errorf("failed to walk ID: %w", err)
 	}
 
-	secretIDs := dagql.WalkedIDs[*core.Secret](walked)
-	socketIDs := dagql.WalkedIDs[*core.Socket](walked)
+	secretIDs := dagql.CollectedIDs[*core.Secret](walked)
+	socketIDs := dagql.CollectedIDs[*core.Socket](walked)
 
 	// Filter out resources that this client already knows about. If the source client
 	// is unavailable (e.g. cache skipped execution and source caller disconnected), we
@@ -66,8 +66,14 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	// Load IDs in the source client's metadata context so any cache-miss re-evaluation
 	// (e.g. host.unixSocket post-call side effects) targets the correct source client.
 	srcClientCtx := engine.ContextWithClientMetadata(ctx, srcClient.clientMetadata)
+	// Ensure the query context is set for schema building. The ctx from
+	// initializeDaggerClient may not have it (it's set later), but
+	// lazilyLoadSchema needs it for dag.Select operations like __schemaJSONFile.
+	if srcClient.dagqlRoot != nil {
+		srcClientCtx = core.ContextWithQuery(srcClientCtx, srcClient.dagqlRoot)
+	}
 
-	srcDag, err := srcClient.deps.Schema(srcClientCtx)
+	srcDag, err := srcClient.servedMods.Server(srcClientCtx)
 	if err != nil {
 		return fmt.Errorf("failed to get source schema: %w", err)
 	}

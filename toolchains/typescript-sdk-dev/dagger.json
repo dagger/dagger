@@ -4,9 +4,7 @@
   "sdk": {
     "source": "github.com/vito/dang/dagger-sdk@8eba69d6ac5bcf1e4050bb855783e01d8b557ea9"
   },
-  "include": [
-    "is-semver"
-  ],
+  "include": ["is-semver"],
   "dependencies": [
     {
       "name": "codegen",

@@ -43,7 +43,7 @@ pub fn render_enum(t: &FullType) -> eyre::Result<rust::Tokens> {
 
     Ok(quote! {
         #[derive($serialize, $deserialize, Clone, PartialEq, Debug)]
-        pub enum $(t.name.as_ref()) {
+        pub enum $(format_name(t.name.as_ref().unwrap())) {
             $(render_enum_values(t))
         }
     })

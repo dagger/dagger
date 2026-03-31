@@ -42,7 +42,8 @@ func (e *ModelContextProtocol) Prompt(base *dagger.LLM) *dagger.LLM {
 2. Use Bash to rm main.go - we don't need it anymore.
 3. Create a new file called "config.json" with some basic configuration settings
 
-Make sure to use the file editing tools available through the MCP server to make these changes.`)
+Make sure to use the file editing tools available through the MCP server to make these changes.`).
+		Loop()
 }
 
 func (e *ModelContextProtocol) Check(ctx context.Context, prompt *dagger.LLM) error {

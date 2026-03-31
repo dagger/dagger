@@ -23,7 +23,7 @@ dagger [options] [subcommand | file...]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -m, --mod string                   Module reference to load, either a local path or a remote git repo (defaults to current directory)
-      --model string                 LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
   -M, --no-mod                       Don't automatically load a module (mutually exclusive with --mod)
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -42,6 +42,7 @@ dagger [options] [subcommand | file...]
 * [dagger functions](#dagger-functions)	 - List available functions
 * [dagger init](#dagger-init)	 - Initialize a new module
 * [dagger install](#dagger-install)	 - Install a dependency
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
 * [dagger login](#dagger-login)	 - Log in to Dagger Cloud
 * [dagger logout](#dagger-logout)	 - Log out from Dagger Cloud
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
@@ -77,6 +78,7 @@ dagger call [options]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -124,6 +126,7 @@ dagger config -m github.com/dagger/hello-dagger
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -158,6 +161,7 @@ dagger core [options]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -220,6 +224,7 @@ dagger develop [options]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -263,6 +268,7 @@ dagger functions [options] [function]...
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -327,6 +333,7 @@ dagger init --sdk=go
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -374,6 +381,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -385,6 +393,248 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger llm
+
+Manage LLM configuration
+
+### Synopsis
+
+Manage LLM provider configuration, API keys, and default models.
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger llm add-key](#dagger-llm-add-key)	 - Add or update API key for a provider
+* [dagger llm config](#dagger-llm-config)	 - Display current LLM configuration
+* [dagger llm remove-key](#dagger-llm-remove-key)	 - Remove API key for a provider
+* [dagger llm reset](#dagger-llm-reset)	 - Reset LLM configuration (removes all stored credentials)
+* [dagger llm set-default](#dagger-llm-set-default)	 - Set default provider and optionally model
+* [dagger llm setup](#dagger-llm-setup)	 - Configure LLM authentication interactively
+* [dagger llm show-config](#dagger-llm-show-config)	 - Show raw LLM configuration (JSON)
+
+## dagger llm add-key
+
+Add or update API key for a provider
+
+### Synopsis
+
+Add or update API key for a provider.
+
+Supported providers:
+  - openrouter: Unified access to 100+ models (https://openrouter.ai/keys)
+  - anthropic: Claude models (https://console.anthropic.com/settings/keys)
+  - openai: GPT models (https://platform.openai.com/api-keys)
+  - google: Gemini models (https://aistudio.google.com/app/apikey)
+
+
+```
+dagger llm add-key <provider>
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm config
+
+Display current LLM configuration
+
+```
+dagger llm config
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm remove-key
+
+Remove API key for a provider
+
+```
+dagger llm remove-key <provider>
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm reset
+
+Reset LLM configuration (removes all stored credentials)
+
+```
+dagger llm reset
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm set-default
+
+Set default provider and optionally model
+
+```
+dagger llm set-default <provider> [model]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm setup
+
+Configure LLM authentication interactively
+
+```
+dagger llm setup
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm show-config
+
+Show raw LLM configuration (JSON)
+
+```
+dagger llm show-config
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
 
 ## dagger login
 
@@ -401,6 +651,7 @@ dagger login [options] [org]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -428,6 +679,7 @@ dagger logout
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -494,6 +746,7 @@ EOF
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -554,6 +807,7 @@ dagger run python main.py
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -577,6 +831,7 @@ Manage toolchains
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -628,6 +883,7 @@ dagger toolchain install github.com/dagger/dagger/toolchains/go
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -673,6 +929,7 @@ dagger toolchain list
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -719,6 +976,7 @@ dagger toolchain uninstall mytoolchain
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -765,6 +1023,7 @@ dagger toolchain update
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -811,6 +1070,7 @@ dagger uninstall hello
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -833,7 +1093,7 @@ Update the dependencies of a local module.
 
 To update only specific dependencies, specify their short names or a complete address.
 
-If no dependency is specified, all dependencies are updated, as well as the module's blueprint, if it exists.
+If no dependency is specified, all dependencies are updated.
 
 
 ```
@@ -862,6 +1122,7 @@ dagger update [options] [<DEPENDENCY>...]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -895,6 +1156,7 @@ dagger version
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --model string                 LLM model to use (overrides config and DAGGER_MODEL)
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)

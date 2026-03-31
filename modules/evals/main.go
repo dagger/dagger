@@ -40,6 +40,9 @@ func (m *Evals) Check(
 	// Run particular models, or all models if unspecified.
 	// +optional
 	models []string,
+	// Limit the attempts per model. (Default is a per-model value.)
+	// +optional
+	attempts int,
 ) error {
 	var evaluatorEvals []*dagger.EvaluatorEval
 	for _, eval := range []string{
@@ -57,6 +60,7 @@ func (m *Evals) Check(
 		"modelContextProtocol",
 		"envPropagation",
 		"nestedObjects",
+		"chainedContext",
 	} {
 		// TODO: replace with self-calls
 		evaluatorEvals = append(evaluatorEvals, (&dagger.EvaluatorEval{}).WithGraphQLQuery(
@@ -71,8 +75,9 @@ func (m *Evals) Check(
 		WithDocsFile(m.Docs).
 		WithEvals(evaluatorEvals).
 		EvalsAcrossModels(dagger.EvaluatorEvalsAcrossModelsOpts{
-			Evals:  evals,
-			Models: models,
+			Evals:    evals,
+			Models:   models,
+			Attempts: attempts,
 		}).
 		Check(ctx)
 }

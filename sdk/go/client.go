@@ -13,9 +13,9 @@ import (
 
 // Client is the Dagger Engine Client
 type Client struct {
-	conn engineconn.EngineConn
+	*Query
 
-	query  *querybuilder.Selection
+	conn   engineconn.EngineConn
 	client graphql.Client
 }
 
@@ -28,6 +28,14 @@ type clientOptFunc func(cfg *engineconn.Config)
 
 func (fn clientOptFunc) setClientOpt(cfg *engineconn.Config) {
 	fn(cfg)
+}
+
+// WithConfigPath sets the path to the dagger config file (e.g. for LLM
+// provider configuration). Overrides the default XDG-based path.
+func WithConfigPath(path string) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.ConfigPath = path
+	})
 }
 
 // WithWorkdir sets the engine workdir
@@ -88,6 +96,15 @@ func WithEnvironmentVariable(key, value string) ClientOpt {
 	})
 }
 
+// WithSkipWorkspaceModules prevents the engine from automatically loading
+// workspace modules based on the working directory. This is useful for
+// clients that only need the core API schema.
+func WithSkipWorkspaceModules() ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.SkipWorkspaceModules = true
+	})
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}
@@ -103,7 +120,9 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
 	c := &Client{
-		query:  querybuilder.Query().Client(gql),
+		Query: &Query{
+			query: querybuilder.Query().Client(gql),
+		},
 		client: gql,
 		conn:   conn,
 	}
@@ -116,7 +135,7 @@ func (c *Client) GraphQLClient() graphql.Client {
 }
 
 func (c *Client) QueryBuilder() *querybuilder.Selection {
-	return c.query
+	return c.Query.query
 }
 
 // Close the engine connection

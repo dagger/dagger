@@ -27,6 +27,10 @@ type Function struct {
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this function declaration."`
 
+	// SourceModuleName is set when the function is provided by a module (e.g. a module
+	// constructor or auto-alias on the Query root). Empty for core API functions.
+	SourceModuleName string `field:"true" doc:"If this function is provided by a module, the name of the module. Unset otherwise."`
+
 	// Below are not in public API
 	CachePolicy     FunctionCachePolicy
 	CacheTTLSeconds dagql.Nullable[dagql.Int]
@@ -127,6 +131,12 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		}
 
 		argTypeDef := modType.TypeDef()
+
+		// Workspace arguments are always optional, regardless of how they're declared in code.
+		// They are automatically injected when not explicitly set.
+		if arg.IsWorkspace() {
+			argTypeDef = argTypeDef.WithOptional(true)
+		}
 
 		input := argTypeDef.ToInput()
 		var defaultVal dagql.Input
@@ -850,6 +860,12 @@ type ObjectTypeDef struct {
 	// The original name of the object as provided by the SDK that defined it, used
 	// when invoking the SDK so it doesn't need to think as hard about case conversions
 	OriginalName string
+
+	// IsMainObject is true when this object is the primary (entry-point)
+	// object of its source module, as determined by Module.MainObject().
+	// Set by Module.TypeDefs() so downstream consumers don't need
+	// name-matching heuristics.
+	IsMainObject bool
 }
 
 func (obj ObjectTypeDef) functions() iter.Seq[*Function] {
@@ -1443,7 +1459,6 @@ type FunctionCall struct {
 	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
 
 	ParentID *call.ID
-	EnvID    *call.ID
 
 	Module *Module `json:"-"`
 }

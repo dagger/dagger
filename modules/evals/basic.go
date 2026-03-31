@@ -23,7 +23,8 @@ func (e *Basic) Name() string {
 
 func (e *Basic) Prompt(base *dagger.LLM) *dagger.LLM {
 	return base.
-		WithPrompt("Hello there! Simply respond with 'potato' and take no other action.")
+		WithPrompt("Hello there! Simply respond with 'potato' and take no other action.").
+		Loop()
 }
 
 func (e *Basic) Check(ctx context.Context, prompt *dagger.LLM) error {

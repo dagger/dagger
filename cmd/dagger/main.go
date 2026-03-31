@@ -75,6 +75,8 @@ var (
 	dotFocusField     string
 	dotShowInternal   bool
 
+	llmModel string
+
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
 
@@ -143,7 +145,7 @@ func init() {
 		checksCmd,
 		generateCmd,
 		moduleInitCmd,
-		moduleInstallCmd,
+		moduleDepInstallCmd,
 		moduleUnInstallCmd,
 		moduleUpdateCmd,
 		moduleDevelopCmd,
@@ -157,6 +159,7 @@ func init() {
 		shellCmd,
 		clientCmd,
 		mcpCmd,
+		llmParentCmd,
 	)
 
 	rootCmd.AddGroup(moduleGroup)
@@ -222,14 +225,14 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
-		var err error
-		workdir, err = NormalizeWorkdir(workdir)
+		normalized, err := NormalizeWorkdir(workdir)
 		if err != nil {
 			return err
 		}
-		if err := os.Chdir(workdir); err != nil {
-			return err
+		if err := os.Chdir(normalized); err != nil {
+			return fmt.Errorf("change workdir: %w", err)
 		}
+		workdir = normalized
 
 		labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
 		t := analytics.New(analytics.DefaultConfig(labels))
@@ -331,7 +334,7 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
-	flags.StringVar(&workdir, "workdir", ".", "Change the working directory")
+	flags.StringVar(&workdir, "workdir", ".", "Set the working directory")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
@@ -342,6 +345,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
 	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
+	flags.StringVar(&llmModel, "model", "", "LLM model to use (overrides config and DAGGER_MODEL)")
 
 	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
 	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
@@ -421,6 +425,15 @@ var opts dagui.FrontendOpts
 
 func main() {
 	parseGlobalFlags()
+
+	// Propagate --model to DAGGER_MODEL so the engine's LLM router picks it
+	// up.  parseGlobalFlags already parsed --model from argv (via its own
+	// standalone FlagSet with UnknownFlags=true), so llmModel is set here
+	// even when a subcommand like "call" will later consume it too.
+	if llmModel != "" {
+		os.Setenv("DAGGER_MODEL", llmModel)
+	}
+
 	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
 	opts.Verbosity += verbose                      // raise verbosity with -v
 	opts.Verbosity -= quiet                        // lower verbosity with -q

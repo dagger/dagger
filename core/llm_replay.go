@@ -9,10 +9,10 @@ import (
 )
 
 type LLMReplayer struct {
-	messages []*ModelMessage
+	messages []*LLMMessage
 }
 
-func newHistoryReplay(messages []*ModelMessage) *LLMReplayer {
+func newHistoryReplay(messages []*LLMMessage) *LLMReplayer {
 	return &LLMReplayer{messages: messages}
 }
 
@@ -20,8 +20,8 @@ func (*LLMReplayer) IsRetryable(err error) bool {
 	return false
 }
 
-func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	if len(history) > 0 && history[0].Role == "system" {
+func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, _ *LLMCallOpts) (_ *LLMResponse, rerr error) {
+	if len(history) > 0 && history[0].Role == LLMMessageRoleSystem {
 		// HACK: drop the default system prompt, since we don't return it in
 		// HistoryJSON
 		history = history[1:]
@@ -31,7 +31,7 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, to
 	}
 	for i, message := range history {
 		// TODO: (cwlbraa) is this a complete comparison? also doesn't this end up being O(n^2)?
-		if scrub.Stabilize(message.Content) != scrub.Stabilize(c.messages[i].Content) || message.Role != c.messages[i].Role {
+		if scrub.Stabilize(message.TextContent()) != scrub.Stabilize(c.messages[i].TextContent()) || message.Role != c.messages[i].Role {
 			return nil, fmt.Errorf(
 				"message history diverges at index %d:\n%s",
 				i,
@@ -43,7 +43,6 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, to
 
 	return &LLMResponse{
 		Content:    msg.Content,
-		ToolCalls:  msg.ToolCalls,
 		TokenUsage: msg.TokenUsage,
 	}, nil
 }

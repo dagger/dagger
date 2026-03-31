@@ -35,6 +35,7 @@ from graphql import (
     GraphQLInputFieldMap,
     GraphQLInputObjectType,
     GraphQLInputType,
+    GraphQLInterfaceType,
     GraphQLLeafType,
     GraphQLList,
     GraphQLNamedType,
@@ -225,6 +226,17 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
         ctx.process_type(type_name)
 
     yield ""
+    yield ""
+    yield "class Client(Query):"
+    yield indent(
+        '"""The Dagger client.\n'
+        "\n"
+        "Inherits all Query API methods and adds connection management.\n"
+        '"""'
+    )
+    ctx.defined.add("Client")
+
+    yield ""
     yield "dag = Client()"
     yield '"""The global client instance."""'
     ctx.defined.add("dag")
@@ -287,7 +299,7 @@ def is_input_object_type(t: GraphQLType) -> TypeGuard[GraphQLInputObjectType]:
 
 
 def is_object_type(t: GraphQLType) -> TypeGuard[GraphQLObjectType]:
-    return isinstance(t, GraphQLObjectType)
+    return isinstance(t, (GraphQLObjectType, GraphQLInterfaceType))
 
 
 def is_output_leaf_type(t: GraphQLOutputType) -> TypeGuard[GraphQLLeafType]:
@@ -331,7 +343,12 @@ def is_id_type(
 
 def type_from_id(t: GraphQLType) -> TypeName | None:
     """Return the type name for the given id type name."""
-    return t.name.removesuffix("ID") if is_id_type(t) else None
+    if not is_id_type(t):
+        return None
+    # The generic "ID" scalar doesn't map to a specific type.
+    if t.name == "ID":
+        return None
+    return t.name.removesuffix("ID")
 
 
 def id_from_type(t: GraphQLType) -> IDName | None:
@@ -397,7 +414,11 @@ def format_input_type(t: GraphQLInputType, convert_id=True) -> str:
         return fmt % f"list[{format_input_type(t.of_type, convert_id)}]"
 
     if convert_id and is_id_type(t):
-        return fmt % type_from_id(t)
+        type_name = type_from_id(t)
+        if type_name is not None:
+            return fmt % type_name
+        # Generic ID scalar — accept any Type (Dagger object)
+        return fmt % "Type"
 
     return fmt % (Scalars.from_type(t) if is_scalar_type(t) else get_named_type(t).name)
 
@@ -564,7 +585,7 @@ class _ObjectField:
         self.is_list = is_list_of_objects_type(field.type)
         self.is_exec = self.is_leaf or self.is_list
         self.is_void = self.is_leaf and self.named_type.name == "Void"
-        self.type = format_output_type(field.type).replace("Query", "Client")
+        self.type = format_output_type(field.type)
 
         # Any field in the API that returns an ID for its parent object should
         # return the binding for the object instead in the SDK to allow continued
@@ -842,7 +863,7 @@ class Object(ObjectHandler[GraphQLObjectType]):
         return "Root" if t.name == "Query" else "Type"
 
     def type_name(self, t: GraphQLObjectType) -> str:
-        return super().type_name(t).replace("Query", "Client")
+        return super().type_name(t)
 
     def fields(self, t: GraphQLObjectType) -> Iterator[_ObjectField]:
         return (

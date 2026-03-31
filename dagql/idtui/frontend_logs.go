@@ -64,6 +64,11 @@ func NewLogs(output io.Writer) Frontend {
 func (fe *frontendLogs) SetClient(client *dagger.Client) {}
 
 func (fe *frontendLogs) SetSidebarContent(SidebarSection) {}
+func (fe *frontendLogs) SetStatusLine(StatusLineData)     {}
+
+func (fe *frontendLogs) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	return fe.db.LLMTokenMetrics
+}
 
 func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.opts = opts
@@ -136,6 +141,10 @@ func (fe *frontendLogs) Shell(ctx context.Context, handler ShellHandler) {
 
 func (fe *frontendLogs) HandlePrompt(ctx context.Context, _, prompt string, dest any) error {
 	return interact.NewInteraction(prompt).Resolve(dest)
+}
+
+func (fe *frontendLogs) Close() error {
+	return nil
 }
 
 func (fe *frontendLogs) HandleForm(ctx context.Context, form *huh.Form) error {

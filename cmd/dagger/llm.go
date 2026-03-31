@@ -3,28 +3,27 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/muesli/termenv"
+	"github.com/google/uuid"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/syntax"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/core/openrouter"
-	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -72,15 +71,15 @@ type LLMSession struct {
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
 
-	beforeFS     *dagger.Directory
-	beforeFSTime time.Time
-	afterFS      *dagger.Directory
-
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
 
 	autoCompact  bool
 	autoCompactL *sync.Mutex
+
+	onStep func(s *LLMSession) // called after every step in the prompt loop
+
+	subscriptionLabelCache string // cached OAuth subscription label
 }
 
 func NewLLMSession(
@@ -189,10 +188,6 @@ func (s *LLMSession) Fork() *LLMSession {
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
 
-	if err := s.syncVarsToLLM(); err != nil {
-		return s, err
-	}
-
 	resolvedModel, err := s.llm.Model(s.plumbingCtx)
 	if err != nil {
 		return nil, err
@@ -222,12 +217,25 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 			return s, err
 		}
 
+		// Auto-save after every step so sessions are preserved even if
+		// the process is interrupted mid-turn.
+		if s.onStep != nil {
+			s.onStep(s)
+		}
+
 		hasMore, err := prompted.HasPrompt(s.plumbingCtx)
 		if err != nil {
 			return s, err
 		}
 		if !hasMore {
-			break
+			// Check if the user queued a message while the LLM was
+			// running. If so, inject it as the next prompt and keep
+			// iterating instead of returning to the shell.
+			if queued := s.shell.DequeueMessage(); queued != "" {
+				prompted = prompted.WithPrompt(queued)
+			} else {
+				break
+			}
 		}
 
 		// Check if we need to compact in-between steps
@@ -235,10 +243,6 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		if err != nil {
 			return s, fmt.Errorf("auto-compact: %w", err)
 		}
-	}
-
-	if err := s.syncVarsFromLLM(); err != nil {
-		return s, err
 	}
 
 	return s, nil
@@ -278,113 +282,86 @@ func (s *LLMSession) updateLLMAndAgentVar(llm *dagger.LLM) error {
 	return nil
 }
 
+// subscriptionLabel returns a display label for the OAuth subscription type
+// of the currently active provider, or empty string if not using OAuth.
+// Cached after first lookup.
+func (s *LLMSession) subscriptionLabel() string {
+	if s.subscriptionLabelCache != "" {
+		return s.subscriptionLabelCache
+	}
+	cfg, err := llmconfig.Load()
+	if err != nil || cfg == nil {
+		return ""
+	}
+	// Only show subscription label for the default provider
+	defaultProvider := cfg.LLM.DefaultProvider
+	if defaultProvider == "" {
+		return ""
+	}
+	provider, ok := cfg.LLM.Providers[defaultProvider]
+	if !ok || !provider.IsOAuth() || provider.SubscriptionType == "" {
+		return ""
+	}
+	s.subscriptionLabelCache = llmconfig.SubscriptionLabel(provider.SubscriptionType)
+	return s.subscriptionLabelCache
+}
+
 func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
-	inputTokens, err := llm.TokenUsage().InputTokens(s.plumbingCtx)
+	// Get current session token usage from API (for this thread only)
+	sessionInputTokens, err := llm.TokenUsage().InputTokens(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
-	outputTokens, err := llm.TokenUsage().OutputTokens(s.plumbingCtx)
+	sessionOutputTokens, err := llm.TokenUsage().OutputTokens(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
-	cacheReads, err := llm.TokenUsage().CachedTokenReads(s.plumbingCtx)
+	sessionCacheReads, err := llm.TokenUsage().CachedTokenReads(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
-	cacheWrites, err := llm.TokenUsage().CachedTokenWrites(s.plumbingCtx)
+	sessionCacheWrites, err := llm.TokenUsage().CachedTokenWrites(s.plumbingCtx)
 	if err != nil {
 		return err
-	}
-	lines := []string{
-		termenv.String(s.model).Foreground(termenv.ANSIMagenta).Bold().String(),
 	}
 
-	if opts.Verbosity > dagui.ShowInternalVerbosity {
-		if inputTokens > 0 {
-			lines = append(lines,
-				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"Tokens In: ",
-					inputTokens))
+	// Get aggregated token metrics from DB (includes all spans/sub-agents)
+	llmMetrics := s.frontend.GetLLMTokenMetrics()
+
+	// Calculate total cost across all models
+	var totalCost float64
+	for model, metrics := range llmMetrics.ByModel {
+		if m := s.models.Lookup(model); m != nil {
+			inputCost := m.Pricing.Prompt.Cost(int(metrics.InputTokens))
+			outputCost := m.Pricing.Completion.Cost(int(metrics.OutputTokens))
+			cacheReadCost := m.Pricing.InputCacheRead.Cost(int(metrics.CachedTokenReads))
+			cacheWriteCost := m.Pricing.InputCacheWrite.Cost(int(metrics.CachedTokenWrites))
+			totalCost += inputCost + outputCost + cacheReadCost + cacheWriteCost
 		}
-		if outputTokens > 0 {
-			lines = append(lines,
-				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"Tokens Out:",
-					outputTokens))
-		}
-		if cacheReads > 0 {
-			lines = append(lines,
-				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"Cache Reads: ",
-					cacheReads))
-		}
-		if cacheWrites > 0 {
-			lines = append(lines,
-				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"Cache Writes:",
-					cacheWrites))
-		}
+	}
+
+	data := idtui.StatusLineData{
+		Model:             s.model,
+		SubscriptionLabel: s.subscriptionLabel(),
+		InputTokens:       sessionInputTokens,
+		OutputTokens:      sessionOutputTokens,
+		CacheReads:        sessionCacheReads,
+		CacheWrites:       sessionCacheWrites,
+		TotalCost:         totalCost,
+		ContextPercent:    -1, // unknown by default
+		AutoCompact:       s.ShouldAutocompact(),
 	}
 
 	if m := s.models.Lookup(s.model); m != nil {
-		inputCost := m.Pricing.Prompt.Cost(inputTokens)
-		outputCost := m.Pricing.Completion.Cost(outputTokens)
-		cacheReadCost := m.Pricing.InputCacheRead.Cost(cacheReads)
-		cacheWriteCost := m.Pricing.InputCacheWrite.Cost(cacheWrites)
-		totalCost := inputCost + outputCost + cacheReadCost + cacheWriteCost
-		if totalCost > 0 {
-			contextUsage := int(float64(inputTokens) / float64(m.ContextLength) * 100)
-			contextStyle := termenv.String("%d%%").Bold()
-			if contextUsage > 80 {
-				contextStyle = contextStyle.Foreground(termenv.ANSIYellow)
-			}
-			if contextUsage > 90 {
-				contextStyle = contextStyle.Foreground(termenv.ANSIRed)
-			}
-			if contextUsage > 100 {
-				contextStyle = contextStyle.Foreground(termenv.ANSIBrightRed)
-			}
-			lines = append(lines,
-				fmt.Sprintf("Cost: "+termenv.String("$%0.2f").Bold().String(),
-					totalCost),
-				fmt.Sprintf("Context: "+contextStyle.String(),
-					contextUsage),
-			)
+		data.ContextWindow = int(m.ContextLength)
+		if sessionInputTokens > 0 && m.ContextLength > 0 {
+			data.ContextPercent = float64(sessionInputTokens) / float64(m.ContextLength) * 100
 		}
 	}
 
-	s.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title:   "LLM",
-		Content: strings.Join(lines, "\n"),
-	})
+	s.frontend.SetStatusLine(data)
 
-	s.afterFS = llm.Env().Workspace()
-
-	dirDiff := s.afterFS.Changes(s.beforeFS)
-
-	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
-	if err != nil {
-		return err
-	}
-
-	if preview != nil {
-		s.frontend.SetSidebarContent(idtui.SidebarSection{
-			Title: "Changes",
-			ContentFunc: func(width int) string {
-				var buf strings.Builder
-				out := idtui.NewOutput(&buf)
-				if err := preview.Summarize(out, width); err != nil {
-					return "ERROR: " + err.Error()
-				}
-				return buf.String()
-			},
-			KeyMap: []key.Binding{
-				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
-			},
-		})
-	}
-
-	return err
+	return nil
 }
 
 // maybeAutoCompact checks if the context usage exceeds 80% and automatically compacts if so
@@ -417,166 +394,6 @@ func (s *LLMSession) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr 
 	}
 
 	return s.llm, nil
-}
-
-func (s *LLMSession) syncVarsToLLM() error {
-	ctx := s.plumbingCtx
-
-	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
-	oldVars := s.syncedVars
-	s.syncedVars = make(map[string]digest.Digest)
-	maps.Copy(s.syncedVars, oldVars)
-
-	if value, ok := s.shell.runner.Vars[agentVar]; ok {
-		if key := GetStateKey(value.String()); key != "" {
-			st, err := s.shell.state.Load(key)
-			if err != nil {
-				return err
-			}
-			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
-			// from the agent var
-			s.llm = s.dag.LLM().WithGraphQLQuery(st.QueryBuilder(s.dag))
-		}
-	}
-
-	if s.beforeFS == nil {
-		s.beforeFS = s.llm.Env().Workspace()
-		s.beforeFSTime = time.Now()
-	}
-
-	syncedEnvQ := s.dag.QueryBuilder().
-		Select("loadEnvFromID").
-		Arg("id", s.llm.Env())
-
-	var changed bool
-	for name, value := range s.shell.runner.Vars {
-		if name == agentVar {
-			// handled separately
-			continue
-		}
-		if name == lastValueVar {
-			// don't sync the auto-last-value var back to the LLM
-			continue
-		}
-		if s.skipEnv[name] {
-			continue
-		}
-
-		if s.syncedVars[name] == hashutil.HashStrings(value.String()) {
-			continue
-		}
-
-		dbg.Printf("syncing var %q => llm env\n", name)
-
-		changed = true
-
-		if key := GetStateKey(value.String()); key != "" {
-			st, err := s.shell.state.Load(key)
-			if err != nil {
-				return err
-			}
-			q := st.QueryBuilder(s.dag)
-			modDef := s.shell.GetDef(st)
-			typeDef, err := st.GetTypeDef(modDef)
-			if err != nil {
-				return err
-			}
-			if typeDef.AsFunctionProvider() != nil {
-				var id string
-				if err := q.Select("id").Bind(&id).Execute(ctx); err != nil {
-					return err
-				}
-				digest, err := idDigest(id)
-				if err != nil {
-					return err
-				}
-				typeName := typeDef.Name()
-				syncedEnvQ = syncedEnvQ.
-					Select(fmt.Sprintf("with%sInput", typeName)).
-					Arg("name", name).
-					Arg("description", ""). // TODO
-					Arg("value", id)
-				s.syncedVars[name] = digest
-			}
-		} else {
-			s.syncedVars[name] = hashutil.HashStrings(value.String())
-			syncedEnvQ = syncedEnvQ.
-				Select("withStringInput").
-				Arg("name", name).
-				Arg("description", ""). // TODO
-				Arg("value", value.String())
-		}
-	}
-	if !changed {
-		return nil
-	}
-	var envID dagger.EnvID
-	if err := syncedEnvQ.Select("id").Bind(&envID).Execute(ctx); err != nil {
-		return err
-	}
-	s.updateLLMAndAgentVar(s.llm.WithEnv(s.dag.LoadEnvFromID(envID)))
-	return nil
-}
-
-func (s *LLMSession) syncVarsFromLLM() error {
-	ctx := s.plumbingCtx
-
-	outputs, err := s.llm.Env().Outputs(ctx)
-	if err != nil {
-		return err
-	}
-
-	assign := func(bnd *dagger.Binding) error {
-		name, err := bnd.Name(ctx)
-		if err != nil {
-			return err
-		}
-		typeName, err := bnd.TypeName(ctx)
-		if err != nil {
-			return err
-		}
-		isNull, err := bnd.IsNull(ctx)
-		if err != nil {
-			return err
-		}
-		if isNull {
-			return nil
-		}
-		switch typeName {
-		case "", "Query", "Void":
-			return nil
-		case "String":
-			str, err := bnd.AsString(ctx)
-			if err != nil {
-				return err
-			}
-			s.assignShellString(ctx, name, str)
-			return nil
-		default:
-			var objID string
-			if err :=
-				s.dag.QueryBuilder().
-					Select("loadBindingFromID").
-					Arg("id", bnd).
-					Select("as" + typeName).
-					Select("id").
-					Bind(&objID).
-					Execute(ctx); err != nil {
-				return err
-			}
-			return s.assignShell(ctx, name, &dynamicObject{objID, typeName})
-		}
-	}
-
-	// assign all outputs
-	for _, output := range outputs {
-		if err := assign(&output); err != nil {
-			return err
-		}
-	}
-
-	// assign last value
-	return assign(s.llm.BindResult(lastValueVar))
 }
 
 type dagqlObject interface {
@@ -652,6 +469,50 @@ func (s *LLMSession) Clear() *LLMSession {
 //go:embed llm_compact.md
 var compactPrompt string
 
+//go:embed llm_branch_summary.md
+var branchSummaryPrompt string
+
+// BranchSummary generates a summary of the current conversation branch.
+// This is used when branching to describe what was explored in the branch
+// being abandoned, so the summary can be injected at the branch target.
+//
+// Like pi, we serialize the conversation to text first (preventing the
+// model from treating it as a conversation to continue), then pass it to
+// a fresh lightweight LLM call with maxTokens=2048.
+// If customInstructions is non-empty, it is appended to the default prompt.
+func (s *LLMSession) BranchSummary(ctx context.Context, customInstructions string) (_ string, rerr error) {
+	ctx, span := Tracer().Start(ctx, "branch summary", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	// Serialize the conversation to plain text so the summarizer sees
+	// it as data to summarize, not a conversation to continue.
+	conversationText, err := s.llm.SerializeHistory(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize history: %w", err)
+	}
+
+	instructions := branchSummaryPrompt
+	if customInstructions != "" {
+		instructions += "\n\nAdditional focus: " + customInstructions
+	}
+
+	prompt := fmt.Sprintf("<conversation>\n%s\n</conversation>\n\n%s", conversationText, instructions)
+
+	// Use a fresh LLM (no tools, no history) with a small output budget.
+	summaryText, err := s.llm.
+		WithoutMessageHistory().
+		WithoutSystemPrompts().
+		WithSystemPrompt("You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified. Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.").
+		WithMaxTokens(2048).
+		WithPrompt(prompt).
+		Loop(dagger.LLMLoopOpts{MaxAPICalls: 1}).
+		LastReply(ctx)
+	if err != nil {
+		return "", err
+	}
+	return summaryText, nil
+}
+
 func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 	ctx, span := Tracer().Start(ctx, "compact", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -660,6 +521,7 @@ func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 		WithoutSystemPrompts().
 		WithSystemPrompt("You are a helpful AI assistant tasked with summarizing conversations.").
 		WithPrompt(compactPrompt).
+		Loop().
 		LastReply(ctx)
 	if err != nil {
 		return nil, err
@@ -696,164 +558,171 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 	return s, nil
 }
 
-func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
-	if s.llm == nil {
-		return fmt.Errorf("no LLM session active")
-	}
-
-	if s.beforeFSTime.IsZero() {
-		return nil
-	}
-
-	ctx, span := Tracer().Start(ctx, "syncing local changes",
-		telemetry.Reveal())
-	defer telemetry.EndWithCause(span, &rerr)
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-
-	var pathsToUpload []string
-
-	// Look for paths modified since the last sync, and only upload those.
-	if err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			// ignore errors
-			return err
-		}
-		if d.IsDir() {
-			if d.Name() == ".git" {
-				// don't recurse into .git
-				return filepath.SkipDir
-			}
-			// nothing to do for directories
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		if info.ModTime().After(s.beforeFSTime) {
-			slog.Info(
-				"file changed since last sync",
-				"path", path,
-				"syncTime", s.beforeFSTime,
-				"mtime", info.ModTime(),
-			)
-			pathsToUpload = append(pathsToUpload, path)
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("walk looking for modifications: %w", err)
-	}
-
-	// The model's workspace has its own changes since last sync, so if we're
-	// syncing from local, we need to revert them
-	if s.afterFS != nil && s.beforeFS != nil {
-		changes := s.afterFS.Changes(s.beforeFS)
-		modified, err := changes.ModifiedPaths(ctx)
-		if err != nil {
-			return err
-		}
-		removed, err := changes.RemovedPaths(ctx)
-		if err != nil {
-			return err
-		}
-		if len(modified) > 0 {
-			slog.Info("reverting LLM-modified files", "modified", modified)
-			pathsToUpload = append(pathsToUpload, modified...)
-		}
-		if len(removed) > 0 {
-			slog.Info("restoring LLM-removed files", "removed", removed)
-			pathsToUpload = append(pathsToUpload, removed...)
-		}
-	}
-
-	if len(pathsToUpload) == 0 {
-		slog.Warn("no changes detected")
-		return nil
-	}
-
-	slog.Info("syncing changed files", "paths", pathsToUpload)
-
-	localChanges, err := s.dag.Host().Directory(".", dagger.HostDirectoryOpts{
-		Include:   pathsToUpload,
-		NoCache:   true,
-		Gitignore: true,
-	}).Sync(ctx)
-	if err != nil {
-		return nil
-	}
-
-	currentFS := s.afterFS
-	if currentFS == nil {
-		currentFS = s.beforeFS
-	}
-
-	withChanges := currentFS.WithDirectory(".", localChanges)
-
-	newLLM := s.llm.WithEnv(
-		s.llm.Env().WithWorkspace(withChanges),
-	)
-
-	dirDiff := withChanges.Changes(currentFS)
-
-	// Add an LLM prompt as a cue to the model so it knows what files changed.
-	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
-	if err != nil {
-		return err
-	}
-
-	if preview != nil {
-		var buf strings.Builder
-		out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
-		if err := preview.Summarize(out, 80); err != nil {
-			slog.Warn("failed to summarize uploaded changes", "error", err)
-		} else {
-			newLLM = newLLM.WithPrompt(
-				fmt.Sprintf("I have made the following changes:\n\n```\n%s\n```", buf.String()),
-			)
-		}
-
-		// Show colorized summary to user.
-		_ = preview.Summarize(idtui.NewOutput(stdio.Stdout), 80)
-	}
-
-	s.updateLLMAndAgentVar(newLLM)
-
-	// reset before/after state
-	s.beforeFS = withChanges
-	s.beforeFSTime = time.Now()
-	s.afterFS = nil
-
-	// Update sidebar to show sync success
-	s.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title:   "Changes",
-		Content: "", // empty content will hide it
-	})
-
-	return nil
+// sessionMetadata stores metadata about a saved LLM session
+type sessionMetadata struct {
+	Name      string `json:"name"`
+	Model     string `json:"model"`
+	CreatedAt string `json:"created_at"`
+	LLMID     string `json:"llm_id"`
+	Branch    string `json:"branch,omitempty"`
 }
 
-func (s *LLMSession) SyncToLocal(ctx context.Context) error {
+// getSessionDir returns the directory where LLM sessions are stored, creating it if necessary
+func getSessionDir() (string, error) {
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	if stateHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		stateHome = filepath.Join(homeDir, ".local", "state")
+	}
+
+	sessionDir := filepath.Join(stateHome, "dagger", "llm-sessions")
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create session directory: %w", err)
+	}
+
+	return sessionDir, nil
+}
+
+// AutoSaveSession saves the session automatically, named after the initial prompt,
+// stored on disk under a UUIDv7 filename for anonymity and time-sorted ordering.
+// If existingUUID is non-empty the same file is updated in-place; otherwise a
+// new UUIDv7 is generated. Returns the UUID used.
+func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, existingUUID string) (string, error) {
 	if s.llm == nil {
-		return fmt.Errorf("no LLM session active")
+		return existingUUID, nil // nothing to save
 	}
 
-	if s.afterFS == nil {
-		return fmt.Errorf("nothing to sync")
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return existingUUID, err
 	}
 
-	if _, err := s.afterFS.Changes(s.beforeFS).Export(ctx, "."); err != nil {
+	llmID, err := s.llm.ID(ctx)
+	if err != nil {
+		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
+	}
+
+	sessionID := existingUUID
+	if sessionID == "" {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return "", fmt.Errorf("failed to generate session UUID: %w", err)
+		}
+		sessionID = id.String()
+	}
+
+	// Capture current git branch from the workspace
+	branch, err := s.llm.Env().Workspace().Branch(ctx)
+	if err != nil {
+		slog.Debug("failed to get workspace branch", "error", err)
+	}
+
+	metadata := sessionMetadata{
+		Name:      initialPrompt,
+		Model:     s.model,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		LLMID:     string(llmID),
+		Branch:    branch,
+	}
+
+	jsonData, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return sessionID, fmt.Errorf("failed to marshal session data: %w", err)
+	}
+
+	sessionFile := filepath.Join(sessionDir, sessionID+".json")
+	if err := os.WriteFile(sessionFile, jsonData, 0644); err != nil {
+		return sessionID, fmt.Errorf("failed to write session file: %w", err)
+	}
+
+	slog.Debug("auto-saved LLM session", "id", sessionID, "name", initialPrompt, "file", sessionFile)
+	return sessionID, nil
+}
+
+// LoadSession loads an LLM session from disk by UUID
+func (s *LLMSession) LoadSession(ctx context.Context, sessionID string) error {
+	sessionDir, err := getSessionDir()
+	if err != nil {
 		return err
 	}
 
-	s.beforeFS = s.afterFS
-	s.beforeFSTime = time.Now()
+	sessionFile := filepath.Join(sessionDir, sessionID+".json")
+	data, err := os.ReadFile(sessionFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("session %q not found", sessionID)
+		}
+		return fmt.Errorf("failed to read session file: %w", err)
+	}
 
-	// Update sidebar to show sync success
-	s.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title:   "Changes",
-		Content: "", // empty content will hide it
-	})
+	var metadata sessionMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return fmt.Errorf("failed to unmarshal session data: %w", err)
+	}
 
-	return nil
+	if metadata.LLMID == "" {
+		return fmt.Errorf("invalid session data: missing LLM ID")
+	}
+
+	loadedLLM := s.dag.LoadLLMFromID(dagger.LLMID(metadata.LLMID))
+
+	// Replay the message history to emit telemetry spans so the TUI
+	// shows the conversation in its scrollback.
+	if _, err := loadedLLM.Replay(ctx); err != nil {
+		slog.Warn("failed to replay session history", "error", err)
+	}
+
+	if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
+		return err
+	}
+	return s.updateSidebar(loadedLLM)
+}
+
+// ListSessions returns saved sessions sorted by creation time (newest first, via UUIDv7 ordering)
+func ListSessions() ([]sessionMetadata, error) {
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read session directory: %w", err)
+	}
+
+	var sessions []sessionMetadata
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(sessionDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var meta sessionMetadata
+		if err := json.Unmarshal(data, &meta); err != nil {
+			continue
+		}
+		// Store the UUID (filename without extension) in the Name field isn't ideal,
+		// so let's use a separate approach: we'll include the UUID in the list
+		sessionID := strings.TrimSuffix(entry.Name(), ".json")
+		sessions = append(sessions, sessionMetadata{
+			Name:      meta.Name,
+			Model:     meta.Model,
+			CreatedAt: meta.CreatedAt,
+			LLMID:     sessionID, // repurpose LLMID field to carry the file UUID for listing
+			Branch:    meta.Branch,
+		})
+	}
+
+	// Reverse so newest (highest UUIDv7) is first
+	slices.Reverse(sessions)
+
+	return sessions, nil
 }

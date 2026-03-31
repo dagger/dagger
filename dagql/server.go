@@ -34,6 +34,7 @@ type Server struct {
 	root       AnyObjectResult
 	telemetry  AroundFunc
 	objects    map[string]ObjectType
+	interfaces map[string]*Interface
 	scalars    map[string]ScalarType
 	typeDefs   map[string]TypeDef
 	directives map[string]DirectiveSpec
@@ -57,6 +58,37 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache *SessionCache
+
+	// canonical, if set, is the server without entrypoint sugar.
+	// Entrypoint proxies flatten a module's methods onto the Query root
+	// as syntactic convenience; the canonical server preserves the real
+	// namespace where constructors and core fields live unshadowed.
+	//
+	// Load, LoadType, and callers that need to bypass proxies (proxy
+	// resolvers, SDK plumbing) use Canonical() to reach it.
+	canonical *Server
+}
+
+// Canonical returns the server without entrypoint sugar. For servers
+// with entrypoint proxies, this is the underlying server where
+// constructors and core fields live unshadowed. For all other servers,
+// it returns the receiver itself.
+//
+// Use Canonical() when you need to bypass proxy fields: in entrypoint
+// proxy resolvers (to call the real constructor), in SDK plumbing (to
+// reach core fields like "directory"), and for ID evaluation (so IDs
+// always encode the real call path, not the sugared one).
+func (s *Server) Canonical() *Server {
+	if s.canonical != nil {
+		return s.canonical
+	}
+	return s
+}
+
+// SetCanonical sets the canonical (un-sugared) server. This is called
+// by SchemaBuilder when constructing the outer/inner server pair.
+func (s *Server) SetCanonical(canonical *Server) {
+	s.canonical = canonical
 }
 
 type ServerSchema struct {
@@ -110,6 +142,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 	srv := &Server{
 		Cache:         c,
 		objects:       map[string]ObjectType{},
+		interfaces:    map[string]*Interface{},
 		scalars:       map[string]ScalarType{},
 		typeDefs:      map[string]TypeDef{},
 		directives:    map[string]DirectiveSpec{},
@@ -119,12 +152,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		schemaOnces:   make(map[call.View]*sync.Once),
 		schemaLock:    &sync.Mutex{},
 	}
-	rootClass := NewClass(srv, ClassOpts[T]{
-		// NB: there's nothing actually stopping this from being a thing, except it
-		// currently confuses the Dagger Go SDK. could be a nifty way to pass
-		// around global config I suppose.
-		NoIDs: true,
-	})
+	rootClass := NewClass(srv, ClassOpts[T]{})
 	srv.root = ObjectResult[T]{
 		Result: newDetachedResult(nil, root),
 		class:  rootClass,
@@ -177,8 +205,7 @@ var coreScalars = []ScalarType{
 	Int(0),
 	Float(0),
 	String(""),
-	// instead of a single ID type, each object has its own ID type
-	// ID{},
+	AnyID{},
 }
 
 var coreDirectives = []DirectiveSpec{
@@ -276,19 +303,7 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationEnumValue,
 		},
 	},
-	{
-		Name:        "defaultPath",
-		Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
-		Args: NewInputSpecs(
-			InputSpec{
-				Name: "path",
-				Type: String(""),
-			},
-		),
-		Locations: []DirectiveLocation{
-			DirectiveLocationArgumentDefinition,
-		},
-	},
+	DefaultPathDirective,
 	{
 		Name:        "defaultAddress",
 		Description: FormatDescription(`Indicates that the argument defaults to a container address.`),
@@ -333,6 +348,20 @@ var coreDirectives = []DirectiveSpec{
 	},
 }
 
+var DefaultPathDirective = DirectiveSpec{
+	Name:        "defaultPath",
+	Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
+	Args: NewInputSpecs(
+		InputSpec{
+			Name: "path",
+			Type: String(""),
+		},
+	),
+	Locations: []DirectiveLocation{
+		DirectiveLocationArgumentDefinition,
+	},
+}
+
 // Root returns the root object of the server. It is suitable for passing to
 // Resolve to resolve a query.
 func (s *Server) Root() AnyObjectResult {
@@ -352,6 +381,18 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	s.invalidateSchemaCache()
 
 	s.objects[class.TypeName()] = class
+
+	// Auto-implement the "Object" interface for any class that has IDs.
+	if _, hasID := class.IDType(); hasID {
+		if objIface, ok := s.interfaces["Object"]; ok {
+			if objIface.Satisfies(class, "") {
+				if impl, ok := class.(InterfaceImplementor); ok {
+					impl.ImplementInterface(objIface)
+				}
+			}
+		}
+	}
+
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
 
@@ -395,6 +436,30 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	}
 
 	return class
+}
+
+// InstallInterface installs the given Interface type into the schema.
+// If an interface with the same name is already installed, it is returned.
+func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive) *Interface {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	if existing, ok := s.interfaces[iface.TypeName()]; ok {
+		return existing
+	}
+	if len(directives) > 0 {
+		iface.directives = append(iface.directives, directives...)
+	}
+	s.interfaces[iface.TypeName()] = iface
+	s.invalidateSchemaCache()
+	return iface
+}
+
+// InterfaceType returns the Interface with the given name, if it exists.
+func (s *Server) InterfaceType(name string) (*Interface, bool) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	t, ok := s.interfaces[name]
+	return t, ok
 }
 
 // InstallScalar installs the given Scalar type into the schema, or returns the
@@ -493,6 +558,17 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			}
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
+
+			// Also register this object as a possible type for each interface it
+			// declares via def.Interfaces.
+			for _, ifaceName := range def.Interfaces {
+				schema.AddPossibleType(ifaceName, def)
+			}
+		})
+		// Emit interface definitions.
+		sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
+			def := iface.Definition(view)
+			schema.AddTypes(def)
 		})
 		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
 			def := definition(ast.Scalar, t, view)
@@ -668,6 +744,11 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
+	// Delegate to the canonical server so IDs are always evaluated
+	// against the real schema, not the sugared one.
+	if c := s.canonical; c != nil {
+		return c.Load(ctx, id)
+	}
 	res, err := s.LoadType(ctx, id)
 	if err != nil {
 		return nil, err
@@ -676,6 +757,9 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	if c := s.canonical; c != nil {
+		return c.LoadType(ctx, id)
+	}
 	var base AnyResult
 	var err error
 	if id.Receiver() != nil {
@@ -723,7 +807,14 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
-	if !isNonInternal(ctx) {
+	if isNonInternal(ctx) {
+		// We only want "non internal" to apply to the immediate call, so flip it
+		// from here on; it already did its job in avoiding the withInternal below.
+		//
+		// FIXME: this is an absurd dance, we should maybe just remove the
+		// auto-Internaling, but that'll be a game of wack-a-mole
+		ctx = withoutNonInternalTelemetry(ctx)
+	} else {
 		// Annotate ctx with the internal flag so we can distinguish self-calls from
 		// user-calls in the UI.
 		//
@@ -818,8 +909,15 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 }
 
 func (s *Server) isObjectType(typeName string) bool {
-	_, ok := s.ObjectType(typeName)
-	return ok
+	if _, ok := s.ObjectType(typeName); ok {
+		return true
+	}
+	// Interface types also need to be treated as "object-like" for selection purposes,
+	// since their values are concrete objects that support field selection.
+	if _, ok := s.interfaces[typeName]; ok {
+		return true
+	}
+	return false
 }
 
 // Attach an install hook
@@ -1091,6 +1189,16 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	}
 
 	if len(sel.Subselections) == 0 {
+		// Check if the value is an object type that requires sub-selections.
+		// Without this check, returning an object without sub-selections
+		// leads to a cryptic JSON marshal error because object values
+		// contain function closures that can't be serialized.
+		if _, ok := val.(AnyObjectResult); ok {
+			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
+		}
+		if _, ok := s.ObjectType(val.Type().Name()); ok {
+			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
+		}
 		return val.Unwrap(), nil
 	}
 
@@ -1101,6 +1209,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	}
 
 	return s.Resolve(ctx, node, sel.Subselections...)
+}
+
+// ToSelectable converts an AnyResult to an AnyObjectResult if possible.
+func (s *Server) ToSelectable(val AnyResult) (AnyObjectResult, error) {
+	return s.toSelectable(val)
 }
 
 func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
@@ -1137,19 +1250,51 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 	return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 }
 
+// typeConditionMatches returns true if the given type condition (from a
+// fragment spread or inline fragment) matches the given object type name.
+//
+// A match occurs if:
+// - The condition is empty (unconditional).
+// - The condition is the exact object type name.
+// - The condition names an interface that the object type implements.
+func (s *Server) typeConditionMatches(condition string, objectTypeName string) bool {
+	if condition == "" {
+		return true
+	}
+	if condition == objectTypeName {
+		return true
+	}
+	// Check if condition names an interface that this object implements.
+	if iface, ok := s.interfaces[condition]; ok {
+		if _, implements := iface.Implementors()[objectTypeName]; implements {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
-	class := s.objects[self.Name()]
-	if class == nil {
-		return nil, fmt.Errorf("parseASTSelections: not an Object type: %q", self.Name())
+	// fieldParser is the common interface for parsing fields from objects and interfaces.
+	type fieldParser interface {
+		ParseField(ctx context.Context, view call.View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
+	}
+
+	var parser fieldParser
+	if class := s.objects[self.Name()]; class != nil {
+		parser = class
+	} else if iface, ok := s.interfaces[self.Name()]; ok {
+		parser = iface
+	} else {
+		return nil, fmt.Errorf("parseASTSelections: not an Object or Interface type: %q", self.Name())
 	}
 
 	sels := []Selection{}
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			sel, resType, err := class.ParseField(ctx, s.View, x, vars)
+			sel, resType, err := parser.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}
@@ -1171,12 +1316,27 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			if fragment == nil {
 				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
 			}
-			if len(fragment.SelectionSet) > 0 {
-				subsels, err := s.parseASTSelections(ctx, gqlOp, self, fragment.SelectionSet)
-				if err != nil {
-					return nil, err
+			// Check type condition: only include if the fragment's type matches
+			// the current object type (or is empty / matches an interface).
+			if s.typeConditionMatches(fragment.TypeCondition, self.Name()) {
+				if len(fragment.SelectionSet) > 0 {
+					subsels, err := s.parseASTSelections(ctx, gqlOp, self, fragment.SelectionSet)
+					if err != nil {
+						return nil, err
+					}
+					sels = append(sels, subsels...)
 				}
-				sels = append(sels, subsels...)
+			}
+		case *ast.InlineFragment:
+			// If the type condition matches (or is empty), recurse into its selections.
+			if x.TypeCondition == "" || s.typeConditionMatches(x.TypeCondition, self.Name()) {
+				if len(x.SelectionSet) > 0 {
+					subsels, err := s.parseASTSelections(ctx, gqlOp, self, x.SelectionSet)
+					if err != nil {
+						return nil, err
+					}
+					sels = append(sels, subsels...)
+				}
 			}
 		default:
 			return nil, fmt.Errorf("unknown field type: %T", x)

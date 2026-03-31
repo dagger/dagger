@@ -47,7 +47,7 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 }
 
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
-	if obj, ok := strings.CutSuffix(refName, "ID"); input && ok {
+	if obj, ok := strings.CutSuffix(refName, "ID"); input && ok && obj != "" {
 		representation += "*" + f.scope + formatName(obj)
 	} else {
 		representation += f.scope + formatName(refName)

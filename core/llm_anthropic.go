@@ -11,7 +11,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -22,13 +21,28 @@ type AnthropicClient struct {
 }
 
 func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
-	opts := []option.RequestOption{option.WithAPIKey(endpoint.Key)}
-	if endpoint.Key != "" {
+	var opts []option.RequestOption
+
+	if endpoint.IsOAuth {
+		// Claude Code OAuth: use bearer token auth with Claude Code headers
+		opts = append(opts,
+			option.WithAuthToken(endpoint.AuthToken),
+			option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14"),
+			option.WithHeader("user-agent", "claude-cli/2.1.2 (external, cli)"),
+			option.WithHeader("x-app", "cli"),
+		)
+	} else if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
+		opts = append(opts, option.WithHeader("anthropic-beta", "fine-grained-tool-streaming-2025-05-14"))
 	}
+
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
+
+	// Inject OTel tracing HTTP client to capture LLM request/response bodies
+	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("anthropic")))
+
 	client := anthropic.NewClient(opts...)
 	return &AnthropicClient{
 		client:   &client,
@@ -37,15 +51,6 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 }
 
 var ephemeral = anthropic.CacheControlEphemeralParam{Type: constant.Ephemeral("").Default()}
-
-// Anthropic's API only allows 4 cache breakpoints.
-const maxAnthropicCacheBlocks = 4
-
-// Set a reasonable threshold for when we should start caching.
-//
-// Sonnet's minimum is 1024, Haiku's is 2048. Better to err on the higher side
-// so we don't waste cache breakpoints.
-const anthropicCacheThreshold = 2048
 
 var _ LLMClient = (*AnthropicClient)(nil)
 
@@ -67,12 +72,10 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 }
 
 //nolint:gocyclo
-func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-
-	markdownW := telemetry.NewWriter(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (res *LLMResponse, rerr error) {
+	// parentCtx is the context we create sibling spans from (thinking, response).
+	// Each phase of the streaming response gets its own span.
+	parentCtx := ctx
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
 	spanCtx := trace.SpanContextFromContext(ctx)
@@ -106,63 +109,71 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 	// Convert generic messages to Anthropic-specific message parameters.
 	var messages []anthropic.MessageParam
 	var systemPrompts []anthropic.TextBlockParam
-	var cachedBlocks int
 	for _, msg := range history {
+		if msg.Role == LLMMessageRoleSystem {
+			text := msg.TextContent()
+			if text != "" {
+				systemPrompts = append(systemPrompts, anthropic.TextBlockParam{Text: text})
+			}
+			continue
+		}
+
 		var blocks []anthropic.ContentBlockParamUnion
-
-		// Anthropic's API sometimes returns an empty content whilst not accepting it:
-		// anthropic.BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'messages: text content blocks must be non-empty'}}
-		// This workaround overwrites the empty content to space character
-		// As soon as this issue is resolved, we can remove this hack
-		// https://github.com/anthropics/anthropic-sdk-python/issues/461#issuecomment-2141882744
-		content := msg.Content
-		if content == "" {
-			content = " "
-		}
-
-		if msg.ToolCallID != "" {
-			blocks = append(blocks, anthropic.NewToolResultBlock(
-				msg.ToolCallID,
-				content,
-				msg.ToolErrored,
-			))
-		} else {
-			blocks = append(blocks, anthropic.NewTextBlock(content))
-		}
-
-		// add tool usage blocks first so they get cached when setting
-		// CacheControl below
-		for _, call := range msg.ToolCalls {
-			blocks = append(blocks, anthropic.NewToolUseBlock(call.ID, call.Function.Arguments, call.Function.Name))
-		}
-
-		// enable caching based on simple token usage heuristic
-		var cacheControl anthropic.CacheControlEphemeralParam
-		if msg.TokenUsage.TotalTokens > anthropicCacheThreshold && cachedBlocks < maxAnthropicCacheBlocks {
-			cacheControl = ephemeral
-			cachedBlocks++
-		}
-
-		if len(blocks) > 0 {
-			lastBlock := &blocks[len(blocks)-1]
-			switch {
-			case lastBlock.OfText != nil:
-				lastBlock.OfText.CacheControl = cacheControl
-			case lastBlock.OfToolUse != nil:
-				lastBlock.OfToolUse.CacheControl = cacheControl
-			case lastBlock.OfToolResult != nil:
-				lastBlock.OfToolResult.CacheControl = cacheControl
+		for _, block := range msg.Content {
+			switch block.Kind {
+			case LLMContentText:
+				blocks = append(blocks, anthropic.NewTextBlock(block.Text))
+			case LLMContentThinking:
+				blocks = append(blocks, anthropic.NewThinkingBlock(block.Signature, block.Text))
+			case LLMContentToolCall:
+				var args map[string]any
+				if err := json.Unmarshal(block.Arguments.Bytes(), &args); err != nil {
+					return nil, err
+				}
+				blocks = append(blocks, anthropic.NewToolUseBlock(block.CallID, args, block.ToolName))
+			case LLMContentToolResult:
+				blocks = append(blocks, anthropic.NewToolResultBlock(block.CallID, block.Text, block.Errored))
 			}
 		}
 
 		switch msg.Role {
-		case "user":
-			messages = append(messages, anthropic.NewUserMessage(blocks...))
-		case "assistant":
-			messages = append(messages, anthropic.NewAssistantMessage(blocks...))
-		case "system":
-			// Collect all system prompt messages.
-			systemPrompts = append(systemPrompts, anthropic.TextBlockParam{Text: msg.Content})
+		case LLMMessageRoleUser:
+			messages = appendOrMerge(messages, anthropic.MessageParamRoleUser, blocks)
+		case LLMMessageRoleAssistant:
+			messages = appendOrMerge(messages, anthropic.MessageParamRoleAssistant, blocks)
+		}
+	}
+
+	// Add cache_control breakpoints. Anthropic allows at most 4 cache
+	// breakpoints per request. We place them on:
+	//   1. The last system prompt block (stable across turns)
+	//   2. The last block of the last user message (so the next turn
+	//      gets a cache hit on all preceding content)
+	// This mirrors what Claude Code / pi do and stays well within the
+	// 4-breakpoint limit, even when OAuth adds its own cached system
+	// prompt.
+	if len(systemPrompts) > 0 {
+		systemPrompts[len(systemPrompts)-1].CacheControl = ephemeral
+	}
+	if len(messages) > 0 {
+		// Walk backwards to find the last user message.
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role != anthropic.MessageParamRoleUser {
+				continue
+			}
+			blocks := messages[i].Content
+			if len(blocks) > 0 {
+				lastBlock := &blocks[len(blocks)-1]
+				switch {
+				case lastBlock.OfText != nil:
+					lastBlock.OfText.CacheControl = ephemeral
+				case lastBlock.OfToolUse != nil:
+					lastBlock.OfToolUse.CacheControl = ephemeral
+				case lastBlock.OfToolResult != nil:
+					lastBlock.OfToolResult.CacheControl = ephemeral
+				}
+			}
+			break
 		}
 	}
 
@@ -197,13 +208,63 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 		})
 	}
 
+	// When using OAuth (Claude Code subscription), prepend the Claude Code
+	// identity system prompt. This is required for the OAuth endpoint to
+	// accept the request.
+	if c.endpoint.IsOAuth {
+		claudeCodePrompt := anthropic.TextBlockParam{
+			Text:         "You are Claude Code, Anthropic's official CLI for Claude.",
+			CacheControl: ephemeral,
+		}
+		systemPrompts = append([]anthropic.TextBlockParam{claudeCodePrompt}, systemPrompts...)
+	}
+
 	// Prepare parameters for the streaming call.
+	maxTokens := int64(8192)
+	if opts != nil && opts.MaxTokens > 0 {
+		maxTokens = int64(opts.MaxTokens)
+	}
+
+	// Configure thinking/reasoning if requested.
+	// Named levels from catwalk map to token budgets.
+	var thinkingConfig anthropic.ThinkingConfigParamUnion
+	switch c.endpoint.ThinkingMode {
+	case "adaptive":
+		thinkingConfig = anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
+		}
+		if maxTokens < 16384 {
+			maxTokens = 16384
+		}
+	case "low":
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(2048)
+		if maxTokens < 2048+1024 {
+			maxTokens = 2048 + 1024
+		}
+	case "medium":
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(10000)
+		if maxTokens < 10000+1024 {
+			maxTokens = 10000 + 1024
+		}
+	case "high":
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(32000)
+		if maxTokens < 32000+1024 {
+			maxTokens = 32000 + 1024
+		}
+	case "max":
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(128000)
+		if maxTokens < 128000+1024 {
+			maxTokens = 128000 + 1024
+		}
+	}
+
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.endpoint.Model),
-		MaxTokens: int64(8192),
+		MaxTokens: maxTokens,
 		Messages:  messages,
 		Tools:     toolsConfig,
 		System:    systemPrompts,
+		Thinking:  thinkingConfig,
 	}
 
 	// Start a streaming request.
@@ -215,6 +276,15 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 	}
 
 	acc := new(anthropic.Message)
+
+	dp := newDisplayPhases(parentCtx)
+	defer func() {
+		dp.CloseAll()
+		if rerr != nil {
+			dp.Abort(rerr)
+		}
+	}()
+
 	for stream.Next() {
 		event := stream.Current()
 		acc.Accumulate(event)
@@ -233,12 +303,40 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 			inputTokensCacheWrites.Record(ctx, acc.Usage.CacheCreationInputTokens, metric.WithAttributes(attrs...))
 		}
 
-		// Check if the event delta contains text and trace it.
-		if delta, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
-			if delta.Delta.Text != "" {
-				// Lazily initialize telemetry/logging on first text response.
-				fmt.Fprint(markdownW, delta.Delta.Text)
+		switch ev := event.AsAny().(type) {
+		case anthropic.ContentBlockStartEvent:
+			switch ev.ContentBlock.Type {
+			case "thinking":
+				dp.StartThinking(ev.Index)
+			case "text":
+				dp.StartText(ev.Index)
+			case "tool_use":
+				dp.StartToolCall(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name)
 			}
+
+		case anthropic.ContentBlockDeltaEvent:
+			switch ev.Delta.Type {
+			case "thinking_delta":
+				if p := dp.Phase(ev.Index); p != nil {
+					fmt.Fprint(p.Stdio.Stdout, ev.Delta.Thinking)
+				}
+			case "text_delta":
+				p := dp.Phase(ev.Index)
+				if p == nil {
+					// Lazily create a response phase if we get text without a start event
+					p = dp.StartText(ev.Index)
+				}
+				if p.MarkdownW != nil {
+					fmt.Fprint(p.MarkdownW, ev.Delta.Text)
+				}
+			case "input_json_delta":
+				if p := dp.Phase(ev.Index); p != nil {
+					fmt.Fprint(p.Stdio.Stdout, ev.Delta.PartialJSON)
+				}
+			}
+
+		case anthropic.ContentBlockStopEvent:
+			dp.Close(ev.Index)
 		}
 	}
 
@@ -253,36 +351,34 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 		}
 	}
 
-	// Process the accumulated content into a generic LLMResponse.
-	var content string
-	var toolCalls []LLMToolCall
+	// Process the accumulated content into content blocks.
+	var contentBlocks []*LLMContentBlock
 	for _, block := range acc.Content {
 		switch b := block.AsAny().(type) {
+		case anthropic.ThinkingBlock:
+			contentBlocks = append(contentBlocks, &LLMContentBlock{
+				Kind:      LLMContentThinking,
+				Text:      b.Thinking,
+				Signature: b.Signature,
+			})
 		case anthropic.TextBlock:
-			// Append text from text blocks.
-			content += b.Text
+			contentBlocks = append(contentBlocks, &LLMContentBlock{
+				Kind: LLMContentText,
+				Text: b.Text,
+			})
 		case anthropic.ToolUseBlock:
-			var args map[string]any
-			if len(b.Input) > 0 {
-				if err := json.Unmarshal([]byte(b.Input), &args); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal tool input: %w", err)
-				}
-			}
-			// Map tool-use blocks to our generic tool call structure.
-			toolCalls = append(toolCalls, LLMToolCall{
-				ID: b.ID,
-				Function: FuncCall{
-					Name:      b.Name,
-					Arguments: args,
-				},
-				Type: "function",
+			contentBlocks = append(contentBlocks, &LLMContentBlock{
+				Kind:      LLMContentToolCall,
+				CallID:    b.ID,
+				ToolName:  b.Name,
+				Arguments: JSON(b.Input),
 			})
 		}
 	}
 
+	displaySpans, toolCalls := dp.Response()
 	return &LLMResponse{
-		Content:   content,
-		ToolCalls: toolCalls,
+		Content: contentBlocks,
 		TokenUsage: LLMTokenUsage{
 			InputTokens:       acc.Usage.InputTokens,
 			OutputTokens:      acc.Usage.OutputTokens,
@@ -290,5 +386,24 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 			CachedTokenWrites: acc.Usage.CacheCreationInputTokens,
 			TotalTokens:       acc.Usage.InputTokens + acc.Usage.OutputTokens,
 		},
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCalls,
 	}, nil
+}
+
+// appendOrMerge appends content blocks to the messages slice. If the last
+// message has the same role, the blocks are merged into it rather than
+// creating a new message. This is required by the Anthropic API spec
+// (and strictly enforced by compatible servers like LM Studio) which
+// mandates alternating user/assistant roles — consecutive tool_result
+// blocks from parallel tool calls must be in a single user message.
+func appendOrMerge(messages []anthropic.MessageParam, role anthropic.MessageParamRole, blocks []anthropic.ContentBlockParamUnion) []anthropic.MessageParam {
+	if len(messages) > 0 && messages[len(messages)-1].Role == role {
+		messages[len(messages)-1].Content = append(messages[len(messages)-1].Content, blocks...)
+		return messages
+	}
+	return append(messages, anthropic.MessageParam{
+		Role:    role,
+		Content: blocks,
+	})
 }

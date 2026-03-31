@@ -43,7 +43,7 @@ func (sdk *dangSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Arra
 func (sdk *dangSDK) GenerateClient(
 	ctx context.Context,
 	modSource dagql.ObjectResult[*core.ModuleSource],
-	deps *core.ModDeps,
+	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
 	return inst, fmt.Errorf("dang SDK does not have a client to generate")
@@ -51,7 +51,7 @@ func (sdk *dangSDK) GenerateClient(
 
 func (sdk *dangSDK) Codegen(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	return &core.GeneratedCode{
@@ -62,7 +62,7 @@ func (sdk *dangSDK) Codegen(
 
 func (sdk *dangSDK) Runtime(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (core.ModuleRuntime, error) {
 	return &DangRuntime{
@@ -101,6 +101,8 @@ func (r *DangRuntime) Call(
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.SessionID = clientMetadata.SessionID
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
+	execMD.ConfigPath = clientMetadata.ConfigPath
+	execMD.LLMConfig = clientMetadata.LLMConfig
 
 	if execMD.CallID == nil {
 		execMD.CallID = dagql.CurrentID(ctx)
@@ -108,10 +110,17 @@ func (r *DangRuntime) Call(
 	if execMD.ExecID == "" {
 		execMD.ExecID = identity.NewID()
 	}
+
 	if execMD.SecretToken == "" {
 		execMD.SecretToken = identity.NewID()
 	}
 	execMD.ClientStableID = identity.NewID()
+
+	// Tell the server to proxy session lookups for this client to the
+	// main (CLI) client's session, which has filesync support. The Dang
+	// SDK runs in-process and only makes HTTP requests — it never
+	// establishes a gRPC session of its own.
+	execMD.SessionProxyClientID = clientMetadata.ClientID // will be resolved to the main client via parent chain
 	if execMD.EncodedModuleID == "" {
 		mod := fnCall.Module
 		if mod.ResultID == nil {

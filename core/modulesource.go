@@ -50,7 +50,8 @@ func (proto ModuleSourceKind) Type() *ast.Type {
 	}
 }
 
-// ModuleRelationType distinguishes between dependencies and toolchains in error messages and field access
+// ModuleRelationType distinguishes between dependencies and toolchains in error
+// messages and field access for ModuleSource authoring mutations.
 type ModuleRelationType int
 
 const (
@@ -223,7 +224,6 @@ func (src ModuleSource) Clone() *ModuleSource {
 	origDependencies := src.Dependencies
 	src.Dependencies = make([]dagql.ObjectResult[*ModuleSource], len(origDependencies))
 	copy(src.Dependencies, origDependencies)
-
 	origConfigToolchains := src.ConfigToolchains
 	src.ConfigToolchains = make([]*modules.ModuleConfigDependency, len(origConfigToolchains))
 	copy(src.ConfigToolchains, origConfigToolchains)
@@ -286,7 +286,8 @@ func (src *ModuleSource) Pin() string {
 	}
 }
 
-// GetRelatedModules returns the related modules (dependencies or toolchains) based on the type
+// GetRelatedModules returns the related modules (dependencies or toolchains)
+// based on the type.
 func (src *ModuleSource) GetRelatedModules(typ ModuleRelationType) []dagql.ObjectResult[*ModuleSource] {
 	if typ == ModuleRelationTypeDependency {
 		return src.Dependencies
@@ -294,7 +295,8 @@ func (src *ModuleSource) GetRelatedModules(typ ModuleRelationType) []dagql.Objec
 	return src.Toolchains
 }
 
-// SetRelatedModules sets the related modules (dependencies or toolchains) based on the type
+// SetRelatedModules sets the related modules (dependencies or toolchains)
+// based on the type.
 func (src *ModuleSource) SetRelatedModules(typ ModuleRelationType, modules []dagql.ObjectResult[*ModuleSource]) {
 	if typ == ModuleRelationTypeDependency {
 		src.Dependencies = modules
@@ -513,12 +515,10 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 		inputs = append(inputs, dep.Self().Digest)
 	}
 
-	// Include blueprint in digest so changes to blueprint invalidate cache
 	if src.Blueprint.Self() != nil {
 		inputs = append(inputs, "blueprint:"+src.Blueprint.Self().Digest)
 	}
 
-	// Include toolchains in digest so changes to toolchains invalidate cache
 	for _, toolchain := range src.Toolchains {
 		if toolchain.Self() == nil {
 			continue
@@ -603,16 +603,7 @@ func (src *ModuleSource) LoadContextDir(
 		})
 	}
 
-	// Check if there's an Env - if so, use its workspace as the context for
-	// defaultPath arguments.
-	//
-	// NOTE: this applies unilaterally, whether the module was loaded from Host,
-	// Git, or a Directory.
-	if envID, ok := EnvIDFromContext(ctx); ok {
-		inst, err = src.loadContextFromEnv(ctx, dag, envID, path, filterInputs)
-	} else {
-		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
-	}
+	inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
 	if err != nil {
 		return inst, err
 	}
@@ -629,48 +620,6 @@ func (src *ModuleSource) LoadContextDir(
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 
-	return inst, nil
-}
-
-func (src *ModuleSource) loadContextFromEnv(
-	ctx context.Context,
-	dag *dagql.Server,
-	envID *call.ID,
-	path string,
-	filterInputs []dagql.NamedInput,
-) (inst dagql.ObjectResult[*Directory], err error) {
-	// If path is not absolute, it's relative to the module root directory.
-	// If path is absolute, it's relative to the context directory.
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(src.SourceRootSubpath, path)
-	}
-	envRes, err := dag.Load(ctx, envID)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load current env: %w", err)
-	}
-	sels := []dagql.Selector{
-		{
-			Field: "workspace",
-		},
-	}
-	if path != "." {
-		sels = append(sels, dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(path)},
-			},
-		})
-	}
-	if len(filterInputs) > 0 {
-		sels = append(sels, dagql.Selector{
-			Field: "filter",
-			Args:  filterInputs,
-		})
-	}
-	err = dag.Select(ctx, envRes, &inst, sels...)
-	if err != nil {
-		return inst, fmt.Errorf("failed to select env directory: %w", err)
-	}
 	return inst, nil
 }
 
@@ -1256,10 +1205,30 @@ type StatFS interface {
 	Stat(ctx context.Context, path string) (string, *Stat, error)
 }
 
+type ExistsFS interface {
+	Exists(ctx context.Context, path string) (string, bool, error)
+}
+
 type StatFSFunc func(ctx context.Context, path string) (string, *Stat, error)
 
 func (f StatFSFunc) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	return f(ctx, path)
+}
+
+func StatFSExists(ctx context.Context, statFS StatFS, path string) (string, bool, error) {
+	if existsFS, ok := statFS.(ExistsFS); ok {
+		return existsFS.Exists(ctx, path)
+	}
+
+	dirName, _, err := statFS.Stat(ctx, path)
+	switch {
+	case err == nil:
+		return dirName, true, nil
+	case errors.Is(err, os.ErrNotExist):
+		return "", false, nil
+	default:
+		return "", false, err
+	}
 }
 
 type CallerStatFS struct {
@@ -1271,7 +1240,15 @@ func NewCallerStatFS(bk *buildkit.Client) *CallerStatFS {
 }
 
 func (csfs CallerStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
-	bkStat, err := csfs.bk.StatCallerHostPath(ctx, path, true)
+	return csfs.stat(ctx, path, false)
+}
+
+func (csfs CallerStatFS) StatFollow(ctx context.Context, path string) (string, *Stat, error) {
+	return csfs.stat(ctx, path, true)
+}
+
+func (csfs CallerStatFS) stat(ctx context.Context, path string, followSymlinks bool) (string, *Stat, error) {
+	bkStat, err := csfs.bk.StatCallerHostPathFollow(ctx, path, true, followSymlinks)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return "", nil, os.ErrNotExist
@@ -1293,9 +1270,42 @@ func (csfs CallerStatFS) Stat(ctx context.Context, path string) (string, *Stat, 
 	}, nil
 }
 
+func (csfs CallerStatFS) Exists(ctx context.Context, path string) (string, bool, error) {
+	dirName, _, err := csfs.Stat(ctx, path)
+	switch {
+	case err == nil:
+		return dirName, true, nil
+	case errors.Is(err, os.ErrNotExist):
+		return "", false, nil
+	default:
+		return "", false, err
+	}
+}
+
 type ModuleSourceStatFS struct {
 	bk  *buildkit.Client
 	src *ModuleSource
+}
+
+func CallDirExists(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) (string, bool, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", false, err
+	}
+
+	var exists dagql.Boolean
+	err = dag.Select(ctx, dir, &exists,
+		dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		},
+	)
+	if err != nil {
+		return "", false, err
+	}
+	return filepath.Dir(path), exists.Bool(), nil
 }
 
 func CallDirStat(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) (string, *Stat, error) {
@@ -1319,6 +1329,36 @@ func CallDirStat(ctx context.Context, dir dagql.ObjectResult[*Directory], path s
 	return filepath.Dir(path), info, nil
 }
 
+// DirectoryStatFS implements StatFS over a dagql Directory.
+type DirectoryStatFS struct {
+	Dir dagql.ObjectResult[*Directory]
+}
+
+func (dfs *DirectoryStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	return CallDirStat(ctx, dfs.Dir, path)
+}
+
+func (dfs *DirectoryStatFS) Exists(ctx context.Context, path string) (string, bool, error) {
+	return CallDirExists(ctx, dfs.Dir, path)
+}
+
+// DirectoryReadFile reads file contents from a dagql Directory.
+func DirectoryReadFile(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) ([]byte, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var contents dagql.String
+	err = dag.Select(ctx, dir, &contents,
+		dagql.Selector{Field: "file", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(path)}}},
+		dagql.Selector{Field: "contents"},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(contents), nil
+}
+
 func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	if fs.src == nil {
 		return "", nil, os.ErrNotExist
@@ -1336,6 +1376,26 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *St
 		return CallDirStat(ctx, fs.src.ContextDirectory, path)
 	default:
 		return "", nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
+	}
+}
+
+func (fs ModuleSourceStatFS) Exists(ctx context.Context, path string) (string, bool, error) {
+	if fs.src == nil {
+		return "", false, nil
+	}
+
+	switch fs.src.Kind {
+	case ModuleSourceKindLocal:
+		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
+		return CallerStatFS{fs.bk}.Exists(ctx, path)
+	case ModuleSourceKindGit:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CallDirExists(ctx, fs.src.Git.UnfilteredContextDir, path)
+	case ModuleSourceKindDir:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CallDirExists(ctx, fs.src.ContextDirectory, path)
+	default:
+		return "", false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
 }
 

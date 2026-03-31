@@ -186,9 +186,6 @@ func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) (bool, error)
 // formatName formats a GraphQL name (e.g. object, field, arg) into a Go equivalent
 // Example: `fooId` -> `FooID`
 func formatName(s string) string {
-	if s == generator.QueryStructName {
-		return generator.QueryStructClientName
-	}
 	if len(s) > 0 {
 		s = strings.ToUpper(string(s[0])) + s[1:]
 	}

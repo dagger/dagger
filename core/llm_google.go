@@ -2,17 +2,18 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"net/http"
+	"strings"
 
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/googleapis/gax-go/v2/apierror"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
@@ -27,7 +28,8 @@ type GenaiClient struct {
 func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 	ctx := context.Background() // FIXME: should we wire this through from somewhere else?
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey: endpoint.Key,
+		APIKey:     endpoint.Key,
+		HTTPClient: newLLMOTelHTTPClient("google"),
 	})
 	if err != nil {
 		return nil, err
@@ -66,22 +68,62 @@ func (c *GenaiClient) convertToolsToGenai(tools []LLMTool) ([]*genai.Tool, error
 	}, nil
 }
 
-func (c *GenaiClient) prepareGenaiHistory(history []*ModelMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
+func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
+	// Build a map from CallID to ToolName so that tool result blocks
+	// (which only carry CallID) can recover the function name that
+	// Google's FunctionResponse.Name requires.
+	callIDToToolName := map[string]string{}
+	for _, msg := range history {
+		for _, block := range msg.Content {
+			if block.Kind == LLMContentToolCall && block.CallID != "" {
+				callIDToToolName[block.CallID] = block.ToolName
+			}
+		}
+	}
+
 	systemInstruction = &genai.Content{
 		Parts: []*genai.Part{},
 		Role:  "system",
 	}
+	// isToolResultOnly reports whether every block in a message is a
+	// TOOL_RESULT block.
+	isToolResultOnly := func(msg *LLMMessage) bool {
+		if len(msg.Content) == 0 {
+			return false
+		}
+		for _, b := range msg.Content {
+			if b.Kind != LLMContentToolResult {
+				return false
+			}
+		}
+		return true
+	}
+
 	for _, msg := range history {
 		var content *genai.Content
 		switch msg.Role {
-		case "system":
+		case LLMMessageRoleSystem:
 			content = systemInstruction
-		case "user", "function":
-			content = &genai.Content{
-				Parts: []*genai.Part{},
-				Role:  "user",
+		case LLMMessageRoleUser:
+			// Google's API requires all FunctionResponse parts for a
+			// batch of parallel tool calls to be in a single Content.
+			// Dagger stores each tool result as a separate user message,
+			// so we merge consecutive tool-result-only user messages
+			// into one Content.
+			if isToolResultOnly(msg) && len(genaiHistory) > 0 {
+				prev := genaiHistory[len(genaiHistory)-1]
+				if prev.Role == "user" && len(prev.Parts) > 0 && prev.Parts[len(prev.Parts)-1].FunctionResponse != nil {
+					// Merge into the previous user Content.
+					content = prev
+				}
 			}
-		case "model", "assistant":
+			if content == nil {
+				content = &genai.Content{
+					Parts: []*genai.Part{},
+					Role:  "user",
+				}
+			}
+		case LLMMessageRoleAssistant:
 			content = &genai.Content{
 				Parts: []*genai.Part{},
 				Role:  "model",
@@ -90,38 +132,73 @@ func (c *GenaiClient) prepareGenaiHistory(history []*ModelMessage) (genaiHistory
 			return nil, nil, fmt.Errorf("unexpected role %s", msg.Role)
 		}
 
-		// message was a tool call
-		if msg.ToolCallID != "" {
-			// find the function name
-			content.Parts = append(content.Parts, &genai.Part{
-				FunctionResponse: &genai.FunctionResponse{
-					Name: msg.ToolCallID,
-					// Genai expects a json format response
-					Response: map[string]any{
-						"response": msg.Content,
-						"error":    msg.ToolErrored,
+		for _, block := range msg.Content {
+			switch block.Kind {
+			case LLMContentToolResult:
+				toolName := callIDToToolName[block.CallID]
+				if toolName == "" {
+					// Fallback: CallID may already be a function name
+					// (e.g. from older history formats).
+					toolName = block.CallID
+				}
+				content.Parts = append(content.Parts, &genai.Part{
+					FunctionResponse: &genai.FunctionResponse{
+						Name: toolName,
+						Response: map[string]any{
+							"response": block.Text,
+							"error":    block.Errored,
+						},
 					},
-				},
-			})
-		} else { // just content
-			c := msg.Content
-			if c == "" {
-				c = " "
+				})
+			case LLMContentText:
+				text := block.Text
+				if text == "" {
+					text = " "
+				}
+				content.Parts = append(content.Parts, &genai.Part{Text: text})
+			case LLMContentToolCall:
+				var args map[string]any
+				if err := json.Unmarshal(block.Arguments.Bytes(), &args); err != nil {
+					return nil, nil, err
+				}
+				part := &genai.Part{
+					FunctionCall: &genai.FunctionCall{
+						Name: block.ToolName,
+						Args: args,
+					},
+				}
+				// Restore thought signature if present (required by Gemini
+				// thinking models to associate tool calls with thoughts).
+				if block.Signature != "" {
+					sig, err := base64.StdEncoding.DecodeString(block.Signature)
+					if err != nil {
+						return nil, nil, fmt.Errorf("failed to decode thought signature: %w", err)
+					}
+					part.ThoughtSignature = sig
+				}
+				content.Parts = append(content.Parts, part)
+			case LLMContentThinking:
+				part := &genai.Part{
+					Text:    block.Text,
+					Thought: true,
+				}
+				if block.Signature != "" {
+					sig, err := base64.StdEncoding.DecodeString(block.Signature)
+					if err != nil {
+						return nil, nil, fmt.Errorf("failed to decode thought signature: %w", err)
+					}
+					part.ThoughtSignature = sig
+				}
+				content.Parts = append(content.Parts, part)
 			}
-			content.Parts = append(content.Parts, &genai.Part{Text: c})
 		}
 
-		// add tool calls
-		for _, call := range msg.ToolCalls {
-			content.Parts = append(content.Parts, &genai.Part{
-				FunctionCall: &genai.FunctionCall{
-					Name: call.ID,
-					Args: call.Function.Arguments,
-				},
-			})
+		// Only append to genaiHistory if this is a new Content (not
+		// merged into an existing one).
+		if content.Role == "system" {
+			continue
 		}
-
-		if content.Role != "system" {
+		if len(genaiHistory) == 0 || genaiHistory[len(genaiHistory)-1] != content {
 			genaiHistory = append(genaiHistory, content)
 		}
 	}
@@ -135,17 +212,32 @@ func (c *GenaiClient) prepareGenaiHistory(history []*ModelMessage) (genaiHistory
 
 func (c *GenaiClient) processStreamResponse(
 	stream iter.Seq2[*genai.GenerateContentResponse, error],
-	stdout io.Writer,
+	dp *displayPhases,
 	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
-) (content string, toolCalls []LLMToolCall, tokenUsage LLMTokenUsage, err error) {
+) (contentBlocks []*LLMContentBlock, tokenUsage LLMTokenUsage, err error) {
+	var textContent strings.Builder
+	var thinkingContent strings.Builder
+	var thinkingSignature string // base64-encoded thought signature for the thinking block
+
+	// Phase index counter. Index 0 is reserved for thinking (if present),
+	// index 1 for text. Tool calls start at 2.
+	var toolIdx int64 = 1
+
+	// Counter for generating unique call IDs (Google's API doesn't provide them).
+	var callCounter int
+
+	// Track whether we've started a thinking phase so we can close it
+	// when the first non-thinking part arrives.
+	var inThinking bool
+
 	for res, err := range stream {
 		if err != nil {
 			if apiErr, ok := err.(*apierror.APIError); ok {
 				err = fmt.Errorf("google API error occurred: %w", apiErr.Unwrap())
-				return content, toolCalls, tokenUsage, err
+				return contentBlocks, tokenUsage, err
 			}
 
-			return content, toolCalls, tokenUsage, err
+			return contentBlocks, tokenUsage, err
 		}
 
 		if res.UsageMetadata != nil {
@@ -154,30 +246,120 @@ func (c *GenaiClient) processStreamResponse(
 
 		if len(res.Candidates) == 0 {
 			err = &ModelFinishedError{Reason: "no response from model"}
-			return content, toolCalls, tokenUsage, err
+			return contentBlocks, tokenUsage, err
 		}
 		candidate := res.Candidates[0]
 		if candidate.Content == nil {
 			err = &ModelFinishedError{Reason: string(candidate.FinishReason)}
-			return content, toolCalls, tokenUsage, err
+			return contentBlocks, tokenUsage, err
 		}
 
 		for _, part := range candidate.Content.Parts {
-			if x := part.Text; x != "" {
-				fmt.Fprint(stdout, x)
-				content += x
+			if part.Thought && part.Text != "" {
+				// Thinking/reasoning content from the model.
+				if !inThinking {
+					dp.StartThinking(0)
+					inThinking = true
+				}
+				if p := dp.Phase(0); p != nil {
+					fmt.Fprint(p.Stdio.Stdout, part.Text)
+				}
+				thinkingContent.WriteString(part.Text)
+				// Capture thought signature (typically on the last thinking chunk).
+				if len(part.ThoughtSignature) > 0 {
+					thinkingSignature = base64.StdEncoding.EncodeToString(part.ThoughtSignature)
+				}
+			} else if x := part.Text; x != "" {
+				// Regular text content. Close thinking phase if open.
+				if inThinking {
+					dp.Close(0)
+					inThinking = false
+				}
+				p := dp.Phase(1)
+				if p == nil {
+					p = dp.StartText(1)
+				}
+				fmt.Fprint(p.MarkdownW, x)
+				textContent.WriteString(x)
 			} else if x := part.FunctionCall; x != nil {
-				toolCalls = append(toolCalls, LLMToolCall{
-					ID:       x.Name,
-					Function: FuncCall{Name: x.Name, Arguments: x.Args},
-					Type:     "function",
-				})
+				// Close thinking phase if still open.
+				if inThinking {
+					dp.Close(0)
+					inThinking = false
+				}
+				bytes, err := json.Marshal(x.Args)
+				if err != nil {
+					return contentBlocks, tokenUsage, err
+				}
+				callCounter++
+				callID := fmt.Sprintf("google-%s-%d", x.Name, callCounter)
+				block := &LLMContentBlock{
+					Kind:      LLMContentToolCall,
+					CallID:    callID,
+					ToolName:  x.Name,
+					Arguments: JSON(bytes),
+				}
+				// Preserve thought signature so it can be sent back in
+				// subsequent requests (required by Gemini thinking models).
+				if len(part.ThoughtSignature) > 0 {
+					block.Signature = base64.StdEncoding.EncodeToString(part.ThoughtSignature)
+				}
+				contentBlocks = append(contentBlocks, block)
+
+				toolIdx++
+				p := dp.StartToolCall(toolIdx, callID, x.Name)
+				fmt.Fprint(p.Stdio.Stdout, string(bytes))
+				dp.Close(toolIdx)
 			} else {
 				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
 			}
 		}
 	}
-	return content, toolCalls, tokenUsage, nil
+
+	// Build content blocks: thinking first, then text, then tool calls.
+	var result []*LLMContentBlock
+	if thinkingContent.Len() > 0 {
+		result = append(result, &LLMContentBlock{
+			Kind:      LLMContentThinking,
+			Text:      thinkingContent.String(),
+			Signature: thinkingSignature,
+		})
+	}
+	if textContent.Len() > 0 {
+		result = append(result, &LLMContentBlock{
+			Kind: LLMContentText,
+			Text: textContent.String(),
+		})
+	}
+	contentBlocks = append(result, contentBlocks...)
+	return contentBlocks, tokenUsage, nil
+}
+
+// buildThinkingConfig returns a ThinkingConfig based on the endpoint settings,
+// or nil if thinking is not configured.
+func (c *GenaiClient) buildThinkingConfig() *genai.ThinkingConfig {
+	mode := c.endpoint.ThinkingMode
+	if mode == "" {
+		return nil
+	}
+	tc := &genai.ThinkingConfig{
+		IncludeThoughts: true,
+	}
+	switch mode {
+	case "disabled":
+		return nil
+	case "low":
+		tc.ThinkingLevel = genai.ThinkingLevelLow
+	case "medium":
+		tc.ThinkingLevel = genai.ThinkingLevelMedium
+	case "high":
+		tc.ThinkingLevel = genai.ThinkingLevelHigh
+	case "minimal":
+		tc.ThinkingLevel = genai.ThinkingLevelMinimal
+	default:
+		// "adaptive" or unrecognized — just enable with IncludeThoughts
+	}
+	return tc
 }
 
 var _ LLMClient = (*GenaiClient)(nil)
@@ -196,13 +378,19 @@ func (c *GenaiClient) IsRetryable(err error) bool {
 	}
 }
 
-func (c *GenaiClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-	defer stdio.Close()
+func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
+	parentCtx := ctx
 
-	m := telemetry.Meter(ctx, InstrumentationLibrary)
-	spanCtx := trace.SpanContextFromContext(ctx)
+	dp := newDisplayPhases(parentCtx)
+	defer func() {
+		dp.CloseAll()
+		if rerr != nil {
+			dp.Abort(rerr)
+		}
+	}()
+
+	m := telemetry.Meter(parentCtx, InstrumentationLibrary)
+	spanCtx := trace.SpanContextFromContext(parentCtx)
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
 		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
@@ -248,10 +436,20 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*ModelMessage, to
 		return nil, fmt.Errorf("failed to convert tools: %w", err)
 	}
 
-	chat, err := c.client.Chats.Create(ctx, c.endpoint.Model, &genai.GenerateContentConfig{
+	genaiConfig := &genai.GenerateContentConfig{
 		SystemInstruction: systemInstruction,
 		Tools:             genaiTools,
-	}, chatHistoryForGenai)
+	}
+	if opts != nil && opts.MaxTokens > 0 {
+		genaiConfig.MaxOutputTokens = int32(opts.MaxTokens)
+	}
+
+	// Configure thinking/reasoning if requested
+	if tc := c.buildThinkingConfig(); tc != nil {
+		genaiConfig.ThinkingConfig = tc
+	}
+
+	chat, err := c.client.Chats.Create(ctx, c.endpoint.Model, genaiConfig, chatHistoryForGenai)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat: %w", err)
 	}
@@ -287,19 +485,24 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*ModelMessage, to
 		return usageSummary
 	}
 
-	content, toolCalls, tokenUsage, err := c.processStreamResponse(
+	contentBlocks, tokenUsage, err := c.processStreamResponse(
 		stream,
-		stdio.Stdout,
+		dp,
 		tokenHandler,
 	)
 	if err != nil {
 		return nil, err
 	}
 
+	// Close all phases so their spans are collected before building the response.
+	dp.CloseAll()
+
+	displaySpans, toolCalls := dp.Response()
 	return &LLMResponse{
-		Content:    content,
-		ToolCalls:  toolCalls,
-		TokenUsage: tokenUsage,
+		Content:          contentBlocks,
+		TokenUsage:       tokenUsage,
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCalls,
 	}, nil
 }
 

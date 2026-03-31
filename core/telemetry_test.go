@@ -35,7 +35,7 @@ type mockServer struct {
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata) {
 }
 
-func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error {
+func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDependencies bool, entrypoint bool) error {
 	return nil
 }
 
@@ -66,8 +66,8 @@ func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error
 	return ms.functionCall, nil
 }
 
-func (ms *mockServer) CurrentServedDeps(context.Context) (*ModDeps, error) {
-	return &ModDeps{}, nil
+func (ms *mockServer) CurrentServedDeps(context.Context) (*SchemaBuilder, error) {
+	return NewSchemaBuilder(nil, nil), nil
 }
 
 func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
@@ -81,10 +81,14 @@ func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.C
 	return nil, nil
 }
 
+func (ms *mockServer) CurrentWorkspace(context.Context) (*Workspace, error) {
+	return nil, nil
+}
+
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
-func (ms *mockServer) DefaultDeps(context.Context) (*ModDeps, error)           { return nil, nil }
+func (ms *mockServer) DefaultDeps(context.Context) (*SchemaBuilder, error)     { return nil, nil }
 func (ms *mockServer) Cache(context.Context) (*dagql.SessionCache, error)      { return nil, nil }
 func (ms *mockServer) Server(context.Context) (*dagql.Server, error)           { return nil, nil }
 func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error { return nil }
@@ -98,7 +102,8 @@ func (ms *mockServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) 
 
 func (ms *mockServer) Buildkit(context.Context) (*buildkit.Client, error) { return nil, nil }
 
-func (ms *mockServer) Services(context.Context) (*Services, error) { return nil, nil }
+func (ms *mockServer) Services(context.Context) (*Services, error)     { return nil, nil }
+func (ms *mockServer) MCPClients(context.Context) (*MCPClients, error) { return nil, nil }
 
 func (ms *mockServer) Platform() Platform               { return Platform{} }
 func (ms *mockServer) OCIStore() content.Store          { return nil }
@@ -117,6 +122,7 @@ func (ms *mockServer) BuildkitSession() *bksession.Manager         { return nil 
 func (ms *mockServer) Locker() *locker.Locker                      { return nil }
 func (ms *mockServer) SecretSalt() []byte                          { return nil }
 func (ms *mockServer) FileSyncer() *filesync.FileSyncer            { return nil }
+func (ms *mockServer) FlushSessionTelemetry(context.Context) error { return nil }
 func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error) {
 	return nil, nil
 }

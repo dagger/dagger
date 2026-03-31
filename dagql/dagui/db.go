@@ -21,6 +21,64 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
+// LLMTokenMetrics tracks token usage across all LLM calls
+type LLMTokenMetrics struct {
+	// Map of model name to token metrics
+	ByModel map[string]*LLMModelMetrics
+}
+
+// LLMModelMetrics tracks token usage for a specific model
+type LLMModelMetrics struct {
+	Model             string
+	Provider          string
+	InputTokens       int64
+	OutputTokens      int64
+	CachedTokenReads  int64
+	CachedTokenWrites int64
+}
+
+// Aggregate adds the metrics from a data point to the totals
+func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoint[int64]) {
+	// Extract model and provider from attributes
+	var model, provider string
+	modelAttr, hasModel := point.Attributes.Value(attribute.Key("model"))
+	providerAttr, hasProvider := point.Attributes.Value(attribute.Key("provider"))
+
+	if !hasModel {
+		return // Skip if no model attribute
+	}
+
+	model = modelAttr.AsString()
+	if hasProvider {
+		provider = providerAttr.AsString()
+	}
+
+	if m.ByModel == nil {
+		m.ByModel = make(map[string]*LLMModelMetrics)
+	}
+
+	metrics, ok := m.ByModel[model]
+	if !ok {
+		metrics = &LLMModelMetrics{
+			Model:    model,
+			Provider: provider,
+		}
+		m.ByModel[model] = metrics
+	}
+
+	// Aggregate the token counts based on metric name
+	switch metricName {
+	case telemetry.LLMInputTokens:
+		metrics.InputTokens += point.Value
+	case telemetry.LLMOutputTokens:
+		metrics.OutputTokens += point.Value
+	case telemetry.LLMInputTokensCacheReads:
+		metrics.CachedTokenReads += point.Value
+	case telemetry.LLMInputTokensCacheWrites:
+		metrics.CachedTokenWrites += point.Value
+	}
+}
+
 type DB struct {
 	PrimarySpan SpanID
 	PrimaryLogs map[SpanID][]sdklog.Record
@@ -51,6 +109,9 @@ type DB struct {
 	// needs generalization as more metric types get added
 	MetricsByCall map[string]map[string][]metricdata.DataPoint[int64]
 	MetricsBySpan map[SpanID]map[string][]metricdata.DataPoint[int64]
+
+	// LLM token metrics aggregated across all spans
+	LLMTokenMetrics *LLMTokenMetrics
 
 	// updatedSpans is a set of spans that have been updated since the last
 	// sync, which includes any parent spans whose overall active time intervals
@@ -83,6 +144,8 @@ func NewDB() *DB {
 
 		CompletedEffects: make(map[string]bool),
 		FailedEffects:    make(map[string]bool),
+
+		LLMTokenMetrics: &LLMTokenMetrics{},
 
 		updatedSpans: NewSpanSet(),
 		seenSpans:    make(map[SpanID]struct{}),
@@ -331,6 +394,13 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 		}
 
 		metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
+
+		// Aggregate LLM token metrics across all spans
+		switch metric.Name {
+		case telemetry.LLMInputTokens, telemetry.LLMOutputTokens,
+			telemetry.LLMInputTokensCacheReads, telemetry.LLMInputTokensCacheWrites:
+			db.LLMTokenMetrics.Aggregate(metric.Name, point)
+		}
 	}
 }
 

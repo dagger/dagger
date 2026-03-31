@@ -9,8 +9,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/iancoleman/strcase"
-
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
@@ -79,9 +77,34 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 	}
 }
 
-// pascalCase change a type name into pascalCase
+// pascalCase converts a type name into PascalCase.
+//
+// We use a custom implementation instead of strcase.ToCamel because
+// strcase.ToCamel doesn't handle transitions between consecutive
+// uppercase letters correctly (e.g. "LLMContentBlockKind" becomes
+// "LlmcontentBlockKind" instead of "LlmContentBlockKind").
 func (funcs typescriptTemplateFuncs) pascalCase(name string) string {
-	return strcase.ToCamel(name)
+	return toPascalCase(name)
+}
+
+var (
+	reUpperToUpperLower = regexp.MustCompile(`([A-Z]+)([A-Z][a-z])`)
+	reLowerToUpper      = regexp.MustCompile(`([a-z0-9])([A-Z])`)
+)
+
+func toPascalCase(s string) string {
+	// Insert word boundaries: "LLMContent" -> "LLM_Content", "blockKind" -> "block_Kind"
+	s = reUpperToUpperLower.ReplaceAllString(s, `${1}_${2}`)
+	s = reLowerToUpper.ReplaceAllString(s, `${1}_${2}`)
+
+	parts := strings.Split(s, "_")
+	for i, p := range parts {
+		if len(p) == 0 {
+			continue
+		}
+		parts[i] = strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
+	}
+	return strings.Join(parts, "")
 }
 
 // solve checks if a field is solvable.
@@ -179,19 +202,20 @@ func (funcs typescriptTemplateFuncs) queryToClient(s string) string {
 // in practice, many of these work just fine as e.g. method
 // names, like 'export' and 'from'.
 var jsKeywords = map[string]struct{}{
-	"await":    {},
-	"break":    {},
-	"case":     {},
-	"catch":    {},
-	"class":    {},
-	"const":    {},
-	"continue": {},
-	"debugger": {},
-	"default":  {},
-	"delete":   {},
-	"do":       {},
-	"else":     {},
-	"enum":     {},
+	"arguments": {},
+	"await":     {},
+	"break":     {},
+	"case":      {},
+	"catch":     {},
+	"class":     {},
+	"const":     {},
+	"continue":  {},
+	"debugger":  {},
+	"default":   {},
+	"delete":    {},
+	"do":        {},
+	"else":      {},
+	"enum":      {},
 	// "export":     {}, // containr.export
 	"extends":    {},
 	"false":      {},
@@ -246,7 +270,7 @@ var jsKeywords = map[string]struct{}{
 
 // formatEnum formats a GraphQL enum into a TS equivalent
 func (funcs typescriptTemplateFuncs) formatEnum(s string) string {
-	return strcase.ToCamel(s)
+	return toPascalCase(s)
 }
 
 // isArgOptional checks if some arg are optional.
@@ -317,11 +341,11 @@ func (funcs typescriptTemplateFuncs) sortEnumFields(s []introspection.EnumValue)
 	copy := slices.Clone(s)
 
 	slices.SortStableFunc(copy, func(x, y introspection.EnumValue) int {
-		return cmp.Compare(strcase.ToCamel(x.Name), strcase.ToCamel(y.Name))
+		return cmp.Compare(toPascalCase(x.Name), toPascalCase(y.Name))
 	})
 
 	copy = slices.CompactFunc(copy, func(x, y introspection.EnumValue) bool {
-		return strcase.ToCamel(x.Name) == strcase.ToCamel(y.Name)
+		return toPascalCase(x.Name) == toPascalCase(y.Name)
 	})
 
 	return copy
@@ -340,7 +364,7 @@ func (funcs typescriptTemplateFuncs) groupEnumByValue(s []introspection.EnumValu
 	for _, v := range s {
 		value := cmp.Or(v.Directives.EnumValue(), v.Name)
 		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
-			return strcase.ToCamel(v.Name) == strcase.ToCamel(other.Name)
+			return toPascalCase(v.Name) == toPascalCase(other.Name)
 		}) {
 			m[value] = append(m[value], v)
 		}

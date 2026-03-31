@@ -45,3 +45,7 @@ type LLMID = dagql.ID[*LLM]
 type EnvID = dagql.ID[*Env]
 
 type EnvFileID = dagql.ID[*EnvFile]
+type WorkspaceID = dagql.ID[*Workspace]
+
+// ID is an alias for dagql.AnyID — a generic object identifier.
+type ID = dagql.AnyID
