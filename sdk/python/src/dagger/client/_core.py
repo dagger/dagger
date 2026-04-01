@@ -222,10 +222,7 @@ class Context:
         ids = await ctx.execute(list[Response])
 
         gql_name = element_type._graphql_name()  # noqa: SLF001
-        return [
-            element_type(ctx.select_id(gql_name, v.id))
-            for v in ids
-        ]
+        return [element_type(ctx.select_id(gql_name, v.id)) for v in ids]
 
     async def execute_sync(
         self,

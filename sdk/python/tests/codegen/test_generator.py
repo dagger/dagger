@@ -4,22 +4,48 @@ import graphql
 import pytest
 from graphql import (
     GraphQLArgument as Argument,
+)
+from graphql import (
     GraphQLBoolean as Boolean,
+)
+from graphql import (
     GraphQLEnumType,
     GraphQLEnumValue,
-    GraphQLField as Field,
     GraphQLID,
-    GraphQLInputField as Input,
-    GraphQLInputField as InputField,
-    GraphQLInputObjectType as InputObject,
-    GraphQLInt as Int,
-    GraphQLInterfaceType as Interface,
-    GraphQLList as List,
-    GraphQLNonNull as NonNull,
-    GraphQLObjectType as Object,
-    GraphQLScalarType as Scalar,
-    GraphQLString as String,
     build_schema,
+)
+from graphql import (
+    GraphQLField as Field,
+)
+from graphql import (
+    GraphQLInputField as Input,
+)
+from graphql import (
+    GraphQLInputField as InputField,
+)
+from graphql import (
+    GraphQLInputObjectType as InputObject,
+)
+from graphql import (
+    GraphQLInt as Int,
+)
+from graphql import (
+    GraphQLInterfaceType as Interface,
+)
+from graphql import (
+    GraphQLList as List,
+)
+from graphql import (
+    GraphQLNonNull as NonNull,
+)
+from graphql import (
+    GraphQLObjectType as Object,
+)
+from graphql import (
+    GraphQLScalarType as Scalar,
+)
+from graphql import (
+    GraphQLString as String,
 )
 
 from codegen.generator import (
@@ -40,7 +66,6 @@ from codegen.generator import (
 from codegen.generator import (
     Scalar as ScalarHandler,
 )
-
 
 # Schema with @expectedType directive for testing unified ID behavior.
 _EXPECTED_TYPE_SCHEMA = build_schema("""

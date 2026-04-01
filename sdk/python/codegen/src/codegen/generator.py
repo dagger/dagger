@@ -6,7 +6,7 @@ import re
 import textwrap
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from collections.abc import Callable, Container, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -487,9 +487,7 @@ class _InputField:
         )
 
         # Read @expectedType directive from the argument's AST node.
-        self.expected_type = expected_type_name(
-            ctx.schema, graphql.ast_node
-        )
+        self.expected_type = expected_type_name(ctx.schema, graphql.ast_node)
 
         # On object type fields, don't replace ID scalar with object
         # only if field name is `id` and the expected type matches
@@ -602,9 +600,7 @@ class _ObjectField:
         self.type = format_output_type(field.type)
 
         # Read @expectedType directive from the field's AST node.
-        self.expected_type = expected_type_name(
-            ctx.schema, field.ast_node
-        )
+        self.expected_type = expected_type_name(ctx.schema, field.ast_node)
 
         # Any field in the API that returns an ID for its parent object should
         # return the binding for the object instead in the SDK to allow continued
@@ -699,21 +695,22 @@ class _ObjectField:
 
         if not self.is_exec:
             # Use the concrete client class for interface types
-            if is_interface_type(self.named_type):
-                inst_type = f"_{self.type}Client"
-            else:
-                inst_type = self.type
-            yield f"return {inst_type}(_ctx)"
+            t = self._iface_client_name(self.type)
+            yield f"return {t}(_ctx)"
         elif self.is_list:
-            if is_interface_type(self.named_type):
-                inst_type = f"_{self.named_type.name}Client"
-            else:
-                inst_type = self.named_type.name
-            yield f"return await _ctx.execute_object_list({inst_type})"
+            n = self.named_type.name
+            t = self._iface_client_name(n)
+            yield f"return await _ctx.execute_object_list({t})"
         elif self.is_void:
             yield "await _ctx.execute()"
         else:
             yield f"return await _ctx.execute({self.type})"
+
+    def _iface_client_name(self, name: str) -> str:
+        """Return concrete client class name for interface types."""
+        if is_interface_type(self.named_type):
+            return f"_{name}Client"
+        return name
 
     def func_doc(self) -> str:
         def _out():
@@ -985,5 +982,3 @@ class Object(ObjectHandler[GraphQLObjectType]):
                     return cb(self)
                 '''  # noqa: E501
             )
-
-
