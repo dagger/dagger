@@ -41,6 +41,9 @@ type Function struct {
 	// IsGenerator indicates whether this function is a generator
 	IsGenerator bool
 
+	// IsUp indicates whether this function returns a service to be started with `dagger up`
+	IsUp bool
+
 	// OriginalName of the parent object
 	ParentOriginalName string
 
@@ -222,6 +225,12 @@ func (fn *Function) WithCheck() *Function {
 func (fn *Function) WithGenerator() *Function {
 	fn = fn.Clone()
 	fn.IsGenerator = true
+	return fn
+}
+
+func (fn *Function) WithUp() *Function {
+	fn = fn.Clone()
+	fn.IsUp = true
 	return fn
 }
 

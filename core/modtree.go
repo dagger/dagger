@@ -33,6 +33,7 @@ type ModTreeNode struct {
 	Type           *TypeDef
 	IsCheck        bool
 	IsGenerator    bool
+	IsUp           bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -453,6 +454,13 @@ func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, 
 	}, include, exclude)
 }
 
+// Walk the tree and return all up (service) nodes, with include and exclude filters applied.
+func (node *ModTreeNode) RollupUp(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
+		return n.IsUp
+	}, include, exclude)
+}
+
 type ModTreePath []string
 
 func NewModTreePath(s string) ModTreePath {
@@ -591,6 +599,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 						Type:           &TypeDef{AsObject: dagql.NonNull(subObj)},
 						IsCheck:        false,
 						IsGenerator:    false,
+						IsUp:           false,
 						Description:    subObj.Description,
 					})
 				}
@@ -605,6 +614,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 					Type:           fn.ReturnType,
 					IsCheck:        fn.IsCheck,
 					IsGenerator:    fn.IsGenerator,
+					IsUp:           fn.IsUp,
 					Description:    fn.Description,
 				})
 			}
@@ -619,6 +629,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				Type:           field.TypeDef,
 				IsCheck:        false,
 				IsGenerator:    false,
+				IsUp:           false,
 				Description:    field.Description,
 			})
 		}

@@ -204,6 +204,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("withGenerator", s.functionWithGenerator).
 			Doc(`Returns the function with a flag indicating it's a generator.`),
 
+		dagql.Func("withUp", s.functionWithUp).
+			Doc(`Returns the function with a flag indicating it returns a service for dagger up.`),
+
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
 			Args(
@@ -566,6 +569,10 @@ func (s *moduleSchema) functionWithCheck(ctx context.Context, fn *core.Function,
 
 func (s *moduleSchema) functionWithGenerator(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
 	return fn.WithGenerator(), nil
+}
+
+func (s *moduleSchema) functionWithUp(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	return fn.WithUp(), nil
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
