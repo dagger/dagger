@@ -482,6 +482,36 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.Contains(t, out, "Greetings from Mars!")
 	})
 
+	t.Run("override function default argument in chained function with glob patterns", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "customizations": [
+        {
+          "function": ["gre*", "pla*"],
+          "argument": "planet",
+          "default": "Mars"
+        }
+      ]
+    }
+  ]
+}
+				`)
+		out, err := modGen.
+			With(daggerExec("call", "hello", "greet", "planet")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Greetings from Mars!")
+	})
+
 	t.Run("override container default with address", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
