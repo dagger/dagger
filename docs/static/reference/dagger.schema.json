@@ -105,6 +105,13 @@
           },
           "type": "array",
           "description": "IgnoreGenerators is a list of generator patterns to exclude from this toolchain. Patterns can use glob syntax to match generator names."
+        },
+        "ignoreServices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "IgnoreServices is a list of service (up) patterns to exclude from this toolchain. Patterns can use glob syntax to match service names."
         }
       },
       "additionalProperties": false,

@@ -312,6 +312,12 @@ type TerminalID string
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
 
+// The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
+type UpGroupID string
+
+// The `UpID` scalar type represents an identifier for an object of type Up.
+type UpID string
+
 // The absence of a value.
 //
 // A Null Void is used as a placeholder for resolvers that do not return anything.
@@ -800,6 +806,24 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Retrieve the binding value, as type Up
+func (r *Binding) AsUp() *Up {
+	q := r.query.Select("asUp")
+
+	return &Up{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type UpGroup
+func (r *Binding) AsUpGroup() *UpGroup {
+	q := r.query.Select("asUpGroup")
+
+	return &UpGroup{
+		query: q,
+	}
 }
 
 // Retrieve the binding value, as type Workspace
@@ -6136,6 +6160,54 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type UpGroup in the environment
+func (r *Env) WithUpGroupInput(name string, value *UpGroup, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withUpGroupInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired UpGroup output to be assigned in the environment
+func (r *Env) WithUpGroupOutput(name string, description string) *Env {
+	q := r.query.Select("withUpGroupOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Up in the environment
+func (r *Env) WithUpInput(name string, value *Up, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withUpInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Up output to be assigned in the environment
+func (r *Env) WithUpOutput(name string, description string) *Env {
+	q := r.query.Select("withUpOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Returns a new environment with the provided workspace
 func (r *Env) WithWorkspace(workspace *Directory) *Env {
 	assertNotNil("workspace", workspace)
@@ -7473,6 +7545,15 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 	assertNotNil("sourceMap", sourceMap)
 	q := r.query.Select("withSourceMap")
 	q = q.Arg("sourceMap", sourceMap)
+
+	return &Function{
+		query: q,
+	}
+}
+
+// Returns the function with a flag indicating it returns a service for dagger up.
+func (r *Function) WithUp() *Function {
+	q := r.query.Select("withUp")
 
 	return &Function{
 		query: q,
@@ -10412,6 +10493,29 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 	return q.Execute(ctx)
 }
 
+// ModuleServicesOpts contains options for Module.Services
+type ModuleServicesOpts struct {
+	// Only include services matching the specified patterns
+	Include []string
+}
+
+// Return all services defined by the module
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Module) Services(opts ...ModuleServicesOpts) *UpGroup {
+	q := r.query.Select("services")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // The source for the module.
 func (r *Module) Source() *ModuleSource {
 	q := r.query.Select("source")
@@ -12650,6 +12754,26 @@ func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	}
 }
 
+// Load a Up from its ID.
+func (r *Query) LoadUpFromID(id UpID) *Up {
+	q := r.query.Select("loadUpFromID")
+	q = q.Arg("id", id)
+
+	return &Up{
+		query: q,
+	}
+}
+
+// Load a UpGroup from its ID.
+func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
+	q := r.query.Select("loadUpGroupFromID")
+	q = q.Arg("id", id)
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // Load a Workspace from its ID.
 func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	q := r.query.Select("loadWorkspaceFromID")
@@ -14320,6 +14444,224 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	}
 }
 
+type Up struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *UpID
+	name        *string
+}
+type WithUpFunc func(r *Up) *Up
+
+// With calls the provided function with current Up.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Up) With(f WithUpFunc) *Up {
+	return f(r)
+}
+
+func (r *Up) WithGraphQLQuery(q *querybuilder.Selection) *Up {
+	return &Up{
+		query: q,
+	}
+}
+
+// The description of the service
+func (r *Up) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Up.
+func (r *Up) ID(ctx context.Context) (UpID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response UpID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Up) XXX_GraphQLType() string {
+	return "Up"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Up) XXX_GraphQLIDType() string {
+	return "UpID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Up) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Up) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return the fully qualified name of the service
+func (r *Up) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The original module in which the service has been defined
+func (r *Up) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The path of the service within its module
+func (r *Up) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Execute the service function
+func (r *Up) Run() *Up {
+	q := r.query.Select("run")
+
+	return &Up{
+		query: q,
+	}
+}
+
+type UpGroup struct {
+	query *querybuilder.Selection
+
+	id *UpGroupID
+}
+type WithUpGroupFunc func(r *UpGroup) *UpGroup
+
+// With calls the provided function with current UpGroup.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *UpGroup) With(f WithUpGroupFunc) *UpGroup {
+	return f(r)
+}
+
+func (r *UpGroup) WithGraphQLQuery(q *querybuilder.Selection) *UpGroup {
+	return &UpGroup{
+		query: q,
+	}
+}
+
+// A unique identifier for this UpGroup.
+func (r *UpGroup) ID(ctx context.Context) (UpGroupID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response UpGroupID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *UpGroup) XXX_GraphQLType() string {
+	return "UpGroup"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *UpGroup) XXX_GraphQLIDType() string {
+	return "UpGroupID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *UpGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *UpGroup) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return a list of individual services and their details
+func (r *UpGroup) List(ctx context.Context) ([]Up, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id UpID
+	}
+
+	convert := func(fields []list) []Up {
+		out := []Up{}
+
+		for i := range fields {
+			val := Up{id: &fields[i].Id}
+			val.query = q.Root().Select("loadUpFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Execute all selected service functions
+func (r *UpGroup) Run() *UpGroup {
+	q := r.query.Select("run")
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // A Dagger workspace detected from the current working directory.
 type Workspace struct {
 	query *querybuilder.Selection
@@ -14580,6 +14922,27 @@ func (r *Workspace) Path(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// WorkspaceServicesOpts contains options for Workspace.Services
+type WorkspaceServicesOpts struct {
+	// Only include services matching the specified patterns
+	Include []string
+}
+
+// Return all services from modules loaded in the workspace.
+func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
+	q := r.query.Select("services")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &UpGroup{
+		query: q,
+	}
 }
 
 // Sharing mode of the cache volume.

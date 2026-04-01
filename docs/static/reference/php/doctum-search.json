@@ -1398,6 +1398,46 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Up",
+			"p": "Dagger/Up.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\UpGroup",
+			"p": "Dagger/UpGroup.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\UpGroupId",
+			"p": "Dagger/UpGroupId.html",
+			"d": "<p>The <code>UpGroupID</code> scalar type represents an identifier for an object of type UpGroup.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\UpId",
+			"p": "Dagger/UpId.html",
+			"d": "<p>The <code>UpID</code> scalar type represents an identifier for an object of type Up.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Workspace",
 			"p": "Dagger/Workspace.html",
 			"d": "<p>A Dagger workspace detected from the current working directory.</p>",
@@ -1676,6 +1716,18 @@
 			"n": "Dagger\\Binding::asString",
 			"p": "Dagger/Binding.html#method_asString",
 			"d": "<p>Returns the binding's string value</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asUp",
+			"p": "Dagger/Binding.html#method_asUp",
+			"d": "<p>Retrieve the binding value, as type Up</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asUpGroup",
+			"p": "Dagger/Binding.html#method_asUpGroup",
+			"d": "<p>Retrieve the binding value, as type UpGroup</p>"
 		},
 		{
 			"t": "M",
@@ -2402,6 +2454,18 @@
 			"n": "Dagger\\Client::loadTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadTypeDefFromID",
 			"d": "<p>Load a TypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadUpFromID",
+			"p": "Dagger/Client.html#method_loadUpFromID",
+			"d": "<p>Load a Up from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadUpGroupFromID",
+			"p": "Dagger/Client.html#method_loadUpGroupFromID",
+			"d": "<p>Load a UpGroup from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -3935,6 +3999,30 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withUpGroupInput",
+			"p": "Dagger/Env.html#method_withUpGroupInput",
+			"d": "<p>Create or update a binding of type UpGroup in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withUpGroupOutput",
+			"p": "Dagger/Env.html#method_withUpGroupOutput",
+			"d": "<p>Declare a desired UpGroup output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withUpInput",
+			"p": "Dagger/Env.html#method_withUpInput",
+			"d": "<p>Create or update a binding of type Up in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withUpOutput",
+			"p": "Dagger/Env.html#method_withUpOutput",
+			"d": "<p>Declare a desired Up output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withWorkspace",
 			"p": "Dagger/Env.html#method_withWorkspace",
 			"d": "<p>Returns a new environment with the provided workspace</p>"
@@ -4406,6 +4494,12 @@
 			"n": "Dagger\\Function_::withSourceMap",
 			"p": "Dagger/Function_.html#method_withSourceMap",
 			"d": "<p>Returns the function with the given source map.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Function_::withUp",
+			"p": "Dagger/Function_.html#method_withUp",
+			"d": "<p>Returns the function with a flag indicating it returns a service for dagger up.</p>"
 		},
 		{
 			"t": "M",
@@ -5168,6 +5262,12 @@
 			"n": "Dagger\\Module::serve",
 			"p": "Dagger/Module.html#method_serve",
 			"d": "<p>Serve a module's API in the current session.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Module::services",
+			"p": "Dagger/Module.html#method_services",
+			"d": "<p>Return all services defined by the module</p>"
 		},
 		{
 			"t": "M",
@@ -6059,6 +6159,60 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Up::description",
+			"p": "Dagger/Up.html#method_description",
+			"d": "<p>The description of the service</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::id",
+			"p": "Dagger/Up.html#method_id",
+			"d": "<p>A unique identifier for this Up.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::name",
+			"p": "Dagger/Up.html#method_name",
+			"d": "<p>Return the fully qualified name of the service</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::originalModule",
+			"p": "Dagger/Up.html#method_originalModule",
+			"d": "<p>The original module in which the service has been defined</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::path",
+			"p": "Dagger/Up.html#method_path",
+			"d": "<p>The path of the service within its module</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::run",
+			"p": "Dagger/Up.html#method_run",
+			"d": "<p>Execute the service function</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\UpGroup::id",
+			"p": "Dagger/UpGroup.html#method_id",
+			"d": "<p>A unique identifier for this UpGroup.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\UpGroup::list",
+			"p": "Dagger/UpGroup.html#method_list",
+			"d": "<p>Return a list of individual services and their details</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\UpGroup::run",
+			"p": "Dagger/UpGroup.html#method_run",
+			"d": "<p>Execute all selected service functions</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::address",
 			"p": "Dagger/Workspace.html#method_address",
 			"d": "<p>Canonical Dagger address of the workspace directory.</p>"
@@ -6128,6 +6282,12 @@
 			"n": "Dagger\\Workspace::path",
 			"p": "Dagger/Workspace.html#method_path",
 			"d": "<p>Workspace directory path relative to the workspace boundary.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::services",
+			"p": "Dagger/Workspace.html#method_services",
+			"d": "<p>Return all services from modules loaded in the workspace.</p>"
 		},
 		{
 			"t": "M",

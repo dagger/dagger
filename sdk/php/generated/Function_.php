@@ -190,4 +190,13 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * Returns the function with a flag indicating it returns a service for dagger up.
+     */
+    public function withUp(): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUp');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

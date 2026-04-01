@@ -148,6 +148,12 @@ type Binding {
   """Returns the binding's string value"""
   asString: String
 
+  """Retrieve the binding value, as type Up"""
+  asUp: Up!
+
+  """Retrieve the binding value, as type UpGroup"""
+  asUpGroup: UpGroup!
+
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
@@ -2930,6 +2936,48 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type UpGroup in the environment"""
+  withUpGroupInput(
+    """The name of the binding"""
+    name: String!
+
+    """The UpGroup value to assign to the binding"""
+    value: UpGroupID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired UpGroup output to be assigned in the environment"""
+  withUpGroupOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Up in the environment"""
+  withUpInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Up value to assign to the binding"""
+    value: UpID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Up output to be assigned in the environment"""
+  withUpOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Returns a new environment with the provided workspace"""
   withWorkspace(
     """The directory to set as the host filesystem"""
@@ -3417,6 +3465,11 @@ type Function {
     """The source map for the function definition."""
     sourceMap: SourceMapID!
   ): Function!
+
+  """
+  Returns the function with a flag indicating it returns a service for dagger up.
+  """
+  withUp: Function!
 }
 
 """
@@ -4293,6 +4346,12 @@ type Module {
     entrypoint: Boolean
   ): Void
 
+  """Return all services defined by the module"""
+  services(
+    """Only include services matching the specified patterns"""
+    include: [String!]
+  ): UpGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """The source for the module."""
   source: ModuleSource
 
@@ -5105,6 +5164,12 @@ type Query {
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
 
+  """Load a Up from its ID."""
+  loadUpFromID(id: UpID!): Up!
+
+  """Load a UpGroup from its ID."""
+  loadUpGroupFromID(id: UpGroupID!): UpGroup!
+
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
@@ -5747,6 +5812,47 @@ enum TypeDefKind {
   ENUM
 }
 
+type Up {
+  """The description of the service"""
+  description: String!
+
+  """A unique identifier for this Up."""
+  id: UpID!
+
+  """Return the fully qualified name of the service"""
+  name: String!
+
+  """The original module in which the service has been defined"""
+  originalModule: Module!
+
+  """The path of the service within its module"""
+  path: [String!]!
+
+  """Execute the service function"""
+  run: Up!
+}
+
+type UpGroup {
+  """A unique identifier for this UpGroup."""
+  id: UpGroupID!
+
+  """Return a list of individual services and their details"""
+  list: [Up!]!
+
+  """Execute all selected service functions"""
+  run: UpGroup!
+}
+
+"""
+The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
+"""
+scalar UpGroupID
+
+"""
+The `UpID` scalar type represents an identifier for an object of type Up.
+"""
+scalar UpID
+
 """
 The absence of a value.
 
@@ -5851,6 +5957,12 @@ type Workspace {
 
   """Workspace directory path relative to the workspace boundary."""
   path: String!
+
+  """Return all services from modules loaded in the workspace."""
+  services(
+    """Only include services matching the specified patterns"""
+    include: [String!]
+  ): UpGroup!
 }
 
 """

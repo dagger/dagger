@@ -155,4 +155,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (string)$this->queryLeaf($leafQueryBuilder, 'path');
     }
+
+    /**
+     * Return all services from modules loaded in the workspace.
+     */
+    public function services(?array $include = null): UpGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

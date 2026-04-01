@@ -311,6 +311,16 @@ class TypeDefID(Scalar):
     of type TypeDef."""
 
 
+class UpGroupID(Scalar):
+    """The `UpGroupID` scalar type represents an identifier for an object
+    of type UpGroup."""
+
+
+class UpID(Scalar):
+    """The `UpID` scalar type represents an identifier for an object of
+    type Up."""
+
+
 class Void(Scalar):
     """The absence of a value.  A Null Void is used as a placeholder for
     resolvers that do not return anything."""
@@ -901,6 +911,18 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asString", _args)
         return await _ctx.execute(str | None)
+
+    def as_up(self) -> "Up":
+        """Retrieve the binding value, as type Up"""
+        _args: list[Arg] = []
+        _ctx = self._select("asUp", _args)
+        return Up(_ctx)
+
+    def as_up_group(self) -> "UpGroup":
+        """Retrieve the binding value, as type UpGroup"""
+        _args: list[Arg] = []
+        _ctx = self._select("asUpGroup", _args)
+        return UpGroup(_ctx)
 
     def as_workspace(self) -> "Workspace":
         """Retrieve the binding value, as type Workspace"""
@@ -6679,6 +6701,90 @@ class Env(Type):
         _ctx = self._select("withStringOutput", _args)
         return Env(_ctx)
 
+    def with_up_group_input(
+        self,
+        name: str,
+        value: "UpGroup",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type UpGroup in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The UpGroup value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withUpGroupInput", _args)
+        return Env(_ctx)
+
+    def with_up_group_output(self, name: str, description: str) -> Self:
+        """Declare a desired UpGroup output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withUpGroupOutput", _args)
+        return Env(_ctx)
+
+    def with_up_input(
+        self,
+        name: str,
+        value: "Up",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Up in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Up value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withUpInput", _args)
+        return Env(_ctx)
+
+    def with_up_output(self, name: str, description: str) -> Self:
+        """Declare a desired Up output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withUpOutput", _args)
+        return Env(_ctx)
+
     def with_workspace(self, workspace: Directory) -> Self:
         """Returns a new environment with the provided workspace
 
@@ -7883,6 +7989,14 @@ class Function(Type):
             Arg("sourceMap", source_map),
         ]
         _ctx = self._select("withSourceMap", _args)
+        return Function(_ctx)
+
+    def with_up(self) -> Self:
+        """Returns the function with a flag indicating it returns a service for
+        dagger up.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withUp", _args)
         return Function(_ctx)
 
     def with_(self, cb: Callable[["Function"], "Function"]) -> "Function":
@@ -10610,6 +10724,28 @@ class Module(Type):
         _ctx = self._select("serve", _args)
         await _ctx.execute()
 
+    def services(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> "UpGroup":
+        """Return all services defined by the module
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        include:
+            Only include services matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("services", _args)
+        return UpGroup(_ctx)
+
     def source(self) -> "ModuleSource":
         """The source for the module."""
         _args: list[Arg] = []
@@ -12701,6 +12837,22 @@ class Query(Root):
         _ctx = self._select("loadTypeDefFromID", _args)
         return TypeDef(_ctx)
 
+    def load_up_from_id(self, id: UpID) -> "Up":
+        """Load a Up from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadUpFromID", _args)
+        return Up(_ctx)
+
+    def load_up_group_from_id(self, id: UpGroupID) -> "UpGroup":
+        """Load a UpGroup from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadUpGroupFromID", _args)
+        return UpGroup(_ctx)
+
     def load_workspace_from_id(self, id: WorkspaceID) -> "Workspace":
         """Load a Workspace from its ID."""
         _args = [
@@ -14227,6 +14379,161 @@ class TypeDef(Type):
 
 
 @typecheck
+class Up(Type):
+    async def description(self) -> str:
+        """The description of the service
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> UpID:
+        """A unique identifier for this Up.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        UpID
+            The `UpID` scalar type represents an identifier for an object of
+            type Up.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(UpID)
+
+    async def name(self) -> str:
+        """Return the fully qualified name of the service
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def original_module(self) -> Module:
+        """The original module in which the service has been defined"""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The path of the service within its module
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+    def run(self) -> Self:
+        """Execute the service function"""
+        _args: list[Arg] = []
+        _ctx = self._select("run", _args)
+        return Up(_ctx)
+
+    def with_(self, cb: Callable[["Up"], "Up"]) -> "Up":
+        """Call the provided callable with current Up.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
+class UpGroup(Type):
+    async def id(self) -> UpGroupID:
+        """A unique identifier for this UpGroup.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        UpGroupID
+            The `UpGroupID` scalar type represents an identifier for an object
+            of type UpGroup.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(UpGroupID)
+
+    async def list_(self) -> list[Up]:
+        """Return a list of individual services and their details"""
+        _args: list[Arg] = []
+        _ctx = self._select("list", _args)
+        return await _ctx.execute_object_list(Up)
+
+    def run(self) -> Self:
+        """Execute all selected service functions"""
+        _args: list[Arg] = []
+        _ctx = self._select("run", _args)
+        return UpGroup(_ctx)
+
+    def with_(self, cb: Callable[["UpGroup"], "UpGroup"]) -> "UpGroup":
+        """Call the provided callable with current UpGroup.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory."""
 
@@ -14515,6 +14822,24 @@ class Workspace(Type):
         _ctx = self._select("path", _args)
         return await _ctx.execute(str)
 
+    def services(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> UpGroup:
+        """Return all services from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include services matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("services", _args)
+        return UpGroup(_ctx)
+
 
 class Client(Query):
     """The Dagger client.
@@ -14662,6 +14987,10 @@ __all__ = [
     "TypeDef",
     "TypeDefID",
     "TypeDefKind",
+    "Up",
+    "UpGroup",
+    "UpGroupID",
+    "UpID",
     "Void",
     "Workspace",
     "WorkspaceID",
