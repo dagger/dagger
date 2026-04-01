@@ -340,7 +340,6 @@ def is_self_chainable(t: GraphQLObjectType) -> bool:
 
 def is_id_type(
     t: GraphQLType,
-    known_ids: Container[IDName] | None = None,
 ) -> TypeGuard[GraphQLScalarType]:
     t = get_named_type(t)
     if not is_scalar_type(t):
@@ -348,22 +347,9 @@ def is_id_type(
     return t.name == "ID"
 
 
-def type_from_id(t: GraphQLType) -> TypeName | None:
-    """Return the type name for the given id type name."""
-    # With unified IDs, type_from_id no longer works from the type alone.
-    # Use expected_type_name() to get the type from @expectedType directive.
-    return None
-
-
 def id_from_type(t: GraphQLType) -> IDName | None:
     """Return the id type name for the given type name."""
     return "ID" if is_id_type(t) else None
-
-
-def id_query_field(t: GraphQLType) -> FieldName | None:
-    """Get the field name under Query that returns the given id type."""
-    # No longer derivable from the type alone.
-    return None
 
 
 def expected_type_name(
@@ -630,10 +616,15 @@ class _ObjectField:
         # ...     async def start(self) -> Self: ...
         #
         self.convert_id = False
-        if name != "id" and is_id_type(field.type) and self.is_leaf:
-            if self.expected_type and self.parent_name == self.expected_type:
-                self.type = self.expected_type
-                self.convert_id = True
+        if (
+            name != "id"
+            and is_id_type(field.type)
+            and self.is_leaf
+            and self.expected_type
+            and self.parent_name == self.expected_type
+        ):
+            self.type = self.expected_type
+            self.convert_id = True
 
         self.is_sync = self.convert_id and self.name == "sync"
 
@@ -708,10 +699,16 @@ class _ObjectField:
 
         if not self.is_exec:
             # Use the concrete client class for interface types
-            inst_type = f"_{self.type}Client" if is_interface_type(self.named_type) else self.type
+            if is_interface_type(self.named_type):
+                inst_type = f"_{self.type}Client"
+            else:
+                inst_type = self.type
             yield f"return {inst_type}(_ctx)"
         elif self.is_list:
-            inst_type = f"_{self.named_type.name}Client" if is_interface_type(self.named_type) else self.named_type.name
+            if is_interface_type(self.named_type):
+                inst_type = f"_{self.named_type.name}Client"
+            else:
+                inst_type = self.named_type.name
             yield f"return await _ctx.execute_object_list({inst_type})"
         elif self.is_void:
             yield "await _ctx.execute()"
@@ -893,8 +890,11 @@ class Input(ObjectHandler[GraphQLInputObjectType]):
 
 @dataclass
 class InterfaceProtocol(Handler[GraphQLInterfaceType]):
-    """Generate @runtime_checkable Protocol classes for GraphQL interfaces,
-    plus a concrete _FooClient(Type) class for query builder instantiation."""
+    """Generate Protocol classes for GraphQL interfaces.
+
+    Generates @runtime_checkable Protocol classes and a concrete
+    _FooClient(Type) class for query builder instantiation.
+    """
 
     predicate: ClassVar[Predicate] = staticmethod(is_interface_type)
 
@@ -915,18 +915,18 @@ class InterfaceProtocol(Handler[GraphQLInterfaceType]):
         # Second: a concrete client class for query builder instantiation
         client_name = f"_{t.name}Client"
         yield ""
-        yield f"@typecheck"
+        yield "@typecheck"
         yield f"class {client_name}(Type):"
         yield indent(f'"""Concrete client for {t.name} interface."""')
         yield ""
         # Override _graphql_name to return the interface name
         yield indent("@classmethod")
-        yield indent(f"def _graphql_name(cls) -> str:")
+        yield indent("def _graphql_name(cls) -> str:")
         yield indent(indent(f'return "{t.name}"'))
 
         # Generate method implementations using the Object handler's field rendering
-        for name, field in sorted(t.fields.items()):
-            obj_field = _ObjectField(self.ctx, name, field, t)
+        for name, ifield in sorted(t.fields.items()):
+            obj_field = _ObjectField(self.ctx, name, ifield, t)
             yield indent(str(obj_field))
 
         yield ""
@@ -936,12 +936,12 @@ class InterfaceProtocol(Handler[GraphQLInterfaceType]):
         if t.description:
             yield from wrap(doc(t.description))
 
-        for name, field in sorted(t.fields.items()):
+        for name, ifield in sorted(t.fields.items()):
             if name == "id":
                 # id is available on all Type objects
                 continue
 
-            obj_field = _ObjectField(self.ctx, name, field, t)
+            obj_field = _ObjectField(self.ctx, name, ifield, t)
             sig = obj_field.func_signature()
             yield ""
             yield f"{sig}"

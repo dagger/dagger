@@ -4,48 +4,22 @@ import graphql
 import pytest
 from graphql import (
     GraphQLArgument as Argument,
-)
-from graphql import (
     GraphQLBoolean as Boolean,
-)
-from graphql import (
     GraphQLEnumType,
     GraphQLEnumValue,
-    GraphQLID,
-    build_schema,
-)
-from graphql import (
     GraphQLField as Field,
-)
-from graphql import (
+    GraphQLID,
     GraphQLInputField as Input,
-)
-from graphql import (
     GraphQLInputField as InputField,
-)
-from graphql import (
     GraphQLInputObjectType as InputObject,
-)
-from graphql import (
     GraphQLInt as Int,
-)
-from graphql import (
     GraphQLInterfaceType as Interface,
-)
-from graphql import (
     GraphQLList as List,
-)
-from graphql import (
     GraphQLNonNull as NonNull,
-)
-from graphql import (
     GraphQLObjectType as Object,
-)
-from graphql import (
     GraphQLScalarType as Scalar,
-)
-from graphql import (
     GraphQLString as String,
+    build_schema,
 )
 
 from codegen.generator import (
@@ -70,7 +44,10 @@ from codegen.generator import (
 
 # Schema with @expectedType directive for testing unified ID behavior.
 _EXPECTED_TYPE_SCHEMA = build_schema("""
-    directive @expectedType(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+    directive @expectedType(name: String!)
+        on FIELD_DEFINITION
+        | ARGUMENT_DEFINITION
+        | INPUT_FIELD_DEFINITION
     type Foo { sync: ID! @expectedType(name: "Foo") }
     type Secret { plaintext: String! }
     type Query {
@@ -204,7 +181,8 @@ def test_input_field_param_expected_type(ctx: Context):
     assert _InputField(ctx, "secret", required_arg).as_param() == "secret: Secret"
     # Optional: secret: ID @expectedType(name: "Secret")
     optional_arg = query_type.fields["fn2"].args["secret"]
-    assert _InputField(ctx, "secret", optional_arg).as_param() == "secret: Secret | None = None"
+    result = _InputField(ctx, "secret", optional_arg).as_param()
+    assert result == "secret: Secret | None = None"
 
 
 @pytest.mark.parametrize(
