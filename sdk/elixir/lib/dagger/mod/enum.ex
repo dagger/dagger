@@ -14,14 +14,13 @@ defmodule Dagger.Mod.Enum do
     functions = Enum.map(values, &defenum/1)
 
     atoms =
-      Enum.map(values, fn v ->
+      Enum.map_join(values, "|", fn v ->
         case v do
           {k, _v} when is_atom(k) -> k
           k when is_atom(k) -> k
         end
         |> Macro.to_string()
       end)
-      |> Enum.join(" | ")
 
     {:ok, ast_type} = Code.string_to_quoted("@type t() :: #{atoms}")
 
