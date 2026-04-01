@@ -13,7 +13,8 @@ import (
 
 // Up represents a service function decorated with +up
 type Up struct {
-	Node *ModTreeNode `json:"node"`
+	Node         *ModTreeNode  `json:"node"`
+	PortMappings []PortForward `json:"portMappings,omitempty"`
 }
 
 type UpGroup struct {
@@ -63,7 +64,7 @@ func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 	jobs := parallel.New().WithContextualTracer(true)
 	for _, up := range ug.Ups {
 		jobs = jobs.WithJob(up.Name(), func(ctx context.Context) error {
-			return up.Node.RunUp(ctx, nil, nil)
+			return up.Node.RunUp(ctx, nil, nil, up.PortMappings)
 		})
 	}
 	if err := jobs.Run(ctx); err != nil {
@@ -93,6 +94,24 @@ func (ug *UpGroup) checkPortCollisions(ctx context.Context) error {
 	jobs := parallel.New().WithContextualTracer(true)
 	for _, up := range ug.Ups {
 		jobs = jobs.WithJob(up.Name()+":preflight", func(ctx context.Context) error {
+			// If port mappings are configured, use the frontend (host) ports
+			// for collision detection instead of the container ports.
+			if len(up.PortMappings) > 0 {
+				mu.Lock()
+				defer mu.Unlock()
+				for _, pf := range up.PortMappings {
+					hostPort := pf.Backend
+					if pf.Frontend != nil {
+						hostPort = *pf.Frontend
+					}
+					allPorts = append(allPorts, servicePort{
+						name: up.Name(),
+						port: portKey{port: hostPort, protocol: pf.Protocol},
+					})
+				}
+				return nil
+			}
+
 			var svcResult dagql.ObjectResult[*Service]
 			if err := up.Node.DagqlValue(ctx, &svcResult); err != nil {
 				return err
@@ -179,6 +198,6 @@ func (u *Up) Clone() *Up {
 // Run starts the service returned by this up function.
 func (u *Up) Run(ctx context.Context) (*Up, error) {
 	u = u.Clone()
-	err := u.Node.RunUp(ctx, nil, nil)
+	err := u.Node.RunUp(ctx, nil, nil, u.PortMappings)
 	return u, err
 }

@@ -112,6 +112,16 @@
           },
           "type": "array",
           "description": "IgnoreServices is a list of service (up) patterns to exclude from this toolchain. Patterns can use glob syntax to match service names."
+        },
+        "portMappings": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object",
+          "description": "PortMappings maps service names to port forwarding rules. Keys are service names (e.g. \"web\", \"infra:database\"). Values are arrays of \"hostPort:containerPort\" strings (e.g. [\"3000:80\"])."
         }
       },
       "additionalProperties": false,

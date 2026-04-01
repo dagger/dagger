@@ -513,6 +513,36 @@ func (s *workspaceSchema) services(
 		allUps = append(allUps, filtered...)
 	}
 
+	// Resolve port mappings from toolchain config.
+	for _, mod := range mods {
+		if !mod.Source.Valid {
+			continue
+		}
+		src := mod.Source.Value.Self()
+		if src == nil {
+			continue
+		}
+		for _, cfg := range src.ConfigToolchains {
+			if len(cfg.PortMappings) == 0 {
+				continue
+			}
+			for _, up := range allUps {
+				for svcName, rawMappings := range cfg.PortMappings {
+					fullPath := cfg.Name + ":" + svcName
+					if up.Name() == fullPath {
+						for _, raw := range rawMappings {
+							pf, err := core.ParsePortMapping(raw)
+							if err != nil {
+								return nil, fmt.Errorf("port mapping for %q: %w", fullPath, err)
+							}
+							up.PortMappings = append(up.PortMappings, pf)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return &core.UpGroup{Ups: allUps}, nil
 }
 
