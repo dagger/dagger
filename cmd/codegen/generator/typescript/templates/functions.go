@@ -92,7 +92,7 @@ func (funcs typescriptTemplateFuncs) isInterface(t *introspection.Type) bool {
 // using @expectedType directive for ID scalars.
 func (funcs typescriptTemplateFuncs) formatArgType(
 	commonFunc *generator.CommonFunctions,
-	ff *FormatTypeFunc,
+	_ *FormatTypeFunc,
 ) func(arg introspection.InputValue, scopes ...string) (string, error) {
 	return func(arg introspection.InputValue, scopes ...string) (string, error) {
 		expectedType := arg.Directives.ExpectedType()
@@ -123,7 +123,7 @@ func (funcs typescriptTemplateFuncs) formatArgType(
 // using @expectedType directive for ID scalars (e.g. sync fields).
 func (funcs typescriptTemplateFuncs) formatFieldReturnType(
 	commonFunc *generator.CommonFunctions,
-	ff *FormatTypeFunc,
+	_ *FormatTypeFunc,
 ) func(field introspection.Field, scopes ...string) (string, error) {
 	return func(field introspection.Field, scopes ...string) (string, error) {
 		expectedType := field.Directives.ExpectedType()

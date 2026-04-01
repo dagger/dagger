@@ -78,17 +78,17 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"CheckVersionCompatibility": funcs.CheckVersionCompatibility,
 
 		// arg formatting with directive support
-		"FormatArgType":           funcs.formatArgType,
+		"FormatArgType": funcs.formatArgType,
 
 		// interface support
-		"IsInterfaceType":         funcs.isInterfaceType,
-		"IsInterfaceRef":          funcs.isInterfaceRef,
-		"IsListOfInterface":       funcs.isListOfInterface,
-		"InterfaceClientName":     funcs.interfaceClientName,
-		"PossibleTypes":           funcs.possibleTypes,
-		"ImplementedInterfaces":   funcs.implementedInterfaces,
+		"IsInterfaceType":          funcs.isInterfaceType,
+		"IsInterfaceRef":           funcs.isInterfaceRef,
+		"IsListOfInterface":        funcs.isListOfInterface,
+		"InterfaceClientName":      funcs.interfaceClientName,
+		"PossibleTypes":            funcs.possibleTypes,
+		"ImplementedInterfaces":    funcs.implementedInterfaces,
 		"InterfaceMethodSignature": funcs.interfaceMethodSignature,
-		"InterfaceClientMethod":   funcs.interfaceClientMethod,
+		"InterfaceClientMethod":    funcs.interfaceClientMethod,
 
 		// go specific
 		"Comment":                 funcs.comment,

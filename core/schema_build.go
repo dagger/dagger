@@ -37,20 +37,40 @@ func buildSchema(
 
 	dagintro.Install[*Query](dag)
 
+	objects, ifaces, err := installModules(ctx, dag, mods)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := registerInterfaceImpls(dag, objects, ifaces); err != nil {
+		return nil, err
+	}
+
+	registerInterfaceToInterfaceImpls(dag, ifaces)
+
+	return dag, nil
+}
+
+// installModules installs each module into the server and collects object/interface type defs.
+func installModules(
+	ctx context.Context,
+	dag *dagql.Server,
+	mods []modInstall,
+) ([]*ModuleObjectType, []*InterfaceType, error) {
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
 	for _, m := range mods {
 		mod := m.mod
 		err := mod.Install(ctx, dag, m.opts)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
+			return nil, nil, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
 
 		// TODO support core interfaces types
 		if userMod, ok := mod.(*Module); ok {
 			defs, err := mod.TypeDefs(ctx, dag)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
+				return nil, nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
 			}
 			for _, def := range defs {
 				switch def.Kind {
@@ -68,65 +88,90 @@ func buildSchema(
 			}
 		}
 	}
+	return objects, ifaces, nil
+}
 
-	// Register interface implementations.
+// makeImplementsChecker returns a function that checks whether a type implements an interface,
+// considering both object-implements-interface and interface-satisfies-interface relationships.
+func makeImplementsChecker(
+	dag *dagql.Server,
+	objects []*ModuleObjectType,
+	ifaces []*InterfaceType,
+) func(typeName, ifaceName string) bool {
+	return func(typeName, ifaceName string) bool {
+		// Check if typeName (an object) implements ifaceName (an interface).
+		for _, ot := range objects {
+			if ot.typeDef.Name == typeName {
+				for _, it := range ifaces {
+					if it.typeDef.Name == ifaceName {
+						return ot.typeDef.IsSubtypeOf(it.typeDef)
+					}
+				}
+			}
+		}
+		// Check if typeName is an interface that structurally satisfies ifaceName.
+		// This handles cases like ImplLocalOtherIface satisfying TestOtherIface.
+		typeIface, typeOK := dag.InterfaceType(typeName)
+		targetIface, targetOK := dag.InterfaceType(ifaceName)
+		if typeOK && targetOK {
+			// Check that all fields in targetIface exist in typeIface
+			// with compatible types (recursive checker).
+			for _, targetField := range targetIface.FieldSpecs(dag.View) {
+				typeField, ok := typeIface.FieldSpec(targetField.Name, dag.View)
+				if !ok {
+					return false
+				}
+				// Simple name match for now (exact types).
+				if targetField.Type.Type().Name() != typeField.Type.Type().Name() {
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+}
+
+// registerInterfaceImpls registers object types as implementations of interfaces they satisfy.
+func registerInterfaceImpls(
+	dag *dagql.Server,
+	objects []*ModuleObjectType,
+	ifaces []*InterfaceType,
+) error {
+	checker := makeImplementsChecker(dag, objects, ifaces)
 	for _, objType := range objects {
 		obj := objType.typeDef
 		class, found := dag.ObjectType(obj.Name)
 		if !found {
-			return nil, fmt.Errorf("failed to find object %q in schema", obj.Name)
+			return fmt.Errorf("failed to find object %q in schema", obj.Name)
 		}
 		for _, ifaceType := range ifaces {
 			iface := ifaceType.typeDef
 			if !obj.IsSubtypeOf(iface) {
 				continue
 			}
-
 			dagqlIface, ok := dag.InterfaceType(iface.Name)
-			if ok {
-				if impl, ok := class.(dagql.InterfaceImplementor); ok {
-					checker := func(typeName, ifaceName string) bool {
-						// Check if typeName (an object) implements ifaceName (an interface).
-						for _, ot := range objects {
-							if ot.typeDef.Name == typeName {
-								for _, it := range ifaces {
-									if it.typeDef.Name == ifaceName {
-										return ot.typeDef.IsSubtypeOf(it.typeDef)
-									}
-								}
-							}
-						}
-						// Check if typeName is an interface that structurally satisfies ifaceName.
-						// This handles cases like ImplLocalOtherIface satisfying TestOtherIface.
-						typeIface, typeOK := dag.InterfaceType(typeName)
-						targetIface, targetOK := dag.InterfaceType(ifaceName)
-						if typeOK && targetOK {
-							// Check that all fields in targetIface exist in typeIface
-							// with compatible types (recursive checker).
-							for _, targetField := range targetIface.FieldSpecs(dag.View) {
-								typeField, ok := typeIface.FieldSpec(targetField.Name, dag.View)
-								if !ok {
-									return false
-								}
-								// Simple name match for now (exact types).
-								if targetField.Type.Type().Name() != typeField.Type.Type().Name() {
-									return false
-								}
-							}
-							return true
-						}
-						return false
-					}
-					if dagqlIface.Satisfies(class, dag.View, checker) {
-						impl.ImplementInterfaceUnchecked(dagqlIface)
-					}
-				}
+			if !ok {
+				continue
+			}
+			impl, ok := class.(dagql.InterfaceImplementor)
+			if !ok {
+				continue
+			}
+			if dagqlIface.Satisfies(class, dag.View, checker) {
+				impl.ImplementInterfaceUnchecked(dagqlIface)
 			}
 		}
 	}
+	return nil
+}
 
-	// Register interface-implements-interface relationships (duck typing).
-	// If interface A structurally satisfies interface B, declare A implements B.
+// registerInterfaceToInterfaceImpls registers interface-implements-interface
+// relationships via duck typing.
+func registerInterfaceToInterfaceImpls(
+	dag *dagql.Server,
+	ifaces []*InterfaceType,
+) {
 	for _, ifaceTypeA := range ifaces {
 		dagqlIfaceA, okA := dag.InterfaceType(ifaceTypeA.typeDef.Name)
 		if !okA {
@@ -140,7 +185,6 @@ func buildSchema(
 			if !okB {
 				continue
 			}
-			// Check that all fields in B exist in A with compatible types.
 			// Avoid circular references: don't declare A implements B if B already implements A.
 			if _, alreadyReverse := dagqlIfaceB.Interfaces()[dagqlIfaceA.TypeName()]; alreadyReverse {
 				continue
@@ -150,8 +194,6 @@ func buildSchema(
 			}
 		}
 	}
-
-	return dag, nil
 }
 
 // schemaJSONFileFromServer generates an introspection JSON file from an
