@@ -33,6 +33,9 @@ type Action {
   """Actions that must complete before this one runs."""
   after: [ActionID!]!
 
+  """Return a new Action with additional ordering dependencies."""
+  withAfter(actions: [ActionID!]!): Action!
+
   """Execute this action."""
   run: Void
 }
@@ -223,8 +226,13 @@ Policy should refine orchestration, not redefine the core meaning of a verb.
 `Plan.run` and `Action.run` return void. Structured per-action results for
 CI/programmatic consumers are a known extension point.
 
+## Locked Decisions
+
+- **`Action.withAfter` is part of the public API.** The engine uses it
+  internally during plan compilation, and users can use it to build custom
+  plans. This avoids a separate "engine-only" construction path and ensures
+  the public API is self-sufficient from day one.
+
 ## Open Questions
 
 1. Exact transition path from CheckGroup to Plan.
-2. Whether Action needs `withAfter(actions: [ActionID!]): Action!` for
-   building custom plans, or if dependencies are always set by the engine.

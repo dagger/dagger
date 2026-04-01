@@ -596,3 +596,9 @@ door.
 - [x] Check and generator traversal now apply collection-aware filters, batch shadowing, and raw filter-value listing
 - [x] Go, TypeScript, Python, and Java module authoring paths now register collection backing objects and explicit keys/get overrides
 - [x] Integration coverage now exercises explicit collection traversal in `dagger call` and generated Go and TypeScript clients over the projected `keys` / `list` / `get` / `subset` / `batch` surface
+
+## Open Questions
+
+1. Exact rules for automatic column disambiguation when non-collection fields
+   create ambiguous paths. (Moved here from artifacts.md — only relevant once
+   collections land as dimension providers.)

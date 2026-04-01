@@ -87,11 +87,25 @@ type ArtifactDimension {
 
 """One artifact in the workspace."""
 type Artifact {
-  """This artifact's key within its immediate collection."""
-  key: String!
+  """
+  Ordered coordinate path from the outermost dimension in scope to this
+  artifact. The last element is the artifact's own position; preceding
+  elements trace the path through enclosing dimensions.
 
-  """Ancestor collection coordinates tracing the path from root."""
-  ancestors: [ArtifactCoordinate!]!
+  Coordinates are scope-relative: which dimensions appear depends on the
+  current Artifacts scope. A dimension that is pinned by filters or trivial
+  (only one value exists) may be elided. Coordinates are guaranteed unique
+  within the artifact's scope, but not necessarily unique in a broader scope
+  with fewer filters applied.
+  """
+  coordinates: [ArtifactCoordinate!]!
+
+  """
+  The Artifacts scope that produced this artifact. Coordinates are unique
+  within this scope. Use to navigate back to siblings, inspect which
+  dimensions and filters are active, or further narrow the view.
+  """
+  scope: Artifacts!
 
   """Fields on the underlying object, for inspection."""
   fields: [FieldValue!]!
@@ -191,8 +205,9 @@ dagger check \
 
 ## Open Questions
 
-1. Exact rules for automatic column disambiguation when non-collection fields
-   create ambiguous paths.
+1. ~~Exact rules for automatic column disambiguation when non-collection fields
+   create ambiguous paths.~~ → Moved to [collections.md](./collections.md)
+   open questions. Not relevant until collections land as dimension providers.
 2. How cross-artifact reference ordering interacts with the filter system.
 3. Whether schema-path notation (`go:lint`) should be deprecated in favor of
    typed filters.
