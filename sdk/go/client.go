@@ -126,6 +126,11 @@ func (c *Client) GraphQLClient() graphql.Client {
 	return c.client
 }
 
+// GraphQLSelection returns the root query selection.
+func (c *Client) GraphQLSelection() *querybuilder.Selection {
+	return c.query
+}
+
 func (c *Client) QueryBuilder() *querybuilder.Selection {
 	return c.Query.query
 }

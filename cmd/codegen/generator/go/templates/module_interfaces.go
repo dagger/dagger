@@ -332,7 +332,7 @@ The UnmarshalJSON method attached to the concrete implementation of the interfac
 		if err != nil {
 			return err
 		}
-		*r = customIfaceImpl{query: dag.query.Select("node").Arg("id", id)}
+		*r = customIfaceImpl{query: dagger.SelectNode(dag.GraphQLSelection(), id, "CustomIface")}
 		return nil
 	}
 */
@@ -346,7 +346,7 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("id"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
 			g.Op("*").Id("r").Op("=").Id(spec.concreteStructName()).Values(Dict{
-				Id("query"): Id("dag").Dot("query").Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")),
+				Id("query"): Id("dagger").Dot("SelectNode").Call(Id("dag").Dot("GraphQLSelection").Call(), Id("id"), Lit(spec.name)),
 			})
 			g.Return(Nil())
 		})
@@ -521,7 +521,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 						id := idResult.Id
 
 						results = append(results, &dagger.Directory{
-							query:  q.query.Root().Select("node").Arg("id", id),
+							query:  dagger.SelectNode(q.query.Root(), id, "Directory"),
 						})
 					}
 					return results, nil
@@ -545,7 +545,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Var().Id("results").Index().Add(underlyingReturnTypeCode).Line()
 			s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
 				g.Id("id").Op(":=").Id("idResult").Dot("Id")
-				query := Id("r").Dot("query").Dot("Root").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id"))
+				query := Id("dagger").Dot("SelectNode").Call(Id("r").Dot("query").Dot("Root").Call(), Id("id"), Lit(underlyingReturnType.Name()))
 				g.Id("results").Op("=").Append(Id("results"), Params(Op("&").Add(underlyingImplTypeCode).Values()).Dot("WithGraphQLQuery").Call(query))
 			}).Line()
 

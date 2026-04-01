@@ -15350,6 +15350,12 @@ const (
 	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
 )
 
+// selectNode returns a query selection for node(id:) scoped to the
+// given type via an inline fragment.
+func SelectNode(q *querybuilder.Selection, id any, typeName string) *querybuilder.Selection {
+	return q.Select("node").Arg("id", id).InlineFragment(typeName)
+}
+
 // Loadable is the constraint for types that can be loaded by ID.
 // Every generated object and interface client type satisfies this.
 type Loadable[T any] interface {
@@ -15364,11 +15370,11 @@ func Load[T Loadable[T]](ctx context.Context, c *Client, id ID) (T, error) {
 	var zero T
 	expectedType := zero.XXX_GraphQLType()
 
-	q := c.query.Select("node").Arg("id", id)
+	nodeQ := c.query.Select("node").Arg("id", id)
 
 	// Query __typename to verify the type.
 	var typeName string
-	if err := q.Select("__typename").Bind(&typeName).Execute(ctx); err != nil {
+	if err := nodeQ.Select("__typename").Bind(&typeName).Execute(ctx); err != nil {
 		return zero, fmt.Errorf("load %s: %w", expectedType, err)
 	}
 	if typeName == "" {
@@ -15378,5 +15384,7 @@ func Load[T Loadable[T]](ctx context.Context, c *Client, id ID) (T, error) {
 		return zero, fmt.Errorf("load %s: ID refers to a %s", expectedType, typeName)
 	}
 
-	return zero.WithGraphQLQuery(q), nil
+	// Use an inline fragment so subsequent selections are scoped to the
+	// concrete type: node(id: "...") { ... on Container { platform } }
+	return zero.WithGraphQLQuery(SelectNode(c.query, id, expectedType)), nil
 }

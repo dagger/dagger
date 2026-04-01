@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 
 	gqlgen "github.com/99designs/gqlgen/graphql"
@@ -37,11 +38,14 @@ type enum interface {
 }
 
 var (
-	gqlMarshaller = reflect.TypeOf((*GraphQLMarshaller)(nil)).Elem()
-	enumT         = reflect.TypeOf((*enum)(nil)).Elem()
+	gqlMarshaller = reflect.TypeFor[GraphQLMarshaller]()
+	enumT         = reflect.TypeFor[enum]()
 )
 
 func MarshalGQL(ctx context.Context, v any) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
 	return marshalValue(ctx, reflect.ValueOf(v))
 }
 
@@ -50,6 +54,10 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 
 	if t.Implements(gqlMarshaller) {
 		return marshalCustom(ctx, v)
+	}
+
+	if t.Implements(enumT) {
+		return marshalEnumName(v), nil
 	}
 
 	switch t.Kind() {
@@ -78,8 +86,7 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		n := v.Len()
 		elems := make([]string, n)
 		eg, gctx := errgroup.WithContext(ctx)
-		for i := 0; i < n; i++ {
-			i := i
+		for i := range n {
 			eg.Go(func() error {
 				m, err := marshalValue(gctx, v.Index(i))
 				if err != nil {
@@ -97,8 +104,7 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		n := v.NumField()
 		elems := make([]string, n)
 		eg, gctx := errgroup.WithContext(ctx)
-		for i := 0; i < n; i++ {
-			i := i
+		for i := range n {
 			eg.Go(func() error {
 				f := t.Field(i)
 				fv := v.Field(i)
@@ -131,6 +137,17 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 			}
 		}
 		return fmt.Sprintf("{%s}", strings.Join(nonNullElems, ",")), nil
+	case reflect.Map:
+		elems := make([]string, 0, v.Len())
+		for _, key := range v.MapKeys() {
+			m, err := marshalValue(ctx, v.MapIndex(key))
+			if err != nil {
+				return "", err
+			}
+			elems = append(elems, fmt.Sprintf("%s:%s", key, m))
+		}
+		sort.Strings(elems)
+		return fmt.Sprintf("{%s}", strings.Join(elems, ",")), nil
 	default:
 		return "", fmt.Errorf("unsupported argument of kind %s", t.Kind())
 	}

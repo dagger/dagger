@@ -117,7 +117,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 		return nil, err
 	}
 	return &{{ $field.ParentObject.Name }} {
-		query: q.Root().Select("node").Arg("id", id),
+		query: SelectNode(q.Root(), id, "{{ $field.ParentObject.Name }}"),
 	}, nil
 
 	{{- else if IsInterfaceRef $field.TypeRef }}
@@ -147,7 +147,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	var results {{ $field.TypeRef | FormatOutputType }}
 	for _, idResult := range idResults {
 		results = append(results, &{{ $eleType | ObjectName | InterfaceClientName }}{
-			query: q.Root().Select("node").Arg("id", idResult.Id),
+			query: SelectNode(q.Root(), idResult.Id, "{{ $eleType | ObjectName }}"),
 		})
 	}
 	return results, nil
@@ -169,7 +169,7 @@ type {{ $field | FieldOptionsStructName }} struct {
         for i := range fields {
             val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
             {{- if $eleType | IsIDableObject }}
-              val.query = q.Root().Select("node").Arg("id", fields[i].Id)
+              val.query = SelectNode(q.Root(), fields[i].Id, "{{$eleType | ObjectName}}")
             {{- end }}
             out = append(out, val)
         }
@@ -234,7 +234,7 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
   if err != nil {
     return err
   }
-  *r = {{ $.Name | FormatName }}{query: dag.query.Select("node").Arg("id", id)}
+  *r = {{ $.Name | FormatName }}{query: SelectNode(dag.query, id, "{{ $.Name }}")}
   return nil
 }
 {{- end }}
