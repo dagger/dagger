@@ -15,6 +15,8 @@ pub fn render_object(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust
     let graphql_client = rust::import("crate::core::graphql_client", "DynGraphQLClient");
     let arc = rust::import("std::sync", "Arc");
 
+    let into_id_impl = render_into_id_impl(t);
+
     Ok(quote! {
         #[derive(Clone)]
         pub struct $(t.name.pipe(|s| format_name(s))) {
@@ -25,8 +27,31 @@ pub fn render_object(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust
 
         $(t.fields.pipe(|f| render_optional_args(funcs, f)))
 
+        $into_id_impl
+
         impl $(t.name.pipe(|s| format_name(s))) {
             $(t.fields.pipe(|f| render_functions(funcs, f)))
+        }
+    })
+}
+
+fn render_into_id_impl(t: &FullType) -> Option<rust::Tokens> {
+    let has_id_field = t.fields.as_ref().map_or(false, |fields| {
+        fields.iter().any(|f| f.name.as_deref() == Some("id"))
+    });
+
+    if !has_id_field {
+        return None;
+    }
+
+    let into_id = rust::import("crate::id", "IntoID");
+    let name = t.name.pipe(|s| format_name(s));
+
+    Some(quote! {
+        impl $into_id<Id> for $name {
+            fn into_id(self) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+                Box::pin(async move { self.id().await })
+            }
         }
     })
 }

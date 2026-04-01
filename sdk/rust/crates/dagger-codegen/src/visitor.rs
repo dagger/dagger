@@ -35,7 +35,6 @@ impl Visitor {
                     "Int".into(),
                     "Boolean".into(),
                     "DateTime".into(),
-                    "ID".into(),
                 ]),
             },
             SequenceItem {
