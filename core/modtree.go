@@ -659,6 +659,12 @@ func (node *ModTreeNode) PathString() string {
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)
 
 func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
+	return node.walk(ctx, fn, make(map[string]bool))
+}
+
+func (node *ModTreeNode) walk(ctx context.Context, fn WalkFunc, visiting map[string]bool) error {
+	// The callback is always called so that leaves (checks, services, etc.)
+	// are always discovered regardless of cycle state.
 	enter, err := fn(ctx, node)
 	if err != nil {
 		return err
@@ -666,12 +672,29 @@ func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	if !enter {
 		return nil
 	}
+
+	// Cycle detection: if this node's object type has already been seen
+	// along the current path, don't descend into its children.
+	// This prevents infinite recursion when e.g. Service.start() returns
+	// Service, which has start(), which returns Service, etc.
+	var typeName string
+	if obj := node.ObjectType(); obj != nil {
+		typeName = obj.Name
+	}
+	if typeName != "" {
+		if visiting[typeName] {
+			return nil
+		}
+		visiting[typeName] = true
+		defer delete(visiting, typeName)
+	}
+
 	children, err := node.Children(ctx)
 	if err != nil {
 		return err
 	}
 	for _, child := range children {
-		if err := child.Walk(ctx, fn); err != nil {
+		if err := child.walk(ctx, fn, visiting); err != nil {
 			return err
 		}
 	}
