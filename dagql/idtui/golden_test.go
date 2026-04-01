@@ -32,6 +32,8 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/util/scrub"
 	"github.com/dagger/testctx"
@@ -39,6 +41,29 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	ctx := context.Background()
+
+	if _, err := dag.Cli().Binary().Export(ctx, "/.dagger-cli"); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to export CLI binary: %v\n", err)
+		os.Exit(1)
+	}
+	os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", "/.dagger-cli")
+
+	engineSvc, err := dag.EngineDev().TestEngine().Start(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to start test engine: %v\n", err)
+		os.Exit(1)
+	}
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to get engine endpoint: %v\n", err)
+		os.Exit(1)
+	}
+	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
+
+	os.Unsetenv("DAGGER_SESSION_PORT")
+	os.Unsetenv("DAGGER_SESSION_TOKEN")
+
 	os.Exit(oteltest.Main(m))
 }
 
