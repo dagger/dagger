@@ -23,7 +23,6 @@ use Nette\PhpGenerator\Method;
 class NewCodegenVisitor extends CodeWriter
 {
     public function __construct(
-        IntrospectionSchema $schema,
         string $targetDirectory
     ) {
         parent::__construct($targetDirectory);

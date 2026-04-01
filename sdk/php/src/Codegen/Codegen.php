@@ -18,7 +18,7 @@ class Codegen
 
     public function generate(): void
     {
-        $visitor = new NewCodegenVisitor($this->schema, $this->writeDir);
+        $visitor = new NewCodegenVisitor($this->writeDir);
 
         $filteredTypes = array_filter($this->schema->types, function (IntrospectionType $type) {
             return !str_starts_with($type->name, '_')
