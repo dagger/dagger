@@ -14515,6 +14515,26 @@ class Workspace(Type):
         _ctx = self._select("path", _args)
         return await _ctx.execute(str)
 
+    def update(self) -> Changeset:
+        """Refresh workspace-managed state and return the resulting changeset.
+
+        Currently this refreshes existing lockfile entries only.
+
+        .. caution::
+            Experimental: Experimental workspace update API currently
+            refreshes existing lockfile entries only.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("update", _args)
+        return Changeset(_ctx)
+
+
+class Client(Query):
+    """The Dagger client.
+
+    Inherits all Query API methods and adds connection management.
+    """
+
 
 class Client(Query):
     """The Dagger client.

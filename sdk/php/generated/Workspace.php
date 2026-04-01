@@ -155,4 +155,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (string)$this->queryLeaf($leafQueryBuilder, 'path');
     }
+
+    /**
+     * Refresh workspace-managed state and return the resulting changeset.
+     *
+     * Currently this refreshes existing lockfile entries only.
+     */
+    public function update(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('update');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

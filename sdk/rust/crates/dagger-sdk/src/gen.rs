@@ -14908,6 +14908,16 @@ impl Workspace {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Refresh workspace-managed state and return the resulting changeset.
+    /// Currently this refreshes existing lockfile entries only.
+    pub fn update(&self) -> Changeset {
+        let query = self.selection.select("update");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum CacheSharingMode {

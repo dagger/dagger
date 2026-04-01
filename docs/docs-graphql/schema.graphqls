@@ -5851,6 +5851,13 @@ type Workspace {
 
   """Workspace directory path relative to the workspace boundary."""
   path: String!
+
+  """
+  Refresh workspace-managed state and return the resulting changeset.
+
+  Currently this refreshes existing lockfile entries only.
+  """
+  update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
 }
 
 """
