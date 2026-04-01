@@ -342,11 +342,9 @@ Example:
 ```bash
 $ dagger check --help
   --module=<name>
-  --check=<name>
 
 $ dagger check --help
   --module=<name>
-  --check=<name>
   --go-test=<name>
 ```
 
@@ -356,7 +354,6 @@ Base Artifacts scope:
 workspace.artifacts
   .filterCheck
   .filterBy("module", ["go"])
-  .filterBy("check", ["run-test"])
 ```
 
 Expanded by a collection:
@@ -366,7 +363,6 @@ workspace.artifacts
   .filterCheck
   .filterBy("module", ["go"])
   .filterBy("go-test", ["TestFoo"])
-  .filterBy("check", ["run-test"])
 ```
 
 The base dimensions remain valid. Collections add new selector space rather
@@ -463,7 +459,8 @@ effective check set.
 
 The base selector model lives in [artifacts.md](./artifacts.md). Collections do
 not replace it. They add keyed dimensions and batch behavior on top of
-pre-existing dimensions such as `module` and `check`.
+pre-existing dimensions such as `module` and synthesized non-collection
+object-field dimensions.
 
 #### Filter Model
 

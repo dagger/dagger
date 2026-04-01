@@ -94,24 +94,25 @@ type Plan {
 
 An Action bridges artifacts and functions:
 
-- `Artifact.action("check")` → action on one artifact
-- `Artifacts.action("check")` → action on all in-scope artifacts (batch)
+- `Artifact.action("lint")` → action on one artifact
+- `Artifacts.action("lint")` → action on all in-scope artifacts (batch)
 - `Action.after` → DAG edges to other actions
 - `Action.run` → execute just this action
 
 Actions are the building blocks of Plans. A Plan is a DAG of Actions with
 "after" edges. The engine compiles verb invocations (`Artifacts.check`) into
-Plans by creating Actions with appropriate ordering.
+Plans by selecting the relevant actions from the current artifact scope and
+adding appropriate ordering.
 
 ### Example — two checks, batched
 
 ```
 workspace.artifacts
   .filterCheck
-  .filterBy("module", ["typescript-sdk"])
-  .filterBy("check", ["test-bun", "test-node-lts"])
-  .action("check")
-  # → one Action targeting the selected check scope
+  .filterBy("module", ["go"])
+  .filterBy("platforms", ["linux", "darwin"])
+  .action("run")
+  # → one Action targeting the selected platform artifacts
 ```
 
 ### Example — two checks, per-item
@@ -119,41 +120,41 @@ workspace.artifacts
 ```
 a1 = workspace.artifacts
        .filterCheck
-       .filterBy("module", ["typescript-sdk"])
-       .filterBy("check", ["test-bun"])
-       .action("check")
+       .filterBy("module", ["go"])
+       .filterBy("platforms", ["linux"])
+       .action("run")
 a2 = workspace.artifacts
        .filterCheck
-       .filterBy("module", ["typescript-sdk"])
-       .filterBy("check", ["test-node-lts"])
-       .action("check")
-# → one Action per selected check scope
+       .filterBy("module", ["go"])
+       .filterBy("platforms", ["darwin"])
+       .action("run")
+# → one Action per selected artifact
 ```
 
 ### Example — DAG with ordering
 
 ```
-lint    = artifacts.filterBy("module", ["helm"]).action("lint")
-test    = artifacts
+prepare = artifacts.filterBy("module", ["go"]).action("prepare")
+run     = artifacts
            .filterCheck
-           .filterBy("module", ["helm"])
-           .filterBy("check", ["test"])
-           .action("check")
-           # test.after = [lint.id]
-package = artifacts.filterBy("module", ["helm"]).action("package")
-           # package.after = [test.id]
+           .filterBy("module", ["go"])
+           .filterBy("platforms", ["linux"])
+           .action("run")
+           # run.after = [prepare.id]
+publish = artifacts.filterBy("module", ["go"]).action("publish")
+           # publish.after = [run.id]
 ```
 
 Rendered as a visual DAG:
 
 ```
-  lint(helm) ──▶ check(helm,test) ──▶ package(helm)
+  prepare(go) ──▶ run(go,linux) ──▶ publish(go)
 ```
 
 ## Three Phases
 
 1. **Selection.** User provides filters
-   (`--module=typescript-sdk --check=test-bun`). The CLI translates these into
+   (`--module=go --platforms=linux`). The CLI translates these into
    `filterBy` chains on `Artifacts`.
 2. **Compilation.** The engine compiles the filtered scope + verb into a Plan.
    All implicit config is materialized into concrete Actions with "after" edges.

@@ -41,8 +41,8 @@ Workspace plumbing    Lockfile                │
 
 **Main track:** Workspace plumbing → Artifacts → Execution Plans → Collections
 → Provenance. Artifacts establishes the general selector model first:
-module-level dimensions plus synthesized non-collection selector dimensions
-such as `check`. Collections plug in later as keyed dimension providers and
+module-level dimensions plus synthesized non-collection object-field selector
+dimensions. Collections plug in later as keyed dimension providers and
 batch/subset semantics on top of that base.
 
 **Config track:** Lockfile → Workspace configuration. Independent of the main
