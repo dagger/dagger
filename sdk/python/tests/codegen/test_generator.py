@@ -12,6 +12,7 @@ from graphql import (
     GraphQLEnumType,
     GraphQLEnumValue,
     GraphQLID,
+    build_schema,
 )
 from graphql import (
     GraphQLField as Field,
@@ -67,10 +68,23 @@ from codegen.generator import (
 )
 
 
+# Schema with @expectedType directive for testing unified ID behavior.
+_EXPECTED_TYPE_SCHEMA = build_schema("""
+    directive @expectedType(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+    type Foo { sync: ID! @expectedType(name: "Foo") }
+    type Secret { plaintext: String! }
+    type Query {
+        fn(secret: ID! @expectedType(name: "Secret")): String
+        fn2(secret: ID @expectedType(name: "Secret")): String
+    }
+""")
+
+
 @pytest.fixture
 def ctx():
     return Context(
-        ids=frozenset({}),
+        schema=_EXPECTED_TYPE_SCHEMA,
+        ids=frozenset({"ID"}),
         remaining={"Secret"},
     )
 
@@ -99,23 +113,23 @@ opts = InputObject(
 
 
 @pytest.mark.parametrize(
-    ("graphql", "expected"),
+    ("graphql", "expected", "expected_type"),
     [
-        (NonNull(List(NonNull(String))), "list[str]"),
-        (List(String), "list[str | None] | None"),
-        (List(NonNull(String)), "list[str] | None"),
-        (NonNull(Scalar("FileID")), "File"),
-        (Scalar("FileID"), "File | None"),
-        (NonNull(opts), "Options"),
-        (opts, "Options | None"),
-        (NonNull(List(NonNull(opts))), "list[Options]"),
-        (NonNull(List(opts)), "list[Options | None]"),
-        (List(NonNull(opts)), "list[Options] | None"),
-        (List(opts), "list[Options | None] | None"),
+        (NonNull(List(NonNull(String))), "list[str]", None),
+        (List(String), "list[str | None] | None", None),
+        (List(NonNull(String)), "list[str] | None", None),
+        (NonNull(GraphQLID), "File", "File"),
+        (GraphQLID, "File | None", "File"),
+        (NonNull(opts), "Options", None),
+        (opts, "Options | None", None),
+        (NonNull(List(NonNull(opts))), "list[Options]", None),
+        (NonNull(List(opts)), "list[Options | None]", None),
+        (List(NonNull(opts)), "list[Options] | None", None),
+        (List(opts), "list[Options | None] | None", None),
     ],
 )
-def test_format_input_type(graphql, expected):
-    assert format_input_type(graphql) == expected
+def test_format_input_type(graphql, expected, expected_type):
+    assert format_input_type(graphql, expected_type=expected_type) == expected
 
 
 cache_volume = Object(
@@ -156,8 +170,8 @@ def _(type_: graphql.GraphQLInputType, default_value: str):
     ("name", "args", "expected"),
     [
         ("args", (NonNull(List(String)),), "args: list[str | None]"),
-        ("secret", (NonNull(Scalar("SecretID")),), "secret: Secret"),
-        ("secret", (Scalar("SecretID"),), "secret: Secret | None = None"),
+        # Secret ID test cases moved to test_input_field_param_expected_type
+        # since they require @expectedType directive on the AST node.
         ("from", _(String, "null"), "from_: str | None = None"),
         ("lines", _(Int, "1"), "lines: int | None = 1"),
         (
@@ -180,6 +194,17 @@ def _(type_: graphql.GraphQLInputType, default_value: str):
 @pytest.mark.parametrize("cls", [Argument, Input])
 def test_input_field_param(cls, name: str, args, expected: str, ctx: Context):
     assert _InputField(ctx, name, cls(*args)).as_param() == expected
+
+
+def test_input_field_param_expected_type(ctx: Context):
+    """Test that ID args with @expectedType resolve to the object type name."""
+    query_type = _EXPECTED_TYPE_SCHEMA.type_map["Query"]
+    # Required: secret: ID! @expectedType(name: "Secret")
+    required_arg = query_type.fields["fn"].args["secret"]
+    assert _InputField(ctx, "secret", required_arg).as_param() == "secret: Secret"
+    # Optional: secret: ID @expectedType(name: "Secret")
+    optional_arg = query_type.fields["fn2"].args["secret"]
+    assert _InputField(ctx, "secret", optional_arg).as_param() == "secret: Secret | None = None"
 
 
 @pytest.mark.parametrize(
@@ -240,11 +265,14 @@ def test_input_object_field_deprecated():
 
 
 def test_core_sync(ctx: Context):
+    # Use the field from the parsed schema so it has the @expectedType AST node.
+    foo_type = _EXPECTED_TYPE_SCHEMA.type_map["Foo"]
+    sync_field = foo_type.fields["sync"]
     handler = _ObjectField(
         ctx,
         "sync",
-        Field(NonNull(Scalar("FooID")), {}),
-        Object("Foo", {}),
+        sync_field,
+        foo_type,
     )
 
     assert handler.func_signature() == "async def sync(self) -> Self:"
