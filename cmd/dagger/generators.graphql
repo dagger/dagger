@@ -1,5 +1,5 @@
 query GeneratorGroupListDetails($id: ID!) {
-  group: loadGeneratorGroupFromID(id: $id) {
+  group: node(id: $id) {
     list {
       name
       description

@@ -1,5 +1,5 @@
 query ModuleConfig($source: ID!) {
-  source: loadModuleSourceFromID(id: $source) {
+  source: node(id: $source) {
     kind
     digest
     asString

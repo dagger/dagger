@@ -785,7 +785,7 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 		if modType, ok := fieldType.(*dang.Module); ok && modType != dang.StringType {
 			sel := &dang.FunCall{
 				Fun: &dang.Select{
-					Field: &dang.Symbol{Name: fmt.Sprintf("load%sFromID", modType.Named)},
+					Field: &dang.Symbol{Name: "node"},
 				},
 				Args: dang.Record{
 					dang.Keyed[dang.Node]{

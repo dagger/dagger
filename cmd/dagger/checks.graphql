@@ -1,5 +1,5 @@
 query CheckGroupListDetails($id: ID!) {
-  group: loadCheckGroupFromID(id: $id) {
+  group: node(id: $id) {
     list {
       name
       description
@@ -8,7 +8,7 @@ query CheckGroupListDetails($id: ID!) {
 }
 
 query CheckGroupRunStatuses($checkGroup: ID!) {
-  checkGroup: loadCheckGroupFromID(id: $checkGroup) {
+  checkGroup: node(id: $checkGroup) {
     run {
       list {
         passed

@@ -85,7 +85,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 		return nil, err
 	}
 	return &{{ $field.ParentObject.Name }} {
-		query: q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id),
+		query: q.Root().Select("node").Arg("id", id),
 	}, nil
 
 	{{- else if $field.TypeRef.IsObject }}
@@ -113,7 +113,7 @@ type {{ $field | FieldOptionsStructName }} struct {
         for i := range fields {
             val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
             {{- if $eleType | IsIDableObject }}
-              val.query = q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
+              val.query = q.Root().Select("node").Arg("id", fields[i].Id)
             {{- end }}
             out = append(out, val)
         }

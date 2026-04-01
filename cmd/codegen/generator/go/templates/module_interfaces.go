@@ -233,9 +233,9 @@ func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 /*
 The Load*FromID method attached to the top-level Client struct for this interface. e.g.:
 
-	func LoadCustomIfaceFromID(r *dagger.Client, id CustomIfaceID) CustomIface {
+	func LoadCustomIfaceFromID(r *dagger.Client, id dagger.ID) CustomIface {
 		q = querybuilder.Query().Client(r.GraphQLClient())
-		q = q.Select("loadTestCustomIfaceFromID")
+		q = q.Select("node")
 		q = q.Arg("id", id)
 		return &customIfaceImpl{
 			query:  q,
@@ -249,7 +249,7 @@ func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
 		Params(Id(spec.name)).
 		BlockFunc(func(g *Group) {
 			g.Id("q").Op(":=").Id("querybuilder").Dot("Query").Call().Dot("Client").Call(Id("r").Dot("GraphQLClient").Call())
-			g.Id("q").Op("=").Id("q").Dot("Select").Call(Lit(loadFromIDGQLFieldName(spec)))
+			g.Id("q").Op("=").Id("q").Dot("Select").Call(Lit("node"))
 			g.Id("q").Op("=").Id("q").Dot("Arg").Call(Lit("id"), Id("id"))
 			g.Return(Op("&").Id(spec.concreteStructName()).Values(Dict{
 				Id("query"): Id("q"),
@@ -552,13 +552,11 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 						id := idResult.Id
 
 						results = append(results, &dagger.Directory{
-							query:  q.query.Root().Select("loadDirectoryFromID").Arg("id", id),
+							query:  q.query.Root().Select("node").Arg("id", id),
 						})
 					}
 					return results, nil
 			*/
-
-			loadFromIDQueryName := loadFromIDGQLFieldName(underlyingReturnType)
 
 			s.Id("q").Op("=").Id("q").Dot("Select").Call(Lit("id")).Line()
 			s.Var().Id("idResults").Index().Struct(Id("Id").Id("dagger.ID")).Line()
@@ -578,7 +576,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Var().Id("results").Index().Add(underlyingReturnTypeCode).Line()
 			s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
 				g.Id("id").Op(":=").Id("idResult").Dot("Id")
-				query := Id("r").Dot("query").Dot("Root").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id"))
+				query := Id("r").Dot("query").Dot("Root").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id"))
 				g.Id("results").Op("=").Append(Id("results"), Params(Op("&").Add(underlyingImplTypeCode).Values()).Dot("WithGraphQLQuery").Call(query))
 			}).Line()
 

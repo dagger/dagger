@@ -335,7 +335,7 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 			continue
 		}
 
-		// For loadFooFromID on Query, keep the arg as the raw ID type.
+		// For node(id:) on Query, keep the arg as the raw ID type.
 		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
 			outType, err := funcs.FormatOutputType(arg.TypeRef, scopes...)
 			if err != nil {

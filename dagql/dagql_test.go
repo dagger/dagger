@@ -592,9 +592,11 @@ func TestNullableResults(t *testing.T) {
 					Loaded points.Point
 				}
 				req(t, gql, `query {
-					loaded: loadPointFromID(id: "`+point.ID+`") {
-						x
-						y
+					loaded: node(id: "`+point.ID+`") {
+						... on Point {
+							x
+							y
+						}
 					}
 				}`, &res)
 				assert.Equal(t, point.X, res.Loaded.X)
@@ -713,34 +715,38 @@ func TestListResults(t *testing.T) {
 		assert.Assert(t, cmp.Len(res.ListOfRandomObjects, 2))
 
 		var res2 struct {
-			LoadPointFromID struct {
+			Node struct {
 				X int
 				Y int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+res.ListOfRandomObjects[0].ID+`") {
-				x
-				y
+			node(id: "`+res.ListOfRandomObjects[0].ID+`") {
+				... on Point {
+					x
+					y
+				}
 			}
 		}`, &res2)
-		assert.Equal(t, res2.LoadPointFromID.X, res2.LoadPointFromID.Y)
+		assert.Equal(t, res2.Node.X, res2.Node.Y)
 
 		var res3 struct {
-			LoadPointFromID struct {
+			Node struct {
 				X int
 				Y int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+res.ListOfRandomObjects[1].ID+`") {
-				x
-				y
+			node(id: "`+res.ListOfRandomObjects[1].ID+`") {
+				... on Point {
+					x
+					y
+				}
 			}
 		}`, &res3)
-		assert.Equal(t, res3.LoadPointFromID.X, res3.LoadPointFromID.Y)
+		assert.Equal(t, res3.Node.X, res3.Node.Y)
 
-		assert.Equal(t, res2.LoadPointFromID.X, res3.LoadPointFromID.X)
+		assert.Equal(t, res2.Node.X, res3.Node.X)
 	}
 }
 
@@ -800,57 +806,61 @@ func TestLoadingFromID(t *testing.T) {
 
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
 		var res struct {
-			LoadPointFromID struct {
+			Node struct {
 				ID string
 				X  int
 				Y  int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+neighbor.ID+`") {
-				id
-				x
-				y
+			node(id: "`+neighbor.ID+`") {
+				... on Point {
+					id
+					x
+					y
+				}
 			}
 		}`, &res)
 
-		assert.Equal(t, neighbor.ID, res.LoadPointFromID.ID)
-		assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
-		assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
+		assert.Equal(t, neighbor.ID, res.Node.ID)
+		assert.Equal(t, neighbor.X, res.Node.X)
+		assert.Equal(t, neighbor.Y, res.Node.Y)
 		switch i {
 		case 0:
-			assert.Equal(t, res.LoadPointFromID.X, 4)
-			assert.Equal(t, res.LoadPointFromID.Y, 7)
+			assert.Equal(t, res.Node.X, 4)
+			assert.Equal(t, res.Node.Y, 7)
 		case 1:
-			assert.Equal(t, res.LoadPointFromID.X, 6)
-			assert.Equal(t, res.LoadPointFromID.Y, 7)
+			assert.Equal(t, res.Node.X, 6)
+			assert.Equal(t, res.Node.Y, 7)
 		case 2:
-			assert.Equal(t, res.LoadPointFromID.X, 5)
-			assert.Equal(t, res.LoadPointFromID.Y, 6)
+			assert.Equal(t, res.Node.X, 5)
+			assert.Equal(t, res.Node.Y, 6)
 		case 3:
-			assert.Equal(t, res.LoadPointFromID.X, 5)
-			assert.Equal(t, res.LoadPointFromID.Y, 8)
+			assert.Equal(t, res.Node.X, 5)
+			assert.Equal(t, res.Node.Y, 8)
 		}
 
 		for _, neighbor := range neighbor.Neighbors {
 			var res struct {
-				LoadPointFromID struct {
+				Node struct {
 					ID string
 					X  int
 					Y  int
 				}
 			}
 			req(t, gql, `query {
-				loadPointFromID(id: "`+neighbor.ID+`") {
-					id
-					x
-					y
+				node(id: "`+neighbor.ID+`") {
+					... on Point {
+						id
+						x
+						y
+					}
 				}
 			}`, &res)
 
-			assert.Equal(t, neighbor.ID, res.LoadPointFromID.ID)
-			assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
-			assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
+			assert.Equal(t, neighbor.ID, res.Node.ID)
+			assert.Equal(t, neighbor.X, res.Node.X)
+			assert.Equal(t, neighbor.Y, res.Node.Y)
 		}
 	}
 }
@@ -904,35 +914,37 @@ func TestIDsReflectQuery(t *testing.T) {
 	assert.Assert(t, cmp.Len(res.Point.ShiftLeft.Neighbors, 4))
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
 		var res struct {
-			LoadPointFromID struct {
+			Node struct {
 				ID string
 				X  int
 				Y  int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+neighbor.ID+`") {
-				id
-				x
-				y
+			node(id: "`+neighbor.ID+`") {
+				... on Point {
+					id
+					x
+					y
+				}
 			}
 		}`, &res)
 
-		eqIDs(t, res.LoadPointFromID.ID, neighbor.ID)
+		eqIDs(t, res.Node.ID, neighbor.ID)
 
 		switch i {
 		case 0:
-			assert.Equal(t, res.LoadPointFromID.X, 4)
-			assert.Equal(t, res.LoadPointFromID.Y, 7)
+			assert.Equal(t, res.Node.X, 4)
+			assert.Equal(t, res.Node.Y, 7)
 		case 1:
-			assert.Equal(t, res.LoadPointFromID.X, 6)
-			assert.Equal(t, res.LoadPointFromID.Y, 7)
+			assert.Equal(t, res.Node.X, 6)
+			assert.Equal(t, res.Node.Y, 7)
 		case 2:
-			assert.Equal(t, res.LoadPointFromID.X, 5)
-			assert.Equal(t, res.LoadPointFromID.Y, 6)
+			assert.Equal(t, res.Node.X, 5)
+			assert.Equal(t, res.Node.Y, 6)
 		case 3:
-			assert.Equal(t, res.LoadPointFromID.X, 5)
-			assert.Equal(t, res.LoadPointFromID.Y, 8)
+			assert.Equal(t, res.Node.X, 5)
+			assert.Equal(t, res.Node.Y, 8)
 		}
 	}
 }
@@ -1055,19 +1067,16 @@ func TestEmptyID(t *testing.T) {
 	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	var res struct {
-		LoadPointFromID struct {
-			X int
-			Y int
+		Node struct {
+			ID string
 		}
 	}
 	err := gql.Post(`query {
-		loadPointFromID(id: "") {
+		node(id: "") {
 			id
-			x
-			y
 		}
 	}`, &res)
-	assert.ErrorContains(t, err, "cannot decode empty string as ID")
+	assert.ErrorContains(t, err, "missing required argument")
 }
 
 func TestPureIDsDoNotReEvaluate(t *testing.T) {
@@ -1102,23 +1111,25 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 	assert.Equal(t, called, 1)
 
 	var loaded struct {
-		LoadPointFromID struct {
+		Node struct {
 			ID string
 			X  int
 			Y  int
 		}
 	}
 	req(t, gql, `query {
-		loadPointFromID(id: "`+res.Point.Snitch.ID+`") {
-			id
-			x
-			y
+		node(id: "`+res.Point.Snitch.ID+`") {
+			... on Point {
+				id
+				x
+				y
+			}
 		}
 	}`, &loaded)
 
-	assert.Equal(t, loaded.LoadPointFromID.ID, res.Point.Snitch.ID)
-	assert.Equal(t, loaded.LoadPointFromID.X, 6)
-	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
+	assert.Equal(t, loaded.Node.ID, res.Point.Snitch.ID)
+	assert.Equal(t, loaded.Node.X, 6)
+	assert.Equal(t, loaded.Node.Y, 7)
 
 	assert.Equal(t, called, 1)
 }
@@ -1155,22 +1166,24 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 	assert.Equal(t, called, 1)
 
 	var loaded struct {
-		LoadPointFromID struct {
+		Node struct {
 			ID string
 			X  int
 			Y  int
 		}
 	}
 	req(t, gql, `query {
-		loadPointFromID(id: "`+res.Point.Snitch.ID+`") {
-			id
-			x
-			y
+		node(id: "`+res.Point.Snitch.ID+`") {
+			... on Point {
+				id
+				x
+				y
+			}
 		}
 	}`, &loaded)
-	assert.Equal(t, loaded.LoadPointFromID.ID, res.Point.Snitch.ID)
-	assert.Equal(t, loaded.LoadPointFromID.X, 6)
-	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
+	assert.Equal(t, loaded.Node.ID, res.Point.Snitch.ID)
+	assert.Equal(t, loaded.Node.X, 6)
+	assert.Equal(t, loaded.Node.Y, 7)
 
 	assert.Equal(t, called, 2)
 }
@@ -1466,21 +1479,23 @@ func TestInputObjects(t *testing.T) {
 		assert.Assert(t, id1.Display() != id2.Display())
 
 		var res struct {
-			LoadDefaultsFromID values
+			Node values
 		}
 		req(t, gql, `query {
-			loadDefaultsFromID(id: "`+idRes.MyInput.ID+`") {
-				boolean
-				int
-				string
-				emptyString
-				float
-				slice
-				deepSlice
+			node(id: "`+idRes.MyInput.ID+`") {
+				... on Defaults {
+					boolean
+					int
+					string
+					emptyString
+					float
+					slice
+					deepSlice
+				}
 			}
 		}`, &res)
 
-		assert.DeepEqual(t, values{false, 21, "goodbye, world!", "not empty", 6.28, []int{4, 5}, [][]int{{4}, {5}}}, res.LoadDefaultsFromID)
+		assert.DeepEqual(t, values{false, 21, "goodbye, world!", "not empty", 6.28, []int{4, 5}, [][]int{{4}, {5}}}, res.Node)
 	})
 
 	t.Run("inputs with builtins and defaults", func(t *testing.T) {
@@ -3183,21 +3198,11 @@ func TestInterfaces(t *testing.T) {
 		}(), "Implements should panic for unsatisfied interface")
 	})
 
-	t.Run("auto Object interface", func(t *testing.T) {
+	t.Run("auto Node interface", func(t *testing.T) {
 		srv := dagql.NewServer(Query{}, newCache(t))
 		introspection.Install[Query](srv)
 
-		// Install the "Object" interface before any objects
-		objectIface := dagql.NewInterface("Object", "An object with an identity.")
-		objectIface.AddField(dagql.InterfaceFieldSpec{
-			FieldSpec: dagql.FieldSpec{
-				Name: "id",
-				Type: dagql.AnyID{},
-			},
-		})
-		srv.InstallInterface(objectIface)
-
-		// Now install Point — it should auto-implement Object
+		// Node is auto-installed by NewServer; install Point after.
 		points.Install[Query](srv)
 
 		gql := client.New(dagql.NewDefaultHandler(srv))
@@ -3207,28 +3212,28 @@ func TestInterfaces(t *testing.T) {
 			} `json:"__type"`
 		}
 		req(t, gql, `{ __type(name: "Point") { interfaces { name } } }`, &res)
-		foundObject := false
+		foundNode := false
 		for _, iface := range res.Type.Interfaces {
-			if iface.Name == "Object" {
-				foundObject = true
+			if iface.Name == "Node" {
+				foundNode = true
 			}
 		}
-		assert.Assert(t, foundObject, "Point should auto-implement Object")
+		assert.Assert(t, foundNode, "Point should auto-implement Node")
 
-		// Object interface should have Point in possibleTypes
+		// Node interface should have Point in possibleTypes
 		var ifaceRes struct {
 			Type struct {
 				PossibleTypes []struct{ Name string }
 			} `json:"__type"`
 		}
-		req(t, gql, `{ __type(name: "Object") { possibleTypes { name } } }`, &ifaceRes)
+		req(t, gql, `{ __type(name: "Node") { possibleTypes { name } } }`, &ifaceRes)
 		foundPoint := false
 		for _, pt := range ifaceRes.Type.PossibleTypes {
 			if pt.Name == "Point" {
 				foundPoint = true
 			}
 		}
-		assert.Assert(t, foundPoint, "Object interface should include Point in possibleTypes")
+		assert.Assert(t, foundPoint, "Node interface should include Point in possibleTypes")
 	})
 
 	t.Run("inline fragments", func(t *testing.T) {

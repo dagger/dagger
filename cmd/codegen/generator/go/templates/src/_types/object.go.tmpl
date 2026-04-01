@@ -117,7 +117,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 		return nil, err
 	}
 	return &{{ $field.ParentObject.Name }} {
-		query: q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id),
+		query: q.Root().Select("node").Arg("id", id),
 	}, nil
 
 	{{- else if IsInterfaceRef $field.TypeRef }}
@@ -147,7 +147,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	var results {{ $field.TypeRef | FormatOutputType }}
 	for _, idResult := range idResults {
 		results = append(results, &{{ $eleType | ObjectName | InterfaceClientName }}{
-			query: q.Root().Select("load{{ $eleType | ObjectName }}FromID").Arg("id", idResult.Id),
+			query: q.Root().Select("node").Arg("id", idResult.Id),
 		})
 	}
 	return results, nil
@@ -169,7 +169,7 @@ type {{ $field | FieldOptionsStructName }} struct {
         for i := range fields {
             val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
             {{- if $eleType | IsIDableObject }}
-              val.query = q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
+              val.query = q.Root().Select("node").Arg("id", fields[i].Id)
             {{- end }}
             out = append(out, val)
         }
@@ -239,6 +239,20 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
 }
 {{- end }}
 
+{{ end }}
+{{ end }}
+
+{{- /* Generate LoadFooFromID client-side convenience method on Query */ -}}
+{{ range $field := .Fields }}
+{{ if eq $field.Name "id" }}
+{{- if ne $.Name "Query" }}
+// Load{{ $.Name | FormatName }}FromID loads a {{ $.Name | FormatName }} from an ID.
+func (r *Query) Load{{ $.Name | FormatName }}FromID(id ID) *{{ $.Name | FormatName }} {
+	return &{{ $.Name | FormatName }}{
+		query: r.query.Select("node").Arg("id", id),
+	}
+}
+{{- end }}
 {{ end }}
 {{ end }}
 

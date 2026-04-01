@@ -157,6 +157,18 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		Result: newDetachedResult(nil, root),
 		class:  rootClass,
 	}
+
+	// Install the Node interface before any objects so that InstallObject
+	// can auto-implement it for every class with an ID.
+	nodeIface := NewInterface("Node", "An object with a globally unique ID.")
+	nodeIface.AddField(InterfaceFieldSpec{
+		FieldSpec: FieldSpec{
+			Name: "id",
+			Type: AnyID{},
+		},
+	})
+	srv.interfaces[nodeIface.TypeName()] = nodeIface
+
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
 		srv.InstallScalar(scalar)
@@ -164,7 +176,47 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 	for _, directive := range coreDirectives {
 		srv.InstallDirective(directive)
 	}
+
+	// Install the node(id: ID!): Node field on the root query.
+	srv.Root().ObjectType().Extend(
+		FieldSpec{
+			Name:        "node",
+			Description: "Load any object by its ID.",
+			Type: &interfaceTyped{
+				name:    "Node",
+				nonNull: false,
+			},
+			Args: NewInputSpecs(
+				InputSpec{
+					Name: "id",
+					Type: AnyID{},
+				},
+			),
+			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
+		},
+		func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
+			idable, ok := args["id"].(IDable)
+			if !ok {
+				return nil, fmt.Errorf("expected IDable, got %T", args["id"])
+			}
+			return srv.Load(ctx, idable.ID())
+		},
+	)
+
 	return srv
+}
+
+// interfaceTyped is a Typed marker that returns an interface type name.
+type interfaceTyped struct {
+	name    string
+	nonNull bool
+}
+
+func (m *interfaceTyped) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: m.name,
+		NonNull:   m.nonNull,
+	}
 }
 
 func (s *Server) invalidateSchemaCache() {
@@ -395,53 +447,15 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 
 	s.objects[class.TypeName()] = class
 
-	// Auto-implement the "Object" interface for any class that has IDs.
+	// Auto-implement the "Node" interface for any class that has IDs.
 	if _, hasID := class.IDType(); hasID {
-		if objIface, ok := s.interfaces["Object"]; ok {
-			if objIface.Satisfies(class, "") {
+		if nodeIface, ok := s.interfaces["Node"]; ok {
+			if nodeIface.Satisfies(class, "") {
 				if impl, ok := class.(InterfaceImplementor); ok {
-					impl.ImplementInterface(objIface)
+					impl.ImplementInterface(nodeIface)
 				}
 			}
 		}
-	}
-
-	if _, hasID := class.IDType(); hasID {
-		// Use the generic ID type for loadFooFromID args, with an
-		// @expectedType directive to convey the expected type to SDKs.
-		spec := FieldSpec{
-			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
-			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-			Type:        class.Typed(),
-			Args: NewInputSpecs(
-				InputSpec{
-					Name:       "id",
-					Type:       AnyID{},
-					Directives: []*ast.Directive{ExpectedTypeDirective(class.TypeName())},
-				},
-			),
-			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
-			Directives: directives,
-		}
-
-		s.Root().ObjectType().Extend(
-			spec,
-			func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
-				idable, ok := args["id"].(IDable)
-				if !ok {
-					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
-				}
-				id := idable.ID()
-				if id.Type().ToAST().NamedType != class.TypeName() {
-					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
-				}
-				res, err := s.Load(ctx, idable.ID())
-				if err != nil {
-					return nil, fmt.Errorf("load: %w", err)
-				}
-				return res, nil
-			},
-		)
 	}
 	s.installLock.Unlock()
 
@@ -1276,6 +1290,14 @@ func (s *Server) typeConditionMatches(condition string, objectTypeName string) b
 			return true
 		}
 	}
+	// Check if objectTypeName is an interface and condition is one of its
+	// implementors. This handles inline fragments like `... on Point` when
+	// the current selection context is an interface like `Node`.
+	if iface, ok := s.interfaces[objectTypeName]; ok {
+		if _, implements := iface.Implementors()[condition]; implements {
+			return true
+		}
+	}
 	return false
 }
 
@@ -1334,7 +1356,13 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			// the current object type (or is empty / matches an interface).
 			if s.typeConditionMatches(fragment.TypeCondition, self.Name()) {
 				if len(fragment.SelectionSet) > 0 {
-					subsels, err := s.parseASTSelections(ctx, gqlOp, self, fragment.SelectionSet)
+					// Parse against the fragment's type condition if it differs
+					// from the current context (e.g. narrowing from an interface).
+					fragSelf := self
+					if fragment.TypeCondition != "" && fragment.TypeCondition != self.Name() {
+						fragSelf = &ast.Type{NamedType: fragment.TypeCondition, NonNull: true}
+					}
+					subsels, err := s.parseASTSelections(ctx, gqlOp, fragSelf, fragment.SelectionSet)
 					if err != nil {
 						return nil, err
 					}
@@ -1345,7 +1373,13 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			// If the type condition matches (or is empty), recurse into its selections.
 			if x.TypeCondition == "" || s.typeConditionMatches(x.TypeCondition, self.Name()) {
 				if len(x.SelectionSet) > 0 {
-					subsels, err := s.parseASTSelections(ctx, gqlOp, self, x.SelectionSet)
+					// Parse against the type condition if it narrows from the
+					// current context (e.g. `... on Point` within a Node).
+					fragSelf := self
+					if x.TypeCondition != "" && x.TypeCondition != self.Name() {
+						fragSelf = &ast.Type{NamedType: x.TypeCondition, NonNull: true}
+					}
+					subsels, err := s.parseASTSelections(ctx, gqlOp, fragSelf, x.SelectionSet)
 					if err != nil {
 						return nil, err
 					}

@@ -549,7 +549,7 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 		if strings.HasPrefix(field.Name, "_") {
 			continue
 		}
-		if strings.HasPrefix(field.Name, "load") && strings.HasSuffix(field.Name, "FromID") {
+		if field.Name == "node" {
 			continue
 		}
 		if field.Name == "id" || field.Name == "sync" {

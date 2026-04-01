@@ -1,5 +1,5 @@
 query ModuleClientConfig($source: ID!) {
-  source: loadModuleSourceFromID(id: $source) {
+  source: node(id: $source) {
     configClients {
       generator
       directory

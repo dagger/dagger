@@ -276,37 +276,11 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	// Install the interface into the dagql server schema.
 	dag.InstallInterface(dagqlIface, installDirectives...)
 
-	// Use a thin Typed marker for the return type of loadFooFromID.
-	// It just returns the interface name as the GraphQL type.
-	ifaceTyped := &interfaceTypedMarker{name: ifaceName}
-
-	// Install loadFooFromID to allow loading any ID that implements this interface.
-	// Use generic ID type with @expectedType directive.
-	dag.Root().ObjectType().Extend(
-		dagql.FieldSpec{
-			Name:        fmt.Sprintf("load%sFromID", ifaceName),
-			Description: fmt.Sprintf("Load a %s from its ID.", ifaceName),
-			Type:        ifaceTyped,
-			Args: dagql.NewInputSpecs(
-				dagql.InputSpec{
-					Name:       "id",
-					Type:       dagql.AnyID{},
-					Directives: []*ast.Directive{dagql.ExpectedTypeDirective(ifaceName)},
-				},
-			),
-			Module:     iface.mod.IDModule(),
-			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
-		},
-		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-			return iface.ConvertFromSDKResult(ctx, args["id"])
-		},
-	)
-
 	return nil
 }
 
-// interfaceTypedMarker is a thin Typed wrapper used as the return type for
-// loadFooFromID fields. It just returns the interface name as the GraphQL type.
+// interfaceTypedMarker is a Typed marker that returns an interface type name.
+// Used by typedef.go to express interface return types in module function specs.
 type interfaceTypedMarker struct {
 	name string
 }
