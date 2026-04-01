@@ -233,6 +233,7 @@ func (build *Builder) goWithSource(source *dagger.Directory, version bool, race 
 		Source: source,
 		Values: values,
 		Race:   race,
+		Tags:   []string{"dfexcludepatterns", "dfparents"}, // needed for exclude_pattern_feature.go and parse_parents.go features in buildkit
 	})
 }
 

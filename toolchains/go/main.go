@@ -46,6 +46,10 @@ func New(
 	// +optional
 	ldflags []string,
 
+	// Pass arguments to 'go build -tags'
+	// +optional
+	tags []string,
+
 	// Add string value definition of the form importpath.name=value
 	// Example: "github.com/my/module.Foo=bar"
 	// +optional
@@ -117,6 +121,7 @@ func New(
 		BuildCache:  buildCache,
 		Base:        base,
 		Ldflags:     ldflags,
+		Tags:        tags,
 		Values:      values,
 		Cgo:         cgo,
 		Race:        race,
@@ -143,6 +148,9 @@ type Go struct {
 
 	// Pass arguments to 'go build -ldflags'
 	Ldflags []string
+
+	// Pass arguments to 'go build -tags'
+	Tags []string
 
 	// Add string value definition of the form importpath.name=value
 	Values []string
