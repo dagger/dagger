@@ -24,6 +24,7 @@ class FunctionDefinition:
     deprecated: str | None = None
     check: bool = False
     generator: bool = False
+    service: bool = False
 
 
 class Enum(str, base.Enum):

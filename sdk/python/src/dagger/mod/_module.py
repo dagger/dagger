@@ -55,6 +55,7 @@ FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
 CHECK_DEF_KEY: typing.Final[str] = "__dagger_check__"
 GENERATOR_DEF_KEY: typing.Final[str] = "__dagger_generate__"
+SERVICE_DEF_KEY: typing.Final[str] = "__dagger_up__"
 MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
 MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
 TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json")
@@ -211,6 +212,8 @@ class Module:
                     func_def = func_def.with_check()
                 if func.generate:
                     func_def = func_def.with_generator()
+                if func.service:
+                    func_def = func_def.with_up()
 
                 for param in func.parameters.values():
                     arg_def = to_typedef(
@@ -680,6 +683,18 @@ class Module:
 
         return wrapper(func) if func else wrapper
 
+    def up(
+        self,
+        func: Func[P, R] | None = None,
+    ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
+        """Mark a function as a service for ``dagger up``."""
+
+        def wrapper(fn: Func[P, R]) -> Func[P, R]:
+            setattr(fn, SERVICE_DEF_KEY, True)
+            return fn
+
+        return wrapper(func) if func else wrapper
+
     @overload
     def function(
         self,
@@ -743,6 +758,7 @@ class Module:
             # Check if function is marked as a check or generator
             check = getattr(func, CHECK_DEF_KEY, False)
             generator = getattr(func, GENERATOR_DEF_KEY, False)
+            service = getattr(func, SERVICE_DEF_KEY, False)
 
             meta = FunctionDefinition(
                 name=name,
@@ -751,6 +767,7 @@ class Module:
                 deprecated=deprecated,
                 check=check,
                 generator=generator,
+                service=service,
             )
 
             if inspect.isclass(func):

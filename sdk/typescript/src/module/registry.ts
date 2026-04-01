@@ -164,6 +164,17 @@ export class Registry {
     ) => {}
   }
 
+  /**
+   * The definition of @up decorator that marks a function as a service for dagger up.
+   */
+  up = (): ((
+    target: object,
+    propertyKey: string,
+    descriptor: PropertyDescriptor,
+  ) => PropertyDescriptor) => {
+    return (target, propertyKey, descriptor) => descriptor
+  }
+
   argument = (
     opts?: ArgumentOptions,
   ): ((
