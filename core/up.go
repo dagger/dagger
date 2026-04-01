@@ -1,0 +1,113 @@
+package core
+
+import (
+	"context"
+
+	"github.com/dagger/dagger/util/parallel"
+	"github.com/vektah/gqlparser/v2/ast"
+)
+
+// Up represents a service function decorated with +up
+type Up struct {
+	Node *ModTreeNode `json:"node"`
+}
+
+type UpGroup struct {
+	Node *ModTreeNode `json:"node"`
+	Ups  []*Up        `json:"ups"`
+}
+
+func NewUpGroup(ctx context.Context, mod *Module, include []string) (*UpGroup, error) {
+	rootNode, err := NewModTree(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
+
+	upNodes, err := rootNode.RollupUp(ctx, include, nil)
+	if err != nil {
+		return nil, err
+	}
+	ups := make([]*Up, 0, len(upNodes))
+	for _, upNode := range upNodes {
+		ups = append(ups, &Up{Node: upNode})
+	}
+	return &UpGroup{
+		Node: rootNode,
+		Ups:  ups,
+	}, nil
+}
+
+func (*UpGroup) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "UpGroup",
+		NonNull:   true,
+	}
+}
+
+func (ug *UpGroup) List() []*Up {
+	return ug.Ups
+}
+
+// Run starts all service functions in the group.
+func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
+	ug = ug.Clone()
+
+	jobs := parallel.New().WithContextualTracer(true)
+	for _, up := range ug.Ups {
+		jobs = jobs.WithJob(up.Name(), func(ctx context.Context) error {
+			return up.Node.RunUp(ctx, nil, nil)
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return nil, err
+	}
+	return ug, nil
+}
+
+func (ug *UpGroup) Clone() *UpGroup {
+	cp := *ug
+	if cp.Node != nil {
+		cp.Node = cp.Node.Clone()
+	}
+	cp.Ups = make([]*Up, len(ug.Ups))
+	for i := range cp.Ups {
+		cp.Ups[i] = ug.Ups[i].Clone()
+	}
+	return &cp
+}
+
+func (u *Up) Path() []string {
+	return u.Node.Path()
+}
+
+func (u *Up) Description() string {
+	return u.Node.Description
+}
+
+func (u *Up) OriginalModule() *Module {
+	return u.Node.OriginalModule
+}
+
+func (*Up) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Up",
+		NonNull:   true,
+	}
+}
+
+func (u *Up) Name() string {
+	return u.Node.PathString()
+}
+
+func (u *Up) Clone() *Up {
+	cp := *u
+	cp.Node = u.Node.Clone()
+	return &cp
+}
+
+// Run starts the service returned by this up function.
+func (u *Up) Run(ctx context.Context) (*Up, error) {
+	u = u.Clone()
+	err := u.Node.RunUp(ctx, nil, nil)
+	return u, err
+}

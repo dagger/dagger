@@ -218,6 +218,111 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 	return true, nil
 }
 
+// ServiceNameAttr is the telemetry attribute key for the service name.
+// Defined locally because the canonical constant lives in the external
+// github.com/dagger/otel-go package which we cannot modify.
+const ServiceNameAttr = "dagger.io/service.name"
+
+func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string) error {
+	return node.Run(ctx,
+		func(n *ModTreeNode) bool { return n.IsUp },
+		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
+			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
+				telemetry.Reveal(),
+				trace.WithAttributes(
+					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+					attribute.String(ServiceNameAttr, n.PathString()),
+				),
+			)
+			defer func() {
+				telemetry.EndWithCause(span, &rerr)
+			}()
+			return n.runUpLocally(ctx, span)
+		},
+		include, exclude)
+}
+
+func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span) error {
+	// Evaluate the +up function to get the Service
+	var svcResult dagql.ObjectResult[*Service]
+	if err := node.DagqlValue(ctx, &svcResult); err != nil {
+		return err
+	}
+
+	// Update parent span name with port info from exposed ports.
+	if svc := svcResult.Self(); svc != nil && svc.Container != nil {
+		var portStrs []string
+		for _, p := range svc.Container.Ports {
+			portStrs = append(portStrs, fmt.Sprintf(":%d", p.Port))
+		}
+		if len(portStrs) > 0 {
+			parentSpan.SetName(fmt.Sprintf("%s %s", node.PathString(), strings.Join(portStrs, ", ")))
+		}
+	}
+
+	// Set up the host tunnel
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+
+	var hostSvc dagql.Result[*Service]
+	tunnelArgs := []dagql.NamedInput{
+		{Name: "service", Value: dagql.NewID[*Service](svcResult.ID())},
+		{Name: "native", Value: dagql.Boolean(true)},
+	}
+	err = srv.Select(ctx, srv.Root(), &hostSvc,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "tunnel",
+			Args:  tunnelArgs,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create host tunnel: %w", err)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	runningSvc, err := svcs.Start(ctx, hostSvc.ID(), hostSvc.Self(), true)
+	if err != nil {
+		return fmt.Errorf("failed to start service: %w", err)
+	}
+
+	// Build URL list from the running service's actual ports.
+	var urls []string
+	for _, port := range runningSvc.Ports {
+		scheme := "http"
+		if port.Port == 443 {
+			scheme = "https"
+		}
+		urls = append(urls, fmt.Sprintf("%s://localhost:%d", scheme, port.Port))
+	}
+
+	// Create a "ready" child span
+	readyName := "ready"
+	if len(urls) > 0 {
+		readyName = "ready " + strings.Join(urls, " ")
+	}
+	_, readySpan := Tracer(ctx).Start(ctx, readyName,
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.StringSlice("service.urls", urls),
+		),
+	)
+	defer readySpan.End()
+
+	// Block until the context is canceled (e.g. Ctrl+C).
+	<-ctx.Done()
+	return nil
+}
+
 func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (*Changeset, error) {
 	var cs *Changeset
 	err := node.Run(ctx,
