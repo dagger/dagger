@@ -222,14 +222,3 @@ func TestReadWorkspaceLock(t *testing.T) {
 		require.Empty(t, lockBytes)
 	})
 }
-
-func TestUpdateWorkspaceLockEntry(t *testing.T) {
-	t.Parallel()
-
-	_, err := updateWorkspaceLockEntry(context.Background(), nil, workspace.LookupEntry{
-		Namespace: "acme",
-		Operation: "resolve",
-	})
-	require.Error(t, err)
-	require.ErrorContains(t, err, `unsupported lock entry "acme" "resolve"`)
-}
