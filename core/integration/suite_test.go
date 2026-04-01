@@ -218,7 +218,6 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 	opts = append([]dagger.ClientOpt{
 		// FIXME: test spans are easier to read in the TUI when this is silenced
 		dagger.WithLogOutput(io.Discard),
-		dagger.WithSkipWorkspaceModules(),
 	}, opts...)
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)

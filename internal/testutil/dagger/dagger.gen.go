@@ -158,7 +158,7 @@ type CheckID string
 type CiID string
 
 // The `CliID` scalar type represents an identifier for an object of type Cli.
-type CliID string // cli (../../toolchains/cli-dev/main.go:82:6)
+type CliID string // cli (../../toolchains/cli-dev/main.go:83:6)
 
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
 type CloudID string
@@ -715,7 +715,7 @@ func (r *Binding) AsCi() *Ci {
 }
 
 // Retrieve the binding value, as type Cli
-func (r *Binding) AsCli() *Cli { // cli (../../toolchains/cli-dev/main.go:82:6)
+func (r *Binding) AsCli() *Cli { // cli (../../toolchains/cli-dev/main.go:83:6)
 	q := r.query.Select("asCli")
 
 	return &Cli{
@@ -1879,6 +1879,7 @@ func (r *CheckGroup) Run() *CheckGroup {
 	}
 }
 
+// "CI in CI": check that Dagger can still run its own CI
 type Ci struct {
 	query *querybuilder.Selection
 
@@ -1897,7 +1898,11 @@ type CiBootstrapOpts struct {
 	//
 	// The Dagger repository to run CI against
 	//
-	Repo *GitRepository
+	Source *Workspace
+	//
+	// Which checks to run
+	//
+	Checks []string
 }
 
 // Build dagger from source, and check that it can bootstrap its own CI
@@ -1912,9 +1917,13 @@ func (r *Ci) Bootstrap(ctx context.Context, opts ...CiBootstrapOpts) error {
 	}
 	q := r.query.Select("bootstrap")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `repo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Repo) {
-			q = q.Arg("repo", opts[i].Repo)
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `checks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Checks) {
+			q = q.Arg("checks", opts[i].Checks)
 		}
 	}
 
@@ -1961,7 +1970,7 @@ func (r *Ci) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-type Cli struct { // cli (../../toolchains/cli-dev/main.go:82:6)
+type Cli struct { // cli (../../toolchains/cli-dev/main.go:83:6)
 	query *querybuilder.Selection
 
 	id              *CliID
@@ -1979,11 +1988,11 @@ func (r *Cli) WithGraphQLQuery(q *querybuilder.Selection) *Cli {
 
 // CliBinaryOpts contains options for Cli.Binary
 type CliBinaryOpts struct {
-	Platform Platform // cli (../../toolchains/cli-dev/main.go:92:2)
+	Platform Platform // cli (../../toolchains/cli-dev/main.go:93:2)
 }
 
 // Build the dagger CLI binary for a single platform
-func (r *Cli) Binary(opts ...CliBinaryOpts) *File { // cli (../../toolchains/cli-dev/main.go:90:1)
+func (r *Cli) Binary(opts ...CliBinaryOpts) *File { // cli (../../toolchains/cli-dev/main.go:91:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -1999,12 +2008,12 @@ func (r *Cli) Binary(opts ...CliBinaryOpts) *File { // cli (../../toolchains/cli
 
 // CliDevBinariesOpts contains options for Cli.DevBinaries
 type CliDevBinariesOpts struct {
-	Platform Platform // cli (../../toolchains/cli-dev/main.go:126:2)
+	Platform Platform // cli (../../toolchains/cli-dev/main.go:127:2)
 }
 
 // Build dev CLI binaries
 // TODO: remove this
-func (r *Cli) DevBinaries(opts ...CliDevBinariesOpts) *Directory { // cli (../../toolchains/cli-dev/main.go:124:1)
+func (r *Cli) DevBinaries(opts ...CliDevBinariesOpts) *Directory { // cli (../../toolchains/cli-dev/main.go:125:1)
 	q := r.query.Select("devBinaries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -2142,15 +2151,15 @@ func (r *Cli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSe
 
 // CliReferenceOpts contains options for Cli.Reference
 type CliReferenceOpts struct {
-	Frontmatter string // cli (../../toolchains/cli-dev/main.go:104:2)
+	Frontmatter string // cli (../../toolchains/cli-dev/main.go:105:2)
 	//
 	// Include experimental commands
 	//
-	IncludeExperimental bool // cli (../../toolchains/cli-dev/main.go:107:2)
+	IncludeExperimental bool // cli (../../toolchains/cli-dev/main.go:108:2)
 }
 
 // Generate a markdown CLI reference doc
-func (r *Cli) Reference(opts ...CliReferenceOpts) *File { // cli (../../toolchains/cli-dev/main.go:102:1)
+func (r *Cli) Reference(opts ...CliReferenceOpts) *File { // cli (../../toolchains/cli-dev/main.go:103:1)
 	q := r.query.Select("reference")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `frontmatter` optional argument
@@ -2178,7 +2187,7 @@ func (r *Cli) ReleaseDryRun(ctx context.Context) error { // cli (../../toolchain
 	return q.Execute(ctx)
 }
 
-func (r *Cli) Tag(ctx context.Context) (string, error) { // cli (../../toolchains/cli-dev/main.go:84:2)
+func (r *Cli) Tag(ctx context.Context) (string, error) { // cli (../../toolchains/cli-dev/main.go:85:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -2190,7 +2199,7 @@ func (r *Cli) Tag(ctx context.Context) (string, error) { // cli (../../toolchain
 	return response, q.Execute(ctx)
 }
 
-func (r *Cli) Version(ctx context.Context) (string, error) { // cli (../../toolchains/cli-dev/main.go:83:2)
+func (r *Cli) Version(ctx context.Context) (string, error) { // cli (../../toolchains/cli-dev/main.go:84:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -4442,15 +4451,15 @@ func (r *DaggerDev) Ci() *Ci {
 type DaggerDevCliOpts struct {
 	RunnerHost string // cli (../../toolchains/cli-dev/main.go:16:2)
 
-	Source *Directory // cli (../../toolchains/cli-dev/main.go:36:2)
+	Source *Directory // cli (../../toolchains/cli-dev/main.go:37:2)
 	//
 	// Base image for go build environment
 	//
-	Base *Container // cli (../../toolchains/cli-dev/main.go:40:2)
+	Base *Container // cli (../../toolchains/cli-dev/main.go:41:2)
 	//
 	// Explicit version to set on the Dagger CLI.
 	//
-	Version string // cli (../../toolchains/cli-dev/main.go:44:2)
+	Version string // cli (../../toolchains/cli-dev/main.go:45:2)
 }
 
 func (r *DaggerDev) Cli(opts ...DaggerDevCliOpts) *Cli { // cli (../../toolchains/cli-dev/main.go:12:1)
@@ -6144,7 +6153,6 @@ type ElixirSDK struct {
 	releaseDryRun *Void
 	sdkTest       *Void
 	sourcePath    *string
-	test          *Void
 }
 
 func (r *ElixirSDK) WithGraphQLQuery(q *querybuilder.Selection) *ElixirSDK {
@@ -6328,16 +6336,6 @@ func (r *ElixirSDK) SyncImage() *File {
 	return &File{
 		query: q,
 	}
-}
-
-// Test the SDK
-func (r *ElixirSDK) Test(ctx context.Context) error {
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-
-	return q.Execute(ctx)
 }
 
 func (r *ElixirSDK) Workspace() *Directory {
@@ -6868,6 +6866,8 @@ type EngineDev struct { // engine-dev (../../toolchains/engine-dev/main.go:58:6)
 	networkCidr   *string
 	publish       *Void
 	releaseDryRun *Void
+	test          *Void
+	tests         *string
 }
 type WithEngineDevFunc func(r *EngineDev) *EngineDev
 
@@ -7271,31 +7271,137 @@ func (r *EngineDev) Source() *Directory { // engine-dev (../../toolchains/engine
 	}
 }
 
+// EngineDevTestOpts contains options for EngineDev.Test
+type EngineDevTestOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // engine-dev (../../toolchains/engine-dev/test.go:26:2)
+	//
+	// Skip these tests
+	//
+	Skip string // engine-dev (../../toolchains/engine-dev/test.go:29:2)
+
+	// Default: "./..."
+	Pkg string // engine-dev (../../toolchains/engine-dev/test.go:32:2)
+	//
+	// Abort test run on first failure
+	//
+	Failfast bool // engine-dev (../../toolchains/engine-dev/test.go:35:2)
+	//
+	// How many tests to run in parallel - defaults to the number of CPUs
+	//
+	Parallel int // engine-dev (../../toolchains/engine-dev/test.go:38:2)
+	//
+	// How long before timing out the test run
+	//
+	Timeout string // engine-dev (../../toolchains/engine-dev/test.go:41:2)
+
+	Race bool // engine-dev (../../toolchains/engine-dev/test.go:43:2)
+
+	// Default: 1
+	Count int // engine-dev (../../toolchains/engine-dev/test.go:46:2)
+
+	EnvFile *Secret // engine-dev (../../toolchains/engine-dev/test.go:48:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // engine-dev (../../toolchains/engine-dev/test.go:51:2)
+	//
+	// Update golden files
+	//
+	Update bool // engine-dev (../../toolchains/engine-dev/test.go:54:2)
+	//
+	// Enable the given ebpf progs in the engine during tests
+	//
+	EbpfProgs []string // engine-dev (../../toolchains/engine-dev/test.go:57:2)
+}
+
+// Run core engine tests
+func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../toolchains/engine-dev/test.go:22:1)
+	if r.test != nil {
+		return nil
+	}
+	q := r.query.Select("test")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `envFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
+			q = q.Arg("envFile", opts[i].EnvFile)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `update` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Update) {
+			q = q.Arg("update", opts[i].Update)
+		}
+		// `ebpfProgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
+			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
 // EngineDevTestEngineOpts contains options for EngineDev.TestEngine
 type EngineDevTestEngineOpts struct {
-	EbpfProgs []string // engine-dev (../../toolchains/engine-dev/test.go:16:2)
+	EbpfProgs []string // engine-dev (../../toolchains/engine-dev/test.go:85:2)
 
-	RegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:17:2)
+	RegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:86:2)
 
-	PrivateRegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:18:2)
+	PrivateRegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:87:2)
 	//
 	// Cache volume for /run, shared between engine and test container
 	// so the test container can access /run/dagger-engine.sock
 	//
-	EngineRunVol *CacheVolume // engine-dev (../../toolchains/engine-dev/test.go:21:2)
+	EngineRunVol *CacheVolume // engine-dev (../../toolchains/engine-dev/test.go:90:2)
 	//
 	// Version to bake into the engine binary via ldflags
 	//
-	Version string // engine-dev (../../toolchains/engine-dev/test.go:23:2)
+	Version string // engine-dev (../../toolchains/engine-dev/test.go:92:2)
 	//
 	// Tag to bake into the engine binary via ldflags
 	//
-	Tag string // engine-dev (../../toolchains/engine-dev/test.go:25:2)
+	Tag string // engine-dev (../../toolchains/engine-dev/test.go:94:2)
 }
 
 // Build and start a dev instance of the dagger engine, suitable
 // as a dependency for [engine integration tests](core/integration).
-func (r *EngineDev) TestEngine(opts ...EngineDevTestEngineOpts) *Service { // engine-dev (../../toolchains/engine-dev/test.go:14:1)
+func (r *EngineDev) TestEngine(opts ...EngineDevTestEngineOpts) *Service { // engine-dev (../../toolchains/engine-dev/test.go:83:1)
 	q := r.query.Select("testEngine")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `ebpfProgs` optional argument
@@ -7327,6 +7433,107 @@ func (r *EngineDev) TestEngine(opts ...EngineDevTestEngineOpts) *Service { // en
 	return &Service{
 		query: q,
 	}
+}
+
+// EngineDevTestTelemetryOpts contains options for EngineDev.TestTelemetry
+type EngineDevTestTelemetryOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // engine-dev (../../toolchains/engine-dev/test.go:157:2)
+	//
+	// Skip these tests
+	//
+	Skip string // engine-dev (../../toolchains/engine-dev/test.go:160:2)
+
+	Update bool // engine-dev (../../toolchains/engine-dev/test.go:162:2)
+
+	Failfast bool // engine-dev (../../toolchains/engine-dev/test.go:164:2)
+
+	Parallel int // engine-dev (../../toolchains/engine-dev/test.go:166:2)
+
+	Timeout string // engine-dev (../../toolchains/engine-dev/test.go:168:2)
+
+	Race bool // engine-dev (../../toolchains/engine-dev/test.go:170:2)
+
+	// Default: 1
+	Count int // engine-dev (../../toolchains/engine-dev/test.go:172:2)
+
+	EnvFile *Secret // engine-dev (../../toolchains/engine-dev/test.go:174:2)
+
+	TestVerbose bool // engine-dev (../../toolchains/engine-dev/test.go:176:2)
+	//
+	// Enable the given ebpf progs in the engine during tests
+	//
+	EbpfProgs []string // engine-dev (../../toolchains/engine-dev/test.go:179:2)
+}
+
+// Run telemetry tests
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../toolchains/engine-dev/test.go:153:1)
+	q := r.query.Select("testTelemetry")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `update` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Update) {
+			q = q.Arg("update", opts[i].Update)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `envFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
+			q = q.Arg("envFile", opts[i].EnvFile)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `ebpfProgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
+			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// List all core engine tests
+func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../toolchains/engine-dev/test.go:16:1)
+	if r.tests != nil {
+		return *r.tests, nil
+	}
+	q := r.query.Select("tests")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 func (r *EngineDev) WithBuildkitConfig(key string, value string) *EngineDev { // engine-dev (../../toolchains/engine-dev/main.go:84:1)
@@ -8116,7 +8323,7 @@ func (r *Env) WithCiOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Cli in the environment
-func (r *Env) WithCliInput(name string, value *Cli, description string) *Env { // cli (../../toolchains/cli-dev/main.go:82:6)
+func (r *Env) WithCliInput(name string, value *Cli, description string) *Env { // cli (../../toolchains/cli-dev/main.go:83:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withCliInput")
 	q = q.Arg("name", name)
@@ -8129,7 +8336,7 @@ func (r *Env) WithCliInput(name string, value *Cli, description string) *Env { /
 }
 
 // Declare a desired Cli output to be assigned in the environment
-func (r *Env) WithCliOutput(name string, description string) *Env { // cli (../../toolchains/cli-dev/main.go:82:6)
+func (r *Env) WithCliOutput(name string, description string) *Env { // cli (../../toolchains/cli-dev/main.go:83:6)
 	q := r.query.Select("withCliOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -17512,15 +17719,15 @@ func (r *Client) Ci() *Ci {
 type CliOpts struct {
 	RunnerHost string // cli (../../toolchains/cli-dev/main.go:16:2)
 
-	Source *Directory // cli (../../toolchains/cli-dev/main.go:36:2)
+	Source *Directory // cli (../../toolchains/cli-dev/main.go:37:2)
 	//
 	// Base image for go build environment
 	//
-	Base *Container // cli (../../toolchains/cli-dev/main.go:40:2)
+	Base *Container // cli (../../toolchains/cli-dev/main.go:41:2)
 	//
 	// Explicit version to set on the Dagger CLI.
 	//
-	Version string // cli (../../toolchains/cli-dev/main.go:44:2)
+	Version string // cli (../../toolchains/cli-dev/main.go:45:2)
 }
 
 func (r *Client) Cli(opts ...CliOpts) *Cli { // cli (../../toolchains/cli-dev/main.go:12:1)
@@ -18445,7 +18652,7 @@ func (r *Client) LoadCiFromID(id CiID) *Ci {
 }
 
 // Load a Cli from its ID.
-func (r *Client) LoadCliFromID(id CliID) *Cli { // cli (../../toolchains/cli-dev/main.go:82:6)
+func (r *Client) LoadCliFromID(id CliID) *Cli { // cli (../../toolchains/cli-dev/main.go:83:6)
 	q := r.query.Select("loadCliFromID")
 	q = q.Arg("id", id)
 
@@ -22928,7 +23135,7 @@ func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (..
 }
 
 // NextReleaseVersion returns the next release version from .changes/.next
-func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../version/main.go:264:1)
+func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../version/main.go:265:1)
 	if r.nextReleaseVersion != nil {
 		return *r.nextReleaseVersion, nil
 	}
