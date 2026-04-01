@@ -142,7 +142,7 @@ func (m *Evaluator) WithEval(
 	eval Eval,
 ) (*Evaluator, error) {
 	id, err := eval.(interface {
-		ID(context.Context) (dagger.ID, error)
+		ID(context.Context) (EvalID, error)
 	}).ID(ctx)
 	if err != nil {
 		return nil, err
@@ -152,7 +152,7 @@ func (m *Evaluator) WithEval(
 	//
 	// fortunately the IDs are the same nonetheless, so we can just convert it
 	// with the available plumbing
-	m.Evals = append(m.Evals, dag.LoadEvalWorkspaceEvalFromID(dagger.ID(id)))
+	m.Evals = append(m.Evals, dag.LoadEvalWorkspaceEvalFromID(dagger.EvalWorkspaceEvalID(id)))
 	return m, nil
 }
 
