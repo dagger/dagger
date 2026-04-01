@@ -438,7 +438,7 @@ func (mod *Module) lookupCustomizationObject(typeDef *TypeDef) (*ObjectTypeDef, 
 
 func functionByOriginalName(obj *ObjectTypeDef, name string) (*Function, bool) {
 	for _, fn := range obj.Functions {
-		if strings.EqualFold(fn.OriginalName, name) || strings.EqualFold(fn.Name, gqlFieldName(name)) {
+		if nameMatches(name, fn.OriginalName, fn.Name) {
 			return fn, true
 		}
 	}
