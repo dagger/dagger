@@ -79,6 +79,38 @@ func (l *Lock) Marshal() ([]byte, error) {
 	return l.file.Marshal()
 }
 
+// Clone returns a deep copy of the lock.
+func (l *Lock) Clone() (*Lock, error) {
+	cloned := NewLock()
+	if l == nil || l.file == nil {
+		return cloned, nil
+	}
+	if err := cloned.Merge(l); err != nil {
+		return nil, err
+	}
+	return cloned, nil
+}
+
+// Merge applies all entries from other onto l.
+func (l *Lock) Merge(other *Lock) error {
+	if l == nil || l.file == nil {
+		return fmt.Errorf("nil lock")
+	}
+	if other == nil || other.file == nil {
+		return nil
+	}
+	entries, err := other.Entries()
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := l.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, entry.Result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GetModuleResolve retrieves the lock result for a module source lookup.
 func (l *Lock) GetModuleResolve(source string) (LookupResult, bool, error) {
 	return l.GetLookup("", lockModulesResolveOperation, moduleResolveInputs(source))

@@ -91,6 +91,52 @@ func TestEntries(t *testing.T) {
 	}, entries[0])
 }
 
+func TestClone(t *testing.T) {
+	lock := NewLock()
+	require.NoError(t, lock.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, LookupResult{
+		Value:  "sha256:deadbeef",
+		Policy: PolicyPin,
+	}))
+
+	cloned, err := lock.Clone()
+	require.NoError(t, err)
+
+	require.NoError(t, cloned.SetLookup("", "git.branch", []any{"https://github.com/dagger/dagger.git", "main"}, LookupResult{
+		Value:  "0123456789abcdef0123456789abcdef01234567",
+		Policy: PolicyFloat,
+	}))
+
+	_, ok, err := lock.GetLookup("", "git.branch", []any{"https://github.com/dagger/dagger.git", "main"})
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestMerge(t *testing.T) {
+	base := NewLock()
+	require.NoError(t, base.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, LookupResult{
+		Value:  "sha256:deadbeef",
+		Policy: PolicyPin,
+	}))
+
+	delta := NewLock()
+	require.NoError(t, delta.SetLookup("", "git.branch", []any{"https://github.com/dagger/dagger.git", "main"}, LookupResult{
+		Value:  "0123456789abcdef0123456789abcdef01234567",
+		Policy: PolicyFloat,
+	}))
+
+	require.NoError(t, base.Merge(delta))
+
+	result, ok, err := base.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, LookupResult{Value: "sha256:deadbeef", Policy: PolicyPin}, result)
+
+	result, ok, err = base.GetLookup("", "git.branch", []any{"https://github.com/dagger/dagger.git", "main"})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, LookupResult{Value: "0123456789abcdef0123456789abcdef01234567", Policy: PolicyFloat}, result)
+}
+
 func TestParseLockMode(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		mode, err := ParseLockMode("disabled")
