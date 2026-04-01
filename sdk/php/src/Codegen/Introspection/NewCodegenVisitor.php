@@ -23,7 +23,7 @@ use Nette\PhpGenerator\Method;
 class NewCodegenVisitor extends CodeWriter
 {
     public function __construct(
-        private readonly IntrospectionSchema $schema,
+        IntrospectionSchema $schema,
         string $targetDirectory
     ) {
         parent::__construct($targetDirectory);
@@ -414,7 +414,11 @@ class NewCodegenVisitor extends CodeWriter
 
     // ---- Parameter generation ----
 
-    private function generateMethodParameter(IntrospectionInputValue $arg, Method $method, ?IntrospectionField $field = null): void
+    private function generateMethodParameter(
+        IntrospectionInputValue $arg,
+        Method $method,
+        ?IntrospectionField $field = null,
+    ): void
     {
         $parameter = $method->addParameter($arg->name);
 
