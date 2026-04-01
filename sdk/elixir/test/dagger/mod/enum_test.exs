@@ -1,7 +1,6 @@
 defmodule Dagger.Mod.EnumTest do
   use ExUnit.Case, async: true
 
-  @tag :run
   test "get value description" do
     assert Dagger.Mod.Enum.get_key_description(SimpleEnum, :high) == nil
     assert Dagger.Mod.Enum.get_key_description(EnumWithOption, :unknown) == "Unknown severity"
