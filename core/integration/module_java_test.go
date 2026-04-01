@@ -28,10 +28,10 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=github.com/dagger/dagger/sdk/java"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 
 	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
@@ -43,10 +43,10 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=java"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 
 	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
@@ -58,10 +58,10 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=java@main"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 }
 

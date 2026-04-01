@@ -251,6 +251,11 @@ class PortID(Scalar):
     type Port."""
 
 
+class QueryID(Scalar):
+    """The `QueryID` scalar type represents an identifier for an object of
+    type Query."""
+
+
 class SDKConfigID(Scalar):
     """The `SDKConfigID` scalar type represents an identifier for an
     object of type SDKConfig."""
@@ -7730,6 +7735,28 @@ class Function(Type):
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
 
+    async def source_module_name(self) -> str:
+        """If this function is provided by a module, the name of the module.
+        Unset otherwise.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str)
+
     def with_arg(
         self,
         name: str,
@@ -10548,6 +10575,7 @@ class Module(Type):
         self,
         *,
         include_dependencies: bool | None = None,
+        entrypoint: bool | None = None,
     ) -> Void | None:
         """Serve a module's API in the current session.
 
@@ -10558,6 +10586,9 @@ class Module(Type):
         ----------
         include_dependencies:
             Expose the dependencies of this module to the client
+        entrypoint:
+            Install the module as the entrypoint, promoting its main-object
+            methods onto the Query root
 
         Returns
         -------
@@ -10574,6 +10605,7 @@ class Module(Type):
         """
         _args = [
             Arg("includeDependencies", include_dependencies, None),
+            Arg("entrypoint", entrypoint, None),
         ]
         _ctx = self._select("serve", _args)
         await _ctx.execute()
@@ -11771,7 +11803,7 @@ class Port(Type):
 
 
 @typecheck
-class Client(Root):
+class Query(Root):
     """The root of the DAG."""
 
     def address(self, value: str) -> Address:
@@ -11870,33 +11902,34 @@ class Client(Root):
         _ctx = self._select("currentModule", _args)
         return CurrentModule(_ctx)
 
-    async def current_type_defs(self) -> list["TypeDef"]:
+    async def current_type_defs(
+        self, *, hide_core: bool | None = None
+    ) -> list["TypeDef"]:
         """The TypeDef representations of the objects currently being served in
         the session.
+
+        Parameters
+        ----------
+        hide_core:
+            Strip core API functions from the Query type, leaving only module-
+            sourced functions (constructors, entrypoint proxies, etc.).
+            Core types (Container, Directory, etc.) are kept so return types
+            and method chaining still work.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("hideCore", hide_core, None),
+        ]
         _ctx = self._select("currentTypeDefs", _args)
         return await _ctx.execute_object_list(TypeDef)
 
-    def current_workspace(
-        self,
-        *,
-        skip_migration_check: bool | None = False,
-    ) -> "Workspace":
+    def current_workspace(self) -> "Workspace":
         """Detect and return the current workspace.
 
         .. caution::
             Experimental: Highly experimental API extracted from a more
             ambitious workspace implementation.
-
-        Parameters
-        ----------
-        skip_migration_check:
-            If true, skip legacy dagger.json migration checks.
         """
-        _args = [
-            Arg("skipMigrationCheck", skip_migration_check, False),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("currentWorkspace", _args)
         return Workspace(_ctx)
 
@@ -12134,6 +12167,30 @@ class Client(Root):
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)
+
+    async def id(self) -> QueryID:
+        """A unique identifier for this Query.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        QueryID
+            The `QueryID` scalar type represents an identifier for an object
+            of type Query.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(QueryID)
 
     def json(self) -> JSONValue:
         """Initialize a JSON value"""
@@ -12548,6 +12605,14 @@ class Client(Root):
         _ctx = self._select("loadPortFromID", _args)
         return Port(_ctx)
 
+    def load_query_from_id(self, id: QueryID) -> Self:
+        """Load a Query from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadQueryFromID", _args)
+        return Query(_ctx)
+
     def load_sdk_config_from_id(self, id: SDKConfigID) -> "SDKConfig":
         """Load a SDKConfig from its ID."""
         _args = [
@@ -12789,6 +12854,13 @@ class Client(Root):
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
+
+    def with_(self, cb: Callable[["Query"], "Query"]) -> "Query":
+        """Call the provided callable with current Query.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -14158,6 +14230,45 @@ class TypeDef(Type):
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory."""
 
+    async def address(self) -> str:
+        """Canonical Dagger address of the workspace directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("address", _args)
+        return await _ctx.execute(str)
+
+    def checks(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> CheckGroup:
+        """Return all checks from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include checks matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("checks", _args)
+        return CheckGroup(_ctx)
+
     async def client_id(self) -> str:
         """The client ID that owns this workspace's host filesystem.
 
@@ -14179,6 +14290,28 @@ class Workspace(Type):
         _ctx = self._select("clientId", _args)
         return await _ctx.execute(str)
 
+    async def config_path(self) -> str:
+        """Path to config.toml relative to the workspace boundary (empty if not
+        initialized).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("configPath", _args)
+        return await _ctx.execute(str)
+
     def directory(
         self,
         path: str,
@@ -14189,13 +14322,15 @@ class Workspace(Type):
     ) -> Directory:
         """Returns a Directory from the workspace.
 
-        Path is relative to workspace root. Use "." for the root directory.
+        Relative paths resolve from the workspace directory. Absolute paths
+        resolve from the workspace boundary.
 
         Parameters
         ----------
         path:
-            Location of the directory to retrieve, relative to the workspace
-            root (e.g., "src", ".").
+            Location of the directory to retrieve. Relative paths (e.g.,
+            "src") resolve from the workspace directory; absolute paths (e.g.,
+            "/src") resolve from the workspace boundary.
         exclude:
             Exclude artifacts that match the given pattern (e.g.,
             ["node_modules/", ".git*"]).
@@ -14217,13 +14352,15 @@ class Workspace(Type):
     def file(self, path: str) -> File:
         """Returns a File from the workspace.
 
-        Path is relative to workspace root.
+        Relative paths resolve from the workspace directory. Absolute paths
+        resolve from the workspace boundary.
 
         Parameters
         ----------
         path:
-            Location of the file to retrieve, relative to the workspace root
-            (e.g., "go.mod").
+            Location of the file to retrieve. Relative paths (e.g., "go.mod")
+            resolve from the workspace directory; absolute paths (e.g.,
+            "/go.mod") resolve from the workspace boundary.
         """
         _args = [
             Arg("path", path),
@@ -14240,17 +14377,21 @@ class Workspace(Type):
         """Search for a file or directory by walking up from the start path
         within the workspace.
 
-        Returns the path relative to the workspace root if found, or null if
-        not found.
+        Returns the absolute workspace path if found, or null if not found.
 
-        The search stops at the workspace root and will not traverse above it.
+        Relative start paths resolve from the workspace directory.
+
+        The search stops at the workspace boundary and will not traverse above
+        it.
 
         Parameters
         ----------
         name:
             The name of the file or directory to search for.
         from_:
-            Path to start the search from, relative to the workspace root.
+            Path to start the search from. Relative paths resolve from the
+            workspace directory; absolute paths resolve from the workspace
+            boundary.
 
         Returns
         -------
@@ -14272,6 +14413,43 @@ class Workspace(Type):
         ]
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)
+
+    def generators(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> GeneratorGroup:
+        """Return all generators from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include generators matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("generators", _args)
+        return GeneratorGroup(_ctx)
+
+    async def has_config(self) -> bool:
+        """Whether a config.toml file exists in the workspace.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hasConfig", _args)
+        return await _ctx.execute(bool)
 
     async def id(self) -> WorkspaceID:
         """A unique identifier for this Workspace.
@@ -14297,8 +14475,27 @@ class Workspace(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(WorkspaceID)
 
-    async def root(self) -> str:
-        """Absolute path to the workspace root directory.
+    async def initialized(self) -> bool:
+        """Whether .dagger/config.toml exists.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("initialized", _args)
+        return await _ctx.execute(bool)
+
+    async def path(self) -> str:
+        """Workspace directory path relative to the workspace boundary.
 
         Returns
         -------
@@ -14315,8 +14512,15 @@ class Workspace(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("root", _args)
+        _ctx = self._select("path", _args)
         return await _ctx.execute(str)
+
+
+class Client(Query):
+    """The Dagger client.
+
+    Inherits all Query API methods and adds connection management.
+    """
 
 
 dag = Client()
@@ -14432,6 +14636,8 @@ __all__ = [
     "Port",
     "PortForward",
     "PortID",
+    "Query",
+    "QueryID",
     "ReturnType",
     "SDKConfig",
     "SDKConfigID",

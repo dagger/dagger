@@ -1,5 +1,8 @@
 type TestSplit {
-  let testSpecific(
+  """
+  Lower-level API for running specific tests
+  """
+  pub testSpecific(
     run: [String!]!,
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
