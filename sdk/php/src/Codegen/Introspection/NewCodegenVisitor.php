@@ -417,8 +417,7 @@ class NewCodegenVisitor extends CodeWriter
         IntrospectionInputValue $arg,
         Method $method,
         ?IntrospectionField $field = null,
-    ): void
-    {
+    ): void {
         $parameter = $method->addParameter($arg->name);
 
         if (!$arg->isRequired()) {
