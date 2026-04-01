@@ -100,6 +100,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
 
+		dagql.Func("services", s.moduleServices).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return all services defined by the module`).
+			Args(
+				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
+			),
+
 		dagql.Func("generator", s.moduleGenerator).
 			Experimental("This API is highly experimental and may be removed or replaced entirely.").
 			Doc(`Return the generator defined by the module with the given name. Must match to exactly one generator.`).
@@ -917,6 +924,22 @@ func (s *moduleSchema) moduleGenerators(
 		}
 	}
 	return mod.Generators(ctx, include)
+}
+
+func (s *moduleSchema) moduleServices(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.UpGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+	return mod.Services(ctx, include)
 }
 
 func (s *moduleSchema) currentModuleGenerators(
