@@ -2,7 +2,11 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"sync"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -52,6 +56,10 @@ func (ug *UpGroup) List() []*Up {
 func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 	ug = ug.Clone()
 
+	if err := ug.checkPortCollisions(ctx); err != nil {
+		return nil, err
+	}
+
 	jobs := parallel.New().WithContextualTracer(true)
 	for _, up := range ug.Ups {
 		jobs = jobs.WithJob(up.Name(), func(ctx context.Context) error {
@@ -62,6 +70,69 @@ func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 		return nil, err
 	}
 	return ug, nil
+}
+
+// checkPortCollisions evaluates all service functions to collect their exposed
+// ports and fails fast if two services expose the same host port.
+func (ug *UpGroup) checkPortCollisions(ctx context.Context) error {
+	type portKey struct {
+		port     int
+		protocol NetworkProtocol
+	}
+
+	// Evaluate all services in parallel to collect ports.
+	type servicePort struct {
+		name string
+		port portKey
+	}
+	var (
+		mu       = new(sync.Mutex)
+		allPorts []servicePort
+	)
+
+	jobs := parallel.New().WithContextualTracer(true)
+	for _, up := range ug.Ups {
+		jobs = jobs.WithJob(up.Name()+":preflight", func(ctx context.Context) error {
+			var svcResult dagql.ObjectResult[*Service]
+			if err := up.Node.DagqlValue(ctx, &svcResult); err != nil {
+				return err
+			}
+			svc := svcResult.Self()
+			if svc == nil || svc.Container == nil {
+				return nil
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, p := range svc.Container.Ports {
+				allPorts = append(allPorts, servicePort{
+					name: up.Name(),
+					port: portKey{port: p.Port, protocol: p.Protocol},
+				})
+			}
+			return nil
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return err
+	}
+
+	// Check for duplicates.
+	seen := make(map[portKey]string) // port → first service name
+	var conflicts []string
+	for _, sp := range allPorts {
+		if first, ok := seen[sp.port]; ok {
+			conflicts = append(conflicts, fmt.Sprintf(
+				"port %d/%s is exposed by both %q and %q",
+				sp.port.port, strings.ToLower(string(sp.port.protocol)), first, sp.name,
+			))
+		} else {
+			seen[sp.port] = sp.name
+		}
+	}
+	if len(conflicts) > 0 {
+		return fmt.Errorf("port collision detected:\n  %s", strings.Join(conflicts, "\n  "))
+	}
+	return nil
 }
 
 func (ug *UpGroup) Clone() *UpGroup {
