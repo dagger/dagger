@@ -11,7 +11,7 @@ and operate Dagger modules.
 | [Lockfile](./lockfile.md) | In progress | lockfile.md |
 | [Artifacts](./artifacts.md) | Designed | artifacts.md |
 | [Execution Plans](./plans.md) | Designed | plans.md |
-| [Collections](./collections.md) | Designed (`collections` branch) | collections.md |
+| [Collections](./collections.md) | Designed; prior prototype exists (`collections` branch) | collections.md |
 | [Provenance](./provenance.md) | Designed (high level) | provenance.md |
 | [Stdlib](./stdlib.md) | Stage 1 in progress | stdlib.md |
 
@@ -40,9 +40,10 @@ Workspace plumbing    Lockfile                │
 ```
 
 **Main track:** Workspace plumbing → Artifacts → Execution Plans → Collections
-→ Provenance. Artifacts ships first with module-level dimensions. Collections
-plugs in later as a dimension provider — by then filtering, plans, and batch
-execution are already proven on simpler dimensions.
+→ Provenance. Artifacts establishes the general selector model first:
+module-level dimensions plus synthesized non-collection selector dimensions
+such as `check`. Collections plug in later as keyed dimension providers and
+batch/subset semantics on top of that base.
 
 **Config track:** Lockfile → Workspace configuration. Independent of the main
 track.
@@ -66,8 +67,6 @@ track.
 
 - [../artifacts-on-collections-report.md](../artifacts-on-collections-report.md) —
   design exploration transcript (Artifacts API, Plans, filter model)
-- [../do-we-need-artifact-addresses.md](../do-we-need-artifact-addresses.md) —
-  analysis concluding artifact addresses are unnecessary
 - [../workspace-artifacts.md](../workspace-artifacts.md) — baseline artifacts design
 - [../workspace-artifacts-transcript-guide.md](../workspace-artifacts-transcript-guide.md) —
   reading guide for the full design transcript

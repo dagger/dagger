@@ -1,6 +1,6 @@
 # Collections
 
-## Status: Implemented (`collections` branch)
+## Status: Designed; prior prototype exists (`collections` branch, predates current ordering)
 
 Depends on: [Execution Plans](./plans.md)
 
@@ -10,6 +10,8 @@ Depends on: [Execution Plans](./plans.md)
 - [Proposal](#proposal)
 - [Use Cases](#use-cases)
 - [Interfaces](#interfaces)
+- [How Collections Expand Artifacts](#how-collections-expand-artifacts)
+- [How Collections Expand Plans](#how-collections-expand-plans)
 - [Checks and Generators](#checks-and-generators)
 - [Implementation](#implementation)
 - [General Maps](#general-maps)
@@ -324,6 +326,84 @@ Important boundaries:
 - `batch` is type-specific; different collection types may expose different
   methods under it, and their meaning is outside the core collection algebra
 
+## How Collections Expand Artifacts
+
+Collections extend the selector model defined in [artifacts.md](./artifacts.md).
+They do not replace it.
+
+A collection occurrence contributes:
+- a new public selector dimension named by the collection's item type
+- selector values from the collection's current keys
+- extra artifact coordinates when that dimension is needed for uniqueness in
+  the current scope
+
+Example:
+
+```bash
+$ dagger check --help
+  --module=<name>
+  --check=<name>
+
+$ dagger check --help
+  --module=<name>
+  --check=<name>
+  --go-test=<name>
+```
+
+Base Artifacts scope:
+
+```text
+workspace.artifacts
+  .filterCheck
+  .filterBy("module", ["go"])
+  .filterBy("check", ["run-test"])
+```
+
+Expanded by a collection:
+
+```text
+workspace.artifacts
+  .filterCheck
+  .filterBy("module", ["go"])
+  .filterBy("go-test", ["TestFoo"])
+  .filterBy("check", ["run-test"])
+```
+
+The base dimensions remain valid. Collections add new selector space rather
+than introducing a parallel targeting model.
+
+## How Collections Expand Plans
+
+Plan compilation still starts from an Artifacts scope. Collections change plan
+compilation in two places:
+
+1. collection selector dimensions lower to `subset(keys: ...)` on matching
+   collections
+2. collection `batch` behavior may replace one-item-at-a-time expansion
+
+Example:
+
+```text
+workspace.artifacts
+  .filterCheck
+  .filterBy("module", ["go"])
+  .filterBy("go-test", ["TestFoo", "TestBar"])
+  .check
+```
+
+Without collection-aware batch behavior, the plan may contain one action per
+selected item.
+
+With collection-aware batch behavior, the plan may instead contain one action
+over the filtered subset, equivalent to:
+
+```text
+go.tests
+  .subset(keys: ["TestFoo", "TestBar"])
+  .batch
+  .runTest
+```
+
 ### Typedefs
 
 This section answers how collections are represented in the schema and
@@ -381,6 +461,10 @@ the core collection interfaces defined above.
 Collections affect checks through generated filters and through the collection's
 effective check set.
 
+The base selector model lives in [artifacts.md](./artifacts.md). Collections do
+not replace it. They add keyed dimensions and batch behavior on top of
+pre-existing dimensions such as `module` and `check`.
+
 #### Filter Model
 
 Check filters shape the effective check tree before listing or execution.
@@ -422,9 +506,9 @@ These filters are scope-relative constraints, not unique selectors.
 - A filter may match zero, one, or many occurrences.
 - To narrow further, combine filters.
 
-Function-path selectors remain valid, but filters do not depend on them. A
-selector narrows the scope first. Filters then shape the tree within that
-scope.
+If function-path selectors remain temporarily for CLI compatibility, filters do
+not depend on them. They should be treated as a thin transitional alias over
+the typed selector model, not as a separate long-term targeting system.
 
 Type renames are CLI-breaking for these generated filters.
 
@@ -599,6 +683,4 @@ door.
 
 ## Open Questions
 
-1. Exact rules for automatic column disambiguation when non-collection fields
-   create ambiguous paths. (Moved here from artifacts.md — only relevant once
-   collections land as dimension providers.)
+None currently.

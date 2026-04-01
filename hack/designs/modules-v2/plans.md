@@ -10,8 +10,7 @@ Verbs (`check`, `generate`, `ship`, `up`) compile to an inspectable Plan
 before execution. A Plan is a DAG of Actions with "after" edges. Parallel
 execution is implicit: actions with no pending dependencies run concurrently.
 
-Replaces CheckGroup. Transition path: CheckGroup → CheckGroup + collections
-(done) → Execution Plans (future).
+Replaces CheckGroup. Transition path: CheckGroup → Execution Plans.
 
 ## Schema
 
@@ -104,44 +103,58 @@ Actions are the building blocks of Plans. A Plan is a DAG of Actions with
 "after" edges. The engine compiles verb invocations (`Artifacts.check`) into
 Plans by creating Actions with appropriate ordering.
 
-### Example — three tests, batched
+### Example — two checks, batched
 
 ```
 workspace.artifacts
-  .filterBy("go-test", ["TestFoo", "TestBar", "TestBaz"])
+  .filterCheck
+  .filterBy("module", ["typescript-sdk"])
+  .filterBy("check", ["test-bun", "test-node-lts"])
   .action("check")
-  # → one Action targeting 3 artifacts
+  # → one Action targeting the selected check scope
 ```
 
-### Example — three tests, per-item
+### Example — two checks, per-item
 
 ```
-a1 = workspace.artifacts.filterBy("go-test", ["TestFoo"]).action("check")
-a2 = workspace.artifacts.filterBy("go-test", ["TestBar"]).action("check")
-a3 = workspace.artifacts.filterBy("go-test", ["TestBaz"]).action("check")
-# → three Actions, each targeting 1 artifact
+a1 = workspace.artifacts
+       .filterCheck
+       .filterBy("module", ["typescript-sdk"])
+       .filterBy("check", ["test-bun"])
+       .action("check")
+a2 = workspace.artifacts
+       .filterCheck
+       .filterBy("module", ["typescript-sdk"])
+       .filterBy("check", ["test-node-lts"])
+       .action("check")
+# → one Action per selected check scope
 ```
 
 ### Example — DAG with ordering
 
 ```
-lint   = artifacts.filterBy("go-module", ["./cmd/api"]).action("lint")
-test   = artifacts.filterBy("go-module", ["./cmd/api"]).action("test")
-         # test.after = [lint.id]
-deploy = artifacts.filterBy("netlify-site", ["./docs"]).action("deploy")
-         # deploy.after = [test.id]
+lint    = artifacts.filterBy("module", ["helm"]).action("lint")
+test    = artifacts
+           .filterCheck
+           .filterBy("module", ["helm"])
+           .filterBy("check", ["test"])
+           .action("check")
+           # test.after = [lint.id]
+package = artifacts.filterBy("module", ["helm"]).action("package")
+           # package.after = [test.id]
 ```
 
 Rendered as a visual DAG:
 
 ```
-  lint(./cmd/api) ──▶ test(./cmd/api) ──▶ deploy(./docs)
+  lint(helm) ──▶ check(helm,test) ──▶ package(helm)
 ```
 
 ## Three Phases
 
-1. **Selection.** User provides filters (`--go-test=Foo --go-test=Bar`). The
-   CLI translates these into `filterBy` chains on `Artifacts`.
+1. **Selection.** User provides filters
+   (`--module=typescript-sdk --check=test-bun`). The CLI translates these into
+   `filterBy` chains on `Artifacts`.
 2. **Compilation.** The engine compiles the filtered scope + verb into a Plan.
    All implicit config is materialized into concrete Actions with "after" edges.
 3. **Execution.** The engine walks the DAG. Actions with no pending "after"
@@ -160,8 +173,8 @@ The most recursive verb.
 - Include local check handlers on artifact A.
 - Recursively include `check(B)` for each artifact B referenced by A.
 - If A references B, run `check(B)` before local check handlers on A.
-- If a collection has a batch `check` handler, prefer it over expanding to
-  one item-level `check` per item (batch shadowing).
+- If collection-aware batch behavior exists for the current scope, prefer it
+  over expanding to one item-level `check` per item.
 
 This makes aggregate artifacts useful by default.
 
