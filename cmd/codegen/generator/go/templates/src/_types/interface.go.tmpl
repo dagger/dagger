@@ -221,26 +221,13 @@ func (r *{{ $.Name | InterfaceClientName }}) UnmarshalJSON(bs []byte) error {
   if err != nil {
     return err
   }
-  *r = *(dag.Load{{ $.Name | FormatName }}FromID(ID(id)).(*{{ $.Name | InterfaceClientName }}))
+  *r = {{ $.Name | InterfaceClientName }}{query: dag.query.Select("node").Arg("id", id)}
   return nil
 }
 {{- end }}
 {{ end }}
 
 {{ end -}}
-
-{{ range $field := .Fields }}
-{{ if eq $field.Name "id" }}
-{{- if ne $.Name "Query" }}
-// Load{{ $.Name | FormatName }}FromID loads a {{ $.Name | FormatName }} from an ID.
-func (r *Query) Load{{ $.Name | FormatName }}FromID(id ID) {{ $.Name | FormatName }} {
-	return &{{ $.Name | InterfaceClientName }}{
-		query: r.query.Select("node").Arg("id", id),
-	}
-}
-{{- end }}
-{{ end }}
-{{ end }}
 
 {{- if .PossibleTypes }}
 // Concrete loads and returns the underlying concrete type of this
@@ -261,7 +248,7 @@ func (r *{{ $.Name | InterfaceClientName }}) Concrete(ctx context.Context) (Node
 	switch typeName {
 	{{- range $pt := .PossibleTypes }}
 	case "{{ $pt.Name }}":
-		return dag.Load{{ $pt.Name | FormatName }}FromID(id), nil
+		return &{{ $pt.Name | FormatName }}{query: r.query.Root().Select("node").Arg("id", id)}, nil
 	{{- end }}
 	default:
 		return nil, fmt.Errorf("unknown {{ $.Name }} implementation: %s", typeName)

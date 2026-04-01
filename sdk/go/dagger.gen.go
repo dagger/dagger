@@ -15349,3 +15349,34 @@ const (
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
 )
+
+// Loadable is the constraint for types that can be loaded by ID.
+// Every generated object and interface client type satisfies this.
+type Loadable[T any] interface {
+	Node
+	WithGraphQLQuery(*querybuilder.Selection) T
+}
+
+// Load loads a node by its ID with type safety. It queries __typename
+// to verify the ID refers to the expected type, producing a clean error
+// if the ID is not found or refers to a different type.
+func Load[T Loadable[T]](ctx context.Context, c *Client, id ID) (T, error) {
+	var zero T
+	expectedType := zero.XXX_GraphQLType()
+
+	q := c.query.Select("node").Arg("id", id)
+
+	// Query __typename to verify the type.
+	var typeName string
+	if err := q.Select("__typename").Bind(&typeName).Execute(ctx); err != nil {
+		return zero, fmt.Errorf("load %s: %w", expectedType, err)
+	}
+	if typeName == "" {
+		return zero, fmt.Errorf("load %s: node not found for given ID", expectedType)
+	}
+	if typeName != expectedType {
+		return zero, fmt.Errorf("load %s: ID refers to a %s", expectedType, typeName)
+	}
+
+	return zero.WithGraphQLQuery(q), nil
+}

@@ -234,25 +234,11 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
   if err != nil {
     return err
   }
-  *r = *dag.Load{{ $.Name | FormatName }}FromID(ID(id))
+  *r = {{ $.Name | FormatName }}{query: dag.query.Select("node").Arg("id", id)}
   return nil
 }
 {{- end }}
 
-{{ end }}
-{{ end }}
-
-{{- /* Generate LoadFooFromID client-side convenience method on Query */ -}}
-{{ range $field := .Fields }}
-{{ if eq $field.Name "id" }}
-{{- if ne $.Name "Query" }}
-// Load{{ $.Name | FormatName }}FromID loads a {{ $.Name | FormatName }} from an ID.
-func (r *Query) Load{{ $.Name | FormatName }}FromID(id ID) *{{ $.Name | FormatName }} {
-	return &{{ $.Name | FormatName }}{
-		query: r.query.Select("node").Arg("id", id),
-	}
-}
-{{- end }}
 {{ end }}
 {{ end }}
 

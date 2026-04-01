@@ -148,7 +148,6 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	// the base boilerplate methods needed for all structs implementing an api type
 	code := Empty().
 		Add(spec.concreteStructDefCode()).Line().Line().
-		Add(spec.loadFromIDMethodCode()).Line().Line().
 		Add(spec.withGraphQLQuery()).Line().Line().
 		Add(spec.graphqlTypeMethodCode()).Line().Line().
 		Add(spec.graphqlIDTypeMethodCode()).Line().Line().
@@ -193,10 +192,6 @@ func (spec *parsedIfaceType) idTypeName() string {
 	return "dagger.ID"
 }
 
-func (spec *parsedIfaceType) loadFromIDMethodName() string {
-	return fmt.Sprintf("Load%sFromID", spec.name)
-}
-
 func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec) string {
 	return strcase.ToLowerCamel(method.name)
 }
@@ -228,33 +223,6 @@ func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 			g.Id(spec.concreteStructCachedFieldName(method)).Op("*").Id(primitiveType.GoType().String())
 		}
 	})
-}
-
-/*
-The Load*FromID method attached to the top-level Client struct for this interface. e.g.:
-
-	func LoadCustomIfaceFromID(r *dagger.Client, id dagger.ID) CustomIface {
-		q = querybuilder.Query().Client(r.GraphQLClient())
-		q = q.Select("node")
-		q = q.Arg("id", id)
-		return &customIfaceImpl{
-			query:  q,
-		}
-	}
-*/
-func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
-	return Func().
-		Id(spec.loadFromIDMethodName()).
-		Params(Id("r").Op("*").Id("dagger").Dot("Client"), Id("id").Id("dagger").Dot("ID")).
-		Params(Id(spec.name)).
-		BlockFunc(func(g *Group) {
-			g.Id("q").Op(":=").Id("querybuilder").Dot("Query").Call().Dot("Client").Call(Id("r").Dot("GraphQLClient").Call())
-			g.Id("q").Op("=").Id("q").Dot("Select").Call(Lit("node"))
-			g.Id("q").Op("=").Id("q").Dot("Arg").Call(Lit("id"), Id("id"))
-			g.Return(Op("&").Id(spec.concreteStructName()).Values(Dict{
-				Id("query"): Id("q"),
-			}))
-		})
 }
 
 /*
@@ -359,12 +327,12 @@ func (spec *parsedIfaceType) marshalJSONMethodCode() *Statement {
 The UnmarshalJSON method attached to the concrete implementation of the interface. e.g.:
 
 	func (r *customIfaceImpl) UnmarshalJSON(bs []byte) error {
-		var id CustomIfaceID
+		var id dagger.ID
 		err := json.Unmarshal(bs, &id)
 		if err != nil {
 			return err
 		}
-		*r = *dag.LoadCustomIfaceFromID(id).(*customIfaceImpl)
+		*r = customIfaceImpl{query: dag.query.Select("node").Arg("id", id)}
 		return nil
 	}
 */
@@ -377,8 +345,9 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 			g.Var().Id("id").Id("dagger").Dot("ID")
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("id"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
-			g.Op("*").Id("r").Op("=").Op("*").Id(spec.loadFromIDMethodName()).
-				Call(Id("dag"), Id("id")).Assert(Id("*").Id(spec.concreteStructName()))
+			g.Op("*").Id("r").Op("=").Id(spec.concreteStructName()).Values(Dict{
+				Id("query"): Id("dag").Dot("query").Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")),
+			})
 			g.Return(Nil())
 		})
 }

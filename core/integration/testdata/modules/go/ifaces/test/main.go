@@ -228,7 +228,10 @@ func (m *Test) DepWithIface(ctx context.Context, iface CustomIface) (*Test, erro
 		return nil, err
 	}
 
-	loadedIface := dag.LoadDepCustomIfaceFromID(dagger.ID(id))
+	loadedIface, err := dagger.Load[*dagger.DepCustomIfaceClient](ctx, dag, dagger.ID(id))
+	if err != nil {
+		return nil, err
+	}
 
 	m.Dep = m.Dep.WithIface(loadedIface)
 
