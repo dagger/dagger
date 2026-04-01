@@ -542,6 +542,11 @@ func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeN
 	slices.SortStableFunc(res, func(a, b *ModTreeNode) int {
 		return strings.Compare(a.PathString(), b.PathString())
 	})
+	// Deduplicate by path — a function and its object subtree can both
+	// produce the same leaf (e.g. toolchain services appear in both).
+	res = slices.CompactFunc(res, func(a, b *ModTreeNode) bool {
+		return a.PathString() == b.PathString()
+	})
 	return res, err
 }
 
@@ -701,6 +706,12 @@ func (node *ModTreeNode) walk(ctx context.Context, fn WalkFunc, visiting map[str
 	return nil
 }
 
+// Children returns child nodes for tree walking.
+// NOTE: When a function returns a module-defined object, both a function leaf
+// (preserving IsCheck/IsGenerator/IsUp) and an object subtree child are
+// added with the same Name. This is intentional so that leaf flags are preserved
+// while the object's nested functions are still discoverable via the subtree.
+// Callers that need unique results should deduplicate by path (see RollupNodes).
 func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	var children []*ModTreeNode
 	if objType := node.ObjectType(); objType != nil {
@@ -710,17 +721,26 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				continue
 			}
 			returnType := fn.ReturnType.ToType().Name()
-			objectAdded := false
-			// if the type returned by the function is an object, check the children of the return type
+			// always add the function itself as a child first
+			children = append(children, &ModTreeNode{
+				Parent:         node,
+				Name:           fn.Name,
+				DagqlServer:    node.DagqlServer,
+				Module:         node.Module,
+				OriginalModule: node.OriginalModule,
+				Type:           fn.ReturnType,
+				IsCheck:        fn.IsCheck,
+				IsGenerator:    fn.IsGenerator,
+				IsUp:           fn.IsUp,
+				Description:    fn.Description,
+			})
+			// if the type returned by the function is an object, also add the object subtree
 			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
-				// avoid cycles (X.withFoo: X)
 				returnType != nodeType {
-				// search for the object defined by the return type, in the "originalModule" that can be the toolchain one
 				if subObj, ok := node.OriginalModule.ObjectByName(fn.ReturnType.ToType().Name()); ok {
-					objectAdded = true
 					children = append(children, &ModTreeNode{
 						Parent:         node,
-						Name:           fn.Name, // use the name of the function and not the name of the type as we want the chain
+						Name:           fn.Name,
 						DagqlServer:    node.DagqlServer,
 						Module:         node.Module,
 						OriginalModule: node.OriginalModule,
@@ -731,20 +751,6 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 						Description:    subObj.Description,
 					})
 				}
-			}
-			if !objectAdded {
-				children = append(children, &ModTreeNode{
-					Parent:         node,
-					Name:           fn.Name,
-					DagqlServer:    node.DagqlServer,
-					Module:         node.Module,
-					OriginalModule: node.OriginalModule,
-					Type:           fn.ReturnType,
-					IsCheck:        fn.IsCheck,
-					IsGenerator:    fn.IsGenerator,
-					IsUp:           fn.IsUp,
-					Description:    fn.Description,
-				})
 			}
 		}
 		for _, field := range objType.Fields {
