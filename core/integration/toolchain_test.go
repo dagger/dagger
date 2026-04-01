@@ -515,6 +515,11 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	const (
+		toolchainOldRef = "github.com/dagger/pytest@43bbd8a3daa3db19202eec22a93971e3c54d7670"
+		toolchainNewRef = "github.com/dagger/pytest@a6ae8e2911f9f0a7621b05bf25593bc51652f7d6"
+	)
+
 	// Test installing multiple versions of the same toolchain using different commits
 	t.Run("install multiple commits of same toolchain", func(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
@@ -525,13 +530,13 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		// Install first commit
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install",
-			"github.com/dagger/jest@4bb91226fb222aab808bd4ffd5666697c25ab2ef",
+			toolchainOldRef,
 		))
 
-		// will fail at name deduplication (both named "jest")
+		// will fail at name deduplication (both named "pytest")
 		_, err := modGen.With(daggerExec(
 			"toolchain", "install",
-			"github.com/dagger/jest@6da037d411f3c2b492196b39229a30470b72bee5",
+			toolchainNewRef,
 		)).CombinedOutput(ctx)
 
 		// this should error with "duplicate toolchain name"
@@ -547,14 +552,14 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 
 		// Install first commit
 		modGen = modGen.With(daggerExec(
-			"toolchain", "install", "--name", "jest-old",
-			"github.com/dagger/jest@4bb91226fb222aab808bd4ffd5666697c25ab2ef",
+			"toolchain", "install", "--name", "pytest-old",
+			toolchainOldRef,
 		))
 
-		// will fail at name deduplication (both named "jest")
+		// will fail at name deduplication (both named "pytest")
 		modGen = modGen.With(daggerExec(
-			"toolchain", "install", "--name", "jest-new",
-			"github.com/dagger/jest@6da037d411f3c2b492196b39229a30470b72bee5",
+			"toolchain", "install", "--name", "pytest-new",
+			toolchainNewRef,
 		))
 
 		// This should work if we use different names
@@ -562,15 +567,15 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		require.NoError(t, err)
 
 		// Verify both toolchains are present
-		require.Contains(t, out, "jest-old")
-		require.Contains(t, out, "jest-new")
+		require.Contains(t, out, "pytest-old")
+		require.Contains(t, out, "pytest-new")
 
 		// Different names should appear in check list
 		out, err = modGen.With(daggerExec("check", "-l")).Stdout(ctx)
 		require.NoError(t, err)
 
-		require.Contains(t, out, "jest-old:test")
-		require.Contains(t, out, "jest-new:test")
+		require.Contains(t, out, "pytest-old:test")
+		require.Contains(t, out, "pytest-new:test")
 
 		t.Logf("Toolchains with different names:\n%s", out)
 	})

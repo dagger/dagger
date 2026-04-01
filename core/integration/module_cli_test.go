@@ -341,10 +341,10 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 				With(daggerExec("init", "--name=bare", "--sdk="+tc.sdk))
 
 			out, err := modGen.
-				With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+				With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+			require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 
 			t.Run("configures .gitattributes", func(ctx context.Context, t *testctx.T) {
 				ignore, err := modGen.File(".gitattributes").Contents(ctx)
@@ -880,7 +880,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			With(daggerExec("install", "--eager-runtime", "./dep")).
 			Sync(ctx)
 
-		requireErrOut(t, err, "failed to install module")
+		requireErrOut(t, err, "failed to install dependency")
 		requireErrOut(t, err, "definitelyUndefinedSymbol")
 	})
 
@@ -1345,11 +1345,12 @@ func (m *OtherObj) FnE() *dagger.Container {
 	})
 
 	t.Run("no module present errors nicely", func(ctx context.Context, t *testctx.T) {
-		_, err := ctr.
+		out, err := ctr.
 			WithWorkdir("/empty").
 			With(daggerFunctions()).
-			Stdout(ctx)
-		requireErrOut(t, err, `module not found`)
+			Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "No functions found.")
 	})
 }
 

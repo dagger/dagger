@@ -210,6 +210,20 @@ func (Go) Version() string {
 }
 `,
 		)).
+		With(withModInitAt("modules/objdoc", "go", `package main
+
+func New() *Objdoc {
+	return &Objdoc{}
+}
+
+// Object-only description
+type Objdoc struct{}
+
+func (Objdoc) Hello() string {
+	return "hello"
+}
+`,
+		)).
 		With(withModInitAt("other", "go", ` package main
 
 // A local module
@@ -222,19 +236,22 @@ func (Other) Version() string {
 		)).
 		With(daggerExec("install", "./modules/dep")).
 		With(daggerExec("install", "./modules/git")).
-		With(daggerExec("install", "./modules/go"))
+		With(daggerExec("install", "./modules/go")).
+		With(daggerExec("install", "./modules/objdoc"))
 
 	t.Run("general help", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
 			With(daggerShell(".help")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "Main module")
-		require.NotContains(t, out, "Multiline module description.")
 		require.Regexp(t, `version\s+Test version`, out)
 		require.Regexp(t, `go\s+Encouragement`, out)
 		require.Regexp(t, `dep\s+Dependency module`, out)
 		require.Regexp(t, `git\s+A git helper`, out)
+		// Constructor has no description and module has no package doc,
+		// but the object type has a doc comment — the engine should use
+		// it as the constructor's description on the Query root.
+		require.Regexp(t, `objdoc\s+Object-only description`, out)
 		require.NotContains(t, out, "A go helper")
 	})
 
@@ -286,23 +303,6 @@ func (Other) Version() string {
 		require.Contains(t, out, "RETURNS")
 	})
 
-	t.Run("disambiguate dependency function", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps | go | version")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "go version", out)
-	})
-
-	t.Run("disambiguate dependency function doc", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps | .help go")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "MODULE")
-		require.Contains(t, out, "A go helper")
-	})
-
 	t.Run("current module function takes precedence over stdlib", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
 			With(daggerShell("version")).
@@ -319,23 +319,6 @@ func (Other) Version() string {
 		require.Contains(t, out, "Test version")
 	})
 
-	t.Run("disambiguate stdlib command", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".stdlib | version")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Regexp(t, regexp.MustCompile(`^v0.\d+`), out)
-	})
-
-	t.Run("disambiguate stdlib command doc", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".stdlib | .help version")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "Get the current Dagger Engine version.")
-		require.Contains(t, out, "RETURNS")
-	})
-
 	t.Run("dependency module function takes precedence over stdlib", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
 			With(daggerShell("git acme.org | url")).
@@ -350,8 +333,8 @@ func (Other) Version() string {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "A git helper")
-		require.Contains(t, out, "ENTRYPOINT")
-		require.Contains(t, out, "AVAILABLE FUNCTIONS")
+		// git is a function on Query; .help shows function-style docs.
+		require.Contains(t, out, "RETURNS")
 	})
 
 	t.Run("other module function", func(ctx context.Context, t *testctx.T) {
@@ -377,7 +360,7 @@ func (Other) Version() string {
 			WithWorkdir("modules/git").
 			With(daggerShell("url")).
 			Sync(ctx)
-		requireErrOut(t, err, "constructor: requires 1 positional argument(s), received 0")
+		requireErrOut(t, err, `missing required argument: "url"`)
 	})
 
 	t.Run("current module required constructor arg function", func(ctx context.Context, t *testctx.T) {
@@ -407,133 +390,6 @@ func (Other) Version() string {
 		require.Regexp(t, regexp.MustCompile("\n  version +Dep version"), out)
 	})
 
-	t.Run("deps result", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "- dep")
-		require.Contains(t, out, "- git")
-		require.Contains(t, out, "- go")
-	})
-
-	t.Run("deps doc", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps | .help")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Regexp(t, regexp.MustCompile(`\n  dep +Dependency module`), out)
-		require.Regexp(t, regexp.MustCompile(`\n  git +A git helper`), out)
-		require.Regexp(t, regexp.MustCompile(`\n  go +A go helper`), out)
-	})
-
-	t.Run("deps doc module", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".deps | .help go")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "MODULE")
-		require.Contains(t, out, "A go helper")
-	})
-
-	t.Run("stdlib result", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".stdlib")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "- version")
-		require.NotContains(t, out, "Get the current Dagger Engine version")
-		require.NotContains(t, out, "- load-container-from-id")
-		require.NotContains(t, out, "- git") // replaced by dependency
-	})
-
-	t.Run("stdlib doc", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".stdlib | .help")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "version")
-		require.Contains(t, out, "Get the current Dagger Engine version")
-		require.NotContains(t, out, "load-container-from-id")
-		require.NotContains(t, out, "Git repository") // replaced by dependency
-	})
-
-	t.Run("stdlib doc with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
-		_, err := setup.
-			With(daggerShell(".stdlib | .help git")).
-			Stdout(ctx)
-		require.Error(t, err)
-		requireErrRegexp(t, err, "command not found")
-	})
-
-	t.Run("stdlib doc with function", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".stdlib | .help http")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "an http remote url content")
-		require.Contains(t, out, "http <url> [options]")
-		require.Contains(t, out, "RETURNS")
-	})
-
-	t.Run("core result", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".core")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "- load-container-from-id")
-		require.NotContains(t, out, "Load a Container") // no descriptions
-		require.NotContains(t, out, "- git")            // replaced by dependency
-	})
-
-	t.Run("core doc", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".core | .help")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "load-container-from-id")
-		require.Contains(t, out, "Load a Container from its ID")
-		require.NotContains(t, out, "- git") // replaced by dependency
-	})
-
-	t.Run("core doc function", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".core | .help load-container-from-id")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Regexp(t, regexp.MustCompile(`^Load a Container from its ID`), out)
-		require.Contains(t, out, "load-container-from-id <id>")
-		require.Contains(t, out, "RETURNS")
-	})
-
-	t.Run("stdlib with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
-		_, err := setup.
-			With(daggerShell(".stdlib | git")).
-			Sync(ctx)
-		requireErrOut(t, err, `command not found: "git"`)
-	})
-
-	t.Run("stdlib doc with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
-		_, err := setup.
-			With(daggerShell(".stdlib | .help git")).
-			Sync(ctx)
-		requireErrOut(t, err, `command not found: "git"`)
-	})
-
-	t.Run("core with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
-		_, err := setup.
-			With(daggerShell(".core | git")).
-			Sync(ctx)
-		requireErrOut(t, err, `"git" not found`)
-	})
-
-	t.Run("core doc with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
-		_, err := setup.
-			With(daggerShell(".core | .help git")).
-			Sync(ctx)
-		requireErrOut(t, err, `"git" not found`)
-	})
-
 	t.Run("types result", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
 			With(daggerShell(".types")).
@@ -552,16 +408,6 @@ func (Other) Version() string {
 		require.Contains(t, out, "OBJECT")
 		require.Contains(t, out, "Test main object")
 		require.Contains(t, out, "Encouragement")
-	})
-}
-
-func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	modGen := daggerCliBase(t, c)
-
-	t.Run("module builtin does not work", func(ctx context.Context, t *testctx.T) {
-		_, err := modGen.With(daggerShell(".deps")).Sync(ctx)
-		requireErrOut(t, err, "module not loaded")
 	})
 }
 
@@ -680,9 +526,9 @@ type Foo struct{
 func (ShellSuite) TestNotExists(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	_, err := modInit(t, c, "go", "").
-		With(daggerShell("load-container-from-id")).
+		With(daggerShell("i-dont-exist")).
 		Sync(ctx)
-	requireErrOut(t, err, "\"load-container-from-id\" does not exist")
+	requireErrOut(t, err, "\"i-dont-exist\" does not exist")
 }
 
 func (ShellSuite) TestIntegerArg(ctx context.Context, t *testctx.T) {
@@ -734,7 +580,7 @@ func (m *Test) DirectoryID(ctx context.Context) (string, error) {
 	return string(id), err
 }
 `
-	script := ".core | load-directory-from-id $(directory-id) | file foo | contents"
+	script := "load-directory-from-id $(directory-id) | file foo | contents"
 
 	out, err := modInit(t, c, "go", source).
 		With(daggerShell(script)).
@@ -1154,7 +1000,7 @@ directory | with-new-file test bar | file test | contents
 	t.Run("async", func(ctx context.Context, t *testctx.T) {
 		script := `
 directory | with-new-file test foo | file test | contents &
-directory | with-new-file test bar | file test | contents & 
+directory | with-new-file test bar | file test | contents &
 .wait
 `
 		c := connect(ctx, t)

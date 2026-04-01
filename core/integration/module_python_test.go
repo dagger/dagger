@@ -90,11 +90,11 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
                     def message(self) -> str:
                         return f"Hello, {self.my_name}!"
             `)).
-			With(daggerQuery(`{helloWorld(myName: "Monde"){message}}`)).
+			With(daggerQuery(`{with(myName: "Monde"){message}}`)).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `{"helloWorld":{"message":"Hello, Monde!"}}`, out)
+		require.JSONEq(t, `{"with":{"message":"Hello, Monde!"}}`, out)
 	})
 
 	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
@@ -122,10 +122,10 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 
 	t.Run("init module when current dir only has hidden dirs", func(ctx context.Context, t *testctx.T) {
@@ -143,10 +143,10 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 
 	t.Run("specify a custom location for the main object", func(ctx context.Context, t *testctx.T) {
@@ -186,9 +186,9 @@ class HelloWorld:
 			).
 			With(daggerExec("init", "--name=hello-world", "--sdk=python", "--source=."))
 
-		out, err := modGen.With(daggerQuery(`{helloWorld{message}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"helloWorld":{"message":"Hello, World!"}}`, out)
+		require.JSONEq(t, `{"message":"Hello, World!"}`, out)
 	})
 
 	t.Run("module name with number", func(ctx context.Context, t *testctx.T) {
@@ -243,9 +243,9 @@ class Test:
 			).
 			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
 
-		out, err := modGen.With(daggerQuery(`{test{message}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
+		require.JSONEq(t, `{"message":"Hello, World!"}`, out)
 	})
 
 	t.Run("fallback to main import package name", func(ctx context.Context, t *testctx.T) {
@@ -290,9 +290,9 @@ class Test:
 			).
 			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
 
-		out, err := modGen.With(daggerQuery(`{test{message}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
+		require.JSONEq(t, `{"message":"Hello, World!"}`, out)
 	})
 }
 
@@ -954,7 +954,7 @@ func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Regexp(t, `Test@xxh3:[a-f0-9]{16}`, out)
+		require.Equal(t, "Query\n", out)
 	})
 
 	t.Run("no uv.lock on develop", func(ctx context.Context, t *testctx.T) {
@@ -1089,68 +1089,68 @@ func (PythonSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 	}{
 		{
 			name:     "def () -> str",
-			query:    `{test{hello}}`,
-			expected: `{"test":{"hello":"hello"}}`,
+			query:    `{hello}`,
+			expected: `{"hello":"hello"}`,
 		},
 		{
 			name:     "def () -> None",
-			query:    `{test{helloNone}}`,
-			expected: `{"test":{"helloNone":null}}`,
+			query:    `{helloNone}`,
+			expected: `{"helloNone":null}`,
 		},
 		{
 			name:     "def ()",
-			query:    `{test{helloVoid}}`,
-			expected: `{"test":{"helloVoid":null}}`,
+			query:    `{helloVoid}`,
+			expected: `{"helloVoid":null}`,
 		},
 		{
 			name:     "def (str) -> str",
-			query:    `{test{echo(msg:"world")}}`,
-			expected: `{"test":{"echo":"world"}}`,
+			query:    `{echo(msg:"world")}`,
+			expected: `{"echo":"world"}`,
 		},
 		{
 			name:     "def (str = 'hello') -> str",
-			query:    `{test{echoDefault}}`,
-			expected: `{"test":{"echoDefault":"hello"}}`,
+			query:    `{echoDefault}`,
+			expected: `{"echoDefault":"hello"}`,
 		},
 		{
 			name:     "def (str = 'hello') -> str: (bonjour)",
-			query:    `{test{echoDefault(msg:"bonjour")}}`,
-			expected: `{"test":{"echoDefault":"bonjour"}}`,
+			query:    `{echoDefault(msg:"bonjour")}`,
+			expected: `{"echoDefault":"bonjour"}`,
 		},
 		{
 			name:     "def (str | None = None) -> str",
-			query:    `{test{echoOptional}}`,
-			expected: `{"test":{"echoOptional":"hello"}}`,
+			query:    `{echoOptional}`,
+			expected: `{"echoOptional":"hello"}`,
 		},
 		{
 			name:     "def (Optional[str] = None) -> str",
-			query:    `{test{echoOldOptional}}`,
-			expected: `{"test":{"echoOldOptional":"hello"}}`,
+			query:    `{echoOldOptional}`,
+			expected: `{"echoOldOptional":"hello"}`,
 		},
 		{
 			name:     "def (str | None = None) -> str: (bonjour)",
-			query:    `{test{echoOptional(msg:"bonjour")}}`,
-			expected: `{"test":{"echoOptional":"bonjour"}}`,
+			query:    `{echoOptional(msg:"bonjour")}`,
+			expected: `{"echoOptional":"bonjour"}`,
 		},
 		{
 			name:     "sequence abc",
-			query:    `{test{echoSequence(msg:["a", "b", "c"])}}`,
-			expected: `{"test":{"echoSequence":"a+b+c"}}`,
+			query:    `{echoSequence(msg:["a", "b", "c"])}`,
+			expected: `{"echoSequence":"a+b+c"}`,
 		},
 		{
 			name:     "tuple",
-			query:    `{test{echoTuple(msg:["a", "b", "c"])}}`,
-			expected: `{"test":{"echoTuple":"a+b+c"}}`,
+			query:    `{echoTuple(msg:["a", "b", "c"])}`,
+			expected: `{"echoTuple":"a+b+c"}`,
 		},
 		{
 			name:     "list",
-			query:    `{test{echoList(msg:["a", "b", "c"])}}`,
-			expected: `{"test":{"echoList":"a+b+c"}}`,
+			query:    `{echoList(msg:["a", "b", "c"])}`,
+			expected: `{"echoList":"a+b+c"}`,
 		},
 		{
 			name:     "def (str, str, int) -> str",
-			query:    `{test{echoOpts(msg:"hello", suffix:"!", times:3)}}`,
-			expected: `{"test":{"echoOpts":"hello!hello!hello!"}}`,
+			query:    `{echoOpts(msg:"hello", suffix:"!", times:3)}`,
+			expected: `{"echoOpts":"hello!hello!hello!"}`,
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -1194,23 +1194,23 @@ func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T)
 	}{
 		{
 			name:     "read",
-			query:    fmt.Sprintf(`{test{read(dir: %q)}}`, dirID),
-			expected: `{"test":{"read":"bar"}}`,
+			query:    fmt.Sprintf(`{read(dir: %q)}`, dirID),
+			expected: `{"read":"bar"}`,
 		},
 		{
 			name:     "read list",
-			query:    fmt.Sprintf(`{test{readList(dir: [%q])}}`, dirID),
-			expected: `{"test":{"readList":"bar"}}`,
+			query:    fmt.Sprintf(`{readList(dir: [%q])}`, dirID),
+			expected: `{"readList":"bar"}`,
 		},
 		{
 			name:     "read optional",
-			query:    fmt.Sprintf(`{test{readOptional(dir: %q)}}`, dirID),
-			expected: `{"test":{"readOptional":"bar"}}`,
+			query:    fmt.Sprintf(`{readOptional(dir: %q)}`, dirID),
+			expected: `{"readOptional":"bar"}`,
 		},
 		{
 			name:     "read optional (default)",
-			query:    `{test{readOptional}}`,
-			expected: `{"test":{"readOptional":""}}`,
+			query:    `{readOptional}`,
+			expected: `{"readOptional":""}`,
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -1548,7 +1548,7 @@ func (PythonSuite) TestNameConflicts(ctx context.Context, t *testctx.T) {
             from_: str = field(default="")
 
             @function
-            def with_(self, import_: str = "") -> str:
+            def pass_(self, import_: str = "") -> str:
                 return import_
         `)
 
@@ -1556,7 +1556,7 @@ func (PythonSuite) TestNameConflicts(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "foo", out)
 
-	out, err = modGen.With(daggerCall("with", "--import=bar")).Stdout(ctx)
+	out, err = modGen.With(daggerCall("pass", "--import=bar")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bar", out)
 }
@@ -1603,11 +1603,11 @@ func (PythonSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
                 self.message = "bar"
                 return self
         `).
-		With(daggerQuery(`{test{foo{message}}}`)).
+		With(daggerQuery(`{foo{message}}`)).
 		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"foo":{"message":"bar"}}}`, out)
+	require.JSONEq(t, `{"foo":{"message":"bar"}}`, out)
 }
 
 func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {

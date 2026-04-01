@@ -193,7 +193,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			{
 				container {
 					from(address: "` + alpineImage + `") {
-						withError(err: "error raised")
+						withError(err: "error raised") {
+							sync
+						}
 					}
 				}
 			}`,
@@ -205,7 +207,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			{
 				container {
 					from(address: "` + alpineImage + `") {
-						withError(err: "")
+						withError(err: "") {
+							sync
+						}
 					}
 				}
 			}`,

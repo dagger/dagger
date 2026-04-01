@@ -22,12 +22,16 @@ import (
 func GoTemplateFuncs(
 	ctx context.Context,
 	schema *introspection.Schema,
+	fullSchema *introspection.Schema,
 	schemaVersion string,
 	cfg generator.Config,
 	pkg *packages.Package,
 	fset *token.FileSet,
 	pass int,
 ) template.FuncMap {
+	if fullSchema == nil {
+		fullSchema = schema
+	}
 	return goTemplateFuncs{
 		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
 		ctx:             ctx,
@@ -35,6 +39,7 @@ func GoTemplateFuncs(
 		modulePkg:       pkg,
 		moduleFset:      fset,
 		schema:          schema,
+		fullSchema:      fullSchema,
 		schemaVersion:   schemaVersion,
 		pass:            pass,
 	}.FuncMap()
@@ -42,11 +47,15 @@ func GoTemplateFuncs(
 
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
-	ctx           context.Context
-	cfg           generator.Config
-	modulePkg     *packages.Package
-	moduleFset    *token.FileSet
-	schema        *introspection.Schema
+	ctx        context.Context
+	cfg        generator.Config
+	modulePkg  *packages.Package
+	moduleFset *token.FileSet
+	schema     *introspection.Schema
+	// fullSchema is the complete schema including all dependency types. It is
+	// used for type lookups (e.g. resolving dep-contributed enums in module
+	// code) while schema may be a filtered subset used for code rendering.
+	fullSchema    *introspection.Schema
 	schemaVersion string
 	pass          int
 }
@@ -91,8 +100,21 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"ModuleRelPath":           funcs.moduleRelPath,
 		"Dependencies":            funcs.Dependencies,
 		"HasLocalDependencies":    funcs.HasLocalDependencies,
+		"IsExtendableType":        funcs.isExtendableType,
+		"FullSchemaTypes":         funcs.fullSchemaTypes,
 		"json":                    funcs.json,
 	}
+}
+
+// fullSchemaTypes returns all types from the full schema, including dependency
+// types. Unlike .Types (which is bound to the filtered core schema), this
+// includes types contributed by dependency modules.
+func (funcs goTemplateFuncs) fullSchemaTypes() []*introspection.Type {
+	return funcs.fullSchema.Visit()
+}
+
+func (goTemplateFuncs) isExtendableType(t introspection.Type) bool {
+	return slices.Contains(introspection.ExtendableTypes, t.Name)
 }
 
 func (goTemplateFuncs) json(v any) (string, error) {
@@ -164,9 +186,6 @@ func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) (bool, error)
 // formatName formats a GraphQL name (e.g. object, field, arg) into a Go equivalent
 // Example: `fooId` -> `FooID`
 func formatName(s string) string {
-	if s == generator.QueryStructName {
-		return generator.QueryStructClientName
-	}
 	if len(s) > 0 {
 		s = strings.ToUpper(string(s[0])) + s[1:]
 	}

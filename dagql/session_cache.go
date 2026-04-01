@@ -79,6 +79,12 @@ func WithNonInternalTelemetry(ctx context.Context) context.Context {
 	return context.WithValue(ctx, internalKey{}, false)
 }
 
+// withoutNonInternalTelemetry removes the internal flag from the context,
+// so that Server.Select does not mark its spans internal.
+func withoutNonInternalTelemetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, internalKey{}, nil)
+}
+
 func telemetryKeys(ctx context.Context) *sync.Map {
 	if v := ctx.Value(seenKeysCtxKey{}); v != nil {
 		return v.(*sync.Map)
