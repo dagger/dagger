@@ -214,6 +214,10 @@ type ModuleConfigDependency struct {
 	// IgnoreGenerators is a list of generator patterns to exclude from this toolchain.
 	// Patterns can use glob syntax to match generator names.
 	IgnoreGenerators []string `json:"ignoreGenerators,omitempty"`
+
+	// IgnoreServices is a list of service (up) patterns to exclude from this toolchain.
+	// Patterns can use glob syntax to match service names.
+	IgnoreServices []string `json:"ignoreServices,omitempty"`
 }
 
 // ModuleConfigArgument represents an argument override for a toolchain function

@@ -64,6 +64,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
+		dagql.Func("services", s.services).
+			Doc("Return all services from modules loaded in the workspace.").
+			Args(
+				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
+			),
 	}.Install(srv)
 }
 
@@ -455,6 +460,60 @@ func (s *workspaceSchema) generators(
 	}
 
 	return &core.GeneratorGroup{Generators: allGenerators}, nil
+}
+
+func (s *workspaceSchema) services(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.UpGroup, error) {
+	include := workspaceIncludePatterns(args.Include)
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ignoreServices := toolchainIgnorePatterns(mods, func(cfg *modules.ModuleConfigDependency) []string {
+		return cfg.IgnoreServices
+	})
+
+	var allUps []*core.Up
+	for _, mod := range mods {
+		upGroup, err := mod.Services(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("services from module %q: %w", mod.Name(), err)
+		}
+		reparentWorkspaceTreeRoot(upGroup.Node, mod.Name())
+		filtered, err := filterNodesByInclude(
+			ctx,
+			upGroup.Ups,
+			include,
+			func(up *core.Up) *core.ModTreeNode { return up.Node },
+			func(up *core.Up) string { return up.Name() },
+			"service",
+		)
+		if err != nil {
+			return nil, err
+		}
+		if exclude := ignoreServices[mod.Name()]; len(exclude) > 0 {
+			filtered, err = filterNodesByExclude(
+				ctx,
+				filtered,
+				exclude,
+				func(up *core.Up) *core.ModTreeNode { return up.Node },
+				func(up *core.Up) string { return up.Name() },
+				"service",
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
+		allUps = append(allUps, filtered...)
+	}
+
+	return &core.UpGroup{Ups: allUps}, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
