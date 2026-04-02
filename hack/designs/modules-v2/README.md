@@ -11,6 +11,7 @@ and operate Dagger modules.
 | [Lockfile](./lockfile.md) | In progress | lockfile.md |
 | [Artifacts](./artifacts.md) | Designed | artifacts.md |
 | [Execution Plans](./plans.md) | Designed | plans.md |
+| [Ship](./ship.md) | Designed | ship.md |
 | [Collections](./collections.md) | Designed; prior prototype exists (`collections` branch) | collections.md |
 | [Provenance](./provenance.md) | Designed (high level) | provenance.md |
 | [Stdlib](./stdlib.md) | Stage 1 in progress | stdlib.md |
@@ -28,26 +29,32 @@ Workspace plumbing    Lockfile                │
      (done)                │                  │
         │                  ▼                  │
     Artifacts    Workspace configuration      │
-        ├──────────────────────┐              │
-        ▼                      ▼              │
- Execution Plans         Provenance           │
-        │                                     │
-        ▼                                     │
-  Collections ────────────────────────────────┤
+        ├──────────────────┐                  │
+        ▼                  ▼                  │
+ Execution Plans      Provenance              │
+        ├──────────┐                          │
+        ▼          ▼                          │
+      Ship    Collections ────────────────────┤
                                               ▼
                                          Stdlib stage 3
 ```
 
 **Main track:** Workspace plumbing → Artifacts. From there the design splits:
-- **Selector/orchestration track** — Artifacts → Execution Plans → Collections
+- **Selector/orchestration track** — Artifacts → Execution Plans. From there,
+  [Ship](./ship.md) extends the plan model with shipping semantics, and
+  [Collections](./collections.md) extends the selector/plan base with keyed
+  dimensions and collection-aware batching.
 - **Provenance track** — Artifacts → Provenance
 
 Artifacts establishes the general selector model first: module-level
 dimensions plus synthesized non-collection object-field selector dimensions.
+Execution Plans turns selected artifacts into inspectable DAGs of actions.
+Ship plugs in later as a verb-specific extension over that plan substrate.
 Collections plug in later as keyed dimension providers and batch/subset
-semantics on top of that base. Provenance also builds on Artifacts, but it is
-orthogonal to Execution Plans and Collections: it adds path/git filtering over
-effective artifact provenance rather than new plan or collection semantics.
+semantics on top of the Artifacts/Plans base. Provenance also builds on
+Artifacts, but it is orthogonal to Execution Plans, Ship, and Collections: it
+adds path/git filtering over effective artifact provenance rather than new plan
+or collection semantics.
 
 ## Component Boundaries
 
@@ -55,8 +62,10 @@ effective artifact provenance rather than new plan or collection semantics.
   scope-relative coordinate rows.
 - **Provenance** extends `Artifacts` with path/change predicates over effective
   artifact provenance.
-- **Execution Plans** defines callable functions on selected artifacts and
-  compiles verb invocations into inspectable plans.
+- **Execution Plans** defines `Action`, `Plan`, plan construction, and plan
+  execution. This unit rolls out `check` and `generate`.
+- **Ship** extends `Artifacts` and `Execution Plans` with `+ship`,
+  `filterShip`, and `Artifacts.ship`.
 - **Collections** extends both layers: it adds new keyed selector dimensions
   and collection-aware lowering/batching on top of the Artifacts/Plans base.
 

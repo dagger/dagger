@@ -6,9 +6,11 @@ Depends on: [Artifacts](./artifacts.md)
 
 ## Summary
 
-Verbs (`check`, `generate`, `ship`, `up`) compile to an inspectable Plan
-before execution. A Plan is a DAG of Actions with "after" edges. Parallel
-execution is implicit: actions with no pending dependencies run concurrently.
+Execution Plans introduces a generic `Action`/`Plan` substrate for verb
+orchestration. A Plan is a DAG of Actions with "after" edges. `dagger check`
+and `dagger generate` compile to inspectable plans in this unit. Later docs
+such as [Ship](./ship.md) extend the same substrate with additional
+verb-specific construction rules.
 
 Replaces CheckGroup. Transition path: CheckGroup → Execution Plans.
 
@@ -32,10 +34,28 @@ Included in this unit:
 - public rollout of the selector surfaces defined in [artifacts.md](./artifacts.md)
 - removal of the old `ModTree` / `CheckGroup` / `GeneratorGroup` path
 
+Deferred to [ship.md](./ship.md):
+
+- `Artifacts.ship`
+- `+ship`
+- ship-specific plan construction rules
+
 Deferred to [collections.md](./collections.md):
 
 - collection-provided dimensions
 - collection-aware batch lowering and shadowing
+
+### Pull Request Description
+
+```text
+This PR implements the Execution Plans design unit. It adds `Action`, `Plan`,
+`Artifacts.actions`, `Artifact.actions`, `Artifacts.action`, `Artifact.action`,
+`Artifacts.check`, and `Artifacts.generate`; makes `dagger list` public;
+migrates `dagger check` and `dagger generate` onto the Artifacts/Plans stack;
+publicly rolls out the selector surfaces defined in Artifacts, including the
+first non-collection typed filters; and removes the old `ModTree` /
+`CheckGroup` / `GeneratorGroup` path.
+```
 
 ## Schema
 
@@ -58,12 +78,6 @@ extend type Artifacts {
 
   """Compile a generate execution plan for the selected artifact set."""
   generate: Plan!
-
-  """Compile a ship execution plan for the selected artifact set."""
-  ship: Plan!
-
-  """Compile an up execution plan for the selected artifact set."""
-  up: Plan!
 }
 
 extend type Artifact {
@@ -116,8 +130,8 @@ type Plan {
 
   """
   Execute the plan. Returns void on success, error on failure.
-  All other outputs (check results, deployment URLs, generated files)
-  are side effects observed through telemetry, TUI, or the filesystem.
+  All other outputs (check results, generated files, future verb side effects)
+  are observed through telemetry, TUI, or the filesystem.
   """
   run: Void
 }
@@ -128,11 +142,11 @@ type Plan {
 - **Plan = DAG of Actions.** Each action is (artifacts, function) with "after"
   edges. Parallel is implicit — actions with no pending dependencies run
   concurrently.
-- **Always compiled.** `dagger check` always compiles a Plan, then executes
-  it. `--plan` stops before execution and displays the plan.
+- **Always compiled.** `dagger check` and `dagger generate` always compile a
+  Plan, then execute it. `--plan` stops before execution and displays the plan.
 - **Engine compiles, CLI displays.** The engine owns plan compilation
-  (`Artifacts.check → Plan`). The CLI decides whether to call `run` or
-  display the plan nodes.
+  (`Artifacts.check → Plan`, `Artifacts.generate → Plan`). The CLI decides
+  whether to call `run` or display the plan nodes.
 - **Plans materialize all implicit config.** Workspace defaults, filter
   results, batch-vs-item decisions — all collapsed into concrete Actions.
   The plan is the "fully resolved" view. No more "what will this actually
@@ -159,9 +173,9 @@ An Action bridges artifacts and functions:
 - `Action.run` → execute just this action
 
 Actions are the building blocks of Plans. A Plan is a DAG of Actions with
-"after" edges. The engine compiles verb invocations (`Artifacts.check`) into
-Plans by selecting the relevant actions from the current artifact scope and
-adding appropriate ordering.
+"after" edges. The engine compiles verb invocations such as `Artifacts.check`
+into Plans by selecting the relevant actions from the current artifact scope
+and adding appropriate ordering.
 
 ### Example — two checks, batched
 
@@ -210,25 +224,27 @@ Rendered as a visual DAG:
   prepare(go) ──▶ run(go,linux) ──▶ publish(go)
 ```
 
-## Three Phases
+## Plan Construction
 
-1. **Selection.** User provides filters
-   (`--module=go --platform=linux`). The CLI translates these into
-   `filterBy` chains on `Artifacts`.
-2. **Compilation.** The engine compiles the filtered scope + verb into a Plan.
-   All implicit config is materialized into concrete Actions with "after" edges.
-3. **Execution.** The engine walks the DAG. Actions with no pending "after"
-   dependencies run concurrently. `--plan` stops after compilation and displays
-   the plan without executing.
+Plan compilation has three parts:
 
-## Verb Compilation Rules
+1. **Selection.** User-provided filters
+   (`--module=go --platform=linux`) become `filterBy` chains on `Artifacts`.
+2. **Action discovery.** The engine turns the retained direct handlers for the
+   selected verb into concrete Actions. Batch-vs-item decisions are resolved
+   here.
+3. **Action ordering.** The engine adds `after` edges between Actions.
+   Ordering may come from explicit user composition (`withAfter`) or from the
+   construction rules of the compiled verb.
 
-Each verb has specific rules for how it compiles to a Plan. These rules
-govern recursion, ordering, and expansion.
+This document defines automatic construction rules only for `check` and
+`generate`.
+
+## Check And Generate Construction
 
 ### `check`
 
-The most recursive verb.
+The most recursive verb in this unit.
 
 - Include local check handlers on artifact A.
 - Recursively include `check(B)` for each artifact B referenced by A.
@@ -248,51 +264,13 @@ Conservative — no recursive expansion.
 
 This avoids surprising workspace mutations.
 
-### `ship`
+## Plan Execution
 
-Stricter than `check`.
-
-- Include local ship handlers on artifact A.
-- Do not recursively ship every referenced artifact by default.
-- Usually require `check(A)` first unless explicitly skipped.
-
-Raw references are too broad to define automatic ship propagation.
-
-### `up`
-
-Similar to `ship`.
-
-- Include local up handlers on artifact A.
-- Do not recursively follow all references by default.
-- Likely require `check(A)` or equivalent readiness checks first.
+Once a Plan is constructed, execution is generic DAG walking. Actions with no
+pending "after" dependencies run concurrently. `--plan` stops after
+compilation and displays the DAG without executing it.
 
 ## Future Work
-
-### Shipping in CI
-
-`ship` is targetable via the Artifacts API, but the full CI shipping model is
-not yet defined. Open areas:
-
-- **Environment specificity.** The same artifact may ship to preview, staging,
-  or prod depending on context. PR workflows should skew toward preview/dev.
-- **Dependency policy.** `check` recurses over references; `ship` needs
-  stricter and sometimes explicit dependencies.
-- **Workflow shape.** Some teams want a custom declarative workflow composing
-  `generate`, `check`, `ship`, and approvals. Whether that belongs in schema,
-  workspace config, or external CI is open.
-- **Safety and policy.** Manual approval, secret availability, branch/event
-  gating, protected environments.
-
-### Verb Policy
-
-Workspace or user policy may add gates and ordering on top of core verb
-semantics:
-
-- Require `check` before `ship`.
-- Require explicit confirmation or target selection for production `ship`.
-- Default `ship` target to preview rather than prod.
-
-Policy should refine orchestration, not redefine the core meaning of a verb.
 
 ### Structured Results
 
