@@ -817,11 +817,13 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	getPorts := `query Test($id: ID!) {
-		loadContainerFromID(id: $id) {
-			exposedPorts {
-				port
-				protocol
-				description
+		container: node(id: $id) {
+			... on Container {
+				exposedPorts {
+					port
+					protocol
+					description
+				}
 			}
 		}
 	}`
@@ -833,7 +835,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 				Protocol    dagger.NetworkProtocol
 				Description *string
 			}
-		} `json:"loadContainerFromID"`
+		} `json:"container"`
 	}
 
 	res, err := testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{

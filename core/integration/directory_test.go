@@ -801,9 +801,11 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 		bID := newDirWithFile(t, "b-file", "b-content")
 
 		diff := `query Diff($id: ID!, $other: ID!) {
-			loadDirectoryFromID(id: $id) {
-				diff(other: $other) {
-					entries
+			directory: node(id: $id) {
+				... on Directory {
+					diff(other: $other) {
+						entries
+					}
 				}
 			}
 		}`
@@ -813,7 +815,7 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 				Diff struct {
 					Entries []string
 				}
-			} `json:"loadDirectoryFromID"`
+			} `json:"directory"`
 		}](c, t, diff, &testutil.QueryOptions{
 			Variables: map[string]any{
 				"id":    aID,
@@ -829,7 +831,7 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 				Diff struct {
 					Entries []string
 				}
-			} `json:"loadDirectoryFromID"`
+			} `json:"directory"`
 		}](c, t, diff, &testutil.QueryOptions{
 			Variables: map[string]any{
 				"id":    bID,
