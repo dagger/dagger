@@ -82,6 +82,9 @@ func (ug *UpGroup) checkPortCollisions(ctx context.Context) error {
 	}
 
 	// Evaluate all services in parallel to collect ports.
+	// NOTE: the same DagqlValue() call happens again in runUpLocally during
+	// Run(). This is safe because dagql caches Select results by content
+	// address, so the second evaluation is a cache hit with no re-execution.
 	type servicePort struct {
 		name string
 		port portKey
