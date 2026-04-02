@@ -58,7 +58,7 @@ func (h *shellCallHandler) ChangeDir(ctx context.Context, path string) error {
 
 	var subpath string
 
-	def, cfg, err := h.maybeLoadModule(ctx, path)
+	def, cfg, err := h.maybeLoadModule(ctx, path, dagger.ModuleServeOpts{Entrypoint: true})
 	if err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func (src gitSourceContext) File(dag *dagger.Client, subpath string) *dagger.Fil
 	return src.context(dag).File(subpath)
 }
 
-func (h *shellCallHandler) maybeLoadModule(ctx context.Context, path string) (*moduleDef, *configuredModule, error) {
+func (h *shellCallHandler) maybeLoadModule(ctx context.Context, path string, opts ...dagger.ModuleServeOpts) (*moduleDef, *configuredModule, error) {
 	cfg, err := h.parseModRef(ctx, path)
 	if err != nil {
 		return nil, cfg, fmt.Errorf("find module %q: %w", path, err)
@@ -264,7 +264,7 @@ func (h *shellCallHandler) maybeLoadModule(ctx context.Context, path string) (*m
 		return nil, nil, nil
 	}
 	def, err := h.getOrInitDef(cfg.Digest, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, cfg.Ref, cfg.Source)
+		return initializeModule(ctx, h.dag, cfg.Ref, cfg.Source, opts...)
 	})
 
 	return def, cfg, err

@@ -234,6 +234,8 @@ func TestGlob(t *testing.T) {
 			// also verify using git itself (sanity check)
 			t.Run(pattern+" (git)", func(t *testing.T) {
 				cmd := exec.Command("git", "ls-remote", "file://"+tmpDir)
+				// Avoid inheriting the outer repo's broken worktree .git file in containerized test runs.
+				cmd.Dir = tmpDir
 				if pattern != "" {
 					cmd.Args = append(cmd.Args, "--", pattern)
 				}

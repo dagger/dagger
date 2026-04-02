@@ -40,18 +40,26 @@ func NewCommonFunctions(schemaVersion string, formatTypeFuncs FormatTypeFuncs) *
 	return &CommonFunctions{schemaVersion: schemaVersion, formatTypeFuncs: formatTypeFuncs}
 }
 
-// IsSelfChainable returns true if an object type has any fields that return that same type.
+// IsSelfChainable returns true if an object type has any fields that return
+// that same type, and does not already have a field named "with" (which would
+// conflict with the generated With helper method).
 func (c *CommonFunctions) IsSelfChainable(t introspection.Type) bool {
+	selfChainable := false
 	for _, f := range t.Fields {
+		// If there's already a "with" field, the generated With helper
+		// would conflict with it — skip generating the helper.
+		if f.Name == "with" {
+			return false
+		}
 		// Only consider fields that return a non-null object.
 		if !f.TypeRef.IsObject() || f.TypeRef.Kind != introspection.TypeKindNonNull {
 			continue
 		}
 		if f.TypeRef.OfType.Name == t.Name {
-			return true
+			selfChainable = true
 		}
 	}
-	return false
+	return selfChainable
 }
 
 func (c *CommonFunctions) InnerType(t *introspection.TypeRef) *introspection.TypeRef {

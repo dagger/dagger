@@ -225,6 +225,17 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
         ctx.process_type(type_name)
 
     yield ""
+    yield ""
+    yield "class Client(Query):"
+    yield indent(
+        '"""The Dagger client.\n'
+        "\n"
+        "Inherits all Query API methods and adds connection management.\n"
+        '"""'
+    )
+    ctx.defined.add("Client")
+
+    yield ""
     yield "dag = Client()"
     yield '"""The global client instance."""'
     ctx.defined.add("dag")
@@ -564,7 +575,7 @@ class _ObjectField:
         self.is_list = is_list_of_objects_type(field.type)
         self.is_exec = self.is_leaf or self.is_list
         self.is_void = self.is_leaf and self.named_type.name == "Void"
-        self.type = format_output_type(field.type).replace("Query", "Client")
+        self.type = format_output_type(field.type)
 
         # Any field in the API that returns an ID for its parent object should
         # return the binding for the object instead in the SDK to allow continued
@@ -842,7 +853,7 @@ class Object(ObjectHandler[GraphQLObjectType]):
         return "Root" if t.name == "Query" else "Type"
 
     def type_name(self, t: GraphQLObjectType) -> str:
-        return super().type_name(t).replace("Query", "Client")
+        return super().type_name(t)
 
     def fields(self, t: GraphQLObjectType) -> Iterator[_ObjectField]:
         return (

@@ -56,14 +56,16 @@ available functions.
 	),
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) (rerr error) {
-			mod, err := initializeDefaultModule(ctx, engineClient.Dagger())
+		params := initModuleParams(args)
+		return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+			// -m modules are loaded at engine connect time as extra modules.
+			mod, err := initializeWorkspace(ctx, engineClient.Dagger(), loadTypeDefsOpts{HideCore: true})
 			if err != nil {
 				return err
 			}
 			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
-			for _, field := range cmd.Flags().Args() {
+			for _, field := range args {
 				// Lookup the next function in the specified pipeline
 				nextFunc, err := GetSupportedFunction(mod, o, field)
 				if err != nil {
@@ -87,13 +89,18 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			return functionListRun(o, cmd.OutOrStdout())
+			return functionListRun(o, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer) error {
+func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer) error {
 	fns, skipped := GetSupportedFunctions(o)
+
+	if len(fns) == 0 {
+		fmt.Fprintln(errWriter, "No functions found.")
+		return nil
+	}
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",

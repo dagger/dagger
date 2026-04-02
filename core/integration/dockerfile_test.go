@@ -994,7 +994,7 @@ func (DockerfileSuite) TestCopyExclude(ctx context.Context, t *testctx.T) {
 	dir := baseDir.
 		WithNewFile("Dockerfile",
 			`# syntax=docker/dockerfile:1
-			FROM `+alpineImage+`
+FROM `+alpineImage+`
 COPY --exclude=no data data
 `)
 	found, err := dir.DockerBuild().Exists(ctx, "data/yes")

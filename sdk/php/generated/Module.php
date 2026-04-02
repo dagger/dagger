@@ -165,11 +165,14 @@ class Module extends Client\AbstractObject implements Client\IdAble
      *
      * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
      */
-    public function serve(?bool $includeDependencies = null): void
+    public function serve(?bool $includeDependencies = null, ?bool $entrypoint = null): void
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('serve');
         if (null !== $includeDependencies) {
         $leafQueryBuilder->setArgument('includeDependencies', $includeDependencies);
+        }
+        if (null !== $entrypoint) {
+        $leafQueryBuilder->setArgument('entrypoint', $entrypoint);
         }
         $this->queryLeaf($leafQueryBuilder, 'serve');
     }

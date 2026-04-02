@@ -3348,6 +3348,11 @@ type Function {
   """The location of this function declaration."""
   sourceMap: SourceMap
 
+  """
+  If this function is provided by a module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String!
+
   """Returns the function with the provided argument"""
   withArg(
     """The name of the argument"""
@@ -4284,6 +4289,11 @@ type Module {
   serve(
     """Expose the dependencies of this module to the client"""
     includeDependencies: Boolean
+
+    """
+    Install the module as the entrypoint, promoting its main-object methods onto the Query root
+    """
+    entrypoint: Boolean
   ): Void
 
   """The source for the module."""
@@ -4778,13 +4788,18 @@ type Query {
   """
   The TypeDef representations of the objects currently being served in the session.
   """
-  currentTypeDefs: [TypeDef!]!
+  currentTypeDefs(
+    """
+    Strip core API functions from the Query type, leaving only module-sourced
+    functions (constructors, entrypoint proxies, etc.).
+
+    Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+    """
+    hideCore: Boolean
+  ): [TypeDef!]!
 
   """Detect and return the current workspace."""
-  currentWorkspace(
-    """If true, skip legacy dagger.json migration checks."""
-    skipMigrationCheck: Boolean = false
-  ): Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
+  currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
 
   """The default platform of the engine."""
   defaultPlatform: Platform!
@@ -4906,6 +4921,9 @@ type Query {
     """A service which must be started before the URL is fetched."""
     experimentalServiceHost: ServiceID
   ): File!
+
+  """A unique identifier for this Query."""
+  id: QueryID!
 
   """Initialize a JSON value"""
   json: JSONValue!
@@ -5057,6 +5075,9 @@ type Query {
   """Load a Port from its ID."""
   loadPortFromID(id: PortID!): Port!
 
+  """Load a Query from its ID."""
+  loadQueryFromID(id: QueryID!): Query!
+
   """Load a SDKConfig from its ID."""
   loadSDKConfigFromID(id: SDKConfigID!): SDKConfig
 
@@ -5175,6 +5196,11 @@ type Query {
   """Get the current Dagger Engine version."""
   version: String!
 }
+
+"""
+The `QueryID` scalar type represents an identifier for an object of type Query.
+"""
+scalar QueryID
 
 """Expected return type of an execution"""
 enum ReturnType {
@@ -5736,17 +5762,33 @@ scalar Void
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {
+  """Canonical Dagger address of the workspace directory."""
+  address: String!
+
+  """Return all checks from modules loaded in the workspace."""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup!
+
   """The client ID that owns this workspace's host filesystem."""
   clientId: String!
 
   """
+  Path to config.toml relative to the workspace boundary (empty if not initialized).
+  """
+  configPath: String!
+
+  """
   Returns a Directory from the workspace.
 
-  Path is relative to workspace root. Use "." for the root directory.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   directory(
     """
-    Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    Location of the directory to retrieve. Relative paths (e.g., "src") resolve
+    from the workspace directory; absolute paths (e.g., "/src") resolve from the
+    workspace boundary.
     """
     path: String!
 
@@ -5767,11 +5809,13 @@ type Workspace {
   """
   Returns a File from the workspace.
 
-  Path is relative to workspace root.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   file(
     """
-    Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+    Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
+    from the workspace directory; absolute paths (e.g., "/go.mod") resolve from
+    the workspace boundary.
     """
     path: String!
   ): File!
@@ -5779,23 +5823,40 @@ type Workspace {
   """
   Search for a file or directory by walking up from the start path within the workspace.
 
-  Returns the path relative to the workspace root if found, or null if not found.
+  Returns the absolute workspace path if found, or null if not found.
 
-  The search stops at the workspace root and will not traverse above it.
+  Relative start paths resolve from the workspace directory.
+
+  The search stops at the workspace boundary and will not traverse above it.
   """
   findUp(
     """The name of the file or directory to search for."""
     name: String!
 
-    """Path to start the search from, relative to the workspace root."""
+    """
+    Path to start the search from. Relative paths resolve from the workspace
+    directory; absolute paths resolve from the workspace boundary.
+    """
     from: String = "."
   ): String
+
+  """Return all generators from modules loaded in the workspace."""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup!
+
+  """Whether a config.toml file exists in the workspace."""
+  hasConfig: Boolean!
 
   """A unique identifier for this Workspace."""
   id: WorkspaceID!
 
-  """Absolute path to the workspace root directory."""
-  root: String!
+  """Whether .dagger/config.toml exists."""
+  initialized: Boolean!
+
+  """Workspace directory path relative to the workspace boundary."""
+  path: String!
 }
 
 """

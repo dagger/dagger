@@ -1946,6 +1946,11 @@ export type ModuleServeOpts = {
    * Expose the dependencies of this module to the client
    */
   includeDependencies?: boolean
+
+  /**
+   * Install the module as the entrypoint, promoting its main-object methods onto the Query root
+   */
+  entrypoint?: boolean
 }
 
 /**
@@ -2137,11 +2142,13 @@ export type ClientContainerOpts = {
   platform?: Platform
 }
 
-export type ClientCurrentWorkspaceOpts = {
+export type ClientCurrentTypeDefsOpts = {
   /**
-   * If true, skip legacy dagger.json migration checks.
+   * Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   *
+   * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
-  skipMigrationCheck?: boolean
+  hideCore?: boolean
 }
 
 export type ClientEnvOpts = {
@@ -2282,6 +2289,11 @@ export type ClientSecretOpts = {
    */
   cacheKey?: string
 }
+
+/**
+ * The `QueryID` scalar type represents an identifier for an object of type Query.
+ */
+export type QueryID = string & { __QueryID: never }
 
 /**
  * Expected return type of an execution
@@ -2718,6 +2730,13 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type WorkspaceChecksOpts = {
+  /**
+   * Only include checks matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type WorkspaceDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -2737,9 +2756,16 @@ export type WorkspaceDirectoryOpts = {
 
 export type WorkspaceFindUpOpts = {
   /**
-   * Path to start the search from, relative to the workspace root.
+   * Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
    */
   from?: string
+}
+
+export type WorkspaceGeneratorsOpts = {
+  /**
+   * Only include generators matching the specified patterns
+   */
+  include?: string[]
 }
 
 /**
@@ -8028,6 +8054,7 @@ export class Function_ extends BaseClient {
   private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
+  private readonly _sourceModuleName?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -8038,6 +8065,7 @@ export class Function_ extends BaseClient {
     _deprecated?: string,
     _description?: string,
     _name?: string,
+    _sourceModuleName?: string,
   ) {
     super(ctx)
 
@@ -8045,6 +8073,7 @@ export class Function_ extends BaseClient {
     this._deprecated = _deprecated
     this._description = _description
     this._name = _name
+    this._sourceModuleName = _sourceModuleName
   }
 
   /**
@@ -8138,6 +8167,21 @@ export class Function_ extends BaseClient {
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
+  }
+
+  /**
+   * If this function is provided by a module, the name of the module. Unset otherwise.
+   */
+  sourceModuleName = async (): Promise<string> => {
+    if (this._sourceModuleName) {
+      return this._sourceModuleName
+    }
+
+    const ctx = this._ctx.select("sourceModuleName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -10571,6 +10615,7 @@ export class Module_ extends BaseClient {
    *
    * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
    * @param opts.includeDependencies Expose the dependencies of this module to the client
+   * @param opts.entrypoint Install the module as the entrypoint, promoting its main-object methods onto the Query root
    */
   serve = async (opts?: ModuleServeOpts): Promise<void> => {
     if (this._serve) {
@@ -11671,15 +11716,22 @@ export class Port extends BaseClient {
  * The root of the DAG.
  */
 export class Client extends BaseClient {
+  private readonly _id?: QueryID = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _version?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _defaultPlatform?: Platform, _version?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: QueryID,
+    _defaultPlatform?: Platform,
+    _version?: string,
+  ) {
     super(ctx)
 
+    this._id = _id
     this._defaultPlatform = _defaultPlatform
     this._version = _version
   }
@@ -11689,6 +11741,17 @@ export class Client extends BaseClient {
    */
   public getGQLClient() {
     return this._ctx.getGQLClient()
+  }
+
+  /**
+   * A unique identifier for this Query.
+   */
+  id = async (): Promise<QueryID> => {
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<QueryID> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -11768,13 +11831,18 @@ export class Client extends BaseClient {
 
   /**
    * The TypeDef representations of the objects currently being served in the session.
+   * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   *
+   * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
-  currentTypeDefs = async (): Promise<TypeDef[]> => {
+  currentTypeDefs = async (
+    opts?: ClientCurrentTypeDefsOpts,
+  ): Promise<TypeDef[]> => {
     type currentTypeDefs = {
       id: TypeDefID
     }
 
-    const ctx = this._ctx.select("currentTypeDefs").select("id")
+    const ctx = this._ctx.select("currentTypeDefs", { ...opts }).select("id")
 
     const response: Awaited<currentTypeDefs[]> = await ctx.execute()
 
@@ -11783,11 +11851,10 @@ export class Client extends BaseClient {
 
   /**
    * Detect and return the current workspace.
-   * @param opts.skipMigrationCheck If true, skip legacy dagger.json migration checks.
    * @experimental
    */
-  currentWorkspace = (opts?: ClientCurrentWorkspaceOpts): Workspace => {
-    const ctx = this._ctx.select("currentWorkspace", { ...opts })
+  currentWorkspace = (): Workspace => {
+    const ctx = this._ctx.select("currentWorkspace")
     return new Workspace(ctx)
   }
 
@@ -12314,6 +12381,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Query from its ID.
+   */
+  loadQueryFromID = (id: QueryID): Client => {
+    const ctx = this._ctx.select("loadQueryFromID", { id })
+    return new Client(ctx)
+  }
+
+  /**
    * Load a SDKConfig from its ID.
    */
   loadSDKConfigFromID = (id: SDKConfigID): SDKConfig => {
@@ -12498,6 +12573,15 @@ export class Client extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Call the provided function with current Client.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Client) => Client) => {
+    return arg(this)
   }
 }
 
@@ -13702,9 +13786,13 @@ export class TypeDef extends BaseClient {
  */
 export class Workspace extends BaseClient {
   private readonly _id?: WorkspaceID = undefined
+  private readonly _address?: string = undefined
   private readonly _clientId?: string = undefined
+  private readonly _configPath?: string = undefined
   private readonly _findUp?: string = undefined
-  private readonly _root?: string = undefined
+  private readonly _hasConfig?: boolean = undefined
+  private readonly _initialized?: boolean = undefined
+  private readonly _path?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -13712,16 +13800,24 @@ export class Workspace extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: WorkspaceID,
+    _address?: string,
     _clientId?: string,
+    _configPath?: string,
     _findUp?: string,
-    _root?: string,
+    _hasConfig?: boolean,
+    _initialized?: boolean,
+    _path?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._address = _address
     this._clientId = _clientId
+    this._configPath = _configPath
     this._findUp = _findUp
-    this._root = _root
+    this._hasConfig = _hasConfig
+    this._initialized = _initialized
+    this._path = _path
   }
 
   /**
@@ -13740,6 +13836,30 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Canonical Dagger address of the workspace directory.
+   */
+  address = async (): Promise<string> => {
+    if (this._address) {
+      return this._address
+    }
+
+    const ctx = this._ctx.select("address")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return all checks from modules loaded in the workspace.
+   * @param opts.include Only include checks matching the specified patterns
+   */
+  checks = (opts?: WorkspaceChecksOpts): CheckGroup => {
+    const ctx = this._ctx.select("checks", { ...opts })
+    return new CheckGroup(ctx)
+  }
+
+  /**
    * The client ID that owns this workspace's host filesystem.
    */
   clientId = async (): Promise<string> => {
@@ -13755,10 +13875,25 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Path to config.toml relative to the workspace boundary (empty if not initialized).
+   */
+  configPath = async (): Promise<string> => {
+    if (this._configPath) {
+      return this._configPath
+    }
+
+    const ctx = this._ctx.select("configPath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Returns a Directory from the workspace.
    *
-   * Path is relative to workspace root. Use "." for the root directory.
-   * @param path Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.gitignore Apply .gitignore filter rules inside the directory.
@@ -13771,8 +13906,8 @@ export class Workspace extends BaseClient {
   /**
    * Returns a File from the workspace.
    *
-   * Path is relative to workspace root.
-   * @param path Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.
    */
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
@@ -13782,11 +13917,13 @@ export class Workspace extends BaseClient {
   /**
    * Search for a file or directory by walking up from the start path within the workspace.
    *
-   * Returns the path relative to the workspace root if found, or null if not found.
+   * Returns the absolute workspace path if found, or null if not found.
    *
-   * The search stops at the workspace root and will not traverse above it.
+   * Relative start paths resolve from the workspace directory.
+   *
+   * The search stops at the workspace boundary and will not traverse above it.
    * @param name The name of the file or directory to search for.
-   * @param opts.from Path to start the search from, relative to the workspace root.
+   * @param opts.from Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
    */
   findUp = async (
     name: string,
@@ -13804,14 +13941,53 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Absolute path to the workspace root directory.
+   * Return all generators from modules loaded in the workspace.
+   * @param opts.include Only include generators matching the specified patterns
    */
-  root = async (): Promise<string> => {
-    if (this._root) {
-      return this._root
+  generators = (opts?: WorkspaceGeneratorsOpts): GeneratorGroup => {
+    const ctx = this._ctx.select("generators", { ...opts })
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
+   * Whether a config.toml file exists in the workspace.
+   */
+  hasConfig = async (): Promise<boolean> => {
+    if (this._hasConfig) {
+      return this._hasConfig
     }
 
-    const ctx = this._ctx.select("root")
+    const ctx = this._ctx.select("hasConfig")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether .dagger/config.toml exists.
+   */
+  initialized = async (): Promise<boolean> => {
+    if (this._initialized) {
+      return this._initialized
+    }
+
+    const ctx = this._ctx.select("initialized")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Workspace directory path relative to the workspace boundary.
+   */
+  path = async (): Promise<string> => {
+    if (this._path) {
+      return this._path
+    }
+
+    const ctx = this._ctx.select("path")
 
     const response: Awaited<string> = await ctx.execute()
 
