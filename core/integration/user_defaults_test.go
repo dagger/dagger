@@ -658,6 +658,18 @@ SECRETS=env://FOO,env://BAR,env://BAZ
 			},
 		},
 		{
+			"inner string with commas",
+			"./defaults/.env",
+			`
+GREETING="one,two"
+`,
+			"./defaults",
+			[]string{"dagger", "call", "message"},
+			dagger.ReturnTypeSuccess,
+			"one,two, world!",
+			nil,
+		},
+		{
 			"outer envfile inner workdir",
 			".env",
 			`
