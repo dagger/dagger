@@ -1208,8 +1208,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
-	sess, ok := m.mcpSessions[serverName]
-	if !ok {
+	if _, ok := m.mcpSessions[serverName]; !ok {
 		// Fall back to individual calls if session not found
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
@@ -1221,10 +1220,27 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	}
 
 	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	serviceDigest, err := mcpSrv.Service.ContentPreferredDigest(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	running, err := query.Services(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	runningSvc, err := running.Get(ctx, serviceDigest, false)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
 	var results []*ModelMessage
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
-		sess.ID(),
+		runningSvc,
 		ctr.Self().Config.WorkingDir,
 		m.env.Self().Workspace.Self(),
 		func() error {

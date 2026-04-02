@@ -12,7 +12,7 @@ func TestCollectedContentCollectUnknownAnyResult(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	cacheIface, err := dagql.NewCache(ctx, "")
+	cacheIface, err := dagql.NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cacheIface)
 	sc := cacheIface

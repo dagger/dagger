@@ -358,7 +358,7 @@ type PersistedSnapshotRefLinkProvider interface {
 	PersistedSnapshotRefLinks() []PersistedSnapshotRefLink
 }
 
-func persistedSnapshotLinksFromTyped(self Typed) []PersistedSnapshotRefLink {
+func snapshotOwnerLinksFromTyped(self Typed) []PersistedSnapshotRefLink {
 	if self == nil {
 		return nil
 	}

@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 
 	cache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
@@ -51,8 +50,8 @@ type ChecksumOpts struct {
 	ExcludePatterns []string
 }
 
-func Checksum(ctx context.Context, ref cache.ImmutableRef, path string, opts ChecksumOpts, s session.Group) (digest.Digest, error) {
-	return getDefaultManager().Checksum(ctx, ref, path, opts, s)
+func Checksum(ctx context.Context, ref cache.ImmutableRef, path string, opts ChecksumOpts) (digest.Digest, error) {
+	return getDefaultManager().Checksum(ctx, ref, path, opts)
 }
 
 func GetCacheContext(ctx context.Context, md cache.RefMetadata) (CacheContext, error) {
@@ -68,7 +67,7 @@ func ClearCacheContext(md cache.RefMetadata) {
 }
 
 type CacheContext interface {
-	Checksum(ctx context.Context, ref cache.Mountable, p string, opts ChecksumOpts, s session.Group) (digest.Digest, error)
+	Checksum(ctx context.Context, ref cache.Mountable, p string, opts ChecksumOpts) (digest.Digest, error)
 	HandleChange(kind fsutil.ChangeKind, p string, fi os.FileInfo, err error) error
 }
 
@@ -90,18 +89,22 @@ type cacheManager struct {
 	lruMu  sync.Mutex
 }
 
-func (cm *cacheManager) Checksum(ctx context.Context, ref cache.ImmutableRef, p string, opts ChecksumOpts, s session.Group) (digest.Digest, error) {
+func (cm *cacheManager) Checksum(ctx context.Context, ref cache.ImmutableRef, p string, opts ChecksumOpts) (digest.Digest, error) {
 	if ref == nil {
 		if p == "/" {
 			return digest.FromBytes(nil), nil
 		}
 		return "", errors.Errorf("%s: no such file or directory", p)
 	}
-	cc, err := cm.GetCacheContext(ctx, ensureOriginMetadata(ref))
-	if err != nil {
-		return "", nil //nolint:nilerr // TODO: ??? this is how it was upstream?
+	md, ok := any(ref).(cache.RefMetadata)
+	if !ok {
+		return "", errors.Errorf("checksum metadata: unexpected ref type %T", ref)
 	}
-	return cc.Checksum(ctx, ref, p, opts, s)
+	cc, err := cm.GetCacheContext(ctx, ensureOriginMetadata(md))
+	if err != nil {
+		return "", err
+	}
+	return cc.Checksum(ctx, ref, p, opts)
 }
 
 func (cm *cacheManager) GetCacheContext(ctx context.Context, md cache.RefMetadata) (CacheContext, error) {
@@ -140,10 +143,9 @@ func (cm *cacheManager) SetCacheContext(ctx context.Context, md cache.RefMetadat
 			dirtyMap: map[string]struct{}{},
 			linkMap:  map[string][][]byte{},
 		}
-	} else {
-		if err := cc.save(); err != nil {
-			return err
-		}
+	}
+	if err := cc.save(); err != nil {
+		return err
 	}
 	cm.lruMu.Lock()
 	cm.lru.Add(md.ID(), cc)
@@ -188,14 +190,13 @@ type mount struct {
 	mountable cache.Mountable
 	mountPath string
 	unmount   func() error
-	session   session.Group
 }
 
 func (m *mount) mount(ctx context.Context) (string, error) {
 	if m.mountPath != "" {
 		return m.mountPath, nil
 	}
-	mounts, err := m.mountable.Mount(ctx, true, m.session)
+	mounts, err := m.mountable.Mount(ctx, true)
 	if err != nil {
 		return "", err
 	}
@@ -406,8 +407,8 @@ func (cc *cacheContext) HandleChange(kind fsutil.ChangeKind, p string, fi os.Fil
 	return nil
 }
 
-func (cc *cacheContext) Checksum(ctx context.Context, mountable cache.Mountable, p string, opts ChecksumOpts, s session.Group) (digest.Digest, error) {
-	m := &mount{mountable: mountable, session: s}
+func (cc *cacheContext) Checksum(ctx context.Context, mountable cache.Mountable, p string, opts ChecksumOpts) (digest.Digest, error) {
+	m := &mount{mountable: mountable}
 	defer m.clean()
 
 	if !opts.Wildcard && len(opts.IncludePatterns) == 0 && len(opts.ExcludePatterns) == 0 {
@@ -1225,11 +1226,7 @@ func addParentToMap(d string, m map[string]struct{}) {
 }
 
 func ensureOriginMetadata(md cache.RefMetadata) cache.RefMetadata {
-	em, ok := md.GetEqualMutable()
-	if !ok {
-		em = md
-	}
-	return em
+	return md
 }
 
 var pool32K = sync.Pool{

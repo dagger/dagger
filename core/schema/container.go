@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -16,14 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/v2/core/images"
-	"github.com/containerd/containerd/v2/core/leases"
-	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
@@ -34,6 +27,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -920,9 +914,9 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, err
 	}
-	bk, err := query.Buildkit(ctx)
+	rslvr, err := query.RegistryResolver(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		return inst, fmt.Errorf("failed to get registry resolver: %w", err)
 	}
 	platform := parent.Self().Platform
 
@@ -941,11 +935,9 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		ctr.ImageRef = ""
 
 		refStr := refName.String()
-		_, _, cfgBytes, err := bk.ResolveImageConfig(ctx, refStr, sourceresolver.Opt{
-			Platform: ptr(platform.Spec()),
-			ImageOpt: &sourceresolver.ResolveImageOpt{
-				ResolveMode: llb.ResolveModePreferLocal.String(),
-			},
+		_, _, cfgBytes, err := rslvr.ResolveImageConfig(ctx, refStr, serverresolver.ResolveImageConfigOpts{
+			Platform:    ptr(platform.Spec()),
+			ResolveMode: serverresolver.ResolveModeDefault,
 		})
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refStr, platform.Format(), err)
@@ -967,9 +959,10 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			Lazy:     &core.DirectoryFromContainerLazy{Container: ctr},
 		}
 		ctr.FS = &core.ContainerDirectorySource{Value: rootfsDir}
-		ctr.Lazy = &core.ContainerFromLazy{
+		ctr.Lazy = &core.ContainerFromImageRefLazy{
 			LazyState:    core.NewLazyState(),
 			CanonicalRef: refStr,
+			ResolveMode:  serverresolver.ResolveModeDefault,
 		}
 
 		inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -988,11 +981,9 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical
 	// digested ref instead. This ensures the ID returned here is always stable w/ the
 	// digested image ref.
-	_, digest, _, err := bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
-		Platform: ptr(platform.Spec()),
-		ImageOpt: &sourceresolver.ResolveImageOpt{
-			ResolveMode: llb.ResolveModeDefault.String(),
-		},
+	_, digest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
+		Platform:    ptr(platform.Spec()),
+		ResolveMode: serverresolver.ResolveModeDefault,
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
@@ -2969,10 +2960,6 @@ func (s *containerSchema) exportImage(
 	if err != nil {
 		return core.Void{}, err
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return core.Void{}, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
 		return core.Void{}, fmt.Errorf("failed to get server: %w", err)
@@ -3002,113 +2989,17 @@ func (s *containerSchema) exportImage(
 		}
 	}
 
-	imageWriter, err := bk.WriteImage(ctx, refName.String())
+	_, err = parent.Self().Export(ctx, core.ExportOpts{
+		Dest:              refName.String(),
+		PlatformVariants:  platformVariants,
+		ForcedCompression: args.ForcedCompression.Value,
+		MediaTypes:        args.MediaTypes,
+		Tar:               false,
+	})
 	if err != nil {
 		return core.Void{}, err
 	}
-
-	if imageWriter.ContentStore != nil {
-		// create and use a lease to write to our content store, prevents
-		// content being cleaned up while we're writing
-		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, imageWriter.LeaseManager, leaseutil.MakeTemporary)
-		if err != nil {
-			return core.Void{}, err
-		}
-		defer leaseDone(context.WithoutCancel(leaseCtx))
-		leaseID, _ := leases.FromContext(leaseCtx)
-
-		// NB: buildkit loads the "export" ContentStore itself (it's not explicitly passed in)
-		desc, err := parent.Self().Export(ctx, core.ExportOpts{
-			PlatformVariants:  platformVariants,
-			ForcedCompression: args.ForcedCompression.Value,
-			MediaTypes:        args.MediaTypes,
-			LeaseID:           leaseID,
-		})
-		if err != nil {
-			return core.Void{}, err
-		}
-
-		// update the written content with gc labels (buildkit doesn't write them itself)
-		handler := images.ChildrenHandler(imageWriter.ContentStore)
-		handler = images.SetChildrenMappedLabels(imageWriter.ContentStore, handler, images.ChildGCLabels)
-		if err := images.WalkNotEmpty(ctx, handler, *desc); err != nil {
-			return core.Void{}, err
-		}
-
-		// create/update the image
-		img := images.Image{
-			Name:   refName.String(),
-			Target: *desc,
-		}
-		if _, err := imageWriter.ImagesStore.Update(ctx, img); err != nil {
-			if !errors.Is(err, cerrdefs.ErrNotFound) {
-				return core.Void{}, err
-			}
-
-			if _, err = imageWriter.ImagesStore.Create(ctx, img); err != nil {
-				return core.Void{}, err
-			}
-		}
-		return core.Void{}, nil
-	}
-
-	if dest := imageWriter.Tarball; dest != nil {
-		defer func() {
-			// close dest if it wasn't already closed and set to nil
-			if dest != nil {
-				dest.Close()
-			}
-		}()
-
-		// create the tarball
-		var tarball dagql.ObjectResult[*core.File]
-		sel := dagql.Selector{
-			Field: "asTarball",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "mediaTypes",
-					Value: args.MediaTypes,
-				},
-			},
-		}
-		if args.PlatformVariants != nil {
-			sel.Args = append(sel.Args, dagql.NamedInput{
-				Name:  "platformVariants",
-				Value: dagql.ArrayInput[core.ContainerID](args.PlatformVariants),
-			})
-		}
-		if args.ForcedCompression.Valid {
-			sel.Args = append(sel.Args, dagql.NamedInput{
-				Name:  "forcedCompression",
-				Value: args.ForcedCompression,
-			})
-		}
-		err = srv.Select(ctx, parent, &tarball, sel)
-		if err != nil {
-			return core.Void{}, err
-		}
-
-		err = tarball.Self().Mount(ctx, func(path string) error {
-			f, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-
-			// stream in chunks *definitely* smaller than the max gRPC message size
-			buf := make([]byte, 3*1024*1024)
-			_, err = io.CopyBuffer(dest, f, buf)
-			if err != nil {
-				return err
-			}
-
-			err = dest.Close()
-			dest = nil
-			return err
-		})
-		return core.Void{}, err
-	}
-	return core.Void{}, errors.New("invalid load config")
+	return core.Void{}, nil
 }
 
 type containerImportArgs struct {

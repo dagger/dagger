@@ -39,7 +39,7 @@ func TestRemoteFromCacheResultRejectsInvalidPayload(t *testing.T) {
 func TestRemoteMetadataCacheKeyIsolation(t *testing.T) {
 	ctx := context.Background()
 
-	cacheIface, err := dagql.NewCache(ctx, "")
+	cacheIface, err := dagql.NewCache(ctx, "", nil)
 	require.NoError(t, err)
 
 	remotePayload := `{"refs":[]}`

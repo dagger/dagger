@@ -15,8 +15,6 @@ import (
 
 const sizeUnknown int64 = -1
 const keySize = "snapshot.size"
-const keyEqualMutable = "cache.equalMutable"
-const keyCachePolicy = "cache.cachePolicy"
 const keyDescription = "cache.description"
 const keyCreatedAt = "cache.createdAt"
 const keyLastUsedAt = "cache.lastUsedAt"
@@ -24,13 +22,7 @@ const keyUsageCount = "cache.usageCount"
 const keyLayerType = "cache.layerType"
 const keyRecordType = "cache.recordType"
 const keyCommitted = "snapshot.committed"
-const keyParent = "cache.parent"
-const keyMergeParents = "cache.mergeParents"
-const keyLowerDiffParent = "cache.lowerDiffParent"
-const keyUpperDiffParent = "cache.upperDiffParent"
 const keyDiffID = "cache.diffID"
-const keyChainID = "cache.chainID"
-const keyBlobChainID = "cache.blobChainID"
 const keyBlob = "cache.blob"
 const keySnapshot = "cache.snapshot"
 const keyBlobOnly = "cache.blobonly"
@@ -40,16 +32,13 @@ const keyDeleted = "cache.deleted"
 const keyBlobSize = "cache.blobsize" // packed blob size from the OCI descriptor
 const keyURLs = "cache.layer.urls"
 
-// Indexes
-const blobchainIndex = "blobchainid:"
-const chainIndex = "chainid:"
-
 type MetadataStore interface {
 	Search(context.Context, string, bool) ([]RefMetadata, error)
 }
 
 type RefMetadata interface {
 	ID() string
+	SnapshotID() string
 
 	GetDescription() string
 	SetDescription(string) error
@@ -57,18 +46,11 @@ type RefMetadata interface {
 	GetCreatedAt() time.Time
 	SetCreatedAt(time.Time) error
 
-	HasCachePolicyDefault() bool
-	SetCachePolicyDefault() error
-	HasCachePolicyRetain() bool
-	SetCachePolicyRetain() error
-
 	GetLayerType() string
 	SetLayerType(string) error
 
 	GetRecordType() client.UsageRecordType
 	SetRecordType(client.UsageRecordType) error
-
-	GetEqualMutable() (RefMetadata, bool)
 
 	// generic getters/setters for external packages
 	GetString(string) string
@@ -223,7 +205,7 @@ func (cm *snapshotManager) search(_ context.Context, idx string, prefixOnly bool
 // callers must hold cm.mu lock
 func (cm *snapshotManager) getMetadata(id string) (*cacheMetadata, bool) {
 	if rec, ok := cm.records[id]; ok {
-		return rec.cacheMetadata, true
+		return rec.md, true
 	}
 	return cm.metadataStore.get(id)
 }
@@ -231,23 +213,17 @@ func (cm *snapshotManager) getMetadata(id string) (*cacheMetadata, bool) {
 // callers must hold cm.mu lock
 func (cm *snapshotManager) ensureMetadata(id string) *cacheMetadata {
 	if rec, ok := cm.records[id]; ok {
-		return rec.cacheMetadata
+		return rec.md
 	}
 	return cm.metadataStore.getOrCreate(id)
 }
 
-// callers must hold cm.mu lock
-func (cm *snapshotManager) searchBlobchain(ctx context.Context, id digest.Digest) ([]RefMetadata, error) {
-	return cm.search(ctx, blobchainIndex+id.String(), false)
-}
-
-// callers must hold cm.mu lock
-func (cm *snapshotManager) searchChain(ctx context.Context, id digest.Digest) ([]RefMetadata, error) {
-	return cm.search(ctx, chainIndex+id.String(), false)
-}
-
 func (md *cacheMetadata) ID() string {
 	return md.id
+}
+
+func (md *cacheMetadata) SnapshotID() string {
+	return md.getSnapshotID()
 }
 
 func (md *cacheMetadata) commitMetadata() error {
@@ -349,22 +325,6 @@ func (md *cacheMetadata) GetCreatedAt() time.Time {
 	return md.getTime(keyCreatedAt)
 }
 
-func (md *cacheMetadata) HasCachePolicyDefault() bool {
-	return md.getCachePolicy() == cachePolicyDefault
-}
-
-func (md *cacheMetadata) SetCachePolicyDefault() error {
-	return md.setCachePolicy(cachePolicyDefault)
-}
-
-func (md *cacheMetadata) HasCachePolicyRetain() bool {
-	return md.getCachePolicy() == cachePolicyRetain
-}
-
-func (md *cacheMetadata) SetCachePolicyRetain() error {
-	return md.setCachePolicy(cachePolicyRetain)
-}
-
 func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 	md.store.mu.RLock()
 	defer md.store.mu.RUnlock()
@@ -383,36 +343,6 @@ func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
 	cpy := make([]byte, len(dt))
 	copy(cpy, dt)
 	md.external[s] = cpy
-	return nil
-}
-
-func (md *cacheMetadata) GetEqualMutable() (RefMetadata, bool) {
-	emID := md.getEqualMutable()
-	if emID == "" {
-		return nil, false
-	}
-	em, ok := md.store.get(emID)
-	if !ok {
-		return nil, false
-	}
-	return em, true
-}
-
-func (md *cacheMetadata) getEqualMutable() string {
-	return md.GetString(keyEqualMutable)
-}
-
-func (md *cacheMetadata) setEqualMutable(s string) error {
-	return md.queueValue(keyEqualMutable, s, "")
-}
-
-func (md *cacheMetadata) clearEqualMutable() error {
-	md.store.mu.Lock()
-	defer md.store.mu.Unlock()
-	md.queue = append(md.queue, func(md *cacheMetadata) error {
-		md.setValueLocked(keyEqualMutable, nil)
-		return nil
-	})
 	return nil
 }
 
@@ -442,22 +372,6 @@ func (md *cacheMetadata) queueSnapshotID(str string) error {
 
 func (md *cacheMetadata) getDiffID() digest.Digest {
 	return digest.Digest(md.GetString(keyDiffID))
-}
-
-func (md *cacheMetadata) queueChainID(str digest.Digest) error {
-	return md.queueValue(keyChainID, str, chainIndex+str.String())
-}
-
-func (md *cacheMetadata) getBlobChainID() digest.Digest {
-	return digest.Digest(md.GetString(keyBlobChainID))
-}
-
-func (md *cacheMetadata) queueBlobChainID(str digest.Digest) error {
-	return md.queueValue(keyBlobChainID, str, blobchainIndex+str.String())
-}
-
-func (md *cacheMetadata) getChainID() digest.Digest {
-	return digest.Digest(md.GetString(keyChainID))
 }
 
 func (md *cacheMetadata) queueBlob(str digest.Digest) error {
@@ -495,38 +409,6 @@ func (md *cacheMetadata) getDeleted() bool {
 	return md.getBool(keyDeleted)
 }
 
-func (md *cacheMetadata) queueParent(parent string) error {
-	return md.queueValue(keyParent, parent, "")
-}
-
-func (md *cacheMetadata) getParent() string {
-	return md.GetString(keyParent)
-}
-
-func (md *cacheMetadata) queueMergeParents(parents []string) error {
-	return md.queueValue(keyMergeParents, parents, "")
-}
-
-func (md *cacheMetadata) getMergeParents() []string {
-	return md.getStringSlice(keyMergeParents)
-}
-
-func (md *cacheMetadata) queueLowerDiffParent(parent string) error {
-	return md.queueValue(keyLowerDiffParent, parent, "")
-}
-
-func (md *cacheMetadata) getLowerDiffParent() string {
-	return md.GetString(keyLowerDiffParent)
-}
-
-func (md *cacheMetadata) queueUpperDiffParent(parent string) error {
-	return md.queueValue(keyUpperDiffParent, parent, "")
-}
-
-func (md *cacheMetadata) getUpperDiffParent() string {
-	return md.GetString(keyUpperDiffParent)
-}
-
 func (md *cacheMetadata) queueSize(s int64) error {
 	return md.queueValue(keySize, s, "")
 }
@@ -555,17 +437,6 @@ func (md *cacheMetadata) getBlobSize() int64 {
 		return size
 	}
 	return sizeUnknown
-}
-
-func (md *cacheMetadata) setCachePolicy(p cachePolicy) error {
-	return md.setValue(keyCachePolicy, p, "")
-}
-
-func (md *cacheMetadata) getCachePolicy() cachePolicy {
-	if i, ok := md.getInt64(keyCachePolicy); ok {
-		return cachePolicy(i)
-	}
-	return cachePolicyDefault
 }
 
 func (md *cacheMetadata) getLastUsed() (int, *time.Time) {

@@ -73,7 +73,6 @@ func CreateFS(ctx context.Context, sessionID string, k string, ref cache.Immutab
 	var cleanup func() error
 	var src string
 	var err error
-	var idmap *idtools.IdentityMapping
 	if ref == nil {
 		src, err = os.MkdirTemp("", "buildkit")
 		if err != nil {
@@ -93,8 +92,6 @@ func CreateFS(ctx context.Context, sessionID string, k string, ref cache.Immutab
 			return nil, nil, err
 		}
 
-		idmap = mount.IdentityMapping()
-
 		cleanup = lm.Unmount
 	}
 
@@ -105,32 +102,12 @@ func CreateFS(ctx context.Context, sessionID string, k string, ref cache.Immutab
 
 	// wrap the output filesystem, applying appropriate filters
 	filterOpt := &fsutil.FilterOpt{}
-	var idMapFunc func(p string, st *fstypes.Stat) fsutil.MapResult
-	if idmap != nil {
-		idMapFunc = func(p string, st *fstypes.Stat) fsutil.MapResult {
-			uid, gid, err := idmap.ToContainer(idtools.Identity{
-				UID: int(st.Uid),
-				GID: int(st.Gid),
-			})
-			if err != nil {
-				return fsutil.MapResultExclude
-			}
-			st.Uid = uint32(uid)
-			st.Gid = uint32(gid)
-			return fsutil.MapResultKeep
-		}
-	}
 	filterOpt.Map = func(p string, st *fstypes.Stat) fsutil.MapResult {
-		res := fsutil.MapResultKeep
-		if idMapFunc != nil {
-			// apply host uid/gid
-			res = idMapFunc(p, st)
-		}
 		if opt.Epoch != nil {
 			// apply used-specified epoch time
 			st.ModTime = opt.Epoch.UnixNano()
 		}
-		return res
+		return fsutil.MapResultKeep
 	}
 	outputFS, err = fsutil.NewFilterFS(outputFS, filterOpt)
 	if err != nil {

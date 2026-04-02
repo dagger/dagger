@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -16,183 +15,221 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
 
-//nolint:gocyclo
-func DoHTTPRequest(
+type ResolveHTTPRequestVersionOpts struct {
+	URL      string
+	Checksum *string
+}
+
+type ResolvedHTTPVersion struct {
+	ETag         *string
+	LastModified *string
+	Digest       *string
+}
+
+type FetchHTTPRequestOpts struct {
+	URL                 string
+	Filename            string
+	Permissions         int
+	Checksum            *string
+	AuthorizationHeader string
+
+	ResolvedETag         *string
+	ResolvedLastModified *string
+	ResolvedDigest       *string
+}
+
+type HTTPFetchResult struct {
+	File          *File
+	ContentDigest digest.Digest
+	LastModified  string
+}
+
+func ResolveHTTPVersion(
 	ctx context.Context,
 	query *Query,
-	req *http.Request,
-	filename string,
-	permissions int,
-) (_ bkcache.ImmutableRef, _ digest.Digest, _ *http.Response, rerr error) {
-	cache := query.BuildkitCache()
+	opts ResolveHTTPRequestVersionOpts,
+) (*ResolvedHTTPVersion, error) {
+	if opts.Checksum != nil && *opts.Checksum != "" {
+		return &ResolvedHTTPVersion{Digest: opts.Checksum}, nil
+	}
 
-	// FIXME: this is the same as the legacy buildkit behavior, but we *could*
-	// potentially reuse ETags even if filename/permissions change: then
-	// creating a new snapshot, copying only the data from the old one
-	url := req.URL.String()
-	urlDigest := hashutil.HashStrings(url, filename, fmt.Sprint(permissions))
-
-	mds, err := searchHTTPByDigest(ctx, cache, urlDigest)
+	headReq, err := http.NewRequestWithContext(ctx, http.MethodHead, opts.URL, nil)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("failed to search metadata for %s: %w", url, err)
+		return nil, err
+	}
+	resp, err := doHTTPClientRequest(ctx, headReq)
+	switch {
+	case err == nil:
+		defer resp.Body.Close()
+		if etag := etagValue(resp.Header.Get("ETag")); etag != "" {
+			return &ResolvedHTTPVersion{ETag: &etag}, nil
+		}
+		if lastModified := resp.Header.Get("Last-Modified"); lastModified != "" {
+			return &ResolvedHTTPVersion{LastModified: &lastModified}, nil
+		}
+	case err != nil && (resp == nil || resp.StatusCode != http.StatusMethodNotAllowed):
+		return nil, err
 	}
 
-	// m is etag->metadata
-	m := map[string]cacheRefMetadata{}
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, opts.URL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err = doHTTPClientRequest(ctx, getReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
 
-	// If we request a single ETag in 'If-None-Match', some servers omit the
-	// unambiguous ETag in their response.
-	// See: https://github.com/dagger/dagger/internal/buildkit/issues/905
-	var onlyETag string
+	h := sha256.New()
+	if _, err := io.Copy(h, resp.Body); err != nil {
+		return nil, err
+	}
+	dgst := digest.NewDigest(digest.SHA256, h)
+	dgstStr := dgst.String()
+	return &ResolvedHTTPVersion{Digest: &dgstStr}, nil
+}
 
-	if len(mds) > 0 {
-		for _, md := range mds {
-			if etag := md.getETag(); etag != "" {
-				if dgst := md.getHTTPChecksum(); dgst != "" {
-					m[etag] = md
-				}
-			}
+func FetchHTTPFile(
+	ctx context.Context,
+	query *Query,
+	opts FetchHTTPRequestOpts,
+) (_ *HTTPFetchResult, rerr error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, opts.URL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if opts.AuthorizationHeader != "" {
+		req.Header.Set("Authorization", opts.AuthorizationHeader)
+	}
+
+	resp, err := doHTTPClientRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if opts.ResolvedETag != nil {
+		got := etagValue(resp.Header.Get("ETag"))
+		if got != *opts.ResolvedETag {
+			return nil, fmt.Errorf("http ETag mismatch: expected %q, got %q", *opts.ResolvedETag, got)
 		}
-		if len(m) > 0 {
-			etags := make([]string, 0, len(m))
-			for t := range m {
-				etags = append(etags, t)
-			}
-			req.Header.Add("If-None-Match", strings.Join(etags, ", "))
-
-			if len(etags) == 1 {
-				onlyETag = etags[0]
-			}
+	}
+	if opts.ResolvedLastModified != nil {
+		got := resp.Header.Get("Last-Modified")
+		if got != *opts.ResolvedLastModified {
+			return nil, fmt.Errorf("http Last-Modified mismatch: expected %q, got %q", *opts.ResolvedLastModified, got)
 		}
 	}
 
+	expectedChecksum, err := parseOptionalChecksum(opts.Checksum)
+	if err != nil {
+		return nil, err
+	}
+	resolvedDigest, err := parseOptionalChecksum(opts.ResolvedDigest)
+	if err != nil {
+		return nil, err
+	}
+
+	bkref, err := query.SnapshotManager().New(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("http url %s", opts.URL)),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if rerr != nil && bkref != nil {
+			_ = bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+
+	h := sha256.New()
+	err = MountRef(ctx, bkref, func(out string, _ *mount.Mount) error {
+		dest := filepath.Join(out, opts.Filename)
+		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(opts.Permissions))
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
+			_ = f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+
+		timestamp := time.Unix(0, 0)
+		if lastModified := resp.Header.Get("Last-Modified"); lastModified != "" {
+			if parsed, err := http.ParseTime(lastModified); err == nil {
+				timestamp = parsed
+			}
+		}
+		return os.Chtimes(dest, timestamp, timestamp)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("file write failed: %w", err)
+	}
+
+	contentDigest := digest.NewDigest(digest.SHA256, h)
+	if expectedChecksum != "" && contentDigest != expectedChecksum {
+		return nil, fmt.Errorf("http checksum mismatch: expected %s, got %s", expectedChecksum, contentDigest)
+	}
+	if resolvedDigest != "" && contentDigest != resolvedDigest {
+		return nil, fmt.Errorf("http content digest mismatch: expected %s, got %s", resolvedDigest, contentDigest)
+	}
+
+	snap, err := bkref.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bkref = nil
+
+	file, err := NewFileWithSnapshot(opts.Filename, query.Platform(), nil, snap)
+	if err != nil {
+		_ = snap.Release(context.WithoutCancel(ctx))
+		return nil, err
+	}
+
+	return &HTTPFetchResult{
+		File:          file,
+		ContentDigest: contentDigest,
+		LastModified:  resp.Header.Get("Last-Modified"),
+	}, nil
+}
+
+func doHTTPClientRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
 	dns, err := DNSConfig(ctx)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, err
 	}
 	client := http.Client{
 		Transport: netconfhttp.NewTransport(http.DefaultTransport, dns),
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, err
 	}
-	defer resp.Body.Close()
+	if req.Method == http.MethodHead && resp.StatusCode == http.StatusMethodNotAllowed {
+		return resp, nil
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		return nil, "", nil, fmt.Errorf("invalid response status %s", resp.Status)
+		defer resp.Body.Close()
+		return nil, fmt.Errorf("invalid response status %s", resp.Status)
 	}
-	if resp.StatusCode == http.StatusNotModified {
-		respETag := etagValue(resp.Header.Get("ETag"))
+	return resp, nil
+}
 
-		if respETag == "" && onlyETag != "" {
-			// handle poorly behaving servers that don't return the ETag when
-			// there's only one provided :(
-			respETag = onlyETag
-			resp.Header.Set("ETag", onlyETag)
-		}
-
-		md, ok := m[respETag]
-		if !ok {
-			return nil, "", nil, fmt.Errorf("invalid not-modified ETag: %v", respETag)
-		}
-		dgst := md.getHTTPChecksum()
-		if dgst == "" {
-			return nil, "", nil, fmt.Errorf("invalid metadata change")
-		}
-		if modTime := md.getHTTPModTime(); modTime != "" {
-			resp.Header.Set("Last-Modified", modTime)
-		}
-
-		snap, err := cache.Get(ctx, md.ID())
-		if err != nil {
-			return nil, "", nil, err
-		}
-		return snap, md.getHTTPChecksum(), resp, nil
+func parseOptionalChecksum(raw *string) (digest.Digest, error) {
+	if raw == nil || *raw == "" {
+		return "", nil
 	}
-
-	bkref, err := cache.New(ctx, nil, nil,
-		bkcache.CachePolicyRetain,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("http url %s", url)))
-	if err != nil {
-		return nil, "", nil, err
-	}
-	defer func() {
-		if rerr != nil && bkref != nil {
-			bkref.Release(context.WithoutCancel(ctx))
-		}
-	}()
-
-	h := sha256.New()
-	err = MountRef(ctx, bkref, nil, func(out string, _ *mount.Mount) error {
-		// create the file
-		dest := filepath.Join(out, filename)
-		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(permissions))
-		if err != nil {
-			return err
-		}
-		if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
-			return err
-		}
-		if err = f.Close(); err != nil {
-			return err
-		}
-
-		// update file atime+mtime to the last-modified time of the response
-		timestamp := time.Unix(0, 0)
-		if lastMod := resp.Header.Get("Last-Modified"); lastMod != "" {
-			if parsedMTime, err := http.ParseTime(lastMod); err == nil {
-				timestamp = parsedMTime
-			}
-		}
-		if err := os.Chtimes(dest, timestamp, timestamp); err != nil {
-			return err
-		}
-
-		return nil
-	})
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("file write failed: %w", err)
-	}
-
-	snap, err := bkref.Commit(ctx)
-	if err != nil {
-		return nil, "", nil, err
-	}
-	defer func() {
-		if rerr != nil && snap != nil {
-			snap.Release(context.WithoutCancel(ctx))
-		}
-	}()
-	bkref = nil
-
-	contentDgst := digest.NewDigest(digest.SHA256, h)
-
-	md := cacheRefMetadata{snap}
-	if respETag := resp.Header.Get("ETag"); respETag != "" {
-		respETag = etagValue(respETag)
-		if err := md.setETag(respETag); err != nil {
-			return nil, "", nil, err
-		}
-		if err := md.setHTTPChecksum(urlDigest, contentDgst); err != nil {
-			return nil, "", nil, err
-		}
-	}
-	if modTime := resp.Header.Get("Last-Modified"); modTime != "" {
-		if err := md.setHTTPModTime(modTime); err != nil {
-			return nil, "", nil, err
-		}
-	}
-
-	resp.Body = io.NopCloser(bytes.NewReader(nil))
-	return snap, contentDgst, resp, nil
+	return digest.Parse(*raw)
 }
 
 func etagValue(v string) string {
-	// remove weak for direct comparison
 	return strings.TrimPrefix(v, "W/")
 }

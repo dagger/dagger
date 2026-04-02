@@ -30,7 +30,6 @@ import (
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
-	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
@@ -46,7 +45,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
 	"github.com/dagger/dagger/internal/buildkit/util/network/netproviders"
-	"github.com/dagger/dagger/internal/buildkit/util/resolver"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/dagger/dagger/internal/buildkit/util/throttle"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
@@ -101,6 +99,7 @@ type Server struct {
 	containerdMetaDB     *ctdmetadata.DB
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
+	builtinContentStore  content.Store
 
 	snapshotter        ctdsnapshot.Snapshotter
 	snapshotterMDStore *storage.MetaStore // only set for overlay snapshotter right now
@@ -108,12 +107,6 @@ type Server struct {
 	leaseManager       *leaseutil.Manager
 
 	corruptDBReset bool
-
-	//
-	// worker file syncer
-	//
-
-	workerFileSyncer *filesync.FileSyncer
 
 	//
 	// worker/executor-specific config+state
@@ -355,7 +348,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			RootCAs:   v.RootCAs,
 		}
 	}
-	srv.registryHosts = resolver.NewRegistryConfig(registries)
+	srv.registryHosts = newRegistryHosts(registries)
+
+	srv.builtinContentStore, err = openBuiltinOCIStore()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open builtin content store: %w", err)
+	}
 
 	//
 	// setup worker+executor
@@ -444,10 +442,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
-	srv.workerFileSyncer = filesync.NewFileSyncer(filesync.FileSyncerOpt{
-		CacheAccessor: srv.workerCache,
-	})
-
 	hostMntNS, err := os.OpenFile("/proc/self/ns/mnt", os.O_RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open host mount namespace: %w", err)
@@ -508,7 +502,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup dagql caching
 	//
 	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
-	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
+	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache)
 	if err != nil {
 		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
 		// db and trying again.
@@ -516,7 +510,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
 			slog.Error("failed to remove existing dagql cache db", "error", err)
 		}
-		srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
+		srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
 		}
@@ -742,16 +736,8 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 }
 
-func (srv *Server) BuildkitCache() bkcache.SnapshotManager {
+func (srv *Server) SnapshotManager() bkcache.SnapshotManager {
 	return srv.workerCache
-}
-
-func (srv *Server) BuildkitSession() *bksession.Manager {
-	return srv.bkSessionManager
-}
-
-func (srv *Server) FileSyncer() *filesync.FileSyncer {
-	return srv.workerFileSyncer
 }
 
 func (srv *Server) CacheAccessor() bkcache.Accessor {

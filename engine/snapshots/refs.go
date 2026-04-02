@@ -3,7 +3,6 @@ package snapshots
 import (
 	"context"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,53 +20,35 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/overlay"
-	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	rootlessmountopts "github.com/dagger/dagger/internal/buildkit/util/rootless/mountopts"
-	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
-	"github.com/docker/docker/pkg/idtools"
-	"github.com/hashicorp/go-multierror"
 	"github.com/moby/sys/mountinfo"
 	"github.com/moby/sys/userns"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 )
 
-var additionalAnnotations = append(compression.EStargzAnnotations, labels.LabelUncompressed)
+var additionalAnnotations = append(append(compression.EStargzAnnotations, labels.LabelUncompressed), "buildkit/createdat")
 
 // Ref is a reference to cacheable objects.
 type Ref interface {
 	Mountable
-	RefMetadata
+	ID() string
 	SnapshotID() string
 	Release(context.Context) error
 	Size(context.Context) (int64, error)
-	IdentityMapping() *idtools.IdentityMapping
-	DescHandler(digest.Digest) *DescHandler
 }
 
 type ImmutableRef interface {
 	Ref
-	Clone() ImmutableRef
-	// Finalize commits the snapshot to the driver if it's not already.
-	// This means the snapshot can no longer be mounted as mutable.
-	Finalize(context.Context) error
-
-	Extract(ctx context.Context, s session.Group) error // +progress
-	// TODO: temporary compatibility seam for exporter paths.
-	// Move remote descriptor construction to exporter-side code and drop this from snapshots.
-	GetRemotes(ctx context.Context, createIfNeeded bool, cfg config.RefConfig, all bool, s session.Group) ([]*Remote, error)
-	LayerChain() RefList
-	FileList(ctx context.Context, s session.Group) ([]string, error)
+	ExportChain(ctx context.Context, cfg config.RefConfig) (*ExportChain, error)
 }
 
 type MutableRef interface {
@@ -77,248 +58,128 @@ type MutableRef interface {
 }
 
 type Mountable interface {
-	Mount(ctx context.Context, readonly bool, s session.Group) (snapshot.Mountable, error)
+	Mount(ctx context.Context, readonly bool) (snapshot.Mountable, error)
 }
 
-type ref interface {
-	shouldUpdateLastUsed() bool
+type refMetadata struct {
+	snapshotID string
+	md         *cacheMetadata
+}
+
+func (rm refMetadata) ID() string {
+	return rm.snapshotID
+}
+
+func (rm refMetadata) SnapshotID() string {
+	return rm.snapshotID
+}
+
+func (rm refMetadata) GetDescription() string {
+	return rm.md.GetDescription()
+}
+
+func (rm refMetadata) SetDescription(descr string) error {
+	return rm.md.SetDescription(descr)
+}
+
+func (rm refMetadata) GetCreatedAt() time.Time {
+	return rm.md.GetCreatedAt()
+}
+
+func (rm refMetadata) SetCreatedAt(tm time.Time) error {
+	return rm.md.SetCreatedAt(tm)
+}
+
+func (rm refMetadata) GetLayerType() string {
+	return rm.md.GetLayerType()
+}
+
+func (rm refMetadata) SetLayerType(layerType string) error {
+	return rm.md.SetLayerType(layerType)
+}
+
+func (rm refMetadata) GetRecordType() client.UsageRecordType {
+	return rm.md.GetRecordType()
+}
+
+func (rm refMetadata) SetRecordType(recordType client.UsageRecordType) error {
+	return rm.md.SetRecordType(recordType)
+}
+
+func (rm refMetadata) GetString(key string) string {
+	return rm.md.GetString(key)
+}
+
+func (rm refMetadata) Get(key string) *Value {
+	return rm.md.Get(key)
+}
+
+func (rm refMetadata) SetString(key, value string, index string) error {
+	return rm.md.SetString(key, value, index)
+}
+
+func (rm refMetadata) GetExternal(key string) ([]byte, error) {
+	return rm.md.GetExternal(key)
+}
+
+func (rm refMetadata) SetExternal(key string, dt []byte) error {
+	return rm.md.SetExternal(key, dt)
+}
+
+func (rm refMetadata) ClearValueAndIndex(key string, index string) error {
+	return rm.md.ClearValueAndIndex(key, index)
 }
 
 type cacheRecord struct {
-	cm *snapshotManager
-	mu *sync.Mutex // the mutex is shared by records sharing data
-
+	cm      *snapshotManager
 	mutable bool
-	refs    map[ref]struct{}
-	parentRefs
-	*cacheMetadata
+	locked  bool
+	md      *cacheMetadata
 
 	// dead means record is marked as deleted
 	dead bool
-
-	mountCache snapshot.Mountable
-
-	sizeG flightcontrol.Group[int64]
-
-	// these are filled if multiple refs point to same data
-	equalMutable   *mutableRef
-	equalImmutable *immutableRef
-
-	layerDigestChainCache *digestChain
 }
 
-// hold ref lock before calling
-func (cr *cacheRecord) ref(triggerLastUsed bool, descHandlers DescHandlers) *immutableRef {
-	ref := &immutableRef{
-		cacheRecord:     cr,
-		triggerLastUsed: triggerLastUsed,
-		descHandlers:    descHandlers,
-	}
-	cr.refs[ref] = struct{}{}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
-	return ref
-}
-
-// hold ref lock before calling
-func (cr *cacheRecord) mref(triggerLastUsed bool, descHandlers DescHandlers) *mutableRef {
-	ref := &mutableRef{
-		cacheRecord:     cr,
-		triggerLastUsed: triggerLastUsed,
-		descHandlers:    descHandlers,
-	}
-	cr.refs[ref] = struct{}{}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
-	return ref
-}
-
-// parentRefs is a disjoint union type that holds either a single layerParent for this record, a list
-// of parents if this is a merged record or all nil fields if this record has no parents. At most one
-// field should be non-nil at a time.
-type parentRefs struct {
-	layerParent  *immutableRef
-	mergeParents []*immutableRef
-	diffParents  *diffParents
-}
-
-type diffParents struct {
-	lower *immutableRef
-	upper *immutableRef
-}
-
-// caller must hold snapshotManager.mu
-func (p parentRefs) release(ctx context.Context) (rerr error) {
-	_ = ctx
-	return nil
-}
-
-func (p parentRefs) clone() parentRefs {
-	if len(p.mergeParents) > 0 {
-		newParents := make([]*immutableRef, len(p.mergeParents))
-		for i, p := range p.mergeParents {
-			newParents[i] = p
-		}
-		p.mergeParents = newParents
-	}
-	if p.diffParents != nil {
-		p.diffParents = &diffParents{
-			lower: p.diffParents.lower,
-			upper: p.diffParents.upper,
-		}
-	}
-	return p
-}
-
-type refKind int
-
-const (
-	BaseLayer refKind = iota
-	Layer
-	Merge
-	Diff
-)
-
-func (k refKind) String() string {
-	switch k {
-	case BaseLayer:
-		return "base"
-	case Layer:
-		return "layer"
-	case Merge:
-		return "merge"
-	case Diff:
-		return "diff"
-	}
-	return "unknown"
-}
-
-func (cr *cacheRecord) kind() refKind {
-	if len(cr.mergeParents) > 0 {
-		return Merge
-	}
-	if cr.diffParents != nil {
-		return Diff
-	}
-	if cr.layerParent != nil {
-		return Layer
-	}
-	return BaseLayer
-}
-
-// hold ref lock before calling
 func (cr *cacheRecord) isDead() bool {
-	return cr.dead || (cr.equalImmutable != nil && cr.equalImmutable.dead) || (cr.equalMutable != nil && cr.equalMutable.dead)
+	return cr.dead
 }
 
-var errSkipWalk = errors.New("skip")
-
-// walkAncestors calls the provided func on cr and each of its ancestors, counting layer,
-// diff, and merge parents. It starts at cr and does a depth-first walk to parents. It will visit
-// a record and its parents multiple times if encountered more than once. It will only skip
-// visiting parents of a record if errSkipWalk is returned. If any other error is returned,
-// the walk will stop and return the error to the caller.
-func (cr *cacheRecord) walkAncestors(f func(*cacheRecord) error) error {
-	curs := []*cacheRecord{cr}
-	for len(curs) > 0 {
-		cur := curs[len(curs)-1]
-		curs = curs[:len(curs)-1]
-		if err := f(cur); err != nil {
-			if errors.Is(err, errSkipWalk) {
-				continue
-			}
-			return err
-		}
-		switch cur.kind() {
-		case Layer:
-			curs = append(curs, cur.layerParent.cacheRecord)
-		case Merge:
-			for _, p := range cur.mergeParents {
-				curs = append(curs, p.cacheRecord)
-			}
-		case Diff:
-			if cur.diffParents.lower != nil {
-				curs = append(curs, cur.diffParents.lower.cacheRecord)
-			}
-			if cur.diffParents.upper != nil {
-				curs = append(curs, cur.diffParents.upper.cacheRecord)
-			}
-		}
-	}
-	return nil
+func (cr *cacheRecord) ID() string {
+	return cr.md.ID()
 }
 
-// walkUniqueAncestors calls walkAncestors but skips a record if it's already been visited.
-func (cr *cacheRecord) walkUniqueAncestors(f func(*cacheRecord) error) error {
-	memo := make(map[*cacheRecord]struct{})
-	return cr.walkAncestors(func(cr *cacheRecord) error {
-		if _, ok := memo[cr]; ok {
-			return errSkipWalk
-		}
-		memo[cr] = struct{}{}
-		return f(cr)
-	})
-}
-
-func (cr *cacheRecord) isLazy(ctx context.Context) (bool, error) {
-	_ = ctx
-	return false, nil
-}
-
-func (cr *cacheRecord) IdentityMapping() *idtools.IdentityMapping {
-	return cr.cm.IdentityMapping()
-}
-
-func (cr *cacheRecord) viewLeaseID() string {
-	return cr.ID() + "-view"
-}
-
-func (cr *cacheRecord) compressionVariantsLeaseID() string {
-	return cr.ID() + "-variants"
-}
-
-func (cr *cacheRecord) viewSnapshotID() string {
-	return cr.getSnapshotID() + "-view"
-}
-
-func (cr *cacheRecord) size(ctx context.Context) (int64, error) {
-	// this expects that usage() is implemented lazily
-	return cr.sizeG.Do(ctx, cr.ID(), func(ctx context.Context) (int64, error) {
-		cr.mu.Lock()
-		s := cr.getSize()
+func sizeFromMetadata(
+	ctx context.Context,
+	sizeG *flightcontrol.Group[int64],
+	cm *snapshotManager,
+	md *cacheMetadata,
+	snapshotID string,
+) (int64, error) {
+	return sizeG.Do(ctx, snapshotID, func(ctx context.Context) (int64, error) {
+		s := md.getSize()
 		if s != sizeUnknown {
-			cr.mu.Unlock()
 			return s, nil
 		}
-		driverID := cr.getSnapshotID()
-		if cr.equalMutable != nil {
-			driverID = cr.equalMutable.getSnapshotID()
-		}
-		cr.mu.Unlock()
+
 		var usage snapshots.Usage
-		if !cr.getBlobOnly() {
+		if !md.getBlobOnly() {
 			var err error
-			usage, err = cr.cm.Snapshotter.Usage(ctx, driverID)
-			if err != nil {
-				cr.mu.Lock()
-				isDead := cr.isDead()
-				cr.mu.Unlock()
-				if isDead {
-					return 0, nil
-				}
-				if !errors.Is(err, cerrdefs.ErrNotFound) {
-					return s, errors.Wrapf(err, "failed to get usage for %s", cr.ID())
-				}
+			usage, err = cm.Snapshotter.Usage(ctx, snapshotID)
+			if err != nil && !errors.Is(err, cerrdefs.ErrNotFound) {
+				return s, errors.Wrapf(err, "failed to get usage for %s", snapshotID)
 			}
 		}
-		if dgst := cr.getBlob(); dgst != "" {
+
+		if dgst := md.getBlob(); dgst != "" {
 			added := make(map[digest.Digest]struct{})
-			info, err := cr.cm.ContentStore.Info(ctx, digest.Digest(dgst))
+			info, err := cm.ContentStore.Info(ctx, digest.Digest(dgst))
 			if err == nil {
 				usage.Size += info.Size
 				added[digest.Digest(dgst)] = struct{}{}
 			}
-			walkBlobVariantsOnly(ctx, cr.cm.ContentStore, digest.Digest(dgst), func(desc ocispecs.Descriptor) bool {
+			walkBlobVariantsOnly(ctx, cm.ContentStore, digest.Digest(dgst), func(desc ocispecs.Descriptor) bool {
 				if _, ok := added[desc.Digest]; !ok {
-					if info, err := cr.cm.ContentStore.Info(ctx, desc.Digest); err == nil {
+					if info, err := cm.ContentStore.Info(ctx, desc.Digest); err == nil {
 						usage.Size += info.Size
 						added[desc.Digest] = struct{}{}
 					}
@@ -326,70 +187,15 @@ func (cr *cacheRecord) size(ctx context.Context) (int64, error) {
 				return true
 			}, nil)
 		}
-		cr.mu.Lock()
-		cr.queueSize(usage.Size)
-		if err := cr.commitMetadata(); err != nil {
-			cr.mu.Unlock()
+
+		if err := md.queueSize(usage.Size); err != nil {
 			return s, err
 		}
-		cr.mu.Unlock()
+		if err := md.commitMetadata(); err != nil {
+			return s, err
+		}
 		return usage.Size, nil
 	})
-}
-
-// caller must hold cr.mu
-func (cr *cacheRecord) mount(ctx context.Context) (_ snapshot.Mountable, rerr error) {
-	if cr.mountCache != nil {
-		return cr.mountCache, nil
-	}
-
-	var mountSnapshotID string
-	if cr.mutable {
-		mountSnapshotID = cr.getSnapshotID()
-	} else if cr.equalMutable != nil {
-		mountSnapshotID = cr.equalMutable.getSnapshotID()
-	} else {
-		mountSnapshotID = cr.viewSnapshotID()
-		if _, err := cr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-			l.ID = cr.viewLeaseID()
-			l.Labels = map[string]string{
-				"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-			}
-			return nil
-		}, leaseutil.MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
-			return nil, err
-		}
-		defer func() {
-			if rerr != nil {
-				cr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: cr.viewLeaseID()})
-			}
-		}()
-		if err := cr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: cr.viewLeaseID()}, leases.Resource{
-			ID:   mountSnapshotID,
-			Type: "snapshots/" + cr.cm.Snapshotter.Name(),
-		}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-			return nil, err
-		}
-		// Return the mount direct from View rather than setting it using the Mounts call below.
-		// The two are equivalent for containerd snapshotters but the moby snapshotter requires
-		// the use of the mountable returned by View in this case.
-		mnts, err := cr.cm.Snapshotter.View(ctx, mountSnapshotID, cr.getSnapshotID())
-		if err != nil && !cerrdefs.IsAlreadyExists(err) {
-			return nil, err
-		}
-		cr.mountCache = mnts
-	}
-
-	if cr.mountCache != nil {
-		return cr.mountCache, nil
-	}
-
-	mnts, err := cr.cm.Snapshotter.Mounts(ctx, mountSnapshotID)
-	if err != nil {
-		return nil, err
-	}
-	cr.mountCache = mnts
-	return cr.mountCache, nil
 }
 
 // cr must be mutable
@@ -397,7 +203,7 @@ func (cr *cacheRecord) hasDirtyVolatile(ctx context.Context) (_ bool, rerr error
 	if !cr.mutable {
 		return false, errors.New("can only check dirty volatile on mutable cache records")
 	}
-	mntable, err := cr.mutableMount(ctx, false, nil)
+	mntable, err := cr.cm.Snapshotter.Mounts(ctx, cr.md.getSnapshotID())
 	if err != nil {
 		return false, err
 	}
@@ -431,8 +237,7 @@ func (cr *cacheRecord) hasDirtyVolatile(ctx context.Context) (_ bool, rerr error
 func (cr *cacheRecord) remove(ctx context.Context, removeSnapshot bool) (rerr error) {
 	defer func() {
 		l := bklog.G(ctx).WithFields(map[string]any{
-			"id":             cr.ID(),
-			"refCount":       len(cr.refs),
+			"id":             cr.md.ID(),
 			"removeSnapshot": removeSnapshot,
 			"stack":          bklog.TraceLevelOnlyStack(),
 		})
@@ -441,225 +246,68 @@ func (cr *cacheRecord) remove(ctx context.Context, removeSnapshot bool) (rerr er
 		}
 		l.Trace("removed cache record")
 	}()
-	delete(cr.cm.records, cr.ID())
+	delete(cr.cm.records, cr.md.ID())
 	if removeSnapshot {
 		if err := cr.cm.LeaseManager.Delete(ctx, leases.Lease{
-			ID: cr.ID(),
+			ID: cr.md.ID(),
 		}); err != nil && !cerrdefs.IsNotFound(err) {
-			return errors.Wrapf(err, "failed to delete lease for %s", cr.ID())
-		}
-		if err := cr.cm.LeaseManager.Delete(ctx, leases.Lease{
-			ID: cr.compressionVariantsLeaseID(),
-		}); err != nil && !cerrdefs.IsNotFound(err) {
-			return errors.Wrapf(err, "failed to delete compression variant lease for %s", cr.ID())
+			return errors.Wrapf(err, "failed to delete lease for %s", cr.md.ID())
 		}
 	}
-	cr.cm.metadataStore.clear(cr.ID())
-	if err := cr.parentRefs.release(ctx); err != nil {
-		return errors.Wrapf(err, "failed to release parents of %s", cr.ID())
-	}
+	cr.cm.metadataStore.clear(cr.md.ID())
 	return nil
 }
 
 type immutableRef struct {
-	*cacheRecord
+	cm *snapshotManager
+	refMetadata
+	leaseID         string
+	mu              sync.Mutex
+	mountCache      snapshot.Mountable
 	triggerLastUsed bool
-	descHandlers    DescHandlers
+	sizeG           flightcontrol.Group[int64]
 }
 
 // hold ref lock before calling
 func (sr *immutableRef) traceLogFields() logrus.Fields {
 	m := map[string]any{
-		"id":          sr.ID(),
-		"refID":       fmt.Sprintf("%p", sr),
-		"newRefCount": len(sr.refs),
-		"mutable":     false,
-		"stack":       bklog.TraceLevelOnlyStack(),
-	}
-	if sr.equalMutable != nil {
-		m["equalMutableID"] = sr.equalMutable.ID()
-	}
-	if sr.equalImmutable != nil {
-		m["equalImmutableID"] = sr.equalImmutable.ID()
+		"id":      sr.ID(),
+		"refID":   fmt.Sprintf("%p", sr),
+		"leaseID": sr.leaseID,
+		"mutable": false,
+		"stack":   bklog.TraceLevelOnlyStack(),
 	}
 	return m
 }
 
-// Order is from parent->child, sr will be at end of slice. Refs should not
-// be released as they are used internally in the underlying cacheRecords.
-func (sr *immutableRef) layerChain() []*immutableRef {
-	var count int
-	sr.layerWalk(func(*immutableRef) {
-		count++
-	})
-	layers := make([]*immutableRef, count)
-	var index int
-	sr.layerWalk(func(sr *immutableRef) {
-		layers[index] = sr
-		index++
-	})
-	return layers
-}
-
-// returns the set of cache record IDs for each layer in sr's layer chain
-func (sr *immutableRef) layerSet() map[string]struct{} {
-	var count int
-	sr.layerWalk(func(*immutableRef) {
-		count++
-	})
-	set := make(map[string]struct{}, count)
-	sr.layerWalk(func(sr *immutableRef) {
-		set[sr.ID()] = struct{}{}
-	})
-	return set
-}
-
-// layerWalk visits each ref representing an actual layer in the chain for
-// sr (including sr). The layers are visited from lowest->highest as ordered
-// in the remote for the ref.
-func (sr *immutableRef) layerWalk(f func(*immutableRef)) {
-	switch sr.kind() {
-	case Merge:
-		for _, parent := range sr.mergeParents {
-			parent.layerWalk(f)
-		}
-	case Diff:
-		lower := sr.diffParents.lower
-		upper := sr.diffParents.upper
-		// If upper is only one blob different from lower, then re-use that blob
-		switch {
-		case upper != nil && lower == nil && upper.kind() == BaseLayer:
-			// upper is a single layer being diffed with scratch
-			f(upper)
-		case upper != nil && lower != nil && upper.kind() == Layer && upper.layerParent.ID() == lower.ID():
-			// upper is a single layer on top of lower
-			f(upper)
-		default:
-			// otherwise, the diff will be computed and turned into its own single blob
-			f(sr)
-		}
-	case Layer:
-		sr.layerParent.layerWalk(f)
-		fallthrough
-	case BaseLayer:
-		f(sr)
-	}
-}
-
-type digestChain struct {
-	digests []digest.Digest
-	seen    map[digest.Digest]struct{}
-}
-
-func (chain *digestChain) add(dig digest.Digest) {
-	if _, exists := chain.seen[dig]; !exists {
-		chain.digests = append(chain.digests, dig)
-		chain.seen[dig] = struct{}{}
-	}
-}
-
-// hold cacheRecord.mu lock before calling
-func (cr *cacheRecord) layerDigestChain() *digestChain {
-	if cr.layerDigestChainCache != nil {
-		return cr.layerDigestChainCache
-	}
-	cr.layerDigestChainCache = &digestChain{seen: map[digest.Digest]struct{}{}}
-	switch cr.kind() {
-	case Diff:
-		if cr.getBlob() == "" && cr.diffParents.upper != nil {
-			// this diff just reuses the upper blob
-			cr.layerDigestChainCache = cr.diffParents.upper.layerDigestChain()
-		} else {
-			cr.layerDigestChainCache.add(cr.getBlob())
-		}
-	case Merge:
-		for _, parent := range cr.mergeParents {
-			for _, dig := range parent.layerDigestChain().digests {
-				cr.layerDigestChainCache.add(dig)
-			}
-		}
-	case Layer:
-		for _, dig := range cr.layerParent.layerDigestChain().digests {
-			cr.layerDigestChainCache.add(dig)
-		}
-		fallthrough
-	case BaseLayer:
-		cr.layerDigestChainCache.add(cr.getBlob())
-	}
-	return cr.layerDigestChainCache
-}
-
-type RefList []ImmutableRef
-
-func (l RefList) Release(ctx context.Context) (rerr error) {
-	for i, r := range l {
-		if r == nil {
-			continue
-		}
-		if err := r.Release(ctx); err != nil {
-			rerr = multierror.Append(rerr, err).ErrorOrNil()
-		} else {
-			l[i] = nil
-		}
-	}
-	return rerr
-}
-
-func (sr *immutableRef) LayerChain() RefList {
-	chain := sr.layerChain()
-	l := RefList(make([]ImmutableRef, len(chain)))
-	for i, p := range chain {
-		l[i] = p.Clone()
-	}
-	return l
-}
-
-func (sr *immutableRef) DescHandler(dgst digest.Digest) *DescHandler {
-	return sr.descHandlers[dgst]
-}
-
 func (sr *immutableRef) Size(ctx context.Context) (int64, error) {
-	return sr.cacheRecord.size(ctx)
+	return sizeFromMetadata(ctx, &sr.sizeG, sr.cm, sr.md, sr.snapshotID)
 }
 
 type mutableRef struct {
-	*cacheRecord
+	cm *snapshotManager
+	refMetadata
+	leaseID         string
+	mu              sync.Mutex
+	mountCache      snapshot.Mountable
 	triggerLastUsed bool
-	descHandlers    DescHandlers
-}
-
-func (sr *immutableRef) SnapshotID() string {
-	return sr.getSnapshotID()
-}
-
-func (sr *mutableRef) SnapshotID() string {
-	return sr.getSnapshotID()
+	sizeG           flightcontrol.Group[int64]
 }
 
 // hold ref lock before calling
 func (sr *mutableRef) traceLogFields() logrus.Fields {
 	m := map[string]any{
-		"id":          sr.ID(),
-		"refID":       fmt.Sprintf("%p", sr),
-		"newRefCount": len(sr.refs),
-		"mutable":     true,
-		"stack":       bklog.TraceLevelOnlyStack(),
-	}
-	if sr.equalMutable != nil {
-		m["equalMutableID"] = sr.equalMutable.ID()
-	}
-	if sr.equalImmutable != nil {
-		m["equalImmutableID"] = sr.equalImmutable.ID()
+		"id":      sr.ID(),
+		"refID":   fmt.Sprintf("%p", sr),
+		"leaseID": sr.leaseID,
+		"mutable": true,
+		"stack":   bklog.TraceLevelOnlyStack(),
 	}
 	return m
 }
 
-func (sr *mutableRef) DescHandler(dgst digest.Digest) *DescHandler {
-	return sr.descHandlers[dgst]
-}
-
 func (sr *mutableRef) Size(ctx context.Context) (int64, error) {
-	return sr.cacheRecord.size(ctx)
+	return sizeFromMetadata(ctx, &sr.sizeG, sr.cm, sr.md, sr.snapshotID)
 }
 
 func (sr *mutableRef) InvalidateSize(_ context.Context) error {
@@ -669,22 +317,13 @@ func (sr *mutableRef) InvalidateSize(_ context.Context) error {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	if sr.getSize() == sizeUnknown {
+	if sr.md.getSize() == sizeUnknown {
 		return nil
 	}
-	sr.queueSize(sizeUnknown)
-	return sr.commitMetadata()
-}
-
-func (sr *immutableRef) clone() *immutableRef {
-	sr.mu.Lock()
-	ref := sr.ref(false, sr.descHandlers)
-	sr.mu.Unlock()
-	return ref
-}
-
-func (sr *immutableRef) Clone() ImmutableRef {
-	return sr.clone()
+	if err := sr.md.queueSize(sizeUnknown); err != nil {
+		return err
+	}
+	return sr.md.commitMetadata()
 }
 
 // layerToDistributable changes the passed in media type to the "distributable" version of the media type.
@@ -728,21 +367,21 @@ func layerToNonDistributable(mt string) string {
 	}
 }
 
-func (sr *immutableRef) ociDesc(ctx context.Context, dhs DescHandlers, preferNonDist bool) (ocispecs.Descriptor, error) {
-	dgst := sr.getBlob()
+func (sr *immutableRef) ociDesc(ctx context.Context, preferNonDist bool) (ocispecs.Descriptor, error) {
+	dgst := sr.md.getBlob()
 	if dgst == "" {
 		return ocispecs.Descriptor{}, errors.Errorf("no blob set for cache record %s", sr.ID())
 	}
 
 	desc := ocispecs.Descriptor{
-		Digest:      sr.getBlob(),
-		Size:        sr.getBlobSize(),
+		Digest:      sr.md.getBlob(),
+		Size:        sr.md.getBlobSize(),
 		Annotations: make(map[string]string),
-		MediaType:   sr.getMediaType(),
+		MediaType:   sr.md.getMediaType(),
 	}
 
 	if preferNonDist {
-		if urls := sr.getURLs(); len(urls) > 0 {
+		if urls := sr.md.getURLs(); len(urls) > 0 {
 			// Make sure the media type is the non-distributable version
 			// We don't want to rely on the stored media type here because it could have been stored as distributable originally.
 			desc.MediaType = layerToNonDistributable(desc.MediaType)
@@ -758,12 +397,9 @@ func (sr *immutableRef) ociDesc(ctx context.Context, dhs DescHandlers, preferNon
 		if blobDesc.Annotations != nil {
 			desc.Annotations = blobDesc.Annotations
 		}
-	} else if dh, ok := dhs[desc.Digest]; ok {
-		// No blob metadtata is stored in the content store. Try to get annotations from desc handlers.
-		maps.Copy(desc.Annotations, filterAnnotationsForSave(dh.Annotations))
 	}
 
-	diffID := sr.getDiffID()
+	diffID := sr.md.getDiffID()
 	if diffID != "" {
 		desc.Annotations[labels.LabelUncompressed] = string(diffID)
 	}
@@ -791,21 +427,8 @@ const (
 // this ref. This doesn't record the blob to the cache record (i.e. the passed blob can't
 // be acquired through getBlob). Use setBlob for that purpose.
 func (sr *immutableRef) linkBlob(ctx context.Context, desc ocispecs.Descriptor) error {
-	if _, err := sr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-		l.ID = sr.compressionVariantsLeaseID()
-		// do not make it flat lease to allow linking blobs using gc label
-		return nil
-	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-		return err
-	}
-	if err := sr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: sr.compressionVariantsLeaseID()}, leases.Resource{
-		ID:   desc.Digest.String(),
-		Type: "content",
-	}); err != nil {
-		return err
-	}
 	cs := sr.cm.ContentStore
-	blobDigest := sr.getBlob()
+	blobDigest := sr.md.getBlob()
 	info, err := cs.Info(ctx, blobDigest)
 	if err != nil {
 		return err
@@ -823,12 +446,18 @@ func (sr *immutableRef) linkBlob(ctx context.Context, desc ocispecs.Descriptor) 
 	}
 	// let the future call to size() recalcultate the new size
 	sr.mu.Lock()
-	sr.queueSize(sizeUnknown)
-	if err := sr.commitMetadata(); err != nil {
+	if err := sr.md.queueSize(sizeUnknown); err != nil {
+		sr.mu.Unlock()
+		return err
+	}
+	if err := sr.md.commitMetadata(); err != nil {
 		sr.mu.Unlock()
 		return err
 	}
 	sr.mu.Unlock()
+	if err := sr.cm.recordSnapshotContent(sr.SnapshotID(), desc); err != nil {
+		return err
+	}
 	if desc.Digest == blobDigest {
 		return nil
 	}
@@ -840,10 +469,10 @@ func (sr *immutableRef) linkBlob(ctx context.Context, desc ocispecs.Descriptor) 
 }
 
 func (sr *immutableRef) getBlobWithCompression(ctx context.Context, compressionType compression.Type) (ocispecs.Descriptor, error) {
-	if _, err := sr.cm.ContentStore.Info(ctx, sr.getBlob()); err != nil {
+	if _, err := sr.cm.ContentStore.Info(ctx, sr.md.getBlob()); err != nil {
 		return ocispecs.Descriptor{}, err
 	}
-	desc, err := sr.ociDesc(ctx, nil, true)
+	desc, err := sr.ociDesc(ctx, true)
 	if err != nil {
 		return ocispecs.Descriptor{}, err
 	}
@@ -982,237 +611,57 @@ func fieldsFromLabels(labels map[string]string) (fields []string) {
 	return
 }
 
-func (sr *immutableRef) Mount(ctx context.Context, readonly bool, s session.Group) (_ snapshot.Mountable, rerr error) {
-	if sr.equalMutable != nil && !readonly {
-		if err := sr.Finalize(ctx); err != nil {
-			return nil, err
-		}
+func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Mountable, rerr error) {
+	if sr.leaseID == "" {
+		return nil, errors.Wrapf(errInvalid, "invalid immutable ref %p", sr)
 	}
-
-	if err := sr.Extract(ctx, s); err != nil {
-		return nil, err
-	}
-
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	if sr.mountCache != nil {
-		if readonly {
-			return setReadonly(sr.mountCache), nil
-		}
-		return sr.mountCache, nil
-	}
-
-	var mnt snapshot.Mountable
-	mnt, rerr = sr.mount(ctx)
-	if rerr != nil {
-		return nil, rerr
-	}
-
 	if readonly {
-		mnt = setReadonly(mnt)
-	}
-	return mnt, nil
-}
-
-func (sr *immutableRef) ensureLocalContentBlob(ctx context.Context, s session.Group) error {
-	if (sr.kind() == Layer || sr.kind() == BaseLayer) && !sr.getBlobOnly() {
-		return nil
-	}
-
-	return sr.unlazy(ctx, sr.descHandlers, nil, s, true, true)
-}
-
-func (sr *immutableRef) Extract(ctx context.Context, s session.Group) (rerr error) {
-	if (sr.kind() == Layer || sr.kind() == BaseLayer) && !sr.getBlobOnly() {
-		return nil
-	}
-
-	return sr.unlazy(ctx, sr.descHandlers, nil, s, true, false)
-}
-
-func (sr *immutableRef) unlazy(ctx context.Context, dhs DescHandlers, pg progress.Controller, s session.Group, topLevel bool, ensureContentStore bool) error {
-	_, err := g.Do(ctx, sr.ID()+"-unlazy", func(ctx context.Context) (_ *leaseutil.LeaseRef, rerr error) {
-		if _, err := sr.cm.Snapshotter.Stat(ctx, sr.getSnapshotID()); err == nil {
-			if !ensureContentStore {
-				return nil, nil
+		viewLeaseID := identity.NewID()
+		viewSnapshotID := viewLeaseID + "-view"
+		if _, err := sr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+			l.ID = viewLeaseID
+			l.Labels = map[string]string{
+				"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
 			}
-			if blob := sr.getBlob(); blob == "" {
-				return nil, nil
-			}
-			if _, err := sr.cm.ContentStore.Info(ctx, sr.getBlob()); err == nil {
-				return nil, nil
-			}
-		}
-
-		switch sr.kind() {
-		case Merge, Diff:
-			return nil, sr.unlazyDiffMerge(ctx, dhs, pg, s, topLevel, ensureContentStore)
-		case Layer, BaseLayer:
-			return nil, sr.unlazyLayer(ctx, dhs, pg, s, ensureContentStore)
-		}
-		return nil, nil
-	})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// should be called within sizeG.Do call for this ref's ID
-func (sr *immutableRef) unlazyDiffMerge(ctx context.Context, dhs DescHandlers, pg progress.Controller, s session.Group, topLevel bool, ensureContentStore bool) (rerr error) {
-	eg, egctx := errgroup.WithContext(ctx)
-	var diffs []snapshot.Diff
-	sr.layerWalk(func(sr *immutableRef) {
-		var diff snapshot.Diff
-		switch sr.kind() {
-		case Diff:
-			if sr.diffParents.lower != nil {
-				diff.Lower = sr.diffParents.lower.getSnapshotID()
-				eg.Go(func() error {
-					return sr.diffParents.lower.unlazy(egctx, dhs, pg, s, false, ensureContentStore)
-				})
-			}
-			if sr.diffParents.upper != nil {
-				diff.Upper = sr.diffParents.upper.getSnapshotID()
-				eg.Go(func() error {
-					return sr.diffParents.upper.unlazy(egctx, dhs, pg, s, false, ensureContentStore)
-				})
-			}
-		case Layer:
-			diff.Lower = sr.layerParent.getSnapshotID()
-			fallthrough
-		case BaseLayer:
-			diff.Upper = sr.getSnapshotID()
-			eg.Go(func() error {
-				return sr.unlazy(egctx, dhs, pg, s, false, ensureContentStore)
-			})
-		}
-		diffs = append(diffs, diff)
-	})
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
-	if pg != nil {
-		action := "merging"
-		if sr.kind() == Diff {
-			action = "diffing"
-		}
-		progressID := sr.GetDescription()
-		if topLevel {
-			progressID = action
-		}
-		if progressID == "" {
-			progressID = fmt.Sprintf("%s %s", action, sr.ID())
-		}
-		_, stopProgress := pg.Start(ctx)
-		defer stopProgress(rerr)
-		statusDone := pg.Status(progressID, action)
-		defer statusDone()
-	}
-
-	return sr.cm.Snapshotter.Merge(ctx, sr.getSnapshotID(), diffs)
-}
-
-// should be called within sizeG.Do call for this ref's ID
-func (sr *immutableRef) unlazyLayer(ctx context.Context, dhs DescHandlers, pg progress.Controller, s session.Group, ensureContentStore bool) (rerr error) {
-	if !sr.getBlobOnly() {
-		return nil
-	}
-
-	if sr.cm.Applier == nil {
-		return errors.New("unlazy requires an applier")
-	}
-
-	if _, ok := leases.FromContext(ctx); !ok {
-		leaseCtx, done, err := leaseutil.WithLease(ctx, sr.cm.LeaseManager, leaseutil.MakeTemporary)
-		if err != nil {
-			return err
-		}
-		defer done(leaseCtx)
-		ctx = leaseCtx
-	}
-
-	if sr.GetLayerType() == "windows" {
-		ctx = winlayers.UseWindowsLayerMode(ctx)
-	}
-
-	eg, egctx := errgroup.WithContext(ctx)
-
-	parentID := ""
-	if sr.layerParent != nil {
-		eg.Go(func() error {
-			if err := sr.layerParent.unlazy(egctx, dhs, pg, s, false, ensureContentStore); err != nil {
-				return err
-			}
-			parentID = sr.layerParent.getSnapshotID()
 			return nil
-		})
-	}
-
-	desc, err := sr.ociDesc(ctx, dhs, true)
-	if err != nil {
-		return err
-	}
-	dh := dhs[desc.Digest]
-
-	eg.Go(func() error {
-		// unlazies if needed, otherwise a no-op
-		return lazyRefProvider{
-			ref:     sr,
-			desc:    desc,
-			dh:      dh,
-			session: s,
-		}.Unlazy(egctx)
-	})
-
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
-	if pg != nil {
-		_, stopProgress := pg.Start(ctx)
-		defer stopProgress(rerr)
-		statusDone := pg.Status("extracting "+desc.Digest.String(), "extracting")
-		defer statusDone()
-	}
-
-	key := fmt.Sprintf("extract-%s %s", identity.NewID(), sr.getChainID())
-
-	err = sr.cm.Snapshotter.Prepare(ctx, key, parentID)
-	if err != nil {
-		return err
-	}
-
-	mountable, err := sr.cm.Snapshotter.Mounts(ctx, key)
-	if err != nil {
-		return err
-	}
-	mounts, unmount, err := mountable.Mount()
-	if err != nil {
-		return err
-	}
-	_, err = sr.cm.Applier.Apply(ctx, desc, mounts)
-	if err != nil {
-		unmount()
-		return err
-	}
-
-	if err := unmount(); err != nil {
-		return err
-	}
-	if err := sr.cm.Snapshotter.Commit(ctx, sr.getSnapshotID(), key); err != nil {
-		if !errors.Is(err, cerrdefs.ErrAlreadyExists) {
+		}, leaseutil.MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
+			return nil, err
+		}
+		releaseViewLease := func() error {
+			err := sr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: viewLeaseID})
+			if cerrdefs.IsNotFound(err) {
+				return nil
+			}
 			return err
 		}
+		if err := sr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: viewLeaseID}, leases.Resource{
+			ID:   viewSnapshotID,
+			Type: "snapshots/" + sr.cm.Snapshotter.Name(),
+		}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+			_ = releaseViewLease()
+			return nil, err
+		}
+		mnts, err := sr.cm.Snapshotter.View(ctx, viewSnapshotID, sr.SnapshotID())
+		if err != nil && !cerrdefs.IsAlreadyExists(err) {
+			_ = releaseViewLease()
+			return nil, err
+		}
+		return &mountableWithRelease{
+			Mountable: setReadonly(mnts),
+			release:   releaseViewLease,
+		}, nil
 	}
-	sr.queueBlobOnly(false)
-	sr.queueSize(sizeUnknown)
-	if err := sr.commitMetadata(); err != nil {
-		return err
+	if sr.mountCache == nil {
+		mnt, err := sr.cm.Snapshotter.Mounts(ctx, sr.SnapshotID())
+		if err != nil {
+			return nil, err
+		}
+		sr.mountCache = mnt
 	}
-	return nil
+	return sr.mountCache, nil
 }
 
 func (sr *immutableRef) Release(ctx context.Context) error {
@@ -1230,15 +679,7 @@ func (sr *immutableRef) shouldUpdateLastUsed() bool {
 }
 
 func (sr *immutableRef) updateLastUsedNow() bool {
-	if !sr.triggerLastUsed {
-		return false
-	}
-	for r := range sr.refs {
-		if r.shouldUpdateLastUsed() {
-			return false
-		}
-	}
-	return true
+	return sr.triggerLastUsed
 }
 
 func (sr *immutableRef) release(ctx context.Context) (rerr error) {
@@ -1249,74 +690,17 @@ func (sr *immutableRef) release(ctx context.Context) (rerr error) {
 		}
 		l.Trace("released cache ref")
 	}()
-
-	delete(sr.refs, sr)
 	if sr.updateLastUsedNow() {
-		sr.updateLastUsed()
-	}
-
-	if len(sr.refs) == 0 {
-		if err := sr.cm.LeaseManager.Delete(ctx, leases.Lease{ID: sr.viewLeaseID()}); err != nil && !cerrdefs.IsNotFound(err) {
+		if err := sr.md.updateLastUsed(); err != nil {
 			return err
 		}
-		sr.mountCache = nil
 	}
-
+	sr.mountCache = nil
+	if err := sr.cm.LeaseManager.Delete(ctx, leases.Lease{ID: sr.leaseID}); err != nil && !cerrdefs.IsNotFound(err) {
+		return err
+	}
+	sr.leaseID = ""
 	return nil
-}
-
-func (sr *immutableRef) Finalize(ctx context.Context) error {
-	sr.mu.Lock()
-	defer sr.mu.Unlock()
-	return sr.finalize(ctx)
-}
-
-// caller must hold cacheRecord.mu
-func (cr *cacheRecord) finalize(ctx context.Context) error {
-	mutable := cr.equalMutable
-	if mutable == nil {
-		return nil
-	}
-
-	_, err := cr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-		l.ID = cr.ID()
-		l.Labels = map[string]string{
-			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-		return nil
-	})
-	if err != nil {
-		if !errors.Is(err, cerrdefs.ErrAlreadyExists) { // migrator adds leases for everything
-			return errors.Wrap(err, "failed to create lease")
-		}
-	}
-
-	if err := cr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: cr.ID()}, leases.Resource{
-		ID:   cr.getSnapshotID(),
-		Type: "snapshots/" + cr.cm.Snapshotter.Name(),
-	}); err != nil {
-		cr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: cr.ID()})
-		return errors.Wrapf(err, "failed to add snapshot %s to lease", cr.getSnapshotID())
-	}
-
-	if err := cr.cm.Snapshotter.Commit(ctx, cr.getSnapshotID(), mutable.getSnapshotID()); err != nil {
-		cr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: cr.ID()})
-		return errors.Wrapf(err, "failed to commit %s to %s during finalize", mutable.getSnapshotID(), cr.getSnapshotID())
-	}
-	cr.mountCache = nil
-
-	mutable.dead = true
-	go func() {
-		cr.cm.mu.Lock()
-		defer cr.cm.mu.Unlock()
-		if err := mutable.remove(context.TODO(), true); err != nil {
-			bklog.G(ctx).Error(err)
-		}
-	}()
-
-	cr.equalMutable = nil
-	cr.clearEqualMutable()
-	return cr.commitMetadata()
 }
 
 func (sr *mutableRef) shouldUpdateLastUsed() bool {
@@ -1324,19 +708,17 @@ func (sr *mutableRef) shouldUpdateLastUsed() bool {
 }
 
 func (sr *mutableRef) commit() (_ *immutableRef, rerr error) {
-	if !sr.mutable || len(sr.refs) == 0 {
+	if sr.leaseID == "" {
+		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
+	}
+	rec, ok := sr.cm.records[sr.snapshotID]
+	if !ok || !rec.mutable || rec.locked == false {
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
 
 	id := identity.NewID()
 	md := sr.cm.ensureMetadata(id)
-	rec := &cacheRecord{
-		mu:            &sync.Mutex{},
-		cm:            sr.cm,
-		parentRefs:    sr.parentRefs.clone(),
-		refs:          make(map[ref]struct{}),
-		cacheMetadata: md,
-	}
+	committed := &cacheRecord{cm: sr.cm, md: md}
 
 	l, err := sr.cm.LeaseManager.Create(context.TODO(), func(l *leases.Lease) error {
 		l.ID = id
@@ -1367,8 +749,8 @@ func (sr *mutableRef) commit() (_ *immutableRef, rerr error) {
 		return nil, errors.Wrapf(err, "failed to add snapshot %s to lease", id)
 	}
 
-	if err := sr.cm.Snapshotter.Commit(context.TODO(), id, sr.getSnapshotID()); err != nil {
-		return nil, errors.Wrapf(err, "failed to commit %s to immutable %s", sr.getSnapshotID(), id)
+	if err := sr.cm.Snapshotter.Commit(context.TODO(), id, sr.SnapshotID()); err != nil {
+		return nil, errors.Wrapf(err, "failed to commit %s to immutable %s", sr.SnapshotID(), id)
 	}
 
 	if descr := sr.GetDescription(); descr != "" {
@@ -1376,60 +758,89 @@ func (sr *mutableRef) commit() (_ *immutableRef, rerr error) {
 			return nil, err
 		}
 	}
+	if layerType := sr.GetLayerType(); layerType != "" {
+		if err := md.SetLayerType(layerType); err != nil {
+			return nil, err
+		}
+	}
+	if recordType := sr.GetRecordType(); recordType != "" {
+		if err := md.SetRecordType(recordType); err != nil {
+			return nil, err
+		}
+	}
+	if createdAt := sr.GetCreatedAt(); !createdAt.IsZero() {
+		if err := md.SetCreatedAt(createdAt); err != nil {
+			return nil, err
+		}
+	}
+	for _, imageRef := range sr.md.getImageRefs() {
+		if err := md.appendImageRef(imageRef); err != nil {
+			return nil, err
+		}
+	}
 
-	if err := initializeMetadata(rec.cacheMetadata, rec.parentRefs); err != nil {
+	if err := initializeMetadata(committed.md); err != nil {
 		return nil, err
 	}
 
-	sr.cm.records[id] = rec
+	sr.cm.records[id] = committed
 
-	if err := sr.commitMetadata(); err != nil {
+	if err := md.queueCommitted(true); err != nil {
 		return nil, err
 	}
-
-	md.queueCommitted(true)
-	md.queueSize(sizeUnknown)
-	md.queueSnapshotID(id)
+	if err := md.queueSize(sizeUnknown); err != nil {
+		return nil, err
+	}
+	if err := md.queueSnapshotID(id); err != nil {
+		return nil, err
+	}
 	if err := md.commitMetadata(); err != nil {
 		return nil, err
 	}
 
-	ref := rec.ref(true, sr.descHandlers)
+	if err := sr.cm.LeaseManager.Delete(context.WithoutCancel(context.TODO()), leases.Lease{ID: sr.leaseID}); err != nil && !cerrdefs.IsNotFound(err) {
+		return nil, err
+	}
+	if err := rec.remove(context.WithoutCancel(context.TODO()), false); err != nil {
+		return nil, err
+	}
+	sr.mountCache = nil
+	sr.leaseID = ""
+
+	ref := &immutableRef{
+		cm:              sr.cm,
+		refMetadata:     refMetadata{snapshotID: committed.md.getSnapshotID(), md: committed.md},
+		leaseID:         id,
+		triggerLastUsed: true,
+	}
+	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
 	return ref, nil
 }
 
-func (sr *mutableRef) Mount(ctx context.Context, readonly bool, s session.Group) (_ snapshot.Mountable, rerr error) {
+func (sr *mutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Mountable, rerr error) {
+	if sr.leaseID == "" {
+		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
+	}
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
-	return sr.mutableMount(ctx, readonly, s)
+	return sr.mutableMount(ctx, readonly)
 }
 
-// caller must hold cacheRecord.mu
-func (cr *cacheRecord) mutableMount(ctx context.Context, readonly bool, s session.Group) (_ snapshot.Mountable, rerr error) {
-	if cr.mountCache != nil {
-		if readonly {
-			return setReadonly(cr.mountCache), nil
+func (sr *mutableRef) mutableMount(ctx context.Context, readonly bool) (_ snapshot.Mountable, rerr error) {
+	if sr.mountCache == nil {
+		mnt, err := sr.cm.Snapshotter.Mounts(ctx, sr.SnapshotID())
+		if err != nil {
+			return nil, err
 		}
-		return cr.mountCache, nil
+		if sr.GetRecordType() == client.UsageRecordTypeCacheMount {
+			mnt = sr.cm.mountPool.setSharable(mnt)
+		}
+		sr.mountCache = mnt
 	}
-
-	var mnt snapshot.Mountable
-	mnt, rerr = cr.mount(ctx)
-	if rerr != nil {
-		return nil, rerr
-	}
-
-	if cr.GetRecordType() == client.UsageRecordTypeCacheMount {
-		// Make the mounts sharable. We don't do this for immutableRef mounts because
-		// it requires the raw []mount.Mount for computing diff on overlayfs.
-		mnt = cr.cm.mountPool.setSharable(mnt)
-	}
-
-	cr.mountCache = mnt
 	if readonly {
-		mnt = setReadonly(mnt)
+		return setReadonly(sr.mountCache), nil
 	}
-	return mnt, nil
+	return sr.mountCache, nil
 }
 
 func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
@@ -1453,6 +864,13 @@ func (sr *mutableRef) Release(ctx context.Context) error {
 }
 
 func (sr *mutableRef) release(ctx context.Context) (rerr error) {
+	if sr.leaseID == "" {
+		return errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
+	}
+	rec, ok := sr.cm.records[sr.snapshotID]
+	if !ok || !rec.mutable {
+		return errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
+	}
 	defer func() {
 		l := bklog.G(ctx).WithFields(sr.traceLogFields())
 		if rerr != nil {
@@ -1460,16 +878,13 @@ func (sr *mutableRef) release(ctx context.Context) (rerr error) {
 		}
 		l.Trace("released cache ref")
 	}()
-	delete(sr.refs, sr)
-
-	if !sr.HasCachePolicyRetain() {
-		return sr.remove(ctx, true)
+	if err := sr.cm.LeaseManager.Delete(ctx, leases.Lease{ID: sr.leaseID}); err != nil && !cerrdefs.IsNotFound(err) {
+		return err
 	}
-	if sr.shouldUpdateLastUsed() {
-		sr.updateLastUsed()
-		sr.triggerLastUsed = false
-	}
-	return nil
+	sr.leaseID = ""
+	sr.mountCache = nil
+	rec.locked = false
+	return rec.remove(ctx, false)
 }
 
 func setReadonly(mounts snapshot.Mountable) snapshot.Mountable {
@@ -1478,6 +893,33 @@ func setReadonly(mounts snapshot.Mountable) snapshot.Mountable {
 
 type readOnlyMounter struct {
 	snapshot.Mountable
+}
+
+type mountableWithRelease struct {
+	snapshot.Mountable
+	release func() error
+}
+
+func (m *mountableWithRelease) Mount() ([]mount.Mount, func() error, error) {
+	mounts, release, err := m.Mountable.Mount()
+	if err != nil {
+		if m.release != nil {
+			_ = m.release()
+		}
+		return nil, nil, err
+	}
+	return mounts, func() error {
+		var retErr error
+		if release != nil {
+			retErr = release()
+		}
+		if m.release != nil {
+			if err := m.release(); err != nil && retErr == nil {
+				retErr = err
+			}
+		}
+		return retErr
+	}, nil
 }
 
 func (m *readOnlyMounter) Mount() ([]mount.Mount, func() error, error) {

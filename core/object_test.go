@@ -110,7 +110,7 @@ func (s *moduleObjectTestServer) DefaultDeps(context.Context) (*ModDeps, error) 
 func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	cacheIface, err := dagql.NewCache(ctx, "")
+	cacheIface, err := dagql.NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cacheIface)
 
@@ -185,7 +185,7 @@ func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	cacheIface, err := dagql.NewCache(ctx, "")
+	cacheIface, err := dagql.NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cacheIface)
 	sc := cacheIface
@@ -229,7 +229,7 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 	t.Parallel()
 
 	ctx := t.Context()
-	cacheIface, err := dagql.NewCache(ctx, "")
+	cacheIface, err := dagql.NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	sc := cacheIface
 
@@ -308,7 +308,7 @@ func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	cacheIface, err := dagql.NewCache(ctx, "")
+	cacheIface, err := dagql.NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	sc := cacheIface
 
@@ -388,7 +388,7 @@ func TestModuleObjectConvertToSDKInputRewritesStoredResults(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	cacheIface, err := dagql.NewCache(ctx, "")
+	cacheIface, err := dagql.NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	sc := cacheIface
 	root := &Query{}
@@ -470,7 +470,7 @@ func TestModuleObjectPersistedResultRefsRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	cacheIface, err := dagql.NewCache(ctx, "")
+	cacheIface, err := dagql.NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	sc := cacheIface
 
@@ -606,7 +606,7 @@ func TestModuleObjectRawHandleFieldBecomesStaleAfterProducerSessionClose(t *test
 	t.Parallel()
 
 	ctx := t.Context()
-	baseCache, err := dagql.NewCache(ctx, "")
+	baseCache, err := dagql.NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 
 	producerCache := baseCache
@@ -689,7 +689,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	t.Parallel()
 
 	ctx := t.Context()
-	baseCache, err := dagql.NewCache(ctx, "")
+	baseCache, err := dagql.NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 
 	buildModule := func(dag *dagql.Server) (*Module, *ObjectTypeDef) {

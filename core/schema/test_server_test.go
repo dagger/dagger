@@ -13,10 +13,9 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
-	"github.com/dagger/dagger/engine/filesync"
+	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"google.golang.org/grpc"
@@ -82,6 +81,10 @@ func (s *currentTypeDefsTestServer) Buildkit(context.Context) (*buildkit.Client,
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) RegistryResolver(context.Context) (*serverresolver.Resolver, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) Services(context.Context) (*core.Services, error) {
 	return nil, nil
 }
@@ -89,6 +92,8 @@ func (s *currentTypeDefsTestServer) Services(context.Context) (*core.Services, e
 func (s *currentTypeDefsTestServer) Platform() core.Platform { return core.Platform{} }
 
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
+
+func (s *currentTypeDefsTestServer) BuiltinOCIStore() content.Store { return nil }
 
 func (s *currentTypeDefsTestServer) DNS() *oci.DNSConfig { return nil }
 
@@ -104,15 +109,11 @@ func (s *currentTypeDefsTestServer) PruneEngineLocalCacheEntries(context.Context
 
 func (s *currentTypeDefsTestServer) EngineLocalCachePolicy() *dagql.CachePrunePolicy { return nil }
 
-func (s *currentTypeDefsTestServer) BuildkitCache() bkcache.SnapshotManager { return nil }
-
-func (s *currentTypeDefsTestServer) BuildkitSession() *bksession.Manager { return nil }
+func (s *currentTypeDefsTestServer) SnapshotManager() bkcache.SnapshotManager { return nil }
 
 func (s *currentTypeDefsTestServer) Locker() *locker.Locker { return nil }
 
 func (s *currentTypeDefsTestServer) SecretSalt() []byte { return nil }
-
-func (s *currentTypeDefsTestServer) FileSyncer() *filesync.FileSyncer { return nil }
 
 func (s *currentTypeDefsTestServer) ClientTelemetry(context.Context, string, string) (*clientdb.DB, error) {
 	return nil, nil

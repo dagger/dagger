@@ -11,13 +11,13 @@ import (
 	"syscall"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"google.golang.org/grpc"
 )
 
 type remoteFS struct {
-	caller       session.Caller
+	callerConn   *grpc.ClientConn
 	clientPath   string
 	includes     []string
 	excludes     []string
@@ -32,14 +32,14 @@ type remoteFS struct {
 }
 
 func newRemoteFS(
-	caller session.Caller,
+	callerConn *grpc.ClientConn,
 	clientPath string,
 	includes, excludes []string,
 	followPaths []string,
 	useGitIgnore bool,
 ) *remoteFS {
 	return &remoteFS{
-		caller:       caller,
+		callerConn:   callerConn,
 		clientPath:   clientPath,
 		useGitIgnore: useGitIgnore,
 		includes:     includes,
@@ -66,7 +66,7 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 	}
 
 	var err error
-	fs.client, err = filesync.NewFileSyncClient(fs.caller.Conn()).DiffCopy(engine.LocalImportOpts{
+	fs.client, err = filesync.NewFileSyncClient(fs.callerConn).DiffCopy(engine.LocalImportOpts{
 		Path:            fs.clientPath,
 		UseGitIgnore:    fs.useGitIgnore,
 		IncludePatterns: fs.includes,

@@ -21,15 +21,16 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 const (
 	defaultTerminalImage = distconsts.AlpineImage
 )
 
-func cloneContainerForTerminal(ctr *Container) *Container {
+func cloneContainerForTerminal(ctx context.Context, query *Query, ctr *Container) (*Container, error) {
 	if ctr == nil {
-		return nil
+		return nil, nil
 	}
 	cp := *ctr
 	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
@@ -40,60 +41,86 @@ func cloneContainerForTerminal(ctr *Container) *Container {
 	cp.Config.Labels = maps.Clone(cp.Config.Labels)
 	cp.Lazy = nil
 	if cp.MetaSnapshot != nil {
-		cp.MetaSnapshot = cp.MetaSnapshot.Clone()
+		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, cp.MetaSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return nil, err
+		}
+		cp.MetaSnapshot = reopened
 	}
-	cp.FS = cloneTerminalDirectorySource(ctr.FS)
-	cp.Mounts = cloneTerminalMounts(ctr.Mounts)
+	var err error
+	cp.FS, err = cloneTerminalDirectorySource(ctx, query, ctr.FS)
+	if err != nil {
+		return nil, err
+	}
+	cp.Mounts, err = cloneTerminalMounts(ctx, query, ctr.Mounts)
+	if err != nil {
+		return nil, err
+	}
 	cp.Secrets = slices.Clone(cp.Secrets)
 	cp.Sockets = slices.Clone(cp.Sockets)
 	cp.Ports = slices.Clone(cp.Ports)
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
-	return &cp
+	return &cp, nil
 }
 
-func cloneTerminalMounts(mounts ContainerMounts) ContainerMounts {
+func cloneTerminalMounts(ctx context.Context, query *Query, mounts ContainerMounts) (ContainerMounts, error) {
 	if mounts == nil {
-		return nil
+		return nil, nil
 	}
 	cp := make(ContainerMounts, len(mounts))
 	for i, mnt := range mounts {
 		cp[i] = mnt
-		cp[i].DirectorySource = cloneTerminalDirectorySource(mnt.DirectorySource)
-		cp[i].FileSource = cloneTerminalFileSource(mnt.FileSource)
+		var err error
+		cp[i].DirectorySource, err = cloneTerminalDirectorySource(ctx, query, mnt.DirectorySource)
+		if err != nil {
+			return nil, err
+		}
+		cp[i].FileSource, err = cloneTerminalFileSource(ctx, query, mnt.FileSource)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return cp
+	return cp, nil
 }
 
-func cloneTerminalDirectorySource(src *ContainerDirectorySource) *ContainerDirectorySource {
+func cloneTerminalDirectorySource(ctx context.Context, query *Query, src *ContainerDirectorySource) (*ContainerDirectorySource, error) {
 	if src == nil {
-		return nil
+		return nil, nil
 	}
 	if src.isResultBacked() {
-		return newContainerDirectoryResultSource(*src.Result)
+		return newContainerDirectoryResultSource(*src.Result), nil
 	}
 	if src.Value == nil {
-		return nil
+		return nil, nil
 	}
-	return newContainerDirectoryValueSource(cloneTerminalDirectory(src.Value))
+	dir, err := cloneTerminalDirectory(ctx, query, src.Value)
+	if err != nil {
+		return nil, err
+	}
+	return newContainerDirectoryValueSource(dir), nil
 }
 
-func cloneTerminalFileSource(src *ContainerFileSource) *ContainerFileSource {
+func cloneTerminalFileSource(ctx context.Context, query *Query, src *ContainerFileSource) (*ContainerFileSource, error) {
 	if src == nil {
-		return nil
+		return nil, nil
 	}
 	if src.isResultBacked() {
-		return newContainerFileResultSource(*src.Result)
+		return newContainerFileResultSource(*src.Result), nil
 	}
 	if src.Value == nil {
-		return nil
+		return nil, nil
 	}
-	return newContainerFileValueSource(cloneTerminalFile(src.Value))
+	file, err := cloneTerminalFile(ctx, query, src.Value)
+	if err != nil {
+		return nil, err
+	}
+	return newContainerFileValueSource(file), nil
 }
 
-func cloneTerminalDirectory(dir *Directory) *Directory {
+func cloneTerminalDirectory(ctx context.Context, query *Query, dir *Directory) (*Directory, error) {
 	if dir == nil {
-		return nil
+		return nil, nil
 	}
 	cp := &Directory{
 		Dir:      dir.Dir,
@@ -106,20 +133,24 @@ func cloneTerminalDirectory(dir *Directory) *Directory {
 	snapshot := dir.Snapshot
 	dir.snapshotMu.RUnlock()
 	if snapshot != nil {
-		cp.Snapshot = snapshot.Clone()
+		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return nil, err
+		}
+		cp.Snapshot = reopened
 		cp.snapshotReady = true
-		return cp
+		return cp, nil
 	}
 	if ready {
 		cp.snapshotReady = true
 		cp.snapshotSource = source
 	}
-	return cp
+	return cp, nil
 }
 
-func cloneTerminalFile(file *File) *File {
+func cloneTerminalFile(ctx context.Context, query *Query, file *File) (*File, error) {
 	if file == nil {
-		return nil
+		return nil, nil
 	}
 	cp := &File{
 		File:     file.File,
@@ -132,15 +163,19 @@ func cloneTerminalFile(file *File) *File {
 	snapshot := file.Snapshot
 	file.snapshotMu.RUnlock()
 	if snapshot != nil {
-		cp.Snapshot = snapshot.Clone()
+		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return nil, err
+		}
+		cp.Snapshot = reopened
 		cp.snapshotReady = true
-		return cp
+		return cp, nil
 	}
 	if ready {
 		cp.snapshotReady = true
 		cp.snapshotSource = source
 	}
-	return cp
+	return cp, nil
 }
 
 func newSyntheticTerminalContainerResult(
@@ -242,7 +277,14 @@ func (container *Container) terminal(
 	if err := cache.Evaluate(ctx, containerRes); err != nil {
 		return fmt.Errorf("failed to evaluate container: %w", err)
 	}
-	container = cloneContainerForTerminal(containerRes.Self())
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	container, err = cloneContainerForTerminal(ctx, query, containerRes.Self())
+	if err != nil {
+		return fmt.Errorf("failed to clone terminal container: %w", err)
+	}
 
 	term, output, err := prepTerminal(ctx, selectedID, execErr)
 	if err != nil {
@@ -278,10 +320,15 @@ func (container *Container) terminal(
 	if selectedDigest == "" {
 		return fmt.Errorf("terminal selection digest is empty")
 	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return err
+	}
 	eg, egctx := errgroup.WithContext(ctx)
-	runningSvc, err := svc.Start(
+	runningSvc, release, err := svcs.StartInteractive(
 		ctx,
 		selectedDigest,
+		svc,
 		&ServiceIO{
 			Stdin:       term.Stdin,
 			Stdout:      term.Stdout,
@@ -293,6 +340,7 @@ func (container *Container) terminal(
 	if err != nil {
 		return fmt.Errorf("failed to start service: %w", err)
 	}
+	defer release()
 
 	eg.Go(func() error {
 		err := <-term.ErrCh
@@ -375,7 +423,14 @@ func (dir *Directory) Terminal(
 		return fmt.Errorf("failed to evaluate terminal base container: %w", err)
 	}
 
-	termCtr := cloneContainerForTerminal(ctr.Self())
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	termCtr, err := cloneContainerForTerminal(ctx, query, ctr.Self())
+	if err != nil {
+		return fmt.Errorf("failed to clone terminal base container: %w", err)
+	}
 	termCtr.Config.WorkingDir = "/src"
 	termCtr, err = termCtr.WithMountedDirectory(ctx, ctr, "/src", parent, "", true)
 	if err != nil {

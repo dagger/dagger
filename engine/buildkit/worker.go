@@ -12,7 +12,7 @@ import (
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
-	imageexporter "github.com/dagger/dagger/engine/buildkit/exporter/containerimage"
+	imageexport "github.com/dagger/dagger/engine/buildkit/imageexport"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -21,10 +21,10 @@ import (
 	containerdsnapshot "github.com/dagger/dagger/internal/buildkit/snapshot/containerd"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
-	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/hashicorp/go-multierror"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
@@ -46,15 +46,13 @@ type Worker struct {
 
 type sharedWorkerState struct {
 	WorkerOpt
-	root                         string
-	executorRoot                 string
-	telemetryPubSub              http.Handler
-	bkSessionManager             *bksession.Manager
-	sessionHandler               sessionHandler
-	dagqlServer                  dagqlServer
-	imageWriter                  *imageexporter.ImageWriter
-	registryResolveImageConfigG  flightcontrol.Group[*resolveImageResult]
-	ociLayoutResolveImageConfigG flightcontrol.Group[*resolveImageResult]
+	root              string
+	executorRoot      string
+	telemetryPubSub   http.Handler
+	bkSessionManager  *bksession.Manager
+	sessionHandler    sessionHandler
+	dagqlServer       dagqlServer
+	imageExportWriter *imageexport.Writer
 
 	runc             *runc.Runc
 	cgroupParent     string
@@ -126,7 +124,7 @@ type NewWorkerOpts struct {
 }
 
 func NewWorker(opts *NewWorkerOpts) (*Worker, error) {
-	imageWriter, err := imageexporter.NewImageWriter(imageexporter.WriterOpt{
+	imageWriter, err := imageexport.NewWriter(imageexport.WriterOpt{
 		Snapshotter:  opts.Snapshotter,
 		ContentStore: opts.ContentStore,
 		Applier:      opts.Applier,
@@ -137,14 +135,14 @@ func NewWorker(opts *NewWorkerOpts) (*Worker, error) {
 	}
 
 	return &Worker{sharedWorkerState: &sharedWorkerState{
-		WorkerOpt:        opts.WorkerOpt,
-		root:             opts.WorkerRoot,
-		executorRoot:     opts.ExecutorRoot,
-		telemetryPubSub:  opts.TelemetryPubSub,
-		bkSessionManager: opts.BKSessionManager,
-		sessionHandler:   opts.SessionHandler,
-		dagqlServer:      opts.DagqlServer,
-		imageWriter:      imageWriter,
+		WorkerOpt:         opts.WorkerOpt,
+		root:              opts.WorkerRoot,
+		executorRoot:      opts.ExecutorRoot,
+		telemetryPubSub:   opts.TelemetryPubSub,
+		bkSessionManager:  opts.BKSessionManager,
+		sessionHandler:    opts.SessionHandler,
+		dagqlServer:       opts.DagqlServer,
+		imageExportWriter: imageWriter,
 
 		runc:             opts.Runc,
 		cgroupParent:     opts.DefaultCgroupParent,
@@ -167,4 +165,50 @@ func NewWorker(opts *NewWorkerOpts) (*Worker, error) {
 
 func (w *Worker) ExecWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata) *Worker {
 	return &Worker{sharedWorkerState: w.sharedWorkerState, causeCtx: causeCtx, execMD: &execMD}
+}
+
+func (w *Worker) Close() error {
+	var rerr error
+	for _, provider := range w.NetworkProviders {
+		if err := provider.Close(); err != nil {
+			rerr = multierror.Append(rerr, err)
+		}
+	}
+	return rerr
+}
+
+func (w *Worker) ContentStore() *containerdsnapshot.Store {
+	return w.WorkerOpt.ContentStore
+}
+
+func (w *Worker) LeaseManager() *leaseutil.Manager {
+	return w.WorkerOpt.LeaseManager
+}
+
+func (w *Worker) ID() string {
+	return w.WorkerOpt.ID
+}
+
+func (w *Worker) Labels() map[string]string {
+	return w.WorkerOpt.Labels
+}
+
+func (w *Worker) Platforms(_ bool) []ocispecs.Platform {
+	return w.WorkerOpt.Platforms
+}
+
+func (w *Worker) BuildkitVersion() bkclient.BuildkitVersion {
+	return w.WorkerOpt.BuildkitVersion
+}
+
+func (w *Worker) GCPolicy() []bkclient.PruneInfo {
+	return w.WorkerOpt.GCPolicy
+}
+
+func (w *Worker) DiskUsage(ctx context.Context, opt bkclient.DiskUsageInfo) ([]*bkclient.UsageInfo, error) {
+	return nil, nil
+}
+
+func (w *Worker) Prune(ctx context.Context, ch chan bkclient.UsageInfo, opt ...bkclient.PruneInfo) error {
+	return nil
 }

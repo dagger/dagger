@@ -32,8 +32,8 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/analytics"
@@ -46,6 +46,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
+	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/cleanups"
@@ -78,6 +79,7 @@ type daggerSession struct {
 	seenKeys        sync.Map
 
 	services *core.Services
+	resolver *serverresolver.Resolver
 
 	analytics analytics.Tracker
 
@@ -142,7 +144,6 @@ type daggerClient struct {
 	fnCall *core.FunctionCall
 
 	// buildkit job-related state/config
-	buildkitSession *bksession.Session
 	getClientCaller func(string) (bksession.Caller, error)
 	dialer          *net.Dialer
 	bkClient        *buildkit.Client
@@ -274,6 +275,18 @@ func (srv *Server) initializeDaggerSession(
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
 	sess.authProvider = auth.NewRegistryAuthProvider()
+	sess.resolver = serverresolver.New(serverresolver.Opts{
+		Hosts: srv.registryHosts,
+		Auth: serverresolver.NewSessionAuthSource(
+			sess.authProvider,
+			func(ctx context.Context) (*grpc.ClientConn, error) {
+				return srv.sessionMainClientConn(ctx, sess)
+			},
+		),
+		ContentStore: srv.contentStore,
+		LeaseManager: srv.leaseManager,
+	})
+	failureCleanups.Add("close session resolver", sess.resolver.Close)
 	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.telemetryPubSub = srv.telemetryPubSub
@@ -355,6 +368,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	slog.Debug("stopped services")
 
+	if sess.resolver != nil {
+		errs = errors.Join(errs, sess.resolver.Close())
+		sess.resolver = nil
+	}
+
 	// release containers + buildkit solver/session state in parallel
 
 	var releaseGroup errgroup.Group
@@ -371,10 +389,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	for _, client := range sess.clients {
 		releaseGroup.Go(func() error {
 			var errs error
-			if client.buildkitSession != nil {
-				errs = errors.Join(errs, client.buildkitSession.Close())
-				client.buildkitSession = nil
-			}
 
 			// Flush all telemetry.
 			errs = errors.Join(errs, client.ShutdownTelemetry(ctx))
@@ -478,12 +492,6 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	var err error
-	client.buildkitSession, err = srv.newBuildkitSession(ctx, client)
-	if err != nil {
-		return fmt.Errorf("failed to create buildkit session: %w", err)
-	}
-	failureCleanups.Add("close buildkit session", client.buildkitSession.Close)
-
 	client.dialer = &net.Dialer{
 		Resolver: &net.Resolver{
 			PreferGo: true,
@@ -517,10 +525,10 @@ func (srv *Server) initializeDaggerClient(
 	client.bkClient, err = buildkit.NewClient(ctx, &buildkit.Opts{
 		Worker:              srv.worker,
 		SessionManager:      srv.bkSessionManager,
-		BkSession:           client.buildkitSession,
 		Dialer:              client.dialer,
 		GetClientCaller:     client.getClientCaller,
 		GetMainClientCaller: client.getMainClientCaller,
+		GetRegistryResolver: srv.RegistryResolver,
 
 		Interactive:        client.daggerSession.interactive,
 		InteractiveCommand: client.daggerSession.interactiveCommand,
@@ -1407,6 +1415,29 @@ func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID st
 	return conn, nil
 }
 
+func (srv *Server) sessionMainClientConn(ctx context.Context, sess *daggerSession) (*grpc.ClientConn, error) {
+	_ = ctx
+	if sess == nil {
+		return nil, errors.New("session is nil")
+	}
+	client, err := srv.clientFromIDs(sess.sessionID, sess.mainClientCallerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main client %q: %w", sess.mainClientCallerID, err)
+	}
+	caller, err := client.getClientCaller(sess.mainClientCallerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main client caller %q: %w", sess.mainClientCallerID, err)
+	}
+	if caller == nil {
+		return nil, fmt.Errorf("main client caller %q was nil", sess.mainClientCallerID)
+	}
+	conn := caller.Conn()
+	if conn == nil {
+		return nil, fmt.Errorf("main client conn %q was nil", sess.mainClientCallerID)
+	}
+	return conn, nil
+}
+
 // The nearest ancestor client that is not a module (either a caller from the host like the CLI
 // or a nested exec). Useful for figuring out where local sources should be resolved from through
 // chains of dependency modules.
@@ -1496,6 +1527,17 @@ func (srv *Server) Buildkit(ctx context.Context) (*buildkit.Client, error) {
 	return client.bkClient, nil
 }
 
+func (srv *Server) RegistryResolver(ctx context.Context) (*serverresolver.Resolver, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if client.daggerSession.resolver == nil {
+		return nil, errors.New("session registry resolver not initialized")
+	}
+	return client.daggerSession.resolver, nil
+}
+
 // The services for the current client's session
 func (srv *Server) Services(ctx context.Context) (*core.Services, error) {
 	client, err := srv.clientFromContext(ctx)
@@ -1513,6 +1555,10 @@ func (srv *Server) Platform() core.Platform {
 // The content store for the engine as a whole
 func (srv *Server) OCIStore() content.Store {
 	return srv.contentStore
+}
+
+func (srv *Server) BuiltinOCIStore() content.Store {
+	return srv.builtinContentStore
 }
 
 // The dns configuration for the engine as a whole

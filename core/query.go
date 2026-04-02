@@ -9,7 +9,6 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -21,7 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
-	"github.com/dagger/dagger/engine/filesync"
+	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"google.golang.org/grpc"
 )
 
@@ -91,6 +90,9 @@ type Server interface {
 	// The buildkit APIs for the current client
 	Buildkit(context.Context) (*buildkit.Client, error)
 
+	// The session-owned registry resolver for the current client.
+	RegistryResolver(context.Context) (*serverresolver.Resolver, error)
+
 	// The services for the current client's session
 	Services(context.Context) (*Services, error)
 
@@ -99,6 +101,9 @@ type Server interface {
 
 	// The content store for the engine as a whole
 	OCIStore() content.Store
+
+	// The builtin engine OCI source store.
+	BuiltinOCIStore() content.Store
 
 	// The dns configuration for the engine as a whole
 	DNS() *oci.DNSConfig
@@ -117,14 +122,8 @@ type Server interface {
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *dagql.CachePrunePolicy
 
-	// Gets the buildkit cache manager
-	BuildkitCache() bkcache.SnapshotManager
-
-	// Gets the buildkit session manager
-	BuildkitSession() *bksession.Manager
-
-	// Gets the local source
-	FileSyncer() *filesync.FileSyncer
+	// Gets the engine snapshot manager.
+	SnapshotManager() bkcache.SnapshotManager
 
 	// A global lock for the engine, can be used to synchronize access to
 	// shared resources between multiple potentially concurrent calls.

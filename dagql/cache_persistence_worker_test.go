@@ -15,7 +15,7 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
-	cacheIface, err := NewCache(ctx, dbPath)
+	cacheIface, err := NewCache(ctx, dbPath, nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	defer func() {
@@ -54,7 +54,7 @@ func TestCachePersistenceWorkerMirrorsUnpruneablePersistedEdge(t *testing.T) {
 
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
-	cacheIface, err := NewCache(ctx, dbPath)
+	cacheIface, err := NewCache(ctx, dbPath, nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	defer func() {
@@ -84,7 +84,7 @@ func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
 
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
-	cacheIface, err := NewCache(ctx, dbPath)
+	cacheIface, err := NewCache(ctx, dbPath, nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	defer func() {
@@ -112,7 +112,7 @@ func TestCachePersistenceWorkerMirrorsPrunedStateAfterRelease(t *testing.T) {
 
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
-	cacheIface, err := NewCache(ctx, dbPath)
+	cacheIface, err := NewCache(ctx, dbPath, nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	defer func() {
@@ -139,7 +139,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
-	cacheIface, err := NewCache(ctx, dbPath)
+	cacheIface, err := NewCache(ctx, dbPath, nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	defer func() {
@@ -198,7 +198,7 @@ func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T
 
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
-	cacheIface, err := NewCache(ctx, dbPath)
+	cacheIface, err := NewCache(ctx, dbPath, nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	defer func() {
@@ -237,7 +237,7 @@ func TestCachePersistenceCleanShutdownToggleOnClose(t *testing.T) {
 
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
-	cacheIface, err := NewCache(ctx, dbPath)
+	cacheIface, err := NewCache(ctx, dbPath, nil)
 	assert.NilError(t, err)
 	c := cacheIface
 

@@ -79,3 +79,23 @@ CREATE TABLE IF NOT EXISTS result_snapshot_links (
     PRIMARY KEY(result_id, ref_key, role, slot),
     FOREIGN KEY(result_id) REFERENCES results(id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS snapshot_content_links (
+    snapshot_id TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    PRIMARY KEY(snapshot_id, digest)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS imported_layer_blob_index (
+    parent_snapshot_id TEXT NOT NULL,
+    blob_digest TEXT NOT NULL,
+    snapshot_id TEXT NOT NULL,
+    PRIMARY KEY(parent_snapshot_id, blob_digest)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS imported_layer_diff_index (
+    parent_snapshot_id TEXT NOT NULL,
+    diff_id TEXT NOT NULL,
+    snapshot_id TEXT NOT NULL,
+    PRIMARY KEY(parent_snapshot_id, diff_id)
+) STRICT, WITHOUT ROWID;

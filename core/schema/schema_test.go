@@ -18,7 +18,7 @@ type currentTypeDefsTestServer struct {
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
 	root := &core.Query{}
-	baseCache, err := dagql.NewCache(ctx, "")
+	baseCache, err := dagql.NewCache(ctx, "", nil)
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, baseCache)
 	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
@@ -144,7 +144,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 
 func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
 	ctx := context.Background()
-	baseCache, err := dagql.NewCache(ctx, "")
+	baseCache, err := dagql.NewCache(ctx, "", nil)
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, baseCache)
 	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
@@ -208,7 +208,7 @@ func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
 
 func TestCurrentTypeDefsReturnAllTypesAfterSessionRelease(t *testing.T) {
 	baseCtx := context.Background()
-	baseCache, err := dagql.NewCache(baseCtx, "")
+	baseCache, err := dagql.NewCache(baseCtx, "", nil)
 	require.NoError(t, err)
 	baseCtx = dagql.ContextWithCache(baseCtx, baseCache)
 

@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/dagger/dagger/dagql/call"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -51,6 +52,18 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	resultSnapshotRows, err := c.pdb.ListMirrorResultSnapshotLinks(ctx)
 	if err != nil {
 		return fmt.Errorf("list mirror result_snapshot_links: %w", err)
+	}
+	snapshotContentRows, err := c.pdb.ListMirrorSnapshotContentLinks(ctx)
+	if err != nil {
+		return fmt.Errorf("list mirror snapshot_content_links: %w", err)
+	}
+	importedLayerBlobRows, err := c.pdb.ListMirrorImportedLayerBlobIndex(ctx)
+	if err != nil {
+		return fmt.Errorf("list mirror imported_layer_blob_index: %w", err)
+	}
+	importedLayerDiffRows, err := c.pdb.ListMirrorImportedLayerDiffIndex(ctx)
+	if err != nil {
+		return fmt.Errorf("list mirror imported_layer_diff_index: %w", err)
 	}
 
 	if len(resultRows) == 0 && len(eqClassRows) == 0 && len(termRows) == 0 {
@@ -340,12 +353,16 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if res == nil {
 				return fmt.Errorf("import result_snapshot_link: missing result %d", row.ResultID)
 			}
-			res.persistedSnapshotLinks = append(res.persistedSnapshotLinks, PersistedSnapshotRefLink{
+			res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, PersistedSnapshotRefLink{
 				RefKey: row.RefKey,
 				Role:   row.Role,
 				Slot:   row.Slot,
 			})
 			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role, row.Slot)
+		}
+
+		for _, res := range c.resultsByID {
+			res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), res.onRelease)
 		}
 
 		for _, res := range c.resultsByID {
@@ -417,6 +434,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				res.persistedEnvelope = nil
 			}
 			res.payloadMu.Unlock()
+			if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
+				res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), onReleaser.OnRelease)
+			}
+			if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
+				return err
+			}
 			c.tracePersistedPayloadImportedEager(ctx, importRunID, resultID, "", "materialized")
 		}
 	}
@@ -428,6 +451,74 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			continue
 		}
 		c.tracePersistedPayloadImportedLazy(ctx, importRunID, resultID, "", state.persistedEnvelope.Kind, state.persistedEnvelope.TypeName)
+	}
+
+	if c.snapshotManager != nil {
+		rows := bkcache.PersistentMetadataRows{
+			SnapshotContent: make([]bkcache.SnapshotContentRow, 0, len(snapshotContentRows)),
+			ImportedByBlob:  make([]bkcache.ImportedLayerBlobRow, 0, len(importedLayerBlobRows)),
+			ImportedByDiff:  make([]bkcache.ImportedLayerDiffRow, 0, len(importedLayerDiffRows)),
+		}
+		for _, row := range snapshotContentRows {
+			rows.SnapshotContent = append(rows.SnapshotContent, bkcache.SnapshotContentRow{
+				SnapshotID: row.SnapshotID,
+				Digest:     normalizeImportedDigest(row.Digest),
+			})
+		}
+		for _, row := range importedLayerBlobRows {
+			rows.ImportedByBlob = append(rows.ImportedByBlob, bkcache.ImportedLayerBlobRow{
+				ParentSnapshotID: row.ParentSnapshotID,
+				BlobDigest:       normalizeImportedDigest(row.BlobDigest),
+				SnapshotID:       row.SnapshotID,
+			})
+		}
+		for _, row := range importedLayerDiffRows {
+			rows.ImportedByDiff = append(rows.ImportedByDiff, bkcache.ImportedLayerDiffRow{
+				ParentSnapshotID: row.ParentSnapshotID,
+				DiffID:           normalizeImportedDigest(row.DiffID),
+				SnapshotID:       row.SnapshotID,
+			})
+		}
+		if err := c.snapshotManager.LoadPersistentMetadata(rows); err != nil {
+			return fmt.Errorf("hydrate snapshot metadata: %w", err)
+		}
+
+		desiredLeaseIDs, err := c.desiredImportedOwnerLeaseIDs(ctx)
+		if err != nil {
+			return fmt.Errorf("compute desired imported owner leases: %w", err)
+		}
+		c.egraphMu.RLock()
+		results := make([]*sharedResult, 0, len(c.resultsByID))
+		for _, res := range c.resultsByID {
+			if res != nil {
+				results = append(results, res)
+			}
+		}
+		c.egraphMu.RUnlock()
+		for _, res := range results {
+			links, ok := c.authoritativeSnapshotLinksForResult(res)
+			if !ok {
+				continue
+			}
+			seen := make(map[snapshotOwnerKey]struct{}, len(links))
+			for _, link := range links {
+				key := snapshotOwnerKey{Role: link.Role, Slot: link.Slot}
+				if _, alreadySeen := seen[key]; alreadySeen {
+					continue
+				}
+				seen[key] = struct{}{}
+				if err := c.snapshotManager.AttachLease(
+					ctx,
+					resultSnapshotLeaseID(res.id, link.Role, link.Slot),
+					link.RefKey,
+				); err != nil {
+					return fmt.Errorf("attach imported result %d owner lease %q: %w", res.id, key.Role, err)
+				}
+			}
+		}
+		if err := c.snapshotManager.DeleteStaleDaggerOwnerLeases(ctx, desiredLeaseIDs); err != nil {
+			return fmt.Errorf("delete stale owner leases: %w", err)
+		}
 	}
 
 	return nil
@@ -510,6 +601,12 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 	}
 	res.payloadMu.Unlock()
+	if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
+		res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), onReleaser.OnRelease)
+	}
+	if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
+		return nil, fmt.Errorf("sync persisted hit owner leases: %w", err)
+	}
 	wrapped, err := wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
 	if err != nil {
 		return nil, err

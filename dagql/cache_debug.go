@@ -940,7 +940,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 		}
 		slices.Sort(outputEqIDs)
-		links := append([]PersistedSnapshotRefLink(nil), res.persistedSnapshotLinks...)
+		links := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
 		slices.SortFunc(links, func(a, b PersistedSnapshotRefLink) int {
 			switch {
 			case a.RefKey < b.RefKey:
@@ -1202,7 +1202,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			}
 			slices.Sort(outputEqIDs)
 
-			links := append([]PersistedSnapshotRefLink(nil), res.persistedSnapshotLinks...)
+			links := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
 			slices.SortFunc(links, func(a, b PersistedSnapshotRefLink) int {
 				switch {
 				case a.RefKey < b.RefKey:

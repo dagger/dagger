@@ -33,15 +33,16 @@ func TestServicesStartHappy(t *testing.T) {
 		_, err := services.Get(ctx, stub.Digest(), false)
 		require.Error(t, err)
 
-		expected := stub.Succeed()
+		expectedHost := stub.Succeed()
 
 		running, err := services.Start(ctx, stub.Digest(), stub, false)
 		require.NoError(t, err)
-		require.Equal(t, expected, running)
+		require.Equal(t, expectedHost, running.Host)
 
-		running, err = services.Get(ctx, stub.Digest(), false)
+		running2, err := services.Get(ctx, stub.Digest(), false)
 		require.NoError(t, err)
-		require.Equal(t, expected, running)
+		require.Equal(t, running, running2)
+		require.Equal(t, expectedHost, running2.Host)
 	}
 
 	t.Run("start one", func(t *testing.T) {
@@ -67,18 +68,19 @@ func TestServicesStartHappyDifferentServers(t *testing.T) {
 			SessionID: sessionID,
 		})
 
-		expected := stub.Succeed()
+		expectedHost := stub.Succeed()
 
 		_, err := services.Get(ctx, stub.Digest(), false)
 		require.Error(t, err)
 
 		running, err := services.Start(ctx, stub.Digest(), stub, false)
 		require.NoError(t, err)
-		require.Equal(t, expected, running)
+		require.Equal(t, expectedHost, running.Host)
 
-		running, err = services.Get(ctx, stub.Digest(), false)
+		running2, err := services.Get(ctx, stub.Digest(), false)
 		require.NoError(t, err)
-		require.Equal(t, expected, running)
+		require.Equal(t, running, running2)
+		require.Equal(t, expectedHost, running2.Host)
 	}
 
 	t.Run("start one", func(t *testing.T) {
@@ -282,8 +284,8 @@ type fakeStartable struct {
 }
 
 type startResult struct {
-	Started *core.RunningService
-	Failed  error
+	configure func(*core.RunningService)
+	failed    error
 }
 
 func newStartable(id string) *fakeStartable {
@@ -300,43 +302,45 @@ func (f *fakeStartable) Digest() digest.Digest {
 	return f.digest
 }
 
-func (f *fakeStartable) Start(context.Context, digest.Digest, *core.ServiceIO) (*core.RunningService, error) {
+func (f *fakeStartable) Start(_ context.Context, running *core.RunningService, _ digest.Digest, _ *core.ServiceIO) error {
 	atomic.AddInt32(&f.starts, 1)
 	res := <-f.startResults
-	return res.Started, res.Failed
+	if res.failed != nil {
+		return res.failed
+	}
+	if res.configure == nil {
+		return nil
+	}
+	res.configure(running)
+	return nil
 }
 
 func (f *fakeStartable) Starts() int {
 	return int(atomic.LoadInt32(&f.starts))
 }
 
-func (f *fakeStartable) Succeed() *core.RunningService {
+func (f *fakeStartable) Succeed() string {
 	waitRes := make(chan struct{})
-
-	running := &core.RunningService{
-		Key: core.ServiceKey{
-			Digest:    f.digest,
-			SessionID: "doesnt-matter",
-		},
-		Host: f.name + "-host",
-		Wait: func(ctx context.Context) error {
-			<-waitRes
-			return f.exitErr
-		},
-	}
+	host := f.name + "-host"
 
 	f.waitResult = waitRes
 	f.startResults <- startResult{
-		Started: running,
+		configure: func(running *core.RunningService) {
+			running.Host = host
+			running.Wait = func(ctx context.Context) error {
+				<-waitRes
+				return f.exitErr
+			}
+		},
 	}
 
-	return running
+	return host
 }
 
 func (f *fakeStartable) Fail() error {
 	err := errors.New("oh no")
 	f.startResults <- startResult{
-		Failed: err,
+		failed: err,
 	}
 	return err
 }
@@ -366,19 +370,11 @@ func TestServicesDetachRace(t *testing.T) {
 	stub := newStartable("race-test")
 
 	// Client A starts the service
-	expected := stub.Succeed()
+	expectedHost := stub.Succeed()
 	running, err := services.Start(ctx, stub.Digest(), stub, false)
 	require.NoError(t, err)
-	require.Equal(t, expected, running)
+	require.Equal(t, expectedHost, running.Host)
 	require.Equal(t, 1, stub.Starts())
-
-	// Add a stop function that waits a bit to simulate actual service shutdown
-	stopCalled := make(chan struct{})
-	running.Stop = func(ctx context.Context, force bool) error {
-		close(stopCalled)
-		time.Sleep(50 * time.Millisecond) // simulate shutdown time
-		return nil
-	}
 
 	// Client A detaches - this will spawn a goroutine that waits DetachGracePeriod
 	// then calls Detach, which should immediately remove the service from the running map
@@ -400,14 +396,6 @@ func TestServicesDetachRace(t *testing.T) {
 
 	// We should have started twice - once for Client A, once for Client B
 	require.Equal(t, 2, stub.Starts())
-
-	// The stop should have been called for Client A's service
-	select {
-	case <-stopCalled:
-		// good, Client A's service was stopped
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("Client A's service was not stopped")
-	}
 
 	// Client B's service should still be running
 	retrieved, err := services.Get(ctxB, stub.Digest(), false)

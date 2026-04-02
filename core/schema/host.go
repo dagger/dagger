@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -10,8 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/distribution/reference"
@@ -133,10 +137,6 @@ func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectRe
 
 	ctr, err := core.BuiltInContainer(ctx, parent.Self().Platform(), args.Digest)
 	if err != nil {
-		return inst, err
-	}
-
-	if err := core.BuiltInContainerUpdateConfig(ctx, ctr, args.Digest); err != nil {
 		return inst, err
 	}
 
@@ -273,23 +273,59 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		snapshotOpts.CacheBuster = rand.Text()
 	}
 
-	ref, contentDgst, err := query.FileSyncer().Snapshot(ctx, nil, query.BuildkitSession(), absRootCopyPath, snapshotOpts)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	callerConn, err := query.SpecificClientAttachableConn(ctx, clientMetadata.ClientID)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get caller attachable conn: %w", err)
+	}
+	drive := pathutil.GetDrive(absRootCopyPath)
+
+	var mirror *core.ClientFilesyncMirror
+	if clientMetadata.ClientStableID != "" {
+		var persistedMirror dagql.ObjectResult[*core.ClientFilesyncMirror]
+		if err := srv.Select(ctx, srv.Root(), &persistedMirror, dagql.Selector{
+			Field: "_clientFilesyncMirror",
+			Args: []dagql.NamedInput{
+				{Name: "stableClientID", Value: dagql.String(clientMetadata.ClientStableID)},
+				{Name: "drive", Value: dagql.String(drive)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("failed to load client filesync mirror: %w", err)
+		}
+		mirror = persistedMirror.Self()
+	} else {
+		mirror = &core.ClientFilesyncMirror{
+			Drive:       drive,
+			EphemeralID: identity.NewID(),
+		}
+		if err := mirror.EnsureCreated(ctx, query); err != nil {
+			return inst, fmt.Errorf("failed to create ephemeral client filesync mirror: %w", err)
+		}
+	}
+
+	ref, contentDgst, err := mirror.Snapshot(ctx, query, callerConn, absRootCopyPath, snapshotOpts)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get snapshot: %w", err)
 	}
-	dagql.TraceEGraphDebug(ctx, "host_directory_snapshot", "phase", "runtime", "path", args.Path, "abs_root_copy_path", absRootCopyPath, "relative_path_from_root", relPathFromRoot, "no_cache", args.NoCache, "cache_buster", snapshotOpts.CacheBuster != "", "content_digest", contentDgst, "snapshot_ref_id", ref.ID(), "include_patterns", includePatterns, "exclude_patterns", excludePatterns, "follow_paths", followPaths, "gitignore", args.Gitignore)
+	dagql.TraceEGraphDebug(ctx, "host_directory_snapshot", "phase", "runtime", "path", args.Path, "abs_root_copy_path", absRootCopyPath, "relative_path_from_root", relPathFromRoot, "no_cache", args.NoCache, "cache_buster", snapshotOpts.CacheBuster != "", "content_digest", contentDgst, "snapshot_ref_id", ref.SnapshotID(), "include_patterns", includePatterns, "exclude_patterns", excludePatterns, "follow_paths", followPaths, "gitignore", args.Gitignore)
 
 	dir, err := core.NewDirectoryWithSnapshot("/", query.Platform(), nil, ref)
 	if err != nil {
+		_ = ref.Release(context.WithoutCancel(ctx))
 		return inst, fmt.Errorf("failed to create host directory: %w", err)
 	}
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
+		_ = dir.OnRelease(context.WithoutCancel(ctx))
 		return inst, fmt.Errorf("failed to create directory result: %w", err)
 	}
 	inst, err = inst.WithContentDigest(ctx, contentDgst)
 	if err != nil {
+		_ = dir.OnRelease(context.WithoutCancel(ctx))
 		return inst, err
 	}
 
@@ -590,6 +626,77 @@ type hostContainerArgs struct {
 	Name string
 }
 
+func resolveHostStoreManifest(
+	ctx context.Context,
+	store content.Store,
+	desc ocispec.Descriptor,
+	platform ocispec.Platform,
+) (*ocispec.Descriptor, error) {
+	matcher := platforms.Only(platforms.Normalize(platform))
+	target, matched, err := resolveHostStoreManifestMatch(ctx, store, desc, matcher)
+	if err != nil {
+		return nil, err
+	}
+	if target != nil {
+		return target, nil
+	}
+	if matched {
+		return nil, fmt.Errorf("requested platform manifest %s is not present locally", platforms.Format(platform))
+	}
+	return nil, fmt.Errorf("no manifest for platform %s in host store", platforms.Format(platform))
+}
+
+func resolveHostStoreManifestMatch(
+	ctx context.Context,
+	store content.Store,
+	desc ocispec.Descriptor,
+	matcher platforms.MatchComparer,
+) (*ocispec.Descriptor, bool, error) {
+	switch desc.MediaType {
+	case ocispec.MediaTypeImageManifest, images.MediaTypeDockerSchema2Manifest:
+		if _, err := store.Info(ctx, desc.Digest); err != nil {
+			return nil, true, nil
+		}
+		return &desc, true, nil
+
+	case ocispec.MediaTypeImageIndex, images.MediaTypeDockerSchema2ManifestList:
+		indexBlob, err := content.ReadBlob(ctx, store, desc)
+		if err != nil {
+			return nil, false, fmt.Errorf("read host image index blob: %w", err)
+		}
+
+		var idx ocispec.Index
+		if err := json.Unmarshal(indexBlob, &idx); err != nil {
+			return nil, false, fmt.Errorf("unmarshal host image index: %w", err)
+		}
+
+		matched := false
+		for _, manifest := range idx.Manifests {
+			switch manifest.MediaType {
+			case ocispec.MediaTypeImageManifest, images.MediaTypeDockerSchema2Manifest,
+				ocispec.MediaTypeImageIndex, images.MediaTypeDockerSchema2ManifestList:
+			default:
+				continue
+			}
+			if manifest.Platform != nil && !matcher.Match(*manifest.Platform) {
+				continue
+			}
+			target, childMatched, err := resolveHostStoreManifestMatch(ctx, store, manifest, matcher)
+			if err != nil {
+				return nil, false, err
+			}
+			matched = matched || childMatched
+			if target != nil {
+				return target, true, nil
+			}
+		}
+		return nil, matched, nil
+
+	default:
+		return nil, false, fmt.Errorf("unsupported host image media type %s", desc.MediaType)
+	}
+}
+
 func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostContainerArgs) (inst dagql.Result[*core.Container], err error) {
 	refName, err := reference.ParseNormalizedNamed(args.Name)
 	if err != nil {
@@ -616,40 +723,9 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 		if err != nil {
 			return inst, fmt.Errorf("failed to get image from host store: %w", err)
 		}
-		target, err := core.ResolveIndex(ctx, imageReader.ContentStore, img.Target, query.Platform().Spec(), "")
+		target, err := resolveHostStoreManifest(ctx, imageReader.ContentStore, img.Target, query.Platform().Spec())
 		if err != nil {
-			return inst, fmt.Errorf("failed to resolve image index: %w", err)
-		}
-		if _, infoErr := imageReader.ContentStore.Info(ctx, target.Digest); infoErr != nil &&
-			(img.Target.MediaType == ocispec.MediaTypeImageIndex || img.Target.MediaType == images.MediaTypeDockerSchema2ManifestList) {
-			matcher := platforms.Only(query.Platform().Spec())
-			manifests, childErr := images.Children(ctx, imageReader.ContentStore, img.Target)
-			if childErr != nil {
-				return inst, fmt.Errorf("failed to inspect host image index: %w", childErr)
-			}
-			var fallback *ocispec.Descriptor
-			for i := range manifests {
-				desc := manifests[i]
-				switch desc.MediaType {
-				case images.MediaTypeDockerSchema2Manifest, ocispec.MediaTypeImageManifest:
-				default:
-					continue
-				}
-				if _, presentErr := imageReader.ContentStore.Info(ctx, desc.Digest); presentErr != nil {
-					continue
-				}
-				if fallback == nil {
-					fallback = &manifests[i]
-				}
-				if desc.Platform != nil && matcher.Match(*desc.Platform) {
-					target = &manifests[i]
-					fallback = nil
-					break
-				}
-			}
-			if fallback != nil {
-				target = fallback
-			}
+			return inst, fmt.Errorf("failed to resolve host image manifest: %w", err)
 		}
 
 		ctx, release, err := leaseutil.WithLease(ctx, query.LeaseManager(), leaseutil.MakeTemporary)
@@ -663,7 +739,7 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 		}
 
 		ctr := core.NewContainer(query.Platform())
-		ctr, err = ctr.FromInternal(ctx, *target)
+		ctr, err = ctr.FromOCIStore(ctx, *target, refName.String())
 		if err != nil {
 			return inst, err
 		}

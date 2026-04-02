@@ -156,7 +156,7 @@ func loadPersistedImmutableSnapshotByResultID(ctx context.Context, dag *dagql.Se
 	if err != nil {
 		return nil, dagql.PersistedSnapshotRefLink{}, err
 	}
-	ref, err := query.BuildkitCache().GetBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
+	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
 	if err != nil {
 		return nil, dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted immutable snapshot %q: %w", link.RefKey, err)
 	}
@@ -172,29 +172,9 @@ func loadPersistedMutableSnapshotByResultID(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return nil, dagql.PersistedSnapshotRefLink{}, err
 	}
-	ref, err := query.BuildkitCache().GetMutableBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
+	ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
 	if err != nil {
 		return nil, dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted mutable snapshot %q: %w", link.RefKey, err)
 	}
 	return ref, link, nil
-}
-
-func retainImmutableRefChain(ctx context.Context, ref bkcache.ImmutableRef) error {
-	if ref == nil {
-		return nil
-	}
-	if err := ref.SetCachePolicyRetain(); err != nil {
-		return err
-	}
-	chain := ref.LayerChain()
-	defer chain.Release(context.WithoutCancel(ctx))
-	for _, layer := range chain {
-		if layer == nil {
-			continue
-		}
-		if err := layer.SetCachePolicyRetain(); err != nil {
-			return err
-		}
-	}
-	return nil
 }

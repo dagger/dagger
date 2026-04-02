@@ -91,7 +91,7 @@ func GetContentHashFromDirectory(
 	if err != nil {
 		return "", fmt.Errorf("failed to get content hash: %w", err)
 	}
-	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", dirInst.Self().Dir, "snapshot_ref_id", snapshot.ID(), "content_digest", dgst)
+	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", dirInst.Self().Dir, "snapshot_ref_id", snapshot.SnapshotID(), "content_digest", dgst)
 
 	return dgst, nil
 }
@@ -136,20 +136,20 @@ func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir
 	if subdir == "" {
 		subdir = "/"
 	}
-	key := ref.ID() + "/" + strings.TrimPrefix(subdir, "/")
+	key := ref.SnapshotID() + "/" + strings.TrimPrefix(subdir, "/")
 	dgst, _, err := checksumG.Do(ctx, key, func(ctx context.Context) (_ digest.Digest, rerr error) {
-		if err := ref.Finalize(ctx); err != nil {
-			return "", fmt.Errorf("failed to finalize ref: %w", err)
+		mdRef, ok := any(ref).(bkcache.RefMetadata)
+		if !ok {
+			return "", fmt.Errorf("content hash metadata: unexpected ref type %T", ref)
 		}
-
-		md := contenthash.CacheRefMetadata{RefMetadata: ref}
+		md := contenthash.CacheRefMetadata{RefMetadata: mdRef}
 
 		if subdir == "/" {
 			// content hashes for the root of dirs are saved in the metadata of the ref (both below
 			// and in the local source implementation); check if we have it already
 			dgst, ok := md.GetContentHashKey()
 			if ok {
-				bklog.G(ctx).Debugf("GetContentHashKey reusing ref %s with digest %s", ref.ID(), dgst)
+				bklog.G(ctx).Debugf("GetContentHashKey reusing snapshot %s with digest %s", ref.SnapshotID(), dgst)
 				return dgst, nil
 			}
 		}
@@ -162,7 +162,7 @@ func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir
 
 		dgst, err := bkcontenthash.Checksum(ctx, ref, subdir, bkcontenthash.ChecksumOpts{
 			FollowLinks: true,
-		}, nil)
+		})
 		if err != nil {
 			return "", fmt.Errorf("failed to checksum ref at subdir %s: %w", subdir, err)
 		}
@@ -177,7 +177,7 @@ func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir
 			}
 		}
 
-		bklog.G(ctx).Debugf("GetContentHashKey setting ref %s with digest %s", ref.ID(), dgst)
+		bklog.G(ctx).Debugf("GetContentHashKey setting snapshot %s with digest %s", ref.SnapshotID(), dgst)
 
 		return dgst, nil
 	})

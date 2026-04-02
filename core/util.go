@@ -18,7 +18,6 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
@@ -232,8 +231,8 @@ func mountRefAsReadOnly(opt *mountRefOpt) {
 //
 // To simplify external logic, when the ref is nil, i.e. scratch, the callback
 // just receives a tmpdir that gets deleted when the function completes.
-func MountRef(ctx context.Context, ref bkcache.Ref, _ bksession.Group, f func(string, *mount.Mount) error, optFns ...mountRefOptFn) error {
-	dir, m, closer, err := MountRefCloser(ctx, ref, nil, optFns...)
+func MountRef(ctx context.Context, ref bkcache.Ref, f func(string, *mount.Mount) error, optFns ...mountRefOptFn) error {
+	dir, m, closer, err := MountRefCloser(ctx, ref, optFns...)
 	if err != nil {
 		return err
 	}
@@ -253,7 +252,7 @@ func MountRef(ctx context.Context, ref bkcache.Ref, _ bksession.Group, f func(st
 // To simplify external logic, when the ref is nil, i.e. scratch, a tmpdir is created (and deleted when the closer func is called).
 //
 // NOTE: prefer MountRef where possible, unless finer-grained control of when the directory is unmounted is needed.
-func MountRefCloser(ctx context.Context, ref bkcache.Ref, _ bksession.Group, optFns ...mountRefOptFn) (_ string, _ *mount.Mount, _ func() error, rerr error) {
+func MountRefCloser(ctx context.Context, ref bkcache.Ref, optFns ...mountRefOptFn) (_ string, _ *mount.Mount, _ func() error, rerr error) {
 	var opt mountRefOpt
 	for _, optFn := range optFns {
 		optFn(&opt)
@@ -268,7 +267,7 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, _ bksession.Group, opt
 			return os.RemoveAll(dir)
 		}, nil
 	}
-	mountable, err := ref.Mount(ctx, opt.readOnly, nil)
+	mountable, err := ref.Mount(ctx, opt.readOnly)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -406,7 +405,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 		if opt.cacheDesc == "" {
 			return "", nil, fmt.Errorf("mountObj saveSnapshotOpt missing cache description")
 		}
-		newRef, err = query.BuildkitCache().New(ctx, parentRef, nil,
+		newRef, err = query.SnapshotManager().New(ctx, parentRef,
 			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(opt.cacheDesc))
 		if err != nil {
 			return "", nil, err
@@ -422,7 +421,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 	if !opt.commitSnapshot {
 		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
 	}
-	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, nil, mountRefOpts...)
+	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, mountRefOpts...)
 	if err != nil {
 		return "", nil, err
 	}
@@ -561,9 +560,4 @@ func pathResolverForMount(
 	default:
 		return nil, nil
 	}
-}
-
-// NewSessionGroup creates a session group from a client ID.
-func NewSessionGroup(clientID string) bksession.Group {
-	return bksession.NewGroup(clientID)
 }

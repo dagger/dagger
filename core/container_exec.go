@@ -21,11 +21,9 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	utilsystem "github.com/dagger/dagger/internal/buildkit/util/system"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/sys/userns"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -371,8 +369,9 @@ type execMountState struct {
 
 	ApplyOutput func(bkcache.ImmutableRef) error
 
-	ActiveRef bkcache.MutableRef
-	OutputRef bkcache.Ref
+	ActiveRef       bkcache.MutableRef
+	OutputMutable   bkcache.MutableRef
+	OutputImmutable bkcache.ImmutableRef
 }
 
 type materializedExecPlan struct {
@@ -397,11 +396,14 @@ func (plan *materializedExecPlan) releaseActives(ctx context.Context) error {
 func (plan *materializedExecPlan) releaseOutputRefs(ctx context.Context) error {
 	var rerr error
 	for _, state := range plan.States {
-		if state.OutputRef == nil {
-			continue
+		if state.OutputMutable != nil {
+			rerr = errors.Join(rerr, state.OutputMutable.Release(ctx))
+			state.OutputMutable = nil
 		}
-		rerr = errors.Join(rerr, state.OutputRef.Release(ctx))
-		state.OutputRef = nil
+		if state.OutputImmutable != nil {
+			rerr = errors.Join(rerr, state.OutputImmutable.Release(ctx))
+			state.OutputImmutable = nil
+		}
 	}
 	return rerr
 }
@@ -415,8 +417,6 @@ func prepareMounts(
 	metaOutput func(bkcache.ImmutableRef) error,
 	mountOutputs []func(bkcache.ImmutableRef) error,
 	cache bkcache.SnapshotManager,
-	session *bksession.Manager,
-	g bksession.Group,
 	cwd string,
 	platform string,
 	makeMutable makeExecMutable,
@@ -442,7 +442,11 @@ func prepareMounts(
 					if !ok {
 						return fmt.Errorf("mount %s readonly output needs immutable input, got %T", state.Dest, state.SourceRef)
 					}
-					state.OutputRef = iref.Clone()
+					reopened, err := cache.GetBySnapshotID(ctx, iref.SnapshotID(), bkcache.NoUpdateLastUsed)
+					if err != nil {
+						return err
+					}
+					state.OutputImmutable = reopened
 				} else {
 					iref, ok := state.SourceRef.(bkcache.ImmutableRef)
 					if state.SourceRef != nil && !ok {
@@ -453,7 +457,7 @@ func prepareMounts(
 						return err
 					}
 					mountable = active
-					state.OutputRef = active
+					state.OutputMutable = active
 				}
 			} else {
 				if !state.Readonly && state.SourceRef != nil {
@@ -487,16 +491,16 @@ func prepareMounts(
 			}
 
 		case pb.MountType_TMPFS:
-			mountable = execTmpFSMountable(cache, state.TmpfsOpt)
+			mountable = execTmpFSMountable(state.TmpfsOpt)
 
 		case pb.MountType_SECRET:
-			mountable, err = prepareExecSecretMount(ctx, cache, state.Secret)
+			mountable, err = prepareExecSecretMount(ctx, state.Secret)
 			if err != nil {
 				return err
 			}
 
 		case pb.MountType_SSH:
-			mountable, err = prepareExecSSHMount(ctx, cache, state.SSH)
+			mountable, err = prepareExecSSHMount(ctx, state.SSH)
 			if err != nil {
 				return err
 			}
@@ -529,11 +533,11 @@ func prepareMounts(
 		}
 
 		if state.Dest == pb.RootMount {
-			root := execMountWithSession(mountable, g)
+			root := execMount(mountable)
 			root.Selector = state.Selector
 			materialized.Root = root
 		} else {
-			mount := execMountWithSession(mountable, g)
+			mount := execMount(mountable)
 			dest := state.Dest
 			if !utilsystem.IsAbs(filepath.Clean(dest), platform) {
 				dest = filepath.Join("/", cwd, dest)
@@ -722,46 +726,31 @@ func prepareMounts(
 	return materialized, nil
 }
 
-func execMountWithSession(mountable bkcache.Mountable, g bksession.Group) executor.Mount {
+func execMount(mountable bkcache.Mountable) executor.Mount {
 	_, readonly := mountable.(bkcache.ImmutableRef)
 	return executor.Mount{
-		Src:      &sessionMountable{mountable: mountable, group: g},
+		Src:      mountable,
 		Readonly: readonly,
 	}
 }
 
-type sessionMountable struct {
-	mountable bkcache.Mountable
-	group     bksession.Group
-}
-
-func (mountable *sessionMountable) Mount(ctx context.Context, readonly bool) (snapshot.Mountable, error) {
-	return mountable.mountable.Mount(ctx, readonly, mountable.group)
-}
-
-func execTmpFSMountable(cache bkcache.SnapshotManager, opt *pb.TmpfsOpt) bkcache.Mountable {
-	return &execTmpFS{
-		idmap: cache.IdentityMapping(),
-		opt:   opt,
-	}
+func execTmpFSMountable(opt *pb.TmpfsOpt) bkcache.Mountable {
+	return &execTmpFS{opt: opt}
 }
 
 type execTmpFS struct {
-	idmap *idtools.IdentityMapping
-	opt   *pb.TmpfsOpt
+	opt *pb.TmpfsOpt
 }
 
-func (tmpfs *execTmpFS) Mount(_ context.Context, readonly bool, _ bksession.Group) (snapshot.Mountable, error) {
+func (tmpfs *execTmpFS) Mount(_ context.Context, readonly bool) (snapshot.Mountable, error) {
 	return &execTmpFSMount{
 		readonly: readonly,
-		idmap:    tmpfs.idmap,
 		opt:      tmpfs.opt,
 	}, nil
 }
 
 type execTmpFSMount struct {
 	readonly bool
-	idmap    *idtools.IdentityMapping
 	opt      *pb.TmpfsOpt
 }
 
@@ -780,11 +769,7 @@ func (tmpfs *execTmpFSMount) Mount() ([]ctrdmount.Mount, func() error, error) {
 	}}, func() error { return nil }, nil
 }
 
-func (tmpfs *execTmpFSMount) IdentityMapping() *idtools.IdentityMapping {
-	return tmpfs.idmap
-}
-
-func prepareExecSecretMount(ctx context.Context, cache bkcache.SnapshotManager, cfg *execSecretMountConfig) (bkcache.Mountable, error) {
+func prepareExecSecretMount(ctx context.Context, cfg *execSecretMountConfig) (bkcache.Mountable, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("invalid secret mount options")
 	}
@@ -798,32 +783,28 @@ func prepareExecSecretMount(ctx context.Context, cache bkcache.SnapshotManager, 
 	}
 
 	return &execSecretMount{
-		uid:   cfg.UID,
-		gid:   cfg.GID,
-		mode:  cfg.Mode,
-		data:  data,
-		idmap: cache.IdentityMapping(),
+		uid:  cfg.UID,
+		gid:  cfg.GID,
+		mode: cfg.Mode,
+		data: data,
 	}, nil
 }
 
 type execSecretMount struct {
-	uid   int
-	gid   int
-	mode  fs.FileMode
-	data  []byte
-	idmap *idtools.IdentityMapping
+	uid  int
+	gid  int
+	mode fs.FileMode
+	data []byte
 }
 
-func (secret *execSecretMount) Mount(_ context.Context, _ bool, _ bksession.Group) (snapshot.Mountable, error) {
+func (secret *execSecretMount) Mount(_ context.Context, _ bool) (snapshot.Mountable, error) {
 	return &execSecretMountInstance{
 		secret: secret,
-		idmap:  secret.idmap,
 	}, nil
 }
 
 type execSecretMountInstance struct {
 	secret *execSecretMount
-	idmap  *idtools.IdentityMapping
 }
 
 func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error, error) {
@@ -872,22 +853,7 @@ func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error,
 		return nil, nil, err
 	}
 
-	uid := secret.secret.uid
-	gid := secret.secret.gid
-	if secret.idmap != nil {
-		hostIdentity, err := secret.idmap.ToHost(idtools.Identity{
-			UID: uid,
-			GID: gid,
-		})
-		if err != nil {
-			_ = cleanup()
-			return nil, nil, err
-		}
-		uid = hostIdentity.UID
-		gid = hostIdentity.GID
-	}
-
-	if err := os.Chown(fp, uid, gid); err != nil {
+	if err := os.Chown(fp, secret.secret.uid, secret.secret.gid); err != nil {
 		_ = cleanup()
 		return nil, nil, err
 	}
@@ -903,11 +869,7 @@ func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error,
 	}}, cleanup, nil
 }
 
-func (secret *execSecretMountInstance) IdentityMapping() *idtools.IdentityMapping {
-	return secret.idmap
-}
-
-func prepareExecSSHMount(ctx context.Context, cache bkcache.SnapshotManager, cfg *execSSHMountConfig) (bkcache.Mountable, error) {
+func prepareExecSSHMount(ctx context.Context, cfg *execSSHMountConfig) (bkcache.Mountable, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("invalid ssh mount options")
 	}
@@ -920,7 +882,6 @@ func prepareExecSSHMount(ctx context.Context, cache bkcache.SnapshotManager, cfg
 		uid:    cfg.UID,
 		gid:    cfg.GID,
 		mode:   cfg.Mode,
-		idmap:  cache.IdentityMapping(),
 	}, nil
 }
 
@@ -929,10 +890,9 @@ type execSSHMount struct {
 	uid    int
 	gid    int
 	mode   fs.FileMode
-	idmap  *idtools.IdentityMapping
 }
 
-func (ssh *execSSHMount) Mount(ctx context.Context, _ bool, _ bksession.Group) (snapshot.Mountable, error) {
+func (ssh *execSSHMount) Mount(ctx context.Context, _ bool) (snapshot.Mountable, error) {
 	sock, cleanup, err := ssh.socket.Self().MountSSHAgent(ctx)
 	if err != nil {
 		return nil, err
@@ -941,7 +901,6 @@ func (ssh *execSSHMount) Mount(ctx context.Context, _ bool, _ bksession.Group) (
 		ssh:     ssh,
 		sock:    sock,
 		cleanup: cleanup,
-		idmap:   ssh.idmap,
 	}, nil
 }
 
@@ -949,25 +908,10 @@ type execSSHMountInstance struct {
 	ssh     *execSSHMount
 	sock    string
 	cleanup func() error
-	idmap   *idtools.IdentityMapping
 }
 
 func (ssh *execSSHMountInstance) Mount() ([]ctrdmount.Mount, func() error, error) {
-	uid := ssh.ssh.uid
-	gid := ssh.ssh.gid
-	if ssh.idmap != nil {
-		hostIdentity, err := ssh.idmap.ToHost(idtools.Identity{
-			UID: uid,
-			GID: gid,
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-		uid = hostIdentity.UID
-		gid = hostIdentity.GID
-	}
-
-	if err := os.Chown(ssh.sock, uid, gid); err != nil {
+	if err := os.Chown(ssh.sock, ssh.ssh.uid, ssh.ssh.gid); err != nil {
 		if ssh.cleanup != nil {
 			_ = ssh.cleanup()
 		}
@@ -991,10 +935,6 @@ func (ssh *execSSHMountInstance) Mount() ([]ctrdmount.Mount, func() error, error
 		Source:  ssh.sock,
 		Options: []string{"rbind"},
 	}}, release, nil
-}
-
-func (ssh *execSSHMountInstance) IdentityMapping() *idtools.IdentityMapping {
-	return ssh.idmap
 }
 
 // mutates container caller must have handled cloning or creating a new child.
@@ -1107,7 +1047,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 		}
 		state.ExecMD = execMD
 
-		cache := query.BuildkitCache()
+		cache := query.SnapshotManager()
 
 		metaSpec, err := container.metaSpec(ctx, state.Opts)
 		if err != nil {
@@ -1118,7 +1058,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 		if err != nil {
 			return fmt.Errorf("failed to get buildkit client: %w", err)
 		}
-		bkSessionGroup := NewSessionGroup(bkClient.ID())
 		opWorker := bkClient.Worker
 		causeCtx := trace.SpanContextFromContext(ctx)
 		if opWorker == nil {
@@ -1173,40 +1112,47 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 		releaseOutputRefs := func() error {
 			var releaseErr error
 			for _, state := range mountStates {
-				if state.OutputRef == nil {
-					continue
+				if state.OutputMutable != nil {
+					releaseErr = errors.Join(releaseErr, state.OutputMutable.Release(context.WithoutCancel(ctx)))
+					state.OutputMutable = nil
 				}
-				releaseErr = errors.Join(releaseErr, state.OutputRef.Release(context.WithoutCancel(ctx)))
-				state.OutputRef = nil
+				if state.OutputImmutable != nil {
+					releaseErr = errors.Join(releaseErr, state.OutputImmutable.Release(context.WithoutCancel(ctx)))
+					state.OutputImmutable = nil
+				}
 			}
 			return releaseErr
 		}
 		applyOutputs := func() error {
 			for _, state := range mountStates {
-				if state.ApplyOutput == nil || state.OutputRef == nil {
+				if state.ApplyOutput == nil {
 					continue
 				}
-				var out bkcache.ImmutableRef
-				if mutable, ok := state.OutputRef.(bkcache.MutableRef); ok {
-					committed, err := mutable.Commit(ctx)
+
+				if state.OutputMutable != nil {
+					committed, err := state.OutputMutable.Commit(ctx)
 					if err != nil {
-						return fmt.Errorf("error committing %s: %w", mutable.ID(), err)
+						return fmt.Errorf("error committing %s: %w", state.OutputMutable.ID(), err)
 					}
-					out = committed
-				} else {
-					out = state.OutputRef.(bkcache.ImmutableRef)
+					state.OutputMutable = nil
+					state.OutputImmutable = committed
 				}
-				if err := state.ApplyOutput(out); err != nil {
+
+				if state.OutputImmutable == nil {
+					continue
+				}
+
+				if err := state.ApplyOutput(state.OutputImmutable); err != nil {
 					return err
 				}
-				state.OutputRef = nil
+				state.OutputImmutable = nil
 			}
 			return nil
 		}
 
 		makeMutable := func(dest string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
 			desc := fmt.Sprintf("mount %s from exec %s", dest, strings.Join(metaSpec.Args, " "))
-			return cache.New(ctx, ref, nil, bkcache.WithDescription(desc))
+			return cache.New(ctx, ref, bkcache.WithDescription(desc))
 		}
 		materializeState := func(state *execMountState) error {
 			var mountable bkcache.Mountable
@@ -1222,7 +1168,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 						if !ok {
 							return fmt.Errorf("mount %s readonly output needs immutable input, got %T", state.Dest, state.SourceRef)
 						}
-						state.OutputRef = iref.Clone()
+						reopened, err := cache.GetBySnapshotID(ctx, iref.SnapshotID(), bkcache.NoUpdateLastUsed)
+						if err != nil {
+							return err
+						}
+						state.OutputImmutable = reopened
 					} else {
 						iref, ok := state.SourceRef.(bkcache.ImmutableRef)
 						if state.SourceRef != nil && !ok {
@@ -1233,7 +1183,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 							return err
 						}
 						mountable = active
-						state.OutputRef = active
+						state.OutputMutable = active
 					}
 				} else {
 					if !state.Readonly && state.SourceRef != nil {
@@ -1267,16 +1217,16 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 				}
 
 			case pb.MountType_TMPFS:
-				mountable = execTmpFSMountable(cache, state.TmpfsOpt)
+				mountable = execTmpFSMountable(state.TmpfsOpt)
 
 			case pb.MountType_SECRET:
-				mountable, err = prepareExecSecretMount(ctx, cache, state.Secret)
+				mountable, err = prepareExecSecretMount(ctx, state.Secret)
 				if err != nil {
 					return err
 				}
 
 			case pb.MountType_SSH:
-				mountable, err = prepareExecSSHMount(ctx, cache, state.SSH)
+				mountable, err = prepareExecSSHMount(ctx, state.SSH)
 				if err != nil {
 					return err
 				}
@@ -1309,11 +1259,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 			}
 
 			if state.Dest == pb.RootMount {
-				root := execMountWithSession(mountable, bkSessionGroup)
+				root := execMount(mountable)
 				root.Selector = state.Selector
 				rootMount = root
 			} else {
-				mount := execMountWithSession(mountable, bkSessionGroup)
+				mount := execMount(mountable)
 				dest := state.Dest
 				if !utilsystem.IsAbs(filepath.Clean(dest), runtime.GOOS) {
 					dest = filepath.Join("/", container.Config.WorkingDir, dest)
@@ -1506,35 +1456,48 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 
 			resolveFailureRef := func(state *execMountState) (bkcache.ImmutableRef, error) {
 				switch {
-				case state.OutputRef != nil:
-					switch out := state.OutputRef.(type) {
-					case bkcache.MutableRef:
-						iref, err := out.Commit(ctx)
-						if err != nil {
-							return nil, fmt.Errorf("commit output ref %s: %w", out.ID(), err)
-						}
-						return iref, nil
-					case bkcache.ImmutableRef:
-						return out.Clone(), nil
-					default:
-						return nil, fmt.Errorf("unexpected output ref type %T", state.OutputRef)
+				case state.OutputImmutable != nil:
+					ref := state.OutputImmutable
+					state.OutputImmutable = nil
+					return ref, nil
+				case state.OutputMutable != nil:
+					iref, err := state.OutputMutable.Commit(ctx)
+					if err != nil {
+						return nil, fmt.Errorf("commit output ref %s: %w", state.OutputMutable.ID(), err)
 					}
+					state.OutputMutable = nil
+					return iref, nil
 				case state.ActiveRef != nil:
 					iref, err := state.ActiveRef.Commit(ctx)
 					if err != nil {
 						return nil, fmt.Errorf("commit active ref %s: %w", state.ActiveRef.ID(), err)
 					}
+					state.ActiveRef = nil
 					return iref, nil
 				default:
 					sourceRef, ok := state.SourceRef.(bkcache.ImmutableRef)
 					if ok && sourceRef != nil {
-						return sourceRef.Clone(), nil
+						return cache.GetBySnapshotID(ctx, sourceRef.SnapshotID(), bkcache.NoUpdateLastUsed)
 					}
 					return nil, nil
 				}
 			}
 
 			resolvedRefs := []bkcache.ImmutableRef{}
+			trackResolvedRef := func(ref bkcache.ImmutableRef) bkcache.ImmutableRef {
+				if ref != nil {
+					resolvedRefs = append(resolvedRefs, ref)
+				}
+				return ref
+			}
+			untrackResolvedRef := func(target bkcache.ImmutableRef) {
+				for i, ref := range resolvedRefs {
+					if ref == target {
+						resolvedRefs = append(resolvedRefs[:i], resolvedRefs[i+1:]...)
+						return
+					}
+				}
+			}
 			releaseResolvedRefs := func() {
 				for _, ref := range resolvedRefs {
 					if ref == nil {
@@ -1552,10 +1515,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 				if err != nil {
 					return nil, err
 				}
-				if ref != nil {
-					resolvedRefs = append(resolvedRefs, ref)
-				}
-				return ref, nil
+				return trackResolvedRef(ref), nil
 			}
 			for _, mountState := range mountStates {
 				keepRef := mountState.Dest == buildkit.MetaMountDestPath
@@ -1633,14 +1593,47 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 					callDig = callID.ContentPreferredDigest()
 				}
 				meta := *metaSpec
-					meta.Args = []string{"/bin/sh"}
-					if len(bkClient.InteractiveCommand) > 0 {
-						meta.Args = bkClient.InteractiveCommand
+				meta.Args = []string{"/bin/sh"}
+				if len(bkClient.InteractiveCommand) > 0 {
+					meta.Args = bkClient.InteractiveCommand
+				}
+				var terminalContainer *Container
+				terminalContainerNeedsRelease := false
+				defer func() {
+					if terminalContainerNeedsRelease && terminalContainer != nil {
+						_ = terminalContainer.OnRelease(context.WithoutCancel(ctx))
 					}
-					terminalContainer := cloneContainerForTerminal(container)
-					terminalContainer.FS = cloneTerminalDirectorySource(inputRootFS)
-					terminalContainer.Mounts = cloneTerminalMounts(inputMounts)
-					terminalContainer.MetaSnapshot = metaRef
+				}()
+				terminalContainer, err = cloneContainerForTerminal(ctx, query, container)
+				if err != nil {
+					rerr = fmt.Errorf("clone terminal container: %w", err)
+					return
+				}
+				terminalContainer.FS, err = cloneTerminalDirectorySource(ctx, query, inputRootFS)
+				if err != nil {
+					rerr = fmt.Errorf("clone terminal rootfs source: %w", err)
+					return
+				}
+				terminalContainer.Mounts, err = cloneTerminalMounts(ctx, query, inputMounts)
+				if err != nil {
+					rerr = fmt.Errorf("clone terminal mounts: %w", err)
+					return
+				}
+				if metaRef != nil {
+					terminalMetaRef, err := query.SnapshotManager().GetBySnapshotID(
+						ctx,
+						metaRef.SnapshotID(),
+						bkcache.NoUpdateLastUsed,
+					)
+					if err != nil {
+						rerr = fmt.Errorf("reopen meta snapshot for terminal: %w", err)
+						return
+					}
+					trackResolvedRef(terminalMetaRef)
+					terminalContainer.MetaSnapshot = terminalMetaRef
+					untrackResolvedRef(terminalMetaRef)
+					terminalContainerNeedsRelease = true
+				}
 				if len(mountStates) >= 1 {
 					rootRef, err := resolveAndTrackFailureRef(mountStates[0])
 					if err != nil {
@@ -1648,21 +1641,22 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 						return
 					}
 					if rootRef != nil {
-						rootDir := &Directory{
-							Dir:      "/",
-							Platform: terminalContainer.Platform,
-							Services: terminalContainer.Services,
-						}
+						rootDirPath := "/"
+						rootPlatform := terminalContainer.Platform
+						rootServices := terminalContainer.Services
 						if inputRootFS != nil && inputRootFS.self() != nil {
-							rootDir.Dir = inputRootFS.self().Dir
-							rootDir.Platform = inputRootFS.self().Platform
-							rootDir.Services = inputRootFS.self().Services
+							rootDirPath = inputRootFS.self().Dir
+							rootPlatform = inputRootFS.self().Platform
+							rootServices = inputRootFS.self().Services
 						}
-						if err := rootDir.setSnapshot(rootRef); err != nil {
+						rootDir, err := NewDirectoryWithSnapshot(rootDirPath, rootPlatform, rootServices, rootRef)
+						if err != nil {
 							rerr = fmt.Errorf("rebuild failed rootfs for terminal: %w", err)
 							return
 						}
+						untrackResolvedRef(rootRef)
 						terminalContainer.setBareRootFS(rootDir)
+						terminalContainerNeedsRelease = true
 					}
 				}
 				for i, ctrMount := range inputMounts {
@@ -1680,29 +1674,35 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 					}
 					switch {
 					case ctrMount.DirectorySource != nil && ctrMount.DirectorySource.self() != nil && !ctrMount.Readonly:
-						outputDir := &Directory{
-							Dir:      ctrMount.DirectorySource.self().Dir,
-							Platform: ctrMount.DirectorySource.self().Platform,
-							Services: ctrMount.DirectorySource.self().Services,
-						}
-						if err := outputDir.setSnapshot(mountRef); err != nil {
+						outputDir, err := NewDirectoryWithSnapshot(
+							ctrMount.DirectorySource.self().Dir,
+							ctrMount.DirectorySource.self().Platform,
+							ctrMount.DirectorySource.self().Services,
+							mountRef,
+						)
+						if err != nil {
 							rerr = fmt.Errorf("rebuild failed directory mount %d for terminal: %w", i, err)
 							return
 						}
+						untrackResolvedRef(mountRef)
 						ctrMount.DirectorySource = newContainerDirectoryValueSource(outputDir)
 						terminalContainer.Mounts[i] = ctrMount
+						terminalContainerNeedsRelease = true
 					case ctrMount.FileSource != nil && ctrMount.FileSource.self() != nil && !ctrMount.Readonly:
-						outputFile := &File{
-							File:     ctrMount.FileSource.self().File,
-							Platform: ctrMount.FileSource.self().Platform,
-							Services: ctrMount.FileSource.self().Services,
-						}
-						if err := outputFile.setSnapshot(mountRef); err != nil {
+						outputFile, err := NewFileWithSnapshot(
+							ctrMount.FileSource.self().File,
+							ctrMount.FileSource.self().Platform,
+							ctrMount.FileSource.self().Services,
+							mountRef,
+						)
+						if err != nil {
 							rerr = fmt.Errorf("rebuild failed file mount %d for terminal: %w", i, err)
 							return
 						}
+						untrackResolvedRef(mountRef)
 						ctrMount.FileSource = newContainerFileValueSource(outputFile)
 						terminalContainer.Mounts[i] = ctrMount
+						terminalContainerNeedsRelease = true
 					}
 				}
 				srv, err := CurrentDagqlServer(ctx)
@@ -1719,6 +1719,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 					rerr = err
 					return
 				}
+				terminalContainerNeedsRelease = false
 			}
 
 			var existingExecErr *ExecError
@@ -1890,10 +1891,22 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 		return "", ErrNoCommand
 	}
 
-	file, err := NewFileWithSnapshot(filePath, container.Platform, container.Services, container.MetaSnapshot)
+	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return "", err
 	}
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, container.MetaSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return "", err
+	}
+	file, err := NewFileWithSnapshot(filePath, container.Platform, container.Services, reopened)
+	if err != nil {
+		_ = reopened.Release(context.WithoutCancel(ctx))
+		return "", err
+	}
+	defer func() {
+		_ = file.OnRelease(context.WithoutCancel(ctx))
+	}()
 
 	content, err := file.Contents(ctx, nil, nil)
 	if err != nil {

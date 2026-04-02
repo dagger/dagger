@@ -53,7 +53,7 @@ func (*persistCodecObj) DecodePersistedObject(ctx context.Context, dag *Server, 
 
 func setupPersistCodecTest(t *testing.T) context.Context {
 	t.Helper()
-	baseCacheIface, err := NewCache(t.Context(), "")
+	baseCacheIface, err := NewCache(t.Context(), "", nil)
 	assert.NilError(t, err)
 	baseCache := baseCacheIface
 	srv := NewServer(&persistCodecRoot{})
@@ -130,7 +130,7 @@ func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	srv := NewServer(&persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))

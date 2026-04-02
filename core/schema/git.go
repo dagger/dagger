@@ -694,6 +694,16 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		}
 	}
 
+	var mirror dagql.ObjectResult[*core.RemoteGitMirror]
+	if err := srv.Select(ctx, parent, &mirror, dagql.Selector{
+		Field: "_remoteGitMirror",
+		Args: []dagql.NamedInput{
+			{Name: "remoteURL", Value: dagql.String(remote.Remote())},
+		},
+	}); err != nil {
+		return inst, fmt.Errorf("failed to select remote git mirror: %w", err)
+	}
+
 	repo, err := core.NewGitRepository(ctx, &core.RemoteGitRepository{
 		URL:           remote,
 		SSHKnownHosts: args.SSHKnownHosts,
@@ -703,6 +713,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		AuthHeader:    httpAuthHeader,
 		Services:      gitServices,
 		Platform:      parent.Self().Platform(),
+		Mirror:        mirror,
 	})
 	if err != nil {
 		return inst, err
@@ -991,6 +1002,7 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 			AuthUsername:  remote.AuthUsername,
 			AuthToken:     token,
 			AuthHeader:    remote.AuthHeader,
+			Mirror:        remote.Mirror,
 		}
 	}
 	return &repo, nil
@@ -1021,6 +1033,7 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 			AuthUsername:  remote.AuthUsername,
 			AuthToken:     remote.AuthToken,
 			AuthHeader:    header,
+			Mirror:        remote.Mirror,
 		}
 	}
 	return &repo, nil

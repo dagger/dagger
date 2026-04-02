@@ -64,6 +64,26 @@ type MirrorResultSnapshotLink struct {
 	Slot     string
 }
 
+type MirrorSnapshotContentLink struct {
+	SnapshotID string
+	Digest     string
+}
+
+type MirrorImportedLayerBlobIndex struct {
+	ParentSnapshotID string
+	BlobDigest       string
+	SnapshotID       string
+}
+
+type MirrorImportedLayerDiffIndex struct {
+	ParentSnapshotID string
+	DiffID           string
+	SnapshotID       string
+}
+
+const clearMirrorImportedLayerDiffIndex = `DELETE FROM imported_layer_diff_index`
+const clearMirrorImportedLayerBlobIndex = `DELETE FROM imported_layer_blob_index`
+const clearMirrorSnapshotContentLinks = `DELETE FROM snapshot_content_links`
 const clearMirrorResultSnapshotLinks = `DELETE FROM result_snapshot_links`
 const clearMirrorPersistedEdges = `DELETE FROM persisted_edges`
 const clearMirrorResultDeps = `DELETE FROM result_deps`
@@ -76,6 +96,9 @@ const clearMirrorEqClasses = `DELETE FROM eq_classes`
 
 func (q *Queries) ClearMirrorState(ctx context.Context) error {
 	for _, stmt := range []string{
+		clearMirrorImportedLayerDiffIndex,
+		clearMirrorImportedLayerBlobIndex,
+		clearMirrorSnapshotContentLinks,
 		clearMirrorResultSnapshotLinks,
 		clearMirrorPersistedEdges,
 		clearMirrorResultDeps,
@@ -177,6 +200,33 @@ INSERT INTO result_snapshot_links (result_id, ref_key, role, slot) VALUES (?, ?,
 
 func (q *Queries) InsertMirrorResultSnapshotLink(ctx context.Context, arg MirrorResultSnapshotLink) error {
 	_, err := q.exec(ctx, nil, insertMirrorResultSnapshotLink, arg.ResultID, arg.RefKey, arg.Role, arg.Slot)
+	return err
+}
+
+const insertMirrorSnapshotContentLink = `
+INSERT INTO snapshot_content_links (snapshot_id, digest) VALUES (?, ?)
+`
+
+func (q *Queries) InsertMirrorSnapshotContentLink(ctx context.Context, arg MirrorSnapshotContentLink) error {
+	_, err := q.exec(ctx, nil, insertMirrorSnapshotContentLink, arg.SnapshotID, arg.Digest)
+	return err
+}
+
+const insertMirrorImportedLayerBlobIndex = `
+INSERT INTO imported_layer_blob_index (parent_snapshot_id, blob_digest, snapshot_id) VALUES (?, ?, ?)
+`
+
+func (q *Queries) InsertMirrorImportedLayerBlobIndex(ctx context.Context, arg MirrorImportedLayerBlobIndex) error {
+	_, err := q.exec(ctx, nil, insertMirrorImportedLayerBlobIndex, arg.ParentSnapshotID, arg.BlobDigest, arg.SnapshotID)
+	return err
+}
+
+const insertMirrorImportedLayerDiffIndex = `
+INSERT INTO imported_layer_diff_index (parent_snapshot_id, diff_id, snapshot_id) VALUES (?, ?, ?)
+`
+
+func (q *Queries) InsertMirrorImportedLayerDiffIndex(ctx context.Context, arg MirrorImportedLayerDiffIndex) error {
+	_, err := q.exec(ctx, nil, insertMirrorImportedLayerDiffIndex, arg.ParentSnapshotID, arg.DiffID, arg.SnapshotID)
 	return err
 }
 
@@ -365,6 +415,63 @@ func (q *Queries) ListMirrorResultSnapshotLinks(ctx context.Context) ([]MirrorRe
 	for rows.Next() {
 		var row MirrorResultSnapshotLink
 		if err := rows.Scan(&row.ResultID, &row.RefKey, &row.Role, &row.Slot); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+const listMirrorSnapshotContentLinks = `SELECT snapshot_id, digest FROM snapshot_content_links`
+
+func (q *Queries) ListMirrorSnapshotContentLinks(ctx context.Context) ([]MirrorSnapshotContentLink, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorSnapshotContentLinks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MirrorSnapshotContentLink
+	for rows.Next() {
+		var row MirrorSnapshotContentLink
+		if err := rows.Scan(&row.SnapshotID, &row.Digest); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+const listMirrorImportedLayerBlobIndex = `SELECT parent_snapshot_id, blob_digest, snapshot_id FROM imported_layer_blob_index`
+
+func (q *Queries) ListMirrorImportedLayerBlobIndex(ctx context.Context) ([]MirrorImportedLayerBlobIndex, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorImportedLayerBlobIndex)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MirrorImportedLayerBlobIndex
+	for rows.Next() {
+		var row MirrorImportedLayerBlobIndex
+		if err := rows.Scan(&row.ParentSnapshotID, &row.BlobDigest, &row.SnapshotID); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+const listMirrorImportedLayerDiffIndex = `SELECT parent_snapshot_id, diff_id, snapshot_id FROM imported_layer_diff_index`
+
+func (q *Queries) ListMirrorImportedLayerDiffIndex(ctx context.Context) ([]MirrorImportedLayerDiffIndex, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorImportedLayerDiffIndex)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MirrorImportedLayerDiffIndex
+	for rows.Next() {
+		var row MirrorImportedLayerDiffIndex
+		if err := rows.Scan(&row.ParentSnapshotID, &row.DiffID, &row.SnapshotID); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

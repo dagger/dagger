@@ -33,6 +33,19 @@ func (s *querySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
 			),
+		dagql.NodeFunc("_remoteGitMirror", s.remoteGitMirror).
+			IsPersistable().
+			Doc(`(Internal-only) Returns the persistent bare git mirror for a remote URL.`).
+			Args(
+				dagql.Arg("remoteURL").Doc("Normalized remote repository URL."),
+			),
+		dagql.NodeFunc("_clientFilesyncMirror", s.clientFilesyncMirror).
+			IsPersistable().
+			Doc(`(Internal-only) Returns the persistent filesync mirror for a stable client and drive.`).
+			Args(
+				dagql.Arg("stableClientID").Doc("Stable client identifier."),
+				dagql.Arg("drive").Doc("Drive prefix for Windows clients; empty otherwise."),
+			),
 	}.Install(srv)
 
 	srv.InstallScalar(core.JSON{})
@@ -81,12 +94,43 @@ type pipelineArgs struct {
 	Labels      dagql.Optional[dagql.ArrayInput[dagql.InputObject[PipelineLabel]]]
 }
 
+type remoteGitMirrorArgs struct {
+	RemoteURL string
+}
+
+type clientFilesyncMirrorArgs struct {
+	StableClientID string
+	Drive          string `default:""`
+}
+
 func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pipelineArgs) (*core.Query, error) {
 	return parent.WithPipeline(args.Name, args.Description), nil
 }
 
 func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (string, error) {
 	return engine.Version, nil
+}
+
+func (s *querySchema) remoteGitMirror(ctx context.Context, parent dagql.ObjectResult[*core.Query], args remoteGitMirrorArgs) (dagql.Result[*core.RemoteGitMirror], error) {
+	mirror := core.NewRemoteGitMirror(args.RemoteURL)
+	if err := mirror.EnsureCreated(ctx, parent.Self()); err != nil {
+		return dagql.Result[*core.RemoteGitMirror]{}, err
+	}
+	return dagql.NewResultForCurrentCall(ctx, mirror)
+}
+
+func (s *querySchema) clientFilesyncMirror(ctx context.Context, parent dagql.ObjectResult[*core.Query], args clientFilesyncMirrorArgs) (dagql.Result[*core.ClientFilesyncMirror], error) {
+	if args.StableClientID == "" {
+		return dagql.Result[*core.ClientFilesyncMirror]{}, fmt.Errorf("stable client id is empty")
+	}
+	mirror := &core.ClientFilesyncMirror{
+		StableClientID: args.StableClientID,
+		Drive:          args.Drive,
+	}
+	if err := mirror.EnsureCreated(ctx, parent.Self()); err != nil {
+		return dagql.Result[*core.ClientFilesyncMirror]{}, err
+	}
+	return dagql.NewResultForCurrentCall(ctx, mirror)
 }
 
 func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]byte, error) {

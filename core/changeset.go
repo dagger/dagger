@@ -132,13 +132,13 @@ func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, aft
 		return fmt.Errorf("evaluate after: %w", err)
 	}
 
-	return MountRef(ctx, beforeRef, nil, func(beforeMount string, _ *mount.Mount) error {
+	return MountRef(ctx, beforeRef, func(beforeMount string, _ *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(beforeMount, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
 
-		return MountRef(ctx, afterRef, nil, func(afterMount string, _ *mount.Mount) error {
+		return MountRef(ctx, afterRef, func(afterMount string, _ *mount.Mount) error {
 			afterDir, err := containerdfs.RootPath(afterMount, ch.After.Self().Dir)
 			if err != nil {
 				return err
@@ -249,6 +249,7 @@ func (*Changeset) TypeDescription() string {
 }
 
 var _ Syncable = (*Changeset)(nil)
+var _ dagql.HasDependencyResults = (*Changeset)(nil)
 
 func (ch *Changeset) Evaluate(context.Context) error {
 	return nil
@@ -256,6 +257,46 @@ func (ch *Changeset) Evaluate(context.Context) error {
 
 func (ch *Changeset) Sync(ctx context.Context) error {
 	return ch.Evaluate(ctx)
+}
+
+func (ch *Changeset) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if ch == nil {
+		return nil, nil
+	}
+
+	var deps []dagql.AnyResult
+
+	if ch.Before.Self() != nil {
+		attached, err := attach(ch.Before)
+		if err != nil {
+			return nil, fmt.Errorf("attach changeset before: %w", err)
+		}
+		before, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach changeset before: unexpected result %T", attached)
+		}
+		ch.Before = before
+		deps = append(deps, before)
+	}
+
+	if ch.After.Self() != nil {
+		attached, err := attach(ch.After)
+		if err != nil {
+			return nil, fmt.Errorf("attach changeset after: %w", err)
+		}
+		after, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach changeset after: unexpected result %T", attached)
+		}
+		ch.After = after
+		deps = append(deps, after)
+	}
+
+	return deps, nil
 }
 
 const ChangesetPatchFilename = "diff.patch"
@@ -316,23 +357,23 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 
-	newRef, err := query.BuildkitCache().New(ctx, nil, nil,
+	newRef, err := query.SnapshotManager().New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("Changeset.asPatch"))
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, beforeRef, nil, func(before string, _ *mount.Mount) error {
+	err = MountRef(ctx, beforeRef, func(before string, _ *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(before, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
-		return MountRef(ctx, afterRef, nil, func(after string, _ *mount.Mount) error {
+		return MountRef(ctx, afterRef, func(after string, _ *mount.Mount) error {
 			afterDir, err := containerdfs.RootPath(after, ch.After.Self().Dir)
 			if err != nil {
 				return err
 			}
-			return MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) (rerr error) {
+			return MountRef(ctx, newRef, func(root string, _ *mount.Mount) (rerr error) {
 				beforeMount := filepath.Join(root, "a")
 				afterMount := filepath.Join(root, "b")
 				if err := os.Mkdir(beforeMount, 0755); err != nil {
@@ -383,7 +424,12 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewFileWithSnapshot(ChangesetPatchFilename, query.Platform(), nil, snap)
+	file, err := NewFileWithSnapshot(ChangesetPatchFilename, query.Platform(), nil, snap)
+	if err != nil {
+		_ = snap.Release(context.WithoutCancel(ctx))
+		return nil, err
+	}
+	return file, nil
 }
 
 func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
@@ -741,16 +787,29 @@ func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Direc
 		return nil, fmt.Errorf("evaluate merged directory snapshot: nil")
 	}
 
-	var after dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &after,
-		dagql.Selector{
-			Field: "__immutableRef",
-			Args: []dagql.NamedInput{
-				{Name: "ref", Value: dagql.NewString(afterRef.ID())},
+	after, err := dagql.NewObjectResultForCall(afterDir, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		Type:        dagql.NewResultCallType(afterDir.Type()),
+		SyntheticOp: "changeset_merge_output",
+		ImplicitInputs: []*dagql.ResultCallArg{
+			{
+				Name: "snapshotID",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: afterRef.SnapshotID(),
+				},
+			},
+			{
+				Name: "dir",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: afterDir.Dir,
+				},
 			},
 		},
-	); err != nil {
-		return nil, fmt.Errorf("create after directory: %w", err)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create synthetic merged directory result: %w", err)
 	}
 
 	return NewChangeset(ctx, before, after)
@@ -803,14 +862,14 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 		return nil, err
 	}
 
-	newRef, err := query.BuildkitCache().New(ctx, baseRef, nil,
+	newRef, err := query.SnapshotManager().New(ctx, baseRef,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(description))
 	if err != nil {
 		return nil, err
 	}
 
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		workDir, err := containerdfs.RootPath(root, base.Dir)
 		if err != nil {
 			return err
@@ -825,8 +884,12 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 	if err != nil {
 		return nil, err
 	}
-
-	return NewDirectoryWithSnapshot(base.Dir, query.Platform(), base.Services, snap)
+	dir, err := NewDirectoryWithSnapshot(base.Dir, query.Platform(), base.Services, snap)
+	if err != nil {
+		_ = snap.Release(context.WithoutCancel(ctx))
+		return nil, err
+	}
+	return dir, nil
 }
 
 func gitMergeWithPatches(
@@ -950,7 +1013,7 @@ func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 		return fmt.Errorf("evaluate patch ref: %w", err)
 	}
 
-	return MountRef(ctx, patchRef, nil, func(patchMount string, _ *mount.Mount) error {
+	return MountRef(ctx, patchRef, func(patchMount string, _ *mount.Mount) error {
 		patchPath, err := containerdfs.RootPath(patchMount, patch.File)
 		if err != nil {
 			return err

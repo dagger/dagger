@@ -110,14 +110,12 @@ func NewFileWithSnapshot(filePath string, platform Platform, services ServiceBin
 	if snapshot == nil {
 		return nil, fmt.Errorf("new file with snapshot: nil snapshot")
 	}
-	cloned := snapshot.Clone()
 	file := &File{
 		File:     filePath,
 		Platform: platform,
 		Services: slices.Clone(services),
 	}
-	if err := file.setSnapshot(cloned); err != nil {
-		_ = cloned.Release(context.Background())
+	if err := file.setSnapshot(snapshot); err != nil {
 		return nil, err
 	}
 	return file, nil
@@ -269,7 +267,7 @@ func (file *File) CacheUsageIdentity() (string, bool) {
 	if snapshot == nil {
 		return "", false
 	}
-	return snapshot.ID(), true
+	return snapshot.SnapshotID(), true
 }
 
 func (file *File) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
@@ -655,7 +653,7 @@ func (file *File) WithContents(ctx context.Context, parent dagql.ObjectResult[*D
 	if err != nil {
 		return err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -666,7 +664,7 @@ func (file *File) WithContents(ctx context.Context, parent dagql.ObjectResult[*D
 		return err
 	}
 
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		resolvedDest, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
@@ -733,7 +731,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 		return nil, errEmptyResultRef
 	}
 
-	err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
 		fullPath, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
@@ -814,7 +812,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]
 	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 
 	results := []*SearchResult{}
-	err = MountRef(ctx, ref, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, ref, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, filepath.Dir(file.File))
 		if err != nil {
 			return err
@@ -851,11 +849,23 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 	if err != nil {
 		return err
 	}
+	if parentSnapshot == nil {
+		return fmt.Errorf("replace file: nil snapshot")
+	}
 
-	sourceFile, err := NewFileWithSnapshot(file.File, file.Platform, file.Services, parentSnapshot)
+	sourceSnapshot, err := query.SnapshotManager().GetBySnapshotID(ctx, parentSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
 	if err != nil {
 		return err
 	}
+
+	sourceFile, err := NewFileWithSnapshot(file.File, file.Platform, file.Services, sourceSnapshot)
+	if err != nil {
+		_ = sourceSnapshot.Release(context.WithoutCancel(ctx))
+		return err
+	}
+	defer func() {
+		_ = sourceFile.OnRelease(context.WithoutCancel(ctx))
+	}()
 
 	// reuse Search internally so we get convenient line numbers for an error if
 	// there are multiple matches
@@ -885,7 +895,11 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 			// If we're replacing all, it's not an error if there are no matches
 			// (just a no-op)
 			if parentSnapshot != nil {
-				return file.setSnapshot(parentSnapshot.Clone())
+				reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, parentSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+				if err != nil {
+					return err
+				}
+				return file.setSnapshot(reopened)
 			}
 			return nil
 		}
@@ -935,12 +949,12 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 	}
 
 	// Create a new layer for the replaced content
-	newRef, err := query.BuildkitCache().New(ctx, parentSnapshot, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newRef, err := query.SnapshotManager().New(ctx, parentSnapshot, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("patch"))
 	if err != nil {
 		return err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) (rerr error) {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) (rerr error) {
 		resolvedPath, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
@@ -985,7 +999,6 @@ func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, err
 			snapshot,
 			file.File,
 			bkcontenthash.ChecksumOpts{},
-			nil,
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to compute digest: %w", err)
@@ -1030,7 +1043,7 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 	// }
 
 	var fileInfo os.FileInfo
-	err = MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, immutableRef, func(root string, _ *mount.Mount) error {
 		resolvedPath, err := rootPathFunc(root, file.File)
 		if err != nil {
 			return err
@@ -1073,7 +1086,7 @@ func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File]
 	if err != nil {
 		return err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -1083,7 +1096,7 @@ func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File]
 	if err != nil {
 		return err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		src, err := RootPathWithoutFinalSymlink(root, sourcePath)
 		if err != nil {
 			return err
@@ -1125,7 +1138,7 @@ func (file *File) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -1135,7 +1148,7 @@ func (file *File) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		fullPath, err := RootPathWithoutFinalSymlink(root, file.File)
 		if err != nil {
 			return err
@@ -1182,7 +1195,7 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 		return nil, errEmptyResultRef
 	}
 
-	root, _, closer, err := MountRefCloser(ctx, snapshot, nil, mountRefAsReadOnly)
+	root, _, closer, err := MountRefCloser(ctx, snapshot, mountRefAsReadOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -1241,7 +1254,7 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 		return errEmptyResultRef
 	}
 
-	return MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
+	return MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
 		path, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
@@ -1258,7 +1271,7 @@ func (file *File) Mount(ctx context.Context, f func(string) error) error {
 	if snapshot == nil {
 		return errEmptyResultRef
 	}
-	err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
 		src, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
@@ -1314,7 +1327,7 @@ func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], o
 	if err != nil {
 		return err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -1324,7 +1337,7 @@ func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], o
 	if err != nil {
 		return err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		chownPath := file.File
 		chownPath, err := containerdfs.RootPath(root, chownPath)
 		if err != nil {

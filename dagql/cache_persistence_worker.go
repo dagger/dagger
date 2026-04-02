@@ -107,7 +107,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			})
 		}
 
-		links := append([]PersistedSnapshotRefLink(nil), c.persistedSnapshotLinksForResultLocked(res)...)
+		links := append([]PersistedSnapshotRefLink(nil), c.snapshotOwnerLinksForResultLocked(res)...)
 		slices.SortFunc(links, func(a, b PersistedSnapshotRefLink) int {
 			switch {
 			case a.RefKey < b.RefKey:
@@ -235,6 +235,30 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 	c.egraphMu.RUnlock()
 
+	if c.snapshotManager != nil {
+		rows := c.snapshotManager.PersistentMetadataRows()
+		for _, row := range rows.SnapshotContent {
+			snapshot.snapshotContentLinks = append(snapshot.snapshotContentLinks, persistdb.MirrorSnapshotContentLink{
+				SnapshotID: row.SnapshotID,
+				Digest:     row.Digest.String(),
+			})
+		}
+		for _, row := range rows.ImportedByBlob {
+			snapshot.importedLayerByBlob = append(snapshot.importedLayerByBlob, persistdb.MirrorImportedLayerBlobIndex{
+				ParentSnapshotID: row.ParentSnapshotID,
+				BlobDigest:       row.BlobDigest.String(),
+				SnapshotID:       row.SnapshotID,
+			})
+		}
+		for _, row := range rows.ImportedByDiff {
+			snapshot.importedLayerByDiff = append(snapshot.importedLayerByDiff, persistdb.MirrorImportedLayerDiffIndex{
+				ParentSnapshotID: row.ParentSnapshotID,
+				DiffID:           row.DiffID.String(),
+				SnapshotID:       row.SnapshotID,
+			})
+		}
+	}
+
 	for i := range snapshot.results {
 		resultSnapshot := &snapshot.results[i]
 		if resultSnapshot.frame == nil {
@@ -335,6 +359,24 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 			}
 		}
 	}
+	for _, row := range snapshot.snapshotContentLinks {
+		if err := q.InsertMirrorSnapshotContentLink(ctx, row); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("insert snapshot_content_link (%s,%s): %w", row.SnapshotID, row.Digest, err)
+		}
+	}
+	for _, row := range snapshot.importedLayerByBlob {
+		if err := q.InsertMirrorImportedLayerBlobIndex(ctx, row); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("insert imported_layer_blob_index (%s,%s,%s): %w", row.ParentSnapshotID, row.BlobDigest, row.SnapshotID, err)
+		}
+	}
+	for _, row := range snapshot.importedLayerByDiff {
+		if err := q.InsertMirrorImportedLayerDiffIndex(ctx, row); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("insert imported_layer_diff_index (%s,%s,%s): %w", row.ParentSnapshotID, row.DiffID, row.SnapshotID, err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit persistence mirror tx: %w", err)
 	}
@@ -395,18 +437,18 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	return env, nil
 }
 
-func (c *Cache) persistedSnapshotLinksForResultLocked(res *sharedResult) []PersistedSnapshotRefLink {
+func (c *Cache) snapshotOwnerLinksForResultLocked(res *sharedResult) []PersistedSnapshotRefLink {
 	if res == nil {
 		return nil
 	}
-	typedLinks := persistedSnapshotLinksFromTyped(res.loadPayloadState().self)
+	typedLinks := snapshotOwnerLinksFromTyped(res.loadPayloadState().self)
 	if len(typedLinks) > 0 {
 		return typedLinks
 	}
-	if len(res.persistedSnapshotLinks) == 0 {
+	if len(res.snapshotOwnerLinks) == 0 {
 		return nil
 	}
-	links := make([]PersistedSnapshotRefLink, len(res.persistedSnapshotLinks))
-	copy(links, res.persistedSnapshotLinks)
+	links := make([]PersistedSnapshotRefLink, len(res.snapshotOwnerLinks))
+	copy(links, res.snapshotOwnerLinks)
 	return links
 }

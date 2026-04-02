@@ -41,7 +41,7 @@ func llmTestContext() context.Context {
 func TestLlmConfig(t *testing.T) {
 	q := LLMTestQuery{}
 
-	baseCache, err := dagql.NewCache(context.Background(), "")
+	baseCache, err := dagql.NewCache(context.Background(), "", nil)
 	assert.NoError(t, err)
 	srv := dagql.NewServer(q)
 
@@ -133,7 +133,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := LLMTestQuery{}
 
-			baseCache, err := dagql.NewCache(context.Background(), "")
+			baseCache, err := dagql.NewCache(context.Background(), "", nil)
 			assert.NoError(t, err)
 			srv := dagql.NewServer(q)
 			dagql.Fields[LLMTestQuery]{
@@ -164,7 +164,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 func TestLlmConfigEnvFile(t *testing.T) {
 	q := LLMTestQuery{}
 
-	baseCache, err := dagql.NewCache(context.Background(), "")
+	baseCache, err := dagql.NewCache(context.Background(), "", nil)
 	assert.NoError(t, err)
 	srv := dagql.NewServer(q)
 	dagql.Fields[LLMTestQuery]{

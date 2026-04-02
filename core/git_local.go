@@ -84,15 +84,14 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 	if err != nil {
 		return inst, err
 	}
-	cache := query.BuildkitCache()
+	cache := query.SnapshotManager()
 
 	parent, err := repo.Directory.Self().getSnapshot()
 	if err != nil {
 		return inst, fmt.Errorf("get git directory snapshot: %w", err)
 	}
 
-	bkref, err := cache.New(ctx, parent, nil,
-		bkcache.CachePolicyRetain,
+	bkref, err := cache.New(ctx, parent,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("git cleaned worktree"))
 
@@ -105,7 +104,7 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 		}
 	}()
 	skip := false
-	err = MountRef(ctx, bkref, nil, func(parentRoot string, _ *mount.Mount) error {
+	err = MountRef(ctx, bkref, func(parentRoot string, _ *mount.Mount) error {
 		src, err := fs.RootPath(parentRoot, repo.Directory.Self().Dir)
 		if err != nil {
 			return err
@@ -182,10 +181,16 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 	bkref = nil
 	dir, err := NewDirectoryWithSnapshot(repo.Directory.Self().Dir, query.Platform(), repo.Directory.Self().Services, snap)
 	if err != nil {
+		_ = snap.Release(context.WithoutCancel(ctx))
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		_ = dir.OnRelease(context.WithoutCancel(ctx))
+		return inst, err
+	}
+	return inst, nil
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
@@ -208,7 +213,7 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTag
 		return err
 	}
 
-	return MountRef(ctx, ref, nil, func(root string, _ *mount.Mount) error {
+	return MountRef(ctx, ref, func(root string, _ *mount.Mount) error {
 		src, err := fs.RootPath(root, repo.Directory.Self().Dir)
 		if err != nil {
 			return err
@@ -228,10 +233,9 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	if err != nil {
 		return nil, err
 	}
-	cache := query.BuildkitCache()
+	cache := query.SnapshotManager()
 
-	bkref, err := cache.New(ctx, nil, nil,
-		bkcache.CachePolicyRetain,
+	bkref, err := cache.New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("git local checkout (%s %s)", ref.Ref.Name, ref.Ref.SHA)))
 	if err != nil {
@@ -249,7 +253,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not find git url: %w", err)
 		}
 
-		return MountRef(ctx, bkref, nil, func(checkoutDir string, _ *mount.Mount) error {
+		return MountRef(ctx, bkref, func(checkoutDir string, _ *mount.Mount) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err
@@ -271,5 +275,10 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		return nil, err
 	}
 	bkref = nil
-	return NewDirectoryWithSnapshot("/", query.Platform(), nil, snap)
+	dir, err := NewDirectoryWithSnapshot("/", query.Platform(), nil, snap)
+	if err != nil {
+		_ = snap.Release(context.WithoutCancel(ctx))
+		return nil, err
+	}
+	return dir, nil
 }

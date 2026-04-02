@@ -23,7 +23,7 @@ func (*detachedLineageObject) Type() *ast.Type {
 func TestDetachedReceiverSelectionPreservesReceiverLineage(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
@@ -58,7 +58,7 @@ func TestDetachedReceiverSelectionPreservesReceiverLineage(t *testing.T) {
 func TestNthValuePreservesAttachmentLineage(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
@@ -106,7 +106,7 @@ func TestNthValuePreservesAttachmentLineage(t *testing.T) {
 func TestNthValueAttachedObjectResultArrayReturnsCanonicalChild(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
@@ -176,7 +176,7 @@ func TestNthValueAttachedObjectResultArrayReturnsCanonicalChild(t *testing.T) {
 func TestNthValueAttachedDynamicResultArrayReturnsCanonicalChild(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
@@ -237,7 +237,7 @@ func TestNthValueAttachedDynamicResultArrayReturnsCanonicalChild(t *testing.T) {
 func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
@@ -296,7 +296,7 @@ func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 func TestNullableWrappedUsesSameSharedResult(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
@@ -356,7 +356,7 @@ func TestNullableWrappedUsesSameSharedResult(t *testing.T) {
 func TestNullableDerefCacheHitsReconstructObjectView(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	base := cacheIface
 	srv := cacheTestServer(t, base)

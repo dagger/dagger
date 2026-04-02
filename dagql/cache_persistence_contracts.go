@@ -29,15 +29,15 @@ func (prov cachePersistInputProvenance) validate() error {
 }
 
 type persistResultSnapshot struct {
-	resultID            sharedResultID
-	frame               *ResultCall
-	self                Typed
-	hasValue            bool
+	resultID              sharedResultID
+	frame                 *ResultCall
+	self                  Typed
+	hasValue              bool
 	sessionResourceHandle SessionResourceHandle
-	persistedEnvelope   *PersistedResultEnvelope
-	row                 persistdb.MirrorResult
-	resultDeps          []persistdb.MirrorResultDep
-	resultSnapshotLinks []persistdb.MirrorResultSnapshotLink
+	persistedEnvelope     *PersistedResultEnvelope
+	row                   persistdb.MirrorResult
+	resultDeps            []persistdb.MirrorResultDep
+	resultSnapshotLinks   []persistdb.MirrorResultSnapshotLink
 }
 
 type persistStateSnapshot struct {
@@ -48,4 +48,7 @@ type persistStateSnapshot struct {
 	termInputs            []persistdb.MirrorTermInput
 	resultOutputEqClasses []persistdb.MirrorResultOutputEqClass
 	results               []persistResultSnapshot
+	snapshotContentLinks  []persistdb.MirrorSnapshotContentLink
+	importedLayerByBlob   []persistdb.MirrorImportedLayerBlobIndex
+	importedLayerByDiff   []persistdb.MirrorImportedLayerDiffIndex
 }

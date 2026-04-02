@@ -188,7 +188,7 @@ func TestCacheRejectsNilTypeResolver(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -214,7 +214,7 @@ func TestCacheRejectsEmptySessionIDForOwningEntrypoints(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -241,7 +241,7 @@ func TestAttachResultAllowsAlreadyAttachedResultWithoutFrame(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -268,7 +268,7 @@ func TestCaptureSessionLazySpanContextFirstWriterWinsAndRelease(t *testing.T) {
 	t.Parallel()
 
 	baseCtx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	ctx := ContextWithCache(baseCtx, cacheIface)
 	c := cacheIface
@@ -314,7 +314,7 @@ func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
 	t.Parallel()
 
 	baseCtx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	ctx := ContextWithCache(baseCtx, cacheIface)
 	c := cacheIface
@@ -515,7 +515,7 @@ func cacheTestObjectResultWithValue(
 func TestCacheConcurrent(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -627,7 +627,7 @@ func TestCacheEvaluate(t *testing.T) {
 	newEvalEnv := func(t *testing.T) (context.Context, *Cache, *Server) {
 		t.Helper()
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		ctx = ContextWithCache(ctx, cacheIface)
 		srv := cacheTestServer(t, cacheIface)
@@ -927,7 +927,7 @@ func TestCacheEvaluate(t *testing.T) {
 func TestCacheErrors(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 
 	keyCall := cacheTestIntCall("42")
@@ -960,7 +960,7 @@ func TestCacheErrors(t *testing.T) {
 func TestCacheRecursiveCall(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 
 	key1Call := cacheTestIntCall("1")
@@ -995,7 +995,7 @@ func TestCacheContextCancel(t *testing.T) {
 	t.Run("cancels after all are canceled", func(t *testing.T) {
 		t.Parallel()
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 
 		keyCall := cacheTestIntCall("1")
@@ -1088,7 +1088,7 @@ func TestCacheContextCancel(t *testing.T) {
 	t.Run("succeeds if others are canceled", func(t *testing.T) {
 		t.Parallel()
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 
 		keyCall := cacheTestIntCall("1")
@@ -1161,7 +1161,7 @@ func TestCacheContextCancel(t *testing.T) {
 		// last-waiter cleanup semantics for canceled waiters when fn later returns.
 		t.Skip("TODO: re-enable after last-waiter canceled cleanup semantics are decided")
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 
 		keyCall := cacheTestIntCall("cancel-last-waiter-release")
@@ -1215,7 +1215,7 @@ func TestSkipDedupe(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 
 	keyCall := cacheTestIntCall("1")
@@ -1282,7 +1282,7 @@ func TestSkipDedupe(t *testing.T) {
 func TestCacheNilKeyIDRejected(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 
 	_, err = cacheIface.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{}}, func(context.Context) (AnyResult, error) {
@@ -1294,7 +1294,7 @@ func TestCacheNilKeyIDRejected(t *testing.T) {
 func TestCacheDifferentConcurrencyKeysDoNotDedupe(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 
 	keyCall := cacheTestIntCall("different-concurrency")
@@ -1349,7 +1349,7 @@ func TestCacheDifferentConcurrencyKeysDoNotDedupe(t *testing.T) {
 func TestCacheNilResultIsCached(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -1382,7 +1382,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	// even when the downstream recipes are distinct.
 	t.Run("basic", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		ctx = ContextWithCache(ctx, cacheIface)
 		c := cacheIface
@@ -1456,7 +1456,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	// which then propagate to h-level and i-level for distinct downstream recipes.
 	t.Run("deep_chain", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -1582,7 +1582,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	// i-level lookups should hit even with non-overlapping extras elsewhere.
 	t.Run("late_extra_digests_at_h", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -1722,7 +1722,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	// Basically, same as earlier tests but with multiple inputs.
 	t.Run("multi_input_all_inputs_equivalent_hit", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -1805,7 +1805,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	// the other lane is not (y1 !~ y2), z(x,y) must miss and execute.
 	t.Run("multi_input_partial_equivalence_miss", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -1889,7 +1889,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	// returning g3Key as the request-facing ID digest.
 	t.Run("transitive_extra_digest_merge_bridge_hit", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -1960,7 +1960,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	// We still expect g(f2) to hit from g(f1), while g(f3) must remain a miss.
 	t.Run("transitive_bridge_no_bridge_no_hit", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -2059,7 +2059,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	//   => join1(left1,right1) ~ join2(left2,right2)
 	t.Run("fanout_fanin_join_hit_after_repair", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -2189,7 +2189,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 
 	t.Run("fanout_fanin_late_merge_enables_downstream_join_input_hit", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -2336,7 +2336,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 	t.Run("exact_recipe_digest_hit_without_term_index", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -2378,7 +2378,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 
 	t.Run("extra_digest_hit_without_term_index", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -2427,7 +2427,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 func TestIndexResultDigestsUsesExplicitRequestAndResponseIDs(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -2483,7 +2483,7 @@ func TestIndexResultDigestsUsesExplicitRequestAndResponseIDs(t *testing.T) {
 
 func TestStructuralHitCanReuseResultFromSameOutputEqClass(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -2532,7 +2532,7 @@ func TestTeachCallEquivalentToResult(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -2595,7 +2595,7 @@ func TestAttachResultNormalizesPendingResultCallRef(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -2634,7 +2634,7 @@ func TestAttachResultNormalizesPendingResultCallRef(t *testing.T) {
 func TestObjectResultResultCallAndReceiver(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	srv := cacheTestServer(t, cacheIface)
@@ -2731,7 +2731,7 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 func TestCacheHitRewrapsObjectResultForCurrentServer(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 
@@ -2786,7 +2786,7 @@ func TestInputSpecsInputsFromResultCallArgs(t *testing.T) {
 func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	srv := cacheTestServer(t, cacheIface)
@@ -2835,7 +2835,7 @@ func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
 func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	srv := cacheTestServer(t, cacheIface)
@@ -2867,7 +2867,7 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 
 	t.Run("hit_on_exact_output_digest_match", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		ctx = ContextWithCache(ctx, cacheIface)
 		c := cacheIface
@@ -2930,7 +2930,7 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 
 	t.Run("miss_without_exact_output_digest_match", func(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
-		cacheIface, err := NewCache(ctx, "")
+		cacheIface, err := NewCache(ctx, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 
@@ -2970,7 +2970,7 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -3041,7 +3041,7 @@ func TestExtraDigestLabelIsolation(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -3168,7 +3168,7 @@ func TestCacheHitReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -3203,7 +3203,7 @@ func TestCacheFreshReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -3237,7 +3237,7 @@ func TestCacheTeachContentDigestPreservesAttachment(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -3271,7 +3271,7 @@ func TestCacheTeachContentDigestWithResultRefs(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -3357,7 +3357,7 @@ func TestDerefValueForNullables(t *testing.T) {
 func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -3391,7 +3391,7 @@ func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 func TestCacheDoNotCachePreservesAttachedReturnedObject(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	srv := cacheTestServer(t, c)
@@ -3436,7 +3436,7 @@ func TestCacheDoNotCachePreservesAttachedReturnedObject(t *testing.T) {
 func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -3481,7 +3481,7 @@ func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) 
 		ClientID:  "release-eq-class-b",
 		SessionID: "release-eq-class-b",
 	})
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -3543,7 +3543,7 @@ func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) 
 func TestCacheArrayResultRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -3594,7 +3594,7 @@ func TestCacheArrayResultsRetainChildResultsAcrossProducerSessionRelease(t *test
 			SessionID: field + "-consumer-session",
 		})
 
-		cacheIface, err := NewCache(ctxA, "")
+		cacheIface, err := NewCache(ctxA, "", nil)
 		assert.NilError(t, err)
 		c := cacheIface
 		ctxA = ContextWithCache(ctxA, c)
@@ -3699,7 +3699,7 @@ func TestCacheArrayResultStressDoesNotReturnHitWithoutCallFrame(t *testing.T) {
 	t.Parallel()
 
 	baseCtx := t.Context()
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	srv := cacheTestServer(t, c)
@@ -3899,7 +3899,7 @@ func TestCacheArrayResultStressDoesNotRaceExplicitDependencyAttachment(t *testin
 	t.Parallel()
 
 	baseCtx := t.Context()
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	srv := cacheTestServer(t, c)
@@ -4018,7 +4018,7 @@ func TestCacheMixedSessionWaitersCancelDoNotLeak(t *testing.T) {
 	t.Parallel()
 
 	baseCtx := t.Context()
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	srv := cacheTestServer(t, c)
@@ -4260,7 +4260,7 @@ func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T)
 	t.Parallel()
 
 	baseCtx := t.Context()
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	srv := cacheTestServer(t, c)
@@ -4473,7 +4473,7 @@ func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T)
 func TestCacheObjectResultRoundTripAndRelease(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	srv := cacheTestServer(t, c)
@@ -4519,7 +4519,7 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 	})
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
-	cacheIface, err := NewCache(ctx, dbPath)
+	cacheIface, err := NewCache(ctx, dbPath, nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4558,7 +4558,7 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
 	t.Parallel()
 	baseCtx := t.Context()
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	base := cacheIface
 
@@ -4610,7 +4610,7 @@ func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
 func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4634,7 +4634,7 @@ func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
 func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4687,7 +4687,7 @@ func TestCacheMakeResultUnpruneableRetainsAcrossSessionClose(t *testing.T) {
 	t.Parallel()
 
 	baseCtx := t.Context()
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4739,7 +4739,7 @@ func TestCacheMakeResultUnpruneableSkipsPrune(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4770,7 +4770,7 @@ func TestCacheMakeResultUnpruneableClearsPersistedExpiry(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4801,7 +4801,7 @@ func TestCacheUsageEntriesAllReportsSessionAndRetainedState(t *testing.T) {
 	t.Parallel()
 
 	baseCtx := t.Context()
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4840,7 +4840,7 @@ func TestCacheUsageEntriesAllDedupesByUsageIdentity(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4884,7 +4884,7 @@ func TestCacheUsageEntriesAllMutableUsageRemeasuresAfterSizeChange(t *testing.T)
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4919,7 +4919,7 @@ func TestCachePruneKeepDuration(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -4976,7 +4976,7 @@ func TestCachePruneThresholdTargetSpace(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5029,7 +5029,7 @@ func TestCachePruneSessionOwnedEntriesAreNeverPruned(t *testing.T) {
 	t.Parallel()
 
 	baseCtx := t.Context()
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5078,7 +5078,7 @@ func TestCacheDoNotCacheRejectsOnReleaser(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
 
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5098,7 +5098,7 @@ func TestCachePruneOrderedSimulationKeepsZeroDeltaPrerequisites(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5158,7 +5158,7 @@ func TestCachePruneOrderedSimulationKeepsZeroDeltaPrerequisites(t *testing.T) {
 func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5197,7 +5197,7 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 		ClientID:  "prune-compact-prunable",
 		SessionID: "prune-compact-prunable",
 	})
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5271,7 +5271,7 @@ func TestCachePruneProtectsExactDependencyOfActiveResult(t *testing.T) {
 		ClientID:  "prune-exact-dep",
 		SessionID: "prune-exact-dep",
 	})
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5319,7 +5319,7 @@ func TestCachePruneProtectsExactDependencyOfActiveResult(t *testing.T) {
 func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *testing.T) {
 	t.Parallel()
 	baseCtx := t.Context()
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5401,7 +5401,7 @@ func TestCacheAttachDependencyResults(t *testing.T) {
 		ClientID:  "attach-owned-lookup",
 		SessionID: "attach-owned-lookup",
 	})
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5488,7 +5488,7 @@ func TestCacheAttachDependencyResultsAlreadyAttachedChild(t *testing.T) {
 		ClientID:  "attached-child-parent",
 		SessionID: "attached-child-parent",
 	})
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5544,7 +5544,7 @@ func TestCacheAddExplicitDependency(t *testing.T) {
 		ClientID:  "explicit-dep-child",
 		SessionID: "explicit-dep-child",
 	})
-	cacheIface, err := NewCache(baseCtx, "")
+	cacheIface, err := NewCache(baseCtx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5598,7 +5598,7 @@ func TestCacheResultCallDerivedFromRequestID(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
 
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5649,7 +5649,7 @@ func TestCacheResultCallFirstWriterWins(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
 
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5690,7 +5690,7 @@ func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
 
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5737,7 +5737,7 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
 
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 
@@ -5837,7 +5837,7 @@ func TestCacheArbitraryRecursiveCall(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
 
-	cacheIface, err := NewCache(ctx, "")
+	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
 	c := cacheIface
 

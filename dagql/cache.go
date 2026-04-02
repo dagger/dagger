@@ -24,6 +24,7 @@ import (
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -80,13 +81,16 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
-const cachePersistenceSchemaVersion = "11"
+const cachePersistenceSchemaVersion = "12"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
-func NewCache(ctx context.Context, dbPath string) (*Cache, error) {
-	c := &Cache{traceBootID: newTraceBootID()}
+func NewCache(ctx context.Context, dbPath string, snapshotManager bkcache.SnapshotManager) (*Cache, error) {
+	c := &Cache{
+		traceBootID:     newTraceBootID(),
+		snapshotManager: snapshotManager,
+	}
 
 	if dbPath == "" {
 		return c, nil
@@ -666,6 +670,177 @@ func runOnReleaseFuncs(ctx context.Context, onReleases []OnReleaseFunc) error {
 	return rerr
 }
 
+func resultSnapshotLeaseID(resultID sharedResultID, role, slot string) string {
+	if slot == "" {
+		return fmt.Sprintf("dagql/result/%d/%s", resultID, url.PathEscape(role))
+	}
+	return fmt.Sprintf(
+		"dagql/result/%d/%s/%s",
+		resultID,
+		url.PathEscape(role),
+		url.PathEscape(slot),
+	)
+}
+
+func joinOnRelease(a, b OnReleaseFunc) OnReleaseFunc {
+	switch {
+	case a == nil:
+		return b
+	case b == nil:
+		return a
+	default:
+		return func(ctx context.Context) error {
+			return errors.Join(a(ctx), b(ctx))
+		}
+	}
+}
+
+type snapshotOwnerKey struct {
+	Role string
+	Slot string
+}
+
+func (c *Cache) authoritativeSnapshotLinksForResult(res *sharedResult) ([]PersistedSnapshotRefLink, bool) {
+	if res == nil {
+		return nil, false
+	}
+
+	state := res.loadPayloadState()
+	if state.hasValue && state.self != nil {
+		linker, ok := any(state.self).(PersistedSnapshotRefLinkProvider)
+		if ok {
+			links := linker.PersistedSnapshotRefLinks()
+			if len(links) == 0 {
+				return nil, true
+			}
+			cpy := make([]PersistedSnapshotRefLink, len(links))
+			copy(cpy, links)
+			return cpy, true
+		}
+	}
+
+	res.payloadMu.RLock()
+	defer res.payloadMu.RUnlock()
+	if len(res.snapshotOwnerLinks) == 0 {
+		return nil, false
+	}
+	links := make([]PersistedSnapshotRefLink, len(res.snapshotOwnerLinks))
+	copy(links, res.snapshotOwnerLinks)
+	return links, true
+}
+
+func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
+	if c == nil || c.snapshotManager == nil || res == nil || res.id == 0 {
+		return nil
+	}
+
+	return func(ctx context.Context) error {
+		links, ok := c.authoritativeSnapshotLinksForResult(res)
+		if !ok {
+			return nil
+		}
+
+		seen := make(map[snapshotOwnerKey]struct{}, len(links))
+		var rerr error
+		for _, link := range links {
+			key := snapshotOwnerKey{Role: link.Role, Slot: link.Slot}
+			if _, alreadySeen := seen[key]; alreadySeen {
+				continue
+			}
+			seen[key] = struct{}{}
+			rerr = errors.Join(rerr, c.snapshotManager.RemoveLease(
+				ctx,
+				resultSnapshotLeaseID(res.id, link.Role, link.Slot),
+			))
+		}
+		return rerr
+	}
+}
+
+func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult) error {
+	if c == nil || c.snapshotManager == nil || res == nil || res.id == 0 {
+		return nil
+	}
+
+	links, ok := c.authoritativeSnapshotLinksForResult(res)
+	if !ok {
+		return nil
+	}
+
+	res.payloadMu.RLock()
+	oldLinks := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
+	res.payloadMu.RUnlock()
+
+	oldByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(oldLinks))
+	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
+
+	for _, link := range oldLinks {
+		oldByKey[snapshotOwnerKey{Role: link.Role, Slot: link.Slot}] = link
+	}
+	for _, link := range links {
+		newByKey[snapshotOwnerKey{Role: link.Role, Slot: link.Slot}] = link
+	}
+
+	for key, oldLink := range oldByKey {
+		newLink, ok := newByKey[key]
+		if !ok || newLink.RefKey != oldLink.RefKey {
+			if err := c.snapshotManager.RemoveLease(
+				ctx,
+				resultSnapshotLeaseID(res.id, key.Role, key.Slot),
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	for key, newLink := range newByKey {
+		oldLink, ok := oldByKey[key]
+		if !ok || oldLink.RefKey != newLink.RefKey {
+			if err := c.snapshotManager.AttachLease(
+				ctx,
+				resultSnapshotLeaseID(res.id, key.Role, key.Slot),
+				newLink.RefKey,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	res.payloadMu.Lock()
+	res.snapshotOwnerLinks = append([]PersistedSnapshotRefLink(nil), links...)
+	res.payloadMu.Unlock()
+
+	return nil
+}
+
+func (c *Cache) desiredImportedOwnerLeaseIDs(ctx context.Context) (map[string]struct{}, error) {
+	if c == nil {
+		return nil, nil
+	}
+
+	c.egraphMu.RLock()
+	results := make([]*sharedResult, 0, len(c.resultsByID))
+	for _, res := range c.resultsByID {
+		if res != nil {
+			results = append(results, res)
+		}
+	}
+	c.egraphMu.RUnlock()
+
+	desired := make(map[string]struct{})
+	for _, res := range results {
+		links, ok := c.authoritativeSnapshotLinksForResult(res)
+		if !ok {
+			continue
+		}
+		for _, link := range links {
+			desired[resultSnapshotLeaseID(res.id, link.Role, link.Slot)] = struct{}{}
+		}
+	}
+
+	return desired, nil
+}
+
 func prepareCacheDBs(ctx context.Context, dbPath string) (*sql.DB, *persistdb.Queries, error) {
 	connURL := &url.URL{
 		Scheme: "file",
@@ -849,6 +1024,8 @@ type Cache struct {
 	tracePersistBatch uint64
 	traceImportRuns   uint64
 
+	snapshotManager bkcache.SnapshotManager
+
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -943,9 +1120,11 @@ type sharedResult struct {
 	// transitive set of handle requirements for cache-hit validation.
 	sessionResourceHandle    SessionResourceHandle
 	requiredSessionResources *set.TreeSet[SessionResourceHandle]
-	// persistedSnapshotLinks are imported snapshot-link associations used before
-	// typed self payload is decoded/rehydrated. They are not child-result deps.
-	persistedSnapshotLinks []PersistedSnapshotRefLink
+	// snapshotOwnerLinks are the current authoritative direct snapshot-owner
+	// links for this result. Imported rows seed them during startup, and typed
+	// self payload can replace them after decode/materialization. They are not
+	// child-result deps.
+	snapshotOwnerLinks []PersistedSnapshotRefLink
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
@@ -1741,14 +1920,14 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			}
 			return r.shared.requiredSessionResources.Copy()
 		}(),
-		persistedEnvelope:      state.persistedEnvelope,
-		persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
-		createdAtUnixNano:      state.createdAtUnixNano,
-		lastUsedAtUnixNano:     state.lastUsedAtUnixNano,
-		sizeEstimateBytes:      r.shared.sizeEstimateBytes,
-		usageIdentity:          r.shared.usageIdentity,
-		description:            r.shared.description,
-		recordType:             r.shared.recordType,
+		persistedEnvelope:  state.persistedEnvelope,
+		snapshotOwnerLinks: slices.Clone(r.shared.snapshotOwnerLinks),
+		createdAtUnixNano:  state.createdAtUnixNano,
+		lastUsedAtUnixNano: state.lastUsedAtUnixNano,
+		sizeEstimateBytes:  r.shared.sizeEstimateBytes,
+		usageIdentity:      r.shared.usageIdentity,
+		description:        r.shared.description,
+		recordType:         r.shared.recordType,
 	}
 	frame = r.shared.loadResultCall()
 	replaced := false
@@ -1818,7 +1997,7 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		sessionResourceHandle:    handle,
 		requiredSessionResources: reqs,
 		persistedEnvelope:        state.persistedEnvelope,
-		persistedSnapshotLinks:   slices.Clone(r.shared.persistedSnapshotLinks),
+		snapshotOwnerLinks:       slices.Clone(r.shared.snapshotOwnerLinks),
 		createdAtUnixNano:        state.createdAtUnixNano,
 		lastUsedAtUnixNano:       state.lastUsedAtUnixNano,
 		sizeEstimateBytes:        r.shared.sizeEstimateBytes,
@@ -2217,6 +2396,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			defer telemetry.EndWithCause(resumeSpan, &err)
 		}
 		err = lazyEval(callbackCtx)
+		if err == nil {
+			err = c.syncResultSnapshotLeases(callbackCtx, shared)
+		}
 
 		shared.lazyMu.Lock()
 		shared.lazyEvalErr = err
@@ -3024,6 +3206,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			oc.res.isObject = isObject
 		}
 	}
+	if !resWasCacheBacked {
+		oc.res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(oc.res), oc.res.onRelease)
+	}
 	requestForIndex := req
 	if oc.res.createdAtUnixNano == 0 {
 		oc.res.createdAtUnixNano = now.UnixNano()
@@ -3270,6 +3455,14 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	c.egraphMu.Unlock()
 
 	if err := c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
+		c.egraphMu.Lock()
+		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
+		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+		c.egraphMu.Unlock()
+		oc.handoffHoldActive = false
+		return errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+	}
+	if err := c.syncResultSnapshotLeases(ctx, oc.res); err != nil {
 		c.egraphMu.Lock()
 		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
 		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)

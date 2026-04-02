@@ -103,36 +103,12 @@ func (*GitRef) TypeDescription() string {
 }
 
 func (repo *GitRepository) OnRelease(ctx context.Context) error {
-	if repo == nil {
-		return nil
-	}
-	remote, ok := repo.Backend.(*RemoteGitRepository)
-	if !ok {
-		return nil
-	}
-	snapshot := remote.getSnapshot()
-	if snapshot == nil {
-		return nil
-	}
-	return snapshot.Release(ctx)
+	_ = ctx
+	return nil
 }
 
 func (repo *GitRepository) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
-	if repo == nil {
-		return nil
-	}
-	remote, ok := repo.Backend.(*RemoteGitRepository)
-	if !ok {
-		return nil
-	}
-	snapshot := remote.getSnapshot()
-	if snapshot == nil {
-		return nil
-	}
-	return []dagql.PersistedSnapshotRefLink{{
-		RefKey: snapshot.SnapshotID(),
-		Role:   "bare_repo",
-	}}
+	return nil
 }
 
 func (repo *GitRepository) AttachDependencyResults(
@@ -160,6 +136,18 @@ func (repo *GitRepository) AttachDependencyResults(
 			owned = append(owned, typed)
 		}
 	case *RemoteGitRepository:
+		if backend.Mirror.Self() != nil {
+			attached, err := attach(backend.Mirror)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository remote mirror: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*RemoteGitMirror])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository remote mirror: unexpected result %T", attached)
+			}
+			backend.Mirror = typed
+			owned = append(owned, typed)
+		}
 		if backend.SSHAuthSocket.Self() != nil {
 			attached, err := attach(backend.SSHAuthSocket)
 			if err != nil {
@@ -344,23 +332,16 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 			AuthUsername:  persisted.Remote.AuthUsername,
 			Platform:      persisted.Remote.Platform,
 		}
-		if resultID != 0 {
-			links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "git repository")
-			if err != nil {
-				return nil, err
-			}
-			for _, link := range links {
-				if link.Role != "bare_repo" {
-					continue
-				}
-				snapshot, _, err := loadPersistedMutableSnapshotByResultID(ctx, dag, resultID, "git repository", "bare_repo")
-				if err != nil {
-					return nil, err
-				}
-				backend.setSnapshot(snapshot)
-				break
-			}
+		var mirror dagql.ObjectResult[*RemoteGitMirror]
+		if err := dag.Select(ctx, dag.Root(), &mirror, dagql.Selector{
+			Field: "_remoteGitMirror",
+			Args: []dagql.NamedInput{
+				{Name: "remoteURL", Value: dagql.String(parsedURL.Remote())},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("decode persisted git repository remote mirror: %w", err)
 		}
+		backend.Mirror = mirror
 		repo.Backend = backend
 		repo.URL = dagql.NonNull(dagql.String(parsedURL.String()))
 	default:

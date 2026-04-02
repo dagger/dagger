@@ -13,10 +13,9 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
-	"github.com/dagger/dagger/engine/filesync"
+	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/moby/locker"
@@ -56,7 +55,7 @@ func (ms *mockServer) CurrentModule(ctx context.Context) (dagql.ObjectResult[*Mo
 	if ms.moduleSource == nil {
 		return zero, nil
 	}
-	cacheIface, err := dagql.NewCache(context.Background(), "")
+	cacheIface, err := dagql.NewCache(context.Background(), "", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -129,10 +128,15 @@ func (ms *mockServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) 
 
 func (ms *mockServer) Buildkit(context.Context) (*buildkit.Client, error) { return nil, nil }
 
+func (ms *mockServer) RegistryResolver(context.Context) (*serverresolver.Resolver, error) {
+	return nil, nil
+}
+
 func (ms *mockServer) Services(context.Context) (*Services, error) { return nil, nil }
 
 func (ms *mockServer) Platform() Platform               { return Platform{} }
 func (ms *mockServer) OCIStore() content.Store          { return nil }
+func (ms *mockServer) BuiltinOCIStore() content.Store   { return nil }
 func (ms *mockServer) DNS() *oci.DNSConfig              { return nil }
 func (ms *mockServer) LeaseManager() *leaseutil.Manager { return nil }
 func (ms *mockServer) EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error) {
@@ -143,11 +147,9 @@ func (ms *mockServer) PruneEngineLocalCacheEntries(context.Context, EngineCacheP
 	return nil, nil
 }
 func (ms *mockServer) EngineLocalCachePolicy() *dagql.CachePrunePolicy { return nil }
-func (ms *mockServer) BuildkitCache() bkcache.SnapshotManager          { return nil }
-func (ms *mockServer) BuildkitSession() *bksession.Manager             { return nil }
+func (ms *mockServer) SnapshotManager() bkcache.SnapshotManager        { return nil }
 func (ms *mockServer) Locker() *locker.Locker                          { return nil }
 func (ms *mockServer) SecretSalt() []byte                              { return nil }
-func (ms *mockServer) FileSyncer() *filesync.FileSyncer                { return nil }
 func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error) {
 	return nil, nil
 }
@@ -227,7 +229,7 @@ func TestAroundFuncSkipsIntrospectionDescendantsViaContext(t *testing.T) {
 }
 
 func TestIsIntrospectionPreservesClassification(t *testing.T) {
-	cache, err := dagql.NewCache(t.Context(), "")
+	cache, err := dagql.NewCache(t.Context(), "", nil)
 	require.NoError(t, err)
 	ctx := dagql.ContextWithCache(t.Context(), cache)
 
@@ -312,7 +314,7 @@ func (telemetryTestLazyString) LazyEvalFunc() dagql.LazyEvalFunc {
 
 func TestRecordStatusDoesNotMarkPendingLazyResultCached(t *testing.T) {
 	ctx := t.Context()
-	cacheIface, err := dagql.NewCache(ctx, "")
+	cacheIface, err := dagql.NewCache(ctx, "", nil)
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cacheIface)
 

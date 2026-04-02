@@ -147,6 +147,12 @@
 ## Implementation Plan
 
 ### engine/server/server.go
+#### Status
+- [x] Pass the snapshot manager directly into `dagql.NewCache(...)`.
+- [x] Keep the existing wipe-and-retry cold-start behavior around cache startup failures.
+- [x] Open the builtin OCI content store once during server initialization and keep it on `Server` state.
+- [x] Replace `bkresolver.NewRegistryConfig(...)` with the engine-owned `newRegistryHosts(...)` adapter.
+
 #### Engine-wide registry host config
 * Keep the existing engine config merge shape that produces `map[string]resolverconfig.RegistryConfig`.
 * Replace `internal/buildkit/util/resolver.NewRegistryConfig(...)` with an engine-owned adapter built around containerd `core/remotes/docker` host types and helpers.
@@ -217,6 +223,11 @@ if err != nil {
 ```
 
 ### engine/server/resolver/resolver.go
+#### Status
+- [x] Add the session-owned resolver package and public typed API surface.
+- [x] Replace the current placeholder internals with the real containerd-backed resolve / pull / push implementation.
+- [x] Clear resolver-owned host/auth cache state during `Close()`.
+
 #### Responsibility
 * This becomes the Dagger-session-owned facade for registry resolution, pull auth, and push auth.
 * It is created once per `daggerSession` during Dagger session initialization and reused for the entire lifetime of that Dagger session.
@@ -538,6 +549,12 @@ func (r *Resolver) Pull(
   * the old `internal/buildkit/util/resolver` auth/session surface is no longer part of the live architecture
 
 ### engine/server/session.go
+#### Status
+- [x] Add the session-owned resolver to `daggerSession` state and initialize it in `initializeDaggerSession(...)`.
+- [x] Expose `RegistryResolver(ctx)` and `BuiltinOCIStore()` through the session/server accessors.
+- [x] Close the session-owned resolver during normal session teardown.
+- [x] Delete fake per-client buildkit-session creation from `initializeDaggerClient(...)` and stop passing `BkSession` into `buildkit.NewClient(...)`.
+
 #### Session-owned resolver lifecycle
 * Add the new resolver to `daggerSession` state.
 * Initialize it in `initializeDaggerSession(...)` using:
@@ -630,6 +647,9 @@ func (srv *Server) BuiltinOCIStore() content.Store
 * Real client attachable access continues to go through explicit caller-connection lookups, not through a server-created synthetic session.
 
 ### engine/server/bk_session.go
+#### Status
+- [x] Delete this file entirely.
+
 #### Delete fake server-created buildkit session
 * Delete this file entirely.
 * There is no surviving server-created buildkit session layer.
@@ -644,6 +664,9 @@ func (srv *Server) BuiltinOCIStore() content.Store
   * direct real-client attachable connections when caller-owned capabilities are needed
 
 ### engine/server/auth.go
+#### Status
+- [x] Delete this file entirely.
+
 #### Delete fake auth proxy
 * Delete this file entirely.
 * `authProxy` only exists to proxy auth RPC through the fake server-created buildkit session.
@@ -654,6 +677,12 @@ func (srv *Server) BuiltinOCIStore() content.Store
 * There is no remaining reason to expose `Credentials`, `FetchToken`, `GetTokenAuthority`, or `VerifyTokenAuthority` through a server-created buildkit session service.
 
 ### engine/snapshots/manager.go
+#### Status
+- [x] Add runtime persisted-snapshot metadata maps plus startup hydration from SQLite-backed dagql persistence.
+- [x] Add deterministic owner-lease helpers for attach/remove/stale-owner cleanup.
+- [x] Expose snapshot metadata rows back to dagql cache-close persistence.
+- [x] Add the narrow `ApplySnapshotDiff(...)` primitive for root-level directory diffing without synthetic diff refs.
+
 #### Snapshot-manager API cutover
 * Re-center the snapshot manager API around real snapshot lifecycle primitives.
 * `GetByBlob(...)` is deleted.
@@ -1030,6 +1059,11 @@ func (cm *snapshotManager) RemoveLease(
   * then delete cache-policy metadata and API surface entirely
 
 ### engine/snapshots/pull.go
+#### Status
+- [x] Add `ImportedImage` / `ImportImageOpts` to the snapshot-manager surface.
+- [x] Implement `ImportImage(...)` and explicit imported-layer reuse indexes in the snapshot package.
+- [x] Record top-level manifest/config/nonlayer content directly on the imported root snapshot.
+
 #### Image snapshot materialization
 * Implement the actual image-import logic here rather than in a shared util package.
 * Move in the parts of `internal/buildkit/util/pull/pull.go` that are actually about snapshot creation:
@@ -1249,6 +1283,10 @@ func (cm *snapshotManager) importImageLayer(
 * Any export-only metadata that still needs to exist should be attached in a narrower export-facing structure rather than threaded through every ref.
 
 ### engine/snapshots/remote.go
+#### Status
+- [x] Replace the live `GetRemotes(...)` export path with local `ExportChain(...)`.
+- [x] Remove lazy provider/session plumbing from the live snapshot export path.
+
 #### Remote/lazy cleanup
 * Strip this file down to only what export code still concretely needs.
 * Remove all lazy remote provider plumbing from this file.
@@ -1299,6 +1337,10 @@ func (sr *immutableRef) ExportChain(
 * Any remaining compression/export support that survives here should be narrowly scoped to exporter needs, not generalized as snapshot-manager laziness.
 
 ### engine/snapshots/blobs.go
+#### Status
+- [x] Add the eager `ensureExportBlob(...)` helper for the live export path.
+- [x] Stop using compression-variant leases in the live export path.
+
 #### Replace blobchain graph logic with eager local export-blob helpers
 * This file still embodies too much of the old world and needs an explicit cut.
 * Delete the synthetic graph/blobchain logic entirely:
@@ -1356,6 +1398,9 @@ func (cm *snapshotManager) ensureExportBlob(
 * Do not keep a tar-parsing file-list API in snapshot manager.
 
 ### engine/snapshots/remote_type.go
+#### Status
+- [x] Replace the old `Remote` DTO with the exporter-facing `ExportChain` / `ExportLayer` shape.
+
 #### Keep only as the rich export DTO or fold into `remote.go`
 * This file is not a deep design issue, but it does need an explicit decision.
 * Either:
@@ -1380,6 +1425,9 @@ type ExportChain struct {
 * It is just the exporter-facing local descriptor chain shape, including the per-layer history metadata the writer still needs.
 
 ### core/containersource/source.go
+#### Status
+- [x] Delete this file entirely.
+
 #### Delete source architecture
 * Delete this file.
 * There is no surviving `Source`, `Identifier`, `Resolve`, or `SourceInstance` architecture in core after the cutover.
@@ -1396,6 +1444,9 @@ type ExportChain struct {
 * There is no surviving `source.Identifier` interface in core and no surviving `session.Manager` / `session.Group` dependency in this path.
 
 ### core/containersource/pull.go
+#### Status
+- [x] Delete this file entirely.
+
 #### Delete wrapper puller
 * Delete this file.
 * It is only a Dagger-side wrapper around `internal/buildkit/util/pull` plus snapshot-manager details.
@@ -1420,6 +1471,9 @@ type ExportChain struct {
 * The whole `core/containersource` package should disappear with it.
 
 ### core/containersource/identifier.go
+#### Status
+- [x] Delete this file entirely.
+
 #### Delete identifier types and old provenance hook
 * Delete this file.
 * There is no surviving `ImageIdentifier` / `OCIIdentifier` type in core after the cutover.
@@ -1437,6 +1491,9 @@ type ExportChain struct {
 * Any remaining image-source metadata that matters for runtime behavior belongs directly on the resolver/import inputs, not on a reusable identifier type.
 
 ### core/containersource/ocilayout.go
+#### Status
+- [x] Delete this file entirely.
+
 #### Delete fake OCI-layout resolver path
 * Delete this file.
 * There is no surviving fake OCI-layout `remotes.Resolver` in core backed by:
@@ -1460,6 +1517,10 @@ type ExportChain struct {
   * all digest-only OCI-layout resolution logic living behind fake resolver semantics
 
 ### internal/buildkit/frontend/dockerui/namedcontext.go
+#### Status
+- [x] Delete the `docker-image://...` named-context image path.
+- [x] Delete the `oci-layout://...` named-context image path.
+
 #### Delete dead named-context image path
 * Delete this file's image-resolution path outright.
 * Do not preserve another caller-backed OCI-layout or named-context resolver stack here.
@@ -1475,6 +1536,12 @@ type ExportChain struct {
 * If Dagger ever wants first-class Dockerfile named-context support in the future, it should be designed explicitly in Dagger terms rather than inherited accidentally from `dockerui`.
 
 ### core/query.go
+#### Status
+- [x] Add `RegistryResolver(context.Context)` to the runtime boundary interface.
+- [x] Add `BuiltinOCIStore()` to the runtime boundary interface.
+- [x] Rename the runtime snapshot accessor from `BuildkitCache()` to `SnapshotManager()`.
+- [x] Delete `FileSyncer()` from the core runtime boundary.
+
 #### Runtime boundary interface
 * Add a session-scoped resolver accessor on the server/runtime boundary instead of routing image auth/resolve/pull/push through BuildKit session machinery.
 * Rename the core runtime snapshot accessor from `BuildkitCache()` to `SnapshotManager()`.
@@ -1503,6 +1570,12 @@ type Server interface {
 ```
 
 ### core/schema/container.go
+#### Status
+- [x] Switch schema-level image config resolution from `query.Buildkit(ctx).ResolveImageConfig(...)` to `query.RegistryResolver(...)`.
+- [x] Point Dockerfile `MetaResolver` at the explicit `dockerfileImageMetaResolver` adapter instead of the Buildkit client.
+- [x] Finish replacing the old live image-lazy path with `ContainerFromImageRefLazy`.
+- [x] Stop `exportImage(...)` from manually leasing caller content stores or selecting `asTarball`; route it through `Container.Export(...)` instead.
+
 #### Schema-layer image resolution
 * `container.from(...)` must call `query.RegistryResolver(...)` directly.
 * Delete `query.Buildkit(ctx).ResolveImageConfig(...)` instead of leaving it behind as an intermediate wrapper.
@@ -1684,6 +1757,12 @@ func (s *containerSchema) from(
 ```
 
 ### core/schema/host.go
+#### Status
+- [x] Stop calling `query.BuildkitSession()` from `host.directory(...)`.
+- [x] Stop calling `query.FileSyncer()` directly from `host.directory(...)`.
+- [x] Route `host.directory(...)` through the hidden filesync mirror object plus direct caller attachable connection.
+- [x] Resolve host-store image manifests through a dedicated local selector with no arbitrary platform fallback.
+
 #### Host directory and image import paths
 * `host.directory(...)` should stop calling `query.BuildkitSession()` entirely.
 * It should stop calling `query.FileSyncer()` entirely.
@@ -2030,6 +2109,13 @@ func (s *hostSchema) builtinContainer(
 ```
 
 ### core/container_image.go
+#### Status
+- [x] Add the core-local OCI-store import path on top of `SnapshotManager().ImportImage(...)`.
+- [x] Move `Import(...)`, `FromInternal(...)`, and `FromOCIStore(...)` onto that path.
+- [x] Move builtin-image import and host store-backed image import onto `FromOCIStore(...)`.
+- [x] Move registry-backed `Container.from(...)` / `FromCanonicalRef(...)` onto the session-owned resolver path.
+- [x] Move `AsTarball(...)` into this file and onto the direct tarball writer path.
+
 #### Core-owned image import
 * Add a new `core/container_image.go` file for the image-specific parts of container construction.
 * Move the image-import-specific lazy type and helper methods out of the generic container file.
@@ -2262,6 +2348,11 @@ func (container *Container) AsTarball(
 ```
 
 ### core/container.go
+#### Status
+- [x] Route `Publish(...)` to typed image-export responses instead of exporter response maps.
+- [x] Route `Export(...)` to typed image-export responses instead of base64 descriptor parsing.
+- [x] Make `AsTarball(...)` write the archive directly through `WriteContainerImageTarball(...)`.
+
 #### Generic container shape
 * After the cutover, keep this file focused on the generic `Container` object model and non-image-specific behavior.
 * Move image-import-specific code out to `core/container_image.go`.
@@ -2283,6 +2374,10 @@ func (container *Container) AsTarball(
   * direct handoff when ownership is moving
 
 ### core/schema/directory.go
+#### Status
+- [x] Delete the internal `Query.__immutableRef(...)` field and rewrite the `Changeset` caller directly.
+- [x] Make `directory(...)` scratch construction commit and hand off directly without retain/finalize.
+
 #### Delete `__immutableRef`
 * Delete the internal `Query.__immutableRef(...)` schema field entirely.
 * It is an old-world hack that:
@@ -2317,6 +2412,12 @@ if err != nil {
 ```
 
 ### core/schema/http.go
+#### Status
+- [x] Make public `http(...)` session-scoped and add hidden persistable `_httpResolved(...)`.
+- [x] Route session-free fetches through `ResolveHTTPVersion(...)` plus `_httpResolved(...)`.
+- [x] Keep session-bound auth/service-host fetches on the public field only.
+- [x] Release the constructed `File` if `WithContentDigest(...)` fails after object construction.
+
 #### Session-scoped HTTP resolution + persistable resolved fetch
 * Public `http(...)` remains, but it is the session-scoped resolution step rather than the final persisted fetch.
 * Add `WithInput(dagql.PerSessionInput)` to the public field.
@@ -2490,6 +2591,11 @@ func (s *httpSchema) httpResolved(
 ```
 
 ### core/http.go
+#### Status
+- [x] Delete the old `DoHTTPRequest(...)` snapshot-metadata/retain path.
+- [x] Add `ResolveHTTPVersion(...)`.
+- [x] Add `FetchHTTPFile(...)` with direct commit-to-`File` handoff.
+
 #### Resolve once per session, fetch in persistable resolved step
 * Delete the old HTTP-specific snapshot metadata cache behavior entirely.
 * `core/http.go` should not search snapshot metadata indexes.
@@ -2569,6 +2675,9 @@ func FetchHTTPFile(
 * No revalidation/state reuse lives here anymore beyond the explicit session-free version resolver step.
 
 ### core/cacheref.go
+#### Status
+- [x] Delete the HTTP-specific snapshot metadata index/helpers.
+
 #### Delete HTTP-specific snapshot metadata index
 * Delete the HTTP-specific metadata helpers entirely:
   * `keyHTTP`
@@ -2587,6 +2696,12 @@ func FetchHTTPFile(
 * Git-related metadata helpers can stay as long as they still fit the git plan.
 
 ### core/service.go
+#### Status
+- [x] Delete `Service.Releasers` and keep runtime-owned refs off the pure `Service` value.
+- [x] Change `Service.Start(...)` and `runAndSnapshotChanges(...)` to operate on `*RunningService`.
+- [x] Move late-bound workspace refs onto `RunningService` ownership.
+- [x] Switch service startup to the sessionless `prepareMounts(...)` path and stop building fake client session groups for service mounts.
+
 #### Pure service values, runtime-owned refs
 * `Service` should be a pure declarative value.
 * Delete `Service.Releasers`.
@@ -2619,7 +2734,7 @@ p, err := prepareMounts(
     "",
     runtime.GOOS,
     func(_ string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
-        return cache.New(ctx, ref)
+        return cache.New(ctx, ref, nil)
     },
 )
 ```
@@ -2674,6 +2789,13 @@ func (svc *Service) runAndSnapshotChanges(
 * If result construction fails after the `Directory` is created, release the constructed `Directory` object before returning.
 
 ### core/container_exec.go
+#### Status
+- [x] Remove tmpfs/secret/ssh exec-mount idmap fields and `IdentityMapping()` methods.
+- [x] Delete host UID/GID remap branches and use requested UID/GID directly for secret and ssh exec mounts.
+- [x] Delete `prepareMounts(...)` session/group parameters and remove the `execMountWithSession(...)` / `sessionMountable` wrapper seam.
+- [x] Make exec tmpfs/secret/ssh mountables implement the sessionless snapshot mount interface directly.
+- [x] Move exec error reporting onto the same sessionless `ref.Mount(...)` path.
+
 #### Delete dead idmap plumbing from exec mounts
 * `IdentityMapping()` is dead in our engine configuration and should be removed entirely from this file.
 * Delete idmap fields from:
@@ -2719,6 +2841,10 @@ type execSSHMount struct {
 ```
 
 ### core/container_emulator.go
+#### Status
+- [x] Remove emulator idmap fields and `IdentityMapping()` plumbing.
+- [x] Delete the `RootPair()` remap branch and copy with direct host defaults only.
+
 #### Delete dead emulator idmap plumbing
 * `IdentityMapping()` is dead here too.
 * `getEmulator(...)` already returns an `emulator` with no idmap set in practice.
@@ -2738,12 +2864,20 @@ type staticEmulatorMount struct {
 ```
 
 ### engine/buildkit/executor_spec.go
+#### Status
+- [x] Delete dead host-bind `IdentityMapping()` boilerplate from executor mount refs.
+
 #### Delete dead host-bind idmap method
 * `hostBindMountRef.IdentityMapping()` is pure dead interface boilerplate.
 * Delete it.
 * More broadly, as `IdentityMapping()` disappears from the executor mount interfaces, remove the requirement entirely rather than stubbing out `nil`.
 
 ### core/directory.go
+#### Status
+- [x] Remove archive-unpack idmap parameters and `archive.TarOptions.IDMap` plumbing.
+- [x] Stop passing `newRef.IdentityMapping()` into archive-unpack helpers.
+- [x] Strengthen `Directory.Diff(...)` to require rebased root-level inputs only.
+
 #### Delete dead archive-unpack idmap plumbing
 * `newRef.IdentityMapping()` is dead in practice and should be removed from the archive-unpack path.
 * `attemptCopyArchiveUnpack(...)` should stop accepting an idmap parameter.
@@ -2772,6 +2906,11 @@ func unpackArchiveFile(
 ```
 
 ### core/services.go
+#### Status
+- [x] Replace `starting map[ServiceKey]*sync.WaitGroup` with explicit `startingService` state.
+- [x] Make `Services` own `starting` / `running` / `exited` transitions and spontaneous-exit cleanup.
+- [x] Ensure session teardown cancels in-flight starts and stops running services without late publish.
+
 #### Session-owned runtime manager
 * `Services` is the authoritative owner of live service runtime state for a Dagger session.
 * This is the explicit third ownership bucket:
@@ -2997,6 +3136,10 @@ func (ss *Services) startWithKey(
 ```
 
 ### core/terminal.go
+#### Status
+- [x] Rewrite terminal clone helpers to reopen snapshot handles by snapshot ID instead of `Clone()`.
+- [x] Route interactive terminal startup through `Services.StartInteractive(...)` instead of a direct `svc.Start(...)` side path.
+
 #### Terminal runtime uses services, not session resources
 * Do not model terminal runtime as a dagql `SessionResourceHandle`.
 * Interactive terminal runtime should piggyback on the same session-owned `Services` / `RunningService` bucket.
@@ -3082,6 +3225,11 @@ defer release()
   * `query.SnapshotManager().GetBySnapshotID(...)` if the terminal clone needs its own independent owner.
 
 ### core/container_exec.go
+#### Status
+- [x] Split exec mount output bookkeeping into explicit mutable vs immutable ownership.
+- [x] Rewrite failure salvage and terminal rebuild to follow explicit ownership transfer and rollback.
+- [x] Remove remaining `Clone()`-based exec failure/output handling in favor of reopen or constructor handoff.
+
 #### Sessionless exec mount plan
 * Delete the `session *bksession.Manager` parameter from `prepareMounts(...)`.
 * Delete the `g bksession.Group` parameter from `prepareMounts(...)`.
@@ -3351,6 +3499,10 @@ terminalContainerNeedsRelease = false
 
 ### core/changeset.go
 #### Replace `__immutableRef` with a synthetic directory result
+#### Status
+- [x] Give merged `After` directories a synthetic dagql result identity.
+- [x] Implement `Changeset.AttachDependencyResults(...)` for `Before` / `After`.
+
 * `newChangesetFromMerge(...)` is the only known caller of `Query.__immutableRef(...)`.
 * Delete that schema round-trip entirely.
 * After `gitMergeWithPatches(...)` / `gitOctopusMergeWithPatches(...)` returns a concrete merged `*Directory`, create the `After` result directly in code with `dagql.NewObjectResultForCall(...)` and a synthetic `ResultCall`.
@@ -3475,6 +3627,10 @@ func (ch *Changeset) AttachDependencyResults(
 * If a later step fails after constructing the object, release the constructed object.
 
 ### core/git.go
+#### Status
+- [x] Stop persisting bare-repo snapshot links directly on `GitRepository`.
+- [x] Attach the internal remote mirror object as a dependency result instead.
+
 #### Bare-repo ownership moves to the internal mirror object
 * `GitRepository` should not directly own the bare mutable repo snapshot through `PersistedSnapshotRefLinks()`.
 * That snapshot is owned by the internal persistable `RemoteGitMirror` object instead.
@@ -3486,6 +3642,10 @@ func (ch *Changeset) AttachDependencyResults(
 * This file should not start cloning or reopening bare-repo snapshot handles just to satisfy object constructors.
 
 ### core/git_local.go
+#### Status
+- [x] Keep `Cleaned(...)` and checkout/tree constructor handoff as direct ownership-transfer sites.
+- [x] Stop using `CachePolicyRetain` for ordinary local-git work refs.
+
 #### Direct snapshot handoff for local git results
 * The `Cleaned(...)` and checkout/tree paths that commit a new snapshot and then call `NewDirectoryWithSnapshot(...)` should stay as direct ownership-transfer sites.
 * Those paths should also follow the new mutable-commit contract:
@@ -3496,6 +3656,9 @@ func (ch *Changeset) AttachDependencyResults(
 * If `dagql.NewObjectResultForCurrentCall(...)` fails after the `Directory` is constructed, release the constructed `Directory` object before returning.
 
 ### core/mcp.go
+#### Status
+- [x] Resolve the concrete `RunningService` through `query.Services().Get(...)` and pass it to `runAndSnapshotChanges(...)`.
+
 #### Service workspace sync follows runtime ownership
 * `callBatchMCPServer(...)` is impacted by the `runAndSnapshotChanges(...)` signature change.
 * It should resolve the concrete `RunningService` through `query.Services().Get(...)` and pass that to `runAndSnapshotChanges(...)`.
@@ -3515,6 +3678,9 @@ func (ch *Changeset) AttachDependencyResults(
 * Builtin-image rootfs import and config loading should happen together through the same one-pass import path used for other OCI-store imports.
 
 ### core/persisted_object.go
+#### Status
+- [x] Delete dead retained-chain helper and keep persisted snapshot links as reopen-only helpers.
+
 #### Persisted snapshot links reopen handles only
 * Persisted snapshot links should only be used to reopen snapshot handles by snapshot ID.
 * They are not the place where retention is enforced.
@@ -3546,6 +3712,11 @@ func loadPersistedImmutableSnapshotByResultID(
 ```
 
 ### core/cache.go
+#### Status
+- [x] Persist `CacheVolume.Source` as ordinary owner-object state and restore it on decode.
+- [x] Keep durable `snapshotID` / `selector` state even when the mutable handle is closed.
+- [x] Make closed-state cache usage identity and size accounting work from persisted `snapshotID`.
+
 #### Cache-volume persistable owner object
 * `CacheVolume` is not an ordinary dagql-owned immutable value.
 * It is itself the canonical persistable dagql owner object for its mutable snapshot.
@@ -3813,6 +3984,10 @@ func (m *ClientFilesyncMirror) EnsureCreated(ctx context.Context, query *Query) 
 
 ### core/schema/query.go
 #### Hidden internal filesync mirror field
+#### Status
+- [x] Add hidden persistable `Query._clientFilesyncMirror(...)`.
+- [x] Make it create the mirror snapshot on first creation and return the persisted mirror object thereafter.
+
 * Add a hidden internal `Query._clientFilesyncMirror(...)` field.
 * It is `IsPersistable()`.
 * It takes normal explicit args:
@@ -3843,6 +4018,10 @@ dagql.Fields[*core.Query]{
 ```
 
 #### Hidden internal bare-git mirror field
+#### Status
+- [x] Add hidden persistable `Query._remoteGitMirror(...)`.
+- [x] Make it create the bare mutable snapshot on first creation and return the persisted mirror object thereafter.
+
 * Add a hidden internal `Query._remoteGitMirror(...)` field.
 * It is `IsPersistable()`.
 * It takes the normalized remote URL as an ordinary explicit arg.
@@ -3870,6 +4049,13 @@ dagql.Fields[*core.Query]{
 ```
 
 ### core/git_remote.go
+#### Status
+- [x] Reopen cached checkout hits by concrete snapshot identity instead of metadata-record `cache.Get(...)`.
+- [x] Stop using `CachePolicyRetain` for ordinary remote checkout work refs.
+- [x] Clean up deterministic `refs/dagger.fetch/...` scratch refs after named-ref fallback fetches.
+- [x] Move bare remote mutable ownership fully onto the internal persistable mirror object.
+- [x] Make `RemoteGitMirror` participate in closed-state cache accounting and prune visibility.
+
 #### Internal persistable bare-git mirror owner
 * Split the two git snapshot cases cleanly:
   * the bare remote repo is owned by an internal persistable dagql mirror object
@@ -3945,6 +4131,11 @@ func (repo *RemoteGitRepository) initRemote(...) error {
   * Once the operation completes, the surviving long-lived mirror state is just the bare repo plus the URL-keyed mutable snapshot.
 
 ### engine/buildkit/client.go
+#### Status
+- [x] Delete `Client.ID()`.
+- [x] Remove `BkSession` from `buildkit.Client.Opts`.
+- [x] Keep `WriteImage(...)` as the real client-side destination seam.
+
 #### Host image reader
 * Delete `Client.ID()` outright.
   * It only exists to expose the old server-created `BkSession` identity.
@@ -3971,6 +4162,11 @@ func (repo *RemoteGitRepository) initRemote(...) error {
 * We should not materialize a temporary tarball file and reopen it just to satisfy that API.
 
 ### engine/filesync/filesyncer.go
+#### Status
+- [x] Remove `session.Group` from the filesync API surface and internal mutable-mount calls.
+- [x] Remove `session.Manager` from the filesync API entirely.
+- [x] Delete the stateful per-client mirror registry and move persistent mirror ownership to `core/client_filesync_mirror.go`.
+
 #### Stateless filesync helpers only
 * Remove `session.Manager` and `session.Group` from the filesync API entirely.
 * This file should not know about `BuildkitSession()` or fake server-created buildkit sessions.
@@ -3992,6 +4188,12 @@ func (repo *RemoteGitRepository) initRemote(...) error {
 * It is fine if this file keeps a thin stateless helper or namespace type for those mechanics, but it should not own persistence, reuse, or pruning anymore.
 
 ### engine/filesync/localfs.go
+#### Status
+- [x] Drop `session.Group` from `localFS.Sync(...)` and use sessionless snapshot mounts there.
+- [x] Remove `Finalize(...)` from the committed `finalRef` path.
+- [x] Stop retaining `finalRef` or manually releasing the consumed `newCopyRef` after `Commit(...)`.
+- [x] Move persistent mirror ownership entirely out of this file and into the dagql mirror object.
+
 #### Mirror mutation + ordinary result materialization
 * `localFS.Sync(...)` should also drop `session.Group`.
 * `newCopyRef.Mount(...)` and all other snapshot mounts in this flow should use the sessionless mount API.
@@ -4018,6 +4220,11 @@ func (local *localFS) Sync(...) (_ bkcache.ImmutableRef, _ digest.Digest, rerr e
 ```
 
 ### engine/contenthash/checksum.go
+#### Status
+- [x] Remove `session.Group` from checksum mounts and checksum APIs.
+- [x] Stop swallowing `GetCacheContext(...)` failures in `Checksum(...)`.
+- [x] Persist copied cache contexts immediately in `SetCacheContext(...)` when the destination ref ID differs.
+
 #### Sessionless checksum mounts
 * Remove `session.Group` from checksum mounts entirely.
 * Checksum should mount already-committed immutable snapshots readonly.
@@ -4057,6 +4264,10 @@ func (m *mount) mount(ctx context.Context) (string, error) {
 ```
 
 ### core/contenthash.go
+#### Status
+- [x] Stop calling `Finalize(...)` from `getContentHashFromRef(...)`.
+- [x] Route content hashes through the sessionless checksum API only.
+
 #### Contenthash without finalize
 * `getContentHashFromRef(...)` should stop calling `Finalize(...)`.
 * It should operate on already-committed immutable snapshots only.
@@ -4090,6 +4301,9 @@ func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir
 
 ### engine/filesync/localfs.go
 #### Remove contenthash workaround dance
+#### Status
+- [x] Delete the `Set/Get/Set` cache-context workaround dance after committing `finalRef`.
+
 * `localFS.Sync(...)` should not do the old BuildKit `SetCacheContext / GetCacheContext / SetCacheContext` workaround after committing `finalRef`.
 * After `finalRef.Commit(...)`, it should do exactly one cache-context assignment:
   * `bkcontenthash.SetCacheContext(ctx, finalRef, cacheCtx)`
@@ -4097,6 +4311,11 @@ func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir
 * The correctness fix belongs in `engine/contenthash/checksum.go`, not in filesync callers.
 
 ### engine/buildkit/worker_source_metadata.go
+#### Status
+- [x] Delete the worker-side exporter registration cases for `ExporterImage`, `ExporterOCI`, and `ExporterDocker`.
+- [x] Make the live `docker-image` / `oci-layout` `ResolveSourceMetadata(...)` branches fail instead of silently preserving the old path.
+- [x] Delete the remaining dead image-resolution helpers and worker-side resolver state from this file entirely.
+
 #### Delete old source-metadata image-resolution path
 * Delete the image-resolution path in this file outright.
 * Do not keep `Worker.ResolveSourceMetadata(...)` as a registry or OCI-layout resolution hop.
@@ -4123,6 +4342,12 @@ func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir
 * If that leaves only generic worker helpers in this file, move them to an ordinary worker file and delete `worker_source_metadata.go` entirely.
 
 ### engine/buildkit/containerimage.go
+#### Status
+- [x] Add a deterministic typed `buildExportRequest(...)`.
+- [x] Delete `ContainerImageToTarball(...)` and replace it with direct `WriteContainerImageTarball(...)`.
+- [x] Route `PublishContainerImage(...)` and `ExportContainerImage(...)` through `engine/buildkit/imageexport`.
+- [x] Delete exporter response-map parsing from Dagger-owned production callers.
+
 #### Image push / export callsites
 * This file is part of the live production image export path today.
 * It should stop routing through the generic exporter-plugin shape as the primary architecture.
@@ -4286,6 +4511,12 @@ func (c *Client) WriteContainerImageTarball(
 ```
 
 ### engine/buildkit/imageexport/writer.go
+#### Status
+- [x] Create the canonical `engine/buildkit/imageexport` package and typed writer/request/response surfaces.
+- [x] Assemble typed `ExportedImage` values for live Dagger production export callsites.
+- [x] Eliminate the remaining legacy metadata-bag / legacy writer internals under `Writer.Assemble(...)`.
+- [x] Switch live layer loading over to `ExportChain(...)` instead of `GetRemotes(...)` / `LayerChain()`.
+
 #### Canonical in-house image writer
 * Create this package as the canonical home for Dagger's real image export logic.
 * Move the useful core of `engine/buildkit/exporter/containerimage/writer.go` here.
@@ -4419,6 +4650,11 @@ func (w *Writer) commitPlatformManifest(
   * never parse `exptypes.ExporterPlatformsKey`, `ExporterImageConfigKey`, or other metadata keys
 
 ### engine/buildkit/imageexport/publish.go
+#### Status
+- [x] Add typed `Export(...)` push/store flows on top of `ExportedImage`.
+- [x] Move caller image-store lifecycle work into this package.
+- [x] Route registry push through the resolver-owned push seam.
+
 #### Canonical in-house push / store flows
 * Move the useful production logic from the old exporter packages here.
 * This file should own:
@@ -4597,6 +4833,9 @@ func pushExportedImage(
 ```
 
 ### engine/buildkit/exporter/exporter.go
+#### Status
+- [x] Remove the live Dagger path from the worker/exporter ABI and leave this package unused by production code.
+
 #### Delete worker-facing exporter ABI from Dagger production paths
 * Dagger production image export should not use the worker/exporter plugin ABI at all after this cut.
 * The real image export logic lives in `engine/buildkit/imageexport`.
@@ -4609,6 +4848,9 @@ func pushExportedImage(
 ```
 
 ### engine/buildkit/exporter/oci/export.go
+#### Status
+- [x] Delete the old engine-side OCI exporter implementation and leave only a dead shell package.
+
 #### Delete this file from the Dagger-owned production path
 * Dagger tarball export already hard-cuts to `WriteContainerImageTarball(...)`.
 * Dagger store/export already hard-cuts to `engine/buildkit/imageexport`.
@@ -4616,6 +4858,9 @@ func pushExportedImage(
 * Delete it instead of turning it into a shim.
 
 ### engine/buildkit/exporter/containerimage/export.go
+#### Status
+- [x] Delete the old engine-side containerimage exporter implementation.
+
 #### Delete this file from the Dagger-owned production path
 * Dagger production image push/store export should not keep this package alive as a shim.
 * The logic moves into `engine/buildkit/imageexport`.
@@ -4630,6 +4875,9 @@ func pushExportedImage(
 * If a remaining caller still depends on this file after the cut, that caller is not migrated and should block the cut rather than forcing a shim layer back into the design.
 
 ### engine/buildkit/exporter/containerimage/writer.go
+#### Status
+- [x] Delete the old engine-side containerimage writer implementation.
+
 #### Delete this file from the Dagger-owned production path
 * Move the real image assembly logic into `engine/buildkit/imageexport/writer.go`.
 * Delete the public exporter-side writer API instead of carrying a second one:
@@ -4655,6 +4903,9 @@ func pushExportedImage(
 * Once the old internal exporter stack is gone, delete this file.
 
 ### engine/buildkit/exporter/containerimage/attestations.go
+#### Status
+- [x] Delete the old engine-side containerimage attestation helper implementation.
+
 #### Delete attestation helper layer
 * Delete this file entirely.
 * Exporter-specific file/layer inspection for attestations should not keep the old session-shaped seam alive.
@@ -4702,6 +4953,17 @@ func pushExportedImage(
 * Once the surviving Dagger callsites are moved, delete this file rather than porting its wrapper logic forward.
 
 ### engine/snapshots/refs.go
+#### Status
+- [x] Make `Mount(...)` sessionless at the ref interface and implementation level.
+- [x] Remove `GetRemotes(...)` / `LayerChain()` from the live export path in favor of `ExportChain(...)`.
+- [x] Delete `Finalize(...)`.
+- [x] Delete lazy-content / unlazy plumbing from refs.
+- [x] Delete `Clone()` and the synthetic equal-ref graph machinery.
+- [x] Narrow `Ref` so it no longer embeds `RefMetadata`.
+- [x] Stop embedding `cacheRecord` in live ref handles and keep it as manager-internal state only.
+- [x] Keep readonly view handling as a mount-time detail instead of ref-lifetime state.
+- [x] Finish the explicit `ApplySnapshotDiff(...)` nil/no-op contract.
+
 #### Ref model simplification
 * Refs become thin lease-backed handles, not nodes in a second ownership graph.
 * Remove `equalMutable`, `equalImmutable`, and every codepath that exists to support them.
@@ -4946,6 +5208,12 @@ func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
 * `WithDirectory(...)` should rely on eager copy plus hardlink optimization instead of routing through this file.
 
 ### dagql/cache.go
+#### Status
+- [x] Add `snapshotManager` to `Cache` and thread it through `NewCache(...)`.
+- [x] Keep cache startup as a one-step constructor that performs persisted import plus startup owner-lease sync.
+- [x] Install deterministic snapshot-owner lease cleanup on imported and newly materialized results.
+- [x] Rename the in-memory direct snapshot-owner link state to match its authoritative runtime role.
+
 #### Authoritative ordinary liveness
 * Dagql is the authoritative liveness system for ordinary snapshot-backed values.
 * Keep:
@@ -5150,6 +5418,10 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 * This makes the direct links mean “what this result directly owns right now”, not “everything it has ever owned”.
 
 ### dagql/cache_persistence_worker.go
+#### Status
+- [x] Mirror snapshot metadata rows from the snapshot manager into SQLite on cache close.
+- [x] Keep `result_snapshot_links` and snapshot metadata mirroring runtime-only; do not drive lease ownership from the worker.
+
 #### Snapshot-link mirror plus Dagger snapshot metadata
 * This file should continue mirroring dagql state into SQLite during cache close.
 * It should not drive snapshot lease ownership.
@@ -5204,6 +5476,11 @@ type ImportedLayerDiffRow struct {
   * It should not ask the snapshot manager to synchronously persist anything during normal runtime.
 
 ### dagql/cache_persistence_import.go
+#### Status
+- [x] Load snapshot metadata rows from SQLite during startup import.
+- [x] Hydrate snapshot-manager runtime indexes before startup owner-lease sync.
+- [x] Restore imported result snapshot links and chain generic lease cleanup onto imported results immediately.
+
 #### Imported result lease cleanup
 * Imported persisted rows should restore `result_snapshot_links` into the in-memory shared result as direct owner links.
 * Imported persisted rows should install generic lease cleanup immediately, even before typed self payload decode.
@@ -5308,6 +5585,12 @@ if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
 ```
 
 ### core/directory.go
+#### Status
+- [x] Make `NewDirectoryWithSnapshot(...)` adopt ownership instead of cloning.
+- [x] Sweep immediate handoff callsites and local temporary `Directory` wrappers for the new ownership contract.
+- [x] Hard-cut `WithDirectory(...)` to the eager child-snapshot copy path with no merge branches.
+- [x] Cut `Directory.Diff(...)` over to `ApplySnapshotDiff(...)` with no wrapper snapshot layer.
+
 #### Directory-owned snapshot handles
 * `Directory` already sits on the right side of the boundary:
   * it owns its snapshot handle directly
@@ -5611,6 +5894,11 @@ func (dir *Directory) Diff(
 ```
 
 ### core/file.go
+#### Status
+- [x] Make `NewFileWithSnapshot(...)` adopt ownership instead of cloning.
+- [x] Sweep immediate handoff callsites and local temporary `File` wrappers for the new ownership contract.
+- [x] Reopen a second immutable handle for `WithReplaced(...)` temporary source wrappers.
+
 #### File-owned snapshot handles
 * `File` should follow the same ownership model as `Directory`.
 * `NewFileWithSnapshot(...)` should adopt ownership of the provided handle and not clone it.
@@ -5674,3 +5962,18 @@ if err != nil {
 ## Design and Implementation Plan points to assess before implementation
 
 * None currently.
+
+## Final completion flow
+
+* After implementation appears finished:
+  * spawn a fresh sub-agent to verify whether everything laid out in this implementation plan is actually done
+  * if the sub-agent finds anything missing, finish that work before moving on
+* Once the implementation is really complete:
+  * make the git commit
+* Only after that commit exists:
+  * run integration tests in this order:
+    * `test directory`
+    * `test file`
+    * `test container`
+    * `test module`
+    * `test engine`

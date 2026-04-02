@@ -31,9 +31,6 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("directory", s.directory).
 			Doc(`Creates an empty directory.`),
-		dagql.NodeFunc("__immutableRef", s.immutableRef).
-			Doc(`(Internal-only) Returns a directory backed by a pre-existing immutable ref.`).
-			Args(dagql.Arg("ref").Doc("The immutable ref ID.")),
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
@@ -371,30 +368,6 @@ type directoryPipelineArgs struct {
 	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
 
-type immutableRefArgs struct {
-	Ref string
-}
-
-func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectResult[*core.Query], args immutableRefArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return res, err
-	}
-
-	immutable, err := parent.Self().BuildkitCache().Get(ctx, args.Ref)
-	if err != nil {
-		return res, fmt.Errorf("get immutable ref %q: %w", args.Ref, err)
-	}
-	defer immutable.Release(context.WithoutCancel(ctx))
-
-	dir, err := core.NewDirectoryWithSnapshot("/", parent.Self().Platform(), nil, immutable)
-	if err != nil {
-		return res, err
-	}
-
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-}
-
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
 	// deprecated and a no-op
 	return parent, nil
@@ -413,8 +386,7 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 	// TODO: could have a truly engine-wide shared "scratch" ref to save a little work. For now, as long as everyone uses this API they will
 	// share this ref
 
-	scratchRef, err := parent.Self().BuildkitCache().New(ctx, nil, nil,
-		bkcache.CachePolicyRetain,
+	scratchRef, err := parent.Self().SnapshotManager().New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("scratch"),
 	)
@@ -425,16 +397,19 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, fmt.Errorf("failed to commit scratch ref: %w", err)
 	}
-	if err := finalRef.Finalize(ctx); err != nil {
-		return inst, fmt.Errorf("failed to finalize scratch ref: %w", err)
-	}
 
 	dir, err := core.NewDirectoryWithSnapshot("/", platform, nil, finalRef)
 	if err != nil {
+		_ = finalRef.Release(context.WithoutCancel(ctx))
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		_ = dir.OnRelease(context.WithoutCancel(ctx))
+		return inst, err
+	}
+	return inst, nil
 }
 
 type subdirectoryArgs struct {

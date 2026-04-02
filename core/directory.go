@@ -38,7 +38,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
-	"github.com/docker/docker/pkg/idtools"
 )
 
 // Directory is a content-addressed directory.
@@ -105,14 +104,12 @@ func NewDirectoryWithSnapshot(dir string, platform Platform, services ServiceBin
 	if snapshot == nil {
 		return nil, fmt.Errorf("new directory with snapshot: nil snapshot")
 	}
-	cloned := snapshot.Clone()
 	dirInst := &Directory{
 		Dir:      dir,
 		Platform: platform,
 		Services: slices.Clone(services),
 	}
-	if err := dirInst.setSnapshot(cloned); err != nil {
-		_ = cloned.Release(context.Background())
+	if err := dirInst.setSnapshot(snapshot); err != nil {
 		return nil, err
 	}
 	return dirInst, nil
@@ -253,7 +250,7 @@ func (dir *Directory) CacheUsageIdentity() (string, bool) {
 	if snapshot == nil {
 		return "", false
 	}
-	return snapshot.ID(), true
+	return snapshot.SnapshotID(), true
 }
 
 func (dir *Directory) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
@@ -1136,7 +1133,6 @@ func (dir *Directory) Digest(ctx context.Context) (string, error) {
 		snapshot,
 		dir.Dir,
 		bkcontenthash.ChecksumOpts{},
-		nil,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to compute digest: %w", err)
@@ -1156,7 +1152,7 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 	if snapshot == nil {
 		err = errEmptyResultRef
 	} else {
-		err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
+		err = MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
 			resolvedDir, err := containerdfs.RootPath(root, src)
 			if err != nil {
 				return err
@@ -1223,7 +1219,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	if snapshot == nil {
 		err = errEmptyResultRef
 	} else {
-		err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
+		err = MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
 			resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 			if err != nil {
 				return err
@@ -1312,7 +1308,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -1322,7 +1318,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
 		if err != nil {
 			return err
@@ -1378,7 +1374,11 @@ func (dir *Directory) WithNewFile(ctx context.Context, parent dagql.ObjectResult
 func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcache.ImmutableRef, patch []byte) (bkcache.ImmutableRef, error) {
 	if len(patch) == 0 {
 		if parentRef != nil {
-			return parentRef.Clone(), nil
+			query, err := CurrentQuery(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return query.SnapshotManager().GetBySnapshotID(ctx, parentRef.SnapshotID(), bkcache.NoUpdateLastUsed)
 		}
 		return nil, nil
 	}
@@ -1392,12 +1392,12 @@ func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcach
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
 
-	newRef, err := query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newRef, err := query.SnapshotManager().New(ctx, parentRef, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("patch"))
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) (rerr error) {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) (rerr error) {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
@@ -1427,7 +1427,7 @@ func (dir *Directory) withoutPathsFromSnapshot(ctx context.Context, parentSnapsh
 	if err != nil {
 		return nil, false, err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -1439,7 +1439,7 @@ func (dir *Directory) withoutPathsFromSnapshot(ctx context.Context, parentSnapsh
 	}
 
 	var anyPathsRemoved bool
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		for _, p := range paths {
 			p = path.Join(dir.Dir, p)
 			var matches []string
@@ -1541,7 +1541,7 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool,
 	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 
 	results := []*SearchResult{}
-	err = MountRef(ctx, ref, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, ref, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
@@ -1759,201 +1759,142 @@ func (dir *Directory) WithDirectory(
 		}
 	}
 
-	canDoDirectMerge :=
-		filter.IsEmpty() &&
-			destDir == "/" &&
-			src.Self().Dir == "/" &&
-			owner == "" &&
-			permissions == nil &&
-			!attemptUnpackDockerCompatibility
+	newRef, err := query.SnapshotManager().New(
+		ctx,
+		dirRef,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("Directory.withDirectory"),
+	)
+	if err != nil {
+		return fmt.Errorf("buildkitcache.New failed: %w", err)
+	}
+	defer newRef.Release(context.WithoutCancel(ctx))
 
-	bkCache := query.BuildkitCache()
-	copySourceToScratch := func() (bkcache.ImmutableRef, error) {
-		newRef, err := query.BuildkitCache().New(ctx, nil, nil,
-			bkcache.CachePolicyRetain,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-			bkcache.WithDescription("Directory.withDirectory source"))
+	err = MountRef(ctx, newRef, func(copyDest string, destMnt *mount.Mount) error {
+		resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
 		if err != nil {
-			return nil, fmt.Errorf("buildkitcache.New failed: %w", err)
+			return err
 		}
-
-		err = MountRef(ctx, newRef, nil, func(copyDest string, destMnt *mount.Mount) error {
-			resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
+		if srcRef == nil {
+			err = os.MkdirAll(resolvedCopyDest, 0755)
 			if err != nil {
 				return err
 			}
-			if srcRef == nil {
-				err = os.MkdirAll(resolvedCopyDest, 0755)
-				if err != nil {
-					return err
+			if permissions != nil {
+				if err := os.Chmod(resolvedCopyDest, os.FileMode(*permissions)); err != nil {
+					return fmt.Errorf("failed to chmod %s: %w", resolvedCopyDest, err)
 				}
-				if permissions != nil {
-					if err := os.Chmod(resolvedCopyDest, os.FileMode(*permissions)); err != nil {
-						return fmt.Errorf("failed to chmod %s: %w", resolvedCopyDest, err)
-					}
-				}
-				if owner != "" {
-					ownership, err := parseDirectoryOwner(owner)
-					if err != nil {
-						return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-					}
-					if err := os.Chown(resolvedCopyDest, ownership.UID, ownership.GID); err != nil {
-						return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
-					}
-				}
-				return nil
 			}
-			mounter, err := srcRef.Mount(ctx, true, nil)
-			if err != nil {
-				return fmt.Errorf("failed to mount source directory: %w", err)
-			}
-			ms, unmountSrc, err := mounter.Mount()
-			if err != nil {
-				return fmt.Errorf("failed to mount source directory: %w", err)
-			}
-			defer unmountSrc()
-			if len(ms) == 0 {
-				return fmt.Errorf("no mounts returned for source directory")
-			}
-			srcMnt := ms[0]
-			lm := snapshot.LocalMounterWithMounts(ms)
-			mntedSrcPath, err := lm.Mount()
-			if err != nil {
-				return fmt.Errorf("failed to mount source directory: %w", err)
-			}
-			defer lm.Unmount()
-			resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Self().Dir)
-			if err != nil {
-				return err
-			}
-			srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
-			if err != nil {
-				return fmt.Errorf("failed to create source path resolver: %w", err)
-			}
-			destResolver, err := pathResolverForMount(destMnt, copyDest)
-			if err != nil {
-				return fmt.Errorf("failed to create destination path resolver: %w", err)
-			}
-
-			var ownership *Ownership
 			if owner != "" {
-				ownership, err = parseDirectoryOwner(owner)
+				ownership, err := parseDirectoryOwner(owner)
 				if err != nil {
 					return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 				}
-			}
-
-			var opts []fscopy.Opt
-			opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
-				AlwaysReplaceExistingDestPaths: true,
-				CopyDirContents:                true,
-				EnableHardlinkOptimization:     true,
-				SourcePathResolver:             srcResolver,
-				DestPathResolver:               destResolver,
-				Mode:                           permissions,
-			}))
-			effectiveSrcPath, effectiveInclude, err := maybeUseSourcePathContentsWhenDir(resolvedSrcPath, filter.Include, copySourcePathContentsWhenDir)
-			if err != nil {
-				return err
-			}
-
-			for _, pattern := range effectiveInclude {
-				opts = append(opts, fscopy.WithIncludePattern(pattern))
-			}
-			for _, pattern := range filter.Exclude {
-				opts = append(opts, fscopy.WithExcludePattern(pattern))
-			}
-			if filter.Gitignore {
-				opts = append(opts, fscopy.WithGitignore())
-			}
-			if ownership != nil {
-				opts = append(opts, fscopy.WithChown(ownership.UID, ownership.GID))
-			}
-
-			if attemptUnpackDockerCompatibility {
-				didUnpack, err := attemptCopyArchiveUnpack(
-					ctx,
-					effectiveSrcPath,
-					resolvedCopyDest,
-					effectiveInclude,
-					filter.Exclude,
-					filter.Gitignore,
-					ownership,
-					permissions,
-					newRef.IdentityMapping(),
-					destPathHintIsDirectory,
-				)
-				if err != nil {
-					return fmt.Errorf("failed to unpack source archive: %w", err)
+				if err := os.Chown(resolvedCopyDest, ownership.UID, ownership.GID); err != nil {
+					return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
 				}
-				if didUnpack {
-					return nil
-				}
-			}
-
-			if err := fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
-				return fmt.Errorf("failed to copy source directory: %w", err)
 			}
 			return nil
-		})
+		}
+		mounter, err := srcRef.Mount(ctx, true)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("failed to mount source directory: %w", err)
 		}
-
-		rebasedDirRef, err := newRef.Commit(ctx)
+		ms, unmountSrc, err := mounter.Mount()
 		if err != nil {
-			return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+			return fmt.Errorf("failed to mount source directory: %w", err)
 		}
-		return rebasedDirRef, nil
-	}
-
-	if dirRef == nil {
-		// handle case where WithDirectory is called on an empty dir (i.e. scratch dir)
-		// note this always occurs when creating the rebasedDir
-
-		if canDoDirectMerge && srcRef != nil {
-			return dir.setSnapshot(srcRef.Clone())
+		defer unmountSrc()
+		if len(ms) == 0 {
+			return fmt.Errorf("no mounts returned for source directory")
 		}
-		rebasedDirRef, err := copySourceToScratch()
+		srcMnt := ms[0]
+		lm := snapshot.LocalMounterWithMounts(ms)
+		mntedSrcPath, err := lm.Mount()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to mount source directory: %w", err)
 		}
-		return dir.setSnapshot(rebasedDirRef)
-	}
-
-	mergeRefs := []bkcache.ImmutableRef{dirRef}
-
-	if canDoDirectMerge {
-		// Directly merge the states together, which is lazy, uses hardlinks instead of
-		// copies and caches inputs individually instead of invalidating the whole
-		// chain following any modified input.
-		if srcRef == nil {
-			return dir.setSnapshot(dirRef.Clone())
-		}
-		mergeRefs = append(mergeRefs, srcRef)
-	} else {
-		// Even if we can't merge directly, we can still get some optimization by
-		// copying to scratch and then merging that. This still results in an on-disk
-		// copy but preserves the other caching benefits of MergeOp. This is the same
-		// behavior as "COPY --link" in Dockerfiles.
-		//
-		// NOTE: do this directly rather than recursively selecting withDirectory,
-		// which can resolve to this same object and deadlock on lazy-state mutex.
-		rebasedDirRef, err := copySourceToScratch()
+		defer lm.Unmount()
+		resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Self().Dir)
 		if err != nil {
 			return err
 		}
-		defer rebasedDirRef.Release(context.WithoutCancel(ctx))
-		mergeRefs = append(mergeRefs, rebasedDirRef)
-	}
+		srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
+		if err != nil {
+			return fmt.Errorf("failed to create source path resolver: %w", err)
+		}
+		destResolver, err := pathResolverForMount(destMnt, copyDest)
+		if err != nil {
+			return fmt.Errorf("failed to create destination path resolver: %w", err)
+		}
 
-	ref, err := bkCache.Merge(ctx, mergeRefs)
-	if err != nil {
-		return fmt.Errorf("failed to merge directories: %w", err)
-	}
-	err = ref.Finalize(ctx)
+		var ownership *Ownership
+		if owner != "" {
+			ownership, err = parseDirectoryOwner(owner)
+			if err != nil {
+				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+			}
+		}
+
+		var opts []fscopy.Opt
+		opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
+			AlwaysReplaceExistingDestPaths: true,
+			CopyDirContents:                true,
+			EnableHardlinkOptimization:     true,
+			SourcePathResolver:             srcResolver,
+			DestPathResolver:               destResolver,
+			Mode:                           permissions,
+		}))
+		effectiveSrcPath, effectiveInclude, err := maybeUseSourcePathContentsWhenDir(resolvedSrcPath, filter.Include, copySourcePathContentsWhenDir)
+		if err != nil {
+			return err
+		}
+
+		for _, pattern := range effectiveInclude {
+			opts = append(opts, fscopy.WithIncludePattern(pattern))
+		}
+		for _, pattern := range filter.Exclude {
+			opts = append(opts, fscopy.WithExcludePattern(pattern))
+		}
+		if filter.Gitignore {
+			opts = append(opts, fscopy.WithGitignore())
+		}
+		if ownership != nil {
+			opts = append(opts, fscopy.WithChown(ownership.UID, ownership.GID))
+		}
+
+		if attemptUnpackDockerCompatibility {
+			didUnpack, err := attemptCopyArchiveUnpack(
+				ctx,
+				effectiveSrcPath,
+				resolvedCopyDest,
+				effectiveInclude,
+				filter.Exclude,
+				filter.Gitignore,
+				ownership,
+				permissions,
+				destPathHintIsDirectory,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to unpack source archive: %w", err)
+			}
+			if didUnpack {
+				return nil
+			}
+		}
+
+		if err := fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
+			return fmt.Errorf("failed to copy source directory: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return err
+	}
+
+	ref, err := newRef.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to commit copied directory: %w", err)
 	}
 	return dir.setSnapshot(ref)
 }
@@ -2032,7 +1973,6 @@ func attemptCopyArchiveUnpack(
 	useGitignore bool,
 	ownership *Ownership,
 	permissions *int,
-	idmap *idtools.IdentityMapping,
 	destPathHintIsDirectory bool,
 ) (bool, error) {
 	// Keep default path untouched for anything non-canonical to this compatibility mode.
@@ -2069,7 +2009,7 @@ func attemptCopyArchiveUnpack(
 			return false, err
 		}
 
-		unpacked, err := unpackArchiveFile(resolvedSrcPath, destPath, ownership, idmap)
+		unpacked, err := unpackArchiveFile(resolvedSrcPath, destPath, ownership)
 		if err != nil {
 			return false, err
 		}
@@ -2204,7 +2144,7 @@ func resolveAttemptUnpackMatches(srcRoot string, includePatterns []string) ([]st
 	return out, true, nil
 }
 
-func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, idmap *idtools.IdentityMapping) (bool, error) {
+func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership) (bool, error) {
 	if !isArchivePath(srcPath) {
 		return false, nil
 	}
@@ -2228,9 +2168,6 @@ func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, id
 
 	opts := &archive.TarOptions{
 		BestEffortXattrs: true,
-	}
-	if idmap != nil {
-		opts.IDMap = *idmap
 	}
 	if err := chrootarchive.Untar(file, destPath, opts); err != nil {
 		return false, err
@@ -2286,7 +2223,7 @@ func ensureRequiredCopySourcePathExists(ctx context.Context, srcRef bkcache.Immu
 		return fmt.Errorf("%q: not found", requiredDisplayPath)
 	}
 
-	return MountRef(ctx, srcRef, nil, func(root string, _ *mount.Mount) error {
+	return MountRef(ctx, srcRef, func(root string, _ *mount.Mount) error {
 		resolvedSrcDir, err := containerdfs.RootPath(root, path.Clean(srcDir))
 		if err != nil {
 			return err
@@ -2316,7 +2253,7 @@ func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRe
 		return &os.PathError{Op: "lstat", Path: parentPath, Err: syscall.ENOENT}
 	}
 
-	return MountRef(ctx, baseRef, nil, func(root string, _ *mount.Mount) error {
+	return MountRef(ctx, baseRef, func(root string, _ *mount.Mount) error {
 		resolvedParentPath, err := containerdfs.RootPath(root, parentPath)
 		if err != nil {
 			return err
@@ -2364,7 +2301,7 @@ func (dir *Directory) WithFile(
 			return err
 		}
 	}
-	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newRef, err := query.SnapshotManager().New(ctx, dirCacheRef, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(src.Self().File))))
 	if err != nil {
 		return err
@@ -2372,7 +2309,7 @@ func (dir *Directory) WithFile(
 
 	var realDestPath string
 	var realUnpackDestPath string
-	if err := MountRef(ctx, newRef, nil, func(root string, destMnt *mount.Mount) (rerr error) {
+	if err := MountRef(ctx, newRef, func(root string, destMnt *mount.Mount) (rerr error) {
 		mntedDestPath, err := containerdfs.RootPath(root, destPath)
 		if err != nil {
 			return err
@@ -2434,7 +2371,7 @@ func (dir *Directory) WithFile(
 	}
 
 	var realSrcPath string
-	if err := MountRef(ctx, srcCacheRef, nil, func(root string, srcMnt *mount.Mount) (rerr error) {
+	if err := MountRef(ctx, srcCacheRef, func(root string, srcMnt *mount.Mount) (rerr error) {
 		srcPath, err := containerdfs.RootPath(root, src.Self().File)
 		if err != nil {
 			return err
@@ -2462,7 +2399,7 @@ func (dir *Directory) WithFile(
 
 	unpacked := false
 	if attemptUnpackDockerCompatibility {
-		unpacked, err = unpackArchiveFile(realSrcPath, realUnpackDestPath, ownership, newRef.IdentityMapping())
+		unpacked, err = unpackArchiveFile(realSrcPath, realUnpackDestPath, ownership)
 		if err != nil {
 			return fmt.Errorf("failed to unpack source archive: %w", err)
 		}
@@ -2511,7 +2448,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -2521,7 +2458,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
@@ -2569,7 +2506,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -2579,7 +2516,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
 		if err != nil {
 			return err
@@ -2609,7 +2546,7 @@ func (dir *Directory) Diff(ctx context.Context, parent dagql.ObjectResult[*Direc
 		return fmt.Errorf("failed to get directory ref: %w", err)
 	}
 
-	thisDirPath := dir.Dir
+	thisDirPath := parent.Self().Dir
 	if thisDirPath == "" {
 		thisDirPath = "/"
 	}
@@ -2617,9 +2554,8 @@ func (dir *Directory) Diff(ctx context.Context, parent dagql.ObjectResult[*Direc
 	if otherDirPath == "" {
 		otherDirPath = "/"
 	}
-	if thisDirPath != otherDirPath {
-		// this shouldnt happen (since core/schema/directory.go code performs copies the directory to /)
-		return fmt.Errorf("internal error: Directory.diff received different relative paths: %q != %q", dir.Dir, other.Self().Dir)
+	if thisDirPath != "/" || otherDirPath != "/" {
+		return fmt.Errorf("internal error: Directory.diff expects rebased root dirs, got %q and %q", thisDirPath, otherDirPath)
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -2631,42 +2567,33 @@ func (dir *Directory) Diff(ctx context.Context, parent dagql.ObjectResult[*Direc
 		return fmt.Errorf("failed to get other directory ref: %w", err)
 	}
 
-	bkCache := query.BuildkitCache()
-
 	var ref bkcache.ImmutableRef
 	if thisDirRef == nil {
-		// lower is nil, so the diff is just the upper ref
-		ref = otherDirRef
+		if otherDirRef == nil {
+			ref = nil
+		} else {
+			ref, err = query.SnapshotManager().GetBySnapshotID(
+				ctx,
+				otherDirRef.SnapshotID(),
+				bkcache.NoUpdateLastUsed,
+			)
+		}
 	} else {
-		ref, err = bkCache.Diff(ctx, thisDirRef, otherDirRef)
+		ref, err = query.SnapshotManager().ApplySnapshotDiff(
+			ctx,
+			thisDirRef,
+			otherDirRef,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription("directory diff"),
+		)
 		if err != nil {
 			return fmt.Errorf("failed to diff directories: %w", err)
 		}
 	}
-
-	newRef, err := bkCache.New(ctx, ref, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("diff"))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to diff directories: %w", err)
 	}
-
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
-		fullPath, err := RootPathWithoutFinalSymlink(root, dir.Dir)
-		if err != nil {
-			return err
-		}
-		return os.MkdirAll(fullPath, 0755)
-	})
-	if err != nil {
-		return err
-	}
-
-	dirRef, err := newRef.Commit(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to commit diff directory: %w", err)
-	}
-
-	return dir.setSnapshot(dirRef)
+	return dir.setSnapshot(ref)
 }
 
 func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult[*Directory], changes dagql.ObjectResult[*Changeset]) error {
@@ -2721,7 +2648,14 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 		return nil
 	}
 	if !changed {
-		currentSnapshot = currentSnapshot.Clone()
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		currentSnapshot, err = query.SnapshotManager().GetBySnapshotID(ctx, currentSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return err
+		}
 	}
 	return dir.setSnapshot(currentSnapshot)
 }
@@ -2837,7 +2771,7 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 	}
 
 	var fileInfo os.FileInfo
-	err = MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, immutableRef, func(root string, _ *mount.Mount) error {
 		resolvedPath, err := rootPathFunc(root, path.Join(dir.Dir, targetPath))
 		if err != nil {
 			return err
@@ -2894,7 +2828,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 		return errEmptyResultRef
 	}
 
-	return MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
+	return MountRef(ctx, immutableRef, func(root string, _ *mount.Mount) error {
 		root, err = containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
@@ -2919,7 +2853,7 @@ func (dir *Directory) WithSymlink(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -2929,7 +2863,7 @@ func (dir *Directory) WithSymlink(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		fullLinkName := path.Join(dir.Dir, linkName)
 		linkDir, linkBasename := filepath.Split(fullLinkName)
 		resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
@@ -3000,7 +2934,7 @@ func (dir *Directory) Chown(ctx context.Context, parent dagql.ObjectResult[*Dire
 	if err != nil {
 		return err
 	}
-	newRef, err := query.BuildkitCache().New(
+	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
 		nil,
@@ -3010,7 +2944,7 @@ func (dir *Directory) Chown(ctx context.Context, parent dagql.ObjectResult[*Dire
 	if err != nil {
 		return err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		chownPath := path.Join(dir.Dir, chownPath)
 		chownPath, err := containerdfs.RootPath(root, chownPath)
 		if err != nil {

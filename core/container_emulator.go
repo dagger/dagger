@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	copy "github.com/dagger/dagger/internal/fsutil/copy"
-	"github.com/docker/docker/pkg/idtools"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
@@ -34,17 +33,15 @@ var qemuArchMap = map[string]string{
 }
 
 type emulator struct {
-	path  string
-	idmap *idtools.IdentityMapping
+	path string
 }
 
 func (e *emulator) Mount(ctx context.Context, readonly bool) (snapshot.Mountable, error) {
-	return &staticEmulatorMount{path: e.path, idmap: e.idmap}, nil
+	return &staticEmulatorMount{path: e.path}, nil
 }
 
 type staticEmulatorMount struct {
-	path  string
-	idmap *idtools.IdentityMapping
+	path string
 }
 
 func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
@@ -59,16 +56,10 @@ func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
 		}
 	}()
 
-	var uid, gid int
-	if m.idmap != nil {
-		root := m.idmap.RootPair()
-		uid = root.UID
-		gid = root.GID
-	}
 	if err := copy.Copy(context.TODO(), filepath.Dir(m.path), filepath.Base(m.path), tmpdir, buildkit.BuildkitQemuEmulatorMountPoint, func(ci *copy.CopyInfo) {
 		m := 0555
 		ci.Mode = &m
-	}, copy.WithChown(uid, gid)); err != nil {
+	}); err != nil {
 		return nil, nil, err
 	}
 
@@ -80,10 +71,6 @@ func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
 		}}, func() error {
 			return os.RemoveAll(tmpdir)
 		}, nil
-}
-
-func (m *staticEmulatorMount) IdentityMapping() *idtools.IdentityMapping {
-	return m.idmap
 }
 
 func getEmulator(ctx context.Context, pp ocispecs.Platform) (*emulator, error) {

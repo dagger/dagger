@@ -24,7 +24,6 @@ import (
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -67,9 +66,6 @@ type Service struct {
 
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
-
-	// Refs to release when shutting down the service.
-	Releasers []bkcache.Ref
 }
 
 func (*Service) Type() *ast.Type {
@@ -290,27 +286,33 @@ func (io *ServiceIO) Close() error {
 
 func (svc *Service) Start(
 	ctx context.Context,
+	running *RunningService,
 	dig digest.Digest,
 	sio *ServiceIO,
-) (running *RunningService, err error) {
+) error {
 	switch {
 	case svc.Container.Self() != nil:
-		return svc.startContainer(ctx, dig, sio)
+		return svc.startContainer(ctx, running, dig, sio)
 	case svc.TunnelUpstream.Self() != nil:
-		return svc.startTunnel(ctx)
+		return svc.startTunnel(ctx, running)
 	case len(svc.HostSockets) > 0:
-		return svc.startReverseTunnel(ctx, dig)
+		return svc.startReverseTunnel(ctx, running, dig)
 	default:
-		return nil, fmt.Errorf("unknown service type")
+		return fmt.Errorf("unknown service type")
 	}
 }
 
 //nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
+	running *RunningService,
 	dig digest.Digest,
 	sio *ServiceIO,
-) (running *RunningService, rerr error) {
+) (rerr error) {
+	if running == nil {
+		return fmt.Errorf("running service is nil")
+	}
+
 	var cleanup cleanups.Cleanups
 	defer func() {
 		if rerr != nil {
@@ -322,37 +324,37 @@ func (svc *Service) startContainer(
 
 	host, err := svc.Hostname(ctx, dig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	cacheCtr, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	srv := dagql.CurrentDagqlServer(ctx)
 	if srv == nil {
-		return nil, fmt.Errorf("failed to get dagql server")
+		return fmt.Errorf("failed to get dagql server")
 	}
 	attachedAny, err := cacheCtr.AttachResult(ctx, clientMetadata.SessionID, srv, svc.Container)
 	if err != nil {
-		return nil, fmt.Errorf("attach service container: %w", err)
+		return fmt.Errorf("attach service container: %w", err)
 	}
 	attached, ok := attachedAny.(dagql.ObjectResult[*Container])
 	if !ok {
-		return nil, fmt.Errorf("attach service container: expected %T, got %T", svc.Container, attachedAny)
+		return fmt.Errorf("attach service container: expected %T, got %T", svc.Container, attachedAny)
 	}
 	svc.Container = attached
 	if err := cacheCtr.Evaluate(ctx, svc.Container); err != nil {
-		return nil, err
+		return err
 	}
 	ctr := svc.Container.Self()
 	if ctr == nil {
-		return nil, fmt.Errorf("service container is nil")
+		return fmt.Errorf("service container is nil")
 	}
 
 	execMD := svc.ExecMD
@@ -362,31 +364,21 @@ func (svc *Service) startContainer(
 			NoInit:                        svc.NoInit,
 		}, nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-
-	// Services support having refs re-mounted at runtime, so when the service
-	// stops, we need to release them all.
-	cleanup.Add("release late-bound refs", func() error {
-		var errs error
-		for _, ref := range svc.Releasers {
-			errs = errors.Join(errs, ref.Release(context.WithoutCancel(ctx)))
-		}
-		return errs
-	})
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	detachDeps, _, err := svcs.StartBindings(ctx, ctr.Services)
 	if err != nil {
-		return nil, fmt.Errorf("start dependent services: %w", err)
+		return fmt.Errorf("start dependent services: %w", err)
 	}
 	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
 
@@ -394,11 +386,11 @@ func (svc *Service) startContainer(
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
 		implementationScopedMod, err := ImplementationScopedModule(ctx, mod)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get implementation-scoped module: %w", err)
+			return fmt.Errorf("failed to get implementation-scoped module: %w", err)
 		}
 		modDigest, err := implementationScopedMod.ContentPreferredDigest(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get implementation-scoped module digest: %w", err)
+			return fmt.Errorf("failed to get implementation-scoped module digest: %w", err)
 		}
 		domain = network.ModuleDomain(modDigest, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
@@ -416,19 +408,17 @@ func (svc *Service) startContainer(
 
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	cache := query.BuildkitCache()
-	session := query.BuildkitSession()
+	cache := query.SnapshotManager()
 
 	svcID := identity.NewID()
 
-	bkSessionGroup := bksession.NewGroup(bk.ID())
-	p, err := prepareMounts(ctx, ctr, nil, nil, nil, cache, session, bkSessionGroup, "", runtime.GOOS, func(_ string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
-		return cache.New(ctx, ref, bkSessionGroup)
+	p, err := prepareMounts(ctx, ctr, nil, nil, nil, cache, "", runtime.GOOS, func(_ string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+		return cache.New(ctx, ref)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("prepare mounts: %w", err)
+		return fmt.Errorf("prepare mounts: %w", err)
 	}
 
 	cleanup.Add("release active refs", func() error {
@@ -447,7 +437,7 @@ func (svc *Service) startContainer(
 			NoInit:                        svc.NoInit,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		meta.Hostname = fullHost
 	}
@@ -506,7 +496,7 @@ func (svc *Service) startContainer(
 
 	secretEnv, err := ctr.secretEnvValues(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
@@ -526,7 +516,7 @@ func (svc *Service) startContainer(
 	}()
 	select {
 	case <-ctx.Done():
-		return nil, context.Cause(ctx)
+		return context.Cause(ctx)
 	case <-started:
 	}
 
@@ -535,7 +525,7 @@ func (svc *Service) startContainer(
 	if ctr.Config.Healthcheck != nil {
 		dockerHealthcheck, err := newDockerHealthcheck(worker, svcID, ctr, svc.Creator)
 		if err != nil {
-			return nil, fmt.Errorf("failed to setup docker healthcheck: %w", err)
+			return fmt.Errorf("failed to setup docker healthcheck: %w", err)
 		}
 		go func() {
 			checked <- dockerHealthcheck.Check(ctx)
@@ -648,23 +638,22 @@ func (svc *Service) startContainer(
 	select {
 	case err := <-checked:
 		if err != nil {
-			return nil, fmt.Errorf("health check errored: %w", err)
+			return fmt.Errorf("health check errored: %w", err)
 		}
 
-		return &RunningService{
-			Host:        fullHost,
-			Ports:       ctr.Ports,
-			Stop:        stopSvc,
-			Wait:        waitSvc,
-			Exec:        execSvc,
-			ContainerID: svcID,
-		}, nil
+		running.Host = fullHost
+		running.Ports = ctr.Ports
+		running.Stop = stopSvc
+		running.Wait = waitSvc
+		running.Exec = execSvc
+		running.ContainerID = svcID
+		return nil
 	case <-exited:
 		if exitErr != nil {
 			var gwErr *gwpb.ExitError
 			if errors.As(exitErr, &gwErr) {
 				// Create ExecError with available service information
-				return nil, &ExecError{
+				return &ExecError{
 					Err:      telemetry.TrackOrigin(gwErr, svc.Creator),
 					Cmd:      meta.Args,
 					ExitCode: int(gwErr.ExitCode),
@@ -672,9 +661,9 @@ func (svc *Service) startContainer(
 					Stderr:   stderrBuf.String(),
 				}
 			}
-			return nil, exitErr
+			return exitErr
 		}
-		return nil, fmt.Errorf("service exited before healthcheck")
+		return fmt.Errorf("service exited before healthcheck")
 	}
 }
 
@@ -748,7 +737,10 @@ func (mwc multiWriteCloser) Close() error {
 	return errs
 }
 
-func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, rerr error) {
+func (svc *Service) startTunnel(ctx context.Context, running *RunningService) (rerr error) {
+	if running == nil {
+		return fmt.Errorf("running service is nil")
+	}
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 	defer func() {
 		if rerr != nil {
@@ -758,30 +750,30 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
+		return fmt.Errorf("failed to get services: %w", err)
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	upstreamDig, err := svc.TunnelUpstream.ContentPreferredDigest(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("upstream service digest: %w", err)
+		return fmt.Errorf("upstream service digest: %w", err)
 	}
 	upstream, err := svcs.Start(svcCtx, upstreamDig, svc.TunnelUpstream.Self(), svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
 	if err != nil {
-		return nil, fmt.Errorf("start upstream: %w", err)
+		return fmt.Errorf("start upstream: %w", err)
 	}
 
 	closers := make([]func() error, len(svc.TunnelPorts))
@@ -805,17 +797,17 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 			fmt.Sprintf("%s:%d", upstream.Host, forward.Backend),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("host to container: %w", err)
+			return fmt.Errorf("host to container: %w", err)
 		}
 
 		_, portStr, err := net.SplitHostPort(res.GetAddr())
 		if err != nil {
-			return nil, fmt.Errorf("split host port: %w", err)
+			return fmt.Errorf("split host port: %w", err)
 		}
 
 		frontend, err = strconv.Atoi(portStr)
 		if err != nil {
-			return nil, fmt.Errorf("parse port: %w", err)
+			return fmt.Errorf("parse port: %w", err)
 		}
 
 		desc := fmt.Sprintf("tunnel %s:%d -> %s:%d", bindHost, frontend, upstream.Host, forward.Backend)
@@ -829,47 +821,49 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 		closers[i] = closeListener
 	}
 
-	return &RunningService{
-		Host:  dialHost,
-		Ports: ports,
-		Stop: func(_ context.Context, _ bool) error {
-			stop(errors.New("service stop called"))
-			svcs.Detach(svcCtx, upstream)
-			var errs []error
-			for _, closeListener := range closers {
-				errs = append(errs, closeListener())
-			}
-			return errors.Join(errs...)
-		},
-	}, nil
+	running.Host = dialHost
+	running.Ports = ports
+	running.Stop = func(_ context.Context, _ bool) error {
+		stop(errors.New("service stop called"))
+		svcs.Detach(svcCtx, upstream)
+		var errs []error
+		for _, closeListener := range closers {
+			errs = append(errs, closeListener())
+		}
+		return errors.Join(errs...)
+	}
+	return nil
 }
 
-func (svc *Service) startReverseTunnel(ctx context.Context, dig digest.Digest) (running *RunningService, rerr error) {
+func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningService, dig digest.Digest) (rerr error) {
+	if running == nil {
+		return fmt.Errorf("running service is nil")
+	}
 	host, err := svc.Hostname(ctx, dig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	fullHost := host + "." + network.SessionDomain(clientMetadata.SessionID)
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	// we don't need a full container, just a CNI provisioned network namespace to listen in
 	netNS, err := bk.NewNetworkNamespace(ctx, fullHost)
 	if err != nil {
-		return nil, fmt.Errorf("new network namespace: %w", err)
+		return fmt.Errorf("new network namespace: %w", err)
 	}
 
 	checkPorts := []Port{}
@@ -877,7 +871,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, dig digest.Digest) (
 	for _, sock := range svc.HostSockets {
 		port, err := sock.PortForward(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("service reverse tunnel: socket port forward: %w", err)
+			return fmt.Errorf("service reverse tunnel: socket port forward: %w", err)
 		}
 		desc := fmt.Sprintf("tunnel %s %d -> %d", port.Protocol, port.FrontendOrBackendPort(), port.Backend)
 		descs = append(descs, desc)
@@ -926,33 +920,32 @@ func (svc *Service) startReverseTunnel(ctx context.Context, dig digest.Digest) (
 			netNS.Release(svcCtx)
 			err = fmt.Errorf("health check errored: %w", err)
 			stop(err)
-			return nil, err
+			return err
 		}
 
-		return &RunningService{
-			Host:  fullHost,
-			Ports: checkPorts,
-			Stop: func(context.Context, bool) (rerr error) {
-				defer telemetry.EndWithCause(span, &rerr)
-				stop(errors.New("service stop called"))
-				waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
-				defer waitCancel()
-				netNS.Release(waitCtx)
-				select {
-				case <-waitCtx.Done():
-					return fmt.Errorf("timeout waiting for tunnel to stop: %w", waitCtx.Err())
-				case <-exited:
-					return nil
-				}
-			},
-		}, nil
+		running.Host = fullHost
+		running.Ports = checkPorts
+		running.Stop = func(context.Context, bool) (rerr error) {
+			defer telemetry.EndWithCause(span, &rerr)
+			stop(errors.New("service stop called"))
+			waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
+			defer waitCancel()
+			netNS.Release(waitCtx)
+			select {
+			case <-waitCtx.Done():
+				return fmt.Errorf("timeout waiting for tunnel to stop: %w", waitCtx.Err())
+			case <-exited:
+				return nil
+			}
+		}
+		return nil
 	case <-exited:
 		netNS.Release(svcCtx)
 		stop(errors.New("proxy exited"))
 		if exitErr != nil {
-			return nil, fmt.Errorf("proxy exited: %w", exitErr)
+			return fmt.Errorf("proxy exited: %w", exitErr)
 		}
-		return nil, fmt.Errorf("proxy exited before healthcheck")
+		return fmt.Errorf("proxy exited before healthcheck")
 	}
 }
 
@@ -968,11 +961,17 @@ func (svc *Service) startReverseTunnel(ctx context.Context, dig digest.Digest) (
 // before the new mutable copy is remounted.
 func (svc *Service) runAndSnapshotChanges(
 	ctx context.Context,
-	containerID string,
+	running *RunningService,
 	target string,
 	source *Directory,
 	f func() error,
 ) (res dagql.ObjectResult[*Directory], hasChanges bool, rerr error) {
+	if running == nil {
+		return res, false, fmt.Errorf("running service is nil")
+	}
+	running.workspaceMu.Lock()
+	defer running.workspaceMu.Unlock()
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return res, false, err
@@ -988,20 +987,24 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	mutableRef, err := query.BuildkitCache().New(ctx, ref, nil,
+	mutableRef, err := query.SnapshotManager().New(ctx, ref,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("mcp remount"))
 	if err != nil {
 		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
 	}
-	defer mutableRef.Release(ctx)
+	defer func() {
+		if mutableRef != nil {
+			_ = mutableRef.Release(ctx)
+		}
+	}()
 
-	err = MountRef(ctx, mutableRef, nil, func(root string, _ *mount.Mount) (rerr error) {
+	err = MountRef(ctx, mutableRef, func(root string, _ *mount.Mount) (rerr error) {
 		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
 		if err != nil {
 			return err
 		}
-		if err := mountIntoContainer(ctx, containerID, resolvedDir, target); err != nil {
+		if err := mountIntoContainer(ctx, running.ContainerID, resolvedDir, target); err != nil {
 			return fmt.Errorf("remount container: %w", err)
 		}
 		return f()
@@ -1010,7 +1013,7 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, err
 	}
 
-	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.ID())
+	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
 	if err != nil {
 		return res, false, fmt.Errorf("failed to check for changes: %w", err)
 	}
@@ -1024,17 +1027,14 @@ func (svc *Service) runAndSnapshotChanges(
 	if err != nil {
 		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
 	}
-
-	// Release unconditionally here, since we take our own cloned ref for the
-	// returned directory object below.
-	defer immutableRef.Release(ctx)
+	mutableRef = nil
 
 	// Create a new mutable ref to leave the service with, to prevent further
 	// changes from mutating the now-immutable ref
 	//
 	// NOTE: there's technically a race here, for sure, but we can least prevent
 	// mutation outside of the bounds of this func
-	abandonedRef, err := query.BuildkitCache().New(ctx, immutableRef, nil,
+	abandonedRef, err := query.SnapshotManager().New(ctx, immutableRef,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("mcp remount"))
 	if err != nil {
@@ -1042,40 +1042,43 @@ func (svc *Service) runAndSnapshotChanges(
 	}
 
 	defer func() {
-		if rerr != nil {
+		if rerr != nil && abandonedRef != nil {
 			// Only release this on error, otherwise leave it to be released when the
 			// service cleans up.
-			abandonedRef.Release(ctx)
+			_ = abandonedRef.Release(ctx)
 		}
 	}()
 
 	// Mount the mutable ref of their changes over the target path.
-	err = MountRef(ctx, abandonedRef, nil, func(root string, _ *mount.Mount) (rerr error) {
+	err = MountRef(ctx, abandonedRef, func(root string, _ *mount.Mount) (rerr error) {
 		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
 		if err != nil {
 			return err
 		}
-		return mountIntoContainer(ctx, containerID, resolvedDir, target)
+		return mountIntoContainer(ctx, running.ContainerID, resolvedDir, target)
 	})
 	if err != nil {
 		return res, false, fmt.Errorf("failed to remount mutable copy: %w", err)
 	}
 
-	// Keep track of the mutable ref so we can release it when the service stops.
-	svc.Releasers = append(svc.Releasers, abandonedRef)
+	running.TrackRef(abandonedRef)
+	abandonedRef = nil
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
+		_ = immutableRef.Release(ctx)
 		return res, false, fmt.Errorf("get dagql server: %w", err)
 	}
 
 	snapshot, err := NewDirectoryWithSnapshot(source.Dir, source.Platform, source.Services, immutableRef)
 	if err != nil {
+		_ = immutableRef.Release(ctx)
 		return res, false, err
 	}
 
 	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
 	if err != nil {
+		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
 		return res, false, err
 	}
 
