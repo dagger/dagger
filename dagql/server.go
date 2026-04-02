@@ -67,6 +67,13 @@ type Server struct {
 	// Load, LoadType, and callers that need to bypass proxies (proxy
 	// resolvers, SDK plumbing) use Canonical() to reach it.
 	canonical *Server
+
+	// nodeLoader, if set, is called by the node(id:) resolver to load
+	// an object from its ID. This allows the Dagger core layer to
+	// resolve IDs through a server that has all necessary module
+	// dependencies installed, rather than being limited to the
+	// current server's schema.
+	nodeLoader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 // Canonical returns the server without entrypoint sugar. For servers
@@ -89,6 +96,13 @@ func (s *Server) Canonical() *Server {
 // by SchemaBuilder when constructing the outer/inner server pair.
 func (s *Server) SetCanonical(canonical *Server) {
 	s.canonical = canonical
+}
+
+// SetNodeLoader sets a custom loader for the node(id:) resolver.
+// This allows the Dagger core layer to resolve IDs through a server
+// that has all necessary module dependencies installed.
+func (s *Server) SetNodeLoader(loader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)) {
+	s.nodeLoader = loader
 }
 
 type ServerSchema struct {
@@ -198,6 +212,9 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 			idable, ok := args["id"].(IDable)
 			if !ok {
 				return nil, fmt.Errorf("expected IDable, got %T", args["id"])
+			}
+			if srv.nodeLoader != nil {
+				return srv.nodeLoader(ctx, idable.ID())
 			}
 			return srv.Load(ctx, idable.ID())
 		},

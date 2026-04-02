@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
 )
 
@@ -34,6 +35,27 @@ func buildSchema(
 	}
 
 	dag.Around(AroundFunc)
+
+	// Set up the node(id:) loader to resolve IDs through a server that
+	// has all the module dependencies the ID requires. Without this,
+	// node(id:) would try to replay the ID's call chain on the current
+	// server, which may not have the necessary modules installed.
+	dag.SetNodeLoader(func(ctx context.Context, id *call.ID) (dagql.AnyObjectResult, error) {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			// No query in context — fall back to the local server.
+			return dag.Load(ctx, id)
+		}
+		deps, err := query.IDDeps(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("node: resolve deps: %w", err)
+		}
+		idServer, err := deps.Server(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("node: build server: %w", err)
+		}
+		return idServer.Load(ctx, id)
+	})
 
 	dagintro.Install[*Query](dag)
 

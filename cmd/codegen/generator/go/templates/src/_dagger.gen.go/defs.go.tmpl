@@ -276,28 +276,29 @@ type Loadable[T any] interface {
 	WithGraphQLQuery(*querybuilder.Selection) T
 }
 
-// Load loads a node by its ID with type safety. It queries __typename
-// to verify the ID refers to the expected type, producing a clean error
-// if the ID is not found or refers to a different type.
+// Load loads a node by its ID with type safety. It verifies that the
+// node exists and matches the expected type before returning.
+//
+// The type parameter can be a concrete type or an interface. The
+// __typename check is done through the inline fragment so that
+// interface loads succeed when the concrete type (e.g. "Impl")
+// implements the expected interface (e.g. "CustomIface").
 func Load[T Loadable[T]](ctx context.Context, c *Client, id ID) (T, error) {
 	var zero T
 	expectedType := zero.XXX_GraphQLType()
 
-	nodeQ := c.query.Select("node").Arg("id", id)
-
-	// Query __typename to verify the type.
+	// Query __typename through the inline fragment. For concrete types
+	// this is equivalent to a direct check. For interfaces, the fragment
+	// only matches if the concrete type implements the interface — an
+	// empty result means the ID doesn't satisfy the expected type.
+	q := SelectNode(c.query, id, expectedType)
 	var typeName string
-	if err := nodeQ.Select("__typename").Bind(&typeName).Execute(ctx); err != nil {
+	if err := q.Select("__typename").Bind(&typeName).Execute(ctx); err != nil {
 		return zero, fmt.Errorf("load %s: %w", expectedType, err)
 	}
 	if typeName == "" {
-		return zero, fmt.Errorf("load %s: node not found for given ID", expectedType)
-	}
-	if typeName != expectedType {
-		return zero, fmt.Errorf("load %s: ID refers to a %s", expectedType, typeName)
+		return zero, fmt.Errorf("load %s: node not found or does not implement %s", expectedType, expectedType)
 	}
 
-	// Use an inline fragment so subsequent selections are scoped to the
-	// concrete type: node(id: "...") { ... on Container { platform } }
 	return zero.WithGraphQLQuery(SelectNode(c.query, id, expectedType)), nil
 }
