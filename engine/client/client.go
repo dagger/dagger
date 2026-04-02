@@ -574,6 +574,9 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	if err != nil {
 		return fmt.Errorf("connect buildkit session: %w", err)
 	}
+	if err := c.sessionSrv.finishSetup(); err != nil {
+		return fmt.Errorf("finish buildkit session setup: %w", err)
+	}
 
 	c.eg.Go(func() error {
 		ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -635,6 +638,9 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 	)
 	if err != nil {
 		return fmt.Errorf("connect buildkit session: %w", err)
+	}
+	if err := c.sessionSrv.finishSetup(); err != nil {
+		return fmt.Errorf("finish buildkit session setup: %w", err)
 	}
 
 	c.eg.Go(func() error {
@@ -719,6 +725,10 @@ type BuildkitSessionServer struct {
 }
 
 func (srv *BuildkitSessionServer) finishSetup() error {
+	if srv.initReq == nil {
+		return nil
+	}
+
 	resp, err := http.ReadResponse(bufio.NewReader(srv.Conn), srv.initReq)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
