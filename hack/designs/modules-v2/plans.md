@@ -17,16 +17,19 @@ Replaces CheckGroup. Transition path: CheckGroup → Execution Plans.
 This design is intended to land as one primary implementation unit:
 
 - **PR:** `verbs: add plans, migrate check + generate, remove old path`
-- **API:** `Action`, `Plan`, `Artifacts.check`, `Artifacts.generate`
-- **UI:** `dagger list`, `dagger list <dimension>`, `dagger list <dimension> --check`,
-  `dagger check --plan`, `dagger generate --plan`, and the first public
+- **API:** `Action`, `Plan`, `Artifacts.actions`, `Artifact.actions`,
+  `Artifacts.action`, `Artifact.action`, `Artifacts.check`,
+  `Artifacts.generate`
+- **UI:** `dagger check --plan`, `dagger generate --plan`, plus the first
+  public rollout of the Artifacts selector UX: `dagger list`,
+  `dagger list <dimension>`, `dagger list <dimension> --check`, and the first
   non-collection typed filters on `check` / `generate`
 
 Included in this unit:
 
 - the Action/Plan substrate
 - migration of `dagger check` and `dagger generate` onto `Artifacts`
-- public discovery and non-collection typed filters
+- public rollout of the selector surfaces defined in [artifacts.md](./artifacts.md)
 - removal of the old `ModTree` / `CheckGroup` / `GeneratorGroup` path
 
 Deferred to [collections.md](./collections.md):
@@ -38,15 +41,51 @@ Deferred to [collections.md](./collections.md):
 
 ```text
 This PR implements the Execution Plans design unit. It adds `Action`, `Plan`,
+`Artifacts.actions`, `Artifact.actions`, `Artifacts.action`, `Artifact.action`,
 `Artifacts.check`, and `Artifacts.generate`; makes `dagger list` public;
 migrates `dagger check` and `dagger generate` onto the Artifacts/Plans stack;
-enables the first public non-collection typed filters; and removes the old
-`ModTree` / `CheckGroup` / `GeneratorGroup` path.
+publicly rolls out the selector surfaces defined in Artifacts, including the
+first non-collection typed filters; and removes the old `ModTree` /
+`CheckGroup` / `GeneratorGroup` path.
 ```
 
 ## Schema
 
 ```graphql
+extend type Artifacts {
+  """
+  Union of direct non-traversal function names across all in-scope artifacts.
+  Zero-arg object-returning members participate in selector traversal instead.
+  """
+  actions: [String!]!
+
+  """
+  Create an action targeting the in-scope artifacts that directly expose this
+  function name. Errors if no in-scope artifact exposes it.
+  """
+  action(name: String!): Action!
+
+  """Compile a check execution plan for the selected artifact set."""
+  check: Plan!
+
+  """Compile a generate execution plan for the selected artifact set."""
+  generate: Plan!
+
+  """Compile a ship execution plan for the selected artifact set."""
+  ship: Plan!
+
+  """Compile an up execution plan for the selected artifact set."""
+  up: Plan!
+}
+
+extend type Artifact {
+  """Available direct non-traversal function names on the underlying object."""
+  actions: [String!]!
+
+  """Create an action targeting this single artifact."""
+  action(name: String!): Action!
+}
+
 """
 A callable action: one or more artifacts + a function.
 Actions are the building blocks of execution plans.

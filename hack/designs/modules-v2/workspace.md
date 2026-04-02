@@ -15,6 +15,30 @@ Collapses three shipped/in-progress components:
 FIXME: Workspace API and configuration details to be written up. The binding
 and access control model below is the most detailed section.
 
+## Core Workspace Types
+
+### `WorkspacePath`
+
+`WorkspacePath` is the canonical path type for paths inside a bound workspace.
+
+Canonical form:
+
+- workspace-root-relative
+- `/` separators
+- no leading `./`
+- no `..` segments
+- no trailing `/`, except `/` itself for workspace root
+
+Examples:
+
+- `docs`
+- `docs/intro.md`
+- `/`
+
+CLI input may use local path syntax such as `./docs`. The CLI resolves that
+path relative to the client's current working directory, then converts it to
+canonical workspace-root-relative `WorkspacePath`.
+
 ## Workspace Binding and Access Control
 
 A client has:

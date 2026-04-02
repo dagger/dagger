@@ -466,8 +466,10 @@ object-field dimensions.
 
 Check filters shape the effective check tree before listing or execution.
 
-One filter model across all commands: `--<dimension>=<value>`, repeatable.
-Filter flags are named by **item type** (singular), not collection type.
+Collection-provided selector dimensions still use
+`--<dimension>=<value>`, repeatable. Those dimension flags are named by
+**item type** (singular), not collection type. Dedicated provenance filters
+such as `--path` remain separate; collections do not change them.
 
 Each flag points to `dagger list` for discovery:
 
@@ -493,10 +495,10 @@ $ dagger check --go-test=TestFoo --go-test=TestBar --go-module=./myapp/app2
 ```
 
 Boolean type filters (`--go=true|false`) are replaced by `--module=<name>`.
-`--module=go` replaces `--go=true`. This unifies all filters into one
-valued-filter model.
+`--module=go` replaces `--go=true`. This keeps collection-provided dimension
+filters in one valued-filter model while leaving provenance filters separate.
 
-These filters are scope-relative constraints, not unique selectors.
+These dimension filters are scope-relative constraints, not unique selectors.
 
 - A filter narrows every matching collection occurrence to the given
   key subset.

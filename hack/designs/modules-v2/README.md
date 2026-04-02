@@ -49,6 +49,17 @@ semantics on top of that base. Provenance also builds on Artifacts, but it is
 orthogonal to Execution Plans and Collections: it adds path/git filtering over
 effective artifact provenance rather than new plan or collection semantics.
 
+## Component Boundaries
+
+- **Artifacts** defines the base selector space: scopes, dimensions, and
+  scope-relative coordinate rows.
+- **Provenance** extends `Artifacts` with path/change predicates over effective
+  artifact provenance.
+- **Execution Plans** defines callable functions on selected artifacts and
+  compiles verb invocations into inspectable plans.
+- **Collections** extends both layers: it adds new keyed selector dimensions
+  and collection-aware lowering/batching on top of the Artifacts/Plans base.
+
 **Config track:** Lockfile → Workspace configuration. Independent of the main
 track.
 
@@ -61,7 +72,8 @@ track.
 
 - **Engine smart, CLI dumb.** In doubt, push logic into the engine.
 - **API is UX.** Type names, function names, and breakdown matter.
-- **One filter model.** `--<dimension>=<value>`, repeatable, across all commands.
+- **One filter surface.** Selector dimensions use repeatable
+  `--<dimension>=<value>` flags; provenance uses dedicated artifact filters.
 - **Introspection-driven.** The CLI is a generic client — no per-workspace
   codegen. Dimensions, filters, and actions are discovered at runtime.
 - **Plans, not VMs.** Verbs compile to inspectable finite DAGs. No loops,
