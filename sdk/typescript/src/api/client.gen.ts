@@ -4837,7 +4837,7 @@ export class CurrentModule extends BaseClient {
     const response: Awaited<dependencies[]> = await ctx.execute()
 
     return response.map(
-      (r) => new Module(ctx.copy().selectNode(r.id, "Module")),
+      (r) => new Module_(ctx.copy().selectNode(r.id, "Module")),
     )
   }
 
@@ -9275,7 +9275,7 @@ export class InterfaceTypeDef extends BaseClient {
     const response: Awaited<functions[]> = await ctx.execute()
 
     return response.map(
-      (r) => new Function(ctx.copy().selectNode(r.id, "Function")),
+      (r) => new Function_(ctx.copy().selectNode(r.id, "Function")),
     )
   }
 
@@ -10128,7 +10128,7 @@ export class Module_ extends BaseClient {
     const response: Awaited<dependencies[]> = await ctx.execute()
 
     return response.map(
-      (r) => new Module(ctx.copy().selectNode(r.id, "Module")),
+      (r) => new Module_(ctx.copy().selectNode(r.id, "Module")),
     )
   }
 
@@ -10302,7 +10302,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Module(ctx.copy().selectNode(response, "Module"))
+    return new Module_(ctx.copy().selectNode(response, "Module"))
   }
 
   /**
@@ -11258,7 +11258,7 @@ export class ObjectTypeDef extends BaseClient {
     const response: Awaited<functions[]> = await ctx.execute()
 
     return response.map(
-      (r) => new Function(ctx.copy().selectNode(r.id, "Function")),
+      (r) => new Function_(ctx.copy().selectNode(r.id, "Function")),
     )
   }
 
