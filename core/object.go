@@ -22,8 +22,9 @@ const trivialFieldDirectiveName = "trivialResolveField"
 const deprecatedDirectiveName = "deprecated"
 
 type ModuleObjectType struct {
-	typeDef *ObjectTypeDef
-	mod     *Module
+	typeDef     *ObjectTypeDef
+	collection  *CollectionTypeDef
+	mod         *Module
 }
 
 var _ ModType = &ModuleObjectType{}
@@ -45,9 +46,10 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 	switch value := value.(type) {
 	case map[string]any:
 		return dagql.NewResultForCurrentID(ctx, &ModuleObject{
-			Module:  t.mod,
-			TypeDef: t.typeDef,
-			Fields:  value,
+			Module:     t.mod,
+			TypeDef:    t.typeDef,
+			Collection: t.collection,
+			Fields:     value,
 		})
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
@@ -155,10 +157,14 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 }
 
 func (t *ModuleObjectType) TypeDef() *TypeDef {
-	return &TypeDef{
+	typeDef := &TypeDef{
 		Kind:     TypeDefKindObject,
 		AsObject: dagql.NonNull(t.typeDef),
 	}
+	if t.collection != nil {
+		typeDef.AsCollection = dagql.NonNull(t.collection)
+	}
+	return typeDef
 }
 
 type Callable interface {
@@ -200,8 +206,9 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 type ModuleObject struct {
 	Module *Module
 
-	TypeDef *ObjectTypeDef
-	Fields  map[string]any
+	TypeDef     *ObjectTypeDef
+	Collection  *CollectionTypeDef
+	Fields      map[string]any
 }
 
 func (obj *ModuleObject) Type() *ast.Type {
@@ -252,13 +259,22 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
 	}
-	fields := obj.fields()
+	var fields []dagql.Field[*ModuleObject]
+	var err error
+	if obj.Collection != nil {
+		fields, err = obj.collectionMembers(ctx, dag)
+		if err != nil {
+			return err
+		}
+	} else {
+		fields = obj.fields()
 
-	funs, err := obj.functions(ctx, dag)
-	if err != nil {
-		return err
+		funs, err := obj.functions(ctx, dag)
+		if err != nil {
+			return err
+		}
+		fields = append(fields, funs...)
 	}
-	fields = append(fields, funs...)
 
 	class.Install(fields...)
 	dag.InstallObject(class, installDirectives...)

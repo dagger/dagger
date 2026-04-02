@@ -523,14 +523,15 @@ func (d DynamicID) MarshalJSON() ([]byte, error) {
 }
 
 type TypeDef struct {
-	Kind        TypeDefKind                       `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)."`
-	Optional    bool                              `field:"true" doc:"Whether this type can be set to null. Defaults to false."`
-	AsList      dagql.Nullable[*ListTypeDef]      `field:"true" doc:"If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."`
-	AsObject    dagql.Nullable[*ObjectTypeDef]    `field:"true" doc:"If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."`
-	AsInterface dagql.Nullable[*InterfaceTypeDef] `field:"true" doc:"If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."`
-	AsInput     dagql.Nullable[*InputTypeDef]     `field:"true" doc:"If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."`
-	AsScalar    dagql.Nullable[*ScalarTypeDef]    `field:"true" doc:"If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."`
-	AsEnum      dagql.Nullable[*EnumTypeDef]      `field:"true" doc:"If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null."`
+	Kind         TypeDefKind                        `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)."`
+	Optional     bool                               `field:"true" doc:"Whether this type can be set to null. Defaults to false."`
+	AsList       dagql.Nullable[*ListTypeDef]       `field:"true" doc:"If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."`
+	AsObject     dagql.Nullable[*ObjectTypeDef]     `field:"true" doc:"If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."`
+	AsCollection dagql.Nullable[*CollectionTypeDef] `field:"true" doc:"If kind is OBJECT and the object is a collection, the collection-specific type definition. If the type is not a collection, this will be null."`
+	AsInterface  dagql.Nullable[*InterfaceTypeDef]  `field:"true" doc:"If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."`
+	AsInput      dagql.Nullable[*InputTypeDef]      `field:"true" doc:"If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."`
+	AsScalar     dagql.Nullable[*ScalarTypeDef]     `field:"true" doc:"If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."`
+	AsEnum       dagql.Nullable[*EnumTypeDef]       `field:"true" doc:"If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null."`
 }
 
 func (typeDef TypeDef) Clone() *TypeDef {
@@ -540,6 +541,9 @@ func (typeDef TypeDef) Clone() *TypeDef {
 	}
 	if typeDef.AsObject.Valid {
 		cp.AsObject.Value = typeDef.AsObject.Value.Clone()
+	}
+	if typeDef.AsCollection.Valid {
+		cp.AsCollection.Value = typeDef.AsCollection.Value.Clone()
 	}
 	if typeDef.AsInterface.Valid {
 		cp.AsInterface.Value = typeDef.AsInterface.Value.Clone()
@@ -671,6 +675,26 @@ func (typeDef *TypeDef) WithListOf(elem *TypeDef) *TypeDef {
 func (typeDef *TypeDef) WithObject(name, desc string, deprecated *string, sourceMap *SourceMap) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindObject)
 	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc, deprecated).WithSourceMap(sourceMap))
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithCollection() *TypeDef {
+	typeDef = typeDef.Clone()
+	if !typeDef.AsCollection.Valid {
+		typeDef.AsCollection = dagql.NonNull(&CollectionTypeDef{})
+	}
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithCollectionKeys(name string) *TypeDef {
+	typeDef = typeDef.WithCollection()
+	typeDef.AsCollection.Value.KeysFieldNameOverride = gqlFieldName(name)
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithCollectionGet(name string) *TypeDef {
+	typeDef = typeDef.WithCollection()
+	typeDef.AsCollection.Value.GetFunctionNameOverride = gqlFieldName(name)
 	return typeDef
 }
 
@@ -866,6 +890,45 @@ type ObjectTypeDef struct {
 	// Set by Module.TypeDefs() so downstream consumers don't need
 	// name-matching heuristics.
 	IsMainObject bool
+}
+
+type CollectionTypeDef struct {
+	KeyType   *TypeDef `field:"true" doc:"The type accepted by get(key) and subset(keys: ...)."`
+	ValueType *TypeDef `field:"true" doc:"The type returned by get() and enumerated by list."`
+	BatchType *TypeDef `field:"true" doc:"The synthetic batch type exposed for collection-level operations, if any."`
+
+	// Below are not in public API.
+	KeysFieldNameOverride   string
+	GetFunctionNameOverride string
+
+	KeysFieldName   string
+	GetFunctionName string
+	GetArgName      string
+}
+
+func (*CollectionTypeDef) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "CollectionTypeDef",
+		NonNull:   true,
+	}
+}
+
+func (*CollectionTypeDef) TypeDescription() string {
+	return "A definition of collection semantics layered on top of an object type."
+}
+
+func (typeDef CollectionTypeDef) Clone() *CollectionTypeDef {
+	cp := typeDef
+	if typeDef.KeyType != nil {
+		cp.KeyType = typeDef.KeyType.Clone()
+	}
+	if typeDef.ValueType != nil {
+		cp.ValueType = typeDef.ValueType.Clone()
+	}
+	if typeDef.BatchType != nil {
+		cp.BatchType = typeDef.BatchType.Clone()
+	}
+	return &cp
 }
 
 func (obj ObjectTypeDef) functions() iter.Seq[*Function] {

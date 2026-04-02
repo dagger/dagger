@@ -75,6 +75,17 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	if doc := docForAstSpec(astSpec); doc != nil {
 		docPragmas, docComment := parsePragmaComment(doc.Text())
 		comment := strings.TrimSpace(docComment)
+		if v, ok := docPragmas["collection"]; ok {
+			if v == nil {
+				spec.isCollection = true
+			} else {
+				var ok bool
+				spec.isCollection, ok = v.(bool)
+				if !ok {
+					return nil, fmt.Errorf("collection pragma %q, must be a valid boolean", v)
+				}
+			}
+		}
 		if raw, ok := docPragmas["deprecated"]; ok {
 			reason := ""
 			if str, _ := raw.(string); str != "" {
@@ -142,6 +153,17 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 				fieldSpec.isPrivate, _ = v.(bool)
 			}
 		}
+		if v, ok := pragmas["keys"]; ok {
+			if v == nil {
+				fieldSpec.isCollectionKeys = true
+			} else {
+				var ok bool
+				fieldSpec.isCollectionKeys, ok = v.(bool)
+				if !ok {
+					return nil, fmt.Errorf("keys pragma %q, must be a valid boolean", v)
+				}
+			}
+		}
 		if raw, ok := pragmas["deprecated"]; ok {
 			reason := ""
 			if str, _ := raw.(string); str != "" {
@@ -168,11 +190,12 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 }
 
 type parsedObjectType struct {
-	name       string
-	moduleName string
-	doc        string
-	sourceMap  *sourceMap
-	deprecated *string
+	name         string
+	moduleName   string
+	doc          string
+	sourceMap    *sourceMap
+	deprecated   *string
+	isCollection bool
 
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
@@ -198,6 +221,9 @@ func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, erro
 		return nil, fmt.Errorf("object name is empty")
 	}
 	typeDefObject := dag.TypeDef().WithObject(spec.name, withObjectOpts)
+	if spec.isCollection {
+		typeDefObject = typeDefObject.WithCollection()
+	}
 
 	for _, m := range spec.methods {
 		fnTypeDef, err := m.TypeDefFunc(dag)
@@ -235,6 +261,20 @@ func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, erro
 			return nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
 		}
 		typeDefObject = typeDefObject.WithConstructor(fnTypeDef)
+	}
+
+	for _, field := range spec.fields {
+		if field.isCollectionKeys {
+			typeDefObject = typeDefObject.WithCollectionKeys(field.name)
+			break
+		}
+	}
+
+	for _, method := range spec.methods {
+		if method.isCollectionGet {
+			typeDefObject = typeDefObject.WithCollectionGet(method.name)
+			break
+		}
 	}
 
 	return typeDefObject, nil
@@ -535,6 +575,8 @@ type fieldSpec struct {
 
 	// isPrivate is true if the field is marked with the +private pragma
 	isPrivate bool
+	// isCollectionKeys is true if the field is marked with the +keys pragma
+	isCollectionKeys bool
 	// goName is the name of the field in the Go struct. It may be different than name if the user changed the name of the field via a json tag
 	goName string
 

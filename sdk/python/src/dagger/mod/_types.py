@@ -14,6 +14,7 @@ class FieldDefinition:
     name: APIName | None
     optional: bool = False
     deprecated: str | None = None
+    collection_key: bool = False
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
@@ -24,6 +25,7 @@ class FunctionDefinition:
     deprecated: str | None = None
     check: bool = False
     generator: bool = False
+    collection_get: bool = False
 
 
 class Enum(str, base.Enum):

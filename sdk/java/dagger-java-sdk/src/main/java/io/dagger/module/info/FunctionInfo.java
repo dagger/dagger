@@ -7,4 +7,5 @@ public record FunctionInfo(
     TypeInfo returnType,
     ParameterInfo[] parameters,
     boolean isCheck,
-    boolean isGenerate) {}
+    boolean isGenerate,
+    boolean isCollectionGet) {}

@@ -22,6 +22,165 @@ func TestClientGenerator(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ClientGeneratorTest{})
 }
 
+func (ClientGeneratorTest) TestCollections(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		baseImage string
+		generator string
+		callCmd   []string
+		setup     dagger.WithContainerFunc
+		postSetup dagger.WithContainerFunc
+	}
+
+	testCases := []testCase{
+		{
+			baseImage: golangImage,
+			generator: "go",
+			callCmd:   []string{"go", "run", "main.go"},
+			setup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr.
+					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
+					WithNewFile(".dagger/main.go", goCollectionModuleSource).
+					With(withGoSetup(`package main
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+
+	"test.com/test/dagger"
+)
+
+type result struct {
+	Keys   []string ` + "`json:\"keys\"`" + `
+	List   []string ` + "`json:\"list\"`" + `
+	Subset []string ` + "`json:\"subset\"`" + `
+	Batch  string   ` + "`json:\"batch\"`" + `
+	Get    string   ` + "`json:\"get\"`" + `
+}
+
+func main() {
+	ctx := context.Background()
+
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	tests := dag.Test().Tests()
+
+	keys, err := tests.Keys(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	list, err := tests.List(ctx)
+	if err != nil {
+		panic(err)
+	}
+	names := make([]string, 0, len(list))
+	for i := range list {
+		name, err := list[i].Name(ctx)
+		if err != nil {
+			panic(err)
+		}
+		names = append(names, name)
+	}
+
+	subset := tests.Subset([]string{"integration", "unit"})
+	subsetKeys, err := subset.Keys(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	batch, err := subset.Batch().Names(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	get, err := tests.Get("lint").Name(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	if err := json.NewEncoder(os.Stdout).Encode(result{
+		Keys:   keys,
+		List:   names,
+		Subset: subsetKeys,
+		Batch:  batch,
+		Get:    get,
+	}); err != nil {
+		panic(err)
+	}
+}`))
+			},
+			postSetup: addSDKReplaceToClient(defaultGenDir),
+		},
+		{
+			baseImage: nodeImage,
+			generator: "typescript",
+			callCmd:   []string{"tsx", "index.ts"},
+			setup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr.
+					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
+					WithNewFile(".dagger/main.go", goCollectionModuleSource).
+					With(withTypeScriptSetup(`import { connection, dag } from "@my-app/dagger"
+
+async function main() {
+  await connection(async () => {
+    const tests = dag.test().tests()
+    const keys = await tests.keys()
+    const list = await Promise.all((await tests.list()).map((test) => test.name()))
+    const subset = tests.subset(["integration", "unit"])
+    const subsetKeys = await subset.keys()
+    const batch = await subset.batch().names()
+    const get = await tests.get("lint").name()
+
+    console.log(JSON.stringify({ keys, list, subset: subsetKeys, batch, get }))
+  })
+}
+
+main()
+`, defaultGenDir))
+			},
+			postSetup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr.WithExec([]string{"npm", "install"})
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			moduleSrc := c.Container().From(tc.baseImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+				With(nonNestedDevEngine(c)).
+				With(tc.setup).
+				With(daggerClientInstall(tc.generator))
+
+			if tc.generator == "go" {
+				moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+			}
+
+			moduleSrc = moduleSrc.With(tc.postSetup)
+
+			t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
+				out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, collectionClientOutput, out)
+			})
+
+			t.Run(strings.Join(tc.callCmd, " "), func(ctx context.Context, t *testctx.T) {
+				out, err := moduleSrc.WithExec(tc.callCmd).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, collectionClientOutput, out)
+			})
+		})
+	}
+}
+
 func (ClientGeneratorTest) TestGenerateAndCallDependencies(ctx context.Context, t *testctx.T) {
 	t.Run("no dependency", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {

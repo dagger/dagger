@@ -12,6 +12,8 @@ type checksSchema struct{}
 var _ SchemaResolvers = &checksSchema{}
 
 func (s checksSchema) Install(srv *dagql.Server) {
+	dagql.Fields[*core.CollectionFilterValues]{}.Install(srv)
+
 	dagql.Fields[*core.CheckGroup]{
 		dagql.Func("list", s.list).
 			Doc("Return a list of individual checks and their details"),
@@ -21,6 +23,12 @@ func (s checksSchema) Install(srv *dagql.Server) {
 
 		dagql.Func("report", s.report).
 			Doc("Generate a markdown report"),
+
+		dagql.Func("collectionFilterValues", s.collectionFilterValues).
+			Doc("List the available values for the requested collection-aware filters within the current check scope").
+			Args(
+				dagql.Arg("typeNames").Doc("Collection type names to list values for"),
+			),
 	}.Install(srv)
 
 	// Check methods
@@ -71,6 +79,12 @@ func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args str
 
 func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args struct{}) (*core.File, error) {
 	return parent.Report(ctx)
+}
+
+func (s checksSchema) collectionFilterValues(ctx context.Context, parent *core.CheckGroup, args struct {
+	TypeNames []string
+}) ([]*core.CollectionFilterValues, error) {
+	return parent.CollectionFilterValues(ctx, args.TypeNames)
 }
 
 func (s checksSchema) runSingleCheck(ctx context.Context, parent *core.Check, args struct{}) (*core.Check, error) {

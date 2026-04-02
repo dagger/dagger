@@ -14,6 +14,7 @@ import {
   CHECK_DECORATOR,
   FUNCTION_DECORATOR,
   GENERATOR_DECORATOR,
+  GET_DECORATOR,
 } from "./decorator.js"
 import { Locatable } from "./locatable.js"
 import { References } from "./reference.js"
@@ -31,6 +32,7 @@ export class DaggerFunction extends Locatable {
   public cache: string | undefined
   public isCheck: boolean = false
   public isGenerator: boolean = false
+  public isCollectionGet: boolean = false
 
   private signature: ts.Signature
   private symbol: ts.Symbol
@@ -70,6 +72,10 @@ export class DaggerFunction extends Locatable {
     // Parse @generate decorator
     if (this.ast.isNodeDecoratedWith(this.node, GENERATOR_DECORATOR)) {
       this.isGenerator = true
+    }
+
+    if (this.ast.isNodeDecoratedWith(this.node, GET_DECORATOR)) {
+      this.isCollectionGet = true
     }
 
     for (const parameter of this.node.parameters) {
@@ -145,6 +151,7 @@ export class DaggerFunction extends Locatable {
       description: this.description,
       deprecated: this.deprecated,
       alias: this.alias,
+      isCollectionGet: this.isCollectionGet || undefined,
       arguments: this.arguments,
       returnType: this.returnType,
     }

@@ -350,6 +350,15 @@ type PortForward struct {
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
+// Collection-aware filter input for check and generator traversal.
+type CollectionFilterInput struct {
+	// Collection type name.
+	TypeName string `json:"typeName"`
+
+	// Exact filter values to retain within matching collections.
+	Values []string `json:"values"`
+}
+
 // A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
 type Address struct {
 	query *querybuilder.Selection
@@ -3529,6 +3538,8 @@ func (r *CurrentModule) GeneratedContextDirectory() *Directory {
 type CurrentModuleGeneratorsOpts struct {
 	// Only include generators matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing generators
+	Filters []CollectionFilterInput
 }
 
 // Return all generators defined by the module
@@ -3540,6 +3551,10 @@ func (r *CurrentModule) Generators(opts ...CurrentModuleGeneratorsOpts) *Generat
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 
@@ -10090,6 +10105,8 @@ func (r *Module) Check(name string) *Check {
 type ModuleChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing checks
+	Filters []CollectionFilterInput
 }
 
 // Return all checks defined by the module
@@ -10101,6 +10118,10 @@ func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 
@@ -10213,6 +10234,8 @@ func (r *Module) Generator(name string) *Generator {
 type ModuleGeneratorsOpts struct {
 	// Only include generators matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing generators
+	Filters []CollectionFilterInput
 }
 
 // Return all generators defined by the module
@@ -10224,6 +10247,10 @@ func (r *Module) Generators(opts ...ModuleGeneratorsOpts) *GeneratorGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 
@@ -14195,6 +14222,35 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 	}
 }
 
+// Marks an Object TypeDef as a collection.
+func (r *TypeDef) WithCollection() *TypeDef {
+	q := r.query.Select("withCollection")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Overrides the effective keys field for a collection Object TypeDef.
+func (r *TypeDef) WithCollectionKeys(name string) *TypeDef {
+	q := r.query.Select("withCollectionKeys")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Overrides the effective get function for a collection Object TypeDef.
+func (r *TypeDef) WithCollectionGet(name string) *TypeDef {
+	q := r.query.Select("withCollectionGet")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
 // Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
 func (r *TypeDef) WithFunction(function *Function) *TypeDef {
 	assertNotNil("function", function)
@@ -14357,6 +14413,8 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 type WorkspaceChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing checks
+	Filters []CollectionFilterInput
 }
 
 // Return all checks from modules loaded in the workspace.
@@ -14366,6 +14424,10 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 
@@ -14486,6 +14548,8 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 type WorkspaceGeneratorsOpts struct {
 	// Only include generators matching the specified patterns
 	Include []string
+	// Collection-aware filters to apply while traversing generators
+	Filters []CollectionFilterInput
 }
 
 // Return all generators from modules loaded in the workspace.
@@ -14495,6 +14559,10 @@ func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup 
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `filters` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Filters) {
+			q = q.Arg("filters", opts[i].Filters)
 		}
 	}
 

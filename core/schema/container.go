@@ -1059,6 +1059,9 @@ func (args containerExecArgs) Digest() (digest.Digest, error) {
 	inputs = append(inputs, digest.FromBytes(res).String())
 
 	if args.ExecMD.Self != nil {
+		if args.ExecMD.Self.CallID != nil {
+			inputs = append(inputs, args.ExecMD.Self.CallID.Digest().String())
+		}
 		inputs = append(inputs, string(args.ExecMD.Self.CacheMixin))
 	}
 

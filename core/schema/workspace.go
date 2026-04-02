@@ -58,11 +58,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("filters").Doc("Only include checks whose backing collections match the specified filter values"),
 			),
 		dagql.Func("generators", s.generators).
 			Doc("Return all generators from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+				dagql.Arg("filters").Doc("Only include generators whose backing collections match the specified filter values"),
 			),
 	}.Install(srv)
 }
@@ -351,9 +353,11 @@ func (s *workspaceSchema) checks(
 	parent *core.Workspace,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Filters dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.CollectionFilterInput]]]
 	},
 ) (*core.CheckGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
+	filters := workspaceCollectionFilters(args.Filters)
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -366,8 +370,9 @@ func (s *workspaceSchema) checks(
 	})
 
 	var allChecks []*core.Check
+	workspaceExclude := make([]string, 0)
 	for _, mod := range mods {
-		checkGroup, err := mod.Checks(ctx, nil)
+		checkGroup, err := mod.Checks(ctx, nil, filters)
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Name(), err)
 		}
@@ -385,6 +390,7 @@ func (s *workspaceSchema) checks(
 		}
 		// Apply ignoreChecks exclusion for this toolchain's checks.
 		if exclude := ignoreChecks[mod.Name()]; len(exclude) > 0 {
+			workspaceExclude = append(workspaceExclude, workspaceExcludePatterns(mod.Name(), exclude)...)
 			filtered, err = filterNodesByExclude(
 				ctx,
 				filtered,
@@ -400,7 +406,11 @@ func (s *workspaceSchema) checks(
 		allChecks = append(allChecks, filtered...)
 	}
 
-	return &core.CheckGroup{Checks: allChecks}, nil
+	return &core.CheckGroup{
+		Checks:  allChecks,
+		include: append([]string(nil), include...),
+		exclude: workspaceExclude,
+	}, nil
 }
 
 func (s *workspaceSchema) generators(
@@ -408,9 +418,11 @@ func (s *workspaceSchema) generators(
 	parent *core.Workspace,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Filters dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.CollectionFilterInput]]]
 	},
 ) (*core.GeneratorGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
+	filters := workspaceCollectionFilters(args.Filters)
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -422,7 +434,7 @@ func (s *workspaceSchema) generators(
 	}, 0, len(mods))
 	generatorModuleCount := 0
 	for _, mod := range mods {
-		generatorGroup, err := mod.Generators(ctx, nil)
+		generatorGroup, err := mod.Generators(ctx, nil, filters)
 		if err != nil {
 			return nil, fmt.Errorf("generators from module %q: %w", mod.Name(), err)
 		}
@@ -454,7 +466,10 @@ func (s *workspaceSchema) generators(
 		allGenerators = append(allGenerators, filtered...)
 	}
 
-	return &core.GeneratorGroup{Generators: allGenerators}, nil
+	return &core.GeneratorGroup{
+		Generators: allGenerators,
+		include:    append([]string(nil), include...),
+	}, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
@@ -466,6 +481,32 @@ func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.S
 		patterns = append(patterns, pattern.String())
 	}
 	return patterns
+}
+
+func workspaceCollectionFilters(filtersArg dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.CollectionFilterInput]]]) []core.CollectionFilterInput {
+	if !filtersArg.Valid {
+		return nil
+	}
+	filters := make([]core.CollectionFilterInput, 0, len(filtersArg.Value))
+	for _, filter := range filtersArg.Value {
+		filters = append(filters, filter.Value)
+	}
+	return filters
+}
+
+func workspaceExcludePatterns(modName string, exclude []string) []string {
+	if len(exclude) == 0 {
+		return nil
+	}
+	prefixed := make([]string, 0, len(exclude))
+	for _, pattern := range exclude {
+		if strings.Contains(pattern, ":") {
+			prefixed = append(prefixed, pattern)
+			continue
+		}
+		prefixed = append(prefixed, modName+":"+pattern)
+	}
+	return prefixed
 }
 
 func filterGeneratorsByInclude(

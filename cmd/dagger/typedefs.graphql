@@ -1,6 +1,62 @@
 fragment TypeDefRefParts on TypeDef {
   kind
   optional
+  asCollection {
+    keyType {
+      kind
+      asObject {
+        name
+      }
+      asInterface {
+        name
+      }
+      asInput {
+        name
+      }
+      asScalar {
+        name
+      }
+      asEnum {
+        name
+      }
+    }
+    valueType {
+      kind
+      asObject {
+        name
+      }
+      asInterface {
+        name
+      }
+      asInput {
+        name
+      }
+      asScalar {
+        name
+      }
+      asEnum {
+        name
+      }
+    }
+    batchType {
+      kind
+      asObject {
+        name
+      }
+      asInterface {
+        name
+      }
+      asInput {
+        name
+      }
+      asScalar {
+        name
+      }
+      asEnum {
+        name
+      }
+    }
+  }
   asObject {
     name
   }
@@ -69,6 +125,17 @@ query TypeDefs($hideCore: Boolean) {
   typeDefs: currentTypeDefs(hideCore: $hideCore) {
     kind
     optional
+    asCollection {
+      keyType {
+        ...TypeDefRefParts
+      }
+      valueType {
+        ...TypeDefRefParts
+      }
+      batchType {
+        ...TypeDefRefParts
+      }
+    }
     asObject {
       name
       description

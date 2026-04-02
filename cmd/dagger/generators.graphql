@@ -6,3 +6,12 @@ query GeneratorGroupListDetails($id: GeneratorGroupID!) {
     }
   }
 }
+
+query GeneratorGroupCollectionFilterValues($id: GeneratorGroupID!, $typeNames: [String!]!) {
+  group: loadGeneratorGroupFromID(id: $id) {
+    collectionFilterValues(typeNames: $typeNames) {
+      typeName
+      values
+    }
+  }
+}

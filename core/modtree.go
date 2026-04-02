@@ -33,6 +33,8 @@ type ModTreeNode struct {
 	Type           *TypeDef
 	IsCheck        bool
 	IsGenerator    bool
+	resolveValues  func(context.Context) ([]dagql.AnyResult, error)
+	filterSet      CollectionFilterSet
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -45,7 +47,7 @@ func (node *ModTreeNode) Path() ModTreePath {
 	return path
 }
 
-func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
+func NewModTree(ctx context.Context, mod *Module, filterSet CollectionFilterSet) (*ModTreeNode, error) {
 	mainObj, ok := mod.MainObject()
 	if !ok {
 		return nil, fmt.Errorf("%q: no main object", mod.Name())
@@ -58,6 +60,7 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 		DagqlServer:    srv,
 		Module:         mod,
 		OriginalModule: mod,
+		filterSet:      filterSet.Clone(),
 		Type: &TypeDef{
 			Kind:     TypeDefKindObject,
 			AsObject: dagql.NonNull(mainObj),
@@ -139,30 +142,43 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 }
 
 func (node *ModTreeNode) runCheckLocally(ctx context.Context) error {
-	var status dagql.AnyResult
-	if err := node.DagqlValue(ctx, &status); err != nil {
+	values, err := node.ResolveValues(ctx)
+	if err != nil {
 		return err
 	}
-	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
-		// If the check returns a syncable type, sync it
-		srv := node.DagqlServer
-		if syncField, has := obj.ObjectType().FieldSpec("sync", srv.View); has {
-			if !syncField.Args.HasRequired(srv.View) {
-				if err := srv.Select(
-					dagql.WithNonInternalTelemetry(ctx),
-					obj,
-					&status,
-					dagql.Selector{Field: "sync"},
-				); err != nil {
-					return err
-				}
-			}
+	for _, status := range values {
+		if status == nil {
+			continue
+		}
+		if err := node.syncCheckResult(ctx, status); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
+func (node *ModTreeNode) syncCheckResult(ctx context.Context, status dagql.AnyResult) error {
+	obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status)
+	if !ok {
+		return nil
+	}
+	srv := node.DagqlServer
+	syncField, has := obj.ObjectType().FieldSpec("sync", srv.View)
+	if !has || syncField.Args.HasRequired(srv.View) {
+		return nil
+	}
+	return srv.Select(
+		dagql.WithNonInternalTelemetry(ctx),
+		obj,
+		&status,
+		dagql.Selector{Field: "sync"},
+	)
+}
+
 func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr error) {
+	if node.filterSet.HasAny() {
+		return false, nil
+	}
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return true, err
@@ -247,14 +263,39 @@ func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []st
 }
 
 func (node *ModTreeNode) runGeneratorLocally(ctx context.Context) (*Changeset, error) {
-	var changes dagql.ObjectResult[*Changeset]
-	if err := node.DagqlValue(ctx, &changes); err != nil {
+	values, err := node.ResolveValues(ctx)
+	if err != nil {
 		return nil, err
 	}
-	return changes.Self(), nil
+
+	if len(values) == 0 {
+		return NewEmptyChangeset(ctx)
+	}
+
+	changesets := make([]*Changeset, 0, len(values))
+	for _, value := range values {
+		changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](value)
+		if !ok {
+			return nil, fmt.Errorf("expected generator result to be Changeset, got %T", value)
+		}
+		changesets = append(changesets, changes.Self())
+	}
+
+	if len(changesets) == 1 {
+		return changesets[0], nil
+	}
+
+	res, err := NewEmptyChangeset(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return res.WithChangesets(ctx, changesets, FailEarlyOnConflicts)
 }
 
 func (node *ModTreeNode) tryRunGeneratorScaleOut(ctx context.Context) (_ bool, _ *Changeset, rerr error) {
+	if node.filterSet.HasAny() {
+		return false, nil, nil
+	}
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return true, nil, err
@@ -375,6 +416,17 @@ func (node *ModTreeNode) Clone() *ModTreeNode {
 	return &cp
 }
 
+func (node *ModTreeNode) ResolveValues(ctx context.Context) ([]dagql.AnyResult, error) {
+	if node.resolveValues != nil {
+		return node.resolveValues(ctx)
+	}
+	var value dagql.AnyResult
+	if err := node.DagqlValue(ctx, &value); err != nil {
+		return nil, err
+	}
+	return []dagql.AnyResult{value}, nil
+}
+
 func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// We can't direct-select the dagql path, because Select() doesn't support traversing
 	// lists
@@ -451,6 +503,102 @@ func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, 
 	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
 		return n.IsGenerator
 	}, include, exclude)
+}
+
+func (node *ModTreeNode) CollectionFilterValues(ctx context.Context, typeNames []string, include []string, exclude []string) ([]*CollectionFilterValues, error) {
+	orderedTypeNames := make([]string, 0, len(typeNames))
+	seenTypes := make(map[string]string, len(typeNames))
+	for _, typeName := range typeNames {
+		key := gqlObjectName(typeName)
+		if _, ok := seenTypes[key]; ok {
+			continue
+		}
+		seenTypes[key] = typeName
+		orderedTypeNames = append(orderedTypeNames, key)
+	}
+
+	valuesByType := make(map[string][]string, len(orderedTypeNames))
+	seenValuesByType := make(map[string]map[string]struct{}, len(orderedTypeNames))
+	for _, typeName := range orderedTypeNames {
+		seenValuesByType[typeName] = map[string]struct{}{}
+	}
+
+	err := node.Walk(ctx, func(ctx context.Context, n *ModTreeNode) (bool, error) {
+		if !n.Type.AsCollection.Valid {
+			return true, nil
+		}
+		if len(orderedTypeNames) > 0 {
+			if _, ok := seenTypes[gqlObjectName(n.Type.AsObject.Value.Name)]; !ok {
+				return true, nil
+			}
+		}
+		if len(include) > 0 {
+			match, err := n.Match(ctx, include)
+			if err != nil {
+				return false, err
+			}
+			if !match {
+				return true, nil
+			}
+		}
+		if len(exclude) > 0 {
+			match, err := n.Match(ctx, exclude)
+			if err != nil {
+				return false, err
+			}
+			if match {
+				return true, nil
+			}
+		}
+
+		values, err := n.ResolveValues(ctx)
+		if err != nil {
+			return false, err
+		}
+
+		typeKey := gqlObjectName(n.Type.AsObject.Value.Name)
+		if _, ok := seenValuesByType[typeKey]; !ok {
+			seenValuesByType[typeKey] = map[string]struct{}{}
+			if _, ok := seenTypes[typeKey]; !ok {
+				seenTypes[typeKey] = n.Type.AsObject.Value.Name
+				orderedTypeNames = append(orderedTypeNames, typeKey)
+			}
+		}
+		for _, value := range values {
+			collectionObj, ok := dagql.UnwrapAs[*ModuleObject](value)
+			if !ok {
+				return false, fmt.Errorf("expected collection node %q to resolve to ModuleObject, got %T", n.PathString(), value)
+			}
+			keys, err := n.filteredCollectionKeys(collectionObj, true)
+			if err != nil {
+				return false, err
+			}
+			for _, key := range keys {
+				keyValue, err := normalizeCollectionFilterValue(collectionObj.Collection.KeyType, key)
+				if err != nil {
+					return false, err
+				}
+				if _, ok := seenValuesByType[typeKey][keyValue]; ok {
+					continue
+				}
+				seenValuesByType[typeKey][keyValue] = struct{}{}
+				valuesByType[typeKey] = append(valuesByType[typeKey], keyValue)
+			}
+		}
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]*CollectionFilterValues, 0, len(orderedTypeNames))
+	for _, typeKey := range orderedTypeNames {
+		result = append(result, &CollectionFilterValues{
+			TypeName: seenTypes[typeKey],
+			Values:   valuesByType[typeKey],
+		})
+	}
+	return result, nil
 }
 
 type ModTreePath []string
@@ -566,64 +714,304 @@ func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 }
 
 func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
-	var children []*ModTreeNode
-	if objType := node.ObjectType(); objType != nil {
-		nodeType := objType.Name
-		for _, fn := range objType.Functions {
+	objType := node.ObjectType()
+	if objType == nil {
+		return nil, nil
+	}
+	if node.Type.AsCollection.Valid {
+		return node.collectionChildren(ctx)
+	}
+	return node.objectChildren(ctx, objType)
+}
+
+func (node *ModTreeNode) objectChildren(ctx context.Context, objType *ObjectTypeDef) ([]*ModTreeNode, error) {
+	children := make([]*ModTreeNode, 0, len(objType.Functions)+len(objType.Fields))
+	nodeType := objType.Name
+
+	for _, fn := range objType.Functions {
+		if functionRequiresArgs(fn) {
+			continue
+		}
+		childType, description, isLeaf := node.memberObjectType(node.OriginalModule, nodeType, fn.ReturnType, fn.Description)
+		children = append(children, node.newChildNode(
+			fn.Name,
+			description,
+			childType,
+			fn.IsCheck && isLeaf,
+			fn.IsGenerator && isLeaf,
+			node.OriginalModule,
+			node.memberResolver(fn.Name),
+		))
+	}
+
+	for _, field := range objType.Fields {
+		childType, description, _ := node.memberObjectType(node.OriginalModule, nodeType, field.TypeDef, field.Description)
+		children = append(children, node.newChildNode(
+			field.Name,
+			description,
+			childType,
+			false,
+			false,
+			node.OriginalModule,
+			node.memberResolver(field.Name),
+		))
+	}
+
+	return children, nil
+}
+
+func (node *ModTreeNode) collectionChildren(ctx context.Context) ([]*ModTreeNode, error) {
+	rawCollectionType := &TypeDef{
+		Kind:         TypeDefKindObject,
+		AsObject:     dagql.NonNull(node.ObjectType()),
+		AsCollection: dagql.NonNull(node.Type.AsCollection.Value),
+	}
+	collection := node.Type.AsCollection.Value
+	childrenByName := map[string]*ModTreeNode{}
+
+	valueObj := collection.ValueType.AsObject.Value
+	if fullValueObj, ok := node.OriginalModule.ObjectByName(valueObj.Name); ok {
+		valueObj = fullValueObj
+	}
+	for _, fn := range valueObj.Functions {
+		if functionRequiresArgs(fn) {
+			continue
+		}
+		childType, description, isLeaf := node.memberObjectType(node.OriginalModule, valueObj.Name, fn.ReturnType, fn.Description)
+		childrenByName[fn.Name] = node.newChildNode(
+			fn.Name,
+			description,
+			childType,
+			fn.IsCheck && isLeaf,
+			fn.IsGenerator && isLeaf,
+			node.OriginalModule,
+			node.collectionItemResolver(ctx, fn.Name),
+		)
+	}
+	for _, field := range valueObj.Fields {
+		childType, description, _ := node.memberObjectType(node.OriginalModule, valueObj.Name, field.TypeDef, field.Description)
+		childrenByName[field.Name] = node.newChildNode(
+			field.Name,
+			description,
+			childType,
+			false,
+			false,
+			node.OriginalModule,
+			node.collectionItemResolver(ctx, field.Name),
+		)
+	}
+
+	projector := newCollectionProjector(node.Module)
+	if batchTypeDef := projector.projectCollectionBatchTypeDef(rawCollectionType); batchTypeDef != nil {
+		for _, fn := range batchTypeDef.AsObject.Value.Functions {
 			if functionRequiresArgs(fn) {
 				continue
 			}
-			returnType := fn.ReturnType.ToType().Name()
-			objectAdded := false
-			// if the type returned by the function is an object, check the children of the return type
-			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
-				// avoid cycles (X.withFoo: X)
-				returnType != nodeType {
-				// search for the object defined by the return type, in the "originalModule" that can be the toolchain one
-				if subObj, ok := node.OriginalModule.ObjectByName(fn.ReturnType.ToType().Name()); ok {
-					objectAdded = true
-					children = append(children, &ModTreeNode{
-						Parent:         node,
-						Name:           fn.Name, // use the name of the function and not the name of the type as we want the chain
-						DagqlServer:    node.DagqlServer,
-						Module:         node.Module,
-						OriginalModule: node.OriginalModule,
-						Type:           &TypeDef{AsObject: dagql.NonNull(subObj)},
-						IsCheck:        false,
-						IsGenerator:    false,
-						Description:    subObj.Description,
-					})
-				}
-			}
-			if !objectAdded {
-				children = append(children, &ModTreeNode{
-					Parent:         node,
-					Name:           fn.Name,
-					DagqlServer:    node.DagqlServer,
-					Module:         node.Module,
-					OriginalModule: node.OriginalModule,
-					Type:           fn.ReturnType,
-					IsCheck:        fn.IsCheck,
-					IsGenerator:    fn.IsGenerator,
-					Description:    fn.Description,
-				})
-			}
-		}
-		for _, field := range objType.Fields {
-			children = append(children, &ModTreeNode{
-				Parent:         node,
-				Name:           field.Name,
-				DagqlServer:    node.DagqlServer,
-				Module:         node.Module,
-				OriginalModule: node.OriginalModule,
-				Type:           field.TypeDef,
-				IsCheck:        false,
-				IsGenerator:    false,
-				Description:    field.Description,
-			})
+			childType, description, isLeaf := node.memberObjectType(node.OriginalModule, batchTypeDef.AsObject.Value.Name, fn.ReturnType, fn.Description)
+			childrenByName[fn.Name] = node.newChildNode(
+				fn.Name,
+				description,
+				childType,
+				fn.IsCheck && isLeaf,
+				fn.IsGenerator && isLeaf,
+				node.OriginalModule,
+				node.collectionBatchResolver(fn.Name),
+			)
 		}
 	}
+
+	children := make([]*ModTreeNode, 0, len(childrenByName))
+	for _, child := range childrenByName {
+		children = append(children, child)
+	}
+	slices.SortFunc(children, func(a, b *ModTreeNode) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 	return children, nil
+}
+
+func (node *ModTreeNode) newChildNode(
+	name string,
+	description string,
+	typeDef *TypeDef,
+	isCheck bool,
+	isGenerator bool,
+	originalModule *Module,
+	resolve func(context.Context) ([]dagql.AnyResult, error),
+) *ModTreeNode {
+	return &ModTreeNode{
+		Parent:         node,
+		Name:           name,
+		Description:    description,
+		DagqlServer:    node.DagqlServer,
+		Module:         node.Module,
+		OriginalModule: originalModule,
+		Type:           typeDef,
+		IsCheck:        isCheck,
+		IsGenerator:    isGenerator,
+		resolveValues:  resolve,
+		filterSet:      node.filterSet,
+	}
+}
+
+func (node *ModTreeNode) memberObjectType(originalModule *Module, nodeType string, returnType *TypeDef, description string) (*TypeDef, string, bool) {
+	if returnType.AsObject.Valid && returnType.ToType().Name() != nodeType {
+		if subObj, ok := originalModule.ObjectByName(returnType.ToType().Name()); ok {
+			return &TypeDef{Kind: TypeDefKindObject, AsObject: dagql.NonNull(subObj)}, subObj.Description, false
+		}
+	}
+	return returnType, description, true
+}
+
+func (node *ModTreeNode) memberResolver(name string) func(context.Context) ([]dagql.AnyResult, error) {
+	return func(ctx context.Context) ([]dagql.AnyResult, error) {
+		parentValues, err := node.ResolveValues(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return node.selectMemberValues(ctx, parentValues, name)
+	}
+}
+
+func (node *ModTreeNode) collectionBatchResolver(name string) func(context.Context) ([]dagql.AnyResult, error) {
+	return func(ctx context.Context) ([]dagql.AnyResult, error) {
+		collectionValues, err := node.ResolveValues(ctx)
+		if err != nil {
+			return nil, err
+		}
+		batchValues, err := node.selectMemberValues(ctx, collectionValues, collectionBatchFieldName)
+		if err != nil {
+			return nil, err
+		}
+		return node.selectMemberValues(ctx, batchValues, name)
+	}
+}
+
+func (node *ModTreeNode) collectionItemResolver(ctx context.Context, name string) func(context.Context) ([]dagql.AnyResult, error) {
+	getFn, ok := node.ObjectType().FunctionByName(node.Type.AsCollection.Value.GetFunctionName)
+	if !ok {
+		return func(context.Context) ([]dagql.AnyResult, error) {
+			return nil, fmt.Errorf("collection get function %q not found on %q", node.Type.AsCollection.Value.GetFunctionName, node.ObjectType().Name)
+		}
+	}
+	getModFun, err := NewModFunction(ctx, node.Module, node.ObjectType(), getFn)
+	if err != nil {
+		return func(context.Context) ([]dagql.AnyResult, error) {
+			return nil, fmt.Errorf("failed to create collection get function %q: %w", getFn.Name, err)
+		}
+	}
+	if err := getModFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
+		return func(context.Context) ([]dagql.AnyResult, error) {
+			return nil, fmt.Errorf("failed to merge user defaults for %q: %w", getFn.Name, err)
+		}
+	}
+
+	return func(ctx context.Context) ([]dagql.AnyResult, error) {
+		collectionValues, err := node.ResolveValues(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		results := make([]dagql.AnyResult, 0)
+		for _, collectionValue := range collectionValues {
+			collectionObj, ok := dagql.UnwrapAs[*ModuleObject](collectionValue)
+			if !ok {
+				return nil, fmt.Errorf("expected collection node %q to resolve to ModuleObject, got %T", node.PathString(), collectionValue)
+			}
+			keys, err := node.filteredCollectionKeys(collectionObj, false)
+			if err != nil {
+				return nil, err
+			}
+			parentResult, ok := dagql.UnwrapAs[dagql.AnyResult](collectionValue)
+			if !ok {
+				parentCtx := dagql.ContextWithID(ctx, collectionValue.ID())
+				parentResult, err = dagql.NewResultForCurrentID(parentCtx, collectionObj)
+				if err != nil {
+					return nil, err
+				}
+			}
+			for _, key := range keys {
+				keyInput, err := collectionObj.collectionKeyInput(key)
+				if err != nil {
+					return nil, err
+				}
+				itemID, err := collectionObj.collectionGetID(parentResult, keyInput)
+				if err != nil {
+					return nil, err
+				}
+				itemCtx := dagql.ContextWithID(ctx, itemID)
+				itemValue, err := collectionObj.callCollectionGet(itemCtx, parentResult, getModFun, node.DagqlServer, keyInput)
+				if err != nil {
+					return nil, err
+				}
+				childValue, err := node.selectMemberValue(ctx, itemValue, name)
+				if err != nil {
+					return nil, err
+				}
+				results = append(results, childValue)
+			}
+		}
+		return results, nil
+	}
+}
+
+func (node *ModTreeNode) selectMemberValues(ctx context.Context, parents []dagql.AnyResult, name string) ([]dagql.AnyResult, error) {
+	values := make([]dagql.AnyResult, 0, len(parents))
+	for _, parent := range parents {
+		child, err := node.selectMemberValue(ctx, parent, name)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, child)
+	}
+	return values, nil
+}
+
+func (node *ModTreeNode) selectMemberValue(ctx context.Context, parent dagql.AnyResult, name string) (dagql.AnyResult, error) {
+	parentObj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](parent)
+	if !ok {
+		return nil, fmt.Errorf("node %q parent is not an object: %T", node.PathString(), parent)
+	}
+	var child dagql.AnyResult
+	if err := node.DagqlServer.Select(dagql.WithNonInternalTelemetry(ctx), parentObj, &child, dagql.Selector{Field: name}); err != nil {
+		return nil, err
+	}
+	return child, nil
+}
+
+func (node *ModTreeNode) filteredCollectionKeys(collectionObj *ModuleObject, ignoreSelf bool) ([]any, error) {
+	currentKeys, err := collectionObj.collectionKeys()
+	if err != nil {
+		return nil, err
+	}
+	filterValues, ok := node.filterSet.ValuesFor(collectionObj.TypeDef.Name)
+	if !ok || ignoreSelf {
+		return currentKeys, nil
+	}
+
+	selected := make(map[string]struct{}, len(filterValues))
+	for _, filterValue := range filterValues {
+		keyID, err := normalizeCollectionFilterValue(collectionObj.Collection.KeyType, filterValue)
+		if err != nil {
+			return nil, err
+		}
+		selected[keyID] = struct{}{}
+	}
+	if len(selected) == 0 {
+		return []any{}, nil
+	}
+
+	filtered := make([]any, 0, len(currentKeys))
+	for _, key := range currentKeys {
+		keyID, err := normalizeCollectionFilterValue(collectionObj.Collection.KeyType, key)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := selected[keyID]; ok {
+			filtered = append(filtered, key)
+		}
+	}
+	return filtered, nil
 }
 
 func (node *ModTreeNode) ChildrenNames(ctx context.Context) ([]string, error) {

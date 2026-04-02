@@ -55,6 +55,8 @@ FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
 CHECK_DEF_KEY: typing.Final[str] = "__dagger_check__"
 GENERATOR_DEF_KEY: typing.Final[str] = "__dagger_generate__"
+COLLECTION_DEF_KEY: typing.Final[str] = "__dagger_collection__"
+GET_DEF_KEY: typing.Final[str] = "__dagger_get__"
 MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
 MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
 TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json")
@@ -162,6 +164,8 @@ class Module:
                     description=get_doc(obj_type.cls),
                     deprecated=obj_type.deprecated,
                 )
+                if obj_type.collection:
+                    type_def = type_def.with_collection()
 
             # Object fields
             if obj_type.fields:
@@ -175,6 +179,13 @@ class Module:
                         description=get_doc(field.return_type),
                         deprecated=field.meta.deprecated,
                     )
+
+                collection_keys = next(
+                    (field for field in obj_type.fields.values() if field.meta.collection_key),
+                    None,
+                )
+                if collection_keys is not None:
+                    type_def = type_def.with_collection_keys(collection_keys.name)
 
             # Object/interface functions
             for func_name, func in obj_type.functions.items():
@@ -237,6 +248,17 @@ class Module:
                     if func_name == ""
                     else type_def.with_function(func_def)
                 )
+
+            collection_get = next(
+                (
+                    func
+                    for name, func in obj_type.functions.items()
+                    if name != "" and func.collection_get
+                ),
+                None,
+            )
+            if collection_get is not None:
+                type_def = type_def.with_collection_get(collection_get.name)
 
             # Add object/interface to module
             mod = (
@@ -573,6 +595,7 @@ class Module:
         name: APIName | None = None,
         init: bool = True,
         deprecated: str | None = None,
+        collection_key: bool = False,
     ) -> Any:
         """Exposes an attribute as a :py:class:`dagger.FieldTypeDef`.
 
@@ -608,11 +631,35 @@ class Module:
             kwargs["default_factory" if callable(default) else "default"] = default
 
         return dataclasses.field(
-            metadata={FIELD_DEF_KEY: FieldDefinition(name, optional, deprecated)},
+            metadata={
+                FIELD_DEF_KEY: FieldDefinition(
+                    name,
+                    optional,
+                    deprecated,
+                    collection_key,
+                )
+            },
             kw_only=True,
             init=init,
             repr=init,  # default repr shows field as an __init__ argument
             **kwargs,
+        )
+
+    def keys(
+        self,
+        *,
+        default: Callable[[], Any] | object = ...,
+        name: APIName | None = None,
+        init: bool = True,
+        deprecated: str | None = None,
+    ) -> Any:
+        """Exposes a field as the effective collection keys field."""
+        return self.field(
+            default=default,
+            name=name,
+            init=init,
+            deprecated=deprecated,
+            collection_key=True,
         )
 
     def check(
@@ -680,6 +727,18 @@ class Module:
 
         return wrapper(func) if func else wrapper
 
+    def get(
+        self,
+        func: Func[P, R] | None = None,
+    ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
+        """Mark a function as the effective collection get function."""
+
+        def wrapper(fn: Func[P, R]) -> Func[P, R]:
+            setattr(fn, GET_DEF_KEY, True)
+            return fn
+
+        return wrapper(func) if func else wrapper
+
     @overload
     def function(
         self,
@@ -743,6 +802,7 @@ class Module:
             # Check if function is marked as a check or generator
             check = getattr(func, CHECK_DEF_KEY, False)
             generator = getattr(func, GENERATOR_DEF_KEY, False)
+            collection_get = getattr(func, GET_DEF_KEY, False)
 
             meta = FunctionDefinition(
                 name=name,
@@ -751,6 +811,7 @@ class Module:
                 deprecated=deprecated,
                 check=check,
                 generator=generator,
+                collection_get=collection_get,
             )
 
             if inspect.isclass(func):
@@ -835,7 +896,12 @@ class Module:
         interface: bool = False,
         deprecated: str | None = None,
     ) -> T:
-        obj_def = ObjectType(cls, interface=interface, deprecated=deprecated)
+        obj_def = ObjectType(
+            cls,
+            interface=interface,
+            deprecated=deprecated,
+            collection=getattr(cls, COLLECTION_DEF_KEY, False),
+        )
 
         cls.__dagger_module__ = self
         cls.__dagger_object_type__ = obj_def
@@ -871,8 +937,10 @@ class Module:
 
         # Find all fields exposed with `mod.field()`.
         for field in dataclasses.fields(cls):
-            field_def: FieldDefinition | None
-            if field_def := field.metadata.get(FIELD_DEF_KEY, None):
+            field_def: FieldDefinition | None = field.metadata.get(FIELD_DEF_KEY, None)
+            if field_def is None and obj_def.collection and field.name == "keys":
+                field_def = FieldDefinition(name=None)
+            if field_def is not None:
                 r = Field(
                     meta=field_def,
                     original_name=field.name,
@@ -905,6 +973,32 @@ class Module:
         )
 
         return cls
+
+    @overload
+    def collection(self, cls: T) -> T: ...
+
+    @overload
+    def collection(self) -> Callable[[T], T]: ...
+
+    def collection(self, cls: T | None = None) -> T | Callable[[T], T]:
+        """Marks an object type as a collection."""
+
+        def wrapper(cls: T) -> T:
+            setattr(cls, COLLECTION_DEF_KEY, True)
+            obj_def = getattr(cls, "__dagger_object_type__", None)
+            if obj_def is not None:
+                obj_def.collection = True
+                if "keys" not in obj_def.fields:
+                    annotations = inspect.get_annotations(cls)
+                    if "keys" in annotations:
+                        obj_def.fields["keys"] = Field(
+                            meta=FieldDefinition(name=None),
+                            original_name="keys",
+                            return_type=annotations["keys"],
+                        )
+            return cls
+
+        return wrapper(cls) if cls else wrapper
 
     @overload
     def interface(self, cls: T) -> T: ...

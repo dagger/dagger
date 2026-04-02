@@ -3,7 +3,12 @@ import ts from "typescript"
 import { IntrospectionError } from "../../../common/errors/index.js"
 import { AST, Location } from "../typescript_module/index.js"
 import { DaggerConstructor } from "./constructor.js"
-import { FUNCTION_DECORATOR, OBJECT_DECORATOR } from "./decorator.js"
+import {
+  COLLECTION_DECORATOR,
+  FUNCTION_DECORATOR,
+  GET_DECORATOR,
+  OBJECT_DECORATOR,
+} from "./decorator.js"
 import { DaggerFunction, DaggerFunctions } from "./function.js"
 import { Locatable } from "./locatable.js"
 import { DaggerObjectBase } from "./objectBase.js"
@@ -30,6 +35,7 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
   public _constructor: DaggerConstructor | undefined = undefined
   public methods: DaggerFunctions = {}
   public properties: DaggerProperties = {}
+  public isCollection: boolean
 
   private symbol: ts.Symbol
 
@@ -65,6 +71,10 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
     }
 
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
+    this.isCollection = this.ast.isNodeDecoratedWith(
+      this.node,
+      COLLECTION_DECORATOR,
+    )
     const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
     this.description = description
     this.deprecated = deprecated
@@ -72,6 +82,9 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
     for (const member of this.node.members) {
       if (ts.isPropertyDeclaration(member)) {
         const property = new DaggerProperty(member, this.ast)
+        if (this.isCollection && property.name === "keys") {
+          property.isExposed = true
+        }
         this.properties[property.alias ?? property.name] = property
 
         continue
@@ -85,7 +98,8 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
 
       if (
         ts.isMethodDeclaration(member) &&
-        this.ast.isNodeDecoratedWith(member, FUNCTION_DECORATOR)
+        (this.ast.isNodeDecoratedWith(member, FUNCTION_DECORATOR) ||
+          this.ast.isNodeDecoratedWith(member, GET_DECORATOR))
       ) {
         const daggerFunction = new DaggerFunction(member, this.ast)
         this.methods[daggerFunction.alias ?? daggerFunction.name] =
@@ -136,10 +150,20 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
   }
 
   public toJSON() {
+    const collectionKeys = Object.values(this.properties).find(
+      (property) => property.isCollectionKeys,
+    )
+    const collectionGet = Object.values(this.methods).find(
+      (method) => method.isCollectionGet,
+    )
+
     return {
       name: this.name,
       description: this.description,
       deprecated: this.deprecated,
+      isCollection: this.isCollection || undefined,
+      collectionKeys: collectionKeys?.alias ?? collectionKeys?.name,
+      collectionGet: collectionGet?.alias ?? collectionGet?.name,
       constructor: this._constructor,
       methods: this.methods,
       properties: this.properties,

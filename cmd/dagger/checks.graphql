@@ -16,3 +16,12 @@ query CheckGroupRunStatuses($checkGroup: CheckGroupID!) {
     }
   }
 }
+
+query CheckGroupCollectionFilterValues($id: CheckGroupID!, $typeNames: [String!]!) {
+  group: loadCheckGroupFromID(id: $id) {
+    collectionFilterValues(typeNames: $typeNames) {
+      typeName
+      values
+    }
+  }
+}

@@ -677,6 +677,9 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// else to sub-select. In that case `q` will be nil to signal that we
 		// just want to return the object's name, without making an API request.
 		if q == nil {
+			if fn.ReturnType.AsCollection != nil {
+				return fc.Help(cmd)
+			}
 			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e, autoApply)
 		}
 
@@ -694,6 +697,9 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 	obj := typeDef.AsFunctionProvider()
 	if obj == nil {
 		return q
+	}
+	if typeDef.AsCollection != nil {
+		return nil
 	}
 
 	// Use duck typing to detect supported functions.

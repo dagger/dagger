@@ -55,10 +55,12 @@ func (g *Generator) Run(ctx context.Context) (*Generator, error) {
 type GeneratorGroup struct {
 	Node       *ModTreeNode `json:"node"`
 	Generators []*Generator `json:"generators"`
+	include    []string
+	exclude    []string
 }
 
-func NewGeneratorGroup(ctx context.Context, mod *Module, include []string) (*GeneratorGroup, error) {
-	rootNode, err := NewModTree(ctx, mod)
+func NewGeneratorGroup(ctx context.Context, mod *Module, include []string, filters []CollectionFilterInput) (*GeneratorGroup, error) {
+	rootNode, err := NewModTree(ctx, mod, NewCollectionFilterSet(filters))
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +78,7 @@ func NewGeneratorGroup(ctx context.Context, mod *Module, include []string) (*Gen
 	return &GeneratorGroup{
 		Node:       rootNode,
 		Generators: generators,
+		include:    append([]string(nil), include...),
 	}, nil
 }
 
@@ -143,8 +146,17 @@ func (gg *GeneratorGroup) Clone() *GeneratorGroup {
 		c.Node = gg.Node.Clone()
 	}
 	c.Generators = make([]*Generator, len(gg.Generators))
+	c.include = append([]string(nil), gg.include...)
+	c.exclude = append([]string(nil), gg.exclude...)
 	for i := range c.Generators {
 		c.Generators[i] = gg.Generators[i].Clone()
 	}
 	return &c
+}
+
+func (gg *GeneratorGroup) CollectionFilterValues(ctx context.Context, typeNames []string) ([]*CollectionFilterValues, error) {
+	if gg.Node == nil {
+		return collectionFilterValuesFromWorkspaceRoots(ctx, typeNames, gg.include, gg.exclude, workspaceGeneratorRoots(gg.Generators))
+	}
+	return gg.Node.CollectionFilterValues(ctx, typeNames, gg.include, gg.exclude)
 }

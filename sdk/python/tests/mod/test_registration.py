@@ -162,6 +162,51 @@ def test_object_type_deprecated_metadata():
     assert obj.deprecated == "Use NewFoo instead"
 
 
+def test_collection_marks_object_and_exposes_default_keys_field():
+    mod = Module()
+
+    @mod.object_type
+    class GoTest:
+        name: str = mod.field(default="")
+
+    @mod.object_type
+    @mod.collection
+    class GoTests:
+        keys: list[str]
+
+        @mod.function
+        def get(self, name: str) -> GoTest:
+            return GoTest(name=name)
+
+    obj = mod.get_object("GoTests")
+    assert obj.collection is True
+    assert "keys" in obj.fields
+    assert obj.fields["keys"].meta.collection_key is False
+
+
+def test_collection_override_markers():
+    mod = Module()
+
+    @mod.object_type
+    class GoTest:
+        name: str = mod.field(default="")
+
+    @mod.object_type
+    @mod.collection
+    class GoTests:
+        paths: list[str] = mod.keys()
+
+        @mod.function
+        @mod.get
+        def lookup(self, name: str) -> GoTest:
+            return GoTest(name=name)
+
+    obj = mod.get_object("GoTests")
+    assert obj.collection is True
+    assert obj.fields["paths"].meta.collection_key is True
+    assert obj.functions["lookup"].collection_get is True
+
+
 def test_external_constructor_doc():
     mod = Module()
 

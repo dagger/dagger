@@ -95,12 +95,12 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
-func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	return NewCheckGroup(ctx, mod, include)
+func (mod *Module) Checks(ctx context.Context, include []string, filters []CollectionFilterInput) (*CheckGroup, error) {
+	return NewCheckGroup(ctx, mod, include, filters)
 }
 
-func (mod *Module) Generators(ctx context.Context, include []string) (*GeneratorGroup, error) {
-	return NewGeneratorGroup(ctx, mod, include)
+func (mod *Module) Generators(ctx context.Context, include []string, filters []CollectionFilterInput) (*GeneratorGroup, error) {
+	return NewGeneratorGroup(ctx, mod, include, filters)
 }
 
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
@@ -571,9 +571,14 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server, opts ...Insta
 			}
 		}
 
+		var collection *CollectionTypeDef
+		if def.AsCollection.Valid {
+			collection = def.AsCollection.Value
+		}
 		obj := &ModuleObject{
-			Module:  mod,
-			TypeDef: objDef,
+			Module:     mod,
+			TypeDef:    objDef,
+			Collection: collection,
 		}
 
 		if err := obj.Install(ctx, dag, opts...); err != nil {
@@ -614,11 +619,12 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef,
 	// TODO: use dag arg to reflect dynamic updates (if/when we support that)
 
 	mainObj, _ := mod.MainObject()
+	projector := newCollectionProjector(mod)
 
 	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
 
 	for _, def := range mod.ObjectDefs {
-		typeDef := def.Clone()
+		typeDef := projector.projectObjectDef(def)
 		if typeDef.AsObject.Valid {
 			typeDef.AsObject.Value.SourceModuleName = mod.Name()
 			if mainObj != nil && typeDef.AsObject.Value.OriginalName == mainObj.OriginalName {
@@ -626,10 +632,16 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef,
 			}
 		}
 		typeDefs = append(typeDefs, typeDef)
+		if def.AsCollection.Valid {
+			if batchTypeDef := projector.projectCollectionBatchTypeDef(def); batchTypeDef != nil {
+				batchTypeDef.AsObject.Value.SourceModuleName = mod.Name()
+				typeDefs = append(typeDefs, batchTypeDef)
+			}
+		}
 	}
 
 	for _, def := range mod.InterfaceDefs {
-		typeDef := def.Clone()
+		typeDef := projector.projectTypeDef(def)
 		if typeDef.AsInterface.Valid {
 			typeDef.AsInterface.Value.SourceModuleName = mod.Name()
 		}
@@ -767,9 +779,14 @@ func (mod *Module) modTypeForList(ctx context.Context, typedef *TypeDef, checkDi
 func (mod *Module) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
 	for _, obj := range mod.ObjectDefs {
 		if obj.AsObject.Value.Name == typeDef.AsObject.Value.Name {
+			var collection *CollectionTypeDef
+			if obj.AsCollection.Valid {
+				collection = obj.AsCollection.Value
+			}
 			return &ModuleObjectType{
-				typeDef: obj.AsObject.Value,
-				mod:     mod,
+				typeDef:    obj.AsObject.Value,
+				collection: collection,
+				mod:        mod,
 			}, true
 		}
 	}
@@ -907,7 +924,110 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			}
 		}
 	}
+
+	if err := mod.validateCollectionTypeDef(typeDef); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (mod *Module) validateCollectionTypeDef(typeDef *TypeDef) error {
+	if !typeDef.AsCollection.Valid {
+		return nil
+	}
+	if typeDef.Kind != TypeDefKindObject || !typeDef.AsObject.Valid {
+		return fmt.Errorf("only object types can be marked as collections")
+	}
+
+	obj := typeDef.AsObject.Value
+	collection := typeDef.AsCollection.Value
+
+	keysFieldName := collection.KeysFieldNameOverride
+	if keysFieldName == "" {
+		keysFieldName = "keys"
+	}
+
+	keysField, hasKeysField := obj.FieldByName(keysFieldName)
+	if !hasKeysField {
+		return fmt.Errorf("collection object %q must define exactly one effective keys field", obj.OriginalName)
+	}
+
+	keyType, err := validateCollectionKeysType(obj, keysFieldName, keysField.TypeDef)
+	if err != nil {
+		return err
+	}
+	collection.KeysFieldName = keysField.Name
+
+	getFunctionName := collection.GetFunctionNameOverride
+	if getFunctionName == "" {
+		getFunctionName = "get"
+	}
+
+	getFn, hasGetFn := obj.FunctionByName(getFunctionName)
+	if !hasGetFn {
+		return fmt.Errorf("collection object %q must define exactly one effective get function", obj.OriginalName)
+	}
+	if len(getFn.Args) != 1 {
+		return fmt.Errorf("collection object %q get function %q must accept exactly one argument", obj.OriginalName, getFn.OriginalName)
+	}
+
+	getArg := getFn.Args[0]
+	if getArg.TypeDef.Optional {
+		return fmt.Errorf("collection object %q get function %q argument %q must be non-null", obj.OriginalName, getFn.OriginalName, getArg.OriginalName)
+	}
+	if !isValidCollectionKeyType(getArg.TypeDef) {
+		return fmt.Errorf("collection object %q get function %q argument %q must use a scalar, custom scalar, or enum key type", obj.OriginalName, getFn.OriginalName, getArg.OriginalName)
+	}
+	if !typeDefsEqual(keyType, getArg.TypeDef) {
+		return fmt.Errorf("collection object %q get function %q argument %q must match keys field type", obj.OriginalName, getFn.OriginalName, getArg.OriginalName)
+	}
+
+	if getFn.ReturnType.Optional {
+		return fmt.Errorf("collection object %q get function %q must return a non-null object", obj.OriginalName, getFn.OriginalName)
+	}
+	if getFn.ReturnType.Kind != TypeDefKindObject || !getFn.ReturnType.AsObject.Valid {
+		return fmt.Errorf("collection object %q get function %q must return an object", obj.OriginalName, getFn.OriginalName)
+	}
+
+	collection.KeyType = keyType.Clone()
+	collection.ValueType = getFn.ReturnType.Clone()
+	collection.GetFunctionName = getFn.Name
+	collection.GetArgName = getArg.Name
+
+	return nil
+}
+
+func validateCollectionKeysType(obj *ObjectTypeDef, keysFieldName string, keysTypeDef *TypeDef) (*TypeDef, error) {
+	if keysTypeDef.Optional {
+		return nil, fmt.Errorf("collection object %q keys field %q must be a non-null list", obj.OriginalName, keysFieldName)
+	}
+	if keysTypeDef.Kind != TypeDefKindList || !keysTypeDef.AsList.Valid {
+		return nil, fmt.Errorf("collection object %q keys field %q must be a list", obj.OriginalName, keysFieldName)
+	}
+
+	keyType := keysTypeDef.AsList.Value.ElementTypeDef
+	if keyType.Optional {
+		return nil, fmt.Errorf("collection object %q keys field %q must be a list of non-null keys", obj.OriginalName, keysFieldName)
+	}
+	if !isValidCollectionKeyType(keyType) {
+		return nil, fmt.Errorf("collection object %q keys field %q must use a scalar, custom scalar, or enum key type", obj.OriginalName, keysFieldName)
+	}
+
+	return keyType, nil
+}
+
+func isValidCollectionKeyType(typeDef *TypeDef) bool {
+	switch typeDef.Kind {
+	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindScalar, TypeDefKindEnum:
+		return true
+	default:
+		return false
+	}
+}
+
+func typeDefsEqual(a, b *TypeDef) bool {
+	return a != nil && b != nil && a.IsSubtypeOf(b) && b.IsSubtypeOf(a)
 }
 
 func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef *TypeDef) error {
@@ -980,6 +1100,25 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 					return err
 				}
 				arg.SourceMap = mod.namespaceSourceMap(modPath, arg.SourceMap)
+			}
+		}
+
+		if typeDef.AsCollection.Valid {
+			collection := typeDef.AsCollection.Value
+			if collection.KeyType != nil {
+				if err := mod.namespaceTypeDef(ctx, modPath, collection.KeyType); err != nil {
+					return err
+				}
+			}
+			if collection.ValueType != nil {
+				if err := mod.namespaceTypeDef(ctx, modPath, collection.ValueType); err != nil {
+					return err
+				}
+			}
+			if collection.BatchType != nil {
+				if err := mod.namespaceTypeDef(ctx, modPath, collection.BatchType); err != nil {
+					return err
+				}
 			}
 		}
 

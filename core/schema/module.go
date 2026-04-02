@@ -84,6 +84,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all checks defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("filters").Doc("Collection-aware filters to apply while traversing checks"),
 			),
 
 		dagql.Func("check", s.moduleCheck).
@@ -98,6 +99,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all generators defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+				dagql.Arg("filters").Doc("Collection-aware filters to apply while traversing generators"),
 			),
 
 		dagql.Func("generator", s.moduleGenerator).
@@ -182,6 +184,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all generators defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+				dagql.Arg("filters").Doc("Collection-aware filters to apply while traversing generators"),
 			),
 	}.Install(dag)
 
@@ -256,6 +259,21 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				intent is only to refer to an object. This is how functions are able to
 				return their own object, or any other circular reference.`),
 
+		dagql.Func("withCollection", s.typeDefWithCollection).
+			Doc(`Marks an Object TypeDef as a collection.`),
+
+		dagql.Func("withCollectionKeys", s.typeDefWithCollectionKeys).
+			Doc(`Overrides the effective keys field used by a collection TypeDef.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the field that enumerates collection keys.`),
+			),
+
+		dagql.Func("withCollectionGet", s.typeDefWithCollectionGet).
+			Doc(`Overrides the effective get function used by a collection TypeDef.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the function that resolves one collection item by key.`),
+			),
+
 		dagql.Func("withInterface", s.typeDefWithInterface).
 			Doc(`Returns a TypeDef of kind Interface with the provided name.`),
 
@@ -307,6 +325,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 	}.Install(dag)
 
+	dagql.Fields[*core.CollectionTypeDef]{}.Install(dag)
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(dag)
 	dagql.Fields[*core.InterfaceTypeDef]{}.Install(dag)
 	dagql.Fields[*core.InputTypeDef]{}.Install(dag)
@@ -376,6 +395,28 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 		return nil, err
 	}
 	return def.WithObject(args.Name, args.Description, args.Deprecated, sourceMap), nil
+}
+
+func (s *moduleSchema) typeDefWithCollection(ctx context.Context, def *core.TypeDef, args struct{}) (*core.TypeDef, error) {
+	return def.WithCollection(), nil
+}
+
+func (s *moduleSchema) typeDefWithCollectionKeys(ctx context.Context, def *core.TypeDef, args struct {
+	Name string
+}) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("collection keys field name must not be empty")
+	}
+	return def.WithCollectionKeys(args.Name), nil
+}
+
+func (s *moduleSchema) typeDefWithCollectionGet(ctx context.Context, def *core.TypeDef, args struct {
+	Name string
+}) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("collection get function name must not be empty")
+	}
+	return def.WithCollectionGet(args.Name), nil
 }
 
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
@@ -863,6 +904,7 @@ func (s *moduleSchema) moduleChecks(
 	mod *core.Module,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Filters dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.CollectionFilterInput]]]
 	},
 ) (*core.CheckGroup, error) {
 	var include []string
@@ -871,7 +913,13 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Checks(ctx, include)
+	var filters []core.CollectionFilterInput
+	if args.Filters.Valid {
+		for _, filter := range args.Filters.Value {
+			filters = append(filters, filter.Value)
+		}
+	}
+	return mod.Checks(ctx, include, filters)
 }
 
 func (s *moduleSchema) moduleCheck(
@@ -881,7 +929,7 @@ func (s *moduleSchema) moduleCheck(
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := mod.Checks(ctx, []string{args.Name})
+	checkGroup, err := mod.Checks(ctx, []string{args.Name}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -901,6 +949,7 @@ func (s *moduleSchema) moduleGenerators(
 	mod *core.Module,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Filters dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.CollectionFilterInput]]]
 	},
 ) (*core.GeneratorGroup, error) {
 	var include []string
@@ -909,7 +958,13 @@ func (s *moduleSchema) moduleGenerators(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Generators(ctx, include)
+	var filters []core.CollectionFilterInput
+	if args.Filters.Valid {
+		for _, filter := range args.Filters.Value {
+			filters = append(filters, filter.Value)
+		}
+	}
+	return mod.Generators(ctx, include, filters)
 }
 
 func (s *moduleSchema) currentModuleGenerators(
@@ -917,6 +972,7 @@ func (s *moduleSchema) currentModuleGenerators(
 	mod *core.CurrentModule,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Filters dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.CollectionFilterInput]]]
 	},
 ) (*core.GeneratorGroup, error) {
 	var include []string
@@ -925,7 +981,13 @@ func (s *moduleSchema) currentModuleGenerators(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Module.Generators(ctx, include)
+	var filters []core.CollectionFilterInput
+	if args.Filters.Valid {
+		for _, filter := range args.Filters.Value {
+			filters = append(filters, filter.Value)
+		}
+	}
+	return mod.Module.Generators(ctx, include, filters)
 }
 
 func (s *moduleSchema) moduleGenerator(
@@ -935,7 +997,7 @@ func (s *moduleSchema) moduleGenerator(
 		Name string
 	},
 ) (*core.Generator, error) {
-	generatorGroup, err := mod.Generators(ctx, []string{args.Name})
+	generatorGroup, err := mod.Generators(ctx, []string{args.Name}, nil)
 	if err != nil {
 		return nil, err
 	}

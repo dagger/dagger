@@ -13696,6 +13696,32 @@ export class TypeDef extends BaseClient {
   }
 
   /**
+   * Marks an Object TypeDef as a collection.
+   */
+  withCollection = (): TypeDef => {
+    const ctx = this._ctx.select("withCollection")
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Overrides the effective keys field for a collection Object TypeDef.
+   * @param name The field name to use as the effective keys field
+   */
+  withCollectionKeys = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionKeys", { name })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Overrides the effective get function for a collection Object TypeDef.
+   * @param name The function name to use as the effective get function
+   */
+  withCollectionGet = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionGet", { name })
+    return new TypeDef(ctx)
+  }
+
+  /**
    * Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
    */
   withFunction = (function_: Function_): TypeDef => {

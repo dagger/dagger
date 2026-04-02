@@ -12,11 +12,14 @@ from dagger.mod._types import Enum
 _default_mod = Module()
 
 check = _default_mod.check
+collection = _default_mod.collection
 enum_type = _default_mod.enum_type
 function = _default_mod.function
 field = _default_mod.field
 generate = _default_mod.generate
+get = _default_mod.get
 interface = _default_mod.interface
+keys = _default_mod.keys
 object_type = _default_mod.object_type
 
 
@@ -34,10 +37,13 @@ __all__ = [
     "Ignore",
     "Name",
     "check",
+    "collection",
     "enum_type",
     "field",
     "function",
     "generate",
+    "get",
     "interface",
+    "keys",
     "object_type",
 ]
