@@ -263,9 +263,9 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 {{ template "_dagger.gen.go/client.go.tmpl" . }}
 {{ end }}
 
-// SelectNode returns a query selection for node(id:) scoped to the
+// selectNode returns a query selection for node(id:) scoped to the
 // given type via an inline fragment.
-func SelectNode(q *querybuilder.Selection, id any, typeName string) *querybuilder.Selection {
+func selectNode(q *querybuilder.Selection, id any, typeName string) *querybuilder.Selection {
 	return q.Select("node").Arg("id", id).InlineFragment(typeName)
 }
 
@@ -280,7 +280,7 @@ type Loadable[T any] interface {
 // network call. The returned value can be used to chain further queries.
 func Ref[T Loadable[T]](c *Client, id ID) T {
 	var zero T
-	return zero.WithGraphQLQuery(SelectNode(c.query, id, zero.XXX_GraphQLType()))
+	return zero.WithGraphQLQuery(selectNode(c.query, id, zero.XXX_GraphQLType()))
 }
 
 // Load loads a node by its ID with type safety. It verifies that the
@@ -298,7 +298,7 @@ func Load[T Loadable[T]](ctx context.Context, c *Client, id ID) (T, error) {
 	// this is equivalent to a direct check. For interfaces, the fragment
 	// only matches if the concrete type implements the interface — an
 	// empty result means the ID doesn't satisfy the expected type.
-	q := SelectNode(c.query, id, expectedType)
+	q := selectNode(c.query, id, expectedType)
 	var typeName string
 	if err := q.Select("__typename").Bind(&typeName).Execute(ctx); err != nil {
 		return zero, fmt.Errorf("load %s: %w", expectedType, err)
@@ -307,5 +307,5 @@ func Load[T Loadable[T]](ctx context.Context, c *Client, id ID) (T, error) {
 		return zero, fmt.Errorf("load %s: node not found or does not implement %s", expectedType, expectedType)
 	}
 
-	return zero.WithGraphQLQuery(SelectNode(c.query, id, expectedType)), nil
+	return zero.WithGraphQLQuery(selectNode(c.query, id, expectedType)), nil
 }

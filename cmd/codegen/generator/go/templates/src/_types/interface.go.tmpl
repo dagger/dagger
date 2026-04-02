@@ -116,7 +116,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 		return nil, err
 	}
 	return &{{ $.Name | InterfaceClientName }}{
-		query: SelectNode(q.Root(), id, "{{ $.Name }}"),
+		query: selectNode(q.Root(), id, "{{ $.Name }}"),
 	}, nil
 	{{- else if IsInterfaceRef $field.TypeRef }}
 	{{- /* Interface return: wrap in the interface's query-builder struct */ -}}
@@ -143,7 +143,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	var results []{{ $typeName | FormatArrayToSingleType }}
 	for _, idResult := range idResults {
 		results = append(results, &{{ $typeName | FormatArrayToSingleType | InterfaceClientName }}{
-			query: SelectNode(q.Root(), idResult.Id, "{{ $typeName | FormatArrayToSingleType }}"),
+			query: selectNode(q.Root(), idResult.Id, "{{ $typeName | FormatArrayToSingleType }}"),
 		})
 	}
 	return results, nil
@@ -163,7 +163,7 @@ type {{ $field | FieldOptionsStructName }} struct {
         for i := range fields {
             val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
             {{- if $eleType | IsIDableObject }}
-              val.query = SelectNode(q.Root(), fields[i].Id, "{{$eleType | ObjectName}}")
+              val.query = selectNode(q.Root(), fields[i].Id, "{{$eleType | ObjectName}}")
             {{- end }}
             out = append(out, val)
         }
@@ -221,7 +221,7 @@ func (r *{{ $.Name | InterfaceClientName }}) UnmarshalJSON(bs []byte) error {
   if err != nil {
     return err
   }
-  *r = {{ $.Name | InterfaceClientName }}{query: SelectNode(dag.query, id, "{{ $.Name }}")}
+  *r = {{ $.Name | InterfaceClientName }}{query: selectNode(dag.query, id, "{{ $.Name }}")}
   return nil
 }
 {{- end }}
@@ -248,7 +248,7 @@ func (r *{{ $.Name | InterfaceClientName }}) Concrete(ctx context.Context) (Node
 	switch typeName {
 	{{- range $pt := PossibleTypes . }}
 	case "{{ $pt.Name }}":
-		return &{{ $pt.Name | FormatName }}{query: SelectNode(r.query.Root(), id, "{{ $pt.Name }}")}, nil
+		return &{{ $pt.Name | FormatName }}{query: selectNode(r.query.Root(), id, "{{ $pt.Name }}")}, nil
 	{{- end }}
 	default:
 		return nil, fmt.Errorf("unknown {{ $.Name }} implementation: %s", typeName)

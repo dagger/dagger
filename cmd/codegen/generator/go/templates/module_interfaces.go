@@ -279,7 +279,7 @@ The XXX_GraphQLType method attached to the concrete implementation of the interf
 
 The returned name must be the schema-level name (module-namespaced), not the
 Go source name, because it is used in inline fragments (... on TypeName) when
-constructing queries via SelectNode / node(id:).
+constructing queries via node(id:) with an inline fragment.
 */
 func (spec *parsedIfaceType) graphqlTypeMethodCode() *Statement {
 	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
@@ -364,7 +364,7 @@ The UnmarshalJSON method attached to the concrete implementation of the interfac
 		if err != nil {
 			return err
 		}
-		*r = customIfaceImpl{query: dagger.SelectNode(dag.GraphQLSelection(), id, "CustomIface")}
+		*r = customIfaceImpl{query: dag.GraphQLSelection().Select("node").Arg("id", id).InlineFragment("CustomIface")}
 		return nil
 	}
 */
@@ -378,7 +378,7 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("id"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
 			g.Op("*").Id("r").Op("=").Id(spec.concreteStructName()).Values(Dict{
-				Id("query"): Id("dagger").Dot("SelectNode").Call(Id("dag").Dot("GraphQLSelection").Call(), Id("id"), Lit(spec.schemaName())),
+				Id("query"): Id("dag").Dot("GraphQLSelection").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")).Dot("InlineFragment").Call(Lit(spec.schemaName())),
 			})
 			g.Return(Nil())
 		})
@@ -553,7 +553,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 						id := idResult.Id
 
 						results = append(results, &dagger.Directory{
-							query:  dagger.SelectNode(q.query.Root(), id, "Directory"),
+							query:  q.query.Root().Select("node").Arg("id", id).InlineFragment("Directory"),
 						})
 					}
 					return results, nil
@@ -577,7 +577,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Var().Id("results").Index().Add(underlyingReturnTypeCode).Line()
 			s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
 				g.Id("id").Op(":=").Id("idResult").Dot("Id")
-				query := Id("dagger").Dot("SelectNode").Call(Id("r").Dot("query").Dot("Root").Call(), Id("id"), Lit(gqlSchemaName(underlyingReturnType.Name(), underlyingReturnType.ModuleName())))
+				query := Id("r").Dot("query").Dot("Root").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")).Dot("InlineFragment").Call(Lit(gqlSchemaName(underlyingReturnType.Name(), underlyingReturnType.ModuleName())))
 				g.Id("results").Op("=").Append(Id("results"), Params(Op("&").Add(underlyingImplTypeCode).Values()).Dot("WithGraphQLQuery").Call(query))
 			}).Line()
 
