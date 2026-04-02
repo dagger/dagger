@@ -86,7 +86,15 @@ func (cm *snapshotManager) ensureExportBlob(
 
 	var lower []mount.Mount
 	if parentSnapshotID != "" {
-		mountable, err := cm.Snapshotter.Mounts(ctx, parentSnapshotID)
+		parentRef, err := cm.GetBySnapshotID(ctx, parentSnapshotID, NoUpdateLastUsed)
+		if err != nil {
+			return ocispecs.Descriptor{}, false, err
+		}
+		defer func() {
+			_ = parentRef.Release(context.WithoutCancel(ctx))
+		}()
+
+		mountable, err := parentRef.Mount(ctx, true)
 		if err != nil {
 			return ocispecs.Descriptor{}, false, err
 		}
@@ -100,7 +108,7 @@ func (cm *snapshotManager) ensureExportBlob(
 		}
 	}
 
-	mountable, err := cm.Snapshotter.Mounts(ctx, ref.SnapshotID())
+	mountable, err := ref.Mount(ctx, true)
 	if err != nil {
 		return ocispecs.Descriptor{}, false, err
 	}
