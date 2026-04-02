@@ -445,8 +445,9 @@ func (s *LLMSession) syncVarsToLLM() error {
 	}
 
 	syncedEnvQ := s.dag.QueryBuilder().
-		Select("loadEnvFromID").
-		Arg("id", s.llm.Env())
+		Select("node").
+		Arg("id", s.llm.Env()).
+		InlineFragment("Env")
 
 	var changed bool
 	for name, value := range s.shell.runner.Vars {
@@ -514,7 +515,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 	if err := syncedEnvQ.Select("id").Bind(&envID).Execute(ctx); err != nil {
 		return err
 	}
-	s.updateLLMAndAgentVar(s.llm.WithEnv(s.dag.LoadEnvFromID(envID)))
+	s.updateLLMAndAgentVar(s.llm.WithEnv((&dagger.Env{}).WithGraphQLQuery(dagger.SelectNode(s.dag.GraphQLSelection(), envID, "Env"))))
 	return nil
 }
 
@@ -556,8 +557,9 @@ func (s *LLMSession) syncVarsFromLLM() error {
 			var objID string
 			if err :=
 				s.dag.QueryBuilder().
-					Select("loadBindingFromID").
+					Select("node").
 					Arg("id", bnd).
+					InlineFragment("Binding").
 					Select("as" + typeName).
 					Select("id").
 					Bind(&objID).
@@ -630,8 +632,9 @@ func (s *LLMSession) toShell(ctx context.Context, idable dagqlObject) (string, e
 	st := ShellState{
 		Calls: []FunctionCall{
 			{
-				Object: "Query",
-				Name:   "load" + typeName + "FromID",
+				Object:         "Query",
+				Name:           "node",
+				InlineFragment: typeName,
 				Arguments: map[string]any{
 					"id": objID,
 				},
