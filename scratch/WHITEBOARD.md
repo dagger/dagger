@@ -4,6 +4,9 @@
 * Assess changeset merge decision to always use git path (removed `conflicts.IsEmpty()` no-git fast path), with specific focus on performance impact
    * Compare runtime/cost of old no-git path vs current always-git path in no-conflict workloads
    * Confirm whether correctness/cohesion benefits outweigh any measured regression and document outcome
+* Sweep remaining raw `srv.Select(..., &ptr, ...)` / `.Self()` ownership boundaries after the current result-detach fixes
+   * Confirm there are no more places where a releasable `*Directory` / `*File` / `*Container` pointer is being re-exposed after loading from dagql
+   * In particular, keep checking for any helper that unwraps a selected result to a raw pointer and then returns or re-wraps that same pointer
 * Remove internal `__immutableRef` schema API once and for all
    * Replace remaining stable-ID use cases with a cleaner non-internal API pattern in dagql/core
 * Review the new HTTP implementation for clarity/cohesion
@@ -33,6 +36,15 @@
 
 * **CRITICAL CACHE MODEL RULE: OVERLAPPING DIGESTS MEAN EQUALITY AND FULL INTERCHANGEABILITY.**
   * If two values share any digest / end up in the same digest-equivalence set, that is not merely "evidence" or "similarity"; it means they are the same value for dagql cache purposes and may be reused interchangeably.
+
+* **CRITICAL OWNERSHIP RULE: NEVER RE-EXPOSE A RAW DAGQL-LOADED POINTER FOR A RELEASEABLE OBJECT.**
+  * This is a crucial design constraint for the hard-cutover cache/snapshot model.
+  * If a helper loads or selects a `Directory`, `File`, or `Container` from dagql, then returning the raw `*Directory` / `*File` / `*Container` pointer is dangerous unless that object is explicitly detached first.
+  * The reason is concrete and non-negotiable: these objects own snapshot refs via `OnRelease`, so pointer aliasing can poison some other owner when one result is released.
+  * Avoiding this entire class of bugs is crucial.
+  * The preferred fix is to preserve `dagql.ObjectResult[*T]` all the way through whenever possible.
+  * If a raw `*T` really must be returned, it must be a detached object with reopened/refreshed ownership of any releaseable snapshot state.
+  * Internal `Value` shells embedded in larger objects are not public results and must not be handed back out directly as if they were.
 
 * A lot of eval'ing of lazy stuff is just triggered inline now; would be nice if dagql cache scheduler knew about these and could do that in parallel for ya
    * This is partially a pre-existing condition though, so not a big deal yet. But will probably make a great optimization in the near-ish future
@@ -127,6 +139,9 @@
     * live runtime state is owned by explicit session-scoped runtime managers, not by dagql values and not by the snapshot manager
     * the snapshot manager is a thin layer for create/open/mount/commit/metadata/lease attachment, not a second liveness graph
   * Ordinary snapshot-backed values must not rely on snapshot-manager retain policy for lifetime.
+  * Ordinary snapshot-backed values also must not rely on pointer identity for lifetime.
+    * A dagql-loaded `*Directory`, `*File`, or `*Container` pointer is not a stable shared owner object.
+    * Returning or re-wrapping that same pointer across result boundaries is a lifetime bug unless the object is detached first.
   * Service/terminal runtime is a distinct third ownership bucket:
     * `Service` values are declarative recipes, not owners of runtime refs
     * `RunningService` and `Services` own live process/runtime state for the session
@@ -143,6 +158,10 @@
   * Local cache accounting and pruning are now dagql-native.
   * Snapshot size, blob size, lazy content access, ref identity, and retain/release behavior should become one authoritative, comprehensible path that matches that model.
   * Cleaning this up should put us in a much better position to fix the current local-cache size-accounting failures without papering over deeper ownership confusion.
+
+* The result-ownership cutover should be consistent across helpers too, not just schema resolvers.
+  * If an internal helper is fundamentally doing a graph load (`srv.Select`, `.Load`, etc.), it should keep the `dagql.ObjectResult[*T]` when that is a valid return shape.
+  * Helpers that unwrap to `Self()` should be treated with suspicion unless they immediately detach or clone ownership-sensitive state.
 
 ## Implementation Plan
 
@@ -219,6 +238,224 @@ if err != nil {
     if err != nil {
         return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
     }
+}
+```
+
+### core/container.go / core/schema/container.go / core/terminal.go
+#### Status
+- [ ] Hard-cut the remaining raw `*Directory` / `*Container` returns in `RootFS(...)` and `FromRefString(...)`.
+- [ ] Preserve `ObjectResult[*Directory]` / `ObjectResult[*Container]` when the operation is really a graph load.
+- [ ] Keep the existing detached-clone behavior only for `Value`-backed container rootfs/mount exposure.
+- [ ] Remove the terminal default-image path that unwraps a selected container to `Self()` and then immediately re-wraps it synthetically.
+
+#### Design
+* `Container.RootFS(...)` should be a graph-result-preserving API.
+  * If the container rootfs is already result-backed, return that `dagql.ObjectResult[*Directory]`.
+  * If the container rootfs is value-backed, detach/clone it and wrap that detached clone in a fresh current-call result.
+  * If the container has no embedded rootfs and we need scratch, return the selected `dagql.ObjectResult[*Directory]` directly rather than `rootfs.Self()`.
+* `Container.FromRefString(...)` is also a graph load.
+  * It should return `dagql.ObjectResult[*Container]`, not `ctr.Self()`.
+* `Directory.Terminal(...)` should use that returned `dagql.ObjectResult[*Container]` directly for the default terminal image.
+  * Do not unwrap the selected container to a raw pointer and then create a synthetic result around that same pointer.
+
+#### Planned signatures
+```go
+func (container *Container) RootFS(ctx context.Context) (dagql.ObjectResult[*Directory], error)
+
+func (container *Container) FromRefString(ctx context.Context, addr string) (dagql.ObjectResult[*Container], error)
+
+func (s *containerSchema) rootfs(
+    ctx context.Context,
+    parent dagql.ObjectResult[*core.Container],
+    args struct{},
+) (dagql.ObjectResult[*core.Directory], error)
+```
+
+#### Planned implementation shape
+```go
+func (container *Container) RootFS(ctx context.Context) (dagql.ObjectResult[*Directory], error) {
+    srv, err := CurrentDagqlServer(ctx)
+    if err != nil {
+        return dagql.ObjectResult[*Directory]{}, fmt.Errorf("failed to get dagql server: %w", err)
+    }
+
+    if container.FS != nil {
+        switch {
+        case container.FS.isResultBacked():
+            return *container.FS.Result, nil
+        case container.FS.Value != nil:
+            dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, container.FS.Value)
+            if err != nil {
+                return dagql.ObjectResult[*Directory]{}, err
+            }
+            return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
+        default:
+            return dagql.ObjectResult[*Directory]{}, fmt.Errorf("container rootfs source is nil")
+        }
+    }
+
+    var rootfs dagql.ObjectResult[*Directory]
+    if err := srv.Select(ctx, srv.Root(), &rootfs, dagql.Selector{Field: "directory"}); err != nil {
+        return dagql.ObjectResult[*Directory]{}, err
+    }
+    return rootfs, nil
+}
+```
+
+```go
+func (container *Container) FromRefString(ctx context.Context, addr string) (dagql.ObjectResult[*Container], error) {
+    ...
+    var ctr dagql.ObjectResult[*Container]
+    err = srv.Select(ctx, srv.Root(), &ctr,
+        dagql.Selector{Field: "container", Args: containerArgs},
+        dagql.Selector{
+            Field: "from",
+            Args: []dagql.NamedInput{
+                {Name: "address", Value: dagql.String(refName.String())},
+            },
+        },
+    )
+    if err != nil {
+        return dagql.ObjectResult[*Container]{}, err
+    }
+    return ctr, nil
+}
+```
+
+```go
+if ctr.Self() == nil {
+    defaultCtr := NewContainer(dir.Platform)
+    ctr, err = defaultCtr.FromRefString(ctx, defaultTerminalImage)
+    if err != nil {
+        return fmt.Errorf("failed to create terminal container: %w", err)
+    }
+}
+```
+
+### core/envfile.go / core/schema/envfile.go
+#### Status
+- [ ] Hard-cut `EnvFile.AsFile(...)` to preserve `dagql.ObjectResult[*File]`.
+- [ ] Remove the raw selected `*File` return path.
+
+#### Design
+* `EnvFile.AsFile(...)` is a graph load of `Query.file(...)`.
+* It should therefore return a `dagql.ObjectResult[*File]`, not unwrap a selected file pointer.
+* This is the same ownership class as the container bug and should be fixed the same way: preserve the result wrapper.
+
+#### Planned signatures
+```go
+func (ef *EnvFile) AsFile(ctx context.Context) (dagql.ObjectResult[*File], error)
+
+func (s envfileSchema) asFile(
+    ctx context.Context,
+    parent *core.EnvFile,
+    args struct{},
+) (dagql.ObjectResult[*core.File], error)
+```
+
+#### Planned implementation shape
+```go
+func (ef *EnvFile) AsFile(ctx context.Context) (dagql.ObjectResult[*File], error) {
+    ...
+    var file dagql.ObjectResult[*File]
+    err = srv.Select(ctx, srv.Root(), &file, q...)
+    if err != nil {
+        return dagql.ObjectResult[*File]{}, err
+    }
+    return file, nil
+}
+```
+
+### core/checks.go / core/schema/checks.go
+#### Status
+- [ ] Hard-cut `CheckGroup.Report(...)` to preserve `dagql.ObjectResult[*File]`.
+- [ ] Remove the raw selected `*File` return path.
+
+#### Design
+* `CheckGroup.Report(...)` is also just a graph load of `Query.file(...)`.
+* It should return a `dagql.ObjectResult[*File]` directly instead of loading a raw `*File`.
+* This is the same bug class as `EnvFile.AsFile(...)`.
+
+#### Planned signatures
+```go
+func (r *CheckGroup) Report(ctx context.Context) (dagql.ObjectResult[*File], error)
+
+func (s checksSchema) report(
+    ctx context.Context,
+    parent *core.CheckGroup,
+    args struct{},
+) (dagql.ObjectResult[*core.File], error)
+```
+
+#### Planned implementation shape
+```go
+func (r *CheckGroup) Report(ctx context.Context) (dagql.ObjectResult[*File], error) {
+    ...
+    var file dagql.ObjectResult[*File]
+    err = srv.Select(ctx, srv.Root(), &file,
+        dagql.Selector{
+            Field: "file",
+            Args: []dagql.NamedInput{
+                {Name: "name", Value: dagql.String("checks.md")},
+                {Name: "contents", Value: dagql.String(contents)},
+            },
+        },
+    )
+    if err != nil {
+        return dagql.ObjectResult[*File]{}, err
+    }
+    return file, nil
+}
+```
+
+### core/integration/envfile_test.go
+#### Status
+- [ ] Add a regression that repeatedly materializes the same env file as a `File` and uses it across multiple calls.
+
+#### Planned test
+```go
+func (EnvFileSuite) TestAsFileDoesNotAliasSelectedFile(ctx context.Context, t *testctx.T) {
+    c := connect(ctx, t)
+
+    env := c.EnvFile().
+        WithVariable("animal", "dog").
+        WithVariable("message", "hello")
+
+    contents1, err := env.AsFile().Contents(ctx)
+    require.NoError(t, err)
+    require.Contains(t, contents1, "animal=dog")
+
+    name, err := env.AsFile().Name(ctx)
+    require.NoError(t, err)
+    require.Equal(t, ".env", name)
+
+    contents2, err := env.AsFile().Contents(ctx)
+    require.NoError(t, err)
+    require.Equal(t, contents1, contents2)
+}
+```
+
+### core/integration/container_test.go
+#### Status
+- [ ] Add a regression that specifically exercises the scratch `Container.RootFS(...)` fallback path multiple times.
+
+#### Planned test
+```go
+func (ContainerSuite) TestScratchRootFSDoesNotAliasSelectedDirectory(ctx context.Context, t *testctx.T) {
+    c := connect(ctx, t)
+
+    entries, err := c.Container().Rootfs().Entries(ctx)
+    require.NoError(t, err)
+    require.Empty(t, entries)
+
+    withFile := c.Container().Rootfs().WithNewFile("foo", "bar")
+    contents, err := withFile.File("foo").Contents(ctx)
+    require.NoError(t, err)
+    require.Equal(t, "bar", contents)
+
+    entries, err = c.Container().Rootfs().Entries(ctx)
+    require.NoError(t, err)
+    require.Empty(t, entries)
 }
 ```
 

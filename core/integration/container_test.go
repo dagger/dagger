@@ -132,6 +132,23 @@ func (ContainerSuite) TestWithRootFS(ctx context.Context, t *testctx.T) {
 	require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(releaseStr))
 }
 
+func (ContainerSuite) TestScratchRootFSDoesNotAliasSelectedDirectory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	entries, err := c.Container().Rootfs().Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+
+	withFile := c.Container().Rootfs().WithNewFile("foo", "bar")
+	contents, err := withFile.File("foo").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar", contents)
+
+	entries, err = c.Container().Rootfs().Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
 //go:embed testdata/hello.go
 var helloSrc string
 

@@ -96,7 +96,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 	return r, nil
 }
 
-func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
+func (r *CheckGroup) Report(ctx context.Context) (dagql.ObjectResult[*File], error) {
 	headers := []string{"check", "description", "success"}
 	rows := [][]string{}
 	for _, check := range r.Checks {
@@ -110,10 +110,10 @@ func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*File]{}, err
 	}
 
-	var file *File
+	var file dagql.ObjectResult[*File]
 	err = srv.Select(ctx, srv.Root(), &file,
 		dagql.Selector{
 			Field: "file",
@@ -124,7 +124,7 @@ func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
 		},
 	)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*File]{}, err
 	}
 	return file, nil
 }

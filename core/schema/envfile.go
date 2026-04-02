@@ -140,7 +140,7 @@ func (s envfileSchema) exists(ctx context.Context, parent *core.EnvFile, args st
 	return dagql.NewBoolean(exists), nil
 }
 
-func (s envfileSchema) asFile(ctx context.Context, parent *core.EnvFile, args struct{}) (*core.File, error) {
+func (s envfileSchema) asFile(ctx context.Context, parent *core.EnvFile, args struct{}) (dagql.ObjectResult[*core.File], error) {
 	return parent.AsFile(ctx)
 }
 

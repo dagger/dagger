@@ -278,6 +278,104 @@ func cloneBareFileForContainerChild(src *File, source FileSnapshotSource, source
 	return &cp
 }
 
+func cloneDetachedDirectoryForContainerResult(ctx context.Context, src *Directory) (*Directory, error) {
+	if src == nil {
+		return nil, nil
+	}
+
+	src.snapshotMu.RLock()
+	ready := src.snapshotReady
+	snapshot := src.Snapshot
+	source := src.snapshotSource
+	lazy := src.Lazy
+	src.snapshotMu.RUnlock()
+
+	cp := *src
+	cp.Services = slices.Clone(src.Services)
+	cp.snapshotMu = sync.RWMutex{}
+	cp.snapshotReady = ready
+	cp.snapshotSource = source
+	cp.Snapshot = nil
+
+	switch lazy := lazy.(type) {
+	case nil:
+		cp.Lazy = nil
+	case *DirectoryFromContainerLazy:
+		cp.Lazy = &DirectoryFromContainerLazy{Container: lazy.Container}
+	case *DirectoryFromSourceLazy:
+		cp.Lazy = &DirectoryFromSourceLazy{
+			LazyState: NewLazyState(),
+			Source:    lazy.Source,
+		}
+	default:
+		return nil, fmt.Errorf("clone detached directory for container result: unsupported lazy %T", lazy)
+	}
+
+	if snapshot == nil {
+		return &cp, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, err
+	}
+	cp.Snapshot = reopened
+	return &cp, nil
+}
+
+func cloneDetachedFileForContainerResult(ctx context.Context, src *File) (*File, error) {
+	if src == nil {
+		return nil, nil
+	}
+
+	src.snapshotMu.RLock()
+	ready := src.snapshotReady
+	snapshot := src.Snapshot
+	source := src.snapshotSource
+	lazy := src.Lazy
+	src.snapshotMu.RUnlock()
+
+	cp := *src
+	cp.Services = slices.Clone(src.Services)
+	cp.snapshotMu = sync.RWMutex{}
+	cp.snapshotReady = ready
+	cp.snapshotSource = source
+	cp.Snapshot = nil
+
+	switch lazy := lazy.(type) {
+	case nil:
+		cp.Lazy = nil
+	case *FileFromContainerLazy:
+		cp.Lazy = &FileFromContainerLazy{Container: lazy.Container}
+	case *FileFromSourceLazy:
+		cp.Lazy = &FileFromSourceLazy{
+			LazyState: NewLazyState(),
+			Source:    lazy.Source,
+		}
+	default:
+		return nil, fmt.Errorf("clone detached file for container result: unsupported lazy %T", lazy)
+	}
+
+	if snapshot == nil {
+		return &cp, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, err
+	}
+	cp.Snapshot = reopened
+	return &cp, nil
+}
+
 func NewContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container]) (*Container, error) {
 	return newContainerChild(ctx, parent, true)
 }
@@ -2063,10 +2161,10 @@ func (mnts ContainerMounts) Replace(newMnt ContainerMount) (ContainerMounts, err
 	return mntsCp, nil
 }
 
-func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
+func (container *Container) FromRefString(ctx context.Context, addr string) (dagql.ObjectResult[*Container], error) {
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse image address %s: %w", addr, err)
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("failed to parse image address %s: %w", addr, err)
 	}
 
 	// add a default :latest if no tag or digest, otherwise this is a no-op
@@ -2079,7 +2177,7 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Dagger server: %w", err)
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("failed to get Dagger server: %w", err)
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("from %s", addr),
@@ -2101,10 +2199,10 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 		},
 	)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*Container]{}, err
 	}
 
-	return ctr.Self(), nil
+	return ctr, nil
 }
 
 // FromCanonicalRef resolves a digest-addressed image pull and updates only the
@@ -2339,24 +2437,39 @@ func (container *Container) Build(
 	return loadedContainer, nil
 }
 
-func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
+func (container *Container) RootFS(ctx context.Context) (dagql.ObjectResult[*Directory], error) {
 	if container.FS != nil {
-		return container.FS.self(), nil
+		switch {
+		case container.FS.isResultBacked():
+			return *container.FS.Result, nil
+		case container.FS.Value != nil:
+			srv, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return dagql.ObjectResult[*Directory]{}, fmt.Errorf("failed to get dagql server: %w", err)
+			}
+			dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, container.FS.Value)
+			if err != nil {
+				return dagql.ObjectResult[*Directory]{}, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
+		default:
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("container rootfs source is nil")
+		}
 	}
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dagql server: %w", err)
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
 	var rootfs dagql.ObjectResult[*Directory]
 	if err := srv.Select(ctx, srv.Root(), &rootfs, dagql.Selector{
 		Field: "directory",
 	}); err != nil {
-		return nil, err
+		return dagql.ObjectResult[*Directory]{}, err
 	}
 
-	return rootfs.Self(), nil
+	return rootfs, nil
 }
 
 // mutates container caller must have handled cloning or creating a new child.
@@ -3189,7 +3302,11 @@ func (container *Container) Directory(ctx context.Context, parent dagql.ObjectRe
 	case mnt == nil: // rootfs
 		if container.FS != nil && container.FS.Value != nil {
 			if subpath == "" || subpath == "." {
-				return dagql.NewObjectResultForCurrentCall(ctx, srv, container.FS.Value)
+				dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, container.FS.Value)
+				if err != nil {
+					return dir, err
+				}
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
 			}
 			rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
 			if err != nil {
@@ -3212,7 +3329,11 @@ func (container *Container) Directory(ctx context.Context, parent dagql.ObjectRe
 	case mnt.DirectorySource != nil: // mounted directory
 		if mnt.DirectorySource.Value != nil {
 			if subpath == "" || subpath == "." {
-				return dagql.NewObjectResultForCurrentCall(ctx, srv, mnt.DirectorySource.Value)
+				dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, mnt.DirectorySource.Value)
+				if err != nil {
+					return dir, err
+				}
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
 			}
 			parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
 			if err != nil {
@@ -3295,7 +3416,11 @@ func (container *Container) File(ctx context.Context, parent dagql.ObjectResult[
 		err = RestoreErrPath(err, filePath) // preserve the full filePath, rather than subpath
 	case mnt.FileSource != nil: // mounted file
 		if mnt.FileSource.Value != nil {
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, mnt.FileSource.Value)
+			fileVal, err := cloneDetachedFileForContainerResult(ctx, mnt.FileSource.Value)
+			if err != nil {
+				return f, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, fileVal)
 		}
 		return *mnt.FileSource.Result, nil
 	default:

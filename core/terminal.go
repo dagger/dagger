@@ -389,13 +389,9 @@ func (dir *Directory) Terminal(
 
 	if ctr.Self() == nil {
 		defaultCtr := NewContainer(dir.Platform)
-		defaultCtr, err = defaultCtr.FromRefString(ctx, defaultTerminalImage)
+		ctr, err = defaultCtr.FromRefString(ctx, defaultTerminalImage)
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
-		}
-		ctr, err = newSyntheticTerminalContainerResult(srv, defaultCtr, "default_terminal_container")
-		if err != nil {
-			return fmt.Errorf("failed to attach terminal container: %w", err)
 		}
 	}
 

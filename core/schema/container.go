@@ -1045,13 +1045,13 @@ func (s *containerSchema) pipeline(ctx context.Context, parent *core.Container, 
 	return parent, nil
 }
 
-func (s *containerSchema) rootfs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (*core.Directory, error) {
+func (s *containerSchema) rootfs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (dagql.ObjectResult[*core.Directory], error) {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.Directory]{}, err
 	}
 	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.Directory]{}, err
 	}
 	return parent.Self().RootFS(ctx)
 }
