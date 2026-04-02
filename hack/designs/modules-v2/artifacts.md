@@ -22,9 +22,8 @@ Depends on: Workspace plumbing (done)
 1. **Selection is fragmented** - Today, targeting is split across schema-path
    notation, command-specific behavior, and whatever structure happens to exist
    in a module.
-2. **Non-collection objects still need disambiguation** - Checks, generators,
-   and other verb-reachable objects may need typed selectors even when they do
-   not come from collections.
+2. **Ordinary object structure still needs disambiguation** - A module can
+   expose multiple targetable object artifacts even before collections exist.
 3. **Collections should not define the base model** - Collections add useful
    keyed dimensions later, but the selector model must already work for
    ordinary workspace/module structure.
@@ -81,70 +80,101 @@ Artifacts has two related scope kinds:
 Selector dimensions choose **artifacts**. Actions remain separate:
 
 - `Artifacts.dimensions` and `Artifact.coordinates` describe object selection
-- `Artifacts.actions` and `Artifact.actions` describe callable function names
+- `Artifacts.actions` and `Artifact.actions` describe direct non-traversal
+  function names
 - verb scopes such as `filterCheck()` narrow which artifacts and actions are in
   play, but they do not introduce new artifact dimensions on their own
+- verb methods such as `Artifacts.check` compile from the selected artifact
+  set; they do not derive their target set from `Artifacts.actions`
+
+The client model is table-shaped:
+
+- `Artifacts.dimensions` is the ordered header row
+- `Artifact.coordinates` is the ordered value row for one item
+- `Artifact.coordinate(name)` is a convenience lookup into that row
+
+`dimensions()` is metadata only. To enumerate values in one dimension, clients
+enumerate `items()` in the current scope and project that dimension's
+coordinate value.
+
+A dimension must be listed from the same `Artifacts` scope that surfaced it.
+Root discovery uses `workspace.artifacts`; verb-local discovery uses the
+corresponding verb scope such as `workspace.artifacts.filterCheck`.
 
 If a future CLI wants action-name filtering such as `--check=<name>`, that
 should layer on top of artifact selection and action discovery. It is not part
 of the artifact selector algebra.
 
-The engine should synthesize enough public selector dimensions and values to
-target current artifact objects without requiring a separate path grammar.
+The engine should synthesize enough public selector dimensions to make current
+artifact objects positively selectable without a separate path grammar.
 
 ### Example: Non-Collection Disambiguation
 
-Suppose the current object tree contains:
+Suppose a module exposes:
 
-```text
-go:platforms:linux
-go:platforms:darwin
+```graphql
+type Go {
+  platforms: Platforms!
+}
+
+type Platforms {
+  linux: Platform!
+  darwin: Platform!
+}
+
+type Platform {
+  run: Void! @check
+}
 ```
 
-and the selected artifacts expose actions:
+The public artifact dimension is:
 
 ```text
-go:platforms:linux   -> run
-go:platforms:darwin  -> run
+platform
 ```
 
-Those are not collection items. The artifact objects still need typed
-selectors.
+with values:
+
+```text
+linux
+darwin
+```
 
 CLI discovery:
 
 ```bash
 $ dagger check --help
-  --module=<name>       Filter by module (see: dagger list modules)
-  --platforms=<name>    Filter by platform (see: dagger list platforms)
+  --module=<name>       Filter by module
+  --platform=<name>     Filter by platform
+  --list=<dimension>    List values in check scope
 
-$ dagger list platforms --module=go
+$ dagger check --list=platform --module=go
 linux
 darwin
 
-$ dagger check --module=go --platforms=linux
+$ dagger check --module=go --platform=linux
 ```
 
 API shape:
 
 ```text
-workspace.artifacts
+scope = workspace.artifacts
   .filterCheck
-  .dimensions
-# => module, platforms
 
-workspace.artifacts
-  .filterCheck
-  .filterBy("module", ["go"])
-  .filterBy("platforms", ["linux"])
-  .check
+scope.dimensions
+# => [module, platform]
 
-workspace.artifacts
-  .filterCheck
+scope
   .filterBy("module", ["go"])
-  .filterBy("platforms", ["linux"])
-  .actions
-# => run
+  .filterBy("platform")
+  .items
+# => rows whose "platform" coordinate is linux or darwin
+
+scope
+  .filterBy("module", ["go"])
+  .filterBy("platform", ["linux"])
+  .items[0].coordinate("platform")
+# => linux
 ```
 
 Collections later add more dimensions to the same model; see
@@ -165,18 +195,39 @@ that same tree projected through one verb:
 - start from the current workspace modules
 - reparent each module under the workspace `module` dimension
 - walk only exposed zero-arg object-valued members
-- keep only artifact objects that expose or can reach the current verb
-  (`check`, `generate`, etc.)
+- prune away every subtree that cannot reach at least one handler for the
+  current verb (`check`, `generate`, etc.)
 
-For a check scope, each reachable artifact object has a module-rooted
-structural path in CLI case:
+The projected tree is the input universe for selector synthesis. Not every
+projected object becomes an artifact:
+
+- the workspace-reparented module root is always an artifact
+- a non-root object that directly exposes at least one direct action in the
+  current scope is an artifact candidate
+- a grouping object remains structural glue unless the selector algebra needs a
+  public dimension at that point
+- once a branching point is promoted to a public dimension, the selected child
+  subtree roots become artifacts in that scope even if they have no direct
+  actions of their own
+
+A public dimension corresponds to one promoted branching point in the object
+graph. The grouping object at that branching point is structural glue; the
+selected child objects are the new artifact boundary.
+
+For example, in the `Go -> Platforms -> Platform` example above:
+
+- `Go` is an artifact
+- `Platforms` is structural glue
+- `Platform(linux)` and `Platform(darwin)` are artifacts
+
+For a check scope, the retained artifact rows might look like:
 
 ```text
-hello
-hello:test
-hello:release
-go:platforms:linux
-go:platforms:darwin
+module=hello
+module=hello, stage=test
+module=hello, stage=release
+module=go, platform=linux
+module=go, platform=darwin
 ```
 
 ### Candidate Dimensions
@@ -184,23 +235,28 @@ go:platforms:darwin
 Each reachable artifact object contributes candidate selector pairs:
 
 1. `module=<module-name>`
-2. for each object-valued field/function hop on the path,
-   `<field-name>=<selected-child-name>`
+2. for each promoted branching point on its path,
+   `<dimension-name>=<selected-child-name>`
 
 Using the tree above:
 
 ```text
-hello                -> module=hello
-hello:test           -> module=hello, test=test
-hello:release        -> module=hello, release=release
-go:platforms:linux   -> module=go, platforms=linux
-go:platforms:darwin  -> module=go, platforms=darwin
+hello root artifact             -> module=hello
+hello test artifact             -> module=hello, stage=test
+hello release artifact          -> module=hello, stage=release
+go linux platform artifact      -> module=go, platform=linux
+go darwin platform artifact     -> module=go, platform=darwin
 ```
 
 Rules:
 
-- non-collection field dimensions are named from the field/function name, in
-  normal CLI case
+- zero-arg functions returning objects participate the same way as fields
+- if one branching point selects among child artifacts that all share the same
+  target artifact type `T`, the preferred public dimension name is the
+  CLI-cased type name of `T`; type names should already be singular by
+  convention (`Platform` → `platform`)
+- otherwise, fall back to one qualified singleton dimension per selected child
+  field/function name; its only non-null coordinate value is that same name
 - their keys are always `String`
 - their values are the selected child segment, also in CLI case
 - scalar fields do not create dimensions
@@ -212,21 +268,45 @@ Rules:
 Public dimensions are synthesized per `Artifacts` scope.
 
 1. Start with the explicit root dimension: `module`.
-2. Enumerate all reachable artifact objects and compute their candidate
-   selector pairs.
-3. Group artifact objects by the conjunction of currently public selector
-   pairs.
-4. For each ambiguous group, inspect the shallowest structural divergence:
-   - if the group diverges under a shared object-valued field/function, add
-     that field as a public dimension
-   - if the group diverges by taking different sibling fields/functions, add
-     one public dimension for each of those sibling fields/functions
-5. Repeat until every reachable artifact object is uniquely selectable by a
-   conjunction of positive filters.
-6. Elide dimensions that never distinguish any artifact objects in the current
-   scope.
-   A one-value dimension may still remain public if that value is the only
-   positive selector for some artifacts.
+2. Enumerate the projected artifact candidates in the current scope:
+   - module roots
+   - projected non-root objects with direct actions in this scope
+   - any child subtree roots added by earlier promotion steps
+3. Group those artifact candidates by the conjunction of currently public
+   coordinate cells.
+4. For each ambiguous group, find the shallowest branching point that
+   separates its members.
+5. Promote that branching point:
+   - if its selected child artifacts are homogeneous, add one public
+     dimension named from the shared child artifact type, with child names as
+     values
+   - otherwise, add one qualified singleton dimension per selected child
+     field/function name
+6. Repeat until every projected artifact candidate has a unique coordinate row
+   in the current scope.
+7. Keep promoted dimensions public for the whole scope, even if some artifact
+   rows have `null` in that column.
+
+In pseudocode:
+
+```text
+public := [module]
+artifacts := moduleRoots + directActionObjects
+repeat
+  groups := groupByCoordinateRow(artifacts, public)
+  if every group has size 1:
+    break
+  for each ambiguous group:
+    bp := shallowestBranchingPoint(group)
+    public += dimensionsFor(bp)
+    artifacts += selectedChildRoots(bp)
+until fixed point
+```
+
+`dimensionsFor(bp)` is the naming rule above: one shared typed dimension for a
+homogeneous branch, otherwise qualified singleton dimensions. A one-value
+dimension may still remain public if that value is the only positive selector
+for some artifacts.
 
 Root discovery uses the unscoped object tree and exposes only artifact
 dimensions valid in that root scope. `dagger list --help` should enumerate
@@ -236,85 +316,110 @@ shows the artifact dimensions valid for that verb-projected scope.
 Two examples:
 
 ```text
-platforms:linux
-platforms:darwin
+module=go, platform=linux
+module=go, platform=darwin
 ```
 
-Both artifact objects collide on `module=go`, but they diverge under the
-shared field `platforms`, so the public dimensions are:
+Both artifact rows collide on `module=go`, but they diverge under one
+shared branching point, so the public dimensions are:
 
 ```text
-module, platforms
+module, platform
 ```
 
 and selection is:
 
 ```bash
-$ dagger check --module=go --platforms=linux
+$ dagger check --module=go --platform=linux
 ```
 
 ```text
-test
-release
+module=hello, stage=test
+module=hello, stage=release
 ```
 
-Both artifact objects collide on `module=hello`, and there is no shared
+Both artifact rows collide on `module=hello`, and there is no shared
 selector field between them. They diverge by taking different sibling fields,
-so both fields become public dimensions:
+but both children share the same target type `Stage`, so the public dimension
+is:
 
 ```text
-module, test, release
+module, stage
 ```
 
 Formal selector pairs are:
 
 ```text
-hello:test    -> module=hello, test=test
-hello:release -> module=hello, release=release
+hello test artifact    -> module=hello, stage=test
+hello release artifact -> module=hello, stage=release
 ```
 
 ### Naming and Qualification
 
 Dimension names are deterministic:
 
-- use the CLI-cased field/function name for non-collection field dimensions
+- use the CLI-cased target artifact type name when one branching point selects
+  among homogeneous child artifact types; type names should already be singular
+  by convention (`Platform` → `platform`)
+- otherwise, use the qualified child field/function name itself as a singleton
+  dimension
 - use `module` for the workspace root dimension
 
 If two synthesized dimensions would have the same public name in one scope,
-qualify them with the shortest unique ancestor prefix:
+qualify them with ancestor prefixes, nearest first:
 
 ```text
 frontend:test
 backend:test
 ```
 
-becomes:
+may become:
 
 ```text
-frontend-test, backend-test
+frontend-stage, backend-stage
 ```
 
-The same qualification rule applies if a synthesized field dimension would
-collide with an existing public dimension such as `module`.
+Prepend successive ancestor names in CLI case until the name is unique in the
+current scope. If exhausting ancestors still collides, append a deterministic
+numeric suffix.
+
+The same rule applies if a synthesized field dimension would collide with an
+existing public dimension such as `module`.
+
+Singleton fallback dimensions are mechanically correct, but not ideal UX. If a
+module shape produces awkward dimensions, authors should rename leaves, insert
+a grouping object, or later use a collection.
 
 ### Coordinates
 
-`Artifact.coordinates` uses the synthesized public dimensions for the current
-scope. Coordinates are not required to be minimal; they must be sufficient to
-select the artifact positively within its scope.
+`Artifact.coordinates` is the full coordinate row for the synthesized public
+dimensions in the current scope. It is not a standalone address. Clients should
+read it the same way they read one row in a table.
 
 Using the earlier example:
 
 ```text
-hello:test
-  -> module=hello, test=test
-
-hello:release
-  -> module=hello, release=release
+hello test artifact    -> module=hello, stage=test
+hello release artifact -> module=hello, stage=release
 ```
 
-Pinned dimensions and trivial singleton dimensions may still be elided from
-coordinates when they add no information in the current scope.
+In a check scope with `dimensions = [module, platform]`:
+
+```text
+go root artifact             -> ["go", null]
+go linux platform artifact   -> ["go", "linux"]
+go darwin platform artifact  -> ["go", "darwin"]
+```
+
+Coordinates follow a strict table contract:
+
+- `scope.dimensions` is ordered and stable for a given scope
+- `artifact.coordinates` has the same length and order
+- `artifact.coordinates[i]` corresponds to `scope.dimensions[i]`
+- `null` means that dimension is not applicable for this artifact in this
+  scope
+- after `filterBy("X")`, every returned artifact must have a non-null
+  coordinate for `X`
 
 ### Edge Cases
 
@@ -322,6 +427,9 @@ coordinates when they add no information in the current scope.
   public.
 - If one branch needs an extra field dimension, that dimension is public for
   the whole scope, not only for the ambiguous artifacts.
+- A branching point with only one selected child in scope may still be
+  promoted if it is the only positive way to separate a parent artifact from
+  that child subtree.
 - A synthesized dimension may have only one value and still remain public if
   it is needed for unique positive selection.
 - Actions available on the selected artifacts are discovered through
@@ -338,13 +446,13 @@ coordinates when they add no information in the current scope.
 
 One filter model across all commands: `--<dimension>=<value>`, repeatable, no
 comma-separated values. Flags are named directly from the public selector
-dimension. Each flag points to
-`dagger list` for discovery:
+dimension.
 
 ```
 $ dagger check --help
-  --module=<name>       Filter by module (see: dagger list modules)
-  --platforms=<name>    Filter by platform (when synthesized)
+  --module=<name>       Filter by module
+  --platform=<name>     Filter by platform (when synthesized)
+  --list=<dimension>    List values in check scope
 ```
 
 The CLI generates flags from the current Artifacts scope's `dimensions` (for
@@ -360,20 +468,56 @@ selection.
 Collection-provided dimensions are an extension to this same model; see
 [collections.md](./collections.md).
 
+Root discovery uses `dagger list <dimension>`. Verb-local discovery uses
+`dagger <verb> --list=<dimension>`. Both are derived from `items()`, not from
+`dimensions()`:
+
+1. call `filterBy("<dimension>").items()`
+2. read `coordinate("<dimension>")` from each returned artifact
+3. deduplicate and sort the distinct non-null values for display
+
+This keeps `dimensions()` static while leaving value enumeration to the scoped
+artifact set.
+
+The important rule is scope matching: if the dimension came from
+`workspace.artifacts.filterCheck.dimensions`, value listing must query
+`workspace.artifacts.filterCheck.filterBy("<dimension>").items()`, not the root
+scope. `dagger check --list=<dimension>` is the CLI surface for that scope.
+
+Implementation sketch:
+
+```go
+rows := scope.FilterBy("platform", nil).Items()
+values := Distinct(NonNil(Map(rows, func(a Artifact) string {
+	return a.Coordinate("platform")
+})))
+```
+
 ### CLI Mappings
 
 ```
 dagger list                → workspace.artifacts.dimensions
 dagger list --help         → workspace.artifacts.dimensions
-dagger list modules        → workspace.artifacts.filterBy("module").items
-dagger list platforms      → workspace.artifacts
-                               .filterBy("platforms")
+dagger list module         → workspace.artifacts
+                               .filterBy("module")
                                .items
-dagger check --module=go \
-  --platforms=linux        → workspace.artifacts
+                               # then print distinct coordinate("module")
+dagger list platform       → workspace.artifacts
+                               .filterBy("platform")
+                               .items
+                               # then print distinct coordinate("platform")
+dagger check --list=platform
+  --module=go              → workspace.artifacts
                                .filterCheck
                                .filterBy("module", ["go"])
-                               .filterBy("platforms", ["linux"])
+                               .filterBy("platform")
+                               .items
+                               # then print sorted distinct coordinate("platform")
+dagger check --module=go \
+  --platform=linux         → workspace.artifacts
+                               .filterCheck
+                               .filterBy("module", ["go"])
+                               .filterBy("platform", ["linux"])
                                .check.run
 dagger check --module=go \
   --plan                   → workspace.artifacts
@@ -397,72 +541,102 @@ A scoped, filterable view over workspace artifacts.
 Chainable: every filter returns a narrowed Artifacts.
 """
 type Artifacts {
-  """Narrow by a dimension, optionally to specific values."""
+  """
+  Narrow by a dimension, optionally to specific values. With no values,
+  selects artifacts whose coordinate row has a non-null cell for that
+  dimension.
+  """
   filterBy(dimension: String!, values: [String!]): Artifacts!
 
-  """Narrow to artifacts that expose or can reach check handlers."""
+  """
+  Narrow to artifacts whose subtree contains at least one check handler.
+  Does not add `check` as an artifact dimension.
+  """
   filterCheck: Artifacts!
 
-  """Narrow to artifacts that expose or can reach generate handlers."""
+  """
+  Narrow to artifacts whose subtree contains at least one generate handler.
+  Does not add `generate` as an artifact dimension.
+  """
   filterGenerate: Artifacts!
 
-  """Narrow to artifacts that expose or can reach ship handlers."""
+  """
+  Narrow to artifacts whose subtree contains at least one ship handler.
+  Does not add `ship` as an artifact dimension.
+  """
   filterShip: Artifacts!
 
-  """Narrow to artifacts that expose or can reach up handlers."""
+  """
+  Narrow to artifacts whose subtree contains at least one up handler.
+  Does not add `up` as an artifact dimension.
+  """
   filterUp: Artifacts!
 
-  """Filterable dimensions available in the current scope. Static."""
+  """Ordered filterable dimensions for the current scope. Static header row."""
   dimensions: [ArtifactDimension!]!
 
-  """Artifacts matching the current filters."""
+  """Artifacts matching the current filters. Dynamic row set."""
   items: [Artifact!]!
 
-  """Union of available function names across all in-scope artifacts. Static."""
+  """
+  Union of direct non-traversal function names across all in-scope artifacts.
+  Zero-arg object-returning members participate in selector traversal instead.
+  """
   actions: [String!]!
 
-  """Create an action targeting all in-scope artifacts."""
+  """
+  Create an action targeting the in-scope artifacts that directly expose this
+  function name. Errors if no in-scope artifact exposes it.
+  """
   action(name: String!): Action!
 
-  """Compile a check execution plan for the current scope."""
+  """
+  Compile a check execution plan for the selected artifact set. Verb-specific
+  expansion and ordering rules live in `plans.md`; overlapping ancestor/child
+  selections are deduplicated at the reachable-handler set before actions are
+  constructed.
+  """
   check: Plan!
 
-  """Compile a generate execution plan for the current scope."""
+  """Compile a generate execution plan for the selected artifact set."""
   generate: Plan!
 
-  """Compile a ship execution plan for the current scope."""
+  """Compile a ship execution plan for the selected artifact set."""
   ship: Plan!
 
-  """Compile an up execution plan for the current scope."""
+  """Compile an up execution plan for the selected artifact set."""
   up: Plan!
 }
 
 """A filterable axis of the artifact graph."""
 type ArtifactDimension {
-  """Filter name as used in CLI flags. Example: "platforms"."""
+  """Filter name as used in CLI flags and table headers. Example: "platform"."""
   name: String!
 
-  """Type of this dimension's keys. Determines parsing and rendering."""
+  """
+  Type of this dimension's keys. Determines parsing, validation, and help
+  rendering. It does not enumerate the current in-scope values.
+  """
   keyType: TypeDef!
 }
 
 """One artifact in the workspace."""
 type Artifact {
   """
-  Ordered coordinate path from the outermost dimension in scope to this
-  artifact. The last element is the artifact's own position; preceding
-  elements trace the path through enclosing dimensions.
+  Ordered coordinate row for this artifact. Same length and order as
+  `scope.dimensions`.
 
-  Coordinates are scope-relative: which dimensions appear depends on the
-  current Artifacts scope. Coordinates are not required to be minimal, but
-  they must be sufficient to select the artifact positively within that scope.
-  A dimension that is pinned by filters or trivial (only one value exists) may
-  be elided. Coordinates are guaranteed unique within the artifact's scope,
-  but not necessarily unique in a broader scope with fewer filters applied.
+  `coordinates[i]` corresponds to `scope.dimensions[i]`. A null cell means the
+  dimension does not apply to this artifact in the current scope.
 
   Coordinates describe artifact selection only. Action names remain separate.
+  Each cell is the public string form that the CLI would round-trip through
+  `--<dimension>=<value>`.
   """
-  coordinates: [ArtifactCoordinate!]!
+  coordinates: [String]!
+
+  """Convenience lookup for one coordinate by dimension name."""
+  coordinate(name: String!): String
 
   """
   The Artifacts scope that produced this artifact. Coordinates are unique
@@ -474,20 +648,11 @@ type Artifact {
   """Fields on the underlying object, for inspection."""
   fields: [FieldValue!]!
 
-  """Available function names on the underlying object."""
+  """Available direct non-traversal function names on the underlying object."""
   actions: [String!]!
 
   """Create an action targeting this single artifact."""
   action(name: String!): Action!
-}
-
-"""A position along one dimension of the artifact graph."""
-type ArtifactCoordinate {
-  """Which dimension. Example: "platforms"."""
-  dimension: String!
-
-  """The key value, rendered per its key type. Example: "linux"."""
-  value: String!
 }
 
 """One field on an artifact's underlying object."""
@@ -510,20 +675,50 @@ For the Action and Plan types, see [plans.md](./plans.md).
 
 ## Notes
 
-- **Static (schema-only, no runtime cost):** root dimensions, verb-scoped
-  artifact dimensions, action names, filter flag generation
-- **Dynamic:** items, item counts, collection-derived selector value discovery,
-  plan compilation, plan execution
+- **Static synthesis (no user-object evaluation):** root dimensions,
+  verb-scoped artifact dimensions, action names, filter flag generation
+- **Dynamic enumeration:** items, item counts, coordinate values in the current
+  scope, collection-derived selector value discovery, plan compilation, plan
+  execution
 
 Non-collection selector synthesis is static. It should require only workspace
 module discovery plus schema/object introspection; it should not require
 evaluating user objects.
 
+For ordinary zero-arg object-returning members, selector synthesis uses the
+declared member name and return type only. It does not execute the function
+body to discover rows or dimensions.
+
+In this document, a "direct action" means a callable non-object function on
+the current object. Zero-arg object-returning members are traversal edges, not
+actions.
+
+`items()` is the one enumeration surface. An implementation may satisfy it
+statically for ordinary object-structure scopes and dynamically for
+collection-backed scopes, but the API contract is the same.
+
+Root discovery and verb scopes may expose different dimensions. That is
+expected: `workspace.artifacts` shows the full root selector space, while
+`filterCheck` / `filterGenerate` prune that space to artifact objects relevant
+to one verb.
+
+Artifact selection and verb compilation are separate layers. `Artifacts.items`
+and `Artifacts.actions` describe the selected artifact set. `Artifacts.check`,
+`generate`, `ship`, and `up` compile plans from that selected set according to
+the verb-specific rules in [plans.md](./plans.md).
+
+For subtree-based verbs, overlap is resolved at the reachable-handler set, not
+at the coordinate-row level. Selecting both an ancestor artifact and one of its
+descendants should not duplicate the same direct handler in the compiled plan.
+
 ### Filter Algebra
 
 - Every chained `filterBy` / `filterCheck` / etc. is **AND**
 - Multiple values within one `filterBy` call is **OR** (list of values)
-- `filterBy("X")` (no values) → select all items of dimension X
+- `filterBy("X")` (no values) → select all items where dimension `X` is
+  present in the current scope
+- for a singleton dimension, `filterBy("X")` and `filterBy("X", ["X"])` are
+  equivalent
 - `filterBy("X", ["a"]).filterBy("X", ["b"])` → intersection (AND) — empty if
   no overlap
 - `filterCheck` / `filterShip` / etc. → narrow to artifact objects relevant to
@@ -545,15 +740,18 @@ Pre-Collections, the initial public selector dimensions are not just `module`.
   not action leaves
 - `Artifacts.actions` returns available function names separately from
   `dimensions`
+- clients derive `dagger list <dimension>` by projecting one coordinate column
+  out of `filterBy("<dimension>").items()` on the same scope that exposed the
+  dimension
 
 Concretely:
 
 ```bash
-$ dagger list platforms --module=go
+$ dagger check --list=platform --module=go
 linux
 darwin
 
-$ dagger check --module=go --platforms=linux
+$ dagger check --module=go --platform=linux
 ```
 
 Collections later add additional selector dimensions on top of this base; see
@@ -570,6 +768,12 @@ aligned:
 - synthesize public artifact dimensions from the reachable object graph using
   the algorithm above
 - generate CLI flags from the current scope's `dimensions`
+- implement `Artifact.coordinate(name)` as named lookup into the row defined by
+  `scope.dimensions` and `coordinates`
+- implement `dagger list <dimension>` by projecting one coordinate column out
+  of `filterBy("<dimension>").items()` in the same scope that exposed the
+  dimension
+- expose verb-local value discovery as `dagger <verb> --list=<dimension>`
 - migrate `dagger check` to `workspace.artifacts.check.run`
 - expose `--module`, any synthesized object-field filters, and `--plan`
 - expose `dagger list` over artifact dimensions
