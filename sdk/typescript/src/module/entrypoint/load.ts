@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Module from "node:module"
 
+import * as clientGen from "../../api/client.gen.js"
 import { dag, TypeDefKind } from "../../api/client.gen.js"
+import { Context } from "../../common/context.js"
+import { Connection } from "../../common/graphql/connection.js"
 import { Executor, Args } from "../executor.js"
 import {
   DaggerConstructor as Constructor,
@@ -167,18 +170,24 @@ export async function loadValue(
     case TypeDefKind.ObjectKind: {
       const objectType = (type as TypeDef<TypeDefKind.ObjectKind>).name
 
-      // For core API types, use the generated load method (which
-      // internally uses node(id:) via selectNode). For module-defined
-      // types, reconstruct from fields.
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      if (dag[`load${objectType}FromID`]) {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        return dag[`load${objectType}FromID`](value)
+      // For module-defined types, reconstruct from fields.
+      // For core API types, the value is an ID string — load via node(id:).
+      if (executor.hasObject(objectType)) {
+        return executor.buildClass(objectType, value)
       }
 
-      return executor.buildClass(objectType, value)
+      // Core type: construct a typed SDK client via node(id:)
+      const ctx = new Context([], new Connection(dag.getGQLClient()))
+        .selectNode(value, objectType)
+      // Look up the class from the generated client exports (e.g. "Directory" -> Directory class)
+      // Some names collide with JS builtins and get a _ suffix (e.g. "Module" -> Module_)
+      const className = (clientGen as any)[objectType] ? objectType : `${objectType}_`
+      const cls = (clientGen as any)[className]
+      if (cls) {
+        return new cls(ctx)
+      }
+      // Fallback: return a BaseClient with the right context
+      return new clientGen.BaseClient(ctx)
     }
     case TypeDefKind.InterfaceKind: {
       const interfaceType = (type as TypeDef<TypeDefKind.InterfaceKind>).name
