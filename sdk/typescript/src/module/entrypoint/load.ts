@@ -167,7 +167,9 @@ export async function loadValue(
     case TypeDefKind.ObjectKind: {
       const objectType = (type as TypeDef<TypeDefKind.ObjectKind>).name
 
-      // Workaround to call get any object that has an id
+      // For core API types, use the generated load method (which
+      // internally uses node(id:) via selectNode). For module-defined
+      // types, reconstruct from fields.
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       if (dag[`load${objectType}FromID`]) {

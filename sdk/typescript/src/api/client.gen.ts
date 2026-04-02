@@ -3109,7 +3109,7 @@ export class Changeset extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadChangesetFromID(response)
+    return new Changeset(ctx.copy().selectNode(response, "Changeset"))
   }
 
   /**
@@ -3380,7 +3380,7 @@ export class CheckGroup extends BaseClient {
 
     const response: Awaited<list[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadCheckFromID(r.id))
+    return response.map((r) => new Check(ctx.copy().selectNode(r.id, "Check")))
   }
 
   /**
@@ -3671,7 +3671,7 @@ export class Container extends BaseClient {
     const response: Awaited<envVariables[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
+      new EnvVariable(ctx.copy().selectNode(r.id, "EnvVariable")),
     )
   }
 
@@ -3843,7 +3843,7 @@ export class Container extends BaseClient {
 
     const response: Awaited<exposedPorts[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
+    return response.map((r) => new Port(ctx.copy().selectNode(r.id, "Port")))
   }
 
   /**
@@ -3920,7 +3920,7 @@ export class Container extends BaseClient {
 
     const response: Awaited<labels[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadLabelFromID(r.id))
+    return response.map((r) => new Label(ctx.copy().selectNode(r.id, "Label")))
   }
 
   /**
@@ -4055,7 +4055,7 @@ export class Container extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadContainerFromID(response)
+    return new Container(ctx.copy().selectNode(response, "Container"))
   }
 
   /**
@@ -4836,7 +4836,7 @@ export class CurrentModule extends BaseClient {
 
     const response: Awaited<dependencies[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
+    return response.map((r) => new Module_(ctx.copy().selectNode(r.id, "Module")))
   }
 
   /**
@@ -5215,7 +5215,7 @@ export class Directory extends BaseClient {
     const response: Awaited<search[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadSearchResultFromID(r.id),
+      new SearchResult(ctx.copy().selectNode(r.id, "SearchResult")),
     )
   }
 
@@ -5237,7 +5237,7 @@ export class Directory extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadDirectoryFromID(response)
+    return new Directory(ctx.copy().selectNode(response, "Directory"))
   }
 
   /**
@@ -5844,7 +5844,7 @@ export class EngineCacheEntrySet extends BaseClient {
     const response: Awaited<entries[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadEngineCacheEntryFromID(r.id),
+      new EngineCacheEntry(ctx.copy().selectNode(r.id, "EngineCacheEntry")),
     )
   }
 
@@ -5934,7 +5934,7 @@ export class EnumTypeDef extends BaseClient {
     const response: Awaited<members[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
+      new EnumValueTypeDef(ctx.copy().selectNode(r.id, "EnumValueTypeDef")),
     )
   }
 
@@ -5989,7 +5989,7 @@ export class EnumTypeDef extends BaseClient {
     const response: Awaited<values[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
+      new EnumValueTypeDef(ctx.copy().selectNode(r.id, "EnumValueTypeDef")),
     )
   }
 }
@@ -6175,7 +6175,7 @@ export class Env extends BaseClient {
 
     const response: Awaited<inputs[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+    return response.map((r) => new Binding(ctx.copy().selectNode(r.id, "Binding")))
   }
 
   /**
@@ -6198,7 +6198,7 @@ export class Env extends BaseClient {
 
     const response: Awaited<outputs[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+    return response.map((r) => new Binding(ctx.copy().selectNode(r.id, "Binding")))
   }
 
   /**
@@ -7066,7 +7066,7 @@ export class EnvFile extends BaseClient {
     const response: Awaited<variables[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
+      new EnvVariable(ctx.copy().selectNode(r.id, "EnvVariable")),
     )
   }
 
@@ -7221,7 +7221,7 @@ export class Error extends BaseClient {
     const response: Awaited<values[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadErrorValueFromID(r.id),
+      new ErrorValue(ctx.copy().selectNode(r.id, "ErrorValue")),
     )
   }
 
@@ -7586,7 +7586,7 @@ export class File extends BaseClient {
     const response: Awaited<search[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadSearchResultFromID(r.id),
+      new SearchResult(ctx.copy().selectNode(r.id, "SearchResult")),
     )
   }
 
@@ -7621,7 +7621,7 @@ export class File extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadFileFromID(response)
+    return new File(ctx.copy().selectNode(response, "File"))
   }
 
   /**
@@ -7742,7 +7742,7 @@ export class Function_ extends BaseClient {
     const response: Awaited<args[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadFunctionArgFromID(r.id),
+      new FunctionArg(ctx.copy().selectNode(r.id, "FunctionArg")),
     )
   }
 
@@ -8148,7 +8148,7 @@ export class FunctionCall extends BaseClient {
     const response: Awaited<inputArgs[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadFunctionCallArgValueFromID(r.id),
+      new FunctionCallArgValue(ctx.copy().selectNode(r.id, "FunctionCallArgValue")),
     )
   }
 
@@ -8600,7 +8600,7 @@ export class GeneratorGroup extends BaseClient {
 
     const response: Awaited<list[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadGeneratorFromID(r.id))
+    return response.map((r) => new Generator(ctx.copy().selectNode(r.id, "Generator")))
   }
 
   /**
@@ -9171,7 +9171,7 @@ export class InputTypeDef extends BaseClient {
     const response: Awaited<fields[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadFieldTypeDefFromID(r.id),
+      new FieldTypeDef(ctx.copy().selectNode(r.id, "FieldTypeDef")),
     )
   }
 
@@ -9260,7 +9260,7 @@ export class InterfaceTypeDef extends BaseClient {
 
     const response: Awaited<functions[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
+    return response.map((r) => new Function_(ctx.copy().selectNode(r.id, "Function")))
   }
 
   /**
@@ -9356,7 +9356,7 @@ export class JSONValue extends BaseClient {
 
     const response: Awaited<asArray[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadJSONValueFromID(r.id))
+    return response.map((r) => new JSONValue(ctx.copy().selectNode(r.id, "JSONValue")))
   }
 
   /**
@@ -9679,7 +9679,7 @@ export class LLM extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadLLMFromID(response)
+    return new LLM(ctx.copy().selectNode(response, "LLM"))
   }
 
   /**
@@ -9690,7 +9690,7 @@ export class LLM extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadLLMFromID(response)
+    return new LLM(ctx.copy().selectNode(response, "LLM"))
   }
 
   /**
@@ -10109,7 +10109,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<dependencies[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
+    return response.map((r) => new Module_(ctx.copy().selectNode(r.id, "Module")))
   }
 
   /**
@@ -10139,7 +10139,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<enums[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+    return response.map((r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")))
   }
 
   /**
@@ -10182,7 +10182,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<interfaces[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+    return response.map((r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")))
   }
 
   /**
@@ -10224,7 +10224,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<objects[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+    return response.map((r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")))
   }
 
   /**
@@ -10276,7 +10276,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadModuleFromID(response)
+    return new Module_(ctx.copy().selectNode(response, "Module"))
   }
 
   /**
@@ -10566,7 +10566,7 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<configClients[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadModuleConfigClientFromID(r.id),
+      new ModuleConfigClient(ctx.copy().selectNode(r.id, "ModuleConfigClient")),
     )
   }
 
@@ -10606,7 +10606,7 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<dependencies[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
+      new ModuleSource(ctx.copy().selectNode(r.id, "ModuleSource")),
     )
   }
 
@@ -10858,7 +10858,7 @@ export class ModuleSource extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadModuleSourceFromID(response)
+    return new ModuleSource(ctx.copy().selectNode(response, "ModuleSource"))
   }
 
   /**
@@ -10874,7 +10874,7 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<toolchains[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
+      new ModuleSource(ctx.copy().selectNode(r.id, "ModuleSource")),
     )
   }
 
@@ -11181,7 +11181,7 @@ export class ObjectTypeDef extends BaseClient {
     const response: Awaited<fields[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadFieldTypeDefFromID(r.id),
+      new FieldTypeDef(ctx.copy().selectNode(r.id, "FieldTypeDef")),
     )
   }
 
@@ -11197,7 +11197,7 @@ export class ObjectTypeDef extends BaseClient {
 
     const response: Awaited<functions[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
+    return response.map((r) => new Function_(ctx.copy().selectNode(r.id, "Function")))
   }
 
   /**
@@ -11479,7 +11479,7 @@ export class Client extends BaseClient {
 
     const response: Awaited<currentTypeDefs[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+    return response.map((r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")))
   }
 
   /**
@@ -11640,7 +11640,7 @@ export class Client extends BaseClient {
    * Load a Address from its ID.
    */
   loadAddressFromID = (id: ID): Address => {
-    const ctx = this._ctx.select("loadAddressFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Address")
     return new Address(ctx)
   }
 
@@ -11648,7 +11648,7 @@ export class Client extends BaseClient {
    * Load a Binding from its ID.
    */
   loadBindingFromID = (id: ID): Binding => {
-    const ctx = this._ctx.select("loadBindingFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Binding")
     return new Binding(ctx)
   }
 
@@ -11656,7 +11656,7 @@ export class Client extends BaseClient {
    * Load a CacheVolume from its ID.
    */
   loadCacheVolumeFromID = (id: ID): CacheVolume => {
-    const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "CacheVolume")
     return new CacheVolume(ctx)
   }
 
@@ -11664,7 +11664,7 @@ export class Client extends BaseClient {
    * Load a Changeset from its ID.
    */
   loadChangesetFromID = (id: ID): Changeset => {
-    const ctx = this._ctx.select("loadChangesetFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Changeset")
     return new Changeset(ctx)
   }
 
@@ -11672,7 +11672,7 @@ export class Client extends BaseClient {
    * Load a Check from its ID.
    */
   loadCheckFromID = (id: ID): Check => {
-    const ctx = this._ctx.select("loadCheckFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Check")
     return new Check(ctx)
   }
 
@@ -11680,7 +11680,7 @@ export class Client extends BaseClient {
    * Load a CheckGroup from its ID.
    */
   loadCheckGroupFromID = (id: ID): CheckGroup => {
-    const ctx = this._ctx.select("loadCheckGroupFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "CheckGroup")
     return new CheckGroup(ctx)
   }
 
@@ -11688,7 +11688,7 @@ export class Client extends BaseClient {
    * Load a Cloud from its ID.
    */
   loadCloudFromID = (id: ID): Cloud => {
-    const ctx = this._ctx.select("loadCloudFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Cloud")
     return new Cloud(ctx)
   }
 
@@ -11696,7 +11696,7 @@ export class Client extends BaseClient {
    * Load a Container from its ID.
    */
   loadContainerFromID = (id: ID): Container => {
-    const ctx = this._ctx.select("loadContainerFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Container")
     return new Container(ctx)
   }
 
@@ -11704,7 +11704,7 @@ export class Client extends BaseClient {
    * Load a CurrentModule from its ID.
    */
   loadCurrentModuleFromID = (id: ID): CurrentModule => {
-    const ctx = this._ctx.select("loadCurrentModuleFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "CurrentModule")
     return new CurrentModule(ctx)
   }
 
@@ -11712,7 +11712,7 @@ export class Client extends BaseClient {
    * Load a Directory from its ID.
    */
   loadDirectoryFromID = (id: ID): Directory => {
-    const ctx = this._ctx.select("loadDirectoryFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Directory")
     return new Directory(ctx)
   }
 
@@ -11720,7 +11720,7 @@ export class Client extends BaseClient {
    * Load a EngineCacheEntry from its ID.
    */
   loadEngineCacheEntryFromID = (id: ID): EngineCacheEntry => {
-    const ctx = this._ctx.select("loadEngineCacheEntryFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "EngineCacheEntry")
     return new EngineCacheEntry(ctx)
   }
 
@@ -11728,7 +11728,7 @@ export class Client extends BaseClient {
    * Load a EngineCacheEntrySet from its ID.
    */
   loadEngineCacheEntrySetFromID = (id: ID): EngineCacheEntrySet => {
-    const ctx = this._ctx.select("loadEngineCacheEntrySetFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "EngineCacheEntrySet")
     return new EngineCacheEntrySet(ctx)
   }
 
@@ -11736,7 +11736,7 @@ export class Client extends BaseClient {
    * Load a EngineCache from its ID.
    */
   loadEngineCacheFromID = (id: ID): EngineCache => {
-    const ctx = this._ctx.select("loadEngineCacheFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "EngineCache")
     return new EngineCache(ctx)
   }
 
@@ -11744,7 +11744,7 @@ export class Client extends BaseClient {
    * Load a Engine from its ID.
    */
   loadEngineFromID = (id: ID): Engine => {
-    const ctx = this._ctx.select("loadEngineFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Engine")
     return new Engine(ctx)
   }
 
@@ -11752,7 +11752,7 @@ export class Client extends BaseClient {
    * Load a EnumTypeDef from its ID.
    */
   loadEnumTypeDefFromID = (id: ID): EnumTypeDef => {
-    const ctx = this._ctx.select("loadEnumTypeDefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "EnumTypeDef")
     return new EnumTypeDef(ctx)
   }
 
@@ -11760,7 +11760,7 @@ export class Client extends BaseClient {
    * Load a EnumValueTypeDef from its ID.
    */
   loadEnumValueTypeDefFromID = (id: ID): EnumValueTypeDef => {
-    const ctx = this._ctx.select("loadEnumValueTypeDefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "EnumValueTypeDef")
     return new EnumValueTypeDef(ctx)
   }
 
@@ -11768,7 +11768,7 @@ export class Client extends BaseClient {
    * Load a EnvFile from its ID.
    */
   loadEnvFileFromID = (id: ID): EnvFile => {
-    const ctx = this._ctx.select("loadEnvFileFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "EnvFile")
     return new EnvFile(ctx)
   }
 
@@ -11776,7 +11776,7 @@ export class Client extends BaseClient {
    * Load a Env from its ID.
    */
   loadEnvFromID = (id: ID): Env => {
-    const ctx = this._ctx.select("loadEnvFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Env")
     return new Env(ctx)
   }
 
@@ -11784,7 +11784,7 @@ export class Client extends BaseClient {
    * Load a EnvVariable from its ID.
    */
   loadEnvVariableFromID = (id: ID): EnvVariable => {
-    const ctx = this._ctx.select("loadEnvVariableFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "EnvVariable")
     return new EnvVariable(ctx)
   }
 
@@ -11792,7 +11792,7 @@ export class Client extends BaseClient {
    * Load a Error from its ID.
    */
   loadErrorFromID = (id: ID): Error => {
-    const ctx = this._ctx.select("loadErrorFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Error")
     return new Error(ctx)
   }
 
@@ -11800,7 +11800,7 @@ export class Client extends BaseClient {
    * Load a ErrorValue from its ID.
    */
   loadErrorValueFromID = (id: ID): ErrorValue => {
-    const ctx = this._ctx.select("loadErrorValueFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "ErrorValue")
     return new ErrorValue(ctx)
   }
 
@@ -11808,7 +11808,7 @@ export class Client extends BaseClient {
    * Load a FieldTypeDef from its ID.
    */
   loadFieldTypeDefFromID = (id: ID): FieldTypeDef => {
-    const ctx = this._ctx.select("loadFieldTypeDefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "FieldTypeDef")
     return new FieldTypeDef(ctx)
   }
 
@@ -11816,7 +11816,7 @@ export class Client extends BaseClient {
    * Load a File from its ID.
    */
   loadFileFromID = (id: ID): File => {
-    const ctx = this._ctx.select("loadFileFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "File")
     return new File(ctx)
   }
 
@@ -11824,7 +11824,7 @@ export class Client extends BaseClient {
    * Load a FunctionArg from its ID.
    */
   loadFunctionArgFromID = (id: ID): FunctionArg => {
-    const ctx = this._ctx.select("loadFunctionArgFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "FunctionArg")
     return new FunctionArg(ctx)
   }
 
@@ -11832,7 +11832,7 @@ export class Client extends BaseClient {
    * Load a FunctionCallArgValue from its ID.
    */
   loadFunctionCallArgValueFromID = (id: ID): FunctionCallArgValue => {
-    const ctx = this._ctx.select("loadFunctionCallArgValueFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "FunctionCallArgValue")
     return new FunctionCallArgValue(ctx)
   }
 
@@ -11840,7 +11840,7 @@ export class Client extends BaseClient {
    * Load a FunctionCall from its ID.
    */
   loadFunctionCallFromID = (id: ID): FunctionCall => {
-    const ctx = this._ctx.select("loadFunctionCallFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "FunctionCall")
     return new FunctionCall(ctx)
   }
 
@@ -11848,7 +11848,7 @@ export class Client extends BaseClient {
    * Load a Function from its ID.
    */
   loadFunctionFromID = (id: ID): Function_ => {
-    const ctx = this._ctx.select("loadFunctionFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Function")
     return new Function_(ctx)
   }
 
@@ -11856,7 +11856,7 @@ export class Client extends BaseClient {
    * Load a GeneratedCode from its ID.
    */
   loadGeneratedCodeFromID = (id: ID): GeneratedCode => {
-    const ctx = this._ctx.select("loadGeneratedCodeFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "GeneratedCode")
     return new GeneratedCode(ctx)
   }
 
@@ -11864,7 +11864,7 @@ export class Client extends BaseClient {
    * Load a Generator from its ID.
    */
   loadGeneratorFromID = (id: ID): Generator => {
-    const ctx = this._ctx.select("loadGeneratorFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Generator")
     return new Generator(ctx)
   }
 
@@ -11872,7 +11872,7 @@ export class Client extends BaseClient {
    * Load a GeneratorGroup from its ID.
    */
   loadGeneratorGroupFromID = (id: ID): GeneratorGroup => {
-    const ctx = this._ctx.select("loadGeneratorGroupFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "GeneratorGroup")
     return new GeneratorGroup(ctx)
   }
 
@@ -11880,7 +11880,7 @@ export class Client extends BaseClient {
    * Load a GitRef from its ID.
    */
   loadGitRefFromID = (id: ID): GitRef => {
-    const ctx = this._ctx.select("loadGitRefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "GitRef")
     return new GitRef(ctx)
   }
 
@@ -11888,7 +11888,7 @@ export class Client extends BaseClient {
    * Load a GitRepository from its ID.
    */
   loadGitRepositoryFromID = (id: ID): GitRepository => {
-    const ctx = this._ctx.select("loadGitRepositoryFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "GitRepository")
     return new GitRepository(ctx)
   }
 
@@ -11896,7 +11896,7 @@ export class Client extends BaseClient {
    * Load a HealthcheckConfig from its ID.
    */
   loadHealthcheckConfigFromID = (id: ID): HealthcheckConfig => {
-    const ctx = this._ctx.select("loadHealthcheckConfigFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "HealthcheckConfig")
     return new HealthcheckConfig(ctx)
   }
 
@@ -11904,7 +11904,7 @@ export class Client extends BaseClient {
    * Load a Host from its ID.
    */
   loadHostFromID = (id: ID): Host => {
-    const ctx = this._ctx.select("loadHostFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Host")
     return new Host(ctx)
   }
 
@@ -11912,7 +11912,7 @@ export class Client extends BaseClient {
    * Load a InputTypeDef from its ID.
    */
   loadInputTypeDefFromID = (id: ID): InputTypeDef => {
-    const ctx = this._ctx.select("loadInputTypeDefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "InputTypeDef")
     return new InputTypeDef(ctx)
   }
 
@@ -11920,7 +11920,7 @@ export class Client extends BaseClient {
    * Load a InterfaceTypeDef from its ID.
    */
   loadInterfaceTypeDefFromID = (id: ID): InterfaceTypeDef => {
-    const ctx = this._ctx.select("loadInterfaceTypeDefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "InterfaceTypeDef")
     return new InterfaceTypeDef(ctx)
   }
 
@@ -11928,7 +11928,7 @@ export class Client extends BaseClient {
    * Load a JSONValue from its ID.
    */
   loadJSONValueFromID = (id: ID): JSONValue => {
-    const ctx = this._ctx.select("loadJSONValueFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "JSONValue")
     return new JSONValue(ctx)
   }
 
@@ -11936,7 +11936,7 @@ export class Client extends BaseClient {
    * Load a LLM from its ID.
    */
   loadLLMFromID = (id: ID): LLM => {
-    const ctx = this._ctx.select("loadLLMFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "LLM")
     return new LLM(ctx)
   }
 
@@ -11944,7 +11944,7 @@ export class Client extends BaseClient {
    * Load a LLMTokenUsage from its ID.
    */
   loadLLMTokenUsageFromID = (id: ID): LLMTokenUsage => {
-    const ctx = this._ctx.select("loadLLMTokenUsageFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "LLMTokenUsage")
     return new LLMTokenUsage(ctx)
   }
 
@@ -11952,7 +11952,7 @@ export class Client extends BaseClient {
    * Load a Label from its ID.
    */
   loadLabelFromID = (id: ID): Label => {
-    const ctx = this._ctx.select("loadLabelFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Label")
     return new Label(ctx)
   }
 
@@ -11960,7 +11960,7 @@ export class Client extends BaseClient {
    * Load a ListTypeDef from its ID.
    */
   loadListTypeDefFromID = (id: ID): ListTypeDef => {
-    const ctx = this._ctx.select("loadListTypeDefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "ListTypeDef")
     return new ListTypeDef(ctx)
   }
 
@@ -11968,7 +11968,7 @@ export class Client extends BaseClient {
    * Load a ModuleConfigClient from its ID.
    */
   loadModuleConfigClientFromID = (id: ID): ModuleConfigClient => {
-    const ctx = this._ctx.select("loadModuleConfigClientFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "ModuleConfigClient")
     return new ModuleConfigClient(ctx)
   }
 
@@ -11976,7 +11976,7 @@ export class Client extends BaseClient {
    * Load a Module from its ID.
    */
   loadModuleFromID = (id: ID): Module_ => {
-    const ctx = this._ctx.select("loadModuleFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Module")
     return new Module_(ctx)
   }
 
@@ -11984,7 +11984,7 @@ export class Client extends BaseClient {
    * Load a ModuleSource from its ID.
    */
   loadModuleSourceFromID = (id: ID): ModuleSource => {
-    const ctx = this._ctx.select("loadModuleSourceFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "ModuleSource")
     return new ModuleSource(ctx)
   }
 
@@ -11992,7 +11992,7 @@ export class Client extends BaseClient {
    * Load a ObjectTypeDef from its ID.
    */
   loadObjectTypeDefFromID = (id: ID): ObjectTypeDef => {
-    const ctx = this._ctx.select("loadObjectTypeDefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "ObjectTypeDef")
     return new ObjectTypeDef(ctx)
   }
 
@@ -12000,7 +12000,7 @@ export class Client extends BaseClient {
    * Load a Port from its ID.
    */
   loadPortFromID = (id: ID): Port => {
-    const ctx = this._ctx.select("loadPortFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Port")
     return new Port(ctx)
   }
 
@@ -12008,7 +12008,7 @@ export class Client extends BaseClient {
    * Load a Query from its ID.
    */
   loadQueryFromID = (id: ID): Client => {
-    const ctx = this._ctx.select("loadQueryFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Query")
     return new Client(ctx)
   }
 
@@ -12016,7 +12016,7 @@ export class Client extends BaseClient {
    * Load a SDKConfig from its ID.
    */
   loadSDKConfigFromID = (id: ID): SDKConfig => {
-    const ctx = this._ctx.select("loadSDKConfigFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "SDKConfig")
     return new SDKConfig(ctx)
   }
 
@@ -12024,7 +12024,7 @@ export class Client extends BaseClient {
    * Load a ScalarTypeDef from its ID.
    */
   loadScalarTypeDefFromID = (id: ID): ScalarTypeDef => {
-    const ctx = this._ctx.select("loadScalarTypeDefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "ScalarTypeDef")
     return new ScalarTypeDef(ctx)
   }
 
@@ -12032,7 +12032,7 @@ export class Client extends BaseClient {
    * Load a SearchResult from its ID.
    */
   loadSearchResultFromID = (id: ID): SearchResult => {
-    const ctx = this._ctx.select("loadSearchResultFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "SearchResult")
     return new SearchResult(ctx)
   }
 
@@ -12040,7 +12040,7 @@ export class Client extends BaseClient {
    * Load a SearchSubmatch from its ID.
    */
   loadSearchSubmatchFromID = (id: ID): SearchSubmatch => {
-    const ctx = this._ctx.select("loadSearchSubmatchFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "SearchSubmatch")
     return new SearchSubmatch(ctx)
   }
 
@@ -12048,7 +12048,7 @@ export class Client extends BaseClient {
    * Load a Secret from its ID.
    */
   loadSecretFromID = (id: ID): Secret => {
-    const ctx = this._ctx.select("loadSecretFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Secret")
     return new Secret(ctx)
   }
 
@@ -12056,7 +12056,7 @@ export class Client extends BaseClient {
    * Load a Service from its ID.
    */
   loadServiceFromID = (id: ID): Service => {
-    const ctx = this._ctx.select("loadServiceFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Service")
     return new Service(ctx)
   }
 
@@ -12064,7 +12064,7 @@ export class Client extends BaseClient {
    * Load a Socket from its ID.
    */
   loadSocketFromID = (id: ID): Socket => {
-    const ctx = this._ctx.select("loadSocketFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Socket")
     return new Socket(ctx)
   }
 
@@ -12072,7 +12072,7 @@ export class Client extends BaseClient {
    * Load a SourceMap from its ID.
    */
   loadSourceMapFromID = (id: ID): SourceMap => {
-    const ctx = this._ctx.select("loadSourceMapFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "SourceMap")
     return new SourceMap(ctx)
   }
 
@@ -12080,7 +12080,7 @@ export class Client extends BaseClient {
    * Load a Stat from its ID.
    */
   loadStatFromID = (id: ID): Stat => {
-    const ctx = this._ctx.select("loadStatFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Stat")
     return new Stat(ctx)
   }
 
@@ -12088,7 +12088,7 @@ export class Client extends BaseClient {
    * Load a Terminal from its ID.
    */
   loadTerminalFromID = (id: ID): Terminal => {
-    const ctx = this._ctx.select("loadTerminalFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Terminal")
     return new Terminal(ctx)
   }
 
@@ -12096,7 +12096,7 @@ export class Client extends BaseClient {
    * Load a TypeDef from its ID.
    */
   loadTypeDefFromID = (id: ID): TypeDef => {
-    const ctx = this._ctx.select("loadTypeDefFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "TypeDef")
     return new TypeDef(ctx)
   }
 
@@ -12104,7 +12104,7 @@ export class Client extends BaseClient {
    * Load a Workspace from its ID.
    */
   loadWorkspaceFromID = (id: ID): Workspace => {
-    const ctx = this._ctx.select("loadWorkspaceFromID", { id })
+    const ctx = this._ctx.selectNode(id as string, "Workspace")
     return new Workspace(ctx)
   }
 
@@ -12477,7 +12477,7 @@ export class SearchResult extends BaseClient {
     const response: Awaited<submatches[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadSearchSubmatchFromID(r.id),
+      new SearchSubmatch(ctx.copy().selectNode(r.id, "SearchSubmatch")),
     )
   }
 }
@@ -12754,7 +12754,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ports[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
+    return response.map((r) => new Port(ctx.copy().selectNode(r.id, "Port")))
   }
 
   /**
@@ -12767,7 +12767,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadServiceFromID(response)
+    return new Service(ctx.copy().selectNode(response, "Service"))
   }
 
   /**
@@ -12779,7 +12779,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadServiceFromID(response)
+    return new Service(ctx.copy().selectNode(response, "Service"))
   }
 
   /**
@@ -12790,7 +12790,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadServiceFromID(response)
+    return new Service(ctx.copy().selectNode(response, "Service"))
   }
   terminal = (opts?: ServiceTerminalOpts): Service => {
     const ctx = this._ctx.select("terminal", { ...opts })
@@ -13136,7 +13136,7 @@ export class Terminal extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadTerminalFromID(response)
+    return new Terminal(ctx.copy().selectNode(response, "Terminal"))
   }
 }
 

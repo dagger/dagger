@@ -147,8 +147,8 @@ class InterfaceWrapper {
   ) {
     this._ctx = new Context([], new Connection(dag.getGQLClient()))
 
-    // Load the interface by its identifier
-    this._ctx = this._ctx.select(`load${ifaceName}FromID`, { id: ifaceId })
+    // Load the interface by its identifier via node(id:)
+    this._ctx = this._ctx.selectNode(ifaceId, ifaceName)
 
     Object.entries(fcts).forEach(([name, fct]) => {
       const argKeys = Object.keys(fct.arguments)
@@ -212,10 +212,13 @@ class InterfaceWrapper {
               )
             }
 
-            // Otherwise, we can just load the objects from the API
+            // Otherwise, load each object via node(id:)
             return await Promise.all(
-              // @ts-ignore
-              ids.map(({ id }) => dag[`load${listTypeDef.name}FromID`](id)),
+              ids.map(({ id }: { id: string }) => {
+                const nodeCtx = new Context([], new Connection(dag.getGQLClient()))
+                  .selectNode(id, typedef.name)
+                return nodeCtx.execute()
+              }),
             )
           }
         }
