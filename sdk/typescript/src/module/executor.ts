@@ -212,13 +212,10 @@ class InterfaceWrapper {
               )
             }
 
-            // Otherwise, load each object via node(id:)
+            // Otherwise, we can just load the objects from the API
             return await Promise.all(
-              ids.map(({ id }: { id: string }) => {
-                const nodeCtx = new Context([], new Connection(dag.getGQLClient()))
-                  .selectNode(id, typedef.name)
-                return nodeCtx.execute()
-              }),
+              // @ts-ignore
+              ids.map(({ id }) => dag[`load${typedef.name}FromID`](id)),
             )
           }
         }
