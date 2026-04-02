@@ -228,7 +228,9 @@ func (m *ClientFilesyncMirror) acquire(ctx context.Context, query *Query) (_ *fi
 		return nil, nil, err
 	}
 	m.usageCount++
-	return m.sharedState, func(releaseCtx context.Context) error {
+	sharedState := m.sharedState
+	m.mu.Unlock()
+	return sharedState, func(releaseCtx context.Context) error {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		m.usageCount--
