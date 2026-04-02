@@ -3941,6 +3941,26 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]buil
 }
 
 func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs.Descriptor, error) {
+	if opts.Tar {
+		tarball, err := container.AsTarball(
+			ctx,
+			opts.PlatformVariants,
+			opts.ForcedCompression,
+			opts.MediaTypes,
+			"container.tar",
+		)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			_ = tarball.OnRelease(context.WithoutCancel(ctx))
+		}()
+		if err := tarball.Export(ctx, opts.Dest, false); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
