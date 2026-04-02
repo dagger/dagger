@@ -10,7 +10,7 @@ type {{ .Name | FormatName }} interface {
 	{{- end }}
 	{{ InterfaceMethodSignature $field }}
 {{ end }}
-{{- if and .PossibleTypes (ne .Name "Node") }}
+{{- if and (PossibleTypes .) (ne .Name "Node") }}
 	// Concrete loads and returns the underlying concrete type of this
 	// interface, which can then be used with a type switch.
 	Concrete(ctx context.Context) (Node, error)
@@ -229,7 +229,7 @@ func (r *{{ $.Name | InterfaceClientName }}) UnmarshalJSON(bs []byte) error {
 
 {{ end -}}
 
-{{- if and .PossibleTypes (ne .Name "Node") }}
+{{- if and (PossibleTypes .) (ne .Name "Node") }}
 // Concrete loads and returns the underlying concrete type of this
 // interface, which can then be used with a type switch.
 func (r *{{ $.Name | InterfaceClientName }}) Concrete(ctx context.Context) (Node, error) {
@@ -246,11 +246,9 @@ func (r *{{ $.Name | InterfaceClientName }}) Concrete(ctx context.Context) (Node
 		return nil, err
 	}
 	switch typeName {
-	{{- range $pt := .PossibleTypes }}
-	{{- if ne $pt.Kind "INTERFACE" }}
+	{{- range $pt := PossibleTypes . }}
 	case "{{ $pt.Name }}":
 		return &{{ $pt.Name | FormatName }}{query: SelectNode(r.query.Root(), id, "{{ $pt.Name }}")}, nil
-	{{- end }}
 	{{- end }}
 	default:
 		return nil, fmt.Errorf("unknown {{ $.Name }} implementation: %s", typeName)

@@ -478,6 +478,19 @@ func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive
 		iface.directives = append(iface.directives, directives...)
 	}
 	s.interfaces[iface.TypeName()] = iface
+
+	// Auto-implement "Node" for interfaces that have an "id" field, just
+	// like objects.  This lets inline fragments like `... on SomeIface` be
+	// valid within `node(id:)` even when the interface has no concrete
+	// implementors in the current schema view.
+	if iface.TypeName() != "Node" {
+		if nodeIface, ok := s.interfaces["Node"]; ok {
+			if nodeIface.SatisfiedByInterface(iface, "") {
+				iface.ImplementInterface(nodeIface)
+			}
+		}
+	}
+
 	s.invalidateSchemaCache()
 	return iface
 }
@@ -597,6 +610,14 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
 			def := iface.Definition(view)
 			schema.AddTypes(def)
+			// Register this interface as a possible type of itself so that
+			// inline fragments like `... on SomeIface` pass the
+			// PossibleFragmentSpreads validation when the parent type is
+			// another interface (e.g. Node).  The gqlparser checks for
+			// overlapping possible-type sets; self-registration ensures the
+			// overlap exists even when no concrete implementor is present in
+			// the current schema view.
+			schema.AddPossibleType(def.Name, def)
 			// Register this interface as a possible type for each interface
 			// it implements (interface-extends-interface).
 			for _, ifaceName := range def.Interfaces {

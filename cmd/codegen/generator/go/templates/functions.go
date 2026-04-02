@@ -429,9 +429,19 @@ func (funcs goTemplateFuncs) interfaceClientName(name string) string {
 	return formatName(name) + "Client"
 }
 
-// possibleTypes returns the possible concrete types for an interface type.
+// possibleTypes returns the possible concrete types for an interface type,
+// filtering out interface entries so that only object types are returned.
+// Interfaces may appear in PossibleTypes due to interface-extends-interface
+// registrations, but codegen (e.g. Concrete() switch) only needs objects.
 func (funcs goTemplateFuncs) possibleTypes(t introspection.Type) []*introspection.Type {
-	return t.PossibleTypes
+	var result []*introspection.Type
+	for _, pt := range t.PossibleTypes {
+		if pt.Kind == introspection.TypeKindInterface {
+			continue
+		}
+		result = append(result, pt)
+	}
+	return result
 }
 
 // implementedInterfaces returns the interfaces that an object type implements,

@@ -143,6 +143,34 @@ func (spec *parsedIfaceType) ModuleName() string {
 	return spec.moduleName
 }
 
+// schemaName returns the namespaced GraphQL type name for this interface as it
+// appears in the engine's schema.  Module-defined types are prefixed with the
+// module name (e.g. module "test", interface "CustomIface" → "TestCustomIface").
+// This mirrors the engine's namespaceObject() logic in core/gqlformat.go.
+func (spec *parsedIfaceType) schemaName() string {
+	return gqlSchemaName(spec.name, spec.moduleName)
+}
+
+// gqlSchemaName computes the namespaced GraphQL type name for a module-defined
+// type.  If moduleName is empty the name is returned as-is (the type comes
+// from the introspection schema and is already fully qualified).
+func gqlSchemaName(name, moduleName string) string {
+	if moduleName == "" {
+		return name
+	}
+	objName := strcase.ToCamel(name)
+	modPrefix := strcase.ToCamel(moduleName)
+	if rest, ok := strings.CutPrefix(objName, modPrefix); ok {
+		if len(rest) == 0 {
+			return objName
+		}
+		if rest[0] >= 'A' && rest[0] <= 'Z' {
+			return objName
+		}
+	}
+	return strcase.ToCamel(moduleName + "_" + name)
+}
+
 // The code implementing the concrete struct that implements the interface and associated methods.
 func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	// the base boilerplate methods needed for all structs implementing an api type
@@ -246,15 +274,19 @@ func (spec *parsedIfaceType) withGraphQLQuery() *Statement {
 The XXX_GraphQLType method attached to the concrete implementation of the interface. e.g.:
 
 	func (r *customIfaceImpl) XXX_GraphQLType() string {
-		return "CustomIface"
+		return "TestCustomIface"
 	}
+
+The returned name must be the schema-level name (module-namespaced), not the
+Go source name, because it is used in inline fragments (... on TypeName) when
+constructing queries via SelectNode / node(id:).
 */
 func (spec *parsedIfaceType) graphqlTypeMethodCode() *Statement {
 	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
 		Id("XXX_GraphQLType").
 		Params().
 		Params(Id("string")).
-		Block(Return(Lit(spec.name)))
+		Block(Return(Lit(spec.schemaName())))
 }
 
 /*
@@ -346,7 +378,7 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("id"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
 			g.Op("*").Id("r").Op("=").Id(spec.concreteStructName()).Values(Dict{
-				Id("query"): Id("dagger").Dot("SelectNode").Call(Id("dag").Dot("GraphQLSelection").Call(), Id("id"), Lit(spec.name)),
+				Id("query"): Id("dagger").Dot("SelectNode").Call(Id("dag").Dot("GraphQLSelection").Call(), Id("id"), Lit(spec.schemaName())),
 			})
 			g.Return(Nil())
 		})
@@ -545,7 +577,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Var().Id("results").Index().Add(underlyingReturnTypeCode).Line()
 			s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
 				g.Id("id").Op(":=").Id("idResult").Dot("Id")
-				query := Id("dagger").Dot("SelectNode").Call(Id("r").Dot("query").Dot("Root").Call(), Id("id"), Lit(underlyingReturnType.Name()))
+				query := Id("dagger").Dot("SelectNode").Call(Id("r").Dot("query").Dot("Root").Call(), Id("id"), Lit(gqlSchemaName(underlyingReturnType.Name(), underlyingReturnType.ModuleName())))
 				g.Id("results").Op("=").Append(Id("results"), Params(Op("&").Add(underlyingImplTypeCode).Values()).Dot("WithGraphQLQuery").Call(query))
 			}).Line()
 
