@@ -687,23 +687,23 @@ func ConnectBuildkitSession(
 	// sessionSrv.initReq = req
 	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
 	if err != nil {
-        return nil, fmt.Errorf("read response: %w", err)
+		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if resp.Body != nil {
-        defer resp.Body.Close()
+		defer resp.Body.Close()
 	}
 	if resp.StatusCode != http.StatusSwitchingProtocols {
-        var respBody []byte
-        if resp.Body != nil {
-                respBody, _ = io.ReadAll(resp.Body)
-        }
-        return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+		var respBody []byte
+		if resp.Body != nil {
+			respBody, _ = io.ReadAll(resp.Body)
+		}
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
 	// We tell the server that we have fully read the response and will now switch to serving gRPC
 	// by sending a single byte ack. This prevents the server from starting to send gRPC client
 	// traffic while we are still reading the previous HTTP response.
 	if _, err := conn.Write([]byte{0}); err != nil {
-        return nil, fmt.Errorf("write ack: %w", err)
+		return nil, fmt.Errorf("write ack: %w", err)
 	}
 
 	return sessionSrv, nil
@@ -741,39 +741,6 @@ type BuildkitSessionServer struct {
 	MethodURLs  []string
 	Conn        net.Conn
 	Attachables []bksession.Attachable
-	initReq     *http.Request
-}
-
-func (srv *BuildkitSessionServer) finishSetup() error {
-	if srv.initReq == nil {
-		return nil
-	}
-
-	resp, err := http.ReadResponse(bufio.NewReader(srv.Conn), srv.initReq)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-	if resp.Body != nil {
-		defer resp.Body.Close()
-	}
-	if resp.StatusCode != http.StatusSwitchingProtocols {
-		var respBody []byte
-		if resp.Body != nil {
-			respBody, _ = io.ReadAll(resp.Body)
-		}
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	// We tell the server that we have fully read the response and will now switch to serving gRPC
-	// by sending a single byte ack. This prevents the server from starting to send gRPC client
-	// traffic while we are still reading the previous HTTP response.
-	if _, err := srv.Conn.Write([]byte{0}); err != nil {
-		return fmt.Errorf("write ack: %w", err)
-	}
-
-	srv.initReq = nil
-
-	return nil
 }
 
 func (srv *BuildkitSessionServer) Run(ctx context.Context) error {
