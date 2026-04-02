@@ -94,7 +94,7 @@ func (m *ModuleEnumType) CollectContent(_ context.Context, value dagql.AnyResult
 
 func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
 	// Check the dependencies
-	srv, err := m.mod.Deps.Schema(ctx)
+	srv, err := m.mod.Deps.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%T.getDecoder: failed to get schema: %w", m, err)
 	}

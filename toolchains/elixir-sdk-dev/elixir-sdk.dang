@@ -21,19 +21,9 @@ type ElixirSdkDev {
   }
 
   """
-  Test the SDK
-  """
-  pub test: Void! {
-    # Run SDK and codegen tests in parallel
-    let sdkResult = sdkTest
-    let codegenResult = codegenTest
-    null
-  }
-
-  """
   Lint the SDK
   """
-  pub lint: Void! {
+  pub lint: Void! @check {
     devContainer
       .withExec(["mix", "credo"])
       .sync
@@ -66,9 +56,9 @@ type ElixirSdkDev {
   """
   Run the SDK tests
   """
-  pub sdkTest: Void! {
+  pub sdkTest: Void! @check {
     devContainer
-      .withExec(["mix", "test"])
+      .withExec(["mix", "test"], experimentalPrivilegedNesting: true)
       .sync
 
     null
@@ -77,7 +67,7 @@ type ElixirSdkDev {
   """
   Run dagger_codegen tests
   """
-  pub codegenTest: Void! {
+  pub codegenTest: Void! @check {
     withCodegen(devContainer)
       .withExec(["mix", "test"])
       .sync
@@ -88,7 +78,7 @@ type ElixirSdkDev {
   """
   Test the publishing process
   """
-  pub releaseDryRun: Void! {
+  pub releaseDryRun: Void! @check {
     publish(
       tag: "HEAD",
       dryRun: true,

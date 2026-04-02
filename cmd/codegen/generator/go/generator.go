@@ -13,6 +13,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/imports"
@@ -28,12 +29,24 @@ const (
 
 	// StarterTemplateFile is the path to write the default module code
 	StarterTemplateFile = "main.go"
+
+	// internalDaggerDir is the directory where internal dagger generated files are written.
+	internalDaggerDir = "internal/dagger"
 )
 
 var goVersion = strings.TrimPrefix(runtime.Version(), "go")
 
 type GoGenerator struct {
 	Config generator.Config
+}
+
+// fullSchemaTemplates is the set of output file paths (without .tmpl suffix)
+// that should be rendered against the full schema rather than the core schema
+// (i.e. the schema with dependency types excluded). These templates need
+// visibility into dep-contributed Query fields (e.g. hello(), loadHelloFromID())
+// so that they can expose those constructors to callers.
+var fullSchemaTemplates = map[string]bool{
+	"dag/dag.gen.go": true,
 }
 
 func generateCode(
@@ -47,19 +60,45 @@ func generateCode(
 	fset *token.FileSet,
 	pass int,
 ) error {
-	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg, pkg, fset, pass)
-	tmpls := templates.Templates(funcs)
+	// Collect all dependency module names present in the schema so we can
+	// split them out into separate files and exclude them from the main
+	// internal/dagger/dagger.gen.go.
+	depNames := schema.DependencyNames()
+
+	// When there are dependencies, generate the core schema (excluding all
+	// deps) into the main dagger.gen.go, then generate each dependency into
+	// its own file.
+	coreSchema := schema
+	if len(depNames) > 0 {
+		coreSchema = schema.Exclude(depNames...)
+	}
+
+	// Build two template sets: one bound to the core schema (most files) and
+	// one bound to the full schema (dag/dag.gen.go and other files that need
+	// to expose dep-contributed Query fields).
+	coreFuncs := templates.GoTemplateFuncs(ctx, coreSchema, schema, schemaVersion, cfg, pkg, fset, pass)
+	fullFuncs := templates.GoTemplateFuncs(ctx, schema, schema, schemaVersion, cfg, pkg, fset, pass)
+
+	coreTmpls := templates.Templates(coreFuncs)
+	fullTmpls := templates.Templates(fullFuncs)
 
 	// Sort template keys for deterministic processing
-	keys := make([]string, 0, len(tmpls))
-	for k := range tmpls {
+	keys := make([]string, 0, len(coreTmpls))
+	for k := range coreTmpls {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
 	for _, k := range keys {
-		tmpl := tmpls[k]
-		dt, err := renderFile(cfg.OutputDir, schema, schemaVersion, pkgInfo, tmpl)
+		// Choose the right template + schema pair for this output file.
+		renderSchema := coreSchema
+		tmpl := coreTmpls[k]
+		if fullSchemaTemplates[k] {
+			renderSchema = schema
+			tmpl = fullTmpls[k]
+		}
+
+		dt, err := renderFile(cfg.OutputDir, renderSchema, schemaVersion, pkgInfo, tmpl)
 		if err != nil {
 			return err
 		}
@@ -85,6 +124,72 @@ func generateCode(
 		}
 		if err := mfs.WriteFile(k, dt, 0600); err != nil {
 			return err
+		}
+	}
+
+	// Generate per-dependency files.
+	if len(depNames) > 0 {
+		if err := generateDependencyFiles(ctx, cfg, schema, schemaVersion, mfs, pkgInfo, pkg, fset, pass, depNames); err != nil {
+			return fmt.Errorf("generate dependency files: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// generateDependencyFiles generates one <dep>.gen.go file per dependency inside
+// internal/dagger/, each containing only the types contributed by that dependency.
+func generateDependencyFiles(
+	ctx context.Context,
+	cfg generator.Config,
+	schema *introspection.Schema,
+	schemaVersion string,
+	mfs *memfs.FS,
+	pkgInfo *PackageInfo,
+	pkg *packages.Package,
+	fset *token.FileSet,
+	pass int,
+	depNames []string,
+) error {
+	// When generating a standalone client, dep files live inside the client
+	// sub-module directory.  We need to resolve imports relative to that
+	// directory so that goimports can find packages like
+	// dagger.io/dagger/querybuilder that are declared in the client's go.mod
+	// (not in the parent module's go.mod).
+	importResolutionDir := cfg.OutputDir
+	if cfg.ClientConfig != nil && cfg.ClientConfig.ClientDir != "" {
+		importResolutionDir = filepath.Join(cfg.OutputDir, cfg.ClientConfig.ClientDir)
+	}
+
+	for _, depName := range depNames {
+		depSchema := schema.Include(depName)
+
+		funcs := templates.GoTemplateFuncs(ctx, depSchema, schema, schemaVersion, cfg, pkg, fset, pass)
+		tmpl, err := templates.DepTemplate(funcs)
+		if err != nil {
+			return fmt.Errorf("get dependency template: %w", err)
+		}
+
+		dt, err := renderFile(importResolutionDir, depSchema, schemaVersion, pkgInfo, tmpl)
+		if err != nil {
+			return fmt.Errorf("render dependency file for %q: %w", depName, err)
+		}
+		if dt == nil {
+			// no types for this dependency, skip
+			continue
+		}
+
+		// Convert dep name to kebab-case for the filename, e.g. "myDep" -> "my-dep.gen.go"
+		depFileName := strcase.ToKebab(depName) + ".gen.go"
+		depFilePath := filepath.Join(internalDaggerDir, depFileName)
+
+		// Special case for client generation, we want to write the file in the specified client directory.
+		if cfg.ClientConfig != nil && cfg.ClientConfig.ClientDir != "" {
+			depFilePath = filepath.Join(cfg.ClientConfig.ClientDir, depFileName)
+		}
+
+		if err := mfs.WriteFile(depFilePath, dt, 0600); err != nil {
+			return fmt.Errorf("write dependency file %q: %w", depFilePath, err)
 		}
 	}
 

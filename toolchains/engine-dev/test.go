@@ -107,7 +107,7 @@ func (dev *EngineDev) TestTelemetry(
 	// Enable the given ebpf progs in the engine during tests
 	// +optional
 	ebpfProgs []string,
-) (*dagger.Directory, error) {
+) (*dagger.Changeset, error) {
 	ctr, _, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
 		return nil, err
@@ -129,10 +129,7 @@ func (dev *EngineDev) TestTelemetry(
 	if err != nil {
 		return nil, err
 	}
-	return dag.Directory().WithDirectory(
-		"./dagql/idtui/testdata/",
-		ran.Directory("./dagql/idtui/testdata/"),
-	), nil
+	return ran.Directory(".").Changes(ctr.Directory(".")), nil
 }
 
 type testOpts struct {

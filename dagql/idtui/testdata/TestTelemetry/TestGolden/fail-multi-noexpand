@@ -1,7 +1,7 @@
 Expected stderr:
 
 ✔ connect X.Xs
-✔ load module: ./viztest X.Xs
+✔ load workspace: . X.Xs
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
