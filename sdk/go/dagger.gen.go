@@ -955,7 +955,7 @@ func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 		return nil, err
 	}
 	return &Changeset{
-		query: q.Root().Select("loadChangesetFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "Changeset"),
 	}, nil
 }
 
@@ -1256,7 +1256,7 @@ func (r *CheckGroup) List(ctx context.Context) ([]Check, error) {
 
 		for i := range fields {
 			val := Check{id: &fields[i].Id}
-			val.query = q.Root().Select("loadCheckFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Check")
 			out = append(out, val)
 		}
 
@@ -1591,7 +1591,7 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 		for i := range fields {
 			val := EnvVariable{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "EnvVariable")
 			out = append(out, val)
 		}
 
@@ -1797,7 +1797,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{id: &fields[i].Id}
-			val.query = q.Root().Select("loadPortFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Port")
 			out = append(out, val)
 		}
 
@@ -1954,7 +1954,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 
 		for i := range fields {
 			val := Label{id: &fields[i].Id}
-			val.query = q.Root().Select("loadLabelFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Label")
 			out = append(out, val)
 		}
 
@@ -2115,7 +2115,7 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 		return nil, err
 	}
 	return &Container{
-		query: q.Root().Select("loadContainerFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "Container"),
 	}, nil
 }
 
@@ -3331,7 +3331,7 @@ func (r *CurrentModule) Dependencies(ctx context.Context) ([]Module, error) {
 
 		for i := range fields {
 			val := Module{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Module")
 			out = append(out, val)
 		}
 
@@ -3984,7 +3984,7 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 
 		for i := range fields {
 			val := SearchResult{id: &fields[i].Id}
-			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "SearchResult")
 			out = append(out, val)
 		}
 
@@ -4033,7 +4033,7 @@ func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 		return nil, err
 	}
 	return &Directory{
-		query: q.Root().Select("loadDirectoryFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "Directory"),
 	}, nil
 }
 
@@ -4767,7 +4767,7 @@ func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]EngineCacheEntry, 
 
 		for i := range fields {
 			val := EngineCacheEntry{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEngineCacheEntryFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "EngineCacheEntry")
 			out = append(out, val)
 		}
 
@@ -4922,7 +4922,7 @@ func (r *EnumTypeDef) Members(ctx context.Context) ([]EnumValueTypeDef, error) {
 
 		for i := range fields {
 			val := EnumValueTypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEnumValueTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "EnumValueTypeDef")
 			out = append(out, val)
 		}
 
@@ -4990,7 +4990,7 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 
 		for i := range fields {
 			val := EnumValueTypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEnumValueTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "EnumValueTypeDef")
 			out = append(out, val)
 		}
 
@@ -5246,7 +5246,7 @@ func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 
 		for i := range fields {
 			val := Binding{id: &fields[i].Id}
-			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Binding")
 			out = append(out, val)
 		}
 
@@ -5289,7 +5289,7 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 
 		for i := range fields {
 			val := Binding{id: &fields[i].Id}
-			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Binding")
 			out = append(out, val)
 		}
 
@@ -6144,7 +6144,7 @@ func (r *EnvFile) Variables(ctx context.Context, opts ...EnvFileVariablesOpts) (
 
 		for i := range fields {
 			val := EnvVariable{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "EnvVariable")
 			out = append(out, val)
 		}
 
@@ -6353,7 +6353,7 @@ func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
 
 		for i := range fields {
 			val := ErrorValue{id: &fields[i].Id}
-			val.query = q.Root().Select("loadErrorValueFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "ErrorValue")
 			out = append(out, val)
 		}
 
@@ -6864,7 +6864,7 @@ func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpt
 
 		for i := range fields {
 			val := SearchResult{id: &fields[i].Id}
-			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "SearchResult")
 			out = append(out, val)
 		}
 
@@ -6913,7 +6913,7 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 	return &File{
-		query: q.Root().Select("loadFileFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "File"),
 	}, nil
 }
 
@@ -7016,7 +7016,7 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 
 		for i := range fields {
 			val := FunctionArg{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFunctionArgFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "FunctionArg")
 			out = append(out, val)
 		}
 
@@ -7526,7 +7526,7 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 
 		for i := range fields {
 			val := FunctionCallArgValue{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFunctionCallArgValueFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "FunctionCallArgValue")
 			out = append(out, val)
 		}
 
@@ -8066,7 +8066,7 @@ func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
 
 		for i := range fields {
 			val := Generator{id: &fields[i].Id}
-			val.query = q.Root().Select("loadGeneratorFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Generator")
 			out = append(out, val)
 		}
 
@@ -8807,7 +8807,7 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 		for i := range fields {
 			val := FieldTypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "FieldTypeDef")
 			out = append(out, val)
 		}
 
@@ -8922,7 +8922,7 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 
 		for i := range fields {
 			val := Function{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFunctionFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Function")
 			out = append(out, val)
 		}
 
@@ -9054,7 +9054,7 @@ func (r *JSONValue) AsArray(ctx context.Context) ([]JSONValue, error) {
 
 		for i := range fields {
 			val := JSONValue{id: &fields[i].Id}
-			val.query = q.Root().Select("loadJSONValueFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "JSONValue")
 			out = append(out, val)
 		}
 
@@ -9446,7 +9446,7 @@ func (r *LLM) Step(ctx context.Context) (*LLM, error) {
 		return nil, err
 	}
 	return &LLM{
-		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "LLM"),
 	}, nil
 }
 
@@ -9459,7 +9459,7 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 		return nil, err
 	}
 	return &LLM{
-		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "LLM"),
 	}, nil
 }
 
@@ -9931,7 +9931,7 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 
 		for i := range fields {
 			val := Module{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Module")
 			out = append(out, val)
 		}
 
@@ -9977,7 +9977,7 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "TypeDef")
 			out = append(out, val)
 		}
 
@@ -10094,7 +10094,7 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "TypeDef")
 			out = append(out, val)
 		}
 
@@ -10153,7 +10153,7 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "TypeDef")
 			out = append(out, val)
 		}
 
@@ -10237,7 +10237,7 @@ func (r *Module) Sync(ctx context.Context) (*Module, error) {
 		return nil, err
 	}
 	return &Module{
-		query: q.Root().Select("loadModuleFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "Module"),
 	}, nil
 }
 
@@ -10486,7 +10486,7 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 
 		for i := range fields {
 			val := ModuleConfigClient{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleConfigClientFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "ModuleConfigClient")
 			out = append(out, val)
 		}
 
@@ -10541,7 +10541,7 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error)
 
 		for i := range fields {
 			val := ModuleSource{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "ModuleSource")
 			out = append(out, val)
 		}
 
@@ -10827,7 +10827,7 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 		return nil, err
 	}
 	return &ModuleSource{
-		query: q.Root().Select("loadModuleSourceFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "ModuleSource"),
 	}, nil
 }
 
@@ -10846,7 +10846,7 @@ func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 
 		for i := range fields {
 			val := ModuleSource{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "ModuleSource")
 			out = append(out, val)
 		}
 
@@ -11143,7 +11143,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 		for i := range fields {
 			val := FieldTypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "FieldTypeDef")
 			out = append(out, val)
 		}
 
@@ -11176,7 +11176,7 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 
 		for i := range fields {
 			val := Function{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFunctionFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Function")
 			out = append(out, val)
 		}
 
@@ -11526,7 +11526,7 @@ func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "TypeDef")
 			out = append(out, val)
 		}
 
@@ -12885,7 +12885,7 @@ func (r *SearchResult) Submatches(ctx context.Context) ([]SearchSubmatch, error)
 
 		for i := range fields {
 			val := SearchSubmatch{id: &fields[i].Id}
-			val.query = q.Root().Select("loadSearchSubmatchFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "SearchSubmatch")
 			out = append(out, val)
 		}
 
@@ -13222,7 +13222,7 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{id: &fields[i].Id}
-			val.query = q.Root().Select("loadPortFromID").Arg("id", fields[i].Id)
+			val.query = SelectNode(q.Root(), fields[i].Id, "Port")
 			out = append(out, val)
 		}
 
@@ -13251,7 +13251,7 @@ func (r *Service) Start(ctx context.Context) (*Service, error) {
 		return nil, err
 	}
 	return &Service{
-		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "Service"),
 	}, nil
 }
 
@@ -13276,7 +13276,7 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 		return nil, err
 	}
 	return &Service{
-		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "Service"),
 	}, nil
 }
 
@@ -13289,7 +13289,7 @@ func (r *Service) Sync(ctx context.Context) (*Service, error) {
 		return nil, err
 	}
 	return &Service{
-		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "Service"),
 	}, nil
 }
 
@@ -13702,7 +13702,7 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 		return nil, err
 	}
 	return &Terminal{
-		query: q.Root().Select("loadTerminalFromID").Arg("id", id),
+		query: SelectNode(q.Root(), id, "Terminal"),
 	}, nil
 }
 
