@@ -252,8 +252,8 @@ github.com/cyphar/filepath-securejoin v0.6.0 h1:BtGB77njd6SVO6VztOHfPxKitJvd/VPT
 github.com/cyphar/filepath-securejoin v0.6.0/go.mod h1:A8hd4EnAeyujCJRrICiOWqjS1AX0a9kM5XL+NwKoYSc=
 github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887 h1:M+yTYQkNo0ZC0A6+CS9vEXtYDhsr4xmSu5RfQaMVEfE=
 github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887/go.mod h1:RP74B3xmOq2MWL1lBsAWD9uvTryDhZ+m1dDzJj9QJEI=
-github.com/dagger/querybuilder v0.0.0-20260402023115-11ec8f3ee604 h1:8ZACdXLFpXoMxuts6UHMOFDtwwygfLEB1JR4tTk7wpQ=
-github.com/dagger/querybuilder v0.0.0-20260402023115-11ec8f3ee604/go.mod h1:xfRvCnIdgzOLikF6jkBQ+KgujqDOndj2VhgcN+sG8y4=
+github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59 h1:g6vfdGRyz6fAjfHz5FyYPZgHy8qcQ31fHrBl1iCOzxw=
+github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59/go.mod h1:jsdUJeYzcbyK1j/EqMGPrQgNYxl/Zfg06vvM9C/xXxs=
 github.com/dagger/testctx v0.1.2 h1:p9/92CttP6N3AhTWnAOrGfFGGNSqD5uDgY32+LISFoE=
 github.com/dagger/testctx v0.1.2/go.mod h1:2T9w5oiFscVVzgQo7YW2q1WxVkLFumHWjwlGQqVT/Sk=
 github.com/dagger/testctx/oteltest v0.1.2 h1:uw84VFKcHY9AVjx/ETWT0hw6+fds1001ozkGLQBTi54=
