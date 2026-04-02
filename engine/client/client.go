@@ -574,9 +574,9 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	if err != nil {
 		return fmt.Errorf("connect buildkit session: %w", err)
 	}
-	if err := c.sessionSrv.finishSetup(); err != nil {
-		return fmt.Errorf("finish buildkit session setup: %w", err)
-	}
+	// if err := c.sessionSrv.finishSetup(); err != nil {
+	// 	return fmt.Errorf("finish buildkit session setup: %w", err)
+	// }
 
 	c.eg.Go(func() error {
 		ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -639,9 +639,9 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 	if err != nil {
 		return fmt.Errorf("connect buildkit session: %w", err)
 	}
-	if err := c.sessionSrv.finishSetup(); err != nil {
-		return fmt.Errorf("finish buildkit session setup: %w", err)
-	}
+	// if err := c.sessionSrv.finishSetup(); err != nil {
+	// 	return fmt.Errorf("finish buildkit session setup: %w", err)
+	// }
 
 	c.eg.Go(func() error {
 		ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -684,7 +684,27 @@ func ConnectBuildkitSession(
 	if err := req.Write(conn); err != nil {
 		return nil, fmt.Errorf("write request: %w", err)
 	}
-	sessionSrv.initReq = req
+	// sessionSrv.initReq = req
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	if err != nil {
+        return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.Body != nil {
+        defer resp.Body.Close()
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+        var respBody []byte
+        if resp.Body != nil {
+                respBody, _ = io.ReadAll(resp.Body)
+        }
+        return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+	// We tell the server that we have fully read the response and will now switch to serving gRPC
+	// by sending a single byte ack. This prevents the server from starting to send gRPC client
+	// traffic while we are still reading the previous HTTP response.
+	if _, err := conn.Write([]byte{0}); err != nil {
+        return nil, fmt.Errorf("write ack: %w", err)
+	}
 
 	return sessionSrv, nil
 }
@@ -760,9 +780,9 @@ func (srv *BuildkitSessionServer) Run(ctx context.Context) error {
 	defer srv.Conn.Close()
 	defer srv.Stop()
 
-	if err := srv.finishSetup(); err != nil {
-		return err
-	}
+	// if err := srv.finishSetup(); err != nil {
+	// 	return err
+	// }
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
