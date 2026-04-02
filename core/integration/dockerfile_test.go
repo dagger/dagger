@@ -522,3 +522,28 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 		require.Error(t, err)
 	})
 }
+
+func (DockerfileSuite) TestCopyExclude(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := c.Directory().
+		WithNewDirectory("data").
+		WithNewFile("data/yes", "oui").
+		WithNewFile("data/no", "nein")
+
+	baseDir := contextDir
+
+	dir := baseDir.
+		WithNewFile("Dockerfile",
+			`# syntax=docker/dockerfile:1
+                       FROM `+alpineImage+`
+COPY --exclude=no data data
+`)
+	found, err := dir.DockerBuild().Exists(ctx, "data/yes")
+	require.NoError(t, err)
+	require.True(t, found)
+
+	found, err = dir.DockerBuild().Exists(ctx, "data/no")
+	require.NoError(t, err)
+	require.False(t, found)
+}
