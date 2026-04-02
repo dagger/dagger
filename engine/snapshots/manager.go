@@ -60,6 +60,7 @@ type Accessor interface {
 	GetMutableBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (MutableRef, error)
 	ImportImage(ctx context.Context, img *ImportedImage, opts ImportImageOpts) (ImmutableRef, error)
 	ApplySnapshotDiff(ctx context.Context, lower, upper ImmutableRef, opts ...RefOption) (ImmutableRef, error)
+	Merge(ctx context.Context, parents []ImmutableRef, opts ...RefOption) (ImmutableRef, error)
 }
 
 type SnapshotManager interface {
@@ -493,6 +494,93 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 	}
 	if err := cm.Snapshotter.Merge(ctx, snapshotID, diffs); err != nil {
 		return nil, errors.Wrap(err, "failed to apply snapshot diff")
+	}
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	md := cm.ensureMetadata(id)
+	rec := &cacheRecord{
+		mutable: false,
+		cm:      cm,
+		md:      md,
+	}
+
+	opts = append(opts, withSnapshotID(snapshotID))
+	if err := initializeMetadata(rec.md, opts...); err != nil {
+		return nil, err
+	}
+	if err := rec.md.queueSnapshotID(snapshotID); err != nil {
+		return nil, err
+	}
+	if err := rec.md.queueCommitted(true); err != nil {
+		return nil, err
+	}
+	if err := rec.md.commitMetadata(); err != nil {
+		return nil, err
+	}
+
+	cm.records[id] = rec
+	ref := &immutableRef{
+		cm:              cm,
+		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
+		leaseID:         l.ID,
+		triggerLastUsed: true,
+	}
+	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	return ref, nil
+}
+
+func (cm *snapshotManager) Merge(ctx context.Context, parents []ImmutableRef, opts ...RefOption) (ir ImmutableRef, rerr error) {
+	normalized := make([]ImmutableRef, 0, len(parents))
+	for _, parent := range parents {
+		if parent != nil {
+			normalized = append(normalized, parent)
+		}
+	}
+
+	switch len(normalized) {
+	case 0:
+		return nil, nil
+	case 1:
+		return cm.GetBySnapshotID(ctx, normalized[0].SnapshotID(), append(opts, NoUpdateLastUsed)...)
+	}
+
+	id := identity.NewID()
+	snapshotID := id
+
+	l, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+		l.ID = id
+		l.Labels = map[string]string{
+			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create lease")
+	}
+	defer func() {
+		if rerr != nil {
+			ctx := context.WithoutCancel(ctx)
+			if err := cm.LeaseManager.Delete(ctx, leases.Lease{ID: l.ID}); err != nil {
+				bklog.G(ctx).Errorf("failed to remove lease: %+v", err)
+			}
+		}
+	}()
+
+	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: id}, leases.Resource{
+		ID:   snapshotID,
+		Type: "snapshots/" + cm.Snapshotter.Name(),
+	}); err != nil {
+		return nil, err
+	}
+
+	diffs := make([]snapshot.Diff, 0, len(normalized))
+	for _, parent := range normalized {
+		diffs = append(diffs, snapshot.Diff{Upper: parent.SnapshotID()})
+	}
+	if err := cm.Snapshotter.Merge(ctx, snapshotID, diffs); err != nil {
+		return nil, errors.Wrap(err, "failed to merge snapshots")
 	}
 
 	cm.mu.Lock()

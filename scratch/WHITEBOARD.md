@@ -5204,8 +5204,19 @@ func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
   * do not preserve lazy merge/diff refs
   * do not preserve ancestor arithmetic or merge flattening in the snapshot manager
 * `ApplySnapshotDiff(...)` in `engine/snapshots/manager.go` should bottom out directly in `Snapshotter.Merge(ctx, snapshotID, diffs)`.
-* There is no corresponding generic merge operation in the new snapshot-manager API.
-* `WithDirectory(...)` should rely on eager copy plus hardlink optimization instead of routing through this file.
+* Reintroduce a narrow eager `SnapshotManager.Merge(...)` on top of this primitive.
+  * Do not restore merge/diff ref graphs or lazy merge behavior.
+  * Do not restore ancestor arithmetic or merge flattening.
+  * The new snapshot-manager merge should only:
+    * accept ordered immutable parent snapshots
+    * immediately materialize a committed merged snapshot
+    * attach lease/resource ownership for that snapshot
+    * persist ordinary immutable-ref metadata for the result
+* The simplified merge contract should be:
+  * empty / all-nil parents => `nil`
+  * one parent => reopen by snapshot ID, no new merged snapshot
+  * multiple parents => build `[]snapshot.Diff{{Upper: parent.SnapshotID()}, ...}` in order and call `Snapshotter.Merge(ctx, snapshotID, diffs)`
+* `WithDirectory(...)` should use this narrow eager merge in the rooted/no-filter/no-ownership/no-permissions/no-unpack cases rather than copying directly into a mutable overlay on top of the destination snapshot.
 
 ### dagql/cache.go
 #### Status
@@ -5588,7 +5599,7 @@ if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
 #### Status
 - [x] Make `NewDirectoryWithSnapshot(...)` adopt ownership instead of cloning.
 - [x] Sweep immediate handoff callsites and local temporary `Directory` wrappers for the new ownership contract.
-- [x] Hard-cut `WithDirectory(...)` to the eager child-snapshot copy path with no merge branches.
+- [ ] Replace the `WithDirectory(...)` always-copy path with the narrow eager merge / fallback-merge plan below.
 - [x] Cut `Directory.Diff(...)` over to `ApplySnapshotDiff(...)` with no wrapper snapshot layer.
 
 #### Directory-owned snapshot handles
@@ -5609,21 +5620,30 @@ if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
 * The concrete clone-to-reopen sweep in this file includes:
   * `applyPatchToSnapshot(...)` empty-patch fast path
   * no-op change application paths that currently do `currentSnapshot.Clone()`
-* `WithDirectory(...)` should be hard-cut simplified:
-  * delete the direct merge optimization branch entirely
-  * delete the fallback "copy to scratch then merge" branch entirely
-  * always create a new mutable child snapshot on top of the destination snapshot
-  * always run the copy logic directly into that child snapshot
-  * keep `EnableHardlinkOptimization: true` in the copy step
-  * commit and set the resulting snapshot directly
-* This keeps the practical optimization we actually care about:
-  * source files can still be hardlinked into the new snapshot when safe
-* And it deletes the merge-specific complexity we no longer want:
-  * `canDoDirectMerge`
-  * merge refs
-  * merge finalization
-  * merge-specific cache behavior
-  * "copy to scratch then merge" as a special architecture
+* `WithDirectory(...)` should not always copy directly into a mutable child snapshot on top of the destination snapshot.
+  * That path breaks for overlapping destination/source paths like `dirA.WithDirectory("/", dirB)` because direct copy into an overlay-backed mutable destination cannot safely preserve the old hardlink-optimized behavior.
+* Bring back the old narrow `canDoDirectMerge` gate:
+  * `filter.IsEmpty()`
+  * `destDir == "/"`
+  * `src.Dir == "/"`
+  * `owner == ""`
+  * `permissions == nil`
+  * `!attemptUnpackDockerCompatibility`
+* In the direct-merge case:
+  * if destination is scratch and source is non-nil, reopen the source snapshot directly by snapshot ID
+  * otherwise call `query.SnapshotManager().Merge(ctx, mergeRefs, ...)`
+* In the fallback case:
+  * copy the source into a fresh scratch snapshot (`parent == nil`)
+  * commit that scratch snapshot
+  * merge the destination snapshot with that rebased scratch snapshot through `SnapshotManager.Merge(...)`
+* Keep the current eager scratch-copy implementation for the fallback path.
+  * This preserves the useful `EnableHardlinkOptimization: true` behavior when copying source files into scratch.
+  * Crucially, the copy target in this fallback path is scratch, not a mutable overlay layered on top of the destination snapshot.
+* The simplification boundary is:
+  * no lazy merge refs
+  * no merge-parent graph on snapshot refs
+  * no merge flattening / ancestor logic in the snapshot manager
+  * only an eager materialized merge API plus the `WithDirectory(...)` caller gate
 * `Directory.Diff(...)` should keep using the underlying snapshotter diff-apply path, but only through the new narrow `SnapshotManager().ApplySnapshotDiff(...)` primitive.
 * `Directory.Diff(...)` should stop creating a diff ref plus an extra wrapper snapshot.
 * Schema already rebases both sides to `/` before constructing `DirectoryDiffLazy`, so `Directory.Diff(...)` should strengthen that assumption and work directly on root-level snapshot IDs.
@@ -5728,103 +5748,86 @@ func (dir *Directory) WithDirectory(
         }
     }
 
-    newRef, err := query.SnapshotManager().New(
+    canDoDirectMerge :=
+        filter.IsEmpty() &&
+            destDir == "/" &&
+            src.Self().Dir == "/" &&
+            owner == "" &&
+            permissions == nil &&
+            !attemptUnpackDockerCompatibility
+
+    copySourceToScratch := func() (bkcache.ImmutableRef, error) {
+        newRef, err := query.SnapshotManager().New(
+            ctx,
+            nil,
+            bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+            bkcache.WithDescription("Directory.withDirectory source"),
+        )
+        if err != nil {
+            return nil, err
+        }
+        defer newRef.Release(context.WithoutCancel(ctx))
+
+        err = MountRef(ctx, newRef, func(copyDest string, destMnt *mount.Mount) error {
+            ...
+            return fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...)
+        })
+        if err != nil {
+            return nil, err
+        }
+
+        snap, err := newRef.Commit(ctx)
+        if err != nil {
+            return nil, err
+        }
+        return snap, nil
+    }
+
+    if dirRef == nil {
+        if canDoDirectMerge && srcRef != nil {
+            ref, err := query.SnapshotManager().GetBySnapshotID(ctx, srcRef.SnapshotID(), bkcache.NoUpdateLastUsed)
+            if err != nil {
+                return err
+            }
+            return dir.setSnapshot(ref)
+        }
+
+        rebasedSrcRef, err := copySourceToScratch()
+        if err != nil {
+            return err
+        }
+        return dir.setSnapshot(rebasedSrcRef)
+    }
+
+    mergeRefs := []bkcache.ImmutableRef{dirRef}
+    if canDoDirectMerge {
+        if srcRef == nil {
+            ref, err := query.SnapshotManager().GetBySnapshotID(ctx, dirRef.SnapshotID(), bkcache.NoUpdateLastUsed)
+            if err != nil {
+                return err
+            }
+            return dir.setSnapshot(ref)
+        }
+        mergeRefs = append(mergeRefs, srcRef)
+    } else {
+        rebasedSrcRef, err := copySourceToScratch()
+        if err != nil {
+            return err
+        }
+        defer rebasedSrcRef.Release(context.WithoutCancel(ctx))
+        mergeRefs = append(mergeRefs, rebasedSrcRef)
+    }
+
+    ref, err := query.SnapshotManager().Merge(
         ctx,
-        dirRef,
+        mergeRefs,
         bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
         bkcache.WithDescription("Directory.withDirectory"),
     )
     if err != nil {
-        return err
+        return fmt.Errorf("failed to merge directories: %w", err)
     }
-    defer newRef.Release(context.WithoutCancel(ctx))
-
-    err = MountRef(ctx, newRef, nil, func(copyDest string, destMnt *mount.Mount) error {
-        resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
-        if err != nil {
-            return err
-        }
-        if srcRef == nil {
-            if err := os.MkdirAll(resolvedCopyDest, 0755); err != nil {
-                return err
-            }
-            if permissions != nil {
-                if err := os.Chmod(resolvedCopyDest, os.FileMode(*permissions)); err != nil {
-                    return err
-                }
-            }
-            if owner != "" {
-                ownership, err := parseDirectoryOwner(owner)
-                if err != nil {
-                    return err
-                }
-                if err := os.Chown(resolvedCopyDest, ownership.UID, ownership.GID); err != nil {
-                    return err
-                }
-            }
-            return nil
-        }
-
-        mounter, err := srcRef.Mount(ctx, true)
-        if err != nil {
-            return err
-        }
-        ms, unmountSrc, err := mounter.Mount()
-        if err != nil {
-            return err
-        }
-        defer unmountSrc()
-
-        srcMnt := ms[0]
-        lm := snapshot.LocalMounterWithMounts(ms)
-        mntedSrcPath, err := lm.Mount()
-        if err != nil {
-            return err
-        }
-        defer lm.Unmount()
-
-        resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Self().Dir)
-        if err != nil {
-            return err
-        }
-        srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
-        if err != nil {
-            return err
-        }
-        destResolver, err := pathResolverForMount(destMnt, copyDest)
-        if err != nil {
-            return err
-        }
-
-        var ownership *Ownership
-        if owner != "" {
-            ownership, err = parseDirectoryOwner(owner)
-            if err != nil {
-                return err
-            }
-        }
-
-        var opts []fscopy.Opt
-        opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
-            AlwaysReplaceExistingDestPaths: true,
-            CopyDirContents:                true,
-            EnableHardlinkOptimization:     true,
-            SourcePathResolver:             srcResolver,
-            DestPathResolver:               destResolver,
-            Mode:                           permissions,
-        }))
-        ...
-        return fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...)
-    })
-    if err != nil {
-        return err
-    }
-
-    snap, err := newRef.Commit(ctx)
-    if err != nil {
-        return err
-    }
-    return dir.setSnapshot(snap)
+    return dir.setSnapshot(ref)
 }
 
 func (dir *Directory) Diff(

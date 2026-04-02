@@ -244,3 +244,54 @@ func TestApplySnapshotDiffNilContract(t *testing.T) {
 		require.Empty(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls[0])
 	})
 }
+
+func TestMergeContract(t *testing.T) {
+	t.Run("nil parents returns nil", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+
+		ref, err := cm.Merge(context.Background(), nil)
+		require.NoError(t, err)
+		require.Nil(t, ref)
+		require.Empty(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls)
+	})
+
+	t.Run("single parent reopens directly", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+		parent := addApplySnapshotDiffTestImmutable(t, cm, "parent-snapshot")
+
+		ref, err := cm.Merge(context.Background(), []ImmutableRef{parent})
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		require.Equal(t, parent.SnapshotID(), ref.SnapshotID())
+		require.NotSame(t, parent, ref)
+		require.Empty(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls)
+	})
+
+	t.Run("nil parents are ignored", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+		parent := addApplySnapshotDiffTestImmutable(t, cm, "parent-snapshot")
+
+		ref, err := cm.Merge(context.Background(), []ImmutableRef{nil, parent, nil})
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		require.Equal(t, parent.SnapshotID(), ref.SnapshotID())
+		require.Empty(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls)
+	})
+
+	t.Run("multiple parents materialize ordered full snapshot diffs", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+		lower := addApplySnapshotDiffTestImmutable(t, cm, "lower-snapshot")
+		upper := addApplySnapshotDiffTestImmutable(t, cm, "upper-snapshot")
+
+		ref, err := cm.Merge(context.Background(), []ImmutableRef{lower, upper})
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		require.NotEqual(t, lower.SnapshotID(), ref.SnapshotID())
+		require.NotEqual(t, upper.SnapshotID(), ref.SnapshotID())
+		require.Len(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls, 1)
+		require.Equal(t, []snapshot.Diff{
+			{Upper: "lower-snapshot"},
+			{Upper: "upper-snapshot"},
+		}, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls[0])
+	})
+}

@@ -87,6 +87,10 @@ func (*fakeSnapshotManager) ApplySnapshotDiff(context.Context, bkcache.Immutable
 	panic("unexpected ApplySnapshotDiff call")
 }
 
+func (*fakeSnapshotManager) Merge(context.Context, []bkcache.ImmutableRef, ...bkcache.RefOption) (bkcache.ImmutableRef, error) {
+	panic("unexpected Merge call")
+}
+
 func (*fakeSnapshotManager) IdentityMapping() *idtools.IdentityMapping {
 	panic("unexpected IdentityMapping call")
 }
