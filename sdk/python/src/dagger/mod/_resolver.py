@@ -40,7 +40,7 @@ from dagger.mod._utils import (
 
 CHECK_DEF_KEY: str = "__dagger_check__"
 GENERATOR_DEF_KEY: str = "__dagger_generate__"
-SERVICE_DEF_KEY: str = "__dagger_up__"
+UP_DEF_KEY: str = "__dagger_up__"
 
 logger = logging.getLogger(__package__)
 
@@ -115,7 +115,7 @@ class Function(Generic[P, R]):
     def service(self) -> bool:
         """Indicates whether the function is configured as a service for dagger up."""
         # Check both the metadata and the attribute to support either decorator order
-        return self.meta.service or getattr(self.wrapped, SERVICE_DEF_KEY, False)
+        return self.meta.service or getattr(self.wrapped, UP_DEF_KEY, False)
 
     @cached_property
     def cache_policy(self):

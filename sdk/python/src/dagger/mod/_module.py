@@ -55,7 +55,7 @@ FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
 CHECK_DEF_KEY: typing.Final[str] = "__dagger_check__"
 GENERATOR_DEF_KEY: typing.Final[str] = "__dagger_generate__"
-SERVICE_DEF_KEY: typing.Final[str] = "__dagger_up__"
+UP_DEF_KEY: typing.Final[str] = "__dagger_up__"
 MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
 MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
 TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json")
@@ -690,7 +690,7 @@ class Module:
         """Mark a function as a service for ``dagger up``."""
 
         def wrapper(fn: Func[P, R]) -> Func[P, R]:
-            setattr(fn, SERVICE_DEF_KEY, True)
+            setattr(fn, UP_DEF_KEY, True)
             return fn
 
         return wrapper(func) if func else wrapper
@@ -758,7 +758,7 @@ class Module:
             # Check if function is marked as a check or generator
             check = getattr(func, CHECK_DEF_KEY, False)
             generator = getattr(func, GENERATOR_DEF_KEY, False)
-            service = getattr(func, SERVICE_DEF_KEY, False)
+            service = getattr(func, UP_DEF_KEY, False)
 
             meta = FunctionDefinition(
                 name=name,
