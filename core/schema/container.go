@@ -2193,6 +2193,14 @@ type containerDirectoryArgs struct {
 }
 
 func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
@@ -2207,6 +2215,14 @@ type containerFileArgs struct {
 }
 
 func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFileArgs) (dagql.ObjectResult[*core.File], error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.File]{}, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return dagql.ObjectResult[*core.File]{}, err
+	}
+
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return dagql.ObjectResult[*core.File]{}, err
