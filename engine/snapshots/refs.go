@@ -618,50 +618,43 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Mo
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	if readonly {
-		viewLeaseID := identity.NewID()
-		viewSnapshotID := viewLeaseID + "-view"
-		if _, err := sr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-			l.ID = viewLeaseID
-			l.Labels = map[string]string{
-				"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-			}
+	viewLeaseID := identity.NewID()
+	viewSnapshotID := viewLeaseID + "-view"
+	if _, err := sr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+		l.ID = viewLeaseID
+		l.Labels = map[string]string{
+			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		return nil
+	}, leaseutil.MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return nil, err
+	}
+	releaseViewLease := func() error {
+		err := sr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: viewLeaseID})
+		if cerrdefs.IsNotFound(err) {
 			return nil
-		}, leaseutil.MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
-			return nil, err
 		}
-		releaseViewLease := func() error {
-			err := sr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: viewLeaseID})
-			if cerrdefs.IsNotFound(err) {
-				return nil
-			}
-			return err
-		}
-		if err := sr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: viewLeaseID}, leases.Resource{
-			ID:   viewSnapshotID,
-			Type: "snapshots/" + sr.cm.Snapshotter.Name(),
-		}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-			_ = releaseViewLease()
-			return nil, err
-		}
-		mnts, err := sr.cm.Snapshotter.View(ctx, viewSnapshotID, sr.SnapshotID())
-		if err != nil && !cerrdefs.IsAlreadyExists(err) {
-			_ = releaseViewLease()
-			return nil, err
-		}
-		return &mountableWithRelease{
-			Mountable: setReadonly(mnts),
-			release:   releaseViewLease,
-		}, nil
+		return err
 	}
-	if sr.mountCache == nil {
-		mnt, err := sr.cm.Snapshotter.Mounts(ctx, sr.SnapshotID())
-		if err != nil {
-			return nil, err
-		}
-		sr.mountCache = mnt
+	if err := sr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: viewLeaseID}, leases.Resource{
+		ID:   viewSnapshotID,
+		Type: "snapshots/" + sr.cm.Snapshotter.Name(),
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		_ = releaseViewLease()
+		return nil, err
 	}
-	return sr.mountCache, nil
+	mnts, err := sr.cm.Snapshotter.View(ctx, viewSnapshotID, sr.SnapshotID())
+	if err != nil && !cerrdefs.IsAlreadyExists(err) {
+		_ = releaseViewLease()
+		return nil, err
+	}
+	if readonly {
+		mnts = setReadonly(mnts)
+	}
+	return &mountableWithRelease{
+		Mountable: mnts,
+		release:   releaseViewLease,
+	}, nil
 }
 
 func (sr *immutableRef) Release(ctx context.Context) error {

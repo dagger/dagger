@@ -276,14 +276,14 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to init metadata db: %w", err)
 	}
 
-	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "buildkit")
+	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
 
 	srv.bkSessionManager, err = bksession.NewManager()
 	if err != nil {
 		return nil, err
 	}
 
-	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "buildkit")
+	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "dagger")
 
 	//
 	// clean up old hosts/resolv.conf file. ignore errors
@@ -403,7 +403,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	workerSnapshotter := containerdsnapshot.NewSnapshotter(
 		srv.snapshotterName,
 		srv.containerdMetaDB.Snapshotter(srv.snapshotterName),
-		"buildkit",
+		"dagger",
 		nil, // no idmapping
 	)
 

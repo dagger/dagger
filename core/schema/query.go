@@ -95,11 +95,11 @@ type pipelineArgs struct {
 }
 
 type remoteGitMirrorArgs struct {
-	RemoteURL string
+	RemoteURL string `name:"remoteURL"`
 }
 
 type clientFilesyncMirrorArgs struct {
-	StableClientID string
+	StableClientID string `name:"stableClientID"`
 	Drive          string `default:""`
 }
 

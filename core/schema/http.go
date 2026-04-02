@@ -59,7 +59,7 @@ type httpResolvedArgs struct {
 	Permissions *int
 	Checksum    *string
 
-	ResolvedETag         *string `internal:"true"`
+	ResolvedETag         *string `name:"resolvedETag" internal:"true"`
 	ResolvedLastModified *string `internal:"true"`
 	ResolvedDigest       *string `internal:"true"`
 }
