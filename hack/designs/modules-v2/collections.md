@@ -578,6 +578,42 @@ filtering and targeting described above applies to both.
 
 ## Implementation
 
+This design is intended to land as one primary implementation unit:
+
+- **PR:** `collections: project and integrate collections`
+- **API:** `TypeDef.AsCollection`, projected `<Collection>` types,
+  projected `<Collection>_Batch` types, collection-driven `Artifacts`
+  dimensions
+- **UI:** collection traversal in `dagger call` / `dagger shell` /
+  `dagger functions`, plus collection-aware `dagger list`, `dagger check`,
+  and `dagger generate`
+
+Included in this unit:
+
+- collection metadata and validation
+- public schema projection for collection and batch types
+- module authoring/runtime and generated-client support
+- collection selector dimensions in the Artifacts model
+- collection-aware filtering and batch behavior in `check` / `generate`
+
+Important:
+
+- the existing `collections` branch is a useful prototype and behavior
+  reference, but it predates the current `Artifacts -> Execution Plans ->
+  Collections` ordering
+- final implementation should target the Artifacts/Plans stack, not revive the
+  old `CheckGroup` / `GeneratorGroup` / `ModTree` integration path
+
+### Pull Request Description
+
+```text
+This PR implements the Collections design unit. It adds collection metadata
+and validation, public schema projection for collection and batch types,
+module-runtime and generated-client support for authored collections,
+collection-driven Artifacts dimensions, and collection-aware filtering and
+batch behavior in `dagger list`, `dagger check`, and `dagger generate`.
+```
+
 Collections affect several existing implementation areas.
 
 ### Engine

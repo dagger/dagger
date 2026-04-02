@@ -12,6 +12,38 @@ execution is implicit: actions with no pending dependencies run concurrently.
 
 Replaces CheckGroup. Transition path: CheckGroup → Execution Plans.
 
+## Implementation
+
+This design is intended to land as one primary implementation unit:
+
+- **PR:** `verbs: add plans, migrate check + generate, remove old path`
+- **API:** `Action`, `Plan`, `Artifacts.check`, `Artifacts.generate`
+- **UI:** `dagger list`, `dagger list <dimension>`, `dagger list <dimension> --check`,
+  `dagger check --plan`, `dagger generate --plan`, and the first public
+  non-collection typed filters on `check` / `generate`
+
+Included in this unit:
+
+- the Action/Plan substrate
+- migration of `dagger check` and `dagger generate` onto `Artifacts`
+- public discovery and non-collection typed filters
+- removal of the old `ModTree` / `CheckGroup` / `GeneratorGroup` path
+
+Deferred to [collections.md](./collections.md):
+
+- collection-provided dimensions
+- collection-aware batch lowering and shadowing
+
+### Pull Request Description
+
+```text
+This PR implements the Execution Plans design unit. It adds `Action`, `Plan`,
+`Artifacts.check`, and `Artifacts.generate`; makes `dagger list` public;
+migrates `dagger check` and `dagger generate` onto the Artifacts/Plans stack;
+enables the first public non-collection typed filters; and removes the old
+`ModTree` / `CheckGroup` / `GeneratorGroup` path.
+```
+
 ## Schema
 
 ```graphql

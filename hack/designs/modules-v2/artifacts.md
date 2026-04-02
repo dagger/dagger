@@ -13,6 +13,7 @@ Depends on: Workspace plumbing (done)
 - [CLI](#cli)
 - [Schema](#schema)
 - [Notes](#notes)
+- [Implementation](#implementation)
 - [Initial Scope](#initial-scope)
 - [Implementation Notes](#implementation-notes)
 - [Open Questions](#open-questions)
@@ -726,6 +727,40 @@ descendants should not duplicate the same direct handler in the compiled plan.
   no overlap
 - `filterCheck` / `filterShip` / etc. → narrow to artifact objects relevant to
   that verb
+
+## Implementation
+
+This design is intended to land as one primary implementation unit:
+
+- **PR:** `artifacts plumbing: selector scopes and rows`
+- **API:** `Workspace.artifacts`, `Artifacts`, `Artifact`, `ArtifactDimension`,
+  `FieldValue`
+- **Contract:** static `dimensions`, dynamic `items`, row-shaped
+  `coordinates`, root and verb-projected selector scopes
+
+Included in this unit:
+
+- selector synthesis and coordinate rows
+- `filterBy`, `filterCheck`, `filterGenerate`, `filterShip`, `filterUp`
+- `Artifact.coordinate(name)` and field inspection
+- enough CLI plumbing to drive selector scopes internally
+
+Deferred to [plans.md](./plans.md):
+
+- `Action` and `Plan`
+- `Artifacts.check` / `generate` / `ship` / `up`
+- the public `dagger list` / typed-filter UX
+- removal of the old check / generate execution path
+
+### Pull Request Description
+
+```text
+This PR implements the Artifacts design unit. It adds `Workspace.artifacts`,
+`Artifacts`, `Artifact`, `ArtifactDimension`, and `FieldValue`, together with
+selector synthesis, scope-relative coordinate rows, and verb-projected selector
+scopes. It lands the selector model itself, but defers the public `dagger list`
+UX and verb execution to Execution Plans.
+```
 
 ## Initial Scope
 
