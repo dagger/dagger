@@ -22,7 +22,17 @@ func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string)
 	}
 	defer release(context.WithoutCancel(ctx))
 
-	manifestDesc := specs.Descriptor{Digest: digest.Digest(blobDigest)}
+	manifestDigest := digest.Digest(blobDigest)
+	info, err := query.BuiltinOCIStore().Info(ctx, manifestDigest)
+	if err != nil {
+		return nil, fmt.Errorf("lookup builtin image manifest %s: %w", manifestDigest, err)
+	}
+
+	manifestDesc := specs.Descriptor{
+		Digest:    manifestDigest,
+		Size:      info.Size,
+		MediaType: specs.MediaTypeImageManifest,
+	}
 	if err := contentutil.CopyChain(ctx, query.OCIStore(), query.BuiltinOCIStore(), manifestDesc); err != nil {
 		return nil, fmt.Errorf("copy builtin image content: %w", err)
 	}
