@@ -2895,6 +2895,8 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Mount the directory read-only.
+	ReadOnly bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -2907,6 +2909,10 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -11961,6 +11967,8 @@ type HTTPOpts struct {
 	Name string
 	// Permissions to set on the file.
 	Permissions int
+	// Expected digest of the downloaded content (e.g., "sha256:...").
+	Checksum string
 	// Secret used to populate the Authorization HTTP header
 	AuthHeader *Secret
 	// A service which must be started before the URL is fetched.
@@ -11978,6 +11986,10 @@ func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
+		}
+		// `checksum` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Checksum) {
+			q = q.Arg("checksum", opts[i].Checksum)
 		}
 		// `authHeader` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AuthHeader) {

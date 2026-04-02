@@ -3198,6 +3198,9 @@ pub struct ContainerWithMountedDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Mount the directory read-only.
+    #[builder(setter(into, strip_option), default)]
+    pub read_only: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedFileOpts<'a> {
@@ -4674,6 +4677,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(read_only) = opts.read_only {
+            query = query.arg("readOnly", read_only);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -12094,6 +12100,9 @@ pub struct QueryHttpOpts<'a> {
     /// Secret used to populate the Authorization HTTP header
     #[builder(setter(into, strip_option), default)]
     pub auth_header: Option<SecretId>,
+    /// Expected digest of the downloaded content (e.g., "sha256:...").
+    #[builder(setter(into, strip_option), default)]
+    pub checksum: Option<&'a str>,
     /// A service which must be started before the URL is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ServiceId>,
@@ -12557,6 +12566,9 @@ impl Query {
         }
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
+        }
+        if let Some(checksum) = opts.checksum {
+            query = query.arg("checksum", checksum);
         }
         if let Some(auth_header) = opts.auth_header {
             query = query.arg("authHeader", auth_header);

@@ -749,6 +749,11 @@ export type ContainerWithMountedDirectoryOpts = {
   owner?: string
 
   /**
+   * Mount the directory read-only.
+   */
+  readOnly?: boolean
+
+  /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
@@ -2223,6 +2228,11 @@ export type ClientHttpOpts = {
    * Permissions to set on the file.
    */
   permissions?: number
+
+  /**
+   * Expected digest of the downloaded content (e.g., "sha256:...").
+   */
+  checksum?: string
 
   /**
    * Secret used to populate the Authorization HTTP header
@@ -4683,6 +4693,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.readOnly Mount the directory read-only.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withMountedDirectory = (
@@ -11965,6 +11976,7 @@ export class Client extends BaseClient {
    * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
    * @param opts.name File name to use for the file. Defaults to the last part of the URL.
    * @param opts.permissions Permissions to set on the file.
+   * @param opts.checksum Expected digest of the downloaded content (e.g., "sha256:...").
    * @param opts.authHeader Secret used to populate the Authorization HTTP header
    * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */

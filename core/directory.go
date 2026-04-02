@@ -1,6 +1,7 @@
 package core
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,6 +37,9 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/chrootarchive"
+	"github.com/docker/docker/pkg/idtools"
 )
 
 // Directory is a content-addressed directory.
@@ -683,6 +687,217 @@ func (cf *CopyFilter) IsEmpty() bool {
 }
 
 //nolint:gocyclo
+func (dir *Directory) WithDirectoryDockerfileCompat(
+	ctx context.Context,
+	destDir string,
+	srcPath string,
+	srcID *call.ID,
+	filter CopyFilter,
+	owner string,
+	permissions *int,
+
+	followSymlink bool,
+	dirCopyContents bool,
+	attemptUnpackDockerCompatibility bool,
+	createDestPath bool,
+	allowWildcard bool,
+	allowEmptyWildcard bool,
+	alwaysReplaceExistingDestPaths bool,
+
+) (*Directory, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	srcObj, err := dagql.NewID[*Directory](srcID).Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	src := srcObj.Self()
+
+	dirRef, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get directory ref: %w", err)
+	}
+	srcRef, err := getRefOrEvaluate(ctx, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory ref: %w", err)
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, dirRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("patch"))
+	if err != nil {
+		return nil, err
+	}
+	var ownership *Ownership
+	err = MountRef(ctx, newRef, nil, func(copyDest string, destMnt *mount.Mount) error {
+		if owner != "" {
+			var err error
+			ownership, err = parseDirectoryOwner(copyDest, owner)
+			if err != nil {
+				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+			}
+		}
+		resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
+		if err != nil {
+			return err
+		}
+		if srcRef == nil {
+			err = os.MkdirAll(resolvedCopyDest, 0755)
+			if err != nil {
+				return err
+			}
+			if permissions != nil {
+				if err := os.Chmod(resolvedCopyDest, os.FileMode(*permissions)); err != nil {
+					return fmt.Errorf("failed to chmod %s: %w", resolvedCopyDest, err)
+				}
+			}
+			if ownership != nil {
+				if err := os.Chown(resolvedCopyDest, ownership.UID, ownership.GID); err != nil {
+					return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
+				}
+			}
+			return nil
+		}
+		mounter, err := srcRef.Mount(ctx, true, nil)
+		if err != nil {
+			return fmt.Errorf("failed to mount source directory: %w", err)
+		}
+		ms, unmountSrc, err := mounter.Mount()
+		if err != nil {
+			return fmt.Errorf("failed to mount source directory: %w", err)
+		}
+		defer unmountSrc()
+		if len(ms) == 0 {
+			return fmt.Errorf("no mounts returned for source directory")
+		}
+		srcMnt := ms[0]
+		lm := snapshot.LocalMounterWithMounts(ms)
+		mntedSrcPath, err := lm.Mount()
+		if err != nil {
+			return fmt.Errorf("failed to mount source directory: %w", err)
+		}
+		defer lm.Unmount()
+		// resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Dir)
+		// if err != nil {
+		// 	return err
+		// }
+
+		srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
+		if err != nil {
+			return fmt.Errorf("failed to create source path resolver: %w", err)
+		}
+		destResolver, err := pathResolverForMount(destMnt, copyDest)
+		if err != nil {
+			return fmt.Errorf("failed to create destination path resolver: %w", err)
+		}
+
+		var opts []fscopy.Opt
+		opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
+			AlwaysReplaceExistingDestPaths: true,
+			CopyDirContents:                true,
+			//EnableHardlinkOptimization:     true,
+			SourcePathResolver: srcResolver,
+			DestPathResolver:   destResolver,
+			Mode:               permissions,
+		}))
+		for _, pattern := range filter.Include {
+			opts = append(opts, fscopy.WithIncludePattern(pattern))
+		}
+		for _, pattern := range filter.Exclude {
+			opts = append(opts, fscopy.WithExcludePattern(pattern))
+		}
+		if filter.Gitignore {
+			opts = append(opts, fscopy.WithGitignore())
+		}
+		if ownership != nil {
+			opts = append(opts, fscopy.WithChown(ownership.UID, ownership.GID))
+		}
+
+		if attemptUnpackDockerCompatibility {
+			destPathHintIsDirectory := strings.HasSuffix(resolvedCopyDest, "/") // TODO is this correct?
+			srcPathCopy := srcPath
+			if src.Dir != "" && src.Dir != "/" {
+				srcPathCopy = src.Dir + "/" + srcPath
+			}
+
+			didUnpack, err := attemptCopyArchiveUnpack(
+				ctx,
+				mntedSrcPath,
+				srcPathCopy,
+				resolvedCopyDest,
+				filter.Include,
+				filter.Exclude,
+				filter.Gitignore,
+				ownership,
+				permissions,
+				newRef.IdentityMapping(),
+				destPathHintIsDirectory,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to unpack source archive: %w", err)
+			}
+			if didUnpack {
+				return nil
+			}
+		}
+
+		pathsToCopy := []string{src.Dir}
+		if srcPath != "" {
+			if src.Dir != "" && src.Dir != "/" {
+				srcPath = src.Dir + "/" + srcPath
+			}
+			var err error
+			pathsToCopy, err = fscopy.ResolveWildcards(mntedSrcPath, srcPath, true) // todo use action.FollowSymlink instead of true
+			if err != nil {
+				return err
+			}
+		}
+
+		for _, srcPath := range pathsToCopy {
+			joinedDest := path.Join(dir.Dir, destDir)
+			if strings.HasSuffix(destDir, "/") && !strings.HasSuffix(joinedDest, "/") {
+				joinedDest += "/"
+			}
+			if !createDestPath {
+				destDirPath := filepath.Dir(path.Join(copyDest, joinedDest))
+				if _, err := os.Lstat(destDirPath); err != nil {
+					err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, src.Dir))
+					return err
+				}
+			}
+			if err := fscopy.Copy(ctx, mntedSrcPath, srcPath, copyDest, joinedDest, opts...); err != nil {
+				err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, src.Dir))
+				err = TrimErrPathPrefix(err, copyDest)
+				return fmt.Errorf("failed to copy source directory: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	dirRef, err = newRef.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+	}
+
+	dir.Result = dirRef
+	return dir, nil
+}
+
+//nolint:gocyclo
 func (dir *Directory) WithDirectory(
 	ctx context.Context,
 	destDir string,
@@ -954,6 +1169,187 @@ func copyFile(srcPath, dstPath string, tryHardlink bool) (err error) {
 	return os.Chtimes(dstPath, modTime, modTime)
 }
 
+func attemptCopyArchiveUnpack(
+	ctx context.Context,
+	mntedSrcPath string,
+	srcPath string,
+	destPath string,
+	includePatterns []string,
+	excludePatterns []string,
+	useGitignore bool,
+	ownership *Ownership,
+	permissions *int,
+	idmap *idtools.IdentityMapping,
+	destPathHintIsDirectory bool,
+) (bool, error) {
+	if useGitignore || len(excludePatterns) > 0 || len(includePatterns) > 0 {
+		return false, nil
+	}
+
+	matches, err := fscopy.ResolveWildcards(mntedSrcPath, srcPath, true) // todo use action.FollowSymlink instead of true
+	if err != nil {
+		return false, err
+	}
+
+	if len(matches) == 0 {
+		return true, nil
+	}
+
+	var opts []fscopy.Opt
+	opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
+		AlwaysReplaceExistingDestPaths: true,
+		CopyDirContents:                true,
+		Mode:                           permissions,
+	}))
+	if ownership != nil {
+		opts = append(opts, fscopy.WithChown(ownership.UID, ownership.GID))
+	}
+
+	for _, src := range matches {
+		resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src)
+		if err != nil {
+			return false, err
+		}
+
+		unpacked, err := unpackArchiveFile(resolvedSrcPath, destPath, ownership, idmap)
+		if err != nil {
+			return false, err
+		}
+		if unpacked {
+			continue
+		}
+
+		if len(matches) == 1 {
+			copiedAsSingleFile, err := copyAttemptUnpackNonArchiveSingleFile(resolvedSrcPath, src, destPath, permissions, ownership, destPathHintIsDirectory)
+			if err != nil {
+				return false, err
+			}
+			if copiedAsSingleFile {
+				continue
+			}
+		}
+
+		if err := fscopy.Copy(ctx, srcPath, src, destPath, ".", opts...); err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+func copyAttemptUnpackNonArchiveSingleFile(
+	resolvedSrcPath string,
+	srcPatternPath string,
+	destPath string,
+	permissions *int,
+	ownership *Ownership,
+	destPathHintIsDirectory bool,
+) (bool, error) {
+	srcInfo, err := os.Stat(resolvedSrcPath)
+	if err != nil {
+		return false, err
+	}
+	if !srcInfo.Mode().IsRegular() {
+		return false, nil
+	}
+
+	destFilePath := destPath
+	if destPathHintIsDirectory {
+		destInfo, err := os.Stat(destPath)
+		if err == nil {
+			if !destInfo.IsDir() {
+				return false, fmt.Errorf("destination path %q exists and is not a directory", destPath)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		destFilePath = filepath.Join(destPath, filepath.Base(srcPatternPath))
+	} else if destInfo, err := os.Stat(destPath); err == nil && destInfo.IsDir() {
+		destFilePath = filepath.Join(destPath, filepath.Base(srcPatternPath))
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destFilePath), 0o755); err != nil {
+		return false, err
+	}
+	tryHardlink := permissions == nil && ownership == nil
+	if err := copyFile(resolvedSrcPath, destFilePath, tryHardlink); err != nil {
+		return false, err
+	}
+	if permissions != nil {
+		if err := os.Chmod(destFilePath, os.FileMode(*permissions)); err != nil {
+			return false, err
+		}
+	}
+	if ownership != nil {
+		if err := os.Chown(destFilePath, ownership.UID, ownership.GID); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, idmap *idtools.IdentityMapping) (bool, error) {
+	if !isArchivePath(srcPath) {
+		return false, nil
+	}
+
+	var chowner fscopy.Chowner
+	if ownership != nil {
+		chowner = func(*fscopy.User) (*fscopy.User, error) {
+			return &fscopy.User{UID: ownership.UID, GID: ownership.GID}, nil
+		}
+	}
+
+	if err := fscopy.MkdirAll(destPath, 0o755, chowner, nil); err != nil {
+		return false, err
+	}
+
+	file, err := os.Open(srcPath)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+
+	opts := &archive.TarOptions{ //nolint:staticcheck
+		BestEffortXattrs: true,
+	}
+	if idmap != nil {
+		opts.IDMap = *idmap
+	}
+	if err := chrootarchive.Untar(file, destPath, opts); err != nil { //nolint:staticcheck
+		return false, err
+	}
+	return true, nil
+}
+
+func isArchivePath(path string) bool {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+	if fi.Mode()&os.ModeType != 0 {
+		return false
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	rdr, err := archive.DecompressStream(file) //nolint:staticcheck
+	if err != nil {
+		return false
+	}
+	defer rdr.Close()
+
+	tr := tar.NewReader(rdr)
+	_, err = tr.Next()
+	return err == nil
+}
+
 func isDir(path string) (bool, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -965,6 +1361,29 @@ func isDir(path string) (bool, error) {
 	return fi.Mode().IsDir(), nil
 }
 
+func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRef, destPath string) error {
+	parentPath := filepath.Dir(path.Clean(destPath))
+	if parentPath == "." {
+		parentPath = "/"
+	}
+
+	if baseRef == nil {
+		if parentPath == "/" {
+			return nil
+		}
+		return &os.PathError{Op: "lstat", Path: parentPath, Err: syscall.ENOENT}
+	}
+
+	return MountRef(ctx, baseRef, nil, func(root string, _ *mount.Mount) error {
+		resolvedParentPath, err := containerdfs.RootPath(root, parentPath)
+		if err != nil {
+			return err
+		}
+		_, err = os.Lstat(resolvedParentPath)
+		return TrimErrPathPrefix(err, root)
+	})
+}
+
 //nolint:gocyclo
 func (dir *Directory) WithFile(
 	ctx context.Context,
@@ -973,6 +1392,8 @@ func (dir *Directory) WithFile(
 	src *File,
 	permissions *int,
 	owner string,
+	doNotCreateDestPath bool,
+	attemptUnpackDockerCompatibility bool,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -997,6 +1418,11 @@ func (dir *Directory) WithFile(
 	}
 
 	destPath = path.Join(dir.Dir, destPath)
+	if doNotCreateDestPath {
+		if err := ensureCopyDestParentExists(ctx, dirCacheRef, destPath); err != nil {
+			return nil, err
+		}
+	}
 	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(src.File))))
 	if err != nil {
@@ -1005,6 +1431,7 @@ func (dir *Directory) WithFile(
 
 	var ownership *Ownership
 	var realDestPath string
+	var realUnpackDestPath string
 	if err := MountRef(ctx, newRef, bkSessionGroup, func(root string, destMnt *mount.Mount) (rerr error) {
 		if owner != "" {
 			var err error
@@ -1018,6 +1445,8 @@ func (dir *Directory) WithFile(
 		if err != nil {
 			return err
 		}
+
+		mntedUnpackDestPath := mntedDestPath
 		destIsDir, err := isDir(mntedDestPath)
 		if err != nil {
 			return err
@@ -1037,9 +1466,14 @@ func (dir *Directory) WithFile(
 		if err != nil {
 			return err
 		}
+		resolvedUnpackDestRelPath, err := filepath.Rel(root, mntedUnpackDestPath)
+		if err != nil {
+			return err
+		}
 		switch destMnt.Type {
 		case "bind", "rbind":
 			realDestPath = filepath.Join(destMnt.Source, resolvedDestRelPath)
+			realUnpackDestPath = filepath.Join(destMnt.Source, resolvedUnpackDestRelPath)
 		case "overlay":
 			// touch the dest parent dir to trigger a copy-up of parent dirs
 			// we never try to keep directory modtimes consistent right now, so
@@ -1059,6 +1493,7 @@ func (dir *Directory) WithFile(
 				return fmt.Errorf("overlay mount missing upperdir option")
 			}
 			realDestPath = filepath.Join(upperdir, resolvedDestRelPath)
+			realUnpackDestPath = filepath.Join(upperdir, resolvedUnpackDestRelPath)
 		default:
 			return fmt.Errorf("unsupported mount type for destination: %s", destMnt.Type)
 		}
@@ -1086,21 +1521,31 @@ func (dir *Directory) WithFile(
 		return nil, err
 	}
 
-	tryHardlink := permissions == nil && owner == ""
-
-	err = copyFile(realSrcPath, realDestPath, tryHardlink)
-	if err != nil {
-		return nil, err
-	}
-
-	if permissions != nil {
-		if err := os.Chmod(realDestPath, os.FileMode(*permissions)); err != nil {
-			return nil, fmt.Errorf("failed to set chmod %s: err", destPath)
+	unpacked := false
+	if attemptUnpackDockerCompatibility {
+		unpacked, err = unpackArchiveFile(realSrcPath, realUnpackDestPath, ownership, newRef.IdentityMapping())
+		if err != nil {
+			return nil, fmt.Errorf("failed to unpack source archive: %w", err)
 		}
 	}
-	if ownership != nil {
-		if err := os.Chown(realDestPath, ownership.UID, ownership.GID); err != nil {
-			return nil, fmt.Errorf("failed to set chown %s: err", destPath)
+
+	if !unpacked {
+		tryHardlink := permissions == nil && owner == ""
+
+		err = copyFile(realSrcPath, realDestPath, tryHardlink)
+		if err != nil {
+			return nil, err
+		}
+
+		if permissions != nil {
+			if err := os.Chmod(realDestPath, os.FileMode(*permissions)); err != nil {
+				return nil, fmt.Errorf("failed to set chmod %s: err", destPath)
+			}
+		}
+		if ownership != nil {
+			if err := os.Chown(realDestPath, ownership.UID, ownership.GID); err != nil {
+				return nil, fmt.Errorf("failed to set chown %s: err", destPath)
+			}
 		}
 	}
 
@@ -1131,6 +1576,8 @@ func (dir *Directory) WithFiles(
 			file,
 			permissions,
 			"",
+			false,
+			false,
 		)
 		if err != nil {
 			return nil, err

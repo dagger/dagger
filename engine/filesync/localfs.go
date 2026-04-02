@@ -76,7 +76,7 @@ type localFS struct {
 	excludes []string // the exclude patterns we're using for this sync
 }
 
-func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string, copyPath string) (*localFS, error) {
+func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes, followPaths []string, copyPath string) (*localFS, error) {
 	baseFS, err := fsutil.NewFS(filepath.Join(sharedState.rootPath, subdir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
@@ -85,6 +85,7 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 	filterFS, err := fsutil.NewFilterFS(baseFS, &fsutil.FilterOpt{
 		IncludePatterns: includes,
 		ExcludePatterns: excludes,
+		FollowPaths:     followPaths,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create filter fs: %w", err)

@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -154,6 +155,20 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+			),
+		dagql.NodeFunc("__withDirectoryDockerfileCompat", DagOpDirectoryWrapper(srv, s.withDirectoryDockerfileCompat, WithPathFn(keepParentDir[WithDirectoryDockerfileCompatArgs]))).
+			View(AllVersion).
+			Doc(`Return a snapshot with a directory added`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/src/").`),
+				dagql.Arg("source").Doc(`Identifier of the directory to copy.`),
+				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
+				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
+				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
+					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
+					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 			),
 		dagql.NodeFunc("filter", DagOpDirectoryWrapper(srv, s.filter, WithPathFn(keepParentDir[FilterArgs]))).
 			Doc(`Return a snapshot with some paths included or excluded`).
@@ -484,6 +499,87 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 
+type WithDirectoryDockerfileCompatArgs struct {
+	Path        string
+	Owner       string `default:""`
+	Permissions dagql.Optional[dagql.Int]
+
+	SrcPath                          string `internal:"true" default:""`
+	FollowSymlink                    bool   `internal:"true" default:"false"`
+	DirCopyContents                  bool   `internal:"true" default:"false"`
+	AttemptUnpackDockerCompatibility bool   `internal:"true" default:"false"`
+	CreateDestPath                   bool   `internal:"true" default:"false"`
+	AllowWildcard                    bool   `internal:"true" default:"false"`
+	AllowEmptyWildcard               bool   `internal:"true" default:"false"`
+	AlwaysReplaceExistingDestPaths   bool   `internal:"true" default:"false"`
+
+	Source core.DirectoryID
+
+	core.CopyFilter
+	DagOpInternalArgs
+}
+
+var _ core.Inputs = WithDirectoryDockerfileCompatArgs{}
+
+func (args WithDirectoryDockerfileCompatArgs) Inputs(ctx context.Context) ([]llb.State, error) {
+	deps := []llb.State{}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	if args.Source.ID() == nil {
+		return nil, nil
+	}
+
+	sourceRes, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return nil, fmt.Errorf("load source: %w", err)
+	}
+	sourceOp, err := llb.NewDefinitionOp(sourceRes.Self().LLB)
+	if err != nil {
+		return nil, fmt.Errorf("source op: %w", err)
+	}
+	if sourceOp.Output() != nil {
+		deps = append(deps, llb.NewState(sourceOp))
+	}
+
+	return deps, nil
+}
+
+func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryDockerfileCompatArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
+	}
+
+	with, err := parent.Self().WithDirectoryDockerfileCompat(
+		ctx,
+		args.Path,
+		args.SrcPath,
+		args.Source.ID(),
+		args.CopyFilter,
+		args.Owner,
+		perms,
+		args.FollowSymlink,
+		args.DirCopyContents,
+		args.AttemptUnpackDockerCompatibility,
+		args.CreateDestPath,
+		args.AllowWildcard,
+		args.AllowEmptyWildcard,
+		args.AlwaysReplaceExistingDestPaths,
+	)
+	if err != nil {
+		return res, fmt.Errorf("WithDirectoryDockerfileCompat %q failed: %w", args.Path, err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
+}
+
 type FilterArgs struct {
 	core.CopyFilter
 
@@ -702,6 +798,11 @@ type WithFileArgs struct {
 	Source      core.FileID
 	Permissions dagql.Optional[dagql.Int]
 	Owner       string `default:""`
+	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
+	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
+	// BuildKit ADD archive auto-unpack compatibility semantics.
+	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
 
 	FSDagOpInternalArgs
 }
@@ -719,16 +820,34 @@ func (args WithFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
 		return nil, nil
 	}
 
+	appendDep := func(def *pb.Definition) error {
+		sourceOp, err := llb.NewDefinitionOp(def)
+		if err != nil {
+			return fmt.Errorf("source op: %w", err)
+		}
+		if sourceOp.Output() != nil {
+			deps = append(deps, llb.NewState(sourceOp))
+		}
+		return nil
+	}
+
 	sourceRes, err := args.Source.Load(ctx, srv)
 	if err != nil {
+		// if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+		//	if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
+		//		dirSourceRes, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
+		//		if dirErr == nil {
+		//			if err := appendDep(dirSourceRes.Self().LLB); err != nil {
+		//				return nil, err
+		//			}
+		//			return deps, nil
+		//		}
+		//	}
+		// }
 		return nil, fmt.Errorf("load source: %w", err)
 	}
-	sourceOp, err := llb.NewDefinitionOp(sourceRes.Self().LLB)
-	if err != nil {
-		return nil, fmt.Errorf("source op: %w", err)
-	}
-	if sourceOp.Output() != nil {
-		deps = append(deps, llb.NewState(sourceOp))
+	if err := appendDep(sourceRes.Self().LLB); err != nil {
+		return nil, err
 	}
 
 	return deps, nil
@@ -740,17 +859,47 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	file, err := args.Source.Load(ctx, srv)
-	if err != nil {
-		return inst, err
-	}
-
 	var perms *int
 	if args.Permissions.Valid {
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	dir, err := parent.Self().WithFile(ctx, srv, args.Path, file.Self(), perms, args.Owner)
+
+	file, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		// if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+		//	if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
+		//		dir, fallbackErr := parent.Self().WithDirectory(
+		//			ctx,
+		//			args.Path,
+		//			dirSourceID,
+		//			core.CopyFilter{},
+		//			args.Owner,
+		//			perms,
+		//			args.DoNotCreateDestPath,
+		//			args.AttemptUnpackDockerCompatibility,
+		//			"",
+		//			false,
+		//			false,
+		//		)
+		//		if fallbackErr == nil {
+		//			return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+		//		}
+		//	}
+		// }
+		return inst, err
+	}
+
+	dir, err := parent.Self().WithFile(
+		ctx,
+		srv,
+		args.Path,
+		file.Self(),
+		perms,
+		args.Owner,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+	)
 	if err != nil {
 		return inst, err
 	}
@@ -1403,26 +1552,29 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
 
-	var sshSocket *core.Socket
+	var sshSocketID *call.ID
 	if args.SSH.Valid {
 		sshSocketResult, err := args.SSH.Value.Load(ctx, srv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load SSH socket: %w", err)
 		}
-		sshSocket = sshSocketResult.Self()
+		if sshSocketResult.Self() == nil {
+			return nil, fmt.Errorf("failed to load SSH socket: nil socket")
+		}
+		sshSocketID = sshSocketResult.ID()
 	}
 
 	return ctr.Build(
 		ctx,
 		parent.Self(),
-		buildctxDir.Self(),
+		buildctxDir.ID(),
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
 		secrets,
 		secretStore,
 		args.NoInit,
-		sshSocket,
+		sshSocketID,
 	)
 }
 

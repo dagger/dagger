@@ -3013,6 +3013,7 @@ class Container(Type):
         source: "Directory",
         *,
         owner: str | None = "",
+        read_only: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a directory mounted at the given path.
@@ -3028,6 +3029,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        read_only:
+            Mount the directory read-only.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3037,6 +3040,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("readOnly", read_only, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedDirectory", _args)
@@ -12139,6 +12143,7 @@ class Query(Root):
         *,
         name: str | None = None,
         permissions: int | None = None,
+        checksum: str | None = None,
         auth_header: "Secret | None" = None,
         experimental_service_host: "Service | None" = None,
     ) -> File:
@@ -12153,6 +12158,8 @@ class Query(Root):
             URL.
         permissions:
             Permissions to set on the file.
+        checksum:
+            Expected digest of the downloaded content (e.g., "sha256:...").
         auth_header:
             Secret used to populate the Authorization HTTP header
         experimental_service_host:
@@ -12162,6 +12169,7 @@ class Query(Root):
             Arg("url", url),
             Arg("name", name, None),
             Arg("permissions", permissions, None),
+            Arg("checksum", checksum, None),
             Arg("authHeader", auth_header, None),
             Arg("experimentalServiceHost", experimental_service_host, None),
         ]

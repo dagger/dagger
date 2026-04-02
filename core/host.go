@@ -106,7 +106,7 @@ func (Host) FindUpAll(
 	return found, nil
 }
 
-func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, noCache bool, relPath string) (*Directory, error) {
+func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, followPaths []string, noCache bool, relPath string) (*Directory, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current query: %w", err)
@@ -120,6 +120,7 @@ func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, 
 	snapshotOpts := filesync.SnapshotOpts{
 		IncludePatterns: filter.Include,
 		ExcludePatterns: filter.Exclude,
+		FollowPaths:     followPaths,
 		GitIgnore:       filter.Gitignore,
 		RelativePath:    relPath,
 	}

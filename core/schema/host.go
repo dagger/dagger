@@ -170,8 +170,9 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 	HostDirCacheConfig
 
-	GitIgnoreRoot string `internal:"true" default:""`
-	Gitignore     bool   `default:"false"`
+	GitIgnoreRoot string   `internal:"true" default:""`
+	FollowPaths   []string `internal:"true" default:"[]"`
+	Gitignore     bool     `default:"false"`
 	DagOpInternalArgs
 }
 
@@ -275,11 +276,19 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		excludePatterns = append(excludePatterns, exclude)
 	}
 
+	followPaths := make([]string, 0, len(args.FollowPaths))
+	for _, followPath := range args.FollowPaths {
+		if !filepath.IsLocal(followPath) {
+			continue
+		}
+		followPaths = append(followPaths, filepath.Join(relPathFromRoot, followPath))
+	}
+
 	dir, err := host.Self().Directory(ctx, absRootCopyPath, core.CopyFilter{
 		Include:   includePatterns,
 		Exclude:   excludePatterns,
 		Gitignore: args.Gitignore,
-	}, args.NoCache, relPathFromRoot)
+	}, followPaths, args.NoCache, relPathFromRoot)
 
 	if err != nil {
 		return inst, fmt.Errorf("failed to get directory: %w", err)

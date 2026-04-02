@@ -21,6 +21,7 @@ type remoteFS struct {
 	clientPath   string
 	includes     []string
 	excludes     []string
+	followPaths  []string
 	useGitIgnore bool
 
 	startOnce   sync.Once
@@ -34,6 +35,7 @@ func newRemoteFS(
 	caller session.Caller,
 	clientPath string,
 	includes, excludes []string,
+	followPaths []string,
 	useGitIgnore bool,
 ) *remoteFS {
 	return &remoteFS{
@@ -42,6 +44,7 @@ func newRemoteFS(
 		useGitIgnore: useGitIgnore,
 		includes:     includes,
 		excludes:     excludes,
+		followPaths:  followPaths,
 	}
 }
 
@@ -68,6 +71,7 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 		UseGitIgnore:    fs.useGitIgnore,
 		IncludePatterns: fs.includes,
 		ExcludePatterns: fs.excludes,
+		FollowPaths:     fs.followPaths,
 	}.AppendToOutgoingContext(ctx))
 	if err != nil {
 		return fmt.Errorf("failed to create diff copy client: %w", err)

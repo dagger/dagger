@@ -118,6 +118,15 @@ type OpDAG struct {
 	asBlobOp  *BlobOp
 }
 
+// OutputIndex returns the specific output of this op represented by this OpDAG
+// instance.
+func (dag *OpDAG) OutputIndex() pb.OutputIndex {
+	if dag == nil {
+		return 0
+	}
+	return dag.outputIndex
+}
+
 func (dag *OpDAG) String() string {
 	builder := &strings.Builder{}
 	return dag.toString(builder, "")

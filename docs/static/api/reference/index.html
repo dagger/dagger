@@ -1389,6 +1389,12 @@
                       </tr>
                       <tr>
                         <td>
+                          <span class="property-name"><code>checksum</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> Expected digest of the downloaded content (e.g., "sha256:..."). </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <span class="property-name"><code>authHeader</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID</code></a></span>
                         </td>
                         <td> Secret used to populate the Authorization HTTP header </td>
@@ -6955,6 +6961,10 @@
                                 <p>A user:group to set for the mounted directory and its contents.</p>
                                 <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>readOnly</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Mount the directory read-only.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
