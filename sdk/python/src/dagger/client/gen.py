@@ -3,6 +3,7 @@
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 from typing_extensions import Self
 
@@ -308,6 +309,46 @@ class PortForward(Input):
 
     protocol: NetworkProtocol | None = NetworkProtocol.TCP
     """Transport layer protocol to use for traffic."""
+
+
+@runtime_checkable
+class Node(Protocol):
+    """An object with a globally unique ID."""
+
+
+@typecheck
+class _NodeClient(Type):
+    """Concrete client for Node interface."""
+
+    @classmethod
+    def _graphql_name(cls) -> str:
+        return "Node"
+
+    async def id(self) -> str:
+        """Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -12116,478 +12157,6 @@ class Query(Root):
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
 
-    def load_address_from_id(self, id: Type) -> Address:
-        """Load a Address from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadAddressFromID", _args)
-        return Address(_ctx)
-
-    def load_binding_from_id(self, id: Type) -> Binding:
-        """Load a Binding from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadBindingFromID", _args)
-        return Binding(_ctx)
-
-    def load_cache_volume_from_id(self, id: Type) -> CacheVolume:
-        """Load a CacheVolume from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCacheVolumeFromID", _args)
-        return CacheVolume(_ctx)
-
-    def load_changeset_from_id(self, id: Type) -> Changeset:
-        """Load a Changeset from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadChangesetFromID", _args)
-        return Changeset(_ctx)
-
-    def load_check_from_id(self, id: Type) -> Check:
-        """Load a Check from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCheckFromID", _args)
-        return Check(_ctx)
-
-    def load_check_group_from_id(self, id: Type) -> CheckGroup:
-        """Load a CheckGroup from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCheckGroupFromID", _args)
-        return CheckGroup(_ctx)
-
-    def load_cloud_from_id(self, id: Type) -> Cloud:
-        """Load a Cloud from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCloudFromID", _args)
-        return Cloud(_ctx)
-
-    def load_container_from_id(self, id: Type) -> Container:
-        """Load a Container from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadContainerFromID", _args)
-        return Container(_ctx)
-
-    def load_current_module_from_id(self, id: Type) -> CurrentModule:
-        """Load a CurrentModule from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCurrentModuleFromID", _args)
-        return CurrentModule(_ctx)
-
-    def load_directory_from_id(self, id: Type) -> Directory:
-        """Load a Directory from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadDirectoryFromID", _args)
-        return Directory(_ctx)
-
-    def load_engine_cache_entry_from_id(self, id: Type) -> EngineCacheEntry:
-        """Load a EngineCacheEntry from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheEntryFromID", _args)
-        return EngineCacheEntry(_ctx)
-
-    def load_engine_cache_entry_set_from_id(self, id: Type) -> EngineCacheEntrySet:
-        """Load a EngineCacheEntrySet from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheEntrySetFromID", _args)
-        return EngineCacheEntrySet(_ctx)
-
-    def load_engine_cache_from_id(self, id: Type) -> EngineCache:
-        """Load a EngineCache from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheFromID", _args)
-        return EngineCache(_ctx)
-
-    def load_engine_from_id(self, id: Type) -> Engine:
-        """Load a Engine from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineFromID", _args)
-        return Engine(_ctx)
-
-    def load_enum_type_def_from_id(self, id: Type) -> EnumTypeDef:
-        """Load a EnumTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnumTypeDefFromID", _args)
-        return EnumTypeDef(_ctx)
-
-    def load_enum_value_type_def_from_id(self, id: Type) -> EnumValueTypeDef:
-        """Load a EnumValueTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnumValueTypeDefFromID", _args)
-        return EnumValueTypeDef(_ctx)
-
-    def load_env_file_from_id(self, id: Type) -> EnvFile:
-        """Load a EnvFile from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvFileFromID", _args)
-        return EnvFile(_ctx)
-
-    def load_env_from_id(self, id: Type) -> Env:
-        """Load a Env from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvFromID", _args)
-        return Env(_ctx)
-
-    def load_env_variable_from_id(self, id: Type) -> EnvVariable:
-        """Load a EnvVariable from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvVariableFromID", _args)
-        return EnvVariable(_ctx)
-
-    def load_error_from_id(self, id: Type) -> Error:
-        """Load a Error from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadErrorFromID", _args)
-        return Error(_ctx)
-
-    def load_error_value_from_id(self, id: Type) -> ErrorValue:
-        """Load a ErrorValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadErrorValueFromID", _args)
-        return ErrorValue(_ctx)
-
-    def load_field_type_def_from_id(self, id: Type) -> FieldTypeDef:
-        """Load a FieldTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFieldTypeDefFromID", _args)
-        return FieldTypeDef(_ctx)
-
-    def load_file_from_id(self, id: Type) -> File:
-        """Load a File from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFileFromID", _args)
-        return File(_ctx)
-
-    def load_function_arg_from_id(self, id: Type) -> FunctionArg:
-        """Load a FunctionArg from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionArgFromID", _args)
-        return FunctionArg(_ctx)
-
-    def load_function_call_arg_value_from_id(self, id: Type) -> FunctionCallArgValue:
-        """Load a FunctionCallArgValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionCallArgValueFromID", _args)
-        return FunctionCallArgValue(_ctx)
-
-    def load_function_call_from_id(self, id: Type) -> FunctionCall:
-        """Load a FunctionCall from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionCallFromID", _args)
-        return FunctionCall(_ctx)
-
-    def load_function_from_id(self, id: Type) -> Function:
-        """Load a Function from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionFromID", _args)
-        return Function(_ctx)
-
-    def load_generated_code_from_id(self, id: Type) -> GeneratedCode:
-        """Load a GeneratedCode from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratedCodeFromID", _args)
-        return GeneratedCode(_ctx)
-
-    def load_generator_from_id(self, id: Type) -> Generator:
-        """Load a Generator from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratorFromID", _args)
-        return Generator(_ctx)
-
-    def load_generator_group_from_id(self, id: Type) -> GeneratorGroup:
-        """Load a GeneratorGroup from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratorGroupFromID", _args)
-        return GeneratorGroup(_ctx)
-
-    def load_git_ref_from_id(self, id: Type) -> GitRef:
-        """Load a GitRef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGitRefFromID", _args)
-        return GitRef(_ctx)
-
-    def load_git_repository_from_id(self, id: Type) -> GitRepository:
-        """Load a GitRepository from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGitRepositoryFromID", _args)
-        return GitRepository(_ctx)
-
-    def load_healthcheck_config_from_id(self, id: Type) -> HealthcheckConfig:
-        """Load a HealthcheckConfig from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadHealthcheckConfigFromID", _args)
-        return HealthcheckConfig(_ctx)
-
-    def load_host_from_id(self, id: Type) -> Host:
-        """Load a Host from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadHostFromID", _args)
-        return Host(_ctx)
-
-    def load_input_type_def_from_id(self, id: Type) -> InputTypeDef:
-        """Load a InputTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadInputTypeDefFromID", _args)
-        return InputTypeDef(_ctx)
-
-    def load_interface_type_def_from_id(self, id: Type) -> InterfaceTypeDef:
-        """Load a InterfaceTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadInterfaceTypeDefFromID", _args)
-        return InterfaceTypeDef(_ctx)
-
-    def load_json_value_from_id(self, id: Type) -> JSONValue:
-        """Load a JSONValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadJSONValueFromID", _args)
-        return JSONValue(_ctx)
-
-    def load_llm_from_id(self, id: Type) -> LLM:
-        """Load a LLM from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMFromID", _args)
-        return LLM(_ctx)
-
-    def load_llm_token_usage_from_id(self, id: Type) -> LLMTokenUsage:
-        """Load a LLMTokenUsage from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMTokenUsageFromID", _args)
-        return LLMTokenUsage(_ctx)
-
-    def load_label_from_id(self, id: Type) -> Label:
-        """Load a Label from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLabelFromID", _args)
-        return Label(_ctx)
-
-    def load_list_type_def_from_id(self, id: Type) -> ListTypeDef:
-        """Load a ListTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadListTypeDefFromID", _args)
-        return ListTypeDef(_ctx)
-
-    def load_module_config_client_from_id(self, id: Type) -> ModuleConfigClient:
-        """Load a ModuleConfigClient from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleConfigClientFromID", _args)
-        return ModuleConfigClient(_ctx)
-
-    def load_module_from_id(self, id: Type) -> Module:
-        """Load a Module from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleFromID", _args)
-        return Module(_ctx)
-
-    def load_module_source_from_id(self, id: Type) -> ModuleSource:
-        """Load a ModuleSource from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleSourceFromID", _args)
-        return ModuleSource(_ctx)
-
-    def load_object_type_def_from_id(self, id: Type) -> ObjectTypeDef:
-        """Load a ObjectTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadObjectTypeDefFromID", _args)
-        return ObjectTypeDef(_ctx)
-
-    def load_port_from_id(self, id: Type) -> Port:
-        """Load a Port from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadPortFromID", _args)
-        return Port(_ctx)
-
-    def load_query_from_id(self, id: Type) -> Self:
-        """Load a Query from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadQueryFromID", _args)
-        return Query(_ctx)
-
-    def load_sdk_config_from_id(self, id: Type) -> "SDKConfig":
-        """Load a SDKConfig from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSDKConfigFromID", _args)
-        return SDKConfig(_ctx)
-
-    def load_scalar_type_def_from_id(self, id: Type) -> "ScalarTypeDef":
-        """Load a ScalarTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadScalarTypeDefFromID", _args)
-        return ScalarTypeDef(_ctx)
-
-    def load_search_result_from_id(self, id: Type) -> "SearchResult":
-        """Load a SearchResult from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSearchResultFromID", _args)
-        return SearchResult(_ctx)
-
-    def load_search_submatch_from_id(self, id: Type) -> "SearchSubmatch":
-        """Load a SearchSubmatch from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSearchSubmatchFromID", _args)
-        return SearchSubmatch(_ctx)
-
-    def load_secret_from_id(self, id: Type) -> "Secret":
-        """Load a Secret from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSecretFromID", _args)
-        return Secret(_ctx)
-
-    def load_service_from_id(self, id: Type) -> "Service":
-        """Load a Service from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadServiceFromID", _args)
-        return Service(_ctx)
-
-    def load_socket_from_id(self, id: Type) -> "Socket":
-        """Load a Socket from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSocketFromID", _args)
-        return Socket(_ctx)
-
-    def load_source_map_from_id(self, id: Type) -> "SourceMap":
-        """Load a SourceMap from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSourceMapFromID", _args)
-        return SourceMap(_ctx)
-
-    def load_stat_from_id(self, id: Type) -> "Stat":
-        """Load a Stat from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadStatFromID", _args)
-        return Stat(_ctx)
-
-    def load_terminal_from_id(self, id: Type) -> "Terminal":
-        """Load a Terminal from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadTerminalFromID", _args)
-        return Terminal(_ctx)
-
-    def load_type_def_from_id(self, id: Type) -> "TypeDef":
-        """Load a TypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadTypeDefFromID", _args)
-        return TypeDef(_ctx)
-
-    def load_workspace_from_id(self, id: Type) -> "Workspace":
-        """Load a Workspace from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadWorkspaceFromID", _args)
-        return Workspace(_ctx)
-
     def module(self) -> Module:
         """Create a new module."""
         _args: list[Arg] = []
@@ -12631,6 +12200,14 @@ class Query(Root):
         ]
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
+
+    def node(self, id: Type) -> Node:
+        """Load any object by its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("node", _args)
+        return _NodeClient(_ctx)
 
     def secret(
         self,
@@ -12733,13 +12310,6 @@ class Query(Root):
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
-
-    def with_(self, cb: Callable[["Query"], "Query"]) -> "Query":
-        """Call the provided callable with current Query.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
 
 
 @typecheck
@@ -14512,6 +14082,7 @@ __all__ = [
     "ModuleSourceExperimentalFeature",
     "ModuleSourceKind",
     "NetworkProtocol",
+    "Node",
     "ObjectTypeDef",
     "PipelineLabel",
     "Platform",
