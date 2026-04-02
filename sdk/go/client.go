@@ -8,7 +8,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"dagger.io/dagger/engineconn"
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 // Client is the Dagger Engine Client

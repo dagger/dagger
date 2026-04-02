@@ -16,14 +16,13 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/querybuilder"
+
 {{ if IsModuleCode }}
-	"{{.UtilityPkgImport}}/querybuilder"
-	
 	telemetry "github.com/dagger/otel-go"
 {{ end }}
 
 {{- if IsStandaloneClient }}
-	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger"
 {{ end }}
 )

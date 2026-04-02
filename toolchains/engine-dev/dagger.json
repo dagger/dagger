@@ -6,7 +6,6 @@
   },
   "include": [
     "../../engine/distconsts/**/*",
-    "../../sdk/go/querybuilder/**/*",
     "../../sdk/typescript/runtime/**/*",
     "../../go.mod",
     "../../go.sum",

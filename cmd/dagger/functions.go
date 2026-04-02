@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"

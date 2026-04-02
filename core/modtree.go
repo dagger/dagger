@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"

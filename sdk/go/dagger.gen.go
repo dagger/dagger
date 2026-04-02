@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"

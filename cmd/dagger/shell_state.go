@@ -13,7 +13,7 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 	"github.com/dagger/dagger/engine/slog"
 	"golang.org/x/sync/errgroup"
 	"mvdan.cc/sh/v3/expand"
