@@ -75,8 +75,8 @@ referenced in the ID before loading. `node(id:)` was missing this.
 | Test | Status |
 |------|--------|
 | `TestInterface/TestIfaceBasic/go` | ✅ PASS (all 32 subtests) |
-| `TestInterface/TestIfaceBasic/typescript` | ❓ Not yet checked |
-| `TestInterface/TestIfaceBasic/python` | ❓ Not yet checked |
+| `TestInterface/TestIfaceBasic/typescript` | ✅ PASS (all subtests) |
+| `TestInterface/TestIfaceBasic/python` | ✅ PASS (all subtests) |
 | Other `TestInterface/` subtests | ❓ Not yet checked |
 
 ## Key files

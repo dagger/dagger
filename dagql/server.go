@@ -19,6 +19,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vektah/gqlparser/v2/validator"
+	validatorcore "github.com/vektah/gqlparser/v2/validator/core"
 	"github.com/vektah/gqlparser/v2/validator/rules"
 	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
@@ -262,6 +263,15 @@ func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
 		// HACK: this rule is disabled because PHP modules <=v0.15.2 query
 		// inputArgs incorrectly.
 		validationRules.RemoveRule(rules.ScalarLeafsRule.Name)
+
+		// Replace PossibleFragmentSpreads with a version that handles
+		// interface-implements-interface per the GraphQL spec.  The
+		// default rule only checks possibleTypes overlap, which fails
+		// when an interface has no concrete implementors in the current
+		// schema view (e.g. `... on TestCustomIface` inside `node(id:)`
+		// when the concrete types are in other modules).  Per the spec,
+		// `... on A` is valid in a `B` context when A implements B.
+		validationRules.ReplaceRule(rules.PossibleFragmentSpreadsRule.Name, possibleFragmentSpreadsRule)
 
 		return validationRules
 	})
@@ -627,32 +637,6 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
 			def := iface.Definition(view)
 			schema.AddTypes(def)
-			schema.AddPossibleType(def.Name, def)
-			for _, ifaceName := range def.Interfaces {
-				schema.AddPossibleType(ifaceName, def)
-			}
-
-			// Generate a synthetic concrete Object type for each
-			// module-defined interface that has no concrete implementors
-			// in the current schema view. This ensures that
-			// PossibleFragmentSpreads validation passes in all GraphQL
-			// implementations (not just gqlparser): `... on SomeIface`
-			// is valid when the parent is `Node` because the synthetic
-			// type appears in both possibleTypes sets.
-			if _, hasImplementors := schema.PossibleTypes[def.Name]; !hasImplementors || !hasObjectType(schema.PossibleTypes[def.Name]) {
-				synth := &ast.Definition{
-					Kind:       ast.Object,
-					Name:       "_" + def.Name + "Implementor",
-					Interfaces: append([]string{def.Name}, def.Interfaces...),
-					Fields:     def.Fields,
-				}
-				schema.AddTypes(synth)
-				schema.AddPossibleType(synth.Name, synth)
-				schema.AddPossibleType(def.Name, synth)
-				for _, ifaceName := range def.Interfaces {
-					schema.AddPossibleType(ifaceName, synth)
-				}
-			}
 		})
 		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
 			def := definition(ast.Scalar, t, view)
@@ -678,17 +662,6 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 }
 
 // SchemaDigest returns the digest of the current schema.
-// hasObjectType returns true if the list of definitions contains at least one
-// Object-kind definition (i.e. a concrete type, not an interface).
-func hasObjectType(defs []*ast.Definition) bool {
-	for _, d := range defs {
-		if d.Kind == ast.Object {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *Server) SchemaDigest() digest.Digest {
 	s.Schema() // ensure it's built
 	s.schemaLock.Lock()
@@ -1658,4 +1631,96 @@ func collectLiteralArgs(obj any) ([]*call.Argument, error) {
 		))
 	}
 	return args, nil
+}
+
+// possibleFragmentSpreadsRule is a replacement for gqlparser's
+// PossibleFragmentSpreadsRule that handles interface-implements-interface
+// per the GraphQL spec (September 2025, §5.5.2.3).
+//
+// The default rule only checks possibleTypes overlap. When an interface
+// has no concrete implementors in the current schema view (common with
+// module-scoped schemas), the overlap is empty and the rule rejects
+// valid spreads like `... on CustomIface` inside `node(id:)`.
+//
+// Per the spec, `... on A` is valid in a `B` context when interface A
+// declares `implements B`, because any future concrete type implementing
+// A must also implement B.
+func possibleFragmentSpreadsRule(observers *validatorcore.Events, addError validatorcore.AddErrFunc) {
+	validate := func(walker *validatorcore.Walker, parentDef *ast.Definition, fragmentName string, emitError func()) {
+		if parentDef == nil {
+			return
+		}
+
+		fragmentDef := walker.Schema.Types[fragmentName]
+		if fragmentDef == nil || !fragmentDef.IsCompositeType() {
+			return
+		}
+
+		// Per the spec: if the fragment type is an interface that
+		// implements the parent interface, the spread is always valid.
+		if parentDef.Kind == ast.Interface && fragmentDef.Kind == ast.Interface {
+			for _, iface := range fragmentDef.Interfaces {
+				if iface == parentDef.Name {
+					return
+				}
+			}
+		}
+
+		// Fall back to the standard possibleTypes overlap check.
+		var parentDefs []*ast.Definition
+		switch parentDef.Kind {
+		case ast.Object:
+			parentDefs = []*ast.Definition{parentDef}
+		case ast.Interface, ast.Union:
+			parentDefs = walker.Schema.GetPossibleTypes(parentDef)
+		default:
+			return
+		}
+
+		fragmentDefs := walker.Schema.GetPossibleTypes(fragmentDef)
+		for _, fd := range fragmentDefs {
+			for _, pd := range parentDefs {
+				if pd.Name == fd.Name {
+					return
+				}
+			}
+		}
+
+		emitError()
+	}
+
+	observers.OnInlineFragment(func(walker *validatorcore.Walker, inlineFragment *ast.InlineFragment) {
+		validate(walker, inlineFragment.ObjectDefinition, inlineFragment.TypeCondition, func() {
+			addError(
+				validatorcore.Message(
+					`Fragment cannot be spread here as objects of type "%s" can never be of type "%s".`,
+					inlineFragment.ObjectDefinition.Name,
+					inlineFragment.TypeCondition,
+				),
+				validatorcore.At(inlineFragment.Position),
+			)
+		})
+	})
+
+	observers.OnFragmentSpread(func(walker *validatorcore.Walker, fragmentSpread *ast.FragmentSpread) {
+		if fragmentSpread.Definition == nil {
+			return
+		}
+		validate(
+			walker,
+			fragmentSpread.ObjectDefinition,
+			fragmentSpread.Definition.TypeCondition,
+			func() {
+				addError(
+					validatorcore.Message(
+						`Fragment "%s" cannot be spread here as objects of type "%s" can never be of type "%s".`,
+						fragmentSpread.Name,
+						fragmentSpread.ObjectDefinition.Name,
+						fragmentSpread.Definition.TypeCondition,
+					),
+					validatorcore.At(fragmentSpread.Position),
+				)
+			},
+		)
+	})
 }

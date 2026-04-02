@@ -81,10 +81,19 @@ class ClientSession(ResourceManager):
 
         client = GraphQLClient(
             transport=transport,
+            # Fetch the schema for DSL query building, but don't
+            # validate queries client-side. The server validates with
+            # a corrected PossibleFragmentSpreads rule that handles
+            # interface-implements-interface; the graphql-core library
+            # used here does not, causing false rejections for
+            # `... on SomeIface` inside `node(id:)` when the interface
+            # has no concrete implementors in this schema view.
             fetch_schema_from_transport=True,
             # We're using the timeout from the httpx transport.
             execute_timeout=None,
         )
+        # Disable client-side query validation.  See comment above.
+        client.validate = lambda request: None  # type: ignore[method-assign]
 
         self.client = retrying_client(client, cfg.retry) if cfg.retry else client
         self._session: AsyncClientSession | None = None
