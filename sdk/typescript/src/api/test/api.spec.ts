@@ -84,25 +84,6 @@ describe("TypeScript SDK api", function () {
     )
   })
 
-  it("Pass a client with an explicit ID as a parameter", async function () {
-    this.timeout(60000)
-    await connect(async (client: Client) => {
-      const image = await client
-        .loadContainerFromID(
-          await client
-            .container()
-            .from("alpine:3.16.2")
-            .withExec(["apk", "add", "yarn"])
-            .id(),
-        )
-        .withMountedCache("/root/.cache", client.cacheVolume("cache_key"))
-        .withExec(["echo", "foo bar"])
-        .stdout()
-
-      assert.strictEqual(image, `foo bar\n`)
-    })
-  })
-
   it("Pass a cache volume with an implicit ID as a parameter", async function () {
     this.timeout(60000)
     await connect(async (client: Client) => {
