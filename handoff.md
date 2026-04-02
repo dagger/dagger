@@ -92,6 +92,39 @@ The Python runtime used the removed `loadFooFromID` fields.
 - **`sdk/typescript/src/module/executor.ts`** — Interface loading uses
   `selectNode`.
 
+### Commit `02658a6d6` — fix Go SDK library loadFooFromID → SelectNode
+
+The Go SDK library (`sdk/go/dagger.gen.go`) still used
+`q.Root().Select("loadFooFromID").Arg("id", id)` in `Sync()` methods and
+array field loaders. These references to the removed `loadFooFromID` schema
+fields caused runtime errors (HTTP 422: `Cannot query field
+"loadContainerFromID" on type "Query"`) in any test that called `.Sync(ctx)`
+on a container/directory/etc.
+
+Used sed to replace all 44 occurrences with
+`SelectNode(q.Root(), id, "Foo")`.
+
+### Commit `9c16a4764` — regenerate all SDK clients and docs
+
+Ran `dagger generate` for all SDK targets (Go, Python, TypeScript, docs).
+The `loadFooFromID` fields are removed from the schema, so the generated
+clients now use `SelectNode`/`selectNode`/`select_id` for ID loading.
+
+### Commit `ce46b1dbb` — fix CLI LoadFooFromID → node(id:)
+
+The CLI code (`cmd/dagger/`) had four references to removed `LoadFooFromID`
+methods:
+- `functions.go`: `LoadChangesetFromID`, `LoadLLMFromID`
+- `llm.go`: `LoadEnvFromID`, `loadBindingFromID`, `loadEnvFromID`
+  (query builder), `load+typeName+FromID` (shell state)
+- `module_inspect.go`: `LoadModuleSourceFromID`
+
+Fixed by:
+1. Using `(&Type{}).WithGraphQLQuery(dagger.SelectNode(...))` for lazy loading
+2. Converting raw query builder calls to `node(id:)` with `InlineFragment()`
+3. Adding `InlineFragment` field to `FunctionCall` and `ShellState.QueryBuilder`
+   so the shell can emit `node(id:) { ... on Foo { ... } }` queries
+
 ### Commit `582ede9b1` — fix PossibleFragmentSpreads for interface-implements-interface
 
 The GraphQL spec (§5.5.2.3) says `... on A` is valid in a `B` context when
@@ -115,12 +148,14 @@ modules).
 | `TestInterface/TestIfaceBasic/go` | ✅ PASS (all 32 subtests) |
 | `TestInterface/TestIfaceBasic/typescript` | ✅ PASS (all subtests) |
 | `TestInterface/TestIfaceBasic/python` | ✅ PASS (all subtests) |
+| `TestInterface/TestIfaceGoDanglingInterface` | ✅ PASS |
 | Other `TestInterface/` subtests | ❓ Not yet checked |
 
 ## Key files
 
 | Area | Files |
 |------|-------|
+| CLI — functions/llm/shell | `cmd/dagger/functions.go`, `cmd/dagger/llm.go`, `cmd/dagger/shell_state.go`, `cmd/dagger/module_inspect.go` |
 | Go codegen — module interface impl | `cmd/codegen/generator/go/templates/module_interfaces.go` |
 | Go codegen — template functions | `cmd/codegen/generator/go/templates/functions.go` |
 | Go codegen — interface template | `cmd/codegen/generator/go/templates/src/_types/interface.go.tmpl` |
