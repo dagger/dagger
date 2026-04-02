@@ -28,22 +28,26 @@ Workspace plumbing    Lockfile                │
      (done)                │                  │
         │                  ▼                  │
     Artifacts    Workspace configuration      │
-        │                                     │
-        ▼                                     │
- Execution Plans                              │
+        ├──────────────────────┐              │
+        ▼                      ▼              │
+ Execution Plans         Provenance           │
         │                                     │
         ▼                                     │
   Collections ────────────────────────────────┤
-        │                                     │
-        ▼                                     ▼
-    Provenance                           Stdlib stage 3
+                                              ▼
+                                         Stdlib stage 3
 ```
 
-**Main track:** Workspace plumbing → Artifacts → Execution Plans → Collections
-→ Provenance. Artifacts establishes the general selector model first:
-module-level dimensions plus synthesized non-collection object-field selector
-dimensions. Collections plug in later as keyed dimension providers and
-batch/subset semantics on top of that base.
+**Main track:** Workspace plumbing → Artifacts. From there the design splits:
+- **Selector/orchestration track** — Artifacts → Execution Plans → Collections
+- **Provenance track** — Artifacts → Provenance
+
+Artifacts establishes the general selector model first: module-level
+dimensions plus synthesized non-collection object-field selector dimensions.
+Collections plug in later as keyed dimension providers and batch/subset
+semantics on top of that base. Provenance also builds on Artifacts, but it is
+orthogonal to Execution Plans and Collections: it adds path/git filtering over
+effective artifact provenance rather than new plan or collection semantics.
 
 **Config track:** Lockfile → Workspace configuration. Independent of the main
 track.
