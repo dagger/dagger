@@ -15298,6 +15298,13 @@ type Loadable[T any] interface {
 	WithGraphQLQuery(*querybuilder.Selection) T
 }
 
+// Ref returns a lazy reference to a node by its ID without making a
+// network call. The returned value can be used to chain further queries.
+func Ref[T Loadable[T]](c *Client, id ID) T {
+	var zero T
+	return zero.WithGraphQLQuery(SelectNode(c.query, id, zero.XXX_GraphQLType()))
+}
+
 // Load loads a node by its ID with type safety. It verifies that the
 // node exists and matches the expected type before returning.
 //

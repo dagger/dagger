@@ -248,7 +248,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 			SourceRoot:   dep.Source.AsString,
 			SourceDigest: dep.Source.Digest,
 			// Note: this should preserve the correct pin if it exists
-			Source: (&dagger.ModuleSource{}).WithGraphQLQuery(dagger.SelectNode(dag.GraphQLSelection(), dep.Source.ID, "ModuleSource")),
+			Source: dagger.Ref[*dagger.ModuleSource](dag, dep.Source.ID),
 		})
 	}
 

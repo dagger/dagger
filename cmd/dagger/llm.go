@@ -515,7 +515,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 	if err := syncedEnvQ.Select("id").Bind(&envID).Execute(ctx); err != nil {
 		return err
 	}
-	s.updateLLMAndAgentVar(s.llm.WithEnv((&dagger.Env{}).WithGraphQLQuery(dagger.SelectNode(s.dag.GraphQLSelection(), envID, "Env"))))
+	s.updateLLMAndAgentVar(s.llm.WithEnv(dagger.Ref[*dagger.Env](s.dag, envID)))
 	return nil
 }
 
