@@ -51,6 +51,9 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	srv.InstallScalar(core.JSON{})
 	srv.InstallScalar(core.Void{})
 
+	dagql.Fields[*core.RemoteGitMirror]{}.Install(srv)
+	dagql.Fields[*core.ClientFilesyncMirror]{}.Install(srv)
+
 	core.NetworkProtocols.Install(srv)
 	core.ImageLayerCompressions.Install(srv)
 	core.ImageMediaTypesEnum.Install(srv)
