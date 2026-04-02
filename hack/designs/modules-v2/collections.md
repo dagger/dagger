@@ -606,16 +606,6 @@ Important:
 - final implementation should target the Artifacts/Plans stack, not revive the
   old `CheckGroup` / `GeneratorGroup` / `ModTree` integration path
 
-### Pull Request Description
-
-```text
-This PR implements the Collections design unit. It adds collection metadata
-and validation, public schema projection for collection and batch types,
-module-runtime and generated-client support for authored collections,
-collection-driven Artifacts dimensions, and collection-aware filtering and
-batch behavior in `dagger list`, `dagger check`, and `dagger generate`.
-```
-
 Collections affect several existing implementation areas.
 
 ### Engine

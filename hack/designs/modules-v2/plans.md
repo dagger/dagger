@@ -37,18 +37,6 @@ Deferred to [collections.md](./collections.md):
 - collection-provided dimensions
 - collection-aware batch lowering and shadowing
 
-### Pull Request Description
-
-```text
-This PR implements the Execution Plans design unit. It adds `Action`, `Plan`,
-`Artifacts.actions`, `Artifact.actions`, `Artifacts.action`, `Artifact.action`,
-`Artifacts.check`, and `Artifacts.generate`; makes `dagger list` public;
-migrates `dagger check` and `dagger generate` onto the Artifacts/Plans stack;
-publicly rolls out the selector surfaces defined in Artifacts, including the
-first non-collection typed filters; and removes the old `ModTree` /
-`CheckGroup` / `GeneratorGroup` path.
-```
-
 ## Schema
 
 ```graphql

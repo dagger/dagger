@@ -752,16 +752,6 @@ Deferred to [plans.md](./plans.md):
 - verb execution over selected artifact scopes
 - removal of the old check / generate execution path
 
-### Pull Request Description
-
-```text
-This PR implements the Artifacts design unit. It adds `Workspace.artifacts`,
-`Artifacts`, `Artifact`, `ArtifactDimension`, and `FieldValue`, together with
-selector synthesis, scope-relative coordinate rows, and verb-projected selector
-scopes. It lands the selector model itself, but defers public discovery and
-verb execution to Execution Plans.
-```
-
 ## Locked Decisions
 
 - **`--mod` and `--module` coexist with distinct long forms.** `--mod` is the
