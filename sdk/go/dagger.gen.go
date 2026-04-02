@@ -317,6 +317,9 @@ type TypeDefID string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
+// The `VolumeID` scalar type represents an identifier for an object of type Volume.
+type VolumeID string
+
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 type WorkspaceID string
 
@@ -800,6 +803,15 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Retrieve the binding value, as type Volume
+func (r *Binding) AsVolume() *Volume {
+	q := r.query.Select("asVolume")
+
+	return &Volume{
+		query: q,
+	}
 }
 
 // Retrieve the binding value, as type Workspace
@@ -2955,6 +2967,17 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 	}
 }
 
+// Retrieves this container plus a host directory mounted at the given path.
+func (r *Container) WithMountedHostDirectory(source string, path string) *Container {
+	q := r.query.Select("withMountedHostDirectory")
+	q = q.Arg("source", source)
+	q = q.Arg("path", path)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithMountedSecretOpts contains options for Container.WithMountedSecret
 type ContainerWithMountedSecretOpts struct {
 	// A user:group to set for the mounted secret.
@@ -3183,6 +3206,18 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 func (r *Container) WithUser(name string) *Container {
 	q := r.query.Select("withUser")
 	q = q.Arg("name", name)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieves this container plus an engine-managed volume mounted at the given path.
+func (r *Container) WithVolumeMount(path string, volume *Volume) *Container {
+	assertNotNil("volume", volume)
+	q := r.query.Select("withVolumeMount")
+	q = q.Arg("path", path)
+	q = q.Arg("volume", volume)
 
 	return &Container{
 		query: q,
@@ -6128,6 +6163,30 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 // Declares a desired string output binding
 func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Volume in the environment
+func (r *Env) WithVolumeInput(name string, value *Volume, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withVolumeInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Volume output to be assigned in the environment
+func (r *Env) WithVolumeOutput(name string, description string) *Env {
+	q := r.query.Select("withVolumeOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -12650,6 +12709,16 @@ func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	}
 }
 
+// Load a Volume from its ID.
+func (r *Client) LoadVolumeFromID(id VolumeID) *Volume {
+	q := r.query.Select("loadVolumeFromID")
+	q = q.Arg("id", id)
+
+	return &Volume{
+		query: q,
+	}
+}
+
 // Load a Workspace from its ID.
 func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	q := r.query.Select("loadWorkspaceFromID")
@@ -12756,6 +12825,32 @@ func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	q = q.Arg("column", column)
 
 	return &SourceMap{
+		query: q,
+	}
+}
+
+// SshfsVolumeOpts contains options for Client.SshfsVolume
+type SshfsVolumeOpts struct {
+	// A service which must be started before the SSHFS volume is mounted.
+	ExperimentalServiceHost *Service
+}
+
+// Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
+func (r *Client) SshfsVolume(endpoint string, privateKey *Secret, publicKey *Secret, opts ...SshfsVolumeOpts) *Volume {
+	assertNotNil("privateKey", privateKey)
+	assertNotNil("publicKey", publicKey)
+	q := r.query.Select("sshfsVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `experimentalServiceHost` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
+		}
+	}
+	q = q.Arg("endpoint", endpoint)
+	q = q.Arg("privateKey", privateKey)
+	q = q.Arg("publicKey", publicKey)
+
+	return &Volume{
 		query: q,
 	}
 }
@@ -14318,6 +14413,59 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	return &TypeDef{
 		query: q,
 	}
+}
+
+// A reference to an engine-managed volume.
+type Volume struct {
+	query *querybuilder.Selection
+
+	id *VolumeID
+}
+
+func (r *Volume) WithGraphQLQuery(q *querybuilder.Selection) *Volume {
+	return &Volume{
+		query: q,
+	}
+}
+
+// A unique identifier for this Volume.
+func (r *Volume) ID(ctx context.Context) (VolumeID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response VolumeID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Volume) XXX_GraphQLType() string {
+	return "Volume"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Volume) XXX_GraphQLIDType() string {
+	return "VolumeID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Volume) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Volume) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // A Dagger workspace detected from the current working directory.
