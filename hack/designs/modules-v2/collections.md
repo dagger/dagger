@@ -473,9 +473,9 @@ Each flag points to `dagger list` for discovery:
 
 ```
 $ dagger check --help
-  --module=<name>       Filter by module (see: dagger list modules)
-  --go-module=<name>    Filter by go module (see: dagger list go-modules)
-  --go-test=<name>      Filter by go test (see: dagger list go-tests)
+  --module=<name>       Filter by module (see: dagger list module --check)
+  --go-module=<name>    Filter by go module (see: dagger list go-module --check)
+  --go-test=<name>      Filter by go test (see: dagger list go-test --check)
 ```
 
 Filter names are derived mechanically from item type names using Dagger's
@@ -511,15 +511,16 @@ Type renames are CLI-breaking for these generated filters.
 
 #### Listing and Discovery
 
-`dagger list` is a verb-independent exploration surface for discovering
-filter values:
+`dagger list` is the exploration surface for discovering filter values. It can
+also be projected through a verb when needed to match a verb-local selector
+scope:
 
 ```bash
 $ dagger list                      # available dimensions with key types
-$ dagger list modules              # workspace modules
-$ dagger list go-modules           # go modules
-$ dagger list go-tests             # all go tests
-$ dagger list go-tests \
+$ dagger list module               # workspace modules
+$ dagger list go-module --check    # go modules in check scope
+$ dagger list go-test --check      # all go tests in check scope
+$ dagger list go-test --check \
     --go-module=./myapp/app2       # go tests filtered by module
 ```
 

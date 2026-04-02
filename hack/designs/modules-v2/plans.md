@@ -110,7 +110,7 @@ adding appropriate ordering.
 workspace.artifacts
   .filterCheck
   .filterBy("module", ["go"])
-  .filterBy("platforms", ["linux", "darwin"])
+  .filterBy("platform", ["linux", "darwin"])
   .action("run")
   # → one Action targeting the selected platform artifacts
 ```
@@ -121,12 +121,12 @@ workspace.artifacts
 a1 = workspace.artifacts
        .filterCheck
        .filterBy("module", ["go"])
-       .filterBy("platforms", ["linux"])
+       .filterBy("platform", ["linux"])
        .action("run")
 a2 = workspace.artifacts
        .filterCheck
        .filterBy("module", ["go"])
-       .filterBy("platforms", ["darwin"])
+       .filterBy("platform", ["darwin"])
        .action("run")
 # → one Action per selected artifact
 ```
@@ -138,7 +138,7 @@ prepare = artifacts.filterBy("module", ["go"]).action("prepare")
 run     = artifacts
            .filterCheck
            .filterBy("module", ["go"])
-           .filterBy("platforms", ["linux"])
+           .filterBy("platform", ["linux"])
            .action("run")
            # run.after = [prepare.id]
 publish = artifacts.filterBy("module", ["go"]).action("publish")
@@ -154,7 +154,7 @@ Rendered as a visual DAG:
 ## Three Phases
 
 1. **Selection.** User provides filters
-   (`--module=go --platforms=linux`). The CLI translates these into
+   (`--module=go --platform=linux`). The CLI translates these into
    `filterBy` chains on `Artifacts`.
 2. **Compilation.** The engine compiles the filtered scope + verb into a Plan.
    All implicit config is materialized into concrete Actions with "after" edges.

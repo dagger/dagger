@@ -99,7 +99,8 @@ coordinate value.
 
 A dimension must be listed from the same `Artifacts` scope that surfaced it.
 Root discovery uses `workspace.artifacts`; verb-local discovery uses the
-corresponding verb scope such as `workspace.artifacts.filterCheck`.
+corresponding verb-projected `dagger list` scope such as
+`workspace.artifacts.filterCheck`.
 
 If a future CLI wants action-name filtering such as `--check=<name>`, that
 should layer on top of artifact selection and action discovery. It is not part
@@ -146,9 +147,8 @@ CLI discovery:
 $ dagger check --help
   --module=<name>       Filter by module
   --platform=<name>     Filter by platform
-  --list=<dimension>    List values in check scope
 
-$ dagger check --list=platform --module=go
+$ dagger list platform --check --module=go
 linux
 darwin
 
@@ -452,7 +452,6 @@ dimension.
 $ dagger check --help
   --module=<name>       Filter by module
   --platform=<name>     Filter by platform (when synthesized)
-  --list=<dimension>    List values in check scope
 ```
 
 The CLI generates flags from the current Artifacts scope's `dimensions` (for
@@ -468,8 +467,9 @@ selection.
 Collection-provided dimensions are an extension to this same model; see
 [collections.md](./collections.md).
 
-Root discovery uses `dagger list <dimension>`. Verb-local discovery uses
-`dagger <verb> --list=<dimension>`. Both are derived from `items()`, not from
+Root and verb-local discovery both use `dagger list`. Verb-local discovery
+projects `dagger list` through one verb first, for example `dagger list
+<dimension> --check`. Value listing is derived from `items()`, not from
 `dimensions()`:
 
 1. call `filterBy("<dimension>").items()`
@@ -482,7 +482,7 @@ artifact set.
 The important rule is scope matching: if the dimension came from
 `workspace.artifacts.filterCheck.dimensions`, value listing must query
 `workspace.artifacts.filterCheck.filterBy("<dimension>").items()`, not the root
-scope. `dagger check --list=<dimension>` is the CLI surface for that scope.
+scope. `dagger list <dimension> --check` is the CLI surface for that scope.
 
 Implementation sketch:
 
@@ -498,6 +498,9 @@ values := Distinct(NonNil(Map(rows, func(a Artifact) string {
 ```
 dagger list                → workspace.artifacts.dimensions
 dagger list --help         → workspace.artifacts.dimensions
+dagger list --check        → workspace.artifacts
+                               .filterCheck
+                               .dimensions
 dagger list module         → workspace.artifacts
                                .filterBy("module")
                                .items
@@ -506,7 +509,7 @@ dagger list platform       → workspace.artifacts
                                .filterBy("platform")
                                .items
                                # then print distinct coordinate("platform")
-dagger check --list=platform
+dagger list platform --check
   --module=go              → workspace.artifacts
                                .filterCheck
                                .filterBy("module", ["go"])
@@ -747,7 +750,7 @@ Pre-Collections, the initial public selector dimensions are not just `module`.
 Concretely:
 
 ```bash
-$ dagger check --list=platform --module=go
+$ dagger list platform --check --module=go
 linux
 darwin
 
@@ -773,7 +776,7 @@ aligned:
 - implement `dagger list <dimension>` by projecting one coordinate column out
   of `filterBy("<dimension>").items()` in the same scope that exposed the
   dimension
-- expose verb-local value discovery as `dagger <verb> --list=<dimension>`
+- expose verb-local value discovery as verb-projected `dagger list`
 - migrate `dagger check` to `workspace.artifacts.check.run`
 - expose `--module`, any synthesized object-field filters, and `--plan`
 - expose `dagger list` over artifact dimensions
