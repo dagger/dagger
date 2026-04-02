@@ -112,6 +112,11 @@ func runServices(ctx context.Context, upGroup *dagger.UpGroup, _ *cobra.Command)
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+	// Run blocks until context cancellation (Ctrl+C). Treat that as a clean
+	// shutdown rather than surfacing a cancellation error to the user.
 	_, err := upGroup.Run().ID(ctx)
+	if ctx.Err() != nil {
+		return nil
+	}
 	return err
 }
