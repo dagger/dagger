@@ -65,6 +65,29 @@ func (WorkspaceSuite) TestCurrentWorkspaceInstall(ctx context.Context, t *testct
 		require.Contains(t, cfg.Modules, "dep")
 		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
 	})
+
+	t.Run("rejects name collisions without rewriting config", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
+
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
+source = "../existing"
+`)
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "install", "--name=dep", "./dep")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "dep" already exists in workspace config with source "../existing" (new source "../dep")`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Contains(t, cfg.Modules, "dep")
+		require.Equal(t, "../existing", cfg.Modules["dep"].Source)
+	})
 }
 
 func readInstalledWorkspaceConfig(t *testctx.T, workdir string) *workspacecfg.Config {

@@ -34,8 +34,16 @@ func (s *workspaceSchema) install(
 		}
 	}
 
-	if existing, ok := cfg.Modules[name]; ok && existing.Source == sourcePath {
-		return dagql.String(fmt.Sprintf("Module %q is already installed", name)), nil
+	if existing, ok := cfg.Modules[name]; ok {
+		if existing.Source == sourcePath {
+			return dagql.String(fmt.Sprintf("Module %q is already installed", name)), nil
+		}
+		return "", fmt.Errorf(
+			"module %q already exists in workspace config with source %q (new source %q)",
+			name,
+			existing.Source,
+			sourcePath,
+		)
 	}
 
 	bk, err := workspaceBuildkit(ctx)
