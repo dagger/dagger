@@ -3657,6 +3657,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::services",
+			"p": "Dagger/Env.html#method_services",
+			"d": "<p>Return all services defined by the installed modules</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withAddressInput",
 			"p": "Dagger/Env.html#method_withAddressInput",
 			"d": "<p>Create or update a binding of type Address in the environment</p>"

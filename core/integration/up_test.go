@@ -86,12 +86,46 @@ func (UpSuite) TestUpRunService(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	modGen = modGen.WithWorkdir("hello-with-services")
 
-	// Run a single service via "dagger up web" to verify it starts correctly.
+	// Run "dagger up web" in the background, wait for the tunneled port to
+	// respond, verify the nginx welcome page, then stop. A timeout ensures
+	// the test never hangs.
 	out, err := modGen.
-		With(daggerExec("up", "web")).
+		WithExec([]string{"sh", "-c", `
+			# Start dagger up in the background
+			dagger up web &
+			DAGGER_PID=$!
+
+			# Poll until the tunneled port responds (nginx on port 80)
+			TIMEOUT=120
+			ELAPSED=0
+			while ! wget -q --spider http://localhost:80 2>/dev/null; do
+				sleep 2
+				ELAPSED=$((ELAPSED + 2))
+				if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+					echo "TIMEOUT: service did not become ready within ${TIMEOUT}s"
+					kill $DAGGER_PID 2>/dev/null
+					exit 1
+				fi
+			done
+
+			# Verify the service responds with nginx content
+			BODY=$(wget -qO- http://localhost:80 2>/dev/null)
+			echo "$BODY" | grep -qi "nginx" || {
+				echo "FAIL: expected nginx response, got: $BODY"
+				kill $DAGGER_PID 2>/dev/null
+				exit 1
+			}
+
+			echo "OK: service responded"
+			kill $DAGGER_PID 2>/dev/null
+			wait $DAGGER_PID 2>/dev/null
+			exit 0
+		`}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
-	_ = out
+	require.Contains(t, out, "OK: service responded")
 }
 
 func (UpSuite) TestUpAsToolchain(ctx context.Context, t *testctx.T) {

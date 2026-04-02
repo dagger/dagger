@@ -5557,6 +5557,28 @@ class Env(Type):
         _ctx = self._select("outputs", _args)
         return await _ctx.execute_object_list(Binding)
 
+    def services(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> "UpGroup":
+        """Return all services defined by the installed modules
+
+        .. caution::
+            Experimental: Services API is highly experimental and may be
+            removed or replaced entirely.
+
+        Parameters
+        ----------
+        include:
+            Only include services matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("services", _args)
+        return UpGroup(_ctx)
+
     def with_address_input(
         self,
         name: str,

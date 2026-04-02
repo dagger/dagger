@@ -28,9 +28,9 @@ func (m *HelloWithServices) Redis() *dagger.Service {
 		AsService()
 }
 
-// Returns the names of all services visible from the current workspace.
+// Returns the names of all services visible from the current environment.
 func (m *HelloWithServices) CurrentEnvServices(ctx context.Context) ([]string, error) {
-	services, err := dag.CurrentWorkspace().Services().List(ctx)
+	services, err := dag.CurrentEnv().Services().List(ctx)
 	if err != nil {
 		return nil, err
 	}

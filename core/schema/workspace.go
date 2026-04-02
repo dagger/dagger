@@ -351,6 +351,7 @@ func (s *workspaceSchema) findUp(
 	return none, nil
 }
 
+//nolint:dupl // same collect-filter-exclude pattern as services(), different types
 func (s *workspaceSchema) checks(
 	ctx context.Context,
 	parent *core.Workspace,
@@ -462,6 +463,7 @@ func (s *workspaceSchema) generators(
 	return &core.GeneratorGroup{Generators: allGenerators}, nil
 }
 
+//nolint:dupl // same collect-filter-exclude pattern as checks(), different types
 func (s *workspaceSchema) services(
 	ctx context.Context,
 	parent *core.Workspace,

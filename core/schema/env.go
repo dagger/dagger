@@ -88,6 +88,12 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc("The name of the check to retrieve"),
 			),
+		dagql.Func("services", s.envServices).
+			Experimental("Services API is highly experimental and may be removed or replaced entirely.").
+			Doc("Return all services defined by the installed modules").
+			Args(
+				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
+			),
 	}.Install(srv)
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).
@@ -329,4 +335,16 @@ func (s environmentSchema) envCheck(ctx context.Context, env *core.Env, args str
 	Name string
 }) (*core.Check, error) {
 	return env.Check(ctx, args.Name)
+}
+
+func (s environmentSchema) envServices(ctx context.Context, env *core.Env, args struct {
+	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+}) (*core.UpGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+	return env.Services(ctx, include)
 }

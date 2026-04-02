@@ -1267,6 +1267,13 @@ export type EnvChecksOpts = {
   include?: string[]
 }
 
+export type EnvServicesOpts = {
+  /**
+   * Only include services matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type EnvFileGetOpts = {
   /**
    * Return the value exactly as written to the file. No quote removal or variable expansion
@@ -6531,6 +6538,16 @@ export class Env extends BaseClient {
     const response: Awaited<outputs[]> = await ctx.execute()
 
     return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+  }
+
+  /**
+   * Return all services defined by the installed modules
+   * @param opts.include Only include services matching the specified patterns
+   * @experimental
+   */
+  services = (opts?: EnvServicesOpts): UpGroup => {
+    const ctx = this._ctx.select("services", { ...opts })
+    return new UpGroup(ctx)
   }
 
   /**

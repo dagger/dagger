@@ -2355,6 +2355,12 @@ type Env {
   """Returns all declared output bindings for the environment"""
   outputs: [Binding!]!
 
+  """Return all services defined by the installed modules"""
+  services(
+    """Only include services matching the specified patterns"""
+    include: [String!]
+  ): UpGroup! @experimental(reason: "Services API is highly experimental and may be removed or replaced entirely.")
+
   """Create or update a binding of type Address in the environment"""
   withAddressInput(
     """The name of the binding"""

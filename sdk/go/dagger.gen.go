@@ -5498,6 +5498,29 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	return convert(response), nil
 }
 
+// EnvServicesOpts contains options for Env.Services
+type EnvServicesOpts struct {
+	// Only include services matching the specified patterns
+	Include []string
+}
+
+// Return all services defined by the installed modules
+//
+// Experimental: Services API is highly experimental and may be removed or replaced entirely.
+func (r *Env) Services(opts ...EnvServicesOpts) *UpGroup {
+	q := r.query.Select("services")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Address in the environment
 func (r *Env) WithAddressInput(name string, value *Address, description string) *Env {
 	assertNotNil("value", value)

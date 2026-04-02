@@ -15,6 +15,7 @@ import (
 
 const errorTypeName = "error"
 
+//nolint:gocyclo
 func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
 	spec := &funcTypeSpec{
 		name: fn.Name(),

@@ -53,6 +53,8 @@
             "**/broken*/**",
             "core/integration/testdata/checks/hello-with-checks/",
             "core/integration/testdata/generators/hello-with-generators/",
+            "core/integration/testdata/services/hello-with-services/",
+            "core/integration/testdata/services/port-collision/",
             "toolchains/release/testdata/module/"
           ]
         }

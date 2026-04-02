@@ -7187,6 +7187,12 @@ pub struct EnvChecksOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EnvServicesOpts<'a> {
+    /// Only include services matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
 impl Env {
     /// Return the check with the given name from the installed modules. Must match exactly one check.
     ///
@@ -7273,6 +7279,35 @@ impl Env {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// Return all services defined by the installed modules
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn services(&self) -> UpGroup {
+        let query = self.selection.select("services");
+        UpGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all services defined by the installed modules
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn services_opts<'a>(&self, opts: EnvServicesOpts<'a>) -> UpGroup {
+        let mut query = self.selection.select("services");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        UpGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Create or update a binding of type Address in the environment
     ///
