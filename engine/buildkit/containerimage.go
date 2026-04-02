@@ -78,6 +78,16 @@ func (c *Client) exportCommitOpts(
 		Compression: compression.New(compression.Default),
 	}
 	if forceCompression != "" {
+		switch forceCompression {
+		case "Gzip":
+			forceCompression = "gzip"
+		case "Zstd":
+			forceCompression = "zstd"
+		case "EStarGZ":
+			forceCompression = "estargz"
+		case "Uncompressed":
+			forceCompression = "uncompressed"
+		}
 		ctype, err := compression.Parse(forceCompression)
 		if err != nil {
 			return imageexport.CommitOpts{}, err

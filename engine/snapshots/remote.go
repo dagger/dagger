@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
@@ -14,6 +15,13 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 	if sr == nil {
 		return &ExportChain{}, nil
 	}
+
+	leaseCtx, done, err := leaseutil.WithLease(ctx, sr.cm.LeaseManager, leaseutil.MakeTemporary)
+	if err != nil {
+		return nil, err
+	}
+	defer done(context.WithoutCancel(leaseCtx))
+	ctx = leaseCtx
 
 	snapshotIDs := []string{}
 	for snapshotID := sr.SnapshotID(); snapshotID != ""; {
