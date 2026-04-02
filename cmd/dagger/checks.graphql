@@ -1,17 +1,21 @@
 query CheckGroupListDetails($id: ID!) {
   group: node(id: $id) {
-    list {
-      name
-      description
+    ... on CheckGroup {
+      list {
+        name
+        description
+      }
     }
   }
 }
 
 query CheckGroupRunStatuses($checkGroup: ID!) {
   checkGroup: node(id: $checkGroup) {
-    run {
-      list {
-        passed
+    ... on CheckGroup {
+      run {
+        list {
+          passed
+        }
       }
     }
   }

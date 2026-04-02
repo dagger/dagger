@@ -1,8 +1,10 @@
 query ModuleClientConfig($source: ID!) {
   source: node(id: $source) {
-    configClients {
-      generator
-      directory
+    ... on ModuleSource {
+      configClients {
+        generator
+        directory
+      }
     }
   }
 }

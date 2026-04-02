@@ -1,8 +1,10 @@
 query GeneratorGroupListDetails($id: ID!) {
   group: node(id: $id) {
-    list {
-      name
-      description
+    ... on GeneratorGroup {
+      list {
+        name
+        description
+      }
     }
   }
 }
