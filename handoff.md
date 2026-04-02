@@ -8,7 +8,7 @@ We're on the `interfaces` branch, implementing first-class interfaces, unified
 IDs, and the `node(id:)` Global Object Identification pattern. The SDK codegen
 (especially Go) needs to work with these engine changes.
 
-## What's been done (this session)
+## What's been done
 
 ### Commit `bd961043c` — querybuilder dependency for codegen
 
@@ -40,58 +40,44 @@ Three interrelated issues with module-defined interfaces and `node(id:)`:
    interface types. Fixed `possibleTypes()` to filter out interface-kind entries, and
    updated the template to use the function instead of the raw field.
 
-## Current blocker: `TestInterface/TestIfaceBasic/go`
+### Commit `a1640117c` — resolve node(id:) through module-aware loader
 
-**Error:** `Call: Query has no such field: "impl"`
+**Root cause:** The `node(id:)` resolver replayed ID call chains on the
+*current module's* dagql server. When the test module received an `ImplImpl`
+ID (from a sibling `impl` module it doesn't depend on), `LoadType` tried to
+resolve `Query.impl(...)` on the test module's server, which doesn't have
+the `impl` field → `Query has no such field: "impl"`.
 
-**What's happening:** The `test` module's runtime receives an `Impl` object (from
-the `impl` module) as a `TestCustomIface` interface value. When the test module's
-runtime tries to reconstruct this object, the generated Go SDK code builds a query
-that references the `impl` module's constructor field on the root Query — but the
-`test` module's schema view doesn't include the `impl` module (it's a sibling
-dependency via `caller`, not a direct dependency of `test`).
+On `main`, `loadFromID` used `IDDeps` to build a server with all modules
+referenced in the ID before loading. `node(id:)` was missing this.
 
-**Root cause:** The old `loadImplFromID` fields are gone, replaced by `node(id:)`.
-But somewhere in the generated code path, the SDK is still constructing queries
-that go through module-specific root fields rather than through `node(id:)`.
+**Fix (two parts):**
 
-**Where to look:**
+1. **`dagql/server.go` + `core/schema_build.go`** — Added a `nodeLoader` hook
+   to `dagql.Server`. The Dagger core sets it in `buildSchema` to use `IDDeps`:
+   get the current `Query` from context, call `query.IDDeps(ctx, id)` to collect
+   all modules the ID depends on, build a server with those deps, then load
+   through that server. Falls back to `srv.Load` if no query in context.
 
-The `AsTestCustomIface()` adapter on objects does a simple local query rewrap:
-```go
-func (r *ImplImpl) AsTestCustomIface() TestCustomIface {
-    return &_TestCustomIfaceClient{query: r.query}
-}
-```
-This preserves the original query chain, which starts from the `impl` module's
-root constructor: `Query.impl(...)`. When this query is later evaluated in the
-`test` module's server context, `impl` doesn't exist as a field.
+2. **`defs.go.tmpl` + `sdk/go/dagger.gen.go`** — Fixed `Load[T]` to query
+   `__typename` *through the inline fragment*. Before, it compared `__typename`
+   directly against the expected type name, which fails for interfaces:
+   `__typename` returns the concrete type (`Impl`), not the interface name
+   (`DepCustomIface`). Now the `__typename` query goes through
+   `SelectNode(c.query, id, expectedType)` so the fragment only matches if the
+   concrete type implements the expected interface. Empty result → node doesn't
+   satisfy the type → clean error.
 
-The fix likely needs to go through `node(id:)` instead of preserving the
-original query chain. When crossing module boundaries (i.e., the interface
-is from a different module than the concrete type), the adapter should
-resolve the ID and use `SelectNode` to rebuild the query via `node(id:)`.
+**Result:** `TestInterface/TestIfaceBasic/go` passes (all 32 subtests).
 
-Alternatively, the engine's `parseASTSelections` / `typeConditionMatches`
-may need to handle the case where the concrete type behind an interface
-fragment isn't in the current schema view but is resolvable via the ID.
+## Tests status
 
-**Repro:**
-```
-dagger call --progress=plain engine-dev test \
-  --pkg ./core/integration/ \
-  --run TestInterface/TestIfaceBasic/go
-```
-
-## Other tests not yet checked
-
-- `TestInterface/TestIfaceBasic/typescript`
-- `TestInterface/TestIfaceBasic/python`
-- Other `TestInterface/` subtests
-- The full `TestInterface` suite
-
-The TypeScript and Python SDK codegen may need similar schema-name fixes
-(using module-prefixed names in SelectNode / node queries).
+| Test | Status |
+|------|--------|
+| `TestInterface/TestIfaceBasic/go` | ✅ PASS (all 32 subtests) |
+| `TestInterface/TestIfaceBasic/typescript` | ❓ Not yet checked |
+| `TestInterface/TestIfaceBasic/python` | ❓ Not yet checked |
+| Other `TestInterface/` subtests | ❓ Not yet checked |
 
 ## Key files
 
@@ -102,10 +88,28 @@ The TypeScript and Python SDK codegen may need similar schema-name fixes
 | Go codegen — interface template | `cmd/codegen/generator/go/templates/src/_types/interface.go.tmpl` |
 | Go codegen — object template (AsFoo) | `cmd/codegen/generator/go/templates/src/_types/object.go.tmpl` |
 | Go codegen — defs template (SelectNode, Load) | `cmd/codegen/generator/go/templates/src/_dagger.gen.go/defs.go.tmpl` |
-| Engine — interface install + schema | `dagql/server.go` |
+| Engine — dagql server (node loader hook) | `dagql/server.go` |
+| Engine — schema building (nodeLoader setup) | `core/schema_build.go` |
+| Engine — interface install + schema | `dagql/server.go` (InstallInterface) |
 | Engine — interface type | `dagql/interfaces.go` |
 | Engine — module schema building | `core/schema_build.go` |
 | Engine — interface install | `core/interface.go` |
 | Engine — type namespacing | `core/gqlformat.go` |
 | Test module source | `core/integration/testdata/modules/go/ifaces/` |
 | Test file | `core/integration/module_iface_test.go` |
+
+## Architecture: How node(id:) loads cross-module IDs
+
+```
+SDK runtime (test module)
+  → UnmarshalJSON: SelectNode(dag.query, id, "TestCustomIface")
+  → executes: { node(id: "...") { ... on TestCustomIface { str } } }
+  → dagql node(id:) resolver
+    → nodeLoader hook (set in core/schema_build.go)
+      → CurrentQuery(ctx) → query.IDDeps(ctx, id)
+        → collects modules referenced in the ID (e.g. impl module)
+      → deps.Server(ctx) → builds server with impl + test + core
+      → idServer.Load(ctx, id)
+        → replays ID call chain on a server that HAS the impl field
+    → returns result, inline fragment scopes to interface fields
+```
