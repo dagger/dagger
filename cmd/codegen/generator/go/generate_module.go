@@ -196,7 +196,7 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 		PackageImport: path.Join(goMod.Module.Mod.Path, packageImport),
 
 		// Set to the official dagger go SDK package.
-		UtilityPkgImport:  "dagger.io/dagger",
+		UtilityPkgImport:  "github.com/vito/dang/pkg", /* FIXME */
 		DaggerPkgReplaced: isDaggerPkgCustomReplaced(goMod.Replace),
 	}, needsRegen, nil
 }
