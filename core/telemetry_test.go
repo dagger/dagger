@@ -8,6 +8,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -83,6 +84,14 @@ func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.C
 
 func (ms *mockServer) CurrentWorkspace(context.Context) (*Workspace, error) {
 	return nil, nil
+}
+
+func (ms *mockServer) CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error) {
+	return nil, false, nil
+}
+
+func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error {
+	return nil
 }
 
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {

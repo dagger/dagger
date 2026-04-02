@@ -13981,6 +13981,17 @@ export class Workspace extends BaseClient {
 
     return response
   }
+
+  /**
+   * Refresh workspace-managed state and return the resulting changeset.
+   *
+   * Currently this refreshes existing lockfile entries only.
+   * @experimental
+   */
+  update = (): Changeset => {
+    const ctx = this._ctx.select("update")
+    return new Changeset(ctx)
+  }
 }
 
 export const dag = new Client()

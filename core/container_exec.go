@@ -93,6 +93,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	}
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.SessionID = clientMetadata.SessionID
+	execMD.LockMode = clientMetadata.LockMode
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
 
 	if execMD.CallID == nil {

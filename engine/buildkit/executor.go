@@ -49,6 +49,7 @@ type ExecutionMetadata struct {
 	SessionID   string
 	SecretToken string
 	Hostname    string
+	LockMode    string
 
 	// The "stable" ID of the client that is used to identify filesync cache refs
 	// across different clients running on the same host.

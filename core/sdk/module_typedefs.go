@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
@@ -45,6 +46,9 @@ func (sdk *moduleTypes) ModuleTypes(
 		CallID:   dagql.CurrentID(ctx),
 		ExecID:   identity.NewID(),
 		Internal: true,
+	}
+	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		execMD.LockMode = clientMetadata.LockMode
 	}
 	execMD.EncodedModuleID, err = currentModuleID.Encode()
 	if err != nil {

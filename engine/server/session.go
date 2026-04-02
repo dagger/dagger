@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -41,12 +42,15 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -102,6 +106,23 @@ type daggerSession struct {
 	interactiveCommand []string
 
 	allowedLLMModules []string
+
+	lockFiles  map[workspaceLockKey]*workspaceLockState
+	lockFileMu sync.RWMutex
+}
+
+type workspaceLockKey struct {
+	ownerClientID string
+	lockPath      string
+}
+
+type workspaceLockState struct {
+	ws       *core.Workspace
+	lockPath string
+	lock     *workspace.Lock
+	delta    *workspace.Lock
+	loaded   bool
+	dirty    bool
 }
 
 type daggerSessionState string
@@ -1008,6 +1029,47 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
 // size.
 func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *buildkit.ExecutionMetadata) {
+	forwardedMD := readClientMetadata(r)
+	inheritedLockMode := srv.inheritedNestedClientLockMode(execMD)
+	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
+		ClientMetadata:      nestedClientMetadata(execMD, forwardedMD, inheritedLockMode),
+		CallID:              execMD.CallID,
+		CallerClientID:      execMD.CallerClientID,
+		EncodedModuleID:     execMD.EncodedModuleID,
+		EncodedFunctionCall: execMD.EncodedFunctionCall,
+		ParentIDs:           execMD.ParentIDs,
+	}).ServeHTTP(w, r)
+}
+
+func readClientMetadata(r *http.Request) *engine.ClientMetadata {
+	md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header)
+	return md
+}
+
+func (srv *Server) inheritedNestedClientLockMode(execMD *buildkit.ExecutionMetadata) string {
+	if execMD == nil {
+		return ""
+	}
+	if execMD.LockMode != "" {
+		return execMD.LockMode
+	}
+	callerClient, err := srv.clientFromIDs(execMD.SessionID, execMD.CallerClientID)
+	if err != nil || callerClient == nil || callerClient.clientMetadata == nil {
+		return ""
+	}
+	if callerClient.clientMetadata.LockMode != "" {
+		return callerClient.clientMetadata.LockMode
+	}
+	for i := len(callerClient.parents) - 1; i >= 0; i-- {
+		parent := callerClient.parents[i]
+		if parent != nil && parent.clientMetadata != nil && parent.clientMetadata.LockMode != "" {
+			return parent.clientMetadata.LockMode
+		}
+	}
+	return ""
+}
+
+func nestedClientMetadata(execMD *buildkit.ExecutionMetadata, forwarded *engine.ClientMetadata, inheritedLockMode string) *engine.ClientMetadata {
 	clientVersion := execMD.ClientVersionOverride
 	if clientVersion == "" {
 		clientVersion = engine.Version
@@ -1016,42 +1078,40 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
 	var skipWorkspaceModules bool
+	lockMode := inheritedLockMode
 	var eagerRuntime bool
 	var workspaceRef *string
-	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
-		clientVersion = md.ClientVersion
-		allowedLLMModules = md.AllowedLLMModules
-		extraModules = md.ExtraModules
-		skipWorkspaceModules = md.SkipWorkspaceModules
-		eagerRuntime = md.EagerRuntime
-		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
+	if forwarded != nil {
+		clientVersion = forwarded.ClientVersion
+		allowedLLMModules = forwarded.AllowedLLMModules
+		extraModules = forwarded.ExtraModules
+		skipWorkspaceModules = forwarded.SkipWorkspaceModules
+		if forwarded.LockMode != "" {
+			lockMode = forwarded.LockMode
+		}
+		eagerRuntime = forwarded.EagerRuntime
+		if declaredWorkspace, ok := workspaceRefFromClientMetadata(forwarded); ok {
 			ref := declaredWorkspace
 			workspaceRef = &ref
 		}
 	}
 
-	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata: &engine.ClientMetadata{
-			ClientID:             execMD.ClientID,
-			ClientVersion:        clientVersion,
-			ClientSecretToken:    execMD.SecretToken,
-			SessionID:            execMD.SessionID,
-			ClientHostname:       execMD.Hostname,
-			ClientStableID:       execMD.ClientStableID,
-			Labels:               map[string]string{},
-			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
-			AllowedLLMModules:    allowedLLMModules,
-			ExtraModules:         extraModules,
-			SkipWorkspaceModules: skipWorkspaceModules,
-			EagerRuntime:         eagerRuntime,
-			Workspace:            workspaceRef,
-		},
-		CallID:              execMD.CallID,
-		CallerClientID:      execMD.CallerClientID,
-		EncodedModuleID:     execMD.EncodedModuleID,
-		EncodedFunctionCall: execMD.EncodedFunctionCall,
-		ParentIDs:           execMD.ParentIDs,
-	}).ServeHTTP(w, r)
+	return &engine.ClientMetadata{
+		ClientID:             execMD.ClientID,
+		ClientVersion:        clientVersion,
+		ClientSecretToken:    execMD.SecretToken,
+		SessionID:            execMD.SessionID,
+		ClientHostname:       execMD.Hostname,
+		ClientStableID:       execMD.ClientStableID,
+		Labels:               map[string]string{},
+		SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
+		AllowedLLMModules:    allowedLLMModules,
+		ExtraModules:         extraModules,
+		SkipWorkspaceModules: skipWorkspaceModules,
+		LockMode:             lockMode,
+		EagerRuntime:         eagerRuntime,
+		Workspace:            workspaceRef,
+	}
 }
 
 const InstrumentationLibrary = "dagger.io/engine.server"
@@ -1320,6 +1380,7 @@ func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *dag
 
 func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
+	var shutdownErr error
 
 	sess := client.daggerSession
 	slog := slog.With(
@@ -1337,6 +1398,12 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
+
+		flushCtx := context.WithoutCancel(ctx)
+		if err := srv.flushWorkspaceLocks(flushCtx, client); err != nil {
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush workspace locks: %w", err))
+			slog.Error("failed to flush workspace locks", "error", err)
+		}
 
 		if len(sess.cacheExporterCfgs) > 0 {
 			ctx = context.WithoutCancel(ctx)
@@ -1380,13 +1447,14 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	slog.ExtraDebug("flushing session telemetry")
 	if err := sess.FlushTelemetry(ctx); err != nil {
 		slog.Error("failed to flush telemetry", "error", err)
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush session telemetry: %w", err))
 	}
 
 	client.closeShutdownOnce.Do(func() {
 		close(client.shutdownCh)
 	})
 
-	return nil
+	return shutdownErr
 }
 
 // Stitch in the given module to the list being served to the current client.
@@ -1471,6 +1539,275 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 		return false
 	}
 	return a.Pin() == b.Pin()
+}
+func (srv *Server) CurrentWorkspaceLock(ctx context.Context) (*workspace.Lock, bool, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	ws, key, lockPath, ok, err := srv.currentWorkspaceLockBinding(client)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+
+	sess := client.daggerSession
+
+	sess.lockFileMu.RLock()
+	if state, ok := sess.lockFiles[key]; ok && state.loaded {
+		cloned, err := state.lock.Clone()
+		sess.lockFileMu.RUnlock()
+		return cloned, true, err
+	}
+	sess.lockFileMu.RUnlock()
+
+	sess.lockFileMu.Lock()
+	defer sess.lockFileMu.Unlock()
+
+	state, err := srv.loadWorkspaceLockStateLocked(ctx, client, ws, key, lockPath)
+	if err != nil {
+		return nil, false, err
+	}
+	cloned, err := state.lock.Clone()
+	if err != nil {
+		return nil, false, err
+	}
+	return cloned, true, nil
+}
+
+func (srv *Server) SetCurrentWorkspaceLookup(
+	ctx context.Context,
+	namespace string,
+	operation string,
+	inputs []any,
+	result workspace.LookupResult,
+) error {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	ws, key, lockPath, ok, err := srv.currentWorkspaceLockBinding(client)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("workspace lock is not available")
+	}
+
+	sess := client.daggerSession
+	sess.lockFileMu.Lock()
+	defer sess.lockFileMu.Unlock()
+
+	state, err := srv.loadWorkspaceLockStateLocked(ctx, client, ws, key, lockPath)
+	if err != nil {
+		return err
+	}
+	if err := state.lock.SetLookup(namespace, operation, inputs, result); err != nil {
+		return err
+	}
+	if err := state.delta.SetLookup(namespace, operation, inputs, result); err != nil {
+		return err
+	}
+	state.dirty = true
+	return nil
+}
+
+func (srv *Server) currentWorkspaceLockBinding(client *daggerClient) (*core.Workspace, workspaceLockKey, string, bool, error) {
+	ws := client.workspace
+	if ws == nil || ws.HostPath() == "" {
+		return nil, workspaceLockKey{}, "", false, nil
+	}
+	lockPath, err := workspaceLockPath(ws)
+	if err != nil {
+		return nil, workspaceLockKey{}, "", false, err
+	}
+	return ws, workspaceLockKey{
+		ownerClientID: ws.ClientID,
+		lockPath:      lockPath,
+	}, lockPath, true, nil
+}
+
+func (srv *Server) loadWorkspaceLockStateLocked(
+	ctx context.Context,
+	client *daggerClient,
+	ws *core.Workspace,
+	key workspaceLockKey,
+	lockPath string,
+) (*workspaceLockState, error) {
+	sess := client.daggerSession
+	if sess.lockFiles == nil {
+		sess.lockFiles = make(map[workspaceLockKey]*workspaceLockState)
+	}
+	if state, ok := sess.lockFiles[key]; ok && state.loaded {
+		return state, nil
+	}
+
+	workspaceCtx, bk, err := srv.workspaceOwnerAccess(ctx, sess, ws)
+	if err != nil {
+		return nil, err
+	}
+	lock, _, err := readWorkspaceLockState(workspaceCtx, bk, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	state := &workspaceLockState{
+		ws:       ws.Clone(),
+		lockPath: lockPath,
+		lock:     lock,
+		delta:    workspace.NewLock(),
+		loaded:   true,
+	}
+	sess.lockFiles[key] = state
+	return state, nil
+}
+
+func (srv *Server) workspaceOwnerAccess(
+	ctx context.Context,
+	sess *daggerSession,
+	ws *core.Workspace,
+) (context.Context, *buildkit.Client, error) {
+	if ws.ClientID == "" {
+		return nil, nil, fmt.Errorf("workspace has no client ID")
+	}
+
+	ownerClient, err := srv.clientFromIDs(sess.sessionID, ws.ClientID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("workspace owner client: %w", err)
+	}
+	if ownerClient.clientMetadata == nil {
+		return nil, nil, fmt.Errorf("workspace owner client metadata not initialized")
+	}
+	if ownerClient.bkClient == nil {
+		return nil, nil, fmt.Errorf("workspace owner buildkit client not initialized")
+	}
+
+	workspaceCtx := engine.ContextWithClientMetadata(ctx, ownerClient.clientMetadata)
+	return workspaceCtx, ownerClient.bkClient, nil
+}
+
+func workspaceLockPath(ws *core.Workspace) (string, error) {
+	if ws == nil {
+		return "", fmt.Errorf("workspace is required")
+	}
+	if ws.HostPath() == "" {
+		return "", fmt.Errorf("workspace has no host path")
+	}
+	return filepath.Join(ws.HostPath(), ws.Path, workspace.LockDirName, workspace.LockFileName), nil
+}
+
+func readWorkspaceLockState(ctx context.Context, bk interface {
+	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
+}, ws *core.Workspace) (*workspace.Lock, bool, error) {
+	lockPath, err := workspaceLockPath(ws)
+	if err != nil {
+		return nil, false, err
+	}
+
+	data, err := bk.ReadCallerHostFile(ctx, lockPath)
+	if err != nil {
+		if isWorkspaceLockNotFound(err) {
+			return workspace.NewLock(), false, nil
+		}
+		return nil, false, fmt.Errorf("reading lock: %w", err)
+	}
+
+	lock, err := workspace.ParseLock(data)
+	if err != nil {
+		return nil, false, fmt.Errorf("parsing lock: %w", err)
+	}
+	return lock, true, nil
+}
+
+func isWorkspaceLockNotFound(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
+}
+
+func exportWorkspaceLockToHost(ctx context.Context, bk *buildkit.Client, ws *core.Workspace, lock *workspace.Lock) error {
+	lockBytes, err := lock.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshal lock: %w", err)
+	}
+
+	lockPath, err := workspaceLockPath(ws)
+	if err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp("", "workspace-lock-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(lockBytes); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+
+	if err := bk.LocalFileExport(ctx, tmpFile.Name(), workspace.LockFileName, lockPath, true); err != nil {
+		return fmt.Errorf("export lock: %w", err)
+	}
+	return nil
+}
+
+func (srv *Server) flushWorkspaceLocks(ctx context.Context, client *daggerClient) error {
+	sess := client.daggerSession
+
+	type pendingWorkspaceLockExport struct {
+		ws       *core.Workspace
+		lockPath string
+		delta    *workspace.Lock
+	}
+
+	var pending []pendingWorkspaceLockExport
+
+	sess.lockFileMu.RLock()
+	for _, state := range sess.lockFiles {
+		if state == nil || !state.loaded || !state.dirty {
+			continue
+		}
+		delta, err := state.delta.Clone()
+		if err != nil {
+			sess.lockFileMu.RUnlock()
+			return fmt.Errorf("clone workspace lock delta for %s: %w", state.lockPath, err)
+		}
+		pending = append(pending, pendingWorkspaceLockExport{
+			ws:       state.ws.Clone(),
+			lockPath: state.lockPath,
+			delta:    delta,
+		})
+	}
+	sess.lockFileMu.RUnlock()
+
+	var flushErr error
+	for _, export := range pending {
+		srv.locker.Lock(export.lockPath)
+
+		workspaceCtx, bk, err := srv.workspaceOwnerAccess(ctx, sess, export.ws)
+		if err == nil {
+			var latest *workspace.Lock
+			latest, _, err = readWorkspaceLockState(workspaceCtx, bk, export.ws)
+			if err == nil {
+				err = latest.Merge(export.delta)
+			}
+			if err == nil {
+				err = exportWorkspaceLockToHost(workspaceCtx, bk, export.ws, latest)
+			}
+		}
+
+		srv.locker.Unlock(export.lockPath)
+
+		if err != nil {
+			flushErr = errors.Join(flushErr, fmt.Errorf("flush workspace lock %s: %w", export.lockPath, err))
+		}
+	}
+
+	return flushErr
 }
 
 // If the current client is coming from a function, return the module that function is from
