@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/modules/go
 
-go 1.25.6
+go 1.26.1
 
 require github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 
@@ -11,14 +11,14 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.6.1
 	github.com/containerd/platforms v1.0.0-rc.1
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
-	github.com/vektah/gqlparser/v2 v2.5.30
+	github.com/vektah/gqlparser/v2 v2.5.32
 	go.opentelemetry.io/otel v1.41.0
 	go.opentelemetry.io/otel/sdk v1.41.0
 	go.opentelemetry.io/otel/trace v1.41.0
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.81 // indirect
+	github.com/99designs/gqlgen v0.17.89 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.17.0 // indirect
@@ -48,7 +48,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/sosodev/duration v1.3.1 // indirect
+	github.com/sosodev/duration v1.4.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.41.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
