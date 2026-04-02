@@ -20,6 +20,8 @@ github.com/containerd/platforms v1.0.0-rc.1 h1:83KIq4yy1erSRgOVHNk1HYdPvzdJ5CnsW
 github.com/containerd/platforms v1.0.0-rc.1/go.mod h1:J71L7B+aiM5SdIEqmd9wp6THLVRzJGXfNuWCZCllLA4=
 github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887 h1:M+yTYQkNo0ZC0A6+CS9vEXtYDhsr4xmSu5RfQaMVEfE=
 github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887/go.mod h1:RP74B3xmOq2MWL1lBsAWD9uvTryDhZ+m1dDzJj9QJEI=
+github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59 h1:g6vfdGRyz6fAjfHz5FyYPZgHy8qcQ31fHrBl1iCOzxw=
+github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59/go.mod h1:jsdUJeYzcbyK1j/EqMGPrQgNYxl/Zfg06vvM9C/xXxs=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=

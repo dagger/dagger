@@ -17,6 +17,7 @@ require (
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/jedevc/diffparser v0.0.0-20251006145221-cebbf07eb779 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
