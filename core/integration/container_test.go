@@ -3081,7 +3081,9 @@ func (ContainerSuite) TestFromIDPlatform(ctx context.Context, t *testctx.T) {
 	}).From(alpineImage).ID(ctx)
 	require.NoError(t, err)
 
-	platform, err := c.LoadContainerFromID(id).Platform(ctx)
+	ctr, err := dagger.Load[*dagger.Container](ctx, c, id)
+	require.NoError(t, err)
+	platform, err := ctr.Platform(ctx)
 	require.NoError(t, err)
 	require.Equal(t, desiredPlatform, platform)
 }
