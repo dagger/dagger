@@ -15,15 +15,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 )
 
 type FileSuite struct{}
 
 func TestFile(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(FileSuite{})
 }
 
@@ -158,21 +160,25 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("host file", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+
 		err := os.WriteFile(filepath.Join(wd, "file.txt"), []byte{}, 0o600)
 		require.NoError(t, err)
 
-		name, err := c.Host().File("file.txt").Name(ctx)
+		name, err := c.Host().File(filepath.Join(wd, "file.txt")).Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file.txt", name)
 	})
 
 	t.Run("host file in dir", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+
 		err := os.MkdirAll(filepath.Join(wd, "path/to/"), 0o700)
 		require.NoError(t, err)
 		err = os.WriteFile(filepath.Join(wd, "path/to/file.txt"), []byte{}, 0o600)
 		require.NoError(t, err)
 
-		name, err := c.Host().Directory("path").File("to/file.txt").Name(ctx)
+		name, err := c.Host().Directory(filepath.Join(wd, "path")).File("to/file.txt").Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file.txt", name)
 	})
@@ -1166,7 +1172,7 @@ func (FileSuite) TestFileCachingContents(ctx context.Context, t *testctx.T) {
 
 		eg.Go(func() error {
 			<-startCh
-			file := c.Host().Directory(".").File(filename)
+			file := c.Host().Directory(wd).File(filename)
 
 			actualContents, err := c.Directory().
 				WithFile("the-file", file).

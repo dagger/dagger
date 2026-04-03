@@ -18,12 +18,14 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 )
 
 type CallSuite struct{}
 
 func TestCall(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(CallSuite{})
 }
 
@@ -2728,8 +2730,8 @@ func (m *Test) Quit() {
 		With(daggerCall("quit")).
 		Sync(ctx)
 
-	var exErr *dagger.ExecError
-	require.ErrorAs(t, err, &exErr)
+	exErr, ok := asExecError(err)
+	require.True(t, ok, "expected ExecError, got %T", err)
 	require.Equal(t, 6, exErr.ExitCode)
 }
 

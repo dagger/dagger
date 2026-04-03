@@ -8,7 +8,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -28,12 +27,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 )
@@ -41,6 +40,8 @@ import (
 type ModuleSuite struct{}
 
 func TestModule(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ModuleSuite{})
 }
 
@@ -1693,7 +1694,7 @@ export class Test {
 func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	moduleSrcPath, err := filepath.Abs("./testdata/modules/go/namespacing")
+	moduleSrcPath, err := filepath.Abs("testdata/modules/go/namespacing")
 	require.NoError(t, err)
 
 	ctr := c.Container().From(alpineImage).
@@ -6806,7 +6807,7 @@ query ModuleIntrospection($path: String!) {
 
 			c := connect(ctx, t)
 
-			res, err := testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			res, err := QueryWithClient[Resp](c, t, introspect, &QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			require.NoError(t, err)
@@ -7066,15 +7067,14 @@ class Test:
 
 			c := connect(ctx, t)
 
-			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			_, err = QueryWithClient[Resp](c, t, introspect, &QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			require.Error(t, err)
 
 			errMsg := err.Error()
-			var execErr *dagger.ExecError
-			if errors.As(err, &execErr) {
-				errMsg = fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr)
+			if info, ok := asExecError(err); ok {
+				errMsg = fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, info.Stdout, info.Stderr)
 			}
 
 			if strings.Contains(errMsg, "failed to run command [docker info]") ||
@@ -7195,7 +7195,7 @@ class Test:
 
 			c := connect(ctx, t)
 
-			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			_, err = QueryWithClient[Resp](c, t, introspect, &QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			if err != nil {
@@ -7408,7 +7408,7 @@ func (m *Test) ReadFile(
 		err = c.ModuleSource(modDir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
-		res1, err := testutil.QueryWithClient[struct {
+		res1, err := QueryWithClient[struct {
 			Test struct {
 				ReadFile string
 			}
@@ -7420,7 +7420,7 @@ func (m *Test) ReadFile(
 		err = os.WriteFile(testFilePath, []byte(newContent), 0o644)
 		require.NoError(t, err)
 
-		res2, err := testutil.QueryWithClient[struct {
+		res2, err := QueryWithClient[struct {
 			Test struct {
 				ReadFile string
 			}
@@ -7469,19 +7469,19 @@ func (m *Test) RunNoisy(ctx context.Context) error {
 	err = c.ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
 
-	_, err = testutil.QueryWithClient[struct {
+	_, err = QueryWithClient[struct {
 		Test struct {
 			RunNoisy any
 		}
 	}](c, t, `{test{runNoisy}}`, nil)
-	var execError *dagger.ExecError
-	require.ErrorAs(t, err, &execError)
+	execInfo, ok := asExecError(err)
+	require.True(t, ok, "expected ExecError, got %T", err)
 
 	// if we get `2` here, that means we're getting the less helpful error:
 	// process "/runtime" did not complete successfully: exit code: 2
-	require.Equal(t, 42, execError.ExitCode)
-	require.Contains(t, execError.Stdout, "xxxxx")
-	require.Contains(t, execError.Stderr, "yyyyy")
+	require.Equal(t, 42, execInfo.ExitCode)
+	require.Contains(t, execInfo.Stdout, "xxxxx")
+	require.Contains(t, execInfo.Stderr, "yyyyy")
 }
 
 func (ModuleSuite) TestReturnNil(ctx context.Context, t *testctx.T) {

@@ -9,9 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dotenv"
-	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -19,6 +18,8 @@ import (
 type EnvFileSuite struct{}
 
 func TestEnvFile(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(EnvFileSuite{})
 }
 
@@ -421,7 +422,7 @@ func (EnvFileSuite) TestCaching(ctx context.Context, t *testctx.T) {
 				WithExec([]string{"sh", "-c", "echo -n \"Hello $NAME here is some random data: \" && cat /dev/urandom | head -c 15 | base64 -w0"}).Stdout(ctx)
 			require.NoError(t, err)
 			expectedPrefix := fmt.Sprintf("Hello %s here is some random data: ", userName)
-			testutil.HasPrefix(t, expectedPrefix, s)
+			HasPrefix(t, expectedPrefix, s)
 			data := strings.TrimPrefix(s, expectedPrefix)
 			require.Len(t, data, 15*4/3) // base64 encoding bloats the data by 4/3
 			if i == 0 {
@@ -448,7 +449,7 @@ func (EnvFileSuite) TestCachingWithIndirectVar(ctx context.Context, t *testctx.T
 				WithExec([]string{"sh", "-c", "echo -n \"Hello $NAME here is some random data: \" && cat /dev/urandom | head -c 15 | base64 -w0"}).Stdout(ctx)
 			require.NoError(t, err)
 			expectedPrefix := fmt.Sprintf("Hello %s here is some random data: ", userName)
-			testutil.HasPrefix(t, expectedPrefix, s)
+			HasPrefix(t, expectedPrefix, s)
 			data := strings.TrimPrefix(s, expectedPrefix)
 			require.Len(t, data, 15*4/3) // base64 encoding bloats the data by 4/3
 			if i == 0 {

@@ -6,15 +6,16 @@ import (
 	"testing"
 	"time"
 
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-
-	"dagger.io/dagger"
 )
 
 type TelemetrySuite struct{}
 
 func TestTelemetry(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(TelemetrySuite{})
 }
 

@@ -20,8 +20,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"dagger.io/dagger"
 	gitsession "github.com/dagger/dagger/engine/session/git"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/testctx"
 )
@@ -29,6 +29,8 @@ import (
 type GitSuite struct{}
 
 func TestGit(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(GitSuite{})
 }
 
@@ -1713,7 +1715,9 @@ exit 1
 	// setup dagger
 	client := connect(ctx, t)
 
-	wd, err := os.Getwd()
+	repoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, repoPath, "_DAGGER_TESTS_REPO_PATH not set")
+	wd, err := filepath.Abs(repoPath)
 	require.NoError(t, err)
 
 	// Create base container with all dependencies
@@ -1737,9 +1741,9 @@ require (
 replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
-		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
-		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
-		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "../../util/grpcutil"))).
+		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "engine/session/git"))).
+		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "util/netrc"))).
+		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "util/grpcutil"))).
 
 		// Create test harness that:
 		// 1. Reads request from JSON file

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"
 	"github.com/google/uuid"
@@ -16,6 +16,8 @@ import (
 type SequentialSuite struct{}
 
 func TestSequential(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t,
 		// omitting testctx.WithParallel middleware to get the desired sequential behavior
 		oteltest.WithTracing[*testing.T](),

@@ -16,7 +16,6 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -37,8 +36,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/testctx"
 	"mvdan.cc/sh/v3/syntax"
@@ -47,6 +46,9 @@ import (
 type ServiceSuite struct{}
 
 func TestServices(t *testing.T) {
+	ctx := context.Background()
+	ensureRegistries(ctx)
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ServiceSuite{})
 }
 
@@ -836,7 +838,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 		} `json:"loadContainerFromID"`
 	}
 
-	res, err := testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
+	res, err := QueryWithClient[GetPortsResponse](c, t, getPorts, &QueryOptions{
 		Variables: map[string]any{
 			"id": cid,
 		},
@@ -866,7 +868,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	withoutTCP := withPorts.WithoutExposedPort(8000)
 	cid, err = withoutTCP.ID(ctx)
 	require.NoError(t, err)
-	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
+	res, err = QueryWithClient[GetPortsResponse](c, t, getPorts, &QueryOptions{
 		Variables: map[string]any{
 			"id": cid,
 		},
@@ -893,7 +895,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	})
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
-	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
+	res, err = QueryWithClient[GetPortsResponse](c, t, getPorts, &QueryOptions{
 		Variables: map[string]any{
 			"id": cid,
 		},
@@ -1049,13 +1051,13 @@ func (ServiceSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	require.Error(t, err)
 	requireErrOut(t, err, "start "+host+" (aliased as www): exit code:")
 
-	var execErr *dagger.ExecError
-	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
+	execInfo, ok := asExecError(err)
+	require.True(t, ok, "expected error to be an ExecError, got %T", err)
 
 	// Verify the ExecError contains expected information
-	require.Equal(t, 42, execErr.ExitCode)
-	require.Equal(t, []string{"sh", "-c", "echo nope; exit 42"}, execErr.Cmd)
-	require.Contains(t, execErr.Stdout, "nope\n")
+	require.Equal(t, 42, execInfo.ExitCode)
+	require.Equal(t, []string{"sh", "-c", "echo nope; exit 42"}, execInfo.Cmd)
+	require.Contains(t, execInfo.Stdout, "nope\n")
 }
 
 func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
@@ -1075,14 +1077,14 @@ func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
 	// Verify we get an ExecError
 	require.Error(t, err)
 
-	var execErr *dagger.ExecError
-	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
+	execInfo, ok := asExecError(err)
+	require.True(t, ok, "expected error to be an ExecError, got %T", err)
 
 	// Verify the ExecError contains expected information
-	require.Equal(t, 42, execErr.ExitCode)
-	require.Equal(t, []string{"sh", "-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"}, execErr.Cmd)
-	require.Contains(t, execErr.Stdout, "stdout message")
-	require.Contains(t, execErr.Stderr, "stderr message")
+	require.Equal(t, 42, execInfo.ExitCode)
+	require.Equal(t, []string{"sh", "-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"}, execInfo.Cmd)
+	require.Contains(t, execInfo.Stdout, "stdout message")
+	require.Contains(t, execInfo.Stderr, "stderr message")
 }
 
 func (ServiceSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
@@ -1236,8 +1238,8 @@ func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -1268,8 +1270,8 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -1303,8 +1305,8 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -2695,11 +2697,11 @@ func (ServiceSuite) TestServiceHealthcheckFailure(ctx context.Context, t *testct
 	require.Error(t, err)
 	requireErrOut(t, err, "start "+host+" (aliased as www): health check errored: exit code:")
 
-	var execErr *dagger.ExecError
-	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
+	execInfo, ok := asExecError(err)
+	require.True(t, ok, "expected error to be an ExecError, got %T", err)
 
 	// Verify the ExecError contains expected information
-	require.Equal(t, "check said no\n", execErr.Stdout)
-	require.Equal(t, "eek an error\n", execErr.Stderr)
-	require.Equal(t, []string{"sh", "-c", "echo 'check said no' && echo 'eek an error' >&2 && exit 42"}, execErr.Cmd)
+	require.Equal(t, "check said no\n", execInfo.Stdout)
+	require.Equal(t, "eek an error\n", execInfo.Stderr)
+	require.Equal(t, []string{"sh", "-c", "echo 'check said no' && echo 'eek an error' >&2 && exit 42"}, execInfo.Cmd)
 }

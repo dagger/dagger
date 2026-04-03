@@ -37,7 +37,35 @@
           "argument": "source",
           "ignore": [
             "bin",
+            "**/node_modules",
+            "**/.venv",
+            "**/__pycache__",
+            "**/sdk/runtime/**",
+            "docs/node_modules",
+            "sdk/typescript/node_modules",
+            "sdk/typescript/dist",
+            "sdk/rust/examples/backend/target",
+            "sdk/rust/target",
+            "sdk/php/vendor",
+            "docs/**",
+            "modules/evals/**"
+          ]
+        }
+      ],
+      "ignoreChecks": [
+        "*"
+      ]
+    },
+    {
+      "name": "golint",
+      "source": "toolchains/go",
+      "customizations": [
+        {
+          "argument": "source",
+          "ignore": [
+            "bin",
             ".git",
+            ".dagger",
             "**/node_modules",
             "**/.venv",
             "**/__pycache__",
@@ -50,9 +78,12 @@
             "sdk/php/vendor",
             "docs/**",
             "dagql/idtui/viztest/broken/**",
+            "modules/evals/**",
             "**/broken*/**",
             "core/integration/testdata/checks/hello-with-checks/",
             "core/integration/testdata/generators/hello-with-generators/",
+            "modules/evaluator/examples/go",
+            "core/integration/testdata/modules/typescript/ifaces",
             "toolchains/release/testdata/module/"
           ]
         }
@@ -129,7 +160,29 @@
     "engine/distconsts",
     "go.mod",
     "go.sum",
+    "util/parallel",
+    "engine/distconsts",
     "util/patchpreview"
   ],
-  "source": ".dagger"
+  "dependencies": [
+    {
+      "name": "engine-dev",
+      "source": "toolchains/engine-dev"
+    },
+    {
+      "name": "cli",
+      "source": "toolchains/cli-dev"
+    },
+    {
+      "name": "version",
+      "source": "version"
+    }
+  ],
+  "source": ".dagger",
+  "clients": [
+    {
+      "generator": "go",
+      "directory": "./internal/testutil/dagger"
+    }
+  ]
 }

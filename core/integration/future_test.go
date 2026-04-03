@@ -5,7 +5,7 @@ import (
 	_ "embed"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 )
 
@@ -16,6 +16,8 @@ import (
 type FutureSuite struct{}
 
 func TestFuture(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(FutureSuite{})
 }
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/containerd/continuity/fs/fstest"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -17,6 +17,8 @@ import (
 type LocalDirSuite struct{}
 
 func TestLocalDir(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(LocalDirSuite{})
 }
 

@@ -12,12 +12,14 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 )
 
 type GPUSuite struct{}
 
 func TestGPU(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(GPUSuite{})
 }
 

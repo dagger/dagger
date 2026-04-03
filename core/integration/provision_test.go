@@ -13,7 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
@@ -25,6 +26,8 @@ import (
 type ProvisionSuite struct{}
 
 func TestProvision(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ProvisionSuite{})
 }
 

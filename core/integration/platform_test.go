@@ -12,12 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 )
 
 type PlatformSuite struct{}
 
 func TestPlatform(t *testing.T) {
+	ctx := context.Background()
+	ensureRegistries(ctx)
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(PlatformSuite{})
 }
 
@@ -34,7 +37,7 @@ var platformToFileArch = map[dagger.Platform]string{
 }
 
 func (PlatformSuite) TestEmulatedExecAndPush(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c := connect(ctx, t, dagger.WithWorkdir("../.."))
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {

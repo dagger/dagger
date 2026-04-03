@@ -8,17 +8,19 @@ import (
 	"strings"
 	"testing"
 
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-
-	"dagger.io/dagger"
 )
 
 // Group all tests that are specific to Python only.
 type PythonSuite struct{}
 
 func TestPython(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(PythonSuite{})
 }
 
@@ -729,10 +731,10 @@ func (PythonSuite) TestAltRuntime(ctx context.Context, t *testctx.T) {
 	runtimeSrcPath, err := filepath.Abs("../../sdk/python/runtime")
 	require.NoError(t, err)
 
-	extSrcPath, err := filepath.Abs("./testdata/modules/python/extended")
+	extSrcPath, err := filepath.Abs("testdata/modules/python/extended")
 	require.NoError(t, err)
 
-	moduleSrcPath, err := filepath.Abs("./testdata/modules/python/git-dep")
+	moduleSrcPath, err := filepath.Abs("testdata/modules/python/git-dep")
 	require.NoError(t, err)
 
 	base := goGitBase(t, c).
@@ -1854,10 +1856,10 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("unhandled", func(ctx context.Context, t *testctx.T) {
 		_, err := ctr.With(daggerCall("unhandled")).Sync(ctx)
-		var exerr *dagger.ExecError
-		require.ErrorAs(t, err, &exerr)
-		require.Contains(t, exerr.Stderr, "Unhandled exception while executing function")
-		require.Contains(t, exerr.Stderr, "ValueError: a foo bubbles up to bar")
+		execInfo, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
+		require.Contains(t, execInfo.Stderr, "Unhandled exception while executing function")
+		require.Contains(t, execInfo.Stderr, "ValueError: a foo bubbles up to bar")
 	})
 }
 
@@ -1913,7 +1915,7 @@ func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc
 
 func pipLockMod(t *testctx.T, c *dagger.Client, inc []string) dagger.WithContainerFunc {
 	t.Helper()
-	modSrc, err := filepath.Abs("./testdata/modules/python/pip-lock")
+	modSrc, err := filepath.Abs("testdata/modules/python/pip-lock")
 	require.NoError(t, err)
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithDirectory("", c.Host().Directory(modSrc, dagger.HostDirectoryOpts{

@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 )
 
@@ -542,10 +542,12 @@ func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *tes
 }
 
 func (EngineSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
 
 	// create some cache content so entries exist
-	_, err := c.Container().From(alpineImage).WithExec([]string{"echo", "hello"}).Sync(ctx)
+	_, err = c.Container().From(alpineImage).WithExec([]string{"echo", "hello"}).Sync(ctx)
 	require.NoError(t, err)
 
 	ents, err := c.Engine().LocalCache().EntrySet().Entries(ctx)

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -19,6 +19,8 @@ const defaultGenDir = "./dagger"
 type ClientGeneratorTest struct{}
 
 func TestClientGenerator(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ClientGeneratorTest{})
 }
 

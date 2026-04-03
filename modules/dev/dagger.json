@@ -6,10 +6,6 @@
   },
   "dependencies": [
     {
-      "name": "engine-dev",
-      "source": "../../toolchains/engine-dev"
-    },
-    {
       "name": "doug",
       "source": "../doug"
     },

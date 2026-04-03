@@ -10,6 +10,7 @@ require (
 replace (
 	dagger.io/dagger => ./sdk/go
 	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
+	github.com/dagger/dagger/internal/testutil/dagger => ./internal/testutil/dagger
 )
 
 require (
@@ -61,6 +62,7 @@ require (
 	github.com/containernetworking/plugins v1.8.0
 	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/creack/pty v1.1.24
+	github.com/dagger/dagger/internal/testutil/dagger v0.0.0
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
 	github.com/dagger/testctx v0.1.1
 	github.com/dagger/testctx/oteltest v0.1.1

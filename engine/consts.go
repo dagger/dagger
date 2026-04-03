@@ -12,6 +12,7 @@ const (
 
 	DaggerVersionEnv        = "_EXPERIMENTAL_DAGGER_VERSION"
 	DaggerTagEnv            = "_EXPERIMENTAL_DAGGER_TAG"
+	DaggerDevEngine         = "_EXPERIMENTAL_DAGGER_DEV_ENGINE" // Set to true to force the engine to act as a dev version even if a version is set already
 	DaggerMinimumVersionEnv = "_EXPERIMENTAL_DAGGER_MIN_VERSION"
 
 	CloudRunnerHostPrefix  = "dagger-cloud://"

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
-	"dagger.io/dagger/dag"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -17,6 +17,8 @@ import (
 type UserDefaultsSuite struct{}
 
 func TestUserDefaults(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(UserDefaultsSuite{})
 }
 

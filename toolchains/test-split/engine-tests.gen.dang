@@ -1,14 +1,25 @@
+"""
+Note: For now, this file is not actually generated. Feel free to make edits.
+"""
 type TestSplit {
-  """
-  Lower-level API for running specific tests
-  """
-  pub testSpecific(
+  pub source: Directory! @defaultPath(path: "/")
+
+  let testSpecific(
     run: [String!]!,
-    ebpfProgs: [String!],
     pkg: String! = "./core/integration",
-    race: Boolean,
   ): Void {
-    engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
+      .withExec(
+        ["go", "test", pkg, "-run", run.join("|"), "-v", "-count", "1", "-timeout", "30m", "-failfast"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
   }
 
   let testSkip(
@@ -17,18 +28,36 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
   ): Void {
-    engineDev.test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
+      .withEnvVariable("CGO_ENABLED", "1")
+      .withExec(
+        ["go", "test", pkg, "-v", "-skip", skip.join("|"), "-count", "1", "-race", "-timeout", "30m"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
   }
 
   """
-  Test Base
+  Test Base (lighter tests, base-only deps — no registries, no engine.tar)
   """
   pub testBase: Void @check {
     testSkip(
-      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace"],
-      pkg: "./...",
-      race: true,
+      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace", "TestGit", "TestRemoteCache", "TestLegacy", "TestServices", "TestPlatform", "TestSecretProvider", "TestConfig", "TestClient", "TestFuture"],
+      pkg: "./core/integration",
     )
+  }
+
+  """
+  Test Base Heavy (base-only deps — no registries, no engine.tar)
+  """
+  pub testBaseHeavy: Void @check {
+    testSpecific(["TestGit", "TestGitCredential", "TestLegacy", "TestSecretProvider", "TestConfig", "TestCLI"])
   }
 
   """
@@ -53,10 +82,10 @@ type TestSplit {
   }
 
   """
-  Test CLI Engine
+  Test Engine (needs engine.tar)
   """
-  pub testCliEngine: Void @check {
-    testSpecific(["TestCLI", "TestEngine"])
+  pub testEngine: Void @check {
+    testSpecific(["TestEngine"])
   }
 
   """
@@ -67,17 +96,63 @@ type TestSplit {
   }
 
   """
-  Test Container
+  Test Container (needs registries + engine.tar, excluding DinD/nested engine tests).
+  TestContainer runs first alphabetically and sets up the superset of deps
+  (registries + engine.tar) needed by TestDockerfile (registries), TestPlatform
+  (registries), and TestServices (registries + engine.tar).
   """
   pub testContainer: Void @check {
-    testSpecific(["TestContainer", "TestDockerfile"])
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
+      .withExec(
+        ["go", "test", "./core/integration",
+         "-run", "TestContainer|TestDockerfile|TestServices|TestPlatform",
+         "-skip", "TestInsecureRootCapabilitesWithService|TestImageLoadCompatibility|TestSaveHostDocker|TestLoadHostDocker|TestSaveHostContainerd|TestLoadHostContainerd|TestLoadSaveNone|TestSaveInNested|TestWithRegistryAuthFileAndDirectoryAccess|TestCrossSessionDockerbuildSockets",
+         "-v", "-parallel", "2", "-count", "1", "-timeout", "30m"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
+  }
+
+  """
+  Test Container DinD/nested engine tests (isolated to prevent cascading failures)
+  """
+  pub testContainerProvision: Void @check {
+    testSpecific([
+      "TestContainer/TestInsecureRootCapabilitesWithService",
+      "TestContainer/TestImageLoadCompatibility",
+      "TestContainer/TestSaveHostDocker",
+      "TestContainer/TestLoadHostDocker",
+      "TestContainer/TestSaveHostContainerd",
+      "TestContainer/TestLoadHostContainerd",
+      "TestContainer/TestLoadSaveNone",
+      "TestContainer/TestSaveInNested",
+      "TestContainer/TestWithRegistryAuthFileAndDirectoryAccess",
+      "TestDockerfile/TestCrossSessionDockerbuildSockets",
+    ])
   }
 
   """
   Test Interface
   """
   pub testInterface: Void @check {
-    testSpecific(["TestInterface"])
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
+      .withExec(
+        ["go", "test", "./core/integration", "-run", "TestInterface", "-v", "-parallel", "1", "-count", "1", "-timeout", "30m", "-failfast"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
   }
 
   """
@@ -88,10 +163,10 @@ type TestSplit {
   }
 
   """
-  Test Module Runtimes
+  Test Module Runtimes (base-only deps — no registries, no engine.tar)
   """
   pub testModuleRuntimes: Void @check {
-    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
+    testSpecific(["TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
   }
 
   """
@@ -106,5 +181,12 @@ type TestSplit {
   """
   pub testWorkspaces: Void @check {
     testSpecific(["TestWorkspace"])
+  }
+
+  """
+  Test Engine Tar (needs engine.tar but not registries)
+  """
+  pub testEngineTar: Void @check {
+    testSpecific(["TestClient", "TestFuture", "TestGo", "TestRemoteCache"])
   }
 }

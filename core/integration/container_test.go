@@ -31,23 +31,25 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 )
 
 type ContainerSuite struct{}
 
 func TestContainer(t *testing.T) {
+	ctx := context.Background()
+	ensureRegistries(ctx)
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ContainerSuite{})
 }
 
 func (ContainerSuite) TestScratch(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			ID     string
 			Rootfs struct {
@@ -68,7 +70,7 @@ func (ContainerSuite) TestScratch(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestFrom(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				File struct {
@@ -158,7 +160,7 @@ func (ContainerSuite) TestExecSync(ctx context.Context, t *testctx.T) {
 	// A successful sync doesn't prove anything. As soon as you call other
 	// leaves to check things, they could be the ones triggering execution.
 	// Still, sync can be useful for short-circuiting.
-	_, err := testutil.Query[struct {
+	_, err := Query[struct {
 		Container struct {
 			From struct {
 				WithExec struct {
@@ -215,7 +217,7 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			_, err := testutil.Query[struct {
+			_, err := Query[struct {
 				Container struct {
 					From struct {
 						WithError struct{}
@@ -292,7 +294,7 @@ echo "err" >&2
 }
 
 func (ContainerSuite) TestExecStdin(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				WithExec struct {
@@ -399,7 +401,7 @@ func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testc
 }
 
 func (ContainerSuite) TestExecWithWorkdir(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				WithWorkdir struct {
@@ -456,7 +458,7 @@ func (ContainerSuite) TestExecWithUser(ctx context.Context, t *testctx.T) {
 	}
 
 	t.Run("user name", func(ctx context.Context, t *testctx.T) {
-		res, err := testutil.Query[resType](t,
+		res, err := Query[resType](t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -477,7 +479,7 @@ func (ContainerSuite) TestExecWithUser(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("user and group name", func(ctx context.Context, t *testctx.T) {
-		res, err := testutil.Query[resType](t,
+		res, err := Query[resType](t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -498,7 +500,7 @@ func (ContainerSuite) TestExecWithUser(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("user ID", func(ctx context.Context, t *testctx.T) {
-		res, err := testutil.Query[resType](t,
+		res, err := Query[resType](t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -519,7 +521,7 @@ func (ContainerSuite) TestExecWithUser(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("user and group ID", func(ctx context.Context, t *testctx.T) {
-		res, err := testutil.Query[resType](t,
+		res, err := Query[resType](t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -540,7 +542,7 @@ func (ContainerSuite) TestExecWithUser(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("stdin", func(ctx context.Context, t *testctx.T) {
-		res, err := testutil.Query[resType](t,
+		res, err := Query[resType](t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -689,7 +691,7 @@ func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.
 }
 
 func (ContainerSuite) TestWithDefaultArgs(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				Entrypoint  []string
@@ -794,7 +796,7 @@ func (ContainerSuite) TestExecWithoutDefaultArgs(ctx context.Context, t *testctx
 }
 
 func (ContainerSuite) TestExecWithEnvVariable(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				WithEnvVariable struct {
@@ -821,7 +823,7 @@ func (ContainerSuite) TestExecWithEnvVariable(ctx context.Context, t *testctx.T)
 }
 
 func (ContainerSuite) TestVariables(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				EnvVariables []core.EnvVariable
@@ -855,7 +857,7 @@ func (ContainerSuite) TestVariables(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestVariable(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	res, err := testutil.QueryWithClient[struct {
+	res, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				EnvVariable *string
@@ -873,7 +875,7 @@ func (ContainerSuite) TestVariable(ctx context.Context, t *testctx.T) {
 	require.NotNil(t, res.Container.From.EnvVariable)
 	require.Equal(t, "1.18.2", *res.Container.From.EnvVariable)
 
-	res, err = testutil.QueryWithClient[struct {
+	res, err = QueryWithClient[struct {
 		Container struct {
 			From struct {
 				EnvVariable *string
@@ -892,7 +894,7 @@ func (ContainerSuite) TestVariable(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestWithoutVariable(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				WithoutEnvVariable struct {
@@ -928,7 +930,7 @@ func (ContainerSuite) TestWithoutVariable(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestEnvVariablesReplace(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				WithEnvVariable struct {
@@ -1013,7 +1015,7 @@ func (ContainerSuite) TestLabel(ctx context.Context, t *testctx.T) {
 	// implementing this test as GraphQL query until
 	// https://github.com/dagger/dagger/issues/4398 gets resolved
 	t.Run("container labels", func(ctx context.Context, t *testctx.T) {
-		res, err := testutil.QueryWithClient[struct {
+		res, err := QueryWithClient[struct {
 			Container struct {
 				From struct {
 					Labels []schema.Label
@@ -1074,7 +1076,7 @@ func (ContainerSuite) TestLabel(ctx context.Context, t *testctx.T) {
 	// implementing this test as GraphQL query until
 	// https://github.com/dagger/dagger/issues/4398 gets resolved
 	t.Run("container labels - nil panics", func(ctx context.Context, t *testctx.T) {
-		res, err := testutil.QueryWithClient[struct {
+		res, err := QueryWithClient[struct {
 			Container struct {
 				From struct {
 					Labels []schema.Label
@@ -1095,7 +1097,7 @@ func (ContainerSuite) TestLabel(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				Workdir  string
@@ -1121,7 +1123,7 @@ func (ContainerSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestWithWorkdir(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				WithWorkdir struct {
@@ -1152,7 +1154,7 @@ func (ContainerSuite) TestWithWorkdir(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -1174,7 +1176,7 @@ func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T
 
 	id := dirRes.Directory.WithNewFile.WithNewFile.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -1203,7 +1205,7 @@ func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.NoError(t, err)
@@ -1213,7 +1215,7 @@ func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T
 
 func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -1239,7 +1241,7 @@ func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t 
 
 	id := dirRes.Directory.WithNewFile.WithNewFile.Directory.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -1264,7 +1266,7 @@ func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t 
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.NoError(t, err)
@@ -1273,7 +1275,7 @@ func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t 
 
 func (ContainerSuite) TestWithMountedDirectoryPropagation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID core.DirectoryID
@@ -1286,12 +1288,12 @@ func (ContainerSuite) TestWithMountedDirectoryPropagation(ctx context.Context, t
 					id
 				}
 			}
-		}`, &testutil.QueryOptions{})
+		}`, &QueryOptions{})
 	require.NoError(t, err)
 
 	id := dirRes.Directory.WithNewFile.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -1343,7 +1345,7 @@ func (ContainerSuite) TestWithMountedDirectoryPropagation(ctx context.Context, t
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{
+		}`, &QueryOptions{
 			Variables: map[string]any{
 				"id": id,
 			},
@@ -1369,7 +1371,7 @@ func (ContainerSuite) TestWithMountedDirectoryPropagation(ctx context.Context, t
 
 func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			WithNewFile struct {
 				File struct {
@@ -1391,7 +1393,7 @@ func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 
 	id := dirRes.Directory.WithNewFile.File.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedFile struct {
@@ -1412,7 +1414,7 @@ func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.NoError(t, err)
@@ -1817,7 +1819,7 @@ func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) 
 	scratchID, err := c.Directory().ID(ctx)
 	require.NoError(t, err)
 
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -1839,7 +1841,7 @@ func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) 
 
 	id := dirRes.Directory.WithNewFile.WithNewFile.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithDirectory struct {
@@ -1884,7 +1886,7 @@ func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) 
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id":      id,
 			"scratch": scratchID,
 		}})
@@ -1965,7 +1967,7 @@ func (ContainerSuite) TestReplacedMounts(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -1987,7 +1989,7 @@ func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 
 	id := dirRes.Directory.WithNewFile.WithNewFile.ID
 
-	writeRes, err := testutil.QueryWithClient[struct {
+	writeRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -2016,14 +2018,14 @@ func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.NoError(t, err)
 
 	writtenID := writeRes.Container.From.WithMountedDirectory.WithMountedDirectory.WithExec.Directory.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -2044,7 +2046,7 @@ func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": writtenID,
 		}})
 	require.NoError(t, err)
@@ -2054,7 +2056,7 @@ func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -2076,7 +2078,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 
 	id := dirRes.Directory.WithNewFile.WithNewFile.ID
 
-	_, err = testutil.QueryWithClient[any](c, t,
+	_, err = QueryWithClient[any](c, t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2087,13 +2089,13 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.Error(t, err)
 	requireErrOut(t, err, "path /mnt/dir/some-file is a file, not a directory")
 
-	_, err = testutil.QueryWithClient[any](c, t,
+	_, err = QueryWithClient[any](c, t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2104,13 +2106,13 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.Error(t, err)
 	requireErrOut(t, err, "bogus: no such file or directory")
 
-	_, err = testutil.QueryWithClient[any](c, t,
+	_, err = QueryWithClient[any](c, t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2126,7 +2128,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "bogus: cannot retrieve path from tmpfs")
 
 	cacheID := newCache(t)
-	_, err = testutil.QueryWithClient[any](c, t,
+	_, err = QueryWithClient[any](c, t,
 		`query Test($cache: CacheVolumeID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2137,7 +2139,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"cache": cacheID,
 		}})
 	require.Error(t, err)
@@ -2146,7 +2148,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			WithNewFile struct {
 				Directory struct {
@@ -2168,7 +2170,7 @@ func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T)
 
 	id := dirRes.Directory.WithNewFile.Directory.ID
 
-	writeRes, err := testutil.QueryWithClient[struct {
+	writeRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -2193,14 +2195,14 @@ func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T)
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.NoError(t, err)
 
 	writtenID := writeRes.Container.From.WithMountedDirectory.WithExec.Directory.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -2221,7 +2223,7 @@ func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T)
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": writtenID,
 		}})
 	require.NoError(t, err)
@@ -2233,7 +2235,7 @@ func (ContainerSuite) TestFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	id := newDirWithFile(t, "some-file", "some-content-")
 
-	writeRes, err := testutil.QueryWithClient[struct {
+	writeRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -2262,14 +2264,14 @@ func (ContainerSuite) TestFile(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.NoError(t, err)
 
 	writtenID := writeRes.Container.From.WithMountedDirectory.WithMountedDirectory.WithExec.File.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedFile struct {
@@ -2290,7 +2292,7 @@ func (ContainerSuite) TestFile(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": writtenID,
 		}})
 	require.NoError(t, err)
@@ -2302,7 +2304,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 	id := newDirWithFile(t, "some-file", "some-content")
 
 	t.Run("path not found", func(ctx context.Context, t *testctx.T) {
-		_, err := testutil.Query[any](t,
+		_, err := Query[any](t,
 			`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2313,7 +2315,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 				"id": id,
 			}})
 		require.Error(t, err)
@@ -2321,7 +2323,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("get directory as file", func(ctx context.Context, t *testctx.T) {
-		_, err := testutil.Query[any](t,
+		_, err := Query[any](t,
 			`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2332,7 +2334,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 				"id": id,
 			}})
 		require.Error(t, err)
@@ -2340,7 +2342,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("get path under tmpfs", func(ctx context.Context, t *testctx.T) {
-		_, err := testutil.Query[any](t,
+		_, err := Query[any](t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2358,7 +2360,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("get path under cache", func(ctx context.Context, t *testctx.T) {
 		cacheID := newCache(t)
-		_, err := testutil.Query[any](t,
+		_, err := Query[any](t,
 			`query Test($cache: CacheVolumeID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2369,7 +2371,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 				"cache": cacheID,
 			}})
 		require.Error(t, err)
@@ -2377,7 +2379,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("get secret mount contents", func(ctx context.Context, t *testctx.T) {
-		_, err := testutil.Query[any](t,
+		_, err := Query[any](t,
 			`query Test($secret: SecretID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2388,7 +2390,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Secrets: map[string]string{
+		}`, &QueryOptions{Secrets: map[string]string{
 				"secret": "some-secret",
 			}})
 		require.Error(t, err)
@@ -2399,7 +2401,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestFSDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				Directory struct {
@@ -2421,7 +2423,7 @@ func (ContainerSuite) TestFSDirectory(ctx context.Context, t *testctx.T) {
 
 	etcID := dirRes.Container.From.Directory.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -2442,7 +2444,7 @@ func (ContainerSuite) TestFSDirectory(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": etcID,
 		}})
 	require.NoError(t, err)
@@ -2454,7 +2456,7 @@ func (ContainerSuite) TestFSDirectory(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID core.DirectoryID
@@ -2473,7 +2475,7 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 	id := dirRes.Directory.WithNewFile.ID
 
 	cacheID := newCache(t)
-	writeRes, err := testutil.QueryWithClient[struct {
+	writeRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithExec struct {
@@ -2528,7 +2530,7 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id":    id,
 			"cache": cacheID,
 		}})
@@ -2544,7 +2546,7 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 
 	writtenID := writeRes.Container.From.WithExec.WithWorkdir.WithWorkdir.WithMountedDirectory.WithMountedTemp.WithMountedCache.WithExec.Directory.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -2565,7 +2567,7 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": writtenID,
 		}})
 	require.NoError(t, err)
@@ -2576,7 +2578,7 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dirRes, err := testutil.QueryWithClient[struct {
+	dirRes, err := QueryWithClient[struct {
 		Directory struct {
 			ID core.DirectoryID
 		}
@@ -2590,7 +2592,7 @@ func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 
 	id := dirRes.Directory.ID
 
-	execRes, err := testutil.QueryWithClient[struct {
+	execRes, err := QueryWithClient[struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
@@ -2623,7 +2625,7 @@ func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.NoError(t, err)
@@ -3258,9 +3260,8 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 			)}).
 			Sync(ctx)
 
-		var exErr *dagger.ExecError
-
-		require.ErrorAs(t, err, &exErr)
+		exErr, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
 		require.Equal(t, outMsg, exErr.Stdout)
 		require.Equal(t, errMsg, exErr.Stderr)
 	})
@@ -3279,9 +3280,8 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 			).
 			Sync(ctx)
 
-		var exErr *dagger.ExecError
-
-		require.ErrorAs(t, err, &exErr)
+		exErr, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
 		require.Equal(t, outMsg, exErr.Stdout)
 		require.Equal(t, errMsg, exErr.Stderr)
 	})
@@ -3325,9 +3325,8 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"sh", "-c", "base64 -d encout >&1; base64 -d encerr >&2; exit 1"}).
 			Sync(ctx)
 
-		var exErr *dagger.ExecError
-
-		require.ErrorAs(t, err, &exErr)
+		exErr, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
 		require.Equal(t, truncMsg+stdoutStr[extraByteCount+len(truncMsg):], exErr.Stdout)
 		require.Equal(t, truncMsg+stderrStr[extraByteCount+len(truncMsg):], exErr.Stderr)
 	})
@@ -3428,7 +3427,7 @@ func (ContainerSuite) TestWithRegistryAuthFileAndDirectoryAccess(ctx context.Con
 
 func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 	t.Run("should test query returning imageRef", func(ctx context.Context, t *testctx.T) {
-		res, err := testutil.Query[struct {
+		res, err := Query[struct {
 			Container struct {
 				From struct {
 					ImageRef string
@@ -3447,7 +3446,7 @@ func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should throw error after the container image modification with exec", func(ctx context.Context, t *testctx.T) {
-		_, err := testutil.Query[struct {
+		_, err := Query[struct {
 			Container struct {
 				From struct {
 					ImageRef string
@@ -3468,7 +3467,7 @@ func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should throw error after the container image modification with exec", func(ctx context.Context, t *testctx.T) {
-		_, err := testutil.Query[struct {
+		_, err := Query[struct {
 			Container struct {
 				From struct {
 					ImageRef string
@@ -3825,7 +3824,7 @@ func (ContainerSuite) TestWithMountedSecretOwner(ctx context.Context, t *testctx
 }
 
 func (ContainerSuite) TestParallelMutation(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			A struct {
 				EnvVariable string
@@ -4195,7 +4194,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 	t.Run("any", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		res, err := testutil.QueryWithClient[struct {
+		res, err := QueryWithClient[struct {
 			Container struct {
 				From struct {
 					WithExec struct {
@@ -4216,7 +4215,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, 0, res.Container.From.WithExec.ExitCode)
 
-		res, err = testutil.QueryWithClient[struct {
+		res, err = QueryWithClient[struct {
 			Container struct {
 				From struct {
 					WithExec struct {
@@ -4241,7 +4240,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 	t.Run("success", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		res, err := testutil.QueryWithClient[struct {
+		res, err := QueryWithClient[struct {
 			Container struct {
 				From struct {
 					WithExec struct {
@@ -4262,7 +4261,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, 0, res.Container.From.WithExec.ExitCode)
 
-		_, err = testutil.QueryWithClient[struct {
+		_, err = QueryWithClient[struct {
 			Container struct {
 				From struct {
 					WithExec struct {
@@ -4286,7 +4285,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 	t.Run("failure", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		_, err := testutil.QueryWithClient[struct {
+		_, err := QueryWithClient[struct {
 			Container struct {
 				From struct {
 					WithExec struct {
@@ -4306,7 +4305,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 		}`, nil)
 		requireErrOut(t, err, "exit code: 0")
 
-		res, err := testutil.QueryWithClient[struct {
+		res, err := QueryWithClient[struct {
 			Container struct {
 				From struct {
 					WithExec struct {

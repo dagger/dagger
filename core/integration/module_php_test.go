@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -13,6 +13,8 @@ import (
 type PHPSuite struct{}
 
 func TestPHP(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(PHPSuite{})
 }
 
@@ -20,7 +22,7 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 	t.Run("from local", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		sdkSrc, err := filepath.Abs("../../sdk/php/")
+		sdkSrc, err := filepath.Abs("../../sdk/php")
 		require.NoError(t, err)
 
 		out, err := goGitBase(t, c).
@@ -253,7 +255,7 @@ func (PHPSuite) TestConstructor(_ context.Context, t *testctx.T) {
 
 func phpModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
-	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/php", moduleName))
+	modSrc, err := filepath.Abs(filepath.Join("testdata/modules/php", moduleName))
 	require.NoError(t, err)
 
 	sdkSrc, err := filepath.Abs("../../sdk/php")

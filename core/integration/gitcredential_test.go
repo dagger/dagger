@@ -16,6 +16,8 @@ import (
 type GitCredentialSuite struct{}
 
 func TestGitCredential(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(GitCredentialSuite{})
 }
 

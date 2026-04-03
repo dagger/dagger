@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/testctx"
@@ -15,6 +15,8 @@ import (
 type ToolchainSuite struct{}
 
 func TestToolchain(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ToolchainSuite{})
 }
 
@@ -24,7 +26,7 @@ func toolchainTestEnv(t *testctx.T, c *dagger.Client) *dagger.Container {
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "init"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithDirectory(".", c.Host().Directory("./testdata/test-blueprint")).
+		WithDirectory(".", c.Host().Directory("testdata/test-blueprint")).
 		WithDirectory("app", c.Directory())
 }
 
@@ -138,7 +140,7 @@ func (ToolchainSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"apk", "add", "git"}).
 			WithExec([]string{"git", "init"}).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory(".", c.Host().Directory("testdata/checks")).
 			WithDirectory("app", c.Directory()).
 			WithWorkdir("app").
 			With(daggerExec("init", "--sdk=go", "--name=test", "--source=.")).
@@ -405,7 +407,7 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 			WithExec([]string{"apk", "add", "git"}).
 			WithExec([]string{"git", "init"}).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory(".", c.Host().Directory("testdata/checks")).
 			WithDirectory("app", c.Directory()).
 			WithWorkdir("app").
 			With(daggerExec("init"))
@@ -467,7 +469,7 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 			WithExec([]string{"apk", "add", "git"}).
 			WithExec([]string{"git", "init"}).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory(".", c.Host().Directory("testdata/checks")).
 			WithDirectory("app", c.Directory()).
 			WithWorkdir("app").
 			With(daggerExec("init"))
@@ -583,7 +585,7 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		// Use hello-with-constructor as the base module (same as other customization tests)
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			WithDirectory("/app", c.Host().Directory("./testdata/test-blueprint/hello-with-constructor"))
+			WithDirectory("/app", c.Host().Directory("testdata/test-blueprint/hello-with-constructor"))
 
 		// Create a custom config file to test customization
 		modGen = modGen.WithNewFile("/app/custom-dev-config.txt", "dev environment config")
