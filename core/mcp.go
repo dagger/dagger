@@ -601,10 +601,16 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 
 		contextual := autoConstruct != nil
 
+		desc := strings.TrimSpace(field.Description)
+		if desc == "" {
+			// LLM providers (e.g. AWS Bedrock) require non-empty tool descriptions.
+			desc = typeDef.Name + " " + field.Name
+		}
+
 		allTools.Add(LLMTool{
 			Name:        toolName,
 			Field:       field,
-			Description: strings.TrimSpace(field.Description),
+			Description: desc,
 			Schema:      toolSchema,
 
 			// TODO: would be nice, but have to 'or-null' all args and list everything
