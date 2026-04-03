@@ -35,12 +35,12 @@ codegen, integration tests, and module dependencies are also fixed.
    object and generates `impl InterfaceTrait for Object` forwarding
    methods for every declared interface.
 
-### Needs regen
+### Regenerated
 
-After changes above, `gen.rs` must be regenerated against a running
-engine so it contains the new `Loadable` impls. Integration tests in
-`tests/mod.rs` (`test_node_load_container`, `test_node_load_directory`,
-`test_node_load_file`) will compile and pass after regen.
+`gen.rs` has been regenerated with trait, Loadable, and possibleTypes
+output. Integration tests in `tests/mod.rs` (`test_node_load_container`,
+`test_node_load_directory`, `test_node_load_file`) compile. 60 types
+implement `Loadable`.
 
 ### Remaining: `@expectedType` codegen
 
