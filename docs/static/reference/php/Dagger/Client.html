@@ -1027,6 +1027,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadVolumeFromID">loadVolumeFromID</a>(<abbr title="Dagger\VolumeId|Dagger\Volume">Volume</abbr> $id)
+        
+                                            <p><p>Load a Volume from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -1105,6 +1115,16 @@
                     <a href="#method_sourceMap">sourceMap</a>(string $filename, int $line, int $column)
         
                                             <p><p>Creates source map metadata.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_sshfsVolume">sshfsVolume</a>(string $endpoint, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $privateKey, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $publicKey, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
+        
+                                            <p><p>Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -5213,6 +5233,63 @@
                     <table class="table table-condensed">
         <tr>
             <td><a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_sshfsVolume">
+        <div class="location">at line 988</div>
+        <code>                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
+    <strong>sshfsVolume</strong>(string $endpoint, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $privateKey, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $publicKey, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$endpoint</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr></td>
+                <td>$privateKey</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr></td>
+                <td>$publicKey</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr></td>
+                <td>$experimentalServiceHost</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a></td>
             <td></td>
         </tr>
     </table>
