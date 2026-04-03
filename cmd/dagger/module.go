@@ -198,7 +198,7 @@ func init() {
 	addModuleDependencyUpdateFlags(moduleUpdateCmd)
 	addModuleDependencyUpdateFlags(moduleModUpdateCmd)
 
-	moduleCmd.AddCommand(moduleModInstallCmd, moduleModUpdateCmd)
+	moduleCmd.AddCommand(moduleInitCmd, moduleModInstallCmd, moduleModUpdateCmd)
 
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
@@ -244,13 +244,13 @@ If --blueprint is specified, the given blueprint is installed in the module.
 `,
 	Example: `
 # Reference a remote module as blueprint
-dagger init --blueprint=github.com/example/blueprint
+dagger module init --blueprint=github.com/example/blueprint
 
 # Reference a local module as blueprint
-dagger init --blueprint=../my/blueprints/simple-webapp
+dagger module init --blueprint=../my/blueprints/simple-webapp
 
 # Implement a standalone module in Go
-dagger init --sdk=go
+dagger module init --sdk=go
 `,
 	GroupID: moduleGroup.ID,
 	Args:    cobra.MaximumNArgs(1),

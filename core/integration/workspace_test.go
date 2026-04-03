@@ -46,17 +46,17 @@ func legacyWorkspaceBase(t testing.TB, c *dagger.Client, config string, ops ...d
 }
 
 // initDangModule creates a Dang module in the workspace with the given name
-// and source code. Uses "dagger init" and "dagger toolchain install" to
-// scaffold the workspace and module, then overwrites main.dang with the
-// provided source.
+// and source code. Uses `dagger module init`, `dagger init`, and
+// `dagger toolchain install` to scaffold the module and workspace, then
+// overwrites main.dang with the provided source.
 func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithWorkdir("toolchains/"+name).
-			With(daggerExec("init", "--sdk=dang", "--name="+name)).
+			With(daggerExec("module", "init", "--sdk=dang", "--name="+name)).
 			WithNewFile("main.dang", source).
 			WithWorkdir("../../").
-			With(daggerExec("init")).
+			With(daggerExecRaw("init")).
 			With(daggerExec("toolchain", "install", "./toolchains/"+name))
 	}
 }
@@ -66,7 +66,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(daggerExec("init", "--sdk=dang", "--source=.", "--name="+name)).
+			With(daggerExec("module", "init", "--sdk=dang", "--source=.", "--name="+name)).
 			WithNewFile("main.dang", source)
 	}
 }
@@ -79,11 +79,12 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 		return ctr.
 			// Create the blueprint module
 			WithWorkdir("blueprints/"+name).
-			With(daggerExec("init", "--sdk=dang", "--name="+name)).
+			With(daggerExec("module", "init", "--sdk=dang", "--name="+name)).
 			WithNewFile("main.dang", source).
 			WithWorkdir("../../").
-			// Init the workspace root module using the blueprint
-			With(daggerExec("init", "--blueprint=./blueprints/"+name))
+			// Initialize the workspace, then create a blueprint-owned workspace module.
+			With(daggerExecRaw("init")).
+			With(daggerExec("module", "init", "--blueprint=./blueprints/"+name))
 	}
 }
 
@@ -1259,7 +1260,7 @@ func (WorkspaceSuite) TestEntrypointProxyDirectoryField(ctx context.Context, t *
 	base := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=playground", "--sdk=go", "--source=.")).
+		With(daggerExec("module", "init", "--name=playground", "--sdk=go", "--source=.")).
 		WithNewFile("main.go", `package main
 
 import (
@@ -1366,7 +1367,7 @@ func (WorkspaceSuite) TestRenamedToolchainModule(ctx context.Context, t *testctx
 	// Create a module named "hello-world" but install it as "greeter".
 	base := workspaceBase(t, c).
 		WithWorkdir("toolchains/hello-world").
-		With(daggerExec("init", "--sdk=dang", "--name=hello-world")).
+		With(daggerExec("module", "init", "--sdk=dang", "--name=hello-world")).
 		WithNewFile("main.dang", `
 type HelloWorld {
   pub greet(name: String! = "world"): String! {
@@ -1375,7 +1376,7 @@ type HelloWorld {
 }
 `).
 		WithWorkdir("../../").
-		With(daggerExec("init")).
+		With(daggerExec("module", "init")).
 		WithNewFile("dagger.json", `
 {
   "name": "app",

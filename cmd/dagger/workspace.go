@@ -58,19 +58,16 @@ var workspaceInitCmd = &cobra.Command{
 	Short: "Initialize a new workspace",
 	Long:  "Initialize a new workspace in the current directory, creating .dagger/config.toml.",
 	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{
-			SkipWorkspaceModules: true,
-		}, func(ctx context.Context, engineClient *client.Client) error {
-			configDir, err := initWorkspace(ctx, engineClient.Dagger())
-			if err != nil {
-				return err
-			}
+	RunE:  runWorkspaceInit,
+}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Initialized workspace in %s\n", configDir)
-			return err
-		})
-	},
+var initCmd = &cobra.Command{
+	Use:     "init",
+	Short:   "Initialize a new workspace",
+	Long:    "Alias for `dagger workspace init`. Initializes a new workspace in the current directory, creating .dagger/config.toml.",
+	Args:    cobra.NoArgs,
+	GroupID: moduleGroup.ID,
+	RunE:    runWorkspaceInit,
 }
 
 var workspaceConfigCmd = &cobra.Command{
@@ -135,6 +132,20 @@ func init() {
 	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceInfoCmd)
 	workspaceCmd.AddCommand(workspaceListCmd)
+}
+
+func runWorkspaceInit(cmd *cobra.Command, _ []string) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		configDir, err := initWorkspace(ctx, engineClient.Dagger())
+		if err != nil {
+			return err
+		}
+
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Initialized workspace in %s\n", configDir)
+		return err
+	})
 }
 
 func initWorkspace(ctx context.Context, dag *dagger.Client) (string, error) {

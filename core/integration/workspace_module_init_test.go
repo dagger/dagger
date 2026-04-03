@@ -12,7 +12,7 @@ import (
 func initWorkspaceDangModule(ctx context.Context, t *testctx.T, ctr *dagger.Container, name string) *dagger.Container {
 	t.Helper()
 
-	initCtr := ctr.WithExec([]string{"dagger", "init", "--sdk=dang", "--name=" + name}, dagger.ContainerWithExecOpts{
+	initCtr := ctr.WithExec([]string{"dagger", "module", "init", "--sdk=dang", "--name=" + name}, dagger.ContainerWithExecOpts{
 		Expect:                        dagger.ReturnTypeAny,
 		ExperimentalPrivilegedNesting: true,
 	})
@@ -81,7 +81,7 @@ type Mymod {
 		ctr := base.
 			With(daggerExec("workspace", "init")).
 			WithExec([]string{"mkdir", "-p", "submod"}).
-			With(daggerExec("init", "--sdk=dang", "--name=standalone", "./submod")).
+			With(daggerExec("module", "init", "--sdk=dang", "--name=standalone", "./submod")).
 			WithNewFile("submod/main.dang", `
 type Standalone {
   pub greet: String! {

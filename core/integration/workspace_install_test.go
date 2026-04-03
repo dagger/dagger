@@ -49,7 +49,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceInstall(ctx context.Context, t *testct
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
@@ -73,7 +73,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceInstall(ctx context.Context, t *testct
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
@@ -109,7 +109,7 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "install", "./dep")
@@ -142,9 +142,9 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, workdir, "init", "--name=app", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--name=app", "--sdk=go")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "install", "./dep")
@@ -170,9 +170,9 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
+		_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--name=app", "--sdk=go", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
+		_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go", ".")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "install", "--mod=./app", "./dep")
@@ -199,9 +199,9 @@ func (WorkspaceSuite) TestModuleInstallCommand(ctx context.Context, t *testctx.T
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
 	require.NoError(t, err)
-	_, err = hostDaggerExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
+	_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--name=app", "--sdk=go", ".")
 	require.NoError(t, err)
-	_, err = hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
+	_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go", ".")
 	require.NoError(t, err)
 
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
@@ -227,9 +227,9 @@ func (WorkspaceSuite) TestModuleUpdateCommand(ctx context.Context, t *testctx.T)
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
 	require.NoError(t, err)
-	_, err = hostDaggerExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
+	_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--name=app", "--sdk=go", ".")
 	require.NoError(t, err)
-	_, err = hostDaggerExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
+	_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go", ".")
 	require.NoError(t, err)
 	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
 	require.NoError(t, err)

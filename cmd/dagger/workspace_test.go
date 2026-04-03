@@ -8,6 +8,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestInitCommandRouting(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"init"})
+	require.NoError(t, err)
+	require.Same(t, initCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"module", "init"})
+	require.NoError(t, err)
+	require.Same(t, moduleInitCmd, cmd)
+}
+
 func TestWriteWorkspaceInfo(t *testing.T) {
 	t.Run("prints config path when present", func(t *testing.T) {
 		var out bytes.Buffer

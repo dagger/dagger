@@ -76,7 +76,7 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 		))
 		initGitRepo(ctx, t, workdir)
 
-		out, err := hostDaggerExec(ctx, t, nestedDir, "--silent", "workspace", "init")
+		out, err := hostDaggerExecRaw(ctx, t, nestedDir, "--silent", "init")
 		require.NoError(t, err)
 		require.Equal(t, fmt.Sprintf("Initialized workspace in %s", filepath.Join(nestedDir, workspace.LockDirName)), strings.TrimSpace(string(out)))
 

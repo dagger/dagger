@@ -893,11 +893,11 @@ rm -rf /tmp/main
 mkdir -p /tmp/main
 cd /tmp/main
 
-dagger init --name main --sdk=go >/dev/null
+dagger module init --name main --sdk=go >/dev/null
 
 mkdir -p dep
 cd dep
-dagger init --name dep --sdk=python >/dev/null
+dagger module init --name dep --sdk=python >/dev/null
 
 cd /tmp/main
 dagger install ./dep >/dev/null
