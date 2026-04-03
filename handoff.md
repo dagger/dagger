@@ -37,8 +37,7 @@ cd toolchains/elixir-sdk-dev && dagger call generate --introspection-json /tmp/i
 dagger call elixir-sdk update-codegen-tests -y
 ```
 
-**Not yet tested:** SDK integration tests (`sdkTest`) require the dev
-engine which is blocked by Dang SDK `@expectedType` support.
+**SDK integration tests (`sdkTest`):** Run via `dagger check elixir-sdk:sdk-test`.
 
 ### PHP SDK ✅
 
@@ -68,8 +67,7 @@ python3 -c "import json; s=json.load(open('cmd/codegen/introspection/testdata/sc
 cd sdk/java && ./mvnw test -Ddaggerengine.version=local -Ddaggerengine.schema=/tmp/introspection.json
 ```
 
-**Not yet tested:** Integration tests (`ClientIT`) require a running
-dev engine.
+**Integration tests (`ClientIT`):** Run via `dagger check java-sdk:sdk-test`.
 
 ## Remaining SDKs
 
@@ -111,10 +109,4 @@ dagger generate php-sdk:api -y    # regenerate
 dagger check 'php-sdk:*'           # run all checks for an SDK
 ```
 
-For the dev engine: `./hack/dev` builds and starts it,
-`./bin/dagger` runs commands against it.
-
-**Note:** The outer `dagger` CLI (stable release) works for running
-toolchain functions. `./bin/dagger` (dev engine) is needed for
-integration tests but is currently blocked for modules with Dang
-SDK dependencies due to missing `@expectedType` support in Dang.
+The `dagger` CLI handles running the correct engine internally.
