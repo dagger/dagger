@@ -1,6 +1,6 @@
 module toolchains/release
 
-go 1.25.3
+go 1.25.6
 
 replace github.com/dagger/dagger => ../..
 
@@ -9,7 +9,7 @@ require (
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	golang.org/x/mod v0.32.0
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.20.0
 )
 
 require (
@@ -46,7 +46,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.41.0
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect

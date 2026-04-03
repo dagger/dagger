@@ -257,7 +257,7 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		if row.Expanded {
 			var lastChild *TraceRow
 
-			if tree.shouldShowRevealedSpans(opts) {
+			if tree.ShouldShowRevealedSpans(opts) {
 				// Show revealed spans directly, finding their TraceTrees
 				for _, revealedSpan := range tree.Span.RevealedSpans.Order {
 					if revealedTree, ok := lv.BySpan[revealedSpan.ID]; ok {
@@ -296,7 +296,7 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 	return rows
 }
 
-func (row *TraceTree) shouldShowRevealedSpans(opts FrontendOpts) bool {
+func (row *TraceTree) ShouldShowRevealedSpans(opts FrontendOpts) bool {
 	verbosity := opts.Verbosity
 	if v, ok := opts.SpanVerbosity[row.Span.ID]; ok {
 		verbosity = v
@@ -305,7 +305,7 @@ func (row *TraceTree) shouldShowRevealedSpans(opts FrontendOpts) bool {
 }
 
 func (row *TraceTree) hasVisibleChildren(opts FrontendOpts) bool {
-	if row.shouldShowRevealedSpans(opts) {
+	if row.ShouldShowRevealedSpans(opts) {
 		return len(row.Span.RevealedSpans.Order) > 0
 	} else {
 		return len(row.Children) > 0

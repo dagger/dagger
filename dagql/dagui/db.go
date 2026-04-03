@@ -428,7 +428,7 @@ type Activity struct {
 	// EarliestRunning as they complete.
 	//
 	// This needs to be synced to the frontend so it doesn't lose track of the
-	// running status in updateEarliest. We exclude from JSON marshalling since
+	// running status in Activity.Add. We exclude from JSON marshalling since
 	// the map key is incompatible. Syncing to the frontend uses encoding/gob,
 	// which accepts the map key type.
 	AllRunning map[SpanID]time.Time `json:"-"`
@@ -489,14 +489,29 @@ func (activity *Activity) Add(span *Span) bool {
 			activity.AllRunning[span.ID] = span.StartTime
 			changed = true
 		}
-		if activity.updateEarliest() {
+		// O(1): just check if this span is earlier than current earliest.
+		if activity.EarliestRunning.IsZero() || span.StartTime.Before(activity.EarliestRunning) {
+			activity.EarliestRunning = span.StartTime
 			changed = true
 		}
 		return changed
 	}
 
+	wasEarliest := span.StartTime.Equal(activity.EarliestRunning)
 	delete(activity.AllRunning, span.ID)
-	if activity.updateEarliest() {
+	if len(activity.AllRunning) == 0 {
+		if !activity.EarliestRunning.IsZero() {
+			activity.EarliestRunning = time.Time{}
+			changed = true
+		}
+	} else if wasEarliest {
+		// Only rescan if we removed the earliest — O(R) but rare.
+		activity.EarliestRunning = time.Time{}
+		for _, t := range activity.AllRunning {
+			if activity.EarliestRunning.IsZero() || t.Before(activity.EarliestRunning) {
+				activity.EarliestRunning = t
+			}
+		}
 		changed = true
 	}
 
@@ -548,21 +563,6 @@ func (activity *Activity) EndTimeOrFallback(now time.Time) time.Time {
 		return time.Time{}
 	}
 	return activity.CompletedIntervals[len(activity.CompletedIntervals)-1].End
-}
-
-func (activity *Activity) updateEarliest() (changed bool) {
-	if len(activity.AllRunning) > 0 {
-		for _, t := range activity.AllRunning {
-			if activity.EarliestRunning.IsZero() || t.Before(activity.EarliestRunning) {
-				activity.EarliestRunning = t
-				changed = true
-			}
-		}
-	} else if !activity.EarliestRunning.IsZero() {
-		activity.EarliestRunning = time.Time{}
-		changed = true
-	}
-	return
 }
 
 // mergeIntervals merges overlapping intervals in the activity.

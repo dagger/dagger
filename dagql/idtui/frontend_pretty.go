@@ -14,17 +14,18 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/adrg/xdg"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
-	"github.com/vito/bubbline/editline"
 	"github.com/vito/bubbline/history"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -38,6 +39,9 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
+
+	"github.com/vito/tuist"
+	"github.com/vito/tuist/teav1"
 )
 
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
@@ -47,19 +51,34 @@ var (
 	ErrInterrupted = errors.New("interrupted")
 )
 
+// windowSize replaces tea.WindowSizeMsg for terminal dimensions.
+type windowSize struct {
+	Width, Height int
+}
+
+// backgroundRequest communicates Background calls to the main run loop.
+type backgroundRequest struct {
+	cmd  ExecCommand
+	raw  bool
+	done chan error
+}
+
 type frontendPretty struct {
+	tuist.Compo
+
 	dagui.FrontendOpts
+
+	// telemetryError records errors from the OTel telemetry pipeline.
+	telemetryError atomic.Pointer[error]
 
 	dag *dagger.Client
 
-	// used for animations
-	now time.Time
-
 	// don't show live progress; just print a full report at the end
 	reportOnly bool
+	reportMu   sync.Mutex // protects state in reportOnly mode (no TUI event loop)
 
 	// updated by Run
-	program     *tea.Program
+	tui         *tuist.TUI
 	run         func(context.Context) (cleanups.CleanupF, error)
 	runCtx      context.Context
 	interrupt   context.CancelCauseFunc
@@ -69,18 +88,25 @@ type frontendPretty struct {
 	err         error
 	cleanup     func()
 
+	// lifecycle channels
+	quit          chan struct{}
+	backgroundReq chan backgroundRequest
+
 	// updated by Shell
 	shell           ShellHandler
 	shellCtx        context.Context
 	shellInterrupt  context.CancelCauseFunc
 	promptFg        termenv.Color
 	promptErr       error
-	editline        *editline.Model
+	promptErrLabel  *ErrorLabel
+	textInput       *tuist.TextInput
+	completionMenu  *tuist.CompletionMenu
+	keymapBar       *KeymapBar
 	editlineFocused bool
+	inputHistory    []string // raw encoded history entries (with mode prefix)
+	historyIndex    int      // -1 = not browsing history
+	historySaved    string   // saved input when browsing history
 	autoModeSwitch  bool
-	flushed         map[dagui.SpanID]bool
-	offscreen       map[dagui.SpanID]bool
-	scrollback      scrollbackRows
 	shellRunning    bool
 	shellLock       sync.Mutex
 
@@ -90,8 +116,6 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	debugged     dagui.SpanID
-	focusedIdx   int
 	rowsView     *dagui.RowsView
 	rows         *dagui.Rows
 	pressedKey   string
@@ -101,38 +125,376 @@ type frontendPretty struct {
 	cloudURL string
 
 	// TUI state/config
-	fps          float64 // frames per second
 	spinner      *Rave
 	profile      termenv.Profile
-	window       tea.WindowSizeMsg // set by BubbleTea
+	window       windowSize // terminal dimensions
 	contentWidth int
-	sidebarWidth int
-	view         *strings.Builder // rendered async
-	viewOut      *termenv.Output
 	browserBuf   *strings.Builder      // logs if browser fails
 	finalRender  bool                  // whether we're doing the final render
 	shownErrs    map[dagui.SpanID]bool // which errors we've rendered
 	stdin        io.Reader             // used by backgroundMsg for running terminal
 	writer       io.Writer
 
-	// content to show in the sidebar
-	sidebar    []SidebarSection
-	sidebarBuf *strings.Builder // logs if sidebar fails
-
-	// held to synchronize tea.Model with updates
-	mu sync.Mutex
+	// notification bubbles (single overlay with a Container of bubbles)
+	notifications         map[string]*NotificationBubble // keyed by section title
+	notificationContainer *tuist.Container
+	notificationOverlay   *tuist.OverlayHandle
 
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
 
 	// Add prompt field
-	form *huh.Form
+	formWrap  *teav1.Wrap // bubbletea v1 adapter for huh.Form
+	formModel *huh.Form   // direct reference for KeyBinds()
+
+	// track whether we've already spawned the run function
+	spawned bool
+
+	// per-span tree components for incremental rendering
+	spanTrees           map[dagui.SpanID]*SpanTreeView
+	topTrees            []*SpanTreeView // top-level tree views, ordered
+	renderVersion       uint64          // bumped on global render config changes (verbosity, zoom)
+	lastRenderedVersion uint64          // renderVersion at last Render, for detecting changes
+
+	// viewDirty is set when DB data changes (ExportSpans, LogExport) and
+	// cleared by recalculateViewLocked in Render. This coalesces multiple
+	// data updates into a single recalculate per render frame.
+	viewDirty bool
+
+	// search state (Vim-style "/" search)
+	searchActive         bool                  // search input bar is shown
+	searchQuery          string                // confirmed search string
+	searchInput          *tuist.TextInput      // the "/" prompt input (non-nil while searchActive)
+	searchMatches        []searchMatch         // ordered list of all matches
+	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
+	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
+	searchIdx            int                   // current match index (-1 = none)
+}
+
+// Verify interface compliance at compile time.
+var (
+	_ tuist.Component   = (*frontendPretty)(nil)
+	_ tuist.Interactive = (*frontendPretty)(nil)
+	_ tuist.Mounter     = (*frontendPretty)(nil)
+)
+
+// treePrefix holds pre-computed prefix strings for a SpanTreeView.
+// These are set by the parent SpanTreeView when rendering its children.
+// By computing prefixes top-down through the tree, we avoid the stale-prefix
+// problem that occurred when each row walked up the TraceRow parent chain
+// independently.
+type treePrefix struct {
+	// step is the prefix for the step title line (ancestor bars + connector).
+	// e.g., "│ ├╴" for a non-last child at depth 2.
+	step string
+	// cont is the prefix for continuation lines (ancestor bars + bar/space).
+	// e.g., "│ │ " for a non-last child at depth 2.
+	cont string
+	// forChildren is the accumulated ancestor bars to pass to this node's
+	// children. Equal to cont (the parent's column continues for children).
+	forChildren string
+	// contWidth is the visual width of cont (for available width calculation).
+	contWidth int
+}
+
+// SpanTreeView is a tuist component that renders a TraceTree node and its
+// children recursively. This is the tree-based replacement for SpanRowView.
+//
+// The parent SpanTreeView computes and sets the prefix strings for each
+// child before calling RenderChild. When a parent's status changes, it
+// re-renders, recomputing child prefixes — so prefixes are always fresh.
+//
+// Children that haven't changed return cached results from RenderChild.
+// The parent just concatenates cached child lines, which is O(pointers).
+type SpanTreeView struct {
+	tuist.Compo
+	fe     *frontendPretty
+	spanID dagui.SpanID
+
+	// parent points to the parent SpanTreeView (nil for top-level nodes).
+	parent *SpanTreeView
+	// indexInParent is this node's position in parent.children (or in
+	// fe.topTrees for top-level nodes).
+	indexInParent int
+
+	// prefix holds the pre-computed indentation from ancestors.
+	// Set by the parent before RenderChild is called.
+	prefix treePrefix
+
+	// children are the expanded child SpanTreeViews, ordered.
+	children []*SpanTreeView
+	// childMap indexes children by span ID for reuse across renders.
+	childMap map[dagui.SpanID]*SpanTreeView
+
+	// spinner is non-nil when the span is running; self-ticking.
+	spinner *SpinnerView
+
+	// childrenGapPrefix is the prefix for gap lines between this node's
+	// children. It shows all ancestor bars + this node's own bar column.
+	// Computed by syncTreeNode. Unlike a child's prefix.cont (which omits
+	// the parent bar for last children), this always shows the parent bar.
+	childrenGapPrefix string
+
+	// focused tracks whether this span is the currently focused span.
+	// Synced by tuist's SetFocus → SetFocused callback.
+	focused bool
+
+	// debugged tracks whether debug info is shown for this span.
+	// Toggled by the "?" key.
+	debugged bool
+
+	// Render metadata — set during Render() for focus-line lookup.
+	// These are output-derived values, not input state that drives rendering.
+	selfLineCount   int   // lines from self content (before children)
+	childGapCounts  []int // gap line count before each child
+	childLineCounts []int // total line count from each child's RenderChild
+}
+
+var _ tuist.Component = (*SpanTreeView)(nil)
+var _ tuist.Focusable = (*SpanTreeView)(nil)
+
+// SetFocused is called by tuist when this component gains or loses focus.
+// This is O(1) — only the old and new focused components are notified.
+func (s *SpanTreeView) SetFocused(_ tuist.Context, focused bool) {
+	if s.focused != focused {
+		s.focused = focused
+		s.Update()
+	}
+}
+
+// SpinnerView is a self-ticking spinner component. It starts a tick goroutine
+// on mount (via OnMount/ctx.Done()) and stops when dismounted. Only mounted
+// when a span is running, so completed spans have zero per-frame cost.
+type SpinnerView struct {
+	tuist.Compo
+	rave *Rave
+	now  time.Time
+}
+
+var (
+	_ tuist.Component = (*SpinnerView)(nil)
+	_ tuist.Mounter   = (*SpinnerView)(nil)
+)
+
+// OnMount starts a tick goroutine. ctx.Done() fires on dismount.
+func (s *SpinnerView) OnMount(ctx tuist.Context) {
+	go func() {
+		ticker := time.NewTicker(33 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case t := <-ticker.C:
+				ctx.Dispatch(func() {
+					s.now = t
+					s.Update()
+				})
+			}
+		}
+	}()
+}
+
+func (s *SpinnerView) Render(ctx tuist.Context) tuist.RenderResult {
+	return tuist.RenderResult{Lines: []string{s.rave.ViewFancy(s.now)}}
+}
+
+// ViewFancy returns the current spinner frame for inline use.
+func (s *SpinnerView) ViewFancy() string {
+	return s.rave.ViewFancy(s.now)
+}
+
+// Render produces the lines for this span tree node and its children.
+// This method is stateless — all component state (prefix, children,
+// focus, spinner) is synced by syncSpanTreeState() before Render runs.
+func (s *SpanTreeView) Render(ctx tuist.Context) tuist.RenderResult {
+	row := s.fe.rows.BySpan[s.spanID]
+	if row == nil {
+		return tuist.RenderResult{}
+	}
+
+	// Render the spinner as a child so tuist manages its lifecycle
+	// (OnMount starts the tick goroutine, dismount stops it).
+	if s.spinner != nil {
+		s.RenderChild(ctx, s.spinner)
+	}
+
+	r := newRenderer(s.fe.db, s.fe.contentWidth/2, s.fe.FrontendOpts, false)
+
+	lines := ctx.Recycle()
+
+	// Render the title (renderStep) into a separate buffer so we can
+	// apply search highlighting to it without double-highlighting the
+	// vterm log output (which handles its own highlighting via
+	// SearchQuery/SearchCurrentRow).
+	titleBuf := new(strings.Builder)
+	titleOut := NewOutput(titleBuf, termenv.WithProfile(s.fe.profile))
+	r.indentFunc = s.indentFunc(titleOut)
+	s.fe.renderStep(titleOut, r, row, "")
+	titleText := titleBuf.String()
+	if titleText != "" {
+		titleLines := strings.Split(strings.TrimSuffix(titleText, "\n"), "\n")
+		// Highlight search matches in title lines only (not logs).
+		if s.fe.searchQuery != "" && s.fe.searchMatchSpans[row.Span.ID] {
+			style := matchHighlight
+			if s.fe.searchIdx >= 0 && s.fe.searchIdx < len(s.fe.searchMatches) {
+				cm := s.fe.searchMatches[s.fe.searchIdx]
+				if cm.spanID == row.Span.ID && cm.logRow == -1 {
+					style = currentMatchHighlight
+				}
+			}
+			for i, line := range titleLines {
+				titleLines[i] = highlightANSI(line, s.fe.searchQuery, style)
+			}
+		}
+		lines = append(lines, titleLines...)
+	}
+
+	// Render the rest (logs, errors, debug) into a separate buffer.
+	// Log highlighting is handled by the Vterm's own SearchQuery state,
+	// so we do NOT apply highlightANSI to these lines.
+	restBuf := new(strings.Builder)
+	restOut := NewOutput(restBuf, termenv.WithProfile(s.fe.profile))
+	r.indentFunc = s.indentFunc(restOut)
+	s.fe.renderRowContentRest(restOut, r, row, "")
+	restText := restBuf.String()
+	if restText != "" {
+		lines = append(lines, strings.Split(strings.TrimSuffix(restText, "\n"), "\n")...)
+	}
+
+	s.selfLineCount = len(lines)
+
+	// Render children (already synced by syncSpanTreeState).
+	s.childGapCounts = s.childGapCounts[:0]
+	s.childLineCounts = s.childLineCounts[:0]
+	for _, child := range s.children {
+		// Gap line between children — uses parent's gap prefix (which always
+		// shows the parent bar), not the child's prefix.cont (which omits
+		// the parent bar for the last child).
+		var gapCount int
+		childRow := s.fe.rows.BySpan[child.spanID]
+		if childRow != nil {
+			gaps := s.fe.renderTreeGap(r, childRow, s.childrenGapPrefix)
+			gapCount = len(gaps)
+			lines = append(lines, gaps...)
+		}
+
+		childCtx := ctx
+		childCtx.Width = ctx.Width - child.prefix.contWidth
+		result := s.RenderChild(childCtx, child)
+		lines = append(lines, result.Lines...)
+
+		s.childGapCounts = append(s.childGapCounts, gapCount)
+		s.childLineCounts = append(s.childLineCounts, len(result.Lines))
+	}
+
+	return tuist.RenderResult{Lines: lines}
+}
+
+// indentFunc returns a fancyIndent override that uses the pre-computed prefix.
+// It only applies to the SpanTreeView's own span; other rows (e.g., synthetic
+// rows from renderErrorCause) return false to fall through to the original
+// fancyIndent which walks the row's parent chain.
+func (s *SpanTreeView) indentFunc(out TermOutput) func(TermOutput, *dagui.TraceRow, bool, bool) bool {
+	return func(o TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool) bool {
+		// Only use tree prefix for our own span. Other rows (synthetic
+		// rootCauseRows, etc.) need the original parent-chain walk.
+		if row.Span.ID != s.spanID {
+			return false
+		}
+		if selfHoriz {
+			fmt.Fprint(o, s.prefix.step)
+		} else if selfBar {
+			fmt.Fprint(o, s.prefix.cont)
+			// Also render self bar (for multi-line call args)
+			span := row.Span
+			color := restrainedStatusColor(span)
+			var symbol string
+			if row.ShowingChildren && !row.Span.Reveal {
+				symbol = VertBar
+			} else {
+				symbol = " "
+			}
+			fmt.Fprint(o, out.String(symbol+" ").Foreground(color).Faint())
+		} else {
+			fmt.Fprint(o, s.prefix.cont)
+		}
+		return true
+	}
+}
+
+// computeChildPrefix computes the prefix for a child at the given position.
+func (s *SpanTreeView) computeChildPrefix(out TermOutput, hasNext bool) treePrefix {
+	row := s.fe.rows.BySpan[s.spanID]
+	if row == nil {
+		return treePrefix{}
+	}
+	span := row.Span
+	color := restrainedStatusColor(span)
+
+	var connector, bar string
+	if len(span.RevealedSpans.Order) > 0 || span.Reveal {
+		// Revealed spans are visually indented beneath their parent,
+		// not connected with tree lines.
+		connector = "  "
+		bar = "  "
+	} else if hasNext {
+		connector = out.String(VertRightBar + HorizHalfLeftBar).Foreground(color).Faint().String()
+		bar = out.String(VertBar + " ").Foreground(color).Faint().String()
+	} else {
+		connector = out.String(CornerBottomLeft + HorizHalfLeftBar).Foreground(color).Faint().String()
+		bar = "  "
+	}
+
+	return treePrefix{
+		step:        s.prefix.forChildren + connector,
+		cont:        s.prefix.forChildren + bar,
+		forChildren: s.prefix.forChildren + bar,
+		contWidth:   s.prefix.contWidth + 2,
+	}
+}
+
+// getOrCreateSpanTree returns the SpanTreeView for the given span ID,
+// creating one if it doesn't exist.
+func (fe *frontendPretty) getOrCreateSpanTree(spanID dagui.SpanID) *SpanTreeView {
+	if fe.spanTrees == nil {
+		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
+	}
+	st, ok := fe.spanTrees[spanID]
+	if !ok {
+		st = &SpanTreeView{
+			fe:     fe,
+			spanID: spanID,
+		}
+		fe.spanTrees[spanID] = st
+	}
+	// Sync spinner: mount when running, dismount when done
+	fe.syncSpinnerTree(st)
+	return st
+}
+
+// syncSpinnerTree sets or clears the spinner on a SpanTreeView based on
+// whether the span is currently running. The spinner's lifecycle is
+// managed by RenderChild in SpanTreeView.Render — tuist auto-mounts it
+// (firing OnMount to start the tick goroutine) and auto-dismounts it
+// when the SpanTreeView stops rendering it.
+func (fe *frontendPretty) syncSpinnerTree(st *SpanTreeView) {
+	tree := fe.rowsView.BySpan[st.spanID]
+	running := tree != nil && tree.Span.IsRunningOrEffectsRunning()
+	if running && st.spinner == nil {
+		st.spinner = &SpinnerView{
+			rave: fe.spinner,
+			now:  time.Now(),
+		}
+	} else if !running && st.spinner != nil {
+		st.spinner = nil
+	}
 }
 
 func (fe *frontendPretty) SetClient(client *dagger.Client) {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	fe.dag = client
+	fe.dispatch(func() {
+		fe.dag = client
+	})
 }
 
 func NewPretty(w io.Writer) Frontend {
@@ -145,9 +507,20 @@ func NewReporter(w io.Writer) Frontend {
 	return fe
 }
 
+// dispatch runs fn on the TUI event loop goroutine (when the TUI is running)
+// or directly under a mutex (in reportOnly mode where there is no event loop).
+func (fe *frontendPretty) dispatch(fn func()) {
+	if fe.reportOnly {
+		fe.reportMu.Lock()
+		defer fe.reportMu.Unlock()
+		fn()
+	} else {
+		fe.tui.Dispatch(fn)
+	}
+}
+
 func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	profile := ColorProfile()
-	view := new(strings.Builder)
 	return &frontendPretty{
 		db:        db,
 		logs:      newPrettyLogs(profile, db),
@@ -157,130 +530,128 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		rowsView: &dagui.RowsView{},
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
-		// shell state
-		flushed:   map[dagui.SpanID]bool{},
-		offscreen: map[dagui.SpanID]bool{},
-
 		// initial TUI state
-		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		fps:        30,                                       // sane default, fine-tune if needed
-		spinner:    NewRave(),
-		profile:    profile,
-		view:       view,
-		viewOut:    NewOutput(view, termenv.WithProfile(profile)),
-		browserBuf: new(strings.Builder),
-		sidebarBuf: new(strings.Builder),
-		writer:     w,
-		shownErrs:  map[dagui.SpanID]bool{},
+		tui:           tuist.New(tuist.NewStdTerminal()),
+		window:        windowSize{Width: -1, Height: -1}, // be clear that it's not set
+		spinner:       NewRave(),
+		profile:       profile,
+		browserBuf:    new(strings.Builder),
+		notifications: make(map[string]*NotificationBubble),
+		writer:        w,
+		shownErrs:     map[dagui.SpanID]bool{},
 	}
 }
 
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	var updated bool
-	for i, cur := range fe.sidebar {
-		if cur.Title == section.Title {
-			fe.sidebar[i] = section
-			updated = true
-			break
-		}
-	}
-	if !updated {
-		if section.Title == "" {
-			fe.sidebar = append([]SidebarSection{section}, fe.sidebar...)
+	fe.dispatch(func() {
+		title := section.Title
+
+		if bubble, ok := fe.notifications[title]; ok {
+			// Update existing bubble
+			bubble.section = section
+			bubble.Update()
 		} else {
-			fe.sidebar = append(fe.sidebar, section)
-		}
-	}
-	fe.renderSidebar()
-}
+			// Create new bubble
+			bubble := newNotificationBubble(fe, section)
+			fe.notifications[title] = bubble
 
-func (fe *frontendPretty) viewSidebar() string {
-	fe.renderSidebar()
-	return fe.sidebarBuf.String()
-}
+			// Lazily create the container and overlay on first notification
+			if fe.notificationContainer == nil {
+				fe.notificationContainer = &tuist.Container{}
+				fe.notificationOverlay = fe.tui.ShowOverlay(fe.notificationContainer, &tuist.OverlayOptions{
+					Width:  tuist.SizeAbs(notificationWidth(fe.window.Width)),
+					Anchor: tuist.AnchorTopRight,
+					Margin: tuist.OverlayMargin{Right: 1},
+				})
+			}
 
-var sidebarBG lipgloss.TerminalColor
-
-func init() {
-	// delegate sidebar background to editline background
-	focusedStyle, _ := editline.DefaultStyles()
-	editlineStyle := focusedStyle.Editor.CursorLine
-	sidebarBG = editlineStyle.GetBackground()
-}
-
-func (fe *frontendPretty) renderSidebar() {
-	fe.setWindowSizeLocked(fe.window)
-	if fe.sidebarWidth == 0 {
-		// sidebar not displayed; don't bother
-		return
-	}
-
-	fe.sidebarBuf.Reset()
-
-	for i, section := range fe.sidebar {
-		content := section.Content
-		if section.ContentFunc != nil {
-			content = section.ContentFunc(fe.sidebarWidth)
+			// Untitled goes first, titled appends
+			if title == "" {
+				fe.notificationContainer.Children = append(
+					[]tuist.Component{bubble},
+					fe.notificationContainer.Children...,
+				)
+				fe.notificationContainer.Update()
+			} else {
+				fe.notificationContainer.AddChild(bubble)
+			}
 		}
 
-		if content == "" {
-			// Section became empty (e.g. changes synced); don't show it
-			continue
-		}
-
-		if i > 0 {
-			fe.sidebarBuf.WriteString("\n")
-			fe.sidebarBuf.WriteString("\n")
-		}
-
-		keymap := new(strings.Builder)
-		if section.Title != "" {
-			fe.sidebarBuf.WriteString(fe.viewOut.String(section.Title).
-				Foreground(termenv.ANSIBrightBlack).String())
-		}
-
-		filler := fe.sidebarWidth - len(section.Title)
-		filler -= 6 // 1 border + 2 spaces * 2 sides + 1 space between title and bar
-		if len(section.KeyMap) > 0 {
-			filler -= fe.renderKeymap(keymap,
-				KeymapStyle.Background(sidebarBG),
-				section.KeyMap)
-			filler -= 1 // space between bar and keymap
-		}
-
-		if filler > 0 {
-			horizBar := fe.viewOut.String(strings.Repeat(HorizBar, filler)).String()
-			fe.sidebarBuf.WriteString(
-				lipgloss.NewStyle().
-					Foreground(ANSIBrightBlack).
-					Background(sidebarBG).
-					Render(" " + horizBar + " "),
-			)
-		}
-
-		fe.sidebarBuf.WriteString(keymap.String())
-		fe.sidebarBuf.WriteString("\n\n")
-
-		// reset everything but the background
-		content = strings.ReplaceAll(content, reset, termenv.CSI+"39;22;23;24;25;27;28;29m")
-
-		fe.sidebarBuf.WriteString(strings.TrimRight(content, "\n"))
-	}
-}
-
-type startShellMsg struct {
-	ctx     context.Context
-	handler ShellHandler
+		fe.Update()
+	})
 }
 
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
-	fe.program.Send(startShellMsg{
-		ctx:     ctx,
-		handler: handler,
+	fe.dispatch(func() {
+		fe.startShell(ctx, handler)
+		fe.Update()
 	})
 	<-ctx.Done()
+	fe.dispatch(func() {
+		fe.stopShell()
+		fe.Update()
+	})
+}
+
+func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) {
+	fe.shell = handler
+	fe.shellCtx = ctx
+	fe.promptFg = termenv.ANSIGreen
+
+	fe.initTextInput()
+
+	// restore history — store raw encoded entries to preserve mode prefixes
+	if hist, err := history.LoadHistory(historyFile); err == nil {
+		fe.inputHistory = hist
+	}
+	fe.historyIndex = -1
+
+	// wire up auto completion
+	fe.completionMenu = tuist.NewCompletionMenu(fe.textInput, func(input string, cursorPos int) tuist.CompletionResult {
+		return handler.AutoComplete(input, cursorPos)
+	})
+
+	// Intercept special keys before TextInput processes them.
+	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
+
+	// Insert errorLabel + textInput before keymapBar: output → error → prompt → keymap
+	fe.promptErrLabel = NewErrorLabel()
+	fe.tui.RemoveChild(fe.keymapBar)
+	fe.tui.AddChild(fe.promptErrLabel)
+	fe.tui.AddChild(fe.textInput)
+	fe.tui.AddChild(fe.keymapBar)
+	fe.tui.SetShowHardwareCursor(true)
+
+	// put the bowtie on
+	fe.syncPrompt()
+	fe.tui.SetFocus(fe.textInput)
+	fe.editlineFocused = true
+	fe.keymapBar.Update()
+}
+
+func (fe *frontendPretty) stopShell() {
+	// save history before clearing shell state
+	fe.saveHistory()
+
+	if fe.promptErrLabel != nil {
+		fe.tui.RemoveChild(fe.promptErrLabel)
+		fe.promptErrLabel = nil
+	}
+	if fe.textInput != nil {
+		fe.tui.RemoveChild(fe.textInput)
+		fe.textInput = nil
+	}
+	if fe.notificationOverlay != nil {
+		fe.notificationOverlay.Remove()
+		fe.notificationOverlay = nil
+		fe.notificationContainer = nil
+		fe.notifications = make(map[string]*NotificationBubble)
+	}
+	fe.shell = nil
+	fe.shellCtx = nil
+	fe.completionMenu = nil
+	fe.editlineFocused = false
+	fe.tui.SetShowHardwareCursor(false)
 }
 
 func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
@@ -289,21 +660,21 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 			slog.Warn("failed to open URL", "url", url, "err", err)
 		}
 	}
-	fe.mu.Lock()
-	fe.cloudURL = url
-	if msg != "" {
-		slog.Warn(msg)
-	}
-
-	if cmdContext, ok := FromCmdContext(ctx); ok && cmdContext.printTraceLink {
-		if logged {
-			fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
-		} else if !skipLoggedOutTraceMsg() {
-			fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
+	fe.dispatch(func() {
+		fe.cloudURL = url
+		if msg != "" {
+			slog.Warn(msg)
 		}
-	}
 
-	fe.mu.Unlock()
+		if cmdContext, ok := FromCmdContext(ctx); ok && cmdContext.printTraceLink {
+			if logged {
+				fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
+			} else if !skipLoggedOutTraceMsg() {
+				fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
+			}
+		}
+		fe.Update()
+	})
 }
 
 func traceMessage(profile termenv.Profile, url string, msg string) string {
@@ -341,15 +712,6 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		fe.err = fe.runWithTUI(ctx, run)
 	}
 
-	if fe.editline != nil && fe.shell != nil {
-		if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
-			slog.Error("failed to create history directory", "err", err)
-		}
-		if err := history.SaveHistory(fe.editline.GetHistory(), historyFile); err != nil {
-			slog.Error("failed to save history", "err", err)
-		}
-	}
-
 	// print the final output display to stderr
 	if renderErr := fe.FinalRender(os.Stderr); renderErr != nil {
 		return renderErr
@@ -375,11 +737,11 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
 	done := make(chan struct{}, 1)
 
-	fe.program.Send(promptMsg{
-		form: form,
-		result: func(f *huh.Form) {
+	fe.dispatch(func() {
+		fe.handlePromptForm(form, func(f *huh.Form) {
 			close(done)
-		},
+		})
+		fe.Update()
 	})
 
 	select {
@@ -390,29 +752,66 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 	}
 }
 
+// blankLine is a trivial component that renders a single empty line.
+type blankLine struct{ tuist.Compo }
+
+func (*blankLine) Render(tuist.Context) tuist.RenderResult {
+	return tuist.RenderResult{Lines: []string{""}}
+}
+
+func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) {
+	form.SubmitCmd = tea.Quit
+	form.CancelCmd = tea.Quit
+	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
+	fe.formWrap = teav1.New(fe.formModel)
+	formSpacer := &blankLine{}
+	fe.formWrap.OnQuit(func() {
+		result(fe.formModel)
+		fe.tui.RemoveChild(fe.formWrap)
+		fe.tui.RemoveChild(formSpacer)
+		fe.formWrap = nil
+		fe.formModel = nil
+		fe.applyTuistFocus() // restore focus to the correct SpanTreeView
+		fe.Update()
+	})
+	// Insert before keymapBar
+	fe.tui.RemoveChild(fe.keymapBar)
+	fe.tui.AddChild(fe.formWrap)
+	fe.tui.AddChild(formSpacer)
+	fe.tui.AddChild(fe.keymapBar)
+	fe.tui.SetFocus(fe.formWrap)
+}
+
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
 	return &fe.FrontendOpts
 }
 
 func (fe *frontendPretty) SetVerbosity(n int) {
-	fe.mu.Lock()
-	fe.Opts().Verbosity = n
-	fe.mu.Unlock()
+	fe.dispatch(func() {
+		fe.Opts().Verbosity = n
+		fe.Update()
+	})
+}
+
+func (fe *frontendPretty) SetTelemetryError(err error) {
+	fe.telemetryError.Store(&err)
 }
 
 func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
-	fe.mu.Lock()
-	fe.db.SetPrimarySpan(spanID)
-	fe.ZoomedSpan = spanID
-	fe.FocusedSpan = spanID
-	fe.recalculateViewLocked()
-	fe.mu.Unlock()
+	fe.dispatch(func() {
+		fe.db.SetPrimarySpan(spanID)
+		fe.ZoomedSpan = spanID
+		fe.FocusedSpan = spanID
+		fe.recalculateViewLocked()
+		fe.Update()
+	})
 }
 
 func (fe *frontendPretty) RevealAllSpans() {
-	fe.mu.Lock()
-	fe.ZoomedSpan = dagui.SpanID{}
-	fe.mu.Unlock()
+	fe.dispatch(func() {
+		fe.ZoomedSpan = dagui.SpanID{}
+		fe.Update()
+	})
 }
 
 func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Context) (cleanups.CleanupF, error)) (rerr error) {
@@ -421,11 +820,10 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 	// set up ctx cancellation so the TUI can interrupt via keypresses
 	fe.runCtx, fe.interrupt = context.WithCancelCause(ctx)
 
-	opts := []tea.ProgramOption{
-		tea.WithMouseCellMotion(),
-	}
+	fe.quit = make(chan struct{})
+	fe.backgroundReq = make(chan backgroundRequest)
 
-	in, out := findTTYs()
+	in, _ := findTTYs()
 	if in == nil {
 		tty, err := openInputTTY()
 		if err != nil {
@@ -436,67 +834,200 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 			defer tty.Close()
 		}
 	}
-	opts = append(opts, tea.WithInput(in))
-	// store in fe to use in backgroundMsg processing
-	// which is used for terminal command
+	// store in fe to use in Background processing
 	fe.stdin = in
-
-	if out != nil {
-		opts = append(opts, tea.WithOutput(out))
-	}
-
-	// keep program state so we can send messages to it
-	fe.program = tea.NewProgram(fe, opts...)
 
 	// prevent browser.OpenURL from breaking the TUI if it fails
 	browser.Stdout = fe.browserBuf
 	browser.Stderr = fe.browserBuf
 
-	// run the program, which starts the callback async
-	if _, err := fe.program.Run(); err != nil {
-		return err
-	}
+	// Create and start the TUI
+	fe.startTUI()
 
-	// if the ctx was canceled, we don't need to return whatever random garbage
-	// error string we got back; just return the ctx err.
-	if fe.runCtx.Err() != nil {
-		// return the cause, since it can hint the CLI to e.g. exit 0 if the
-		// user is just pressing Ctrl+D in the shell
-		return context.Cause(fe.runCtx)
-	}
+	// Main loop: wait for quit or background requests
+	for {
+		select {
+		case <-fe.quit:
+			fe.tui.Stop()
 
-	// return the run err result
-	return fe.err
+			// if the ctx was canceled, we don't need to return whatever random garbage
+			// error string we got back; just return the ctx err.
+			if fe.runCtx.Err() != nil {
+				return context.Cause(fe.runCtx)
+			}
+			return fe.err
+
+		case req := <-fe.backgroundReq:
+			req.done <- fe.tui.Exec(func(in io.Reader, out io.Writer, errOut io.Writer) error {
+				req.cmd.SetStdin(in)
+				req.cmd.SetStdout(out)
+				req.cmd.SetStderr(errOut)
+
+				if req.raw {
+					if stdin, ok := fe.stdin.(*os.File); ok {
+						oldState, rawErr := term.MakeRaw(int(stdin.Fd()))
+						if rawErr != nil {
+							return rawErr
+						}
+						defer func() {
+							if oldState != nil {
+								term.Restore(int(stdin.Fd()), oldState)
+							}
+						}()
+					}
+				}
+				return req.cmd.Run()
+			})
+		}
+	}
+}
+
+func (fe *frontendPretty) startTUI() {
+	if p := os.Getenv("TUIST_LOG"); p != "" {
+		if f, err := os.Create(p); err == nil {
+			fe.tui.SetDebugWriter(f)
+		}
+	}
+	fe.keymapBar = &KeymapBar{
+		Profile:          fe.profile,
+		UsingCloudEngine: fe.UsingCloudEngine,
+		Keys:             fe.keys,
+	}
+	fe.tui.AddChild(fe)
+	fe.tui.AddChild(fe.keymapBar)
+	fe.tui.SetFocus(fe)
+	fe.tui.Start()
+}
+
+// OnMount is called by tuist when the component is mounted into the TUI tree.
+// It starts the frame ticker and, on the first mount, spawns the run function.
+func (fe *frontendPretty) OnMount(ctx tuist.Context) {
+	if !fe.spawned {
+		fe.spawned = true
+		// Spawn the run function
+		go fe.spawnRun()
+	}
+}
+
+// recordKeyPress updates the pressed-key state on both the frontend and the
+// keymapBar component, then schedules a clear after the highlight fades.
+func (fe *frontendPretty) recordKeyPress(keyStr string) {
+	fe.pressedKey = keyStr
+	fe.pressedKeyAt = time.Now()
+	if fe.keymapBar != nil {
+		fe.keymapBar.PressedKey = keyStr
+		fe.keymapBar.PressedKeyAt = fe.pressedKeyAt
+		fe.keymapBar.Update()
+	}
+	fe.scheduleKeypressClear()
+}
+
+// scheduleKeypressClear starts a one-shot timer that re-renders the keymap
+// after the keypress highlight fades. Replaces the old polling frameLoop.
+func (fe *frontendPretty) scheduleKeypressClear() {
+	go func() {
+		time.Sleep(keypressDuration + 50*time.Millisecond)
+		fe.dispatch(func() {
+			if fe.keymapBar != nil {
+				fe.keymapBar.Update()
+			}
+		})
+	}()
+}
+
+func (fe *frontendPretty) spawnRun() {
+	cleanup, err := fe.run(fe.runCtx)
+	fe.dispatch(func() {
+		if !fe.NoExit || fe.interrupted {
+			if cleanup != nil {
+				go func() {
+					if cleanErr := cleanup(); cleanErr != nil {
+						slog.Error("cleanup failed", "err", cleanErr)
+					}
+					fe.dispatch(func() {
+						fe.handleDone(err)
+					})
+				}()
+			} else {
+				fe.handleDone(err)
+			}
+		} else {
+			fe.cleanup = func() {
+				if cleanup != nil {
+					if cleanErr := cleanup(); cleanErr != nil {
+						slog.Error("cleanup failed", "err", cleanErr)
+					}
+				}
+			}
+			fe.handleDone(err)
+		}
+	})
+}
+
+func (fe *frontendPretty) handleDone(err error) {
+	slog.Debug("run finished", "err", err)
+	fe.done = true
+	fe.err = err
+	if fe.eof && (!fe.NoExit || fe.interrupted) {
+		fe.quitting = true
+		fe.doQuit()
+	}
+	fe.Update()
+}
+
+func (fe *frontendPretty) handleEOF() {
+	slog.Debug("got EOF")
+	fe.eof = true
+	if fe.done && (!fe.NoExit || fe.interrupted) {
+		fe.quitting = true
+		fe.doQuit()
+	}
+	fe.Update()
+}
+
+func (fe *frontendPretty) doQuit() {
+	// Remove the keymap bar so it doesn't appear in the final frame.
+	if fe.keymapBar != nil {
+		fe.tui.RemoveChild(fe.keymapBar)
+	}
+	select {
+	case <-fe.quit:
+		// already closed
+	default:
+		close(fe.quit)
+	}
 }
 
 // FinalRender is called after the program has finished running and prints the
 // final output after the TUI has exited.
 func (fe *frontendPretty) FinalRender(w io.Writer) error {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-
 	// Hint for future rendering that this is the final, non-interactive render
 	// (so don't show key hints etc.)
 	fe.finalRender = true
 
+	// Unfocus for the final render.
+	fe.focus(nil)
+
 	// Render the full trace.
 	fe.ZoomedSpan = fe.db.PrimarySpan
+	fe.viewDirty = false
 	fe.recalculateViewLocked()
-
-	// Unfocus for the final render.
-	fe.FocusedSpan = dagui.SpanID{}
 
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, true)
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
-		fe.renderProgress(out, r, fe.window.Height, "")
+		fe.renderProgressFinal(out, r)
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
 				fmt.Fprintln(w)
-				handleTelemetryErrorOutput(w, out, fe.TelemetryError)
+				var telemetryErr error
+				if p := fe.telemetryError.Load(); p != nil {
+					telemetryErr = *p
+				}
+				handleTelemetryErrorOutput(w, out, telemetryErr)
 				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 			}()
 		}
@@ -519,12 +1050,6 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	return renderPrimaryOutput(w, fe.db)
 }
 
-func (fe *frontendPretty) flush() {
-	if fe.program != nil {
-		go fe.program.Send(flushMsg{})
-	}
-}
-
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
 	return prettySpanExporter{fe}
 }
@@ -533,17 +1058,28 @@ type prettySpanExporter struct {
 	*frontendPretty
 }
 
-// flushMsg is sent after spans are exported and the view is recalculated. When
-// this message is received, top-level finished spans are printed to the
-// scrollback.
-type flushMsg struct{}
-
 func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	defer fe.flush()
-	defer fe.recalculateViewLocked() // recalculate view *after* updating the db
-	return fe.db.ExportSpans(ctx, spans)
+	// Copy the slice — the OTel SDK reuses it after ExportSpans returns,
+	// and Dispatch runs asynchronously on the UI goroutine.
+	spansCopy := make([]sdktrace.ReadOnlySpan, len(spans))
+	copy(spansCopy, spans)
+	spanIDs := make([]dagui.SpanID, len(spans))
+	for i, s := range spans {
+		spanIDs[i] = dagui.SpanID{SpanID: s.SpanContext().SpanID()}
+	}
+	fe.dispatch(func() {
+		fe.db.ExportSpans(context.Background(), spansCopy)
+		for _, id := range spanIDs {
+			if sr, ok := fe.spanTrees[id]; ok {
+				sr.Update()
+			}
+		}
+		// Don't recalculate here — set dirty flag so Render coalesces
+		// multiple ExportSpans batches into one recalculate per frame.
+		fe.viewDirty = true
+		fe.Update()
+	})
+	return nil
 }
 
 func (fe *frontendPretty) Shutdown(ctx context.Context) error {
@@ -562,27 +1098,53 @@ type prettyLogExporter struct {
 }
 
 func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	defer fe.flush()
-	if err := fe.db.LogExporter().Export(ctx, logs); err != nil {
-		return err
-	}
-	if err := fe.logs.Export(ctx, logs); err != nil {
-		return err
-	}
+	// Copy the slice — the OTel SDK reuses it after Export returns.
+	logsCopy := make([]sdklog.Record, len(logs))
+	copy(logsCopy, logs)
+	fe.dispatch(func() {
+		for _, log := range logsCopy {
+			if log.SpanID().IsValid() {
+				spanID := dagui.SpanID{SpanID: log.SpanID()}
+				if sr, ok := fe.spanTrees[spanID]; ok {
+					sr.Update()
+				}
+				// Also mark roll-up parent spans dirty
+				if _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
+					for id := spanID; ; {
+						span := fe.db.Spans.Map[id]
+						if span == nil || span.Boundary || span.Encapsulate || span.Internal {
+							break
+						}
+						if span.RollUpLogs {
+							if sr, ok := fe.spanTrees[id]; ok {
+								sr.Update()
+							}
+							break
+						}
+						if !span.ParentID.IsValid() {
+							break
+						}
+						id = span.ParentID
+					}
+				}
+			}
+		}
+		fe.db.LogExporter().Export(context.Background(), logsCopy)
+		fe.logs.Export(context.Background(), logsCopy)
+		fe.Update()
+	})
 	return nil
 }
-
-type eofMsg struct{}
 
 func (fe *frontendPretty) ForceFlush(context.Context) error {
 	return nil
 }
 
 func (fe *frontendPretty) Close() error {
-	if fe.program != nil {
-		fe.program.Send(eofMsg{})
+	if fe.tui != nil {
+		fe.dispatch(func() {
+			fe.handleEOF()
+		})
 	}
 	return nil
 }
@@ -596,9 +1158,34 @@ type FrontendMetricExporter struct {
 }
 
 func (fe FrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
+	// Copy the data — the OTel SDK reuses the ResourceMetrics after Export
+	// returns (via a sync.Pool in PeriodicReader), and dispatch runs
+	// asynchronously on the UI goroutine.
+	metricsCopy := cloneResourceMetrics(resourceMetrics)
+	fe.dispatch(func() {
+		fe.db.MetricExporter().Export(ctx, metricsCopy)
+		fe.Update()
+	})
+	return nil
+}
+
+// cloneResourceMetrics returns a shallow-enough copy of rm so that the
+// caller can safely read it after the original is recycled by the SDK.
+func cloneResourceMetrics(rm *metricdata.ResourceMetrics) *metricdata.ResourceMetrics {
+	out := &metricdata.ResourceMetrics{
+		Resource: rm.Resource,
+	}
+	if len(rm.ScopeMetrics) > 0 {
+		out.ScopeMetrics = make([]metricdata.ScopeMetrics, len(rm.ScopeMetrics))
+		for i, sm := range rm.ScopeMetrics {
+			out.ScopeMetrics[i].Scope = sm.Scope
+			if len(sm.Metrics) > 0 {
+				out.ScopeMetrics[i].Metrics = make([]metricdata.Metrics, len(sm.Metrics))
+				copy(out.ScopeMetrics[i].Metrics, sm.Metrics)
+			}
+		}
+	}
+	return out
 }
 
 func (fe FrontendMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
@@ -613,59 +1200,19 @@ func (fe FrontendMetricExporter) ForceFlush(context.Context) error {
 	return nil
 }
 
-type backgroundMsg struct {
-	cmd  tea.ExecCommand
-	raw  bool
-	errs chan<- error
-}
-
-func (fe *frontendPretty) Background(cmd tea.ExecCommand, raw bool) error {
+func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 	errs := make(chan error, 1)
-	fe.program.Send(backgroundMsg{
+	fe.backgroundReq <- backgroundRequest{
 		cmd:  cmd,
 		raw:  raw,
-		errs: errs,
-	})
+		done: errs,
+	}
 	return <-errs
 }
 
-var KeymapStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
-
-const keypressDuration = 500 * time.Millisecond
-
-func (fe *frontendPretty) renderKeymap(out io.Writer, style lipgloss.Style, keys []key.Binding) int {
-	w := new(strings.Builder)
-	var showedKey bool
-	// Blank line prior to keymap
-	for _, key := range keys {
-		mainKey := key.Keys()[0]
-		var pressed bool
-		if time.Since(fe.pressedKeyAt) < keypressDuration {
-			pressed = slices.Contains(key.Keys(), fe.pressedKey)
-		}
-		if !key.Enabled() && !pressed {
-			continue
-		}
-		keyStyle := style
-		if pressed {
-			keyStyle = keyStyle.Foreground(nil)
-		}
-		if showedKey {
-			fmt.Fprint(w, style.Render(" "+DotTiny+" "))
-		}
-		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
-		fmt.Fprint(w, keyStyle.Render(" "+key.Help().Desc))
-		showedKey = true
-	}
-	res := w.String()
-	fmt.Fprint(out, res)
-	return lipgloss.Width(res)
-}
-
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
-	if fe.form != nil {
-		return fe.form.KeyBinds()
+	if fe.formModel != nil {
+		return fe.formModel.KeyBinds()
 	}
 
 	if fe.editlineFocused {
@@ -710,7 +1257,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
 			key.WithHelp("home", "first")),
-		key.NewBinding(key.WithKeys("end", " "),
+		key.NewBinding(key.WithKeys("end", "space"),
 			key.WithHelp("end", "last")),
 		key.NewBinding(key.WithKeys("+/-", "+", "-"),
 			key.WithHelp("+/-", fmt.Sprintf("verbosity=%d", fe.Verbosity))),
@@ -719,8 +1266,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", quitMsg)),
 		key.NewBinding(key.WithKeys("esc"),
-			key.WithHelp("esc", "unzoom"),
-			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
+			key.WithHelp("esc", fe.escHelp()),
+			KeyEnabled(fe.searchQuery != "" || (fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan))),
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
 			KeyEnabled(focused != nil && len(focused.ErrorOrigins.Order) > 0)),
@@ -728,7 +1275,29 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
 		),
+		key.NewBinding(key.WithKeys("/"),
+			key.WithHelp("/", "search")),
+		key.NewBinding(key.WithKeys("n"),
+			key.WithHelp("n", fe.searchCountHint("next")),
+			KeyEnabled(fe.searchQuery != "")),
+		key.NewBinding(key.WithKeys("N"),
+			key.WithHelp("N", "prev"),
+			KeyEnabled(fe.searchQuery != "")),
 	}
+}
+
+func (fe *frontendPretty) escHelp() string {
+	if fe.searchQuery != "" {
+		return "clear search"
+	}
+	return "unzoom"
+}
+
+func (fe *frontendPretty) searchCountHint(base string) string {
+	if len(fe.searchMatches) == 0 {
+		return base + " (0)"
+	}
+	return fmt.Sprintf("%s (%d/%d)", base, fe.searchIdx+1, len(fe.searchMatches))
 }
 
 func KeyEnabled(enabled bool) key.BindingOpt {
@@ -737,632 +1306,978 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 	}
 }
 
-func (fe *frontendPretty) Render(out TermOutput) error {
-	progHeight := fe.window.Height
+// ---------- tuist.Component -------------------------------------------------
+
+// Render implements tuist.Component. It produces the full TUI output as lines.
+func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
+	if fe.backgrounded || fe.quitting {
+		return tuist.RenderResult{}
+	}
+
+	// Coalesce deferred view updates. Multiple ExportSpans batches may
+	// have set viewDirty since the last frame — recalculate once now.
+	if fe.viewDirty {
+		fe.viewDirty = false
+		fe.recalculateViewLocked()
+	}
+
+	// Refresh search on every frame — picks up new log output via
+	// midterm's incremental search (only re-scans changed rows).
+	if fe.searchQuery != "" {
+		fe.refreshSearchMatches()
+	}
+
+	// Update window dimensions from tuist
+	fe.window = windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()}
+	fe.setWindowSizeLocked(fe.window)
 
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, false)
 
+	lines := ctx.Recycle()
+
+	// Zoom header
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
-		fe.renderStep(out, r, &dagui.TraceRow{
+		zoomBuf := new(strings.Builder)
+		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
+		fe.renderStep(zoomOut, r, &dagui.TraceRow{
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
 		}, "")
-		progHeight -= 1
+		lines = appendView(lines, zoomBuf.String())
 		progPrefix = "  "
 	}
 
-	below := new(strings.Builder)
-	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 && !fe.hasShownRootError() {
-		logs.SetHeight(fe.window.Height / 3)
-		logs.SetPrefix(progPrefix)
-		fmt.Fprint(below, logs.View())
+	// Pre-render chrome below progress to measure its height for truncation.
+	logsLines := fe.renderLogsLines(progPrefix)
+
+	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
+	if len(logsLines) > 0 {
+		chromeHeight += len(logsLines) + 1
+	}
+	chromeHeight += fe.errorLabelHeight() // promptErrLabel is a sibling, not rendered here
+	chromeHeight += fe.editlineHeight()   // textInput is a sibling, not rendered here
+	chromeHeight += fe.formHeight()       // formWrap is a sibling, not rendered here
+	if fe.searchInput != nil {
+		chromeHeight += 1 // searchInput is a sibling, 1 line
 	}
 
-	if below.Len() > 0 {
-		progHeight -= lipgloss.Height(below.String())
+	// Render progress rows via tree-based components
+	progressLines := fe.renderProgressLines(r, ctx, chromeHeight)
+	if len(progressLines) > 0 {
+		lines = append(lines, progressLines...)
+		lines = append(lines, "") // gap line after progress
 	}
 
-	if fe.editline != nil {
-		progHeight -= lipgloss.Height(fe.editlineView())
+	// Append chrome
+	if len(logsLines) > 0 {
+		lines = append(lines, logsLines...)
+		lines = append(lines, "") // trailing gap
 	}
+	// NOTE: textInput and formWrap are rendered as siblings in the TUI
+	// container, not here. Their cursors propagate through tuist automatically.
+	// NOTE: keymapBar is rendered as a sibling in the TUI container.
 
-	if fe.form != nil {
-		progHeight -= lipgloss.Height(fe.formView())
-	}
-
-	progHeight -= lipgloss.Height(fe.keymapView())
-	progHeight -= 1 // mind the gap between progress and logs
-
-	if fe.renderProgress(out, r, progHeight, progPrefix) {
-		fmt.Fprintln(out)
-	}
-
-	if below.Len() > 0 {
-		fmt.Fprint(out, below.String())
-		fmt.Fprintln(out)
-	}
-
-	return nil
+	return tuist.RenderResult{Lines: lines}
 }
 
-func (fe *frontendPretty) keymapView() string {
-	outBuf := new(strings.Builder)
-	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
-	if fe.UsingCloudEngine {
-		fmt.Fprint(out, lipgloss.NewStyle().
-			Foreground(lipgloss.ANSIColor(termenv.ANSIBrightMagenta)).
-			Render(CloudIcon+" cloud"))
-		fmt.Fprint(out, KeymapStyle.Render(" "+VertBoldDash3+" "))
+// appendView splits a string view into lines and appends them.
+func appendView(lines []string, view string) []string {
+	if view == "" {
+		return lines
 	}
-	fe.renderKeymap(out, KeymapStyle, fe.keys(out))
-	return outBuf.String()
+	return append(lines, strings.Split(strings.TrimSuffix(view, "\n"), "\n")...)
+}
+
+// renderLogsLines returns the zoomed span's log output as lines.
+func (fe *frontendPretty) renderLogsLines(prefix string) []string {
+	logs := fe.logs.Logs[fe.ZoomedSpan]
+	if logs == nil || logs.UsedHeight() == 0 || fe.hasShownRootError() {
+		return nil
+	}
+	logs.SetHeight(fe.window.Height / 3)
+	logs.SetPrefix(prefix)
+	view := logs.View()
+	if view == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+}
+
+// errorLabelHeight returns the line count of the error label for chrome-height budgeting.
+func (fe *frontendPretty) errorLabelHeight() int {
+	if fe.promptErrLabel == nil || fe.promptErr == nil {
+		return 0
+	}
+	return 1
+}
+
+// editlineHeight returns the estimated line count of the text input
+// for chrome-height budgeting. The actual rendering is handled by tuist's
+// container (textInput is a sibling, not rendered here).
+func (fe *frontendPretty) editlineHeight() int {
+	if fe.textInput == nil {
+		return 0
+	}
+	// Count newlines in current value + 1 for the input line itself
+	val := fe.textInput.Value()
+	return strings.Count(val, "\n") + 1
+}
+
+// formHeight returns the estimated line count of the form wrap
+// for chrome-height budgeting. The actual rendering is handled by tuist
+// (formWrap is a sibling component).
+func (fe *frontendPretty) formHeight() int {
+	if fe.formModel == nil {
+		return 0
+	}
+	view := fe.formModel.View()
+	if view == "" {
+		return 0
+	}
+	return strings.Count(view, "\n") + 2 // +1 for the view line, +1 for the spacer
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
+	fe.viewDirty = false // clear in case called directly from event handlers
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
 	if len(fe.rows.Order) == 0 {
-		fe.focusedIdx = -1
-		fe.FocusedSpan = dagui.SpanID{}
+		fe.focus(nil)
+		fe.topTrees = nil
 		return
 	}
-	if len(fe.rows.Order) < fe.focusedIdx {
-		// durability: everything disappeared?
+	if fe.focusedIndex() < 0 {
+		// durability: focused span disappeared from view
 		fe.autoFocus = true
 	}
 	if fe.autoFocus {
-		fe.focusedIdx = len(fe.rows.Order) - 1
-		fe.FocusedSpan = fe.rows.Order[fe.focusedIdx].Span.ID
+		fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
 	} else if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
-		fe.focusedIdx = row.Index
+		fe.focus(row)
 	} else {
 		// lost focus somehow
 		fe.autoFocus = true
 		fe.recalculateViewLocked()
+		return
+	}
+
+	// Sync the SpanTreeView component tree with the current rowsView.
+	// This is where ALL component state mutations happen — prefix,
+	// children, focus, spinners. Render() is then a pure read.
+	fe.syncSpanTreeState()
+
+	// Re-apply tuist focus after sync. The focus() call above may have
+	// targeted a SpanTreeView that didn't exist yet (new span on first
+	// appearance). Now that syncSpanTreeState has created all
+	// SpanTreeViews, ensure the correct one has tuist keyboard focus.
+	fe.applyTuistFocus()
+}
+
+// applyTuistFocus sets tuist keyboard focus to the SpanTreeView for the
+// currently focused span (or to fe itself when no span is focused).
+// Skipped when editline or search has focus.
+func (fe *frontendPretty) applyTuistFocus() {
+	if fe.editlineFocused || fe.searchActive {
+		return
+	}
+	if fe.FocusedSpan.IsValid() {
+		if sr, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+			fe.tui.SetFocus(sr)
+			return
+		}
+	}
+	fe.tui.SetFocus(fe)
+}
+
+// syncSpanTreeState synchronizes the SpanTreeView component tree with
+// the current rowsView and rows. Called from recalculateViewLocked()
+// (i.e., from event handlers and Dispatch callbacks, never from Render).
+//
+// It walks the TraceTree top-down, creating/reusing SpanTreeViews,
+// computing prefixes, and calling Update() on components whose
+// visible state changed.
+func (fe *frontendPretty) syncSpanTreeState() {
+	if fe.spanTrees == nil {
+		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
+	}
+
+	// When global config changes (verbosity, zoom, etc.), mark all
+	// existing trees dirty so they re-render with the new settings.
+	if fe.renderVersion != fe.lastRenderedVersion {
+		fe.lastRenderedVersion = fe.renderVersion
+		for _, st := range fe.spanTrees {
+			st.Update()
+		}
+	}
+
+	// Determine the zoom prefix for top-level trees.
+	var zoomPrefix string
+	if fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
+		zoomPrefix = "  "
+	}
+
+	body := fe.rowsView.Body
+	newTops := make([]*SpanTreeView, 0, len(body))
+	for i, tree := range body {
+		st := fe.getOrCreateSpanTree(tree.Span.ID)
+		st.parent = nil
+		st.indexInParent = i
+
+		// Top-level prefix (zoom indentation if applicable)
+		var newPrefix treePrefix
+		if zoomPrefix != "" {
+			newPrefix = treePrefix{
+				step:        zoomPrefix,
+				cont:        zoomPrefix,
+				forChildren: zoomPrefix,
+				contWidth:   lipgloss.Width(zoomPrefix),
+			}
+		}
+		fe.syncTreeNode(st, newPrefix)
+		newTops = append(newTops, st)
+	}
+	fe.topTrees = newTops
+}
+
+// syncTreeNode recursively syncs a SpanTreeView and its children with
+// the current trace data. Updates prefix, focus, spinner, and children.
+// Calls Update() on any SpanTreeView whose visible state changed.
+func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
+	changed := false
+
+	// Sync prefix
+	if st.prefix != newPrefix {
+		st.prefix = newPrefix
+		changed = true
+	}
+
+	// Sync spinner
+	fe.syncSpinnerTree(st)
+
+	if changed {
+		st.Update()
+	}
+
+	// Sync children for expanded nodes
+	tree := fe.rowsView.BySpan[st.spanID]
+	if tree == nil || !tree.IsExpanded(fe.FrontendOpts) {
+		// Collapsed: clear children so they get dismounted on next render
+		if len(st.children) > 0 {
+			st.children = nil
+			st.Update()
+		}
+		return
+	}
+
+	// Determine visible children
+	var childTrees []*dagui.TraceTree
+	if tree.ShouldShowRevealedSpans(fe.FrontendOpts) {
+		for _, revealedSpan := range tree.Span.RevealedSpans.Order {
+			if revealedTree, ok := fe.rowsView.BySpan[revealedSpan.ID]; ok {
+				childTrees = append(childTrees, revealedTree)
+			}
+		}
+	} else {
+		childTrees = tree.Children
+	}
+
+	// Compute the gap prefix for lines between this node's children.
+	// This is the ancestor bars + this node's own bar column (always
+	// shown, since we're between children that both exist).
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	span := tree.Span
+	color := restrainedStatusColor(span)
+	if !span.Reveal && len(span.RevealedSpans.Order) == 0 {
+		st.childrenGapPrefix = st.prefix.forChildren + out.String(VertBar+" ").Foreground(color).Faint().String()
+	} else {
+		st.childrenGapPrefix = st.prefix.forChildren + "  "
+	}
+
+	// Reconcile child SpanTreeViews
+	if st.childMap == nil {
+		st.childMap = make(map[dagui.SpanID]*SpanTreeView)
+	}
+	newChildren := make([]*SpanTreeView, 0, len(childTrees))
+	seen := make(map[dagui.SpanID]bool, len(childTrees))
+	for i, childTree := range childTrees {
+		id := childTree.Span.ID
+		seen[id] = true
+		child, ok := st.childMap[id]
+		if !ok {
+			child = &SpanTreeView{
+				fe:     fe,
+				spanID: id,
+			}
+			st.childMap[id] = child
+			fe.spanTrees[id] = child
+		}
+		child.parent = st
+		child.indexInParent = i
+
+		// Compute child prefix
+		hasNext := i < len(childTrees)-1
+		childPrefix := st.computeChildPrefix(out, hasNext)
+
+		// Recurse
+		fe.syncTreeNode(child, childPrefix)
+		newChildren = append(newChildren, child)
+	}
+	for id := range st.childMap {
+		if !seen[id] {
+			delete(st.childMap, id)
+		}
+	}
+
+	// Detect children changes (added, removed, or reordered).
+	childrenChanged := len(newChildren) != len(st.children)
+	if !childrenChanged {
+		for i := range newChildren {
+			if newChildren[i] != st.children[i] {
+				childrenChanged = true
+				break
+			}
+		}
+	}
+	st.children = newChildren
+	if childrenChanged {
+		st.Update()
 	}
 }
 
-func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, prefix string) []string {
-	buf := new(strings.Builder)
-	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-	fe.renderRow(out, r, row, prefix)
-	if buf.String() == "" {
+// renderProgressLines renders progress using the tree-based SpanTreeView
+// components and returns the output as lines. Truncates below the focused
+// item so it stays onscreen.
+func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, chromeHeight int) []string {
+	if fe.rowsView == nil {
 		return nil
 	}
-	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+
+	// topTrees was synced by syncSpanTreeState() in recalculateViewLocked().
+
+	// Render all top-level trees via RenderChild, assembling into allLines.
+	// We render everything (for caching), then truncate below the focused
+	// item so it stays onscreen. Content above scrolls into scrollback.
+	var allLines []string
+	topGapCounts := make([]int, len(fe.topTrees))
+	for i, treeView := range fe.topTrees {
+		childCtx := ctx
+		ctx.Width = fe.contentWidth
+		result := fe.RenderChild(childCtx, treeView)
+
+		// Gap between top-level trees
+		if i > 0 && len(result.Lines) > 0 {
+			row := fe.rows.BySpan[treeView.spanID]
+			if row != nil {
+				gaps := fe.renderTreeGap(r, row, treeView.prefix.cont)
+				topGapCounts[i] = len(gaps)
+				allLines = append(allLines, gaps...)
+			}
+		}
+
+		allLines = append(allLines, result.Lines...)
+	}
+
+	if len(allLines) == 0 {
+		return nil
+	}
+
+	// Find the focused line by walking up from the focused node.
+	focusLine := -1
+	if fe.FocusedSpan.IsValid() {
+		focusLine = fe.findFocusLine(topGapCounts)
+	}
+
+	// Crop the bottom so the focused span stays within the visible
+	// screen area. Content above scrolls into terminal scrollback
+	// naturally — we never crop the top.
+	viewportHeight := ctx.ScreenHeight() - chromeHeight
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+
+	end := len(allLines)
+	if focusLine >= 0 && len(allLines) > viewportHeight {
+		// Use the root span's own rendered height (selfLineCount), not
+		// the entire tree height. Children may extend below the viewport,
+		// but the root's own content must stay in view.
+		focusHeight := 1
+		if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+			focusHeight = focused.selfLineCount
+		}
+		end = cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
+	}
+
+	return allLines[:end]
 }
 
-func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, height int, prefix string) (rendered bool) {
-	if fe.rowsView == nil {
-		return
+// cropEnd computes the end index for slicing rendered lines so that the
+// focused span's own content [focusLine, focusLine+focusHeight) is always
+// visible within [end-viewportHeight, end). Remaining viewport space is
+// split evenly above and below the focused span's root content.
+//
+// Content above the visible window scrolls into terminal scrollback naturally.
+func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
+	focusEnd := focusLine + focusHeight
+	if focusEnd > totalLines {
+		focusEnd = totalLines
 	}
 
-	rows := fe.rows
+	// Split remaining viewport space evenly above and below the focus root.
+	remaining := viewportHeight - focusHeight
+	if remaining < 0 {
+		remaining = 0
+	}
+	below := remaining / 2
 
-	if fe.finalRender {
-		for _, row := range rows.Order {
-			if fe.renderRow(out, r, row, "") {
-				rendered = true
-			}
-		}
-		return
+	end := focusEnd + below
+
+	// Ensure the focus root stays fully visible: the visible window is
+	// [end-viewportHeight, end), so cap end so focusLine >= end-viewportHeight.
+	if focusHeight <= viewportHeight && end > focusLine+viewportHeight {
+		end = focusLine + viewportHeight
 	}
 
-	lines := fe.renderLines(r, height, prefix)
-	if len(lines) > 0 {
-		rendered = true
+	// When the focus root is taller than the viewport, at least show up
+	// to its end.
+	if end < focusEnd {
+		end = focusEnd
 	}
 
-	for _, line := range lines {
-		fmt.Fprintln(out, line)
+	// Never crop to less than a full viewport when there's enough content.
+	if end < viewportHeight && viewportHeight < totalLines {
+		end = viewportHeight
 	}
 
-	return
+	if end > totalLines {
+		end = totalLines
+	}
+
+	return end
 }
 
-func (fe *frontendPretty) renderLines(r *renderer, height int, prefix string) []string {
-	rows := fe.rows
-	if len(rows.Order) == 0 {
-		return []string{}
+// totalLineCount returns the total number of rendered lines for a SpanTreeView,
+// including self content, gap lines, and all children.
+func (s *SpanTreeView) totalLineCount() int {
+	n := s.selfLineCount
+	if len(s.childGapCounts) != len(s.children) || len(s.childLineCounts) != len(s.children) {
+		return n
 	}
-	if fe.focusedIdx == -1 {
-		fe.autoFocus = true
-		fe.focusedIdx = len(rows.Order) - 1
+	for i := range s.children {
+		n += s.childGapCounts[i] + s.childLineCounts[i]
+	}
+	return n
+}
+
+// findFocusLine returns the line offset of the focused span within the
+// rendered output, or -1 if not found. Instead of searching top-down
+// through the entire tree (O(nodes)), it walks up from the focused
+// SpanTreeView to the root, accumulating offsets (O(depth × siblings)).
+func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
+	focused, ok := fe.spanTrees[fe.FocusedSpan]
+	if !ok {
+		return -1
 	}
 
-	before, focused, after := rows.Order[:fe.focusedIdx],
-		rows.Order[fe.focusedIdx],
-		rows.Order[fe.focusedIdx+1:]
-
-	beforeLines := []string{}
-	focusedLines := fe.renderedRowLines(r, focused, prefix)
-	afterLines := []string{}
-	renderBefore := func() {
-		row := before[len(before)-1]
-		before = before[:len(before)-1]
-		beforeLines = append(fe.renderedRowLines(r, row, prefix), beforeLines...)
-	}
-	renderAfter := func() {
-		row := after[0]
-		after = after[1:]
-		afterLines = append(afterLines, fe.renderedRowLines(r, row, prefix)...)
-	}
-	totalLines := func() int {
-		return len(beforeLines) + len(focusedLines) + len(afterLines)
+	// Walk up from focused node to root, collecting the path.
+	// We need the path so we can compute offsets top-down.
+	var path []*SpanTreeView
+	for cur := focused; cur != nil; cur = cur.parent {
+		path = append(path, cur)
 	}
 
-	// fill in context surrounding the focused row
-	contextLines := (height - len(focusedLines))
-	if contextLines <= 0 {
-		// lines already meets/exceeds height, just show them
-		return focusedLines
-	}
-
-	beforeTargetLines := contextLines / 2
-	var afterTargetLines int
-	if contextLines%2 == 0 {
-		afterTargetLines = beforeTargetLines
-	} else {
-		afterTargetLines = beforeTargetLines + 1
-	}
-	for len(beforeLines) < beforeTargetLines && len(before) > 0 {
-		renderBefore()
-	}
-	for len(afterLines) < afterTargetLines && len(after) > 0 {
-		renderAfter()
-	}
-
-	if total := totalLines(); total > height {
-		extra := total - height
-		if len(beforeLines) >= beforeTargetLines && len(afterLines) >= afterTargetLines {
-			// exceeded the height, so trim the context
-			if len(beforeLines) > beforeTargetLines {
-				beforeLines = beforeLines[len(beforeLines)-beforeTargetLines:]
-			}
-			if len(afterLines) > afterTargetLines {
-				afterLines = afterLines[:afterTargetLines]
-			}
-		} else if len(beforeLines) >= beforeTargetLines {
-			beforeLines = beforeLines[extra:]
-		} else if len(afterLines) >= afterTargetLines {
-			afterLines = afterLines[:len(afterLines)-extra]
+	// The last element is a top-level node. Compute its base offset.
+	root := path[len(path)-1]
+	offset := 0
+	for i, tree := range fe.topTrees {
+		if tree == root {
+			offset += topGapCounts[i]
+			break
 		}
-	} else {
-		// fill in the rest of the screen if there's not enough to fill both sides
-		for totalLines() < height && (len(before) > 0 || len(after) > 0) {
-			switch {
-			case len(before) > 0:
-				renderBefore()
-				if total := totalLines(); total > height {
-					extra := total - height
-					beforeLines = beforeLines[extra:]
-				}
-			case len(after) > 0:
-				renderAfter()
-				if total := totalLines(); total > height {
-					extra := total - height
-					afterLines = afterLines[:len(afterLines)-extra]
-				}
+		offset += topGapCounts[i] + tree.totalLineCount()
+	}
+
+	// Walk down the path (reverse order), adding offsets for preceding
+	// siblings at each level.
+	for j := len(path) - 1; j >= 0; j-- {
+		node := path[j]
+		if j < len(path)-1 {
+			// Add self lines of the parent (the node above us in the path).
+			parent := path[j+1]
+			offset += parent.selfLineCount
+
+			// Add lines from siblings before this node.
+			idx := node.indexInParent
+			if len(parent.childGapCounts) != len(parent.children) ||
+				len(parent.childLineCounts) != len(parent.children) {
+				return -1
 			}
+			for s := 0; s < idx; s++ {
+				offset += parent.childGapCounts[s] + parent.childLineCounts[s]
+			}
+			// Add the gap before this node itself.
+			offset += parent.childGapCounts[idx]
 		}
 	}
 
-	// finally, print all the lines
-	focusedLines = append(beforeLines, focusedLines...)
-	focusedLines = append(focusedLines, afterLines...)
-	return focusedLines
+	return offset
+}
+
+// renderTreeGap renders the gap line(s) that precede a row in tree rendering,
+// using the tree prefix instead of calling fancyIndent.
+func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
+	if fe.shell != nil {
+		if row.Depth == 0 && row.Previous != nil {
+			return []string{""}
+		}
+		// Gap above each LLM response to visually group RTTT sequences.
+		if row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleAssistant {
+			return []string{gapPrefix}
+		}
+		return nil
+	}
+	if row.PreviousVisual != nil &&
+		row.PreviousVisual.Depth >= row.Depth &&
+		!row.Chained &&
+		(row.PreviousVisual.Depth > row.Depth ||
+			row.Span.Call() != nil ||
+			row.Span.CheckName != "" ||
+			row.Span.GeneratorName != "" ||
+			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
+			(row.PreviousVisual.Span.Message != "" && row.Span.Message != "") ||
+			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
+		return []string{gapPrefix}
+	}
+	return nil
+}
+
+// focusedIndex returns the current index of the focused span in rows.Order,
+// or -1 if nothing is focused or the span is not in the current row list.
+func (fe *frontendPretty) focusedIndex() int {
+	if !fe.FocusedSpan.IsValid() || fe.rows == nil {
+		return -1
+	}
+	if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
+		return row.Index
+	}
+	return -1
 }
 
 func (fe *frontendPretty) focus(row *dagui.TraceRow) {
+	oldSpan := fe.FocusedSpan
+	var newSpan dagui.SpanID
 	if row == nil {
+		fe.FocusedSpan = dagui.SpanID{}
+		if !fe.editlineFocused && !fe.searchActive {
+			fe.tui.SetFocus(fe)
+		}
+	} else {
+		newSpan = row.Span.ID
+		fe.FocusedSpan = newSpan
+		if !fe.editlineFocused && !fe.searchActive {
+			if sr, ok := fe.spanTrees[newSpan]; ok {
+				fe.tui.SetFocus(sr)
+			}
+		}
+	}
+	// Invalidate the render caches of old and new SpanTreeViews when
+	// focus moves. Their Render methods read fe.FocusedSpan to decide
+	// highlighting, so stale caches show the wrong focus indicator.
+	if oldSpan != newSpan {
+		if st, ok := fe.spanTrees[oldSpan]; ok {
+			st.Update()
+		}
+		if st, ok := fe.spanTrees[newSpan]; ok {
+			st.Update()
+		}
+	}
+}
+
+// manualFocus is like focus but also deselects the current search match
+// so that n/N seek relative to the new position.
+func (fe *frontendPretty) manualFocus(row *dagui.TraceRow) {
+	fe.focus(row)
+	if fe.searchQuery != "" {
+		fe.searchIdx = -1
+	}
+}
+
+// ---------- tuist.Interactive -----------------------------------------------
+
+// HandleKeyPress implements tuist.Interactive. It dispatches key events to the
+// nav handler. When the TextInput or formWrap is focused, keys go directly to
+// them via tuist's focus routing.
+func (fe *frontendPretty) HandleKeyPress(_ tuist.Context, ev uv.KeyPressEvent) bool {
+	fe.handleNavKeyUV(ev)
+
+	// Schedule a re-render after the keypress highlight fades
+	fe.scheduleKeypressClear()
+
+	fe.Update()
+	return true
+}
+
+// interceptEditlineKey is the TextInput's KeyInterceptor. It handles
+// special keys before TextInput processes them. Returns true if consumed.
+func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPressEvent) bool {
+	k := uv.Key(ev)
+	keyStr := k.String()
+	fe.recordKeyPress(keyStr)
+
+	// Let the completion menu handle keys when visible (up/down/esc/tab).
+	if fe.completionMenu != nil && fe.completionMenu.HandleKeyPress(ctx, ev) {
+		return true
+	}
+
+	switch keyStr {
+	case "ctrl+d":
+		if fe.textInput.Value() == "" {
+			fe.quitAction(ErrShellExited)
+			return true
+		}
+		return false // let TextInput handle ctrl+d (delete char) when input non-empty
+	case "ctrl+c":
+		if fe.shellInterrupt != nil {
+			fe.shellInterrupt(errors.New("interrupted"))
+		}
+		fe.textInput.SetValue("")
+		fe.syncPrompt()
+		return true
+	case "ctrl+l":
+		fe.tui.RequestRender(true)
+		fe.syncPrompt()
+		return true
+	case "esc":
+		fe.enterNavMode(false)
+		fe.syncPrompt()
+		return true
+	case "alt++", "alt+=":
+		fe.Verbosity++
+		fe.renderVersion++
+		fe.recalculateViewLocked()
+		fe.syncPrompt()
+		return true
+	case "alt+-":
+		fe.Verbosity--
+		fe.renderVersion++
+		fe.recalculateViewLocked()
+		fe.syncPrompt()
+		return true
+	case "up":
+		if fe.historyUp() {
+			return true
+		}
+	case "down":
+		if fe.historyDown() {
+			return true
+		}
+	default:
+		if fe.shell != nil {
+			if work := fe.shell.ReactToInput(fe.shellCtx, ev, fe.textInput.Value(), true); work != nil {
+				fe.runShellAsync(work)
+				return true
+			}
+		}
+	}
+
+	return false // let TextInput handle it
+}
+
+// handleNavKeyUV handles key events in navigation mode.
+//
+//nolint:gocyclo // splitting this up doesn't feel more readable
+func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
+	k := uv.Key(ev)
+	keyStr := k.String()
+	lastKey := fe.pressedKey
+	fe.recordKeyPress(keyStr)
+
+	switch keyStr {
+	case "q", "ctrl+c":
+		if fe.shell != nil {
+			if fe.shellInterrupt != nil {
+				fe.shellInterrupt(errors.New("interrupted"))
+			}
+		} else {
+			fe.quitAction(ErrInterrupted)
+		}
+	case "ctrl+\\": // SIGQUIT
+		// Note: can't release terminal mid-render in tuist the way bubbletea can.
+		// Just send the signal.
+		sigquit()
+		return
+	case "E":
+		fe.NoExit = !fe.NoExit
+		return
+	case "down", "j":
+		fe.goDown()
+		return
+	case "up", "k":
+		fe.goUp()
+		return
+	case "left", "h":
+		fe.closeOrGoOut()
+		return
+	case "right", "l":
+		fe.openOrGoIn()
+		return
+	case "home":
+		fe.goStart()
+		return
+	case "end", "G", "space":
+		fe.goEnd()
+		fe.recordKeyPress("end")
+		return
+	case "r":
+		fe.goErrorOrigin()
+		return
+	case "esc":
+		if fe.searchQuery != "" {
+			fe.clearSearch()
+			fe.renderVersion++
+			fe.recalculateViewLocked()
+			return
+		}
+		fe.ZoomedSpan = fe.db.PrimarySpan
+		fe.renderVersion++
+		fe.recalculateViewLocked()
+		return
+	case "+", "=":
+		fe.FrontendOpts.Verbosity++
+		fe.renderVersion++
+		fe.recalculateViewLocked()
+		return
+	case "-":
+		fe.FrontendOpts.Verbosity--
+		if fe.FrontendOpts.Verbosity < -1 {
+			fe.FrontendOpts.Verbosity = -1
+		}
+		fe.renderVersion++
+		fe.recalculateViewLocked()
+		return
+	case "w":
+		if fe.cloudURL == "" {
+			return
+		}
+		url := fe.cloudURL
+		if fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+			url += "?span=" + fe.ZoomedSpan.String()
+		}
+		if fe.FocusedSpan.IsValid() && fe.FocusedSpan != fe.db.PrimarySpan {
+			url += "#" + fe.FocusedSpan.String()
+		}
+		go func() {
+			if err := browser.OpenURL(url); err != nil {
+				slog.Warn("failed to open URL",
+					"url", url,
+					"err", err,
+					"output", fe.browserBuf.String())
+			}
+		}()
+		return
+	case "?":
+		if st, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+			st.debugged = !st.debugged
+			st.Update()
+		}
+		return
+	case "enter":
+		fe.ZoomedSpan = fe.FocusedSpan
+		fe.renderVersion++
+		fe.recalculateViewLocked()
+		return
+	case "tab", "i":
+		fe.enterInsertMode(false)
+		return
+	case "t":
+		fe.terminal()
+		return
+	case "/":
+		fe.enterSearchMode()
+		return
+	case "n":
+		if fe.searchQuery != "" {
+			fe.searchNext()
+			return
+		}
+	case "N":
+		if fe.searchQuery != "" {
+			fe.searchPrev()
+			return
+		}
+	default:
+		if fe.shell != nil {
+			inputVal := ""
+			if fe.textInput != nil {
+				inputVal = fe.textInput.Value()
+			}
+			if work := fe.shell.ReactToInput(fe.shellCtx, ev, inputVal, false); work != nil {
+				fe.runShellAsync(work)
+				return
+			}
+		}
+	}
+
+	switch lastKey { //nolint:gocritic
+	case "g":
+		switch keyStr { //nolint:gocritic
+		case "g":
+			fe.goStart()
+			fe.recordKeyPress("home")
+			return
+		}
+	}
+}
+
+// ---------- editline input completion ---------------------------------------
+
+// handleInputComplete is called when the editline signals that input is
+// complete (user pressed Enter on a complete line).
+func (fe *frontendPretty) handleInputComplete() {
+	if !fe.editlineFocused {
 		return
 	}
-	fe.FocusedSpan = row.Span.ID
-	fe.focusedIdx = row.Index
-	fe.recalculateViewLocked()
-}
 
-func (fe *frontendPretty) Init() tea.Cmd {
-	return tea.Batch(
-		frame(fe.fps),
-		fe.spawn,
-	)
-}
-
-func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	var cmds []tea.Cmd
-
-	fe, cmd := fe.update(msg)
-	cmds = append(cmds, cmd)
-
-	// fe.viewport, cmd = fe.viewport.Update(msg)
-	// cmds = append(cmds, cmd)
-	//
-	return fe, tea.Batch(cmds...)
-}
-
-func (fe *frontendPretty) View() string {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	if fe.backgrounded {
-		// if we've been backgrounded, show nothing, so a user's shell session
-		// doesn't have any garbage before/after
-		return ""
-	}
-	if fe.quitting {
-		// print nothing; make way for the pristine output in the final render
-		return ""
+	// reset prompt error state
+	fe.promptErr = nil
+	if fe.promptErrLabel != nil {
+		fe.promptErrLabel.SetError(nil)
 	}
 
-	// Get sidebar content
-	sidebarContent := fe.viewSidebar()
-
-	var mainView string
-	if fe.editline != nil {
-		mainView += fe.view.String()
-		mainView += fe.editlineView()
-	} else {
-		mainView += fe.view.String()
-	}
-	if fe.form != nil {
-		mainView += fe.formView()
-	}
-	if !strings.HasSuffix(mainView, "\n") {
-		mainView += "\n"
-	}
-	mainView += fe.keymapView()
-
-	if sidebarContent != "" {
-		// If we have sidebar content, create a two-pane layout
-		return fe.renderWithSidebar(mainView, sidebarContent)
-	}
-
-	return mainView
-}
-
-func haircut(s string, maxHeight int) (string, int) {
-	s = strings.TrimRight(s, "\n")
-	lines := strings.Split(s, "\n")
-	height := len(lines) + 1
-	if height <= maxHeight {
-		return s, height - 1
-	}
-	remove := height - maxHeight - 1
-	return strings.Join(lines[remove:], "\n"), maxHeight
-}
-
-// renderWithSidebar creates a two-pane layout with main content on the left and sidebar on the right
-func (fe *frontendPretty) renderWithSidebar(mainContent, sidebarContent string) string {
-	if fe.sidebarWidth == 0 {
-		// If window is too narrow for sidebar, just show main content
-		return mainContent
-	}
-
-	contentView, contentHeight := haircut(mainContent, fe.window.Height)
-
-	styledSidebar := lipgloss.NewStyle().
-		Width(fe.sidebarWidth).
-		MaxHeight(fe.window.Height).
-		Height(contentHeight).
-		Background(sidebarBG).
-		Border(lipgloss.Border{
-			Left: BorderLeft, // use a line that hugs the background
-		}, false, false, false, true).
-		BorderForeground(ANSIBrightBlack).
-		Padding(1, 2).
-		Render(sidebarContent)
-
-	styledContent := lipgloss.NewStyle().
-		MaxWidth(fe.contentWidth).
-		MaxHeight(fe.window.Height).
-		Render(contentView)
-
-	return lipgloss.JoinHorizontal(
-		lipgloss.Bottom,
-		styledContent,
-		styledSidebar,
-	)
-}
-
-func (fe *frontendPretty) editlineView() string {
-	view := fe.editline.View()
-	if fe.promptErr != nil {
-		view = fe.viewOut.String("ERROR: "+fe.promptErr.Error()).Foreground(termenv.ANSIBrightRed).String() + "\n" + view
-	}
-	return view
-}
-
-func (fe *frontendPretty) formView() string {
-	return fe.form.View() + "\n\n"
-}
-
-type doneMsg struct {
-	err error
-}
-
-func (fe *frontendPretty) spawn() (msg tea.Msg) {
-	cleanup, err := fe.run(fe.runCtx)
-	return cleanupMsg{
-		cleanup: func() {
-			err := cleanup()
-			if err != nil {
-				slog.Error("cleanup failed", "err", err)
-			}
-		},
-		msg: doneMsg{err},
-	}
-}
-
-type cleanupMsg struct {
-	cleanup func()
-	msg     tea.Msg
-}
-
-type backgroundDoneMsg struct {
-	backgroundMsg
-	err error
-}
-
-type shellDoneMsg struct {
-	err error
-}
-
-func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nolint: gocyclo
-	switch msg := msg.(type) {
-	case cleanupMsg:
-		if !fe.NoExit || fe.interrupted {
-			go func() {
-				msg.cleanup()
-				fe.program.Send(msg.msg)
-			}()
-		} else {
-			fe.cleanup = msg.cleanup
-			go fe.program.Send(msg.msg)
-		}
-		return fe, nil
-
-	case doneMsg: // run finished
-		slog.Debug("run finished", "err", msg.err)
-		fe.done = true
-		fe.err = msg.err
-		if fe.eof && (!fe.NoExit || fe.interrupted) {
-			fe.quitting = true
-			return fe, tea.Quit
-		}
-		return fe, nil
-
-	case eofMsg: // received end of updates
-		slog.Debug("got EOF")
-		fe.eof = true
-		if fe.done && (!fe.NoExit || fe.interrupted) {
-			fe.quitting = true
-			return fe, tea.Quit
-		}
-		return fe, nil
-
-	case startShellMsg:
-		fe.shell = msg.handler
-		fe.shellCtx = msg.ctx
-		fe.promptFg = termenv.ANSIGreen
-
-		fe.initEditline()
-
-		// restore history
-		fe.editline.MaxHistorySize = 1000
-		if history, err := history.LoadHistory(historyFile); err == nil {
-			fe.editline.SetHistory(history)
-		}
-		fe.editline.HistoryEncoder = msg.handler
-
-		// wire up auto completion
-		fe.editline.AutoComplete = msg.handler.AutoComplete
-
-		// if input ends with a pipe, then it's not complete
-		fe.editline.CheckInputComplete = msg.handler.IsComplete
-
-		// put the bowtie on
-		promptCmd := fe.updatePrompt()
-
-		return fe, tea.Batch(
-			tea.Printf(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`+"\n"),
-			fe.editline.Focus(),
-			tea.DisableMouse,
-			promptCmd,
-		)
-
-	case flushMsg:
-		return fe.flushScrollback()
-
-	case backgroundMsg:
-		fe.backgrounded = true
-		cmd := msg.cmd
-
-		if msg.raw {
-			restore := func() error { return nil }
-			cmd = &wrapCommand{
-				ExecCommand: cmd,
-				before: func() error {
-					if stdin, ok := fe.stdin.(*os.File); ok {
-						oldState, err := term.MakeRaw(int(stdin.Fd()))
-						if err != nil {
-							return err
-						}
-						restore = func() error { return term.Restore(int(stdin.Fd()), oldState) }
-					}
-
-					return nil
-				},
-				after: func() error {
-					return restore()
-				},
-			}
-		}
-		return fe, tea.Exec(cmd, func(err error) tea.Msg {
-			return backgroundDoneMsg{msg, err}
-		})
-
-	case backgroundDoneMsg:
-		fe.backgrounded = false
-		msg.errs <- msg.err
-		return fe, nil
-
-	case tea.MouseMsg:
-		switch msg.Button {
-		case tea.MouseButtonWheelDown:
-			fe.goDown()
-			fe.pressedKey = "down"
-			fe.pressedKeyAt = time.Now()
-		case tea.MouseButtonWheelUp:
-			fe.goUp()
-			fe.pressedKey = "up"
-			fe.pressedKeyAt = time.Now()
-		}
-		return fe, fe.offloadUpdates(msg)
-
-	case editline.InputCompleteMsg:
-		if !fe.editlineFocused {
-			return fe, nil
-		}
-
-		// reset prompt error state
-		fe.promptErr = nil
-
-		value := fe.editline.Value()
-		fe.editline.AddHistoryEntry(value)
-		fe.promptFg = termenv.ANSIYellow
-		promptCmd := fe.updatePrompt()
-
-		// reset now that we've accepted input
-		fe.editline.Reset()
+	value := fe.textInput.Value()
+	// Add to history (encoded with mode prefix for round-trip fidelity)
+	if value != "" {
+		encoded := value
 		if fe.shell != nil {
-			ctx, cancel := context.WithCancelCause(fe.shellCtx)
-			fe.shellInterrupt = cancel
-			fe.shellRunning = true
-
-			// switch back to following the bottom and re-enter nav mode
-			fe.goEnd()
-			fe.enterNavMode(true)
-
-			return fe, tea.Batch(
-				promptCmd,
-				func() tea.Msg {
-					fe.shellLock.Lock()
-					defer fe.shellLock.Unlock()
-					return shellDoneMsg{fe.shell.Handle(ctx, value)}
-				},
-			)
+			encoded = fe.shell.EncodeHistory(value)
 		}
-		return fe, nil
+		fe.inputHistory = append(fe.inputHistory, encoded)
+	}
+	fe.historyIndex = -1
+	fe.promptFg = termenv.ANSIYellow
+	fe.syncPrompt()
 
-	case shellDoneMsg:
-		// show error result above the prompt
-		fe.promptErr = msg.err
-		if msg.err == nil {
-			fe.promptFg = termenv.ANSIGreen
-		} else {
-			fe.promptFg = termenv.ANSIRed
-		}
-		var cmd tea.Cmd
-		if fe.autoModeSwitch {
-			cmd = tea.Batch(cmd, fe.enterInsertMode(true))
-		}
-		cmd = tea.Batch(cmd, fe.updatePrompt())
-		fe.shellRunning = false
-		return fe, cmd
+	// reset now that we've accepted input
+	fe.textInput.SetValue("")
+	if fe.shell != nil {
+		ctx, cancel := context.WithCancelCause(fe.shellCtx)
+		fe.shellInterrupt = cancel
+		fe.shellRunning = true
 
-	case UpdatePromptMsg:
-		return fe, fe.updatePrompt()
+		// switch back to following the bottom and re-enter nav mode
+		fe.goEnd()
+		fe.enterNavMode(true)
 
-	case tea.KeyMsg:
-		switch {
-		// Handle prompt input if there's an active prompt
-		case fe.form != nil:
-			return fe, fe.offloadUpdates(msg)
-		// send all input to editline if it's focused
-		case fe.editlineFocused:
-			return fe, fe.handleEditlineKey(msg)
-		default:
-			return fe, fe.handleNavKey(msg)
-		}
-
-	case tea.WindowSizeMsg:
-		fe.setWindowSizeLocked(msg)
-		return fe, fe.offloadUpdates(msg)
-
-	case frameMsg:
-		fe.now = time.Time(msg)
-		fe.renderLocked()
-		fe, flushCmd := fe.flushScrollback()
-		// NB: take care not to forward Frame downstream, since that will result
-		// in runaway ticks. instead inner components should send a SetFpsMsg to
-		// adjust the outermost layer.
-		return fe, tea.Batch(flushCmd, frame(fe.fps))
-
-	case promptMsg:
-		form := msg.form
-		form.SubmitCmd = func() tea.Msg {
-			msg.result(msg.form)
-			return promptDone{}
-		}
-		form.CancelCmd = func() tea.Msg {
-			msg.result(msg.form)
-			return promptDone{}
-		}
-		fe.form = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
-		return fe, fe.form.Init()
-
-	case promptDone:
-		fe.form = nil
-		return fe, nil
-
-	default:
-		return fe, fe.offloadUpdates(msg)
+		go func() {
+			fe.shellLock.Lock()
+			defer fe.shellLock.Unlock()
+			err := fe.shell.Handle(ctx, value)
+			fe.dispatch(func() {
+				fe.handleShellDone(err)
+				fe.Update()
+			})
+		}()
 	}
 }
 
-// offloadUpdates delegates messages to embedded components, whether they're
-// Bubbletea built-in messages (tea.KeyMsg) or internal messages to those
-// components
-func (fe *frontendPretty) offloadUpdates(msg tea.Msg) tea.Cmd {
-	var cmds []tea.Cmd
-	if fe.form != nil {
-		form, cmd := fe.form.Update(msg)
-		cmds = append(cmds, cmd)
-		if f, ok := form.(*huh.Form); ok {
-			fe.form = f
-		}
+func (fe *frontendPretty) handleShellDone(err error) {
+	fe.promptErr = err
+	if fe.promptErrLabel != nil {
+		fe.promptErrLabel.SetError(err)
 	}
-	{
-		// spinner messages
-		m, cmd := fe.spinner.Update(msg)
-		fe.spinner = m.(*Rave)
-		cmds = append(cmds, cmd)
+	if err == nil {
+		fe.promptFg = termenv.ANSIGreen
+	} else {
+		fe.promptFg = termenv.ANSIRed
 	}
-	return tea.Batch(cmds...)
+	if fe.autoModeSwitch {
+		fe.enterInsertMode(true)
+	}
+	fe.syncPrompt()
+	fe.shellRunning = false
 }
 
-type promptDone struct{}
+// ---------- mode switching --------------------------------------------------
 
 func (fe *frontendPretty) enterNavMode(auto bool) {
 	fe.autoModeSwitch = auto
 	fe.editlineFocused = false
-	fe.editline.Blur()
-	fe.renderLocked()
+	fe.recalculateViewLocked() // also applies tuist focus via applyTuistFocus
+	fe.keymapBar.Update()
 }
 
-func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
-	fe.autoModeSwitch = auto
-	if fe.editline != nil {
-		fe.editlineFocused = true
-		fe.updatePrompt()
-		fe.renderLocked()
-		return fe.editline.Focus()
+func (fe *frontendPretty) enterSearchMode() {
+	if fe.searchActive {
+		return
 	}
-	return nil
+	fe.searchActive = true
+	fe.searchInput = tuist.NewTextInput("")
+	fe.searchInput.Prompt = "/"
+	fe.searchInput.OnSubmit = func(ctx tuist.Context, value string) bool {
+		fe.confirmSearch(value)
+		return true
+	}
+	fe.searchInput.KeyInterceptor = fe.interceptSearchKey
+
+	// Insert before keymapBar.
+	fe.tui.RemoveChild(fe.keymapBar)
+	fe.tui.AddChild(fe.searchInput)
+	fe.tui.AddChild(fe.keymapBar)
+	fe.tui.SetFocus(fe.searchInput)
+	fe.tui.SetShowHardwareCursor(true)
+	fe.keymapBar.Update()
+}
+
+func (fe *frontendPretty) exitSearchMode() {
+	if fe.searchInput != nil {
+		fe.tui.RemoveChild(fe.searchInput)
+		fe.searchInput = nil
+	}
+	fe.searchActive = false
+	fe.tui.SetShowHardwareCursor(fe.textInput != nil && fe.editlineFocused)
+	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
+	fe.keymapBar.Update()
+}
+
+func (fe *frontendPretty) confirmSearch(query string) {
+	fe.exitSearchMode()
+	query = strings.TrimSpace(query)
+	if query == "" {
+		fe.clearSearch()
+		return
+	}
+	fe.searchQuery = query
+	fe.searchIdx = -1
+	// Push query to all vterms (triggers midterm Search), read results,
+	// navigate to first match, then update highlights + dirty trees.
+	fe.syncVtermSearchHighlights()
+	fe.buildSearchMatches()
+	fe.searchFirstForward()
+	fe.dirtySearchTrees()
+	fe.Update()
+}
+
+func (fe *frontendPretty) interceptSearchKey(_ tuist.Context, ev uv.KeyPressEvent) bool {
+	k := uv.Key(ev)
+	keyStr := k.String()
+	if keyStr == "esc" {
+		fe.exitSearchMode()
+		fe.Update()
+		return true
+	}
+	return false
+}
+
+func (fe *frontendPretty) enterInsertMode(auto bool) {
+	fe.autoModeSwitch = auto
+	if fe.textInput != nil {
+		fe.editlineFocused = true
+		fe.syncPrompt()
+		fe.tui.SetFocus(fe.textInput)
+		fe.recalculateViewLocked()
+		fe.keymapBar.Update()
+	}
 }
 
 func (fe *frontendPretty) terminal() {
@@ -1450,357 +2365,170 @@ func loadIDFromSpan(span *dagui.Span) (string, error) {
 	return id, nil
 }
 
-func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
-	defer func() {
-		// update the prompt in all cases since e.g. going through history
-		// can change it
-		cmd = tea.Sequence(cmd, fe.updatePrompt())
-	}()
-	fe.pressedKey = msg.String()
-	fe.pressedKeyAt = time.Now()
-	switch msg.String() {
-	case "ctrl+d":
-		if fe.editline.Value() == "" {
-			return fe.quit(ErrShellExited)
-		}
-	case "ctrl+c":
-		if fe.shellInterrupt != nil {
-			fe.shellInterrupt(errors.New("interrupted"))
-		}
-		fe.editline.Reset()
-	case "ctrl+l":
-		return fe.clearScrollback()
-	case "esc":
-		fe.enterNavMode(false)
-		return nil
-	case "alt++", "alt+=":
-		fe.Verbosity++
-		fe.recalculateViewLocked()
-		return nil
-	case "alt+-":
-		fe.Verbosity--
-		fe.recalculateViewLocked()
-		return nil
-	default:
+// saveHistory persists the in-memory history to disk.
+func (fe *frontendPretty) saveHistory() {
+	if len(fe.inputHistory) == 0 {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
+		slog.Error("failed to create history directory", "err", err)
+		return
+	}
+	if err := history.SaveHistory(fe.inputHistory, historyFile); err != nil {
+		slog.Error("failed to save history", "err", err)
+	}
+}
+
+// historyUp navigates to the previous history entry. Returns true if handled.
+func (fe *frontendPretty) historyUp() bool {
+	if len(fe.inputHistory) == 0 {
+		return false
+	}
+	if fe.historyIndex == -1 {
+		// Start browsing: save current input and mode
+		fe.historySaved = fe.textInput.Value()
 		if fe.shell != nil {
-			cmd := fe.shell.ReactToInput(fe.shellCtx, msg, true, fe.editline)
-			if cmd != nil {
-				return cmd
-			}
+			fe.shell.SaveBeforeHistory()
 		}
+		fe.historyIndex = len(fe.inputHistory) - 1
+	} else if fe.historyIndex > 0 {
+		fe.historyIndex--
+	} else {
+		return true // at oldest entry
 	}
-	el, cmd := fe.editline.Update(msg)
-	fe.editline = el.(*editline.Model)
-	return cmd
+	fe.setHistoryEntry(fe.historyIndex)
+	return true
 }
 
-//nolint:gocyclo // splitting this up doesn't feel more readable
-func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
-	lastKey := fe.pressedKey
-	fe.pressedKey = msg.String()
-	fe.pressedKeyAt = time.Now()
-	switch msg.String() {
-	case "q", "ctrl+c":
+// historyDown navigates to the next history entry. Returns true if handled.
+func (fe *frontendPretty) historyDown() bool {
+	if fe.historyIndex == -1 {
+		return false // not browsing history
+	}
+	if fe.historyIndex < len(fe.inputHistory)-1 {
+		fe.historyIndex++
+		fe.setHistoryEntry(fe.historyIndex)
+	} else {
+		// Restore saved input and mode
+		fe.historyIndex = -1
+		fe.textInput.SetValue(fe.historySaved)
 		if fe.shell != nil {
-			// in shell mode, always just interrupt, don't quit; use Ctrl+D to quit
-			if fe.shellInterrupt != nil {
-				fe.shellInterrupt(errors.New("interrupted"))
-			}
-		} else {
-			return fe.quit(ErrInterrupted)
+			fe.shell.RestoreAfterHistory()
 		}
-	case "ctrl+\\": // SIGQUIT
-		fe.program.ReleaseTerminal()
-		sigquit()
-		return nil
-	case "E":
-		fe.NoExit = !fe.NoExit
-		return nil
-	case "down", "j":
-		fe.goDown()
-		return nil
-	case "up", "k":
-		fe.goUp()
-		return nil
-	case "left", "h":
-		fe.closeOrGoOut()
-		return nil
-	case "right", "l":
-		fe.openOrGoIn()
-		return nil
-	case "home":
-		fe.goStart()
-		return nil
-	case "end", "G", " ":
-		fe.goEnd()
-		fe.pressedKey = "end"
-		fe.pressedKeyAt = time.Now()
-		return nil
-	case "r":
-		fe.goErrorOrigin()
-		return nil
-	case "esc":
-		fe.ZoomedSpan = fe.db.PrimarySpan
-		fe.recalculateViewLocked()
-		return nil
-	case "+", "=":
-		fe.FrontendOpts.Verbosity++
-		fe.recalculateViewLocked()
-		return nil
-	case "-":
-		fe.FrontendOpts.Verbosity--
-		if fe.FrontendOpts.Verbosity < -1 {
-			fe.FrontendOpts.Verbosity = -1
-		}
-		fe.recalculateViewLocked()
-		return nil
-	case "w":
-		if fe.cloudURL == "" {
-			return nil
-		}
-		url := fe.cloudURL
-		if fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
-			url += "?span=" + fe.ZoomedSpan.String()
-		}
-		if fe.FocusedSpan.IsValid() && fe.FocusedSpan != fe.db.PrimarySpan {
-			url += "#" + fe.FocusedSpan.String()
-		}
-		return func() tea.Msg {
-			if err := browser.OpenURL(url); err != nil {
-				slog.Warn("failed to open URL",
-					"url", url,
-					"err", err,
-					"output", fe.browserBuf.String())
-			}
-			return nil
-		}
-	case "?":
-		if fe.debugged == fe.FocusedSpan {
-			fe.debugged = dagui.SpanID{}
-		} else {
-			fe.debugged = fe.FocusedSpan
-		}
-		return nil
-	case "enter":
-		fe.ZoomedSpan = fe.FocusedSpan
-		fe.recalculateViewLocked()
-		return nil
-	case "tab", "i":
-		return fe.enterInsertMode(false)
-	case "t":
-		fe.terminal()
-		return nil
-	default:
-		if fe.shell != nil {
-			cmd := fe.shell.ReactToInput(fe.shellCtx, msg, false, fe.editline)
-			if cmd != nil {
-				return cmd
-			}
-		}
+		fe.syncPrompt()
 	}
-
-	switch lastKey { //nolint:gocritic
-	case "g":
-		switch msg.String() { //nolint:gocritic
-		case "g":
-			fe.goStart()
-			fe.pressedKey = "home"
-			fe.pressedKeyAt = time.Now()
-			return nil
-		}
-	}
-
-	return fe.offloadUpdates(msg)
+	return true
 }
 
-func (fe *frontendPretty) initEditline() {
-	// create the editline
-	fe.editline = editline.New(fe.contentWidth, fe.window.Height)
-	fe.editline.HideKeyMap = true
-	fe.editlineFocused = true
-	// HACK: for some reason editline's first paint is broken (only shows
-	// first 2 chars of prompt, doesn't show cursor). Sending it a message
-	// - any message - fixes it.
-	fe.editline.Update(nil)
-}
-
-type UpdatePromptMsg struct{}
-
-type scrollbackRow struct {
-	row *dagui.TraceRow
-	buf strings.Builder
-}
-
-type scrollbackRows []*scrollbackRow
-
-func (sr scrollbackRows) String() string {
-	var buf strings.Builder
-	for _, r := range sr {
-		buf.WriteString(r.buf.String())
-	}
-	return buf.String()
-}
-
-func (sr scrollbackRows) Len() int {
-	return len(sr)
-}
-
-func (sr *scrollbackRows) Reset() {
-	*sr = nil
-}
-
-func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
-	if fe.shell == nil {
-		return fe, nil
-	}
-	if fe.shellRunning || !fe.editlineFocused {
-		// there won't be anything to flush so long as the shell is running or the
-		// user is in nav mode
-		return fe, nil
-	}
-
-	// Calculate visible area height
-	visibleHeight := fe.window.Height
-	if fe.editline != nil {
-		visibleHeight -= lipgloss.Height(fe.editlineView())
-	}
-
-	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, true)
-
-	var anyFlushed bool
-	for _, row := range fe.rows.Order {
-		// Skip if row is already flushed
-		if fe.flushed[row.Span.ID] {
-			continue
-		}
-		if row.IsRunningOrChildRunning || !fe.logsDone(row.Span.ID, row.Depth == 0) || row.Span.IsPending() {
-			break
-		}
-		sb := &scrollbackRow{row: row}
-		out := NewOutput(&sb.buf, termenv.WithProfile(fe.profile))
-		fe.renderRow(out, r, row, "")
-		fe.scrollback = append(fe.scrollback, sb)
-		fe.flushed[row.Span.ID] = true
-		anyFlushed = true
-	}
-	if !anyFlushed {
-		return fe, nil
-	}
-
-	// If nothing was written, we're done
-	if fe.scrollback.Len() == 0 {
-		dbg.Println("scrollback is empty")
-		return fe, nil
-	}
-
-	// Calculate how many lines need to be flushed
-	scrollbackHeight := lipgloss.Height(fe.scrollback.String())
-	if scrollbackHeight < visibleHeight {
-		return fe, nil
-	}
-
-	offscreenHeight := scrollbackHeight - visibleHeight
-	dbg.Printf("!!! height=%d, offscreenHeight=%d, visibleHeight=%d, scrollbackHeight=%d",
-		fe.window.Height,
-		offscreenHeight,
-		visibleHeight,
-		scrollbackHeight)
-
-	// Build new buffers
-	var onscreen scrollbackRows
-	var offscreen strings.Builder
-	for _, sb := range fe.scrollback {
-		if offscreenHeight > 0 {
-			fmt.Fprint(&offscreen, sb.buf.String())
-			offscreenHeight -= lipgloss.Height(sb.buf.String())
-			fe.offscreen[sb.row.Span.ID] = true
-		} else {
-			onscreen = append(onscreen, sb)
-		}
-	}
-
-	// Replace scrollback with remaining visible lines
-	fe.scrollback = onscreen
-
-	// Return command to print offscreen lines
-	msg := strings.TrimSuffix(offscreen.String(), "\n")
-	dbg.Println("flushing offscreen lines", strconv.Quote(msg))
-	return fe, tea.Printf("%s", msg)
-}
-
-func (fe *frontendPretty) clearScrollback() tea.Cmd {
-	scrollback := strings.TrimSuffix(fe.scrollback.String(), "\n")
-	fe.scrollback.Reset()
-	return tea.Sequence(
-		tea.Printf("%s", scrollback),
-		func() tea.Msg {
-			time.Sleep(100 * time.Millisecond)
-			return tea.ClearScreen()
-		},
-	)
-}
-
-func (fe *frontendPretty) updatePrompt() tea.Cmd {
-	var cmd tea.Cmd
+// setHistoryEntry decodes the history entry at idx and sets it as the
+// TextInput value. If the shell handler is available, DecodeHistory is
+// used to strip mode prefixes.
+func (fe *frontendPretty) setHistoryEntry(idx int) {
+	entry := fe.inputHistory[idx]
 	if fe.shell != nil {
-		fe.editline.Prompt, cmd = fe.shell.Prompt(fe.runCtx, fe.viewOut, fe.promptFg)
+		entry = fe.shell.DecodeHistory(entry)
 	}
-	fe.editline.UpdatePrompt()
-	return cmd
+	fe.textInput.SetValue(entry)
+	fe.syncPrompt()
 }
 
-func (fe *frontendPretty) quit(interruptErr error) tea.Cmd {
+func (fe *frontendPretty) initTextInput() {
+	fe.textInput = tuist.NewTextInput("")
+	fe.textInput.OnSubmit = func(ctx tuist.Context, value string) bool {
+		// Check if the shell considers this a complete command.
+		// If not, insert a newline for multiline editing.
+		if fe.shell != nil && !fe.shell.IsComplete(value) {
+			// Insert a newline at cursor for multiline editing.
+			fe.textInput.InsertRune('\n')
+			return false // don't clear
+		}
+		fe.handleInputComplete()
+		return true // clear input
+	}
+	fe.editlineFocused = true
+}
+
+// syncPrompt refreshes the text input prompt from the shell handler.
+// If the handler returns an async init function (e.g. for LLM setup),
+// it is run in a background goroutine that refreshes the prompt on
+// completion.
+func (fe *frontendPretty) syncPrompt() {
+	if fe.shell != nil && fe.textInput != nil {
+		promptOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+		prompt, init := fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
+		fe.textInput.Prompt = prompt
+		fe.textInput.Update()
+		if init != nil {
+			fe.runShellAsync(init)
+		}
+	}
+}
+
+// runShellAsync runs a shell handler function in a background goroutine,
+// then dispatches a prompt refresh + re-render back to the UI thread.
+func (fe *frontendPretty) runShellAsync(work func()) {
+	go func() {
+		work()
+		fe.dispatch(func() {
+			fe.syncPrompt()
+			fe.Update()
+		})
+	}()
+}
+
+func (fe *frontendPretty) quitAction(interruptErr error) {
 	if fe.cleanup != nil {
 		cleanup := fe.cleanup
 		fe.cleanup = nil // prevent double cleanup
 		go func() {
 			cleanup()
-			fe.quitting = true
-			fe.program.Quit()
+			fe.dispatch(func() {
+				fe.quitting = true
+				fe.doQuit()
+			})
 		}()
 	} else if fe.interrupted {
 		slog.Warn("exiting immediately")
 		fe.quitting = true
-		return tea.Quit
+		fe.doQuit()
 	} else {
 		slog.Warn("canceling... (press again to exit immediately)")
 		fe.interrupted = true
 		fe.interrupt(interruptErr)
 	}
-	return nil
 }
 
 func (fe *frontendPretty) goStart() {
 	fe.autoFocus = false
 	if len(fe.rows.Order) > 0 {
-		fe.focus(fe.rows.Order[0])
+		fe.manualFocus(fe.rows.Order[0])
 	}
 }
 
 func (fe *frontendPretty) goEnd() {
 	fe.autoFocus = true
 	if len(fe.rows.Order) > 0 {
-		fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
+		fe.manualFocus(fe.rows.Order[len(fe.rows.Order)-1])
 	}
 }
 
 func (fe *frontendPretty) goUp() {
 	fe.autoFocus = false
-	newIdx := fe.focusedIdx - 1
+	newIdx := fe.focusedIndex() - 1
 	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
 		return
 	}
-	fe.focus(fe.rows.Order[newIdx])
+	fe.manualFocus(fe.rows.Order[newIdx])
 }
 
 func (fe *frontendPretty) goDown() {
 	fe.autoFocus = false
-	newIdx := fe.focusedIdx + 1
+	newIdx := fe.focusedIndex() + 1
 	if newIdx >= len(fe.rows.Order) {
 		// at bottom
 		return
 	}
-	fe.focus(fe.rows.Order[newIdx])
+	fe.manualFocus(fe.rows.Order[newIdx])
 }
 
 func (fe *frontendPretty) goOut() {
@@ -1809,68 +2537,52 @@ func (fe *frontendPretty) goOut() {
 	if focused == nil {
 		return
 	}
-	parent := focused.Parent
-	if parent == nil {
-		return
-	}
-	fe.FocusedSpan = parent.Span.ID
-	fe.recalculateViewLocked()
+	fe.manualFocus(focused.Parent)
 }
 
 func (fe *frontendPretty) goIn() {
 	fe.autoFocus = false
-	newIdx := fe.focusedIdx + 1
-	if newIdx >= len(fe.rows.Order) {
+	curIdx := fe.focusedIndex()
+	newIdx := curIdx + 1
+	if curIdx < 0 || newIdx >= len(fe.rows.Order) {
 		// at bottom
 		return
 	}
-	cur := fe.rows.Order[fe.focusedIdx]
+	cur := fe.rows.Order[curIdx]
 	next := fe.rows.Order[newIdx]
 	if next.Depth <= cur.Depth {
 		// has no children
 		return
 	}
-	fe.focus(next)
+	fe.manualFocus(next)
 }
 
 func (fe *frontendPretty) closeOrGoOut() {
-	// Only toggle if we have a valid focused span
-	if fe.FocusedSpan.IsValid() {
-		// Get the either explicitly set or defaulted value
-		var isExpanded bool
-		if row, ok := fe.rows.BySpan[fe.FocusedSpan]; ok {
-			isExpanded = row.Expanded
-		}
-		if !isExpanded {
-			// already closed; move up
-			fe.goOut()
-			return
-		}
-		// Toggle the expanded state for the focused span
-		fe.setExpanded(fe.FocusedSpan, !isExpanded)
-		// Recalculate view to reflect changes
-		fe.recalculateViewLocked()
+	if !fe.FocusedSpan.IsValid() {
+		return
 	}
+	tree := fe.rowsView.BySpan[fe.FocusedSpan]
+	if tree == nil || !tree.IsExpanded(fe.FrontendOpts) {
+		// already closed; move up
+		fe.goOut()
+		return
+	}
+	fe.setExpanded(fe.FocusedSpan, false)
+	fe.syncAfterExpandToggle(fe.FocusedSpan)
 }
 
 func (fe *frontendPretty) openOrGoIn() {
-	// Only toggle if we have a valid focused span
-	if fe.FocusedSpan.IsValid() {
-		// Get the either explicitly set or defaulted value
-		var isExpanded bool
-		if row, ok := fe.rows.BySpan[fe.FocusedSpan]; ok {
-			isExpanded = row.Expanded
-		}
-		if isExpanded {
-			// already expanded; go in
-			fe.goIn()
-			return
-		}
-		// Toggle the expanded state for the focused span
-		fe.setExpanded(fe.FocusedSpan, true)
-		// Recalculate view to reflect changes
-		fe.recalculateViewLocked()
+	if !fe.FocusedSpan.IsValid() {
+		return
 	}
+	tree := fe.rowsView.BySpan[fe.FocusedSpan]
+	if tree != nil && tree.IsExpanded(fe.FrontendOpts) {
+		// already expanded; go in
+		fe.goIn()
+		return
+	}
+	fe.setExpanded(fe.FocusedSpan, true)
+	fe.syncAfterExpandToggle(fe.FocusedSpan)
 }
 
 func (fe *frontendPretty) goErrorOrigin() {
@@ -1882,11 +2594,17 @@ func (fe *frontendPretty) goErrorOrigin() {
 	if len(focused.ErrorOrigins.Order) == 0 {
 		return
 	}
-	fe.FocusedSpan = focused.ErrorOrigins.Order[0].ID // TODO which?
-	focusedRow := fe.rowsView.BySpan[fe.FocusedSpan]
+	var earliest *dagui.Span
+	for _, span := range focused.ErrorOrigins.Order {
+		if earliest == nil || span.StartTime.Before(earliest.StartTime) {
+			earliest = span
+		}
+	}
+	focusedRow := fe.rows.BySpan[earliest.ID]
 	if focusedRow == nil {
 		return
 	}
+	fe.manualFocus(focusedRow)
 	for cur := focusedRow.Parent; cur != nil; cur = cur.Parent {
 		// expand parents of target span
 		fe.setExpanded(cur.Span.ID, true)
@@ -1894,27 +2612,12 @@ func (fe *frontendPretty) goErrorOrigin() {
 	fe.recalculateViewLocked()
 }
 
-const (
-	sidebarMinWidth = 30
-	sidebarMaxWidth = 50
-)
-
-func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
+func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	fe.window = msg
-	if len(fe.sidebar) > 0 {
-		fe.sidebarWidth = max(sidebarMinWidth, min(sidebarMaxWidth, fe.window.Width/3))
-	} else {
-		fe.sidebarWidth = 0
-	}
-	fe.contentWidth = msg.Width - fe.sidebarWidth
-	if fe.contentWidth < 0 {
-		fe.contentWidth = msg.Width
-		fe.sidebarWidth = 0
-	}
+	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
-	if fe.editline != nil {
-		fe.editline.SetSize(fe.contentWidth, msg.Height)
-		fe.editline.Update(nil) // bleh
+	if fe.textInput != nil {
+		fe.textInput.Update()
 	}
 }
 
@@ -1923,50 +2626,83 @@ func (fe *frontendPretty) setExpanded(id dagui.SpanID, expanded bool) {
 		fe.SpanExpanded = make(map[dagui.SpanID]bool)
 	}
 	fe.SpanExpanded[id] = expanded
-	fe.recalculateViewLocked()
 }
 
-func (fe *frontendPretty) renderLocked() {
-	fe.view.Reset()
-	fe.Render(fe.viewOut)
-}
-
-func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool { //nolint: gocyclo
-	if fe.offscreen[row.Span.ID] && fe.editlineFocused {
-		return false
+// syncAfterExpandToggle rebuilds the flat row list from the existing
+// rowsView (cheap — no RowsView rebuild) and syncs the affected subtree.
+// Use this after setExpanded for local expand/collapse operations.
+func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
+	// Rebuild flat rows from existing tree. This is O(visible nodes)
+	// and skips the expensive RowsView rebuild (WalkSpans + ShouldShow).
+	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
+	// Sync just the affected subtree's SpanTreeView children.
+	if st, ok := fe.spanTrees[id]; ok {
+		fe.syncTreeNode(st, st.prefix)
+		// Always mark the toggled span dirty — even if syncTreeNode
+		// found no structural changes (e.g. no children), the span's
+		// own rendering may change (logs are shown/hidden based on
+		// row.Expanded).
+		st.Update()
 	}
-	if fe.shell != nil {
-		if row.Depth == 0 {
-			// navigating history and there's a previous row
-			if (!fe.editlineFocused && row.Previous != nil) ||
-				(row.Previous != nil && !fe.offscreen[row.Previous.Span.ID]) {
-				fmt.Fprintln(out, out.String(prefix))
+}
+
+// renderProgressFinal renders all rows using the tree-based SpanTreeView
+// structure. Uses the same renderTreeGap and renderRowContent as the live
+// TUI path, ensuring consistent output between live and final renders.
+func (fe *frontendPretty) renderProgressFinal(out TermOutput, r *renderer) {
+	if fe.rowsView == nil {
+		return
+	}
+	for i, treeView := range fe.topTrees {
+		if i > 0 {
+			row := fe.rows.BySpan[treeView.spanID]
+			if row != nil {
+				for _, gap := range fe.renderTreeGap(r, row, treeView.prefix.cont) {
+					fmt.Fprintln(out, gap)
+				}
 			}
 		}
-	} else if row.PreviousVisual != nil &&
-		row.PreviousVisual.Depth >= row.Depth &&
-		!row.Chained &&
-		( // ensure gaps after last nested child
-		row.PreviousVisual.Depth > row.Depth ||
-			// ensure gaps before unchained calls
-			row.Span.Call() != nil ||
-			// ensure gaps before checks
-			row.Span.CheckName != "" ||
-			// ensure gaps before generators
-			row.Span.GeneratorName != "" ||
-			// ensure gaps between calls and non-calls
-			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
-			// ensure gaps between messages
-			(row.PreviousVisual.Span.Message != "" && row.Span.Message != "") ||
-			// ensure gaps going from tool calls to messages
-			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
-		fmt.Fprint(out, prefix)
-		r.fancyIndent(out, row.PreviousVisual, false, false)
-		fmt.Fprintln(out)
+		fe.renderTreeFinal(out, r, treeView)
 	}
+}
+
+// renderTreeFinal recursively renders a SpanTreeView node and its children
+// for the final (non-interactive) output.
+func (fe *frontendPretty) renderTreeFinal(out TermOutput, r *renderer, st *SpanTreeView) {
+	row := fe.rows.BySpan[st.spanID]
+	if row == nil {
+		return
+	}
+
+	// Use the tree's pre-computed prefix via indentFunc, same as live rendering.
+	r.indentFunc = st.indentFunc(out)
+	fe.renderRowContent(out, r, row, "")
+
+	for _, child := range st.children {
+		childRow := fe.rows.BySpan[child.spanID]
+		if childRow != nil {
+			for _, gap := range fe.renderTreeGap(r, childRow, st.childrenGapPrefix) {
+				fmt.Fprintln(out, gap)
+			}
+		}
+		fe.renderTreeFinal(out, r, child)
+	}
+}
+
+// renderRowContent renders the actual content of a row (step + logs + errors
+// + debug) without gap lines. This is what SpanTreeView.Render() calls.
+func (fe *frontendPretty) renderRowContent(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	fe.renderStep(out, r, row, prefix)
+	fe.renderRowContentRest(out, r, row, prefix)
+}
+
+// renderRowContentRest renders everything after the step title: logs, errors,
+// and debug output. Split out so SpanTreeView.Render can apply search
+// highlighting to the title separately from the log content (which handles
+// its own highlighting via Vterm.SearchQuery).
+func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
 	span := row.Span
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
-	fe.renderStep(out, r, row, prefix)
 
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
@@ -1998,12 +2734,14 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		fe.renderStepError(out, r, row, prefix)
 	}
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
-	return true
 }
 
 func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {
-	if span.ID != fe.debugged && !force {
-		return
+	if !force {
+		st, ok := fe.spanTrees[span.ID]
+		if !ok || !st.debugged {
+			return
+		}
 	}
 	vt := NewVterm(fe.profile)
 	vt.WriteMarkdown([]byte("## Span\n"))
@@ -2169,8 +2907,6 @@ func (fe *frontendPretty) hasShownRootError() bool {
 	}
 	origins := telemetry.ParseErrorOrigins(fe.err.Error())
 	if len(origins) == 0 {
-		// No error origins means the error didn't come from a specific span,
-		// so it can't have been shown in the progress output.
 		return false
 	}
 	for _, origin := range origins {
@@ -2254,7 +2990,7 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 	span := row.Span
 	chained := row.Chained
 	depth := row.Depth
-	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.form == nil
+	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
 
 	if !abridged && row.Span.LLMRole == "" {
 		fe.renderStatusIcon(out, row)
@@ -2350,7 +3086,7 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 
 func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) error {
 	span := row.Span
-	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.form == nil
+	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
 
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
@@ -2372,7 +3108,11 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		return err
 	}
 
-	fmt.Fprintln(out)
+	// User prompts already have a trailing newline from renderLogs,
+	// so skip the extra newline to avoid a blank gap.
+	if row.Span.LLMRole != telemetry.LLMRoleUser {
+		fmt.Fprintln(out)
+	}
 
 	return nil
 }
@@ -2500,7 +3240,12 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 // indicating whether it's interesting enough to reveal at a summary level
 func (fe *frontendPretty) statusIcon(span *dagui.Span) (string, bool) {
 	if span.IsRunningOrEffectsRunning() {
-		return fe.spinner.ViewFancy(fe.now), true
+		// Look up the per-span spinner for animation
+		if sr, ok := fe.spanTrees[span.ID]; ok && sr.spinner != nil {
+			return sr.spinner.ViewFancy(), true
+		}
+		// Fallback for effect spans or spans without a SpanTreeView
+		return fe.spinner.ViewFancy(time.Now()), true
 	} else if span.IsCached() {
 		return IconCached, false
 	} else if span.IsCanceled() {
@@ -2610,17 +3355,7 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	return true
 }
 
-func (fe *frontendPretty) logsDone(id dagui.SpanID, waitForLogs bool) bool {
-	if fe.logs == nil {
-		// no logs to begin with
-		return true
-	}
-	if _, ok := fe.logs.Logs[id]; !ok && !waitForLogs {
-		// no logs to begin with
-		return true
-	}
-	return fe.logs.SawEOF[id]
-}
+// ---------- pretty logs (unchanged) -----------------------------------------
 
 type prettyLogs struct {
 	DB            *dagui.DB
@@ -2794,33 +3529,6 @@ func findTTYs() (in io.Reader, out io.Writer) {
 	return
 }
 
-type frameMsg time.Time
-
-func frame(fps float64) tea.Cmd {
-	return tea.Tick(time.Duration(float64(time.Second)/fps), func(t time.Time) tea.Msg {
-		return frameMsg(t)
-	})
-}
-
-type wrapCommand struct {
-	tea.ExecCommand
-	before func() error
-	after  func() error
-}
-
-var _ tea.ExecCommand = (*wrapCommand)(nil)
-
-func (ts *wrapCommand) Run() error {
-	if err := ts.before(); err != nil {
-		return err
-	}
-	err := ts.ExecCommand.Run()
-	if err2 := ts.after(); err == nil {
-		err = err2
-	}
-	return err
-}
-
 // TermOutput is an interface that captures the methods we need from termenv.Output
 type TermOutput interface {
 	io.Writer
@@ -2828,29 +3536,25 @@ type TermOutput interface {
 	ColorProfile() termenv.Profile
 }
 
-type promptMsg struct {
-	form   *huh.Form
-	result func(*huh.Form)
-}
-
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
 	done := make(chan struct{})
 
-	fe.program.Send(promptMsg{
-		form: NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title(title).
-					Description(strings.TrimSpace((&Markdown{
-						Content: message,
-						Width:   fe.window.Width,
-					}).View())).
-					Value(dest),
+	fe.dispatch(func() {
+		fe.handlePromptForm(
+			NewForm(
+				huh.NewGroup(
+					huh.NewConfirm().
+						Title(title).
+						Description(strings.TrimSpace((&Markdown{
+							Content: message,
+							Width:   fe.window.Width,
+						}).View())).
+						Value(dest),
+				),
 			),
-		),
-		result: func(f *huh.Form) {
-			close(done)
-		},
+			func(f *huh.Form) { close(done) },
+		)
+		fe.Update()
 	})
 
 	select {
@@ -2864,21 +3568,22 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
 	done := make(chan struct{})
 
-	fe.program.Send(promptMsg{
-		form: NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title(title).
-					Description(strings.TrimSpace((&Markdown{
-						Content: message,
-						Width:   fe.window.Width,
-					}).View())).
-					Value(dest),
+	fe.dispatch(func() {
+		fe.handlePromptForm(
+			NewForm(
+				huh.NewGroup(
+					huh.NewInput().
+						Title(title).
+						Description(strings.TrimSpace((&Markdown{
+							Content: message,
+							Width:   fe.window.Width,
+						}).View())).
+						Value(dest),
+				),
 			),
-		),
-		result: func(f *huh.Form) {
-			close(done)
-		},
+			func(f *huh.Form) { close(done) },
+		)
+		fe.Update()
 	})
 
 	select {
@@ -2889,7 +3594,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 	}
 }
 
-func handleTelemetryErrorOutput(w io.Writer, to *termenv.Output, err error) {
+func handleTelemetryErrorOutput(w io.Writer, to TermOutput, err error) {
 	if err != nil {
 		fmt.Fprintf(w, "%s - %s\n(%s)\n", to.String("WARN").Foreground(termenv.ANSIYellow), "failures detected while emitting telemetry. trace information incomplete", err.Error())
 		fmt.Fprintln(w)
@@ -2897,20 +3602,20 @@ func handleTelemetryErrorOutput(w io.Writer, to *termenv.Output, err error) {
 }
 
 var (
-	ANSIBlack         = lipgloss.Color("0")
-	ANSIRed           = lipgloss.Color("1")
-	ANSIGreen         = lipgloss.Color("2")
-	ANSIYellow        = lipgloss.Color("3")
-	ANSIBlue          = lipgloss.Color("4")
-	ANSIMagenta       = lipgloss.Color("5")
-	ANSICyan          = lipgloss.Color("6")
-	ANSIWhite         = lipgloss.Color("7")
-	ANSIBrightBlack   = lipgloss.Color("8")
-	ANSIBrightRed     = lipgloss.Color("9")
-	ANSIBrightGreen   = lipgloss.Color("10")
-	ANSIBrightYellow  = lipgloss.Color("11")
-	ANSIBrightBlue    = lipgloss.Color("12")
-	ANSIBrightMagenta = lipgloss.Color("13")
-	ANSIBrightCyan    = lipgloss.Color("14")
-	ANSIBrightWhite   = lipgloss.Color("15")
+	ANSIBlack         = lipgloss.Black
+	ANSIRed           = lipgloss.Red
+	ANSIGreen         = lipgloss.Green
+	ANSIYellow        = lipgloss.Yellow
+	ANSIBlue          = lipgloss.Blue
+	ANSIMagenta       = lipgloss.Magenta
+	ANSICyan          = lipgloss.Cyan
+	ANSIWhite         = lipgloss.White
+	ANSIBrightBlack   = lipgloss.BrightBlack
+	ANSIBrightRed     = lipgloss.BrightRed
+	ANSIBrightGreen   = lipgloss.BrightGreen
+	ANSIBrightYellow  = lipgloss.BrightYellow
+	ANSIBrightBlue    = lipgloss.BrightBlue
+	ANSIBrightMagenta = lipgloss.BrightMagenta
+	ANSIBrightCyan    = lipgloss.BrightCyan
+	ANSIBrightWhite   = lipgloss.BrightWhite
 )

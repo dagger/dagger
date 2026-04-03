@@ -133,17 +133,15 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 			cmdline := cmdline[:start] + inprogress + cmdline[end+1:]
 			cursor := start + len(inprogress)
 
-			_, comp := autoComplete.Do([][]rune{[]rune(cmdline)}, 0, cursor)
+			result := autoComplete.Complete(cmdline, cursor)
 			if expected == "" {
-				require.Nil(t, comp)
+				require.Empty(t, result.Items)
 			} else {
-				require.NotNil(t, comp)
-				require.Equal(t, 1, comp.NumCategories())
-				candidates := make([]string, 0, comp.NumEntries(0))
-				for i := range comp.NumEntries(0) {
-					entry := comp.Entry(0, i)
-					t.Logf("entry %d: %s (%q)", i, entry.Title(), entry.Description())
-					candidates = append(candidates, entry.Title())
+				require.NotEmpty(t, result.Items)
+				candidates := make([]string, 0, len(result.Items))
+				for _, item := range result.Items {
+					t.Logf("item: %s", item.Label)
+					candidates = append(candidates, item.Label)
 				}
 				require.Contains(t, candidates, expected)
 			}

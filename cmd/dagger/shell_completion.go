@@ -3,8 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/vito/bubbline/computil"
-	"github.com/vito/bubbline/editline"
+	"github.com/vito/tuist"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -15,15 +14,13 @@ type shellAutoComplete struct {
 	*shellCallHandler
 }
 
-var _ editline.AutoCompleteFn = (*shellAutoComplete)(nil).Do
-
-func (h *shellAutoComplete) Do(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
-	line, pos := computil.Flatten(entireInput, row, col)
-	line = line[:pos]
+func (h *shellAutoComplete) Complete(input string, cursorPos int) tuist.CompletionResult {
+	line := input[:cursorPos]
+	pos := cursorPos
 
 	file, err := parseShell(strings.NewReader(line), "", syntax.RecoverErrors(5))
 	if err != nil {
-		return "", nil
+		return tuist.CompletionResult{}
 	}
 
 	// find the smallest stmt next to the cursor - this allows accurate
@@ -107,28 +104,25 @@ func (h *shellAutoComplete) Do(entireInput [][]rune, row, col int) (msg string, 
 		shctx = h.dispatch(shctx, stmt, cursor)
 	}
 	if shctx == nil {
-		return "", nil
+		return tuist.CompletionResult{}
 	}
 
 	completions := shctx.completions(inprogressPrefix)
-	var matches []string
+	var items []tuist.Completion
 	suggested := map[string]struct{}{}
 	for _, c := range completions {
 		if strings.HasPrefix(c, inprogressPrefix) {
 			if _, ok := suggested[c]; ok {
 				continue
 			}
-			matches = append(matches, c)
+			items = append(items, tuist.Completion{Label: c})
 			suggested[c] = struct{}{}
 		}
 	}
-	return "", editline.SimpleWordsCompletion(
-		matches,
-		"completion",
-		col,
-		pos-len(inprogressPrefix),
-		pos,
-	)
+	return tuist.CompletionResult{
+		Items:       items,
+		ReplaceFrom: pos - len(inprogressPrefix),
+	}
 }
 
 func (h *shellAutoComplete) dispatch(previous *CompletionContext, stmt *syntax.Stmt, cursor uint) *CompletionContext {

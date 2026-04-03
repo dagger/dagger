@@ -5,7 +5,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
 )
 
@@ -38,7 +38,10 @@ func ColorProfile() termenv.Profile {
 	}
 }
 
-var bgOnce = &sync.Once{}
+var (
+	bgOnce    = &sync.Once{}
+	hasDarkBG bool
+)
 
 type AdaptiveColor struct {
 	Light termenv.Color
@@ -57,14 +60,16 @@ func HasDarkBackground() bool {
 		if os.Getenv("FORCE_LIGHT_MODE") != "" ||
 			os.Getenv("THEME_MODE") == "light" ||
 			os.Getenv("LIGHT") != "" {
-			lipgloss.SetHasDarkBackground(false)
+			hasDarkBG = false
 		} else if os.Getenv("FORCE_DARK_MODE") != "" ||
 			os.Getenv("THEME_MODE") == "dark" ||
 			os.Getenv("DARK") != "" {
-			lipgloss.SetHasDarkBackground(true)
+			hasDarkBG = true
+		} else {
+			hasDarkBG = lipgloss.HasDarkBackground(os.Stdin, os.Stdout)
 		}
 	})
-	return lipgloss.HasDarkBackground()
+	return hasDarkBG
 }
 
 func hl(st termenv.Style) termenv.Style {

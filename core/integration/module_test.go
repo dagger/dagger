@@ -5333,6 +5333,59 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 	}
 }
 
+// Regression test for #11996. An unversioned dependency with a named pin must
+// resolve that tag or branch rather than silently falling back to the default branch.
+func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	remoteRepo := "github.com/dagger/dagger-test-modules"
+	remoteModule := remoteRepo + "/context-git"
+
+	// Use a tag pin — tags are immutable and exercise the same ref(name: ...)
+	// code path as branches, without the risk of a branch being pruned.
+	pin := "v1.2.3"
+
+	g := c.Git(remoteRepo).Ref(pin)
+	fullref, err := g.Ref(ctx)
+	require.NoError(t, err)
+
+	commit, err := g.Commit(ctx)
+	require.NoError(t, err)
+
+	modGen := goGitBase(t, c).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{
+			"name": "test",
+			"source": ".",
+			"sdk": "go",
+			"dependencies": [
+				{
+					"name": "context-git",
+					"source": "`+remoteModule+`",
+					"pin": "`+pin+`"
+				}
+			]
+		}`).
+		With(sdkSource("go", `package main
+
+		import (
+			"context"
+		)
+
+		type Test struct{}
+
+		func (m *Test) TestRefLocal(ctx context.Context) (string, error) {
+			return dag.ContextGit().TestRefLocal(ctx)
+		}
+		`)).
+		WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
+
+	out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fullref+"@"+commit, out)
+}
+
 func (ModuleSuite) TestContextGitDetectDirty(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -12,6 +12,9 @@ import (
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/vito/go-sse/sse"
+	"go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/trace"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -433,5 +436,60 @@ func spanKindFromString(kind string) tracepb.Span_SpanKind {
 		return tracepb.Span_SPAN_KIND_CONSUMER
 	default:
 		return tracepb.Span_SPAN_KIND_UNSPECIFIED
+	}
+}
+
+// LogMessagesToRecords converts Cloud API LogMessage values into OTel SDK
+// log records suitable for feeding into a LogExporter.
+func LogMessagesToRecords(traceID string, msgs []LogMessage) []sdklog.Record {
+	tid, _ := trace.TraceIDFromHex(traceID)
+	records := make([]sdklog.Record, 0, len(msgs))
+	for _, msg := range msgs {
+		var rec sdklog.Record
+		rec.SetTimestamp(msg.Timestamp)
+		rec.SetBody(log.StringValue(msg.Body))
+		rec.SetTraceID(tid)
+		if msg.SpanID != nil {
+			sid, _ := trace.SpanIDFromHex(*msg.SpanID)
+			rec.SetSpanID(sid)
+		}
+		for k, v := range msg.Attributes {
+			rec.AddAttributes(log.KeyValue{
+				Key:   k,
+				Value: anyToLogValue(v),
+			})
+		}
+		records = append(records, rec)
+	}
+	return records
+}
+
+func anyToLogValue(v any) log.Value {
+	switch val := v.(type) {
+	case string:
+		return log.StringValue(val)
+	case bool:
+		return log.BoolValue(val)
+	case float64:
+		if val == float64(int64(val)) {
+			return log.Int64Value(int64(val))
+		}
+		return log.Float64Value(val)
+	case json.Number:
+		if i, err := val.Int64(); err == nil {
+			return log.Int64Value(i)
+		}
+		if f, err := val.Float64(); err == nil {
+			return log.Float64Value(f)
+		}
+		return log.StringValue(val.String())
+	case []any:
+		values := make([]log.Value, len(val))
+		for i, elem := range val {
+			values[i] = anyToLogValue(elem)
+		}
+		return log.SliceValue(values...)
+	default:
+		return log.StringValue(fmt.Sprintf("%v", v))
 	}
 }

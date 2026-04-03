@@ -5,13 +5,13 @@ Expected stderr:
 ├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
- 
+
 ✔ load module: ./viztest X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
 ╰╴✔ loading type definitions X.Xs
- 
+
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
@@ -23,7 +23,7 @@ Expected stderr:
 │   ╰╴✘ failing inner span X.Xs ERROR
 │     ┃ this should be hoisted - ancestor failed
 │     ! inner failure
-│    
+│
 ╰╴✔ succeeding outer span X.Xs
   ╰╴✔ unset middle span X.Xs
     ╰╴✘ failing inner span X.Xs ERROR

@@ -22,6 +22,7 @@ var resolvers = map[string]SecretResolver{
 	"op":        opProvider,
 	"vault":     vaultProvider,
 	"libsecret": libsecretProvider,
+	"gcp":       gcpProvider,
 	"aws+sm":    awsSecretManagerProvider,
 	"aws+ps":    awsParameterStoreProvider,
 }

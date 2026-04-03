@@ -11,7 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -20,8 +20,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
-	"github.com/vito/bubbline/computil"
-	"github.com/vito/bubbline/editline"
+	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
@@ -438,14 +437,13 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	return h.run(ctx, strings.NewReader(line), "")
 }
 
-func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, tea.Cmd) {
+func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, func()) {
 	sb := new(strings.Builder)
 
 	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
 
-	var init tea.Cmd
+	var init func()
 
-	// Use LLM prompt if LLM session is active and in prompt mode
 	switch h.mode {
 	case modeShell:
 		if def, _ := h.GetModuleDef(nil); def != nil {
@@ -468,9 +466,8 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 		} else {
 			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
 			sb.WriteString(out.String(" ").String())
-			init = func() tea.Msg {
-				h.llm(ctx) // initialize LLM
-				return idtui.UpdatePromptMsg{}
+			init = func() {
+				h.llm(ctx) //nolint:errcheck
 			}
 		}
 		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
@@ -486,33 +483,40 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	return err
 }
 
-func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int) (string, editline.Completions) {
+func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.CompletionResult {
 	if h.mode == modePrompt {
-		word, wstart, wend := computil.FindWord(entireInput, line, col)
+		// Find the word at the cursor for variable completion
+		before := input[:cursorPos]
+		wordStart := strings.LastIndexAny(before, " \t\n") + 1
+		word := before[wordStart:]
 		if after, ok := strings.CutPrefix(word, "$"); ok {
-			prefix := after
 			vars := h.runner.Vars
-			var completions []string
+			var items []tuist.Completion
 			for k := range vars {
-				if strings.HasPrefix(k, prefix) {
-					completions = append(completions, "$"+k)
+				if strings.HasPrefix(k, after) {
+					items = append(items, tuist.Completion{
+						Label:  "$" + k,
+						Detail: "variable",
+					})
 				}
 			}
-			return "", editline.SimpleWordsCompletion(completions, "variable", col, wstart, wend)
+			return tuist.CompletionResult{
+				Items:       items,
+				ReplaceFrom: wordStart,
+			}
 		}
-		return "", nil
+		return tuist.CompletionResult{}
 	}
 
-	return (&shellAutoComplete{h}).Do(entireInput, line, col)
+	return (&shellAutoComplete{h}).Complete(input, cursorPos)
 }
 
-func (h *shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) bool {
+func (h *shellCallHandler) IsComplete(input string) bool {
 	if h.mode == modePrompt {
 		return true // LLM prompt mode always considers input complete
 	}
 
 	// Regular shell mode
-	input, _ := computil.Flatten(entireInput, line, col)
 	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
 	if err != nil {
 		if syntax.IsIncomplete(err) {
@@ -579,58 +583,55 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 	}
 }
 
-func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, editline *editline.Model) tea.Cmd {
-	switch msg.String() {
-	case ">":
-		if editline.AtStart() {
+func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent, inputValue string, editing bool) func() {
+	key := uv.Key(ev)
+	switch {
+	case key.MatchString(">"):
+		if inputValue == "" {
 			h.mode = modePrompt
-			return func() tea.Msg {
+			return func() {
 				h.llm(ctx) // initialize LLM
-				return idtui.UpdatePromptMsg{}
 			}
 		}
-	case "!":
-		if editline.AtStart() {
+	case key.MatchString("!"):
+		if inputValue == "" {
 			h.mode = modeShell
-			return func() tea.Msg {
-				return idtui.UpdatePromptMsg{}
-			}
+			return noop // handled, no async work
 		}
-	case "ctrl+x":
+	case key.MatchString("ctrl+x"):
 		if h.llmSession != nil {
 			h.llmSession.ToggleAutocompact()
+			return noop
 		}
-	case "ctrl+s":
+	case key.MatchString("ctrl+s"):
 		if h.llmSession != nil {
-			return func() tea.Msg {
+			return func() {
 				if err := h.llmSession.SyncToLocal(ctx); err != nil {
 					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
-					// Show error in sidebar
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
 				}
-				return idtui.UpdatePromptMsg{}
 			}
 		}
-	case "ctrl+u":
+	case key.MatchString("ctrl+u"):
 		if h.llmSession != nil {
-			return func() tea.Msg {
+			return func() {
 				if err := h.llmSession.SyncFromLocal(ctx); err != nil {
 					slog.Error("failed to load current working directory into agent workspace", "error", err.Error())
-					// Show error in sidebar
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("UPLOAD ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
 				}
-				return idtui.UpdatePromptMsg{}
 			}
 		}
 	}
 	return nil
 }
+
+func noop() {}
 
 func (h *shellCallHandler) EncodeHistory(entry string) string {
 	switch h.mode {

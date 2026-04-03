@@ -9,9 +9,9 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"dagger.io/dagger"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
@@ -26,13 +26,14 @@ import (
 )
 
 type frontendDots struct {
-	profile  termenv.Profile
-	out      TermOutput
-	mu       sync.Mutex
-	db       *dagui.DB
-	opts     dagui.FrontendOpts
-	reporter *frontendPretty
-	logs     streamingLogExporter
+	profile        termenv.Profile
+	out            TermOutput
+	mu             sync.Mutex
+	db             *dagui.DB
+	opts           dagui.FrontendOpts
+	reporter       *frontendPretty
+	logs           streamingLogExporter
+	telemetryError atomic.Pointer[error]
 }
 
 // NewDots creates a new dots-style frontend that outputs green dots for
@@ -84,12 +85,19 @@ func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 		cleanup, err := f(ctx)
 		fmt.Fprintln(fe.out)
 		fmt.Fprintln(fe.out)
+		if p := fe.telemetryError.Load(); p != nil {
+			handleTelemetryErrorOutput(fe.out, fe.out, *p)
+		}
 		return cleanup, err
 	})
 }
 
 func (fe *frontendDots) Opts() *dagui.FrontendOpts {
 	return &fe.opts
+}
+
+func (fe *frontendDots) SetTelemetryError(err error) {
+	fe.telemetryError.Store(&err)
 }
 
 func (fe *frontendDots) SetVerbosity(verbosity int) {
@@ -108,7 +116,7 @@ func (fe *frontendDots) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendDots) Background(cmd tea.ExecCommand, raw bool) error {
+func (fe *frontendDots) Background(cmd ExecCommand, raw bool) error {
 	return fmt.Errorf("running shell without the TUI is not supported")
 }
 

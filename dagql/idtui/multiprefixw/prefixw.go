@@ -25,6 +25,7 @@ func New(w io.Writer) *Writer {
 const DefaultLineOverhang = "\u23CE" // ⏎
 
 func (pw *Writer) Write(p []byte) (int, error) {
+	total := len(p)
 	for len(p) > 0 {
 		n := bytes.IndexByte(p, '\n')
 		if n < 0 {
@@ -48,7 +49,7 @@ func (pw *Writer) Write(p []byte) (int, error) {
 		p = p[n+1:]
 		pw.lineTerminated = true
 	}
-	return len(p), nil
+	return total, nil
 }
 
 func (pw *Writer) writePrefix(prefix string) error {
