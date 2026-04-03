@@ -58,6 +58,39 @@ class ObjectVisitor extends AbstractVisitor {
               .addStatement("this.connection.close()")
               .build();
       classBuilder.addMethod(closeMethod);
+
+      // loadObjectFromID: load any object by its ID using node(id:) + inline fragment
+      classBuilder.addMethod(
+          MethodSpec.methodBuilder("loadObjectFromID")
+              .addModifiers(Modifier.PUBLIC)
+              .addTypeVariable(TypeVariableName.get("T"))
+              .returns(TypeVariableName.get("T"))
+              .addParameter(
+                  ParameterizedTypeName.get(ClassName.get(Class.class), TypeVariableName.get("T")),
+                  "clazz")
+              .addParameter(ClassName.bestGuess("ID"), "id")
+              .addJavadoc("Load any object by its ID using node(id:) with an inline fragment.\n")
+              .beginControlFlow("try")
+              .addStatement(
+                  "QueryBuilder qb = this.queryBuilder.chainNode(clazz.getSimpleName(), id)")
+              .addStatement(
+                  "return clazz.getDeclaredConstructor(QueryBuilder.class).newInstance(qb)")
+              .nextControlFlow("catch (Exception e)")
+              .addStatement("throw new RuntimeException(\"Failed to load object from ID\", e)")
+              .endControlFlow()
+              .build());
+
+      // nodeQueryBuilder: create a QueryBuilder for node(id:) + inline fragment
+      classBuilder.addMethod(
+          MethodSpec.methodBuilder("nodeQueryBuilder")
+              .addModifiers(Modifier.PUBLIC)
+              .returns(ClassName.bestGuess("QueryBuilder"))
+              .addParameter(ClassName.get(String.class), "typeName")
+              .addParameter(ClassName.bestGuess("ID"), "id")
+              .addJavadoc(
+                  "Create a QueryBuilder for node(id:) scoped to the given type via an inline fragment.\n")
+              .addStatement("return this.queryBuilder.chainNode(typeName, id)")
+              .build());
     } else {
       // Object constructor for JSON deserialization
       MethodSpec constructor =
@@ -101,10 +134,11 @@ class ObjectVisitor extends AbstractVisitor {
                         .addStatement(
                             "$T id = ctx.deserialize($T.class, parser)", String.class, String.class)
                         .addStatement(
-                            "$T o = $T.dag().load$LFromID(new $T(id))",
+                            "$T o = new $T($T.dag().nodeQueryBuilder($S, new $T(id)))",
+                            ClassName.bestGuess(Helpers.formatName(type)),
                             ClassName.bestGuess(Helpers.formatName(type)),
                             ClassName.bestGuess("io.dagger.client.Dagger"),
-                            Helpers.formatName(type),
+                            type.getName(),
                             ClassName.bestGuess("ID"))
                         .addStatement("return o")
                         .build())
@@ -153,7 +187,7 @@ class ObjectVisitor extends AbstractVisitor {
   }
 
   private TypeName resolveArgType(InputObject arg, Field field) {
-    // For Query.loadFooFromID(id: ID! @expectedType(...)), keep as raw string for the id param
+    // For Query.node(id: ID!), keep as raw ID scalar type
     if ("Query".equals(field.getParentObject().getName()) && "id".equals(arg.getName())) {
       return arg.getType().formatOutput();
     }
@@ -238,8 +272,7 @@ class ObjectVisitor extends AbstractVisitor {
       fieldMethodBuilder.addStatement(
           "nextQueryBuilder = nextQueryBuilder.chain(List.of($S))", "id");
       fieldMethodBuilder.addStatement(
-          "List<QueryBuilder> builders = nextQueryBuilder.executeObjectListQuery($L.class)",
-          clientClassName);
+          "List<QueryBuilder> builders = nextQueryBuilder.executeObjectListQuery($S)", objName);
       fieldMethodBuilder.addStatement(
           "return builders.stream().map(qb -> new $L(qb)).toList()", clientClassName);
       fieldMethodBuilder

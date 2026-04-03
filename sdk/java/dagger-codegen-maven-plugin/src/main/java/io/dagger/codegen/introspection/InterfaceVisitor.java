@@ -162,8 +162,7 @@ class InterfaceVisitor extends AbstractVisitor {
       fieldMethodBuilder.addStatement(
           "nextQueryBuilder = nextQueryBuilder.chain(List.of($S))", "id");
       fieldMethodBuilder.addStatement(
-          "List<QueryBuilder> builders = nextQueryBuilder.executeObjectListQuery($L.class)",
-          clientClassName);
+          "List<QueryBuilder> builders = nextQueryBuilder.executeObjectListQuery($S)", objName);
       fieldMethodBuilder.addStatement(
           "return builders.stream().map(qb -> new $L(qb)).toList()", clientClassName);
       fieldMethodBuilder

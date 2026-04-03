@@ -42,7 +42,7 @@ public class ClientIT {
       assertTrue(readme.contains("Dagger"));
 
       ID readmeID = readmeFile.id();
-      String otherReadme = client.loadFileFromID(readmeID).contents();
+      String otherReadme = client.loadObjectFromID(File.class, readmeID).contents();
       assertEquals(readme, otherReadme);
     }
   }
@@ -59,7 +59,12 @@ public class ClientIT {
 
       // Ensure we can grab the container ID back and re-run the same query
       ID id = alpine.id();
-      contents = client.loadContainerFromID(id).rootfs().file("/etc/alpine-release").contents();
+      contents =
+          client
+              .loadObjectFromID(Container.class, id)
+              .rootfs()
+              .file("/etc/alpine-release")
+              .contents();
       assertEquals("3.16.2\n", contents);
     }
   }

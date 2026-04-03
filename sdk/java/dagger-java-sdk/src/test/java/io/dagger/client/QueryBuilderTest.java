@@ -42,4 +42,28 @@ public class QueryBuilderTest {
       assertThat(iae.getMessage()).isEqualTo("A new field cannot be chained");
     }
   }
+
+  @Test
+  public void node_query_with_inline_fragment() throws Exception {
+    DynamicGraphQLClient client = mock(DynamicGraphQLClient.class);
+    QueryBuilder qb = new QueryBuilder(client);
+    qb =
+        qb.chainNode("Container", "abc123")
+            .chain("rootfs")
+            .chain("file", Arguments.newBuilder().add("path", "/etc/alpine-release").build())
+            .chain(List.of("contents"));
+    Document query = qb.buildDocument();
+    assertThat(query.build())
+        .isEqualTo(
+            "query {node(id:\"abc123\"){... on Container {rootfs{file(path:\"/etc/alpine-release\"){contents}}}}}");
+  }
+
+  @Test
+  public void node_query_with_inline_fragment_single_field() throws Exception {
+    DynamicGraphQLClient client = mock(DynamicGraphQLClient.class);
+    QueryBuilder qb = new QueryBuilder(client);
+    qb = qb.chainNode("File", "xyz789").chain(List.of("id"));
+    Document query = qb.buildDocument();
+    assertThat(query.build()).isEqualTo("query {node(id:\"xyz789\"){... on File {id}}}");
+  }
 }

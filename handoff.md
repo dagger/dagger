@@ -48,16 +48,30 @@ Inline fragment support added to QueryBuilderChain.
 Generated code regenerated. All checks pass (223 tests, phpstan,
 phpcs).
 
+### Java SDK ✅
+
+Inline fragment support added to `QueryBuilder` via `chainNode()`
+method and `InlineFragment.on()` from SmallRye GraphQL client.
+`executeObjectListQuery` now takes a GraphQL type name string and
+uses `node(id:)` + inline fragment instead of `loadFooFromID`.
+
+`loadObjectFromID(Class<T>, ID)` and `nodeQueryBuilder(String, ID)`
+helpers generated on Client class. Deserializers use
+`nodeQueryBuilder` to construct typed objects from IDs.
+Annotation processor test fixture updated (import ordering).
+
+35 unit tests pass (23 SDK + 12 annotation processor). Codegen test
+fixture (`cmd/codegen/introspection/testdata/schema.json`) required
+for maven build:
+```bash
+python3 -c "import json; s=json.load(open('cmd/codegen/introspection/testdata/schema.json')); json.dump({'__schema':s}, open('/tmp/introspection.json','w'))"
+cd sdk/java && ./mvnw test -Ddaggerengine.version=local -Ddaggerengine.schema=/tmp/introspection.json
+```
+
+**Not yet tested:** Integration tests (`ClientIT`) require a running
+dev engine.
+
 ## Remaining SDKs
-
-These still reference `loadFooFromID` and need the same migration
-pattern: add inline fragment support to the query builder, update
-codegen, regenerate, fix tests.
-
-### Java SDK
-
-**Codegen:** `sdk/java/dagger-codegen-maven-plugin/src/main/java/io/dagger/codegen/introspection/ObjectVisitor.java`
-**Test:** `sdk/java/dagger-java-sdk/src/test/java/io/dagger/client/ClientIT.java`
 
 ### .NET SDK (test data only)
 

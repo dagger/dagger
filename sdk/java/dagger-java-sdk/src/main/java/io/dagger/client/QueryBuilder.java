@@ -14,6 +14,7 @@ import io.smallrye.graphql.client.Response;
 import io.smallrye.graphql.client.core.Document;
 import io.smallrye.graphql.client.core.Field;
 import io.smallrye.graphql.client.core.FieldOrFragment;
+import io.smallrye.graphql.client.core.InlineFragment;
 import io.smallrye.graphql.client.dynamic.api.DynamicGraphQLClient;
 import jakarta.json.JsonArray;
 import jakarta.json.JsonObject;
@@ -40,20 +41,30 @@ class QueryBuilder {
   private final DynamicGraphQLClient client;
   private final Deque<QueryPart> parts;
   private final List<QueryPart> leaves;
+  private final String inlineFragmentType;
 
   QueryBuilder(DynamicGraphQLClient client) {
-    this(client, new LinkedList<>());
+    this(client, new LinkedList<>(), new ArrayList<>(), null);
   }
 
   private QueryBuilder(DynamicGraphQLClient client, Deque<QueryPart> parts) {
-    this(client, parts, new ArrayList<>());
+    this(client, parts, new ArrayList<>(), null);
   }
 
   private QueryBuilder(
       DynamicGraphQLClient client, Deque<QueryPart> parts, List<String> finalFields) {
+    this(client, parts, finalFields, null);
+  }
+
+  private QueryBuilder(
+      DynamicGraphQLClient client,
+      Deque<QueryPart> parts,
+      List<String> finalFields,
+      String inlineFragmentType) {
     this.client = client;
     this.parts = parts;
     this.leaves = finalFields.stream().map(QueryPart::new).toList();
+    this.inlineFragmentType = inlineFragmentType;
   }
 
   QueryBuilder chain(String operation) {
@@ -67,7 +78,7 @@ class QueryBuilder {
     Deque<QueryPart> list = new LinkedList<>();
     list.addAll(this.parts);
     list.push(new QueryPart(operation, arguments));
-    return new QueryBuilder(client, list);
+    return new QueryBuilder(client, list, new ArrayList<>(), inlineFragmentType);
   }
 
   QueryBuilder chain(String operation, List<String> leaves) {
@@ -77,7 +88,7 @@ class QueryBuilder {
     Deque<QueryPart> list = new LinkedList<>();
     list.addAll(this.parts);
     list.push(new QueryPart(operation));
-    return new QueryBuilder(client, list, leaves);
+    return new QueryBuilder(client, list, leaves, inlineFragmentType);
   }
 
   QueryBuilder chain(List<String> leaves) {
@@ -86,7 +97,19 @@ class QueryBuilder {
     }
     Deque<QueryPart> list = new LinkedList<>();
     list.addAll(this.parts);
-    return new QueryBuilder(client, list, leaves);
+    return new QueryBuilder(client, list, leaves, inlineFragmentType);
+  }
+
+  /**
+   * Create a QueryBuilder for node(id:) with an inline fragment for the given type.
+   *
+   * <p>This produces queries like: {@code node(id: "...") { ... on Container { field { ... } } }}
+   */
+  QueryBuilder chainNode(String typeName, Object id) {
+    Deque<QueryPart> list = new LinkedList<>();
+    list.addAll(this.parts);
+    list.push(new QueryPart("node", Arguments.newBuilder().add("id", id.toString()).build()));
+    return new QueryBuilder(client, list, new ArrayList<>(), typeName);
   }
 
   private void handleErrors(Response response) throws DaggerQueryException {
@@ -129,6 +152,14 @@ class QueryBuilder {
                   field.setFields(List.of(acc));
                   return field;
                 });
+    // Wrap children of the outermost field in an inline fragment if needed.
+    // This produces: node(id: "...") { ... on TypeName { nested { fields } } }
+    if (inlineFragmentType != null) {
+      List<FieldOrFragment> children = operation.getFields();
+      InlineFragment fragment =
+          InlineFragment.on(inlineFragmentType, children.toArray(new FieldOrFragment[0]));
+      operation.setFields(List.of(fragment));
+    }
     Document query = document(operation(operation));
     return query;
   }
@@ -201,7 +232,12 @@ class QueryBuilder {
     return rv;
   }
 
-  <T> List<QueryBuilder> executeObjectListQuery(Class<T> klass)
+  /**
+   * Execute a list query for objects, returning QueryBuilders that load each element via node(id:).
+   *
+   * @param graphqlTypeName the GraphQL type name for inline fragment resolution
+   */
+  List<QueryBuilder> executeObjectListQuery(String graphqlTypeName)
       throws ExecutionException, InterruptedException, DaggerQueryException {
     List<String> pathElts =
         StreamSupport.stream(
@@ -218,11 +254,7 @@ class QueryBuilder {
     List<QueryBuilder> rv = new ArrayList<>();
     for (int i = 0; i < array.size(); i++) {
       String id = array.getJsonObject(i).getString("id");
-      QueryBuilder qb =
-          new QueryBuilder(this.client)
-              .chain(
-                  String.format("load%sFromID", klass.getSimpleName()),
-                  Arguments.newBuilder().add("id", id).build());
+      QueryBuilder qb = new QueryBuilder(this.client).chainNode(graphqlTypeName, id);
       rv.add(qb);
     }
     return rv;
