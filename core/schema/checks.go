@@ -17,7 +17,10 @@ func (s checksSchema) Install(srv *dagql.Server) {
 			Doc("Return a list of individual checks and their details"),
 
 		dagql.Func("run", s.run).
-			Doc("Execute all selected checks"),
+			Doc("Execute all selected checks").
+			Args(
+				dagql.Arg("failFast").Doc("If true, stop running checks as soon as any check fails."),
+			),
 
 		dagql.Func("report", s.report).
 			Doc("Generate a markdown report"),
@@ -66,7 +69,6 @@ func (s checksSchema) list(_ context.Context, parent *core.CheckGroup, args stru
 }
 
 func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args struct {
-	// If true, stop running checks as soon as any check fails.
 	FailFast dagql.Optional[dagql.Boolean]
 }) (*core.CheckGroup, error) {
 	return parent.Run(ctx, args.FailFast.GetOr(false).Bool())

@@ -1449,6 +1449,7 @@ func (r *CheckGroup) Report() *File {
 
 // CheckGroupRunOpts contains options for CheckGroup.Run
 type CheckGroupRunOpts struct {
+	// If true, stop running checks as soon as any check fails.
 	FailFast bool
 }
 

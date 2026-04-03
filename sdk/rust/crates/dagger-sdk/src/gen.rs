@@ -2783,6 +2783,7 @@ pub struct CheckGroup {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct CheckGroupRunOpts {
+    /// If true, stop running checks as soon as any check fails.
     #[builder(setter(into, strip_option), default)]
     pub fail_fast: Option<bool>,
 }

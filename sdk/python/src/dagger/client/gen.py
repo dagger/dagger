@@ -1495,7 +1495,13 @@ class CheckGroup(Type):
         return File(_ctx)
 
     def run(self, *, fail_fast: bool | None = None) -> Self:
-        """Execute all selected checks"""
+        """Execute all selected checks
+
+        Parameters
+        ----------
+        fail_fast:
+            If true, stop running checks as soon as any check fails.
+        """
         _args = [
             Arg("failFast", fail_fast, None),
         ]

@@ -254,6 +254,9 @@ function ChangesetsMergeConflictNameToValue(
   }
 }
 export type CheckGroupRunOpts = {
+  /**
+   * If true, stop running checks as soon as any check fails.
+   */
   failFast?: boolean
 }
 
@@ -3663,6 +3666,7 @@ export class CheckGroup extends BaseClient {
 
   /**
    * Execute all selected checks
+   * @param opts.failFast If true, stop running checks as soon as any check fails.
    */
   run = (opts?: CheckGroupRunOpts): CheckGroup => {
     const ctx = this._ctx.select("run", { ...opts })

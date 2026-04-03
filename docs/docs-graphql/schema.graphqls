@@ -368,7 +368,10 @@ type CheckGroup {
   report: File!
 
   """Execute all selected checks"""
-  run(failFast: Boolean): CheckGroup!
+  run(
+    """If true, stop running checks as soon as any check fails."""
+    failFast: Boolean
+  ): CheckGroup!
 }
 
 """
