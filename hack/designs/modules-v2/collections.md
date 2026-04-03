@@ -339,12 +339,12 @@ A collection occurrence contributes:
 
 Example:
 
-```bash
+```console
 $ dagger check --help
-  --module=<name>
+  --type=<name>
 
 $ dagger check --help
-  --module=<name>
+  --type=<name>
   --go-test=<name>
 ```
 
@@ -353,7 +353,7 @@ Base Artifacts scope:
 ```text
 workspace.artifacts
   .filterVerb(CHECK)
-  .filterDimension("module", ["go"])
+  .filterDimension("type", ["go"])
 ```
 
 Expanded by a collection:
@@ -361,7 +361,7 @@ Expanded by a collection:
 ```text
 workspace.artifacts
   .filterVerb(CHECK)
-  .filterDimension("module", ["go"])
+  .filterDimension("type", ["go"])
   .filterDimension("go-test", ["TestFoo"])
 ```
 
@@ -382,7 +382,7 @@ Example:
 ```text
 workspace.artifacts
   .filterVerb(CHECK)
-  .filterDimension("module", ["go"])
+  .filterDimension("type", ["go"])
   .filterDimension("go-test", ["TestFoo", "TestBar"])
   .check
 ```
@@ -459,8 +459,7 @@ effective check set.
 
 The base selector model lives in [artifacts.md](./artifacts.md). Collections do
 not replace it. They add keyed dimensions and batch behavior on top of
-pre-existing dimensions such as `module` and synthesized non-collection
-object-field dimensions.
+the pre-existing built-in `type` dimension.
 
 #### Filter Model
 
@@ -473,9 +472,9 @@ such as `--path` remain separate; collections do not change them.
 
 Each flag points to `dagger list` for discovery:
 
-```
+```console
 $ dagger check --help
-  --module=<name>       Filter by module (see: dagger list module --check)
+  --type=<name>         Filter by artifact type (see: dagger list types)
   --go-module=<name>    Filter by go module (see: dagger list go-module --check)
   --go-test=<name>      Filter by go test (see: dagger list go-test --check)
 ```
@@ -489,14 +488,21 @@ comma).
 
 Examples:
 
-```bash
-$ dagger check --module=go --module=nodejs
+```console
+$ dagger check --type=go --type=nodejs
 $ dagger check --go-test=TestFoo --go-test=TestBar --go-module=./myapp/app2
 ```
 
-Boolean type filters (`--go=true|false`) are replaced by `--module=<name>`.
-`--module=go` replaces `--go=true`. This keeps collection-provided dimension
-filters in one valued-filter model while leaving provenance filters separate.
+The built-in `type` axis remains available alongside these collection
+dimensions:
+
+```console
+$ dagger check --type=go-test --go-test=TestFoo run
+$ dagger check --go-test=TestFoo run
+```
+
+The second form is legal because filtering by `--go-test=...` already implies
+that the selected rows are `go-test` artifacts.
 
 These dimension filters are scope-relative constraints, not unique selectors.
 
@@ -517,9 +523,9 @@ Type renames are CLI-breaking for these generated filters.
 also be projected through a verb when needed to match a verb-local selector
 scope:
 
-```bash
+```console
 $ dagger list                      # available dimensions with key types
-$ dagger list module               # workspace modules
+$ dagger list types                # artifact types
 $ dagger list go-module --check    # go modules in check scope
 $ dagger list go-test --check      # all go tests in check scope
 $ dagger list go-test --check \
@@ -536,7 +542,9 @@ Listing rules:
   intentionally flattened.
 - Output is unique values in stable order.
 
-`dagger check -l` remains a structural check listing.
+`dagger check -l` and `dagger generate -l` use the table-capable action
+listing defined in [plans.md](./plans.md). Collection dimensions simply become
+more columns when they are needed to distinguish the listed rows.
 
 #### Batch Shadowing
 
@@ -561,15 +569,18 @@ Execution follows the same rule.
 For example, suppose `go.tests` has item checks `runTest` and `lint`, and
 `go.tests.batch` defines `runTest` but not `lint`.
 
-```bash
+```console
 $ dagger check -l
-go:tests:lint
-go:tests:run-test
+GO TEST   ACTION
+TestFoo   lint
+TestFoo   run-test
+TestBar   lint
+TestBar   run-test
 
-$ dagger check --go-test=TestFoo --go-test=TestBar go:tests:run-test
+$ dagger check --go-test=TestFoo --go-test=TestBar run-test
 # runs once using go.tests.batch.runTest over the filtered subset
 
-$ dagger check --go-test=TestFoo --go-test=TestBar go:tests:lint
+$ dagger check --go-test=TestFoo --go-test=TestBar lint
 # runs once per filtered item using the item type's lint check
 ```
 
@@ -698,7 +709,7 @@ door.
 - [x] Locked the design decision that load time checks structure and runtime checks behavior
 - [x] Locked the design decision that collection filters use repeated flags only; comma-separated values are forbidden
 - [x] Locked the design decision that filter flags are named by item type (singular), not collection type
-- [x] Locked the design decision that boolean type filters are replaced by `--module=<name>` valued filters
+- [x] Locked the design decision that artifact kind selection uses the built-in `--type=<name>` filter
 - [x] Locked the design decision that `dagger list` is the discovery surface for filter values
 - [x] Engine implementation has started with collection typedef metadata and validation
 - [x] Engine implementation now projects synthetic public collection and batch schema types

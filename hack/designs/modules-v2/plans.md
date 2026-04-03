@@ -14,9 +14,7 @@ Depends on: [Artifacts](./artifacts.md)
 - [Plan Construction](#plan-construction)
 - [Check And Generate Construction](#check-and-generate-construction)
 - [Plan Execution](#plan-execution)
-- [Future Work](#future-work)
 - [Locked Decisions](#locked-decisions)
-- [Open Questions](#open-questions)
 
 ## Summary
 
@@ -28,23 +26,32 @@ verb-specific construction rules.
 
 Replaces CheckGroup. Transition path: CheckGroup → Execution Plans.
 
+This document builds on the artifact model from [artifacts.md](./artifacts.md):
+
+- top-level module objects are artifact rows
+- collection items are artifact rows
+- ordinary nested objects are structural glue
+
+Action discovery walks that structural glue and produces **artifact-relative**
+action paths such as `lint`, `tests:run-bun`, or `tests:generate-fixtures`.
+
 ## Implementation
 
 This design is intended to land as one primary implementation unit:
 
 - **PR:** `verbs: add plans, migrate check + generate, remove old path`
 - **API:** `Action`, `Plan`, `Artifacts.actions`, `Artifact.actions`,
-  `Artifacts.action`, `Artifact.action`, `Artifacts.filterVerb`,
-  `Artifacts.check`,
+  `Artifacts.action`, `Artifact.action`, `Artifacts.check`,
   `Artifacts.generate`
-- **UI:** `dagger check --plan`, `dagger generate --plan`, plus the first
-  public rollout of the Artifacts selector UX: `dagger list`,
-  `dagger list <dimension>`, `dagger list <dimension> --check`, and the first
-  non-collection typed filters on `check` / `generate`
+- **UI:** `dagger check --plan`, `dagger generate --plan`, public `dagger list`
+  rollout, public `--type` filters, action listing with
+  `dagger check -l` / `dagger generate -l`, and compatibility parsing for
+  typed action prefixes such as `go:lint`
 
 Included in this unit:
 
 - the Action/Plan substrate
+- action discovery over artifact-relative paths
 - migration of `dagger check` and `dagger generate` onto `Artifacts`
 - public rollout of the selector surfaces defined in [artifacts.md](./artifacts.md)
 - removal of the old `ModTree` / `CheckGroup` / `GeneratorGroup` path
@@ -60,34 +67,21 @@ Deferred to [collections.md](./collections.md):
 - collection-provided dimensions
 - collection-aware batch lowering and shadowing
 
-### Pull Request Description
-
-```text
-This PR implements the Execution Plans design unit. It adds `Action`, `Plan`,
-`Artifacts.actions`, `Artifact.actions`, `Artifacts.action`, `Artifact.action`,
-`Artifacts.filterVerb`, `Artifacts.check`, and `Artifacts.generate`; makes
-`dagger list` public;
-migrates `dagger check` and `dagger generate` onto the Artifacts/Plans stack;
-publicly rolls out the selector surfaces defined in Artifacts, including the
-first non-collection typed filters; and removes the old `ModTree` /
-`CheckGroup` / `GeneratorGroup` path.
-```
-
 ## Schema
 
 ```graphql
 extend type Artifacts {
   """
-  Union of direct non-traversal function names across all in-scope artifacts.
-  Zero-arg object-returning members participate in selector traversal instead.
+  Reachable action occurrences on the current artifact set.
+  One row per `(artifact, path)` occurrence.
   """
-  actions: [String!]!
+  actions: [Action!]!
 
   """
-  Create an action targeting the in-scope artifacts that directly expose this
-  function name. Errors if no in-scope artifact exposes it.
+  Create an action targeting all in-scope artifacts that expose this
+  artifact-relative path.
   """
-  action(name: String!): Action!
+  action(path: String!): Action!
 
   """Compile a check execution plan for the selected artifact set."""
   check: Plan!
@@ -97,25 +91,39 @@ extend type Artifacts {
 }
 
 extend type Artifact {
-  """Available direct non-traversal function names on the underlying object."""
-  actions: [String!]!
+  """Reachable actions on this artifact, named by artifact-relative path."""
+  actions: [Action!]!
 
   """Create an action targeting this single artifact."""
-  action(name: String!): Action!
+  action(path: String!): Action!
 }
 
 """
-A callable action: one or more artifacts + a function.
+A callable action: one or more artifacts plus one reachable handler path.
 Actions are the building blocks of execution plans.
 """
 type Action {
-  """The artifacts this action targets."""
+  """
+  The artifacts this action targets.
+
+  - `Artifact.actions` and `Artifacts.actions` return unbatched occurrences, so
+    this list has length 1 there.
+  - `Artifacts.action(path)` may batch several selected artifacts that expose
+    the same path.
+  - Plan compilation may also batch actions when the verb allows it.
+  """
   artifacts: [Artifact!]!
 
-  """The function to call."""
-  name: String!
+  """
+  Artifact-relative colon-separated path.
+  Examples: `lint`, `tests:run-bun`.
+  """
+  path: String!
 
-  """Type definition of the function, for introspection."""
+  """Leaf function name at the end of `path`."""
+  functionName: String!
+
+  """Type definition of the leaf function, for introspection."""
   function: Function
 
   """Actions that must complete before this one runs."""
@@ -132,13 +140,13 @@ type Action {
 A compiled execution plan — a DAG of actions.
 Each action is a function call on one or more artifacts.
 Edges are "after" dependencies between actions.
-Parallel execution is implicit: actions with no pending "after"
-dependencies run concurrently.
+Parallel execution is implicit: actions with no pending dependencies run
+concurrently.
 
-NOTE FOR IMPLEMENTERS: Each action is backed by a DAGQL call chain
-under the hood. The Action/Artifact API is a clean projection over
-engine-internal DAGQL structures. Use existing engine-internal call
-chain representations rather than building parallel ones.
+NOTE FOR IMPLEMENTERS: Each action is backed by a DAGQL call chain under the
+hood. The Action/Artifact API is a clean projection over engine-internal DAGQL
+structures. Use existing engine-internal call chain representations rather than
+building parallel ones.
 """
 type Plan {
   """All actions in this plan."""
@@ -155,9 +163,11 @@ type Plan {
 
 ## Design Decisions
 
-- **Plan = DAG of Actions.** Each action is (artifacts, function) with "after"
+- **Plan = DAG of Actions.** Each action is `(artifacts, path)` with "after"
   edges. Parallel is implicit — actions with no pending dependencies run
   concurrently.
+- **Action paths are artifact-relative.** The action model is `(artifact,
+  path)`, not one global path grammar.
 - **Always compiled.** `dagger check` and `dagger generate` always compile a
   Plan, then execute it. `--plan` stops before execution and displays the plan.
 - **Engine compiles, CLI displays.** The engine owns plan compilation
@@ -165,91 +175,227 @@ type Plan {
   whether to call `run` or display the plan nodes.
 - **Plans materialize all implicit config.** Workspace defaults, filter
   results, batch-vs-item decisions — all collapsed into concrete Actions.
-  The plan is the "fully resolved" view. No more "what will this actually
-  do?"
 - **No mini-VM.** Plans are finite DAGs. No loops, conditionals, variables.
-  "Query plan, not bytecode VM."
-- **The dang test.** If a plan step can't be rendered as a readable public API
-  action, it's the wrong layer. Every Action is backed by a DAGQL call chain
-  that the user could understand and run themselves.
-- **Eager binding.** Plan DAGs are built bottom-up: leaf actions first, then
-  dependents referencing their IDs. All references are resolved at plan
-  construction time via DAGQL's native ID system.
 - **Run returns void.** `Plan.run` and `Action.run` return void on success,
-  error on failure. Outputs are side effects (telemetry, TUI, filesystem).
-  Structured per-action results for CI are a known extension point, deferred.
+  error on failure.
 
 ## Actions
 
 An Action bridges artifacts and functions:
 
-- `Artifact.action("lint")` → action on one artifact
-- `Artifacts.action("lint")` → action on all in-scope artifacts (batch)
-- `Action.after` → DAG edges to other actions
-- `Action.run` → execute just this action
+- `Artifact.action("lint")` → one action on one artifact
+- `Artifact.action("tests:run-bun")` → nested action on one artifact
+- `Artifacts.action("lint")` → one action over every selected artifact that
+  exposes `lint`
 
 Actions are the building blocks of Plans. A Plan is a DAG of Actions with
-"after" edges. The engine compiles verb invocations such as `Artifacts.check`
-into Plans by selecting the relevant actions from the current artifact scope
-and adding appropriate ordering.
+"after" edges.
 
-### Example — two checks, batched
+### Reachability And Naming
 
+Action discovery starts at one artifact root.
+
+It walks recursively through:
+
+- object-valued fields
+- zero-arg object-valued functions
+
+It does not walk through:
+
+- members that require arguments
+- non-object fields
+- cross-artifact references
+- the next artifact boundary
+
+Whenever that walk reaches a direct non-traversal function with the relevant
+verb annotation, that function becomes a reachable action.
+
+The action path is the colon-separated path from the artifact root to that
+function.
+
+Example:
+
+```dang
+type Go {
+  pub lint: Void! @check
+
+  pub tests: Tests! {
+    Tests()
+  }
+}
+
+type Tests {
+  pub runBun: Void! @check
+}
 ```
+
+On the `Go` artifact, the reachable check actions are:
+
+```console
+lint
+tests:run-bun
+```
+
+The artifact root name itself is **not** part of the action path. So this is
+the normal form:
+
+```console
+$ dagger check --type=go lint
+```
+
+not:
+
+```console
+$ dagger check --type=go go:lint
+```
+
+### Enumeration
+
+`Artifact.actions` returns all reachable action occurrences on that artifact.
+
+`Artifacts.actions` returns all reachable action occurrences across the
+selected artifact set.
+
+These are **unbatched** occurrences:
+
+- one `Action` row per `(artifact, path)` occurrence
+- `action.artifacts` therefore has length 1 for these two enumeration APIs
+
+By contrast, `Artifacts.action(path)` may batch several selected artifacts that
+expose the same path.
+
+### Examples
+
+One artifact:
+
+```text
 workspace.artifacts
-  .filterVerb(CHECK)
-  .filterDimension("module", ["go"])
-  .filterDimension("platform", ["linux", "darwin"])
+  .filterDimension("type", ["go"])
+  .items[0]
+  .actions
+```
+
+might produce:
+
+```console
+lint
+tests:run-bun
+tests:run-nodejs
+```
+
+Several selected artifacts:
+
+```text
+workspace.artifacts
+  .filterDimension("type", ["go-test"])
+  .actions
+```
+
+might produce:
+
+```console
+(TestFoo, run)
+(TestBar, run)
+```
+
+Batched action lookup:
+
+```text
+workspace.artifacts
+  .filterDimension("type", ["go-test"])
   .action("run")
-  # → one Action targeting the selected platform artifacts
 ```
 
-### Example — two checks, per-item
+means:
 
-```
-a1 = workspace.artifacts
-       .filterVerb(CHECK)
-       .filterDimension("module", ["go"])
-       .filterDimension("platform", ["linux"])
-       .action("run")
-a2 = workspace.artifacts
-       .filterVerb(CHECK)
-       .filterDimension("module", ["go"])
-       .filterDimension("platform", ["darwin"])
-       .action("run")
-# → one Action per selected artifact
-```
+- keep the currently selected `go-test` rows
+- retain only the rows that expose `run`
+- create one Action targeting that retained set
 
-### Example — DAG with ordering
+### CLI Listing
 
-```
-prepare = artifacts.filterDimension("module", ["go"]).action("prepare")
-run     = artifacts
-           .filterVerb(CHECK)
-           .filterDimension("module", ["go"])
-           .filterDimension("platform", ["linux"])
-           .action("run")
-           # run.after = [prepare.id]
-publish = artifacts.filterDimension("module", ["go"]).action("publish")
-           # publish.after = [run.id]
+`dagger check -l` and `dagger generate -l` list action occurrences.
+
+If all listed actions belong to one artifact row, the CLI prints plain
+artifact-relative action paths:
+
+```console
+$ dagger check --type=go -l
+lint
+tests:run-bun
 ```
 
-Rendered as a visual DAG:
+If several artifact rows are in play, the CLI prints a table:
 
+- one column per artifact dimension needed to distinguish the listed rows
+- one `ACTION` column
+
+Example with only `type` varying:
+
+```console
+$ dagger check -l
+TYPE   ACTION
+go     lint
+go     tests:run-bun
+js     lint
+js     tests:run-bun
 ```
-  prepare(go) ──▶ run(go,linux) ──▶ publish(go)
+
+Example with collection rows:
+
+```console
+$ dagger check --type=go-test -l
+GO TEST   ACTION
+TestFoo   run
+TestBar   run
 ```
+
+Example with more than one varying artifact dimension:
+
+```console
+$ dagger check -l
+GO MODULE   GO TEST   ACTION
+./my-app    TestFoo   run
+./my-lib    TestFoo   run
+```
+
+Do not print dimensions that are constant or entirely null across the listed
+rows.
+
+### Compatibility Input
+
+For compatibility, the CLI may also accept:
+
+```console
+<type>:<action-path>
+```
+
+as shorthand for:
+
+```console
+--type=<type> <action-path>
+```
+
+Examples:
+
+```console
+$ dagger check go:lint
+$ dagger check go-test:run
+```
+
+This is input sugar only. The primary listing format is the plain path or the
+table format above.
 
 ## Plan Construction
 
 Plan compilation has three parts:
 
-1. **Selection.** User-provided filters
-   (`--module=go --platform=linux`) become `filterDimension` chains on
-   `Artifacts`.
-2. **Action discovery.** The engine turns the retained direct handlers for the
-   selected verb into concrete Actions. Batch-vs-item decisions are resolved
-   here.
+1. **Selection.** User-provided filters such as `--type=go` or
+   `--type=go-test --go-test=TestFoo`
+   become `filterDimension` chains on `Artifacts`.
+2. **Action discovery.** The engine turns the retained reachable handlers for
+   the selected verb into concrete Actions. Rollup through structural glue and
+   batch-vs-item decisions are resolved here.
 3. **Action ordering.** The engine adds `after` edges between Actions.
    Ordering may come from explicit user composition (`withAfter`) or from the
    construction rules of the compiled verb.
@@ -287,20 +433,12 @@ Once a Plan is constructed, execution is generic DAG walking. Actions with no
 pending "after" dependencies run concurrently. `--plan` stops after
 compilation and displays the DAG without executing it.
 
-## Future Work
-
-### Structured Results
-
-`Plan.run` and `Action.run` return void. Structured per-action results for
-CI/programmatic consumers are a known extension point.
-
 ## Locked Decisions
 
 - **`Action.withAfter` is part of the public API.** The engine uses it
   internally during plan compilation, and users can use it to build custom
-  plans. This avoids a separate "engine-only" construction path and ensures
-  the public API is self-sufficient from day one.
-
-## Open Questions
-
-1. Exact transition path from CheckGroup to Plan.
+  plans.
+- **Action paths are artifact-relative.** There is no separate canonical
+  workspace-global action path in this design.
+- **`dagger check -l` is table-capable.** It prints plain paths for one
+  artifact row and a minimal distinguishing table for several rows.

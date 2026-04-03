@@ -46,20 +46,20 @@ Workspace plumbing    Lockfile                │
   dimensions and collection-aware batching.
 - **Provenance track** — Artifacts → Provenance
 
-Artifacts establishes the general selector model first: module-level
-dimensions plus synthesized non-collection object-field selector dimensions.
-Execution Plans turns selected artifacts into inspectable DAGs of actions.
-Ship plugs in later as a verb-specific extension over that plan substrate.
-Collections plug in later as keyed dimension providers and batch/subset
-semantics on top of the Artifacts/Plans base. Provenance also builds on
-Artifacts, but it is orthogonal to Execution Plans, Ship, and Collections: it
-adds path/git filtering over effective artifact provenance rather than new plan
-or collection semantics.
+Artifacts establishes the base selector model first: top-level module objects
+and later collection items become artifact rows; `type` is the built-in
+selector dimension. Execution Plans turns selected artifacts into inspectable
+DAGs of actions. Ship plugs in later as a verb-specific extension over that
+plan substrate. Collections plug in later as keyed dimension providers and
+batch/subset semantics on top of the Artifacts/Plans base. Provenance also
+builds on Artifacts, but it is orthogonal to Execution Plans, Ship, and
+Collections: it adds path/git filtering over effective artifact provenance
+rather than new plan or collection semantics.
 
 ## Component Boundaries
 
-- **Artifacts** defines the base selector space: scopes, dimensions, and
-  scope-relative coordinate rows.
+- **Artifacts** defines the base selector space: eligible artifact rows,
+  scopes, built-in dimensions, and scope-relative coordinate rows.
 - **Provenance** extends `Artifacts` with path/change predicates over effective
   artifact provenance.
 - **Execution Plans** defines `Action`, `Plan`, plan construction, and plan
