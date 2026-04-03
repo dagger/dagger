@@ -4,6 +4,20 @@
 
 Depends on: [Artifacts](./artifacts.md)
 
+## Table of Contents
+
+- [Summary](#summary)
+- [Implementation](#implementation)
+- [Schema](#schema)
+- [Design Decisions](#design-decisions)
+- [Actions](#actions)
+- [Plan Construction](#plan-construction)
+- [Check And Generate Construction](#check-and-generate-construction)
+- [Plan Execution](#plan-execution)
+- [Future Work](#future-work)
+- [Locked Decisions](#locked-decisions)
+- [Open Questions](#open-questions)
+
 ## Summary
 
 Execution Plans introduces a generic `Action`/`Plan` substrate for verb
@@ -20,7 +34,8 @@ This design is intended to land as one primary implementation unit:
 
 - **PR:** `verbs: add plans, migrate check + generate, remove old path`
 - **API:** `Action`, `Plan`, `Artifacts.actions`, `Artifact.actions`,
-  `Artifacts.action`, `Artifact.action`, `Artifacts.check`,
+  `Artifacts.action`, `Artifact.action`, `Artifacts.filterVerb`,
+  `Artifacts.check`,
   `Artifacts.generate`
 - **UI:** `dagger check --plan`, `dagger generate --plan`, plus the first
   public rollout of the Artifacts selector UX: `dagger list`,
@@ -50,7 +65,8 @@ Deferred to [collections.md](./collections.md):
 ```text
 This PR implements the Execution Plans design unit. It adds `Action`, `Plan`,
 `Artifacts.actions`, `Artifact.actions`, `Artifacts.action`, `Artifact.action`,
-`Artifacts.check`, and `Artifacts.generate`; makes `dagger list` public;
+`Artifacts.filterVerb`, `Artifacts.check`, and `Artifacts.generate`; makes
+`dagger list` public;
 migrates `dagger check` and `dagger generate` onto the Artifacts/Plans stack;
 publicly rolls out the selector surfaces defined in Artifacts, including the
 first non-collection typed filters; and removes the old `ModTree` /
@@ -181,9 +197,9 @@ and adding appropriate ordering.
 
 ```
 workspace.artifacts
-  .filterCheck
-  .filterBy("module", ["go"])
-  .filterBy("platform", ["linux", "darwin"])
+  .filterVerb(CHECK)
+  .filterDimension("module", ["go"])
+  .filterDimension("platform", ["linux", "darwin"])
   .action("run")
   # → one Action targeting the selected platform artifacts
 ```
@@ -192,14 +208,14 @@ workspace.artifacts
 
 ```
 a1 = workspace.artifacts
-       .filterCheck
-       .filterBy("module", ["go"])
-       .filterBy("platform", ["linux"])
+       .filterVerb(CHECK)
+       .filterDimension("module", ["go"])
+       .filterDimension("platform", ["linux"])
        .action("run")
 a2 = workspace.artifacts
-       .filterCheck
-       .filterBy("module", ["go"])
-       .filterBy("platform", ["darwin"])
+       .filterVerb(CHECK)
+       .filterDimension("module", ["go"])
+       .filterDimension("platform", ["darwin"])
        .action("run")
 # → one Action per selected artifact
 ```
@@ -207,14 +223,14 @@ a2 = workspace.artifacts
 ### Example — DAG with ordering
 
 ```
-prepare = artifacts.filterBy("module", ["go"]).action("prepare")
+prepare = artifacts.filterDimension("module", ["go"]).action("prepare")
 run     = artifacts
-           .filterCheck
-           .filterBy("module", ["go"])
-           .filterBy("platform", ["linux"])
+           .filterVerb(CHECK)
+           .filterDimension("module", ["go"])
+           .filterDimension("platform", ["linux"])
            .action("run")
            # run.after = [prepare.id]
-publish = artifacts.filterBy("module", ["go"]).action("publish")
+publish = artifacts.filterDimension("module", ["go"]).action("publish")
            # publish.after = [run.id]
 ```
 
@@ -229,7 +245,8 @@ Rendered as a visual DAG:
 Plan compilation has three parts:
 
 1. **Selection.** User-provided filters
-   (`--module=go --platform=linux`) become `filterBy` chains on `Artifacts`.
+   (`--module=go --platform=linux`) become `filterDimension` chains on
+   `Artifacts`.
 2. **Action discovery.** The engine turns the retained direct handlers for the
    selected verb into concrete Actions. Batch-vs-item decisions are resolved
    here.

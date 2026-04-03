@@ -65,7 +65,7 @@ or collection semantics.
 - **Execution Plans** defines `Action`, `Plan`, plan construction, and plan
   execution. This unit rolls out `check` and `generate`.
 - **Ship** extends `Artifacts` and `Execution Plans` with `+ship`,
-  `filterShip`, and `Artifacts.ship`.
+  `filterVerb(SHIP)`, and `Artifacts.ship`.
 - **Collections** extends both layers: it adds new keyed selector dimensions
   and collection-aware lowering/batching on top of the Artifacts/Plans base.
 

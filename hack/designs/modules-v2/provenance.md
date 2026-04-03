@@ -66,9 +66,9 @@ Public filters over stored provenance:
 
 V1 uses overlap semantics for both public provenance filters:
 
-- `filterPath(path)` matches when effective artifact provenance overlaps the
-  selected path region
-- `filterAffectedBy(changes)` matches when effective artifact provenance
+- `filterAffectedByPath(path)` matches when effective artifact provenance
+  overlaps the selected path region
+- `filterAffectedByDiff(changes)` matches when effective artifact provenance
   overlaps the changed-path region derived from the `Changeset`
 
 ## Selector Shape
@@ -80,7 +80,8 @@ selector stores the path region that was read. It may also store `include` and
 Root-path provenance at `/` is the canonical coarse provenance region meaning
 "matches all workspace paths".
 
-`filterPath(path)` checks overlap against what the selector really includes
+`filterAffectedByPath(path)` checks overlap against what the selector really
+includes
 after `include` / `exclude` are applied, not just against its root path.
 
 ## Path Filter Examples
@@ -95,19 +96,19 @@ exclude = docs/generated/**
 
 Then:
 
-- `filterPath("docs")` matches
-- `filterPath("docs/intro.md")` matches
-- `filterPath("docs/intro.png")` does not match
-- `filterPath("docs/generated")` does not match
-- `filterPath("docs/generated/api.md")` does not match
+- `filterAffectedByPath("docs")` matches
+- `filterAffectedByPath("docs/intro.md")` matches
+- `filterAffectedByPath("docs/intro.png")` does not match
+- `filterAffectedByPath("docs/generated")` does not match
+- `filterAffectedByPath("docs/generated/api.md")` does not match
 
 The important rule is simple: overlap is checked against the final selected
 file set, not just against the selector root.
 
 Changeset overlap follows the same rule. If a `Changeset` contains only paths
 under `docs/generated/**`, the selector above does not match
-`filterAffectedBy(changes)` because that region is excluded from the effective
-selected file set.
+`filterAffectedByDiff(changes)` because that region is excluded from the
+effective selected file set.
 
 ## Provenance Union
 
@@ -143,10 +144,10 @@ Effective artifact provenance:
 
 So:
 
-- `filterPath("docs")` matches
-- `filterPath("config")` matches
-- `filterPath("docs/generated")` does not match
-- `filterPath("scripts")` does not match
+- `filterAffectedByPath("docs")` matches
+- `filterAffectedByPath("config")` matches
+- `filterAffectedByPath("docs/generated")` does not match
+- `filterAffectedByPath("scripts")` does not match
 
 Precise nested fields:
 
@@ -177,8 +178,8 @@ Result:
 
 - no precise path provenance is known
 - the artifact is tainted with `/`
-- `filterPath("docs")` matches
-- `filterPath("src/api")` matches
+- `filterAffectedByPath("docs")` matches
+- `filterAffectedByPath("src/api")` matches
 
 Coarse match from an exposed `Workspace`-taking function:
 
@@ -191,8 +192,8 @@ Result:
 
 - no precise path provenance is known from fields
 - the artifact is tainted with `/`
-- `filterPath("docs")` matches
-- `filterPath("src/api")` matches
+- `filterAffectedByPath("docs")` matches
+- `filterAffectedByPath("src/api")` matches
 
 ## Conservative Workspace-Sensitive Taint
 
@@ -256,7 +257,8 @@ The main model is artifact filtering, not plan filtering.
 
 - `workspace.artifacts` and verb-scoped artifact views are filtered by artifact
   provenance
-- `filterPath` and `filterAffectedBy(changes: Changeset!)` are dedicated
+- `filterAffectedByPath` and `filterAffectedByDiff(changes: Changeset!)` are
+  dedicated
   provenance predicates on `Artifacts`; they are not selector dimensions
 - provenance filters preserve the current `Artifacts` scope and header row;
   they narrow only the matching artifact rows
@@ -271,9 +273,9 @@ These predicates work on any `Artifacts` scope, not only the root scope.
 Examples:
 
 ```text
-workspace.artifacts.filterPath("docs")
-workspace.artifacts.filterCheck.filterPath("docs")
-workspace.artifacts.filterGenerate.filterAffectedBy(changes)
+workspace.artifacts.filterAffectedByPath("docs")
+workspace.artifacts.filterVerb(CHECK).filterAffectedByPath("docs")
+workspace.artifacts.filterVerb(GENERATE).filterAffectedByDiff(changes)
 ```
 
 ## Artifacts Expansion
@@ -287,22 +289,22 @@ extend type Artifacts {
   Narrow by workspace path provenance. Matches artifacts whose effective
   provenance overlaps the given path selector.
   """
-  filterPath(path: WorkspacePath!): Artifacts!
+  filterAffectedByPath(path: WorkspacePath!): Artifacts!
 
   """
   Narrow by source changes. Matches artifacts whose effective provenance
   overlaps the given changeset. This is a provenance predicate, not a selector
   dimension.
   """
-  filterAffectedBy(changes: Changeset!): Artifacts!
+  filterAffectedByDiff(changes: Changeset!): Artifacts!
 }
 ```
 
 CLI lowering examples:
 
 ```text
-dagger check --path=./docs      → workspace.artifacts.filterCheck.filterPath("./docs")
-dagger check --affected-by=...  → workspace.artifacts.filterCheck.filterAffectedBy(...)
+dagger check --path=./docs      → workspace.artifacts.filterVerb(CHECK).filterAffectedByPath("./docs")
+dagger check --affected-by=...  → workspace.artifacts.filterVerb(CHECK).filterAffectedByDiff(...)
 ```
 
 ## Implementation
@@ -440,18 +442,18 @@ dagger generate --path=docs
 
 ### 4. Implement the two Artifacts filters
 
-`filterPath` overlaps the stored selectors with the requested path region.
-`filterAffectedBy` does the same thing, but uses the changed paths from the
-`Changeset`.
+`filterAffectedByPath` overlaps the stored selectors with the requested path
+region. `filterAffectedByDiff` does the same thing, but uses the changed paths
+from the `Changeset`.
 
 ```go
-func (s *Artifacts) FilterPath(path WorkspacePath) *Artifacts {
+func (s *Artifacts) FilterAffectedByPath(path WorkspacePath) *Artifacts {
 	return s.FilterRows(func(a ArtifactRow) bool {
 		return OverlapsPath(a.Provenance, string(path))
 	})
 }
 
-func (s *Artifacts) FilterAffectedBy(changes Changeset) *Artifacts {
+func (s *Artifacts) FilterAffectedByDiff(changes Changeset) *Artifacts {
 	paths := changes.Paths()
 	return s.FilterRows(func(a ArtifactRow) bool {
 		return OverlapsAnyPath(a.Provenance, paths)
@@ -462,9 +464,9 @@ func (s *Artifacts) FilterAffectedBy(changes Changeset) *Artifacts {
 Examples:
 
 ```text
-workspace.artifacts.filterPath("docs")
-workspace.artifacts.filterCheck.filterPath("docs")
-workspace.artifacts.filterGenerate.filterAffectedBy(changes)
+workspace.artifacts.filterAffectedByPath("docs")
+workspace.artifacts.filterVerb(CHECK).filterAffectedByPath("docs")
+workspace.artifacts.filterVerb(GENERATE).filterAffectedByDiff(changes)
 ```
 
 In all three cases:

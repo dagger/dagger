@@ -352,17 +352,17 @@ Base Artifacts scope:
 
 ```text
 workspace.artifacts
-  .filterCheck
-  .filterBy("module", ["go"])
+  .filterVerb(CHECK)
+  .filterDimension("module", ["go"])
 ```
 
 Expanded by a collection:
 
 ```text
 workspace.artifacts
-  .filterCheck
-  .filterBy("module", ["go"])
-  .filterBy("go-test", ["TestFoo"])
+  .filterVerb(CHECK)
+  .filterDimension("module", ["go"])
+  .filterDimension("go-test", ["TestFoo"])
 ```
 
 The base dimensions remain valid. Collections add new selector space rather
@@ -381,9 +381,9 @@ Example:
 
 ```text
 workspace.artifacts
-  .filterCheck
-  .filterBy("module", ["go"])
-  .filterBy("go-test", ["TestFoo", "TestBar"])
+  .filterVerb(CHECK)
+  .filterDimension("module", ["go"])
+  .filterDimension("go-test", ["TestFoo", "TestBar"])
   .check
 ```
 
