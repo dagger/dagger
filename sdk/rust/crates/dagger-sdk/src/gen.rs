@@ -100,6 +100,36 @@ pub struct PortForward {
     pub frontend: isize,
     pub protocol: NetworkProtocol,
 }
+/// An object with a globally unique ID.
+pub trait Node {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
+}
+#[derive(Clone)]
+pub struct NodeClient {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for NodeClient {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl NodeClient {
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for NodeClient {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Address {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -275,6 +305,13 @@ impl Address {
     pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Address {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -556,6 +593,13 @@ impl Binding {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for Binding {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct CacheVolume {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -574,6 +618,13 @@ impl CacheVolume {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for CacheVolume {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -771,6 +822,13 @@ impl Changeset {
         }
     }
 }
+impl Node for Changeset {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Check {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -848,6 +906,13 @@ impl Check {
         }
     }
 }
+impl Node for Check {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct CheckGroup {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -895,6 +960,13 @@ impl CheckGroup {
         }
     }
 }
+impl Node for CheckGroup {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Cloud {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -918,6 +990,13 @@ impl Cloud {
     pub async fn trace_url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("traceURL");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Cloud {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -3577,6 +3656,13 @@ impl Container {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for Container {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct CurrentModule {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -3731,6 +3817,13 @@ impl CurrentModule {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+impl Node for CurrentModule {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -4822,6 +4915,13 @@ impl Directory {
         }
     }
 }
+impl Node for Directory {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Engine {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -4859,6 +4959,13 @@ impl Engine {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Engine {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -4989,6 +5096,13 @@ impl EngineCache {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for EngineCache {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct EngineCacheEntry {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -5039,6 +5153,13 @@ impl EngineCacheEntry {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for EngineCacheEntry {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct EngineCacheEntrySet {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -5076,6 +5197,13 @@ impl EngineCacheEntrySet {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for EngineCacheEntrySet {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -5139,6 +5267,13 @@ impl EnumTypeDef {
         }]
     }
 }
+impl Node for EnumTypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct EnumValueTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -5186,6 +5321,13 @@ impl EnumValueTypeDef {
     pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for EnumValueTypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -6681,6 +6823,13 @@ impl Env {
         }
     }
 }
+impl Node for Env {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct EnvFile {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -6834,6 +6983,13 @@ impl EnvFile {
         }
     }
 }
+impl Node for EnvFile {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct EnvVariable {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -6862,6 +7018,13 @@ impl EnvVariable {
     pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for EnvVariable {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -6914,6 +7077,13 @@ impl Error {
         }
     }
 }
+impl Node for Error {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct ErrorValue {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -6942,6 +7112,13 @@ impl ErrorValue {
     pub async fn value(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ErrorValue {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -6995,6 +7172,13 @@ impl FieldTypeDef {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+impl Node for FieldTypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -7387,6 +7571,13 @@ impl File {
         }
     }
 }
+impl Node for File {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Function {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -7679,6 +7870,13 @@ impl Function {
         }
     }
 }
+impl Node for Function {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct FunctionArg {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -7752,6 +7950,13 @@ impl FunctionArg {
         }
     }
 }
+impl Node for FunctionArg {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct FunctionCall {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -7822,6 +8027,13 @@ impl FunctionCall {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for FunctionCall {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct FunctionCallArgValue {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -7850,6 +8062,13 @@ impl FunctionCallArgValue {
     pub async fn value(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for FunctionCallArgValue {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -7915,6 +8134,13 @@ impl GeneratedCode {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+impl Node for GeneratedCode {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -7987,6 +8213,13 @@ impl Generator {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+impl Node for Generator {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -8069,6 +8302,13 @@ impl GeneratorGroup {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+impl Node for GeneratorGroup {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -8166,6 +8406,13 @@ impl GitRef {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+impl Node for GitRef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -8336,6 +8583,13 @@ impl GitRepository {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for GitRepository {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct HealthcheckConfig {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -8389,6 +8643,13 @@ impl HealthcheckConfig {
     pub async fn timeout(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("timeout");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for HealthcheckConfig {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -8681,6 +8942,13 @@ impl Host {
         }
     }
 }
+impl Node for Host {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct InputTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -8713,6 +8981,13 @@ impl InputTypeDef {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for InputTypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -8766,6 +9041,13 @@ impl InterfaceTypeDef {
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for InterfaceTypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -8949,6 +9231,13 @@ impl JsonValue {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+impl Node for JsonValue {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -9221,6 +9510,13 @@ impl Llm {
         }
     }
 }
+impl Node for Llm {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct LlmTokenUsage {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -9261,6 +9557,13 @@ impl LlmTokenUsage {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for LlmTokenUsage {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Label {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -9291,6 +9594,13 @@ impl Label {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for Label {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct ListTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -9318,6 +9628,13 @@ impl ListTypeDef {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ListTypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -9642,6 +9959,13 @@ impl Module {
         }
     }
 }
+impl Node for Module {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct ModuleConfigClient {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -9670,6 +9994,13 @@ impl ModuleConfigClient {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ModuleConfigClient {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -10212,6 +10543,13 @@ impl ModuleSource {
         }
     }
 }
+impl Node for ModuleSource {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct ObjectTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -10288,6 +10626,13 @@ impl ObjectTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for ObjectTypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Port {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -10326,6 +10671,13 @@ impl Port {
     pub async fn protocol(&self) -> Result<NetworkProtocol, DaggerError> {
         let query = self.selection.select("protocol");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Port {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -10978,7 +11330,7 @@ impl Query {
         }
     }
     /// Load any object by its ID.
-    pub fn node(&self, id: impl IntoID<Id>) -> Node {
+    pub fn node(&self, id: impl IntoID<Id>) -> NodeClient {
         let mut query = self.selection.select("node");
         query = query.arg_lazy(
             "id",
@@ -10987,7 +11339,7 @@ impl Query {
                 Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
-        Node {
+        NodeClient {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -11076,6 +11428,13 @@ impl Query {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for Query {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct SdkConfig {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -11104,6 +11463,13 @@ impl SdkConfig {
     pub async fn source(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("source");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for SdkConfig {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -11139,6 +11505,13 @@ impl ScalarTypeDef {
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ScalarTypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -11190,6 +11563,13 @@ impl SearchResult {
         }]
     }
 }
+impl Node for SearchResult {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct SearchSubmatch {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -11225,6 +11605,13 @@ impl SearchSubmatch {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for SearchSubmatch {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Secret {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -11258,6 +11645,13 @@ impl Secret {
     pub async fn uri(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("uri");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Secret {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -11452,6 +11846,13 @@ impl Service {
         }
     }
 }
+impl Node for Service {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Socket {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -11470,6 +11871,13 @@ impl Socket {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Socket {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -11517,6 +11925,13 @@ impl SourceMap {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for SourceMap {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Stat {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -11557,6 +11972,13 @@ impl Stat {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Node for Stat {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Terminal {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -11581,6 +12003,13 @@ impl Terminal {
     pub async fn sync(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Terminal {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -12111,6 +12540,13 @@ impl TypeDef {
         }
     }
 }
+impl Node for TypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Workspace {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -12344,23 +12780,11 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
 }
-#[derive(Clone)]
-pub struct Node {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for Node {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Node {
-    pub async fn id(&self) -> Result<Id, DaggerError> {
+impl Node for Workspace {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]

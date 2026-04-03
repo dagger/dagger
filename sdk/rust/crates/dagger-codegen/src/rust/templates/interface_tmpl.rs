@@ -3,9 +3,7 @@ use genco::prelude::rust;
 use genco::quote;
 
 use crate::functions::{CommonFunctions, TypeRefExt};
-use crate::rust::functions::{
-    format_name, format_struct_comment, format_struct_name,
-};
+use crate::rust::functions::{format_name, format_struct_comment, format_struct_name};
 use crate::utility::OptionExt;
 
 use super::object_tmpl::render_object;
@@ -107,7 +105,10 @@ fn render_trait_method(
 }
 
 /// Render required argument list for a trait method signature.
-fn render_trait_method_args(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+fn render_trait_method_args(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<rust::Tokens> {
     let args = field.args.as_ref()?;
     let required: Vec<rust::Tokens> = args
         .iter()
@@ -169,7 +170,10 @@ fn render_trait_impl_methods(funcs: &CommonFunctions, fields: &[FullTypeFields])
 }
 
 /// Generate a single forwarding method.
-fn render_trait_impl_method(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+fn render_trait_impl_method(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<rust::Tokens> {
     let name = field.name.as_ref()?;
     let fn_name = format_struct_name(name);
     let type_ref = &field.type_.as_ref()?.type_ref;
@@ -251,7 +255,10 @@ fn render_trait_impl_arg_parts(
 }
 
 /// Render query.arg(...) calls for required args in trait impl methods.
-fn render_required_arg_setters(_funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+fn render_required_arg_setters(
+    _funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<rust::Tokens> {
     let args = field.args.as_ref()?;
     let setters: Vec<rust::Tokens> = args
         .iter()
@@ -298,7 +305,10 @@ pub fn render_interface_impl_for_object(
     object_type: &FullType,
     iface_type: &FullType,
 ) -> rust::Tokens {
-    let object_name = object_type.name.pipe(|s| format_name(s)).unwrap_or_default();
+    let object_name = object_type
+        .name
+        .pipe(|s| format_name(s))
+        .unwrap_or_default();
     let iface_name = iface_type.name.pipe(|s| format_name(s)).unwrap_or_default();
 
     let methods = iface_type

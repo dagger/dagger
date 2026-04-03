@@ -406,10 +406,8 @@ mod tests {
             .inline_fragment("Container")
             .select("imageRef");
 
-        let resp: Option<serde_json::Value> = serde_json::from_str(
-            r#"{"node": {"imageRef": "alpine:3.18"}}"#,
-        )
-        .unwrap();
+        let resp: Option<serde_json::Value> =
+            serde_json::from_str(r#"{"node": {"imageRef": "alpine:3.18"}}"#).unwrap();
 
         let result: Option<String> = root.unpack_resp(resp).unwrap();
         assert_eq!(result, Some("alpine:3.18".to_string()));
@@ -427,10 +425,8 @@ mod tests {
             .arg("path", "/x")
             .select("contents");
 
-        let resp: Option<serde_json::Value> = serde_json::from_str(
-            r#"{"node": {"file": {"contents": "hello"}}}"#,
-        )
-        .unwrap();
+        let resp: Option<serde_json::Value> =
+            serde_json::from_str(r#"{"node": {"file": {"contents": "hello"}}}"#).unwrap();
 
         let result: Option<String> = root.unpack_resp(resp).unwrap();
         assert_eq!(result, Some("hello".to_string()));

@@ -36,8 +36,7 @@ mod tests {
     use crate::rust::RustGenerator;
 
     fn generate_from_json(json: &str) -> String {
-        let schema =
-            serde_json::from_str::<IntrospectionResponse>(json).unwrap();
+        let schema = serde_json::from_str::<IntrospectionResponse>(json).unwrap();
         generate(
             schema.into_schema().schema.unwrap(),
             Arc::new(RustGenerator {}),
