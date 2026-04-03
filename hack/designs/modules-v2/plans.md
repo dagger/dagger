@@ -7,7 +7,6 @@ Depends on: [Artifacts](./artifacts.md)
 ## Table of Contents
 
 - [Summary](#summary)
-- [Implementation](#implementation)
 - [Schema](#schema)
 - [Design Decisions](#design-decisions)
 - [Actions](#actions)
@@ -34,38 +33,6 @@ This document builds on the artifact model from [artifacts.md](./artifacts.md):
 
 Action discovery walks that structural glue and produces **artifact-relative**
 action paths such as `lint`, `tests:run-bun`, or `tests:generate-fixtures`.
-
-## Implementation
-
-This design is intended to land as one primary implementation unit:
-
-- **PR:** `verbs: add plans, migrate check + generate, remove old path`
-- **API:** `Action`, `Plan`, `Artifacts.actions`, `Artifact.actions`,
-  `Artifacts.action`, `Artifact.action`, `Artifacts.check`,
-  `Artifacts.generate`
-- **UI:** `dagger check --plan`, `dagger generate --plan`, public `dagger list`
-  rollout, public `--type` filters, action listing with
-  `dagger check -l` / `dagger generate -l`, and compatibility parsing for
-  typed action prefixes such as `go:lint`
-
-Included in this unit:
-
-- the Action/Plan substrate
-- action discovery over artifact-relative paths
-- migration of `dagger check` and `dagger generate` onto `Artifacts`
-- public rollout of the selector surfaces defined in [artifacts.md](./artifacts.md)
-- removal of the old `ModTree` / `CheckGroup` / `GeneratorGroup` path
-
-Deferred to [ship.md](./ship.md):
-
-- `Artifacts.ship`
-- `+ship`
-- ship-specific plan construction rules
-
-Deferred to [collections.md](./collections.md):
-
-- collection-provided dimensions
-- collection-aware batch lowering and shadowing
 
 ## Schema
 

@@ -79,6 +79,20 @@ track.
 - **Stage 2** — modules adopt Workspace API (receive workspace, read files/dirs)
 - **Stage 3** — modules expose collections (GoModules, GoTests, etc.)
 
+## Rollout
+
+Component docs define the full design of each component. They do not define
+which subset of themselves lands in a given PR. Rollout sequencing lives here.
+
+Current implementation order:
+
+1. **Artifacts** — selector rows, built-in `type`, dimensions, coordinates,
+   filtering, and `dagger list`.
+2. **Execution Plans** — action discovery, action paths, `dagger check`,
+   `dagger generate`, `-l`, and plan execution.
+3. **Collections** — collection item rows, collection dimensions, collection
+   filter aliases, subset/batch lowering, and collection-aware batching.
+
 ## Design Principles
 
 - **Engine smart, CLI dumb.** In doubt, push logic into the engine.

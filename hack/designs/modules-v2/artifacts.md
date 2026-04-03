@@ -15,7 +15,6 @@ Depends on: Workspace plumbing (done)
 - [Schema](#schema)
 - [Filter Algebra](#filter-algebra)
 - [Acceptance Criteria](#acceptance-criteria)
-- [Implementation](#implementation)
 - [Locked Decisions](#locked-decisions)
 
 ## What Problem Does This Solve?
@@ -930,38 +929,6 @@ generate rows:
 
 This test proves that nested structural glue contributes verb reachability
 without becoming rows or dimensions.
-
-## Implementation
-
-This design is intended to land as one primary implementation unit:
-
-- **PR:** `artifacts plumbing: selector scopes and rows`
-- **API:** `Workspace.artifacts`, `Artifacts`, `Artifact`,
-  `ArtifactDimension`, `FieldValue`
-- **Contract:** static `dimensions`, dynamic `items`, row-shaped coordinates,
-  built-in `type`, plus hooks for later collection dimensions
-
-Included in this unit:
-
-- artifact eligibility for top-level module objects
-- built-in `type` dimension
-- row-shaped coordinates and filtering
-- structural verb projection over artifact rows
-- enough internal plumbing for later public `dagger list` rollout
-
-Deferred to [plans.md](./plans.md):
-
-- action discovery
-- action paths
-- `dagger check -l`
-- `Artifacts.check`
-- `Artifacts.generate`
-
-Deferred to [collections.md](./collections.md):
-
-- collection item rows
-- collection dimensions such as `go-test`
-- collection-aware filtering and batching
 
 ## Locked Decisions
 

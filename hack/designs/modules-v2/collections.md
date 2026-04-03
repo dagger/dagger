@@ -13,7 +13,7 @@ Depends on: [Execution Plans](./plans.md)
 - [How Collections Expand Artifacts](#how-collections-expand-artifacts)
 - [How Collections Expand Plans](#how-collections-expand-plans)
 - [Checks and Generators](#checks-and-generators)
-- [Implementation](#implementation)
+- [Implementation Notes](#implementation-notes)
 - [General Maps](#general-maps)
 
 ## Problem
@@ -672,25 +672,7 @@ $ dagger check --go-test=TestFoo --go-test=TestBar lint
 Generators follow the same traversal rules as checks. The collection-aware
 filtering and targeting described above applies to both.
 
-## Implementation
-
-This design is intended to land as one primary implementation unit:
-
-- **PR:** `collections: project and integrate collections`
-- **API:** `TypeDef.AsCollection`, projected `<Collection>` types,
-  projected `<Collection>_Batch` types, collection-driven `Artifacts`
-  dimensions
-- **UI:** collection traversal in `dagger call` / `dagger shell` /
-  `dagger functions`, plus collection-aware `dagger list`, `dagger check`,
-  and `dagger generate`
-
-Included in this unit:
-
-- collection metadata and validation
-- public schema projection for collection and batch types
-- module authoring/runtime and generated-client support
-- collection selector dimensions in the Artifacts model
-- collection-aware filtering and batch behavior in `check` / `generate`
+## Implementation Notes
 
 Important:
 
@@ -767,39 +749,6 @@ values to objects. It does not introduce:
 
 A broader map design may follow; collections are intended not to close that
 door.
-
-## Implementation Status
-
-### Planned
-
-- [x] Add collection metadata and validation to module typedefs
-- [x] Implement schema projection for public collection and batch types
-- [x] Support explicit collection traversal in `dagger call`, `dagger shell`, and discoverability surfaces
-- [x] Add collection-aware filtering and batch shadowing to `dagger check` and `dagger generate`
-- [x] Add module authoring support across supported SDKs and runtimes
-- [x] Add integration, CLI, and codegen coverage
-
-### Accomplished
-
-- [x] Locked the design decision that `dagger call` and `dagger shell` use explicit collection traversal only
-- [x] Locked the design decision that collection-aware filtering sugar belongs to verb commands and `dagger list`, not `dagger call`
-- [x] Locked the design decision that any exposed collection function beyond the effective `keys` field and `get` is re-homed under `batch`
-- [x] Locked the design decision that collection `keys` are always authored as a field
-- [x] Locked the design decision that the public projected collection type keeps the author-defined collection type name
-- [x] Locked the design decision that the synthetic batch type is named `<CollectionType>_Batch`
-- [x] Locked the design decision that collection keys may be builtin scalars, custom scalars, or enums, but not object-like or list types
-- [x] Locked the design decision that effective `get` takes exactly one non-null key argument and returns a non-null object
-- [x] Locked the design decision that load time checks structure and runtime checks behavior
-- [x] Locked the design decision that collection filters use repeated flags only; comma-separated values are forbidden
-- [x] Locked the design decision that keyed collection filters are named by item type (singular), while bare presence aliases are named by collection type
-- [x] Locked the design decision that artifact kind selection uses the built-in `--type=<name>` filter
-- [x] Locked the design decision that `dagger list` is the discovery surface for filter values
-- [x] Engine implementation has started with collection typedef metadata and validation
-- [x] Engine implementation now projects synthetic public collection and batch schema types
-- [x] CLI type inspection now recognizes projected collections and `dagger call` treats collection leaves as explicit traversal points
-- [x] Check and generator traversal now apply collection-aware filters, batch shadowing, and raw filter-value listing
-- [x] Go, TypeScript, Python, and Java module authoring paths now register collection backing objects and explicit keys/get overrides
-- [x] Integration coverage now exercises explicit collection traversal in `dagger call` and generated Go and TypeScript clients over the projected `keys` / `list` / `get` / `subset` / `batch` surface
 
 ## Open Questions
 
