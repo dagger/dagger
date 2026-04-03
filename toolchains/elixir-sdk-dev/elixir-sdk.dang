@@ -17,7 +17,10 @@ type ElixirSdkDev {
   }
 
   pub devContainer: Container! {
-    withBase(source)
+    daggerEngine
+      .installClient(
+        withBase(source),
+      )
   }
 
   """
@@ -58,7 +61,8 @@ type ElixirSdkDev {
   """
   pub sdkTest: Void! @check {
     devContainer
-      .withExec(["mix", "test"], experimentalPrivilegedNesting: true)
+      .withoutFile("dagger.json")
+      .withExec(["mix", "test"])
       .sync
 
     null

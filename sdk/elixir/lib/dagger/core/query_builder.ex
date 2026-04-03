@@ -101,6 +101,10 @@ defmodule Dagger.Core.QueryBuilder do
   end
 
   def path(%__MODULE__{prev: nil, name: nil}, acc), do: acc
+
+  def path(%__MODULE__{prev: selection, name: "... on " <> _}, acc),
+    do: path(selection, acc)
+
   def path(%__MODULE__{prev: selection, name: name}, acc), do: path(selection, [name | acc])
 end
 
