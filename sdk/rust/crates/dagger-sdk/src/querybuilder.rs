@@ -59,6 +59,13 @@ pub struct Selection {
 }
 
 impl Selection {
+    /// Return a new root Selection, discarding the current query path.
+    /// Used by ConvertID (e.g. sync) to build `node(id) { ... on Foo {} }`
+    /// starting from a fresh root.
+    pub fn root(&self) -> Selection {
+        Selection::default()
+    }
+
     pub fn select_with_alias(&self, alias: &str, name: &str) -> Selection {
         Self {
             name: Some(name.to_string()),
