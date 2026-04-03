@@ -19,7 +19,7 @@ type moduleObjectTestServer struct {
 	cache       *dagql.Cache
 	dag         *dagql.Server
 	root        *Query
-	defaultDeps *ModDeps
+	defaultDeps *SchemaBuilder
 }
 
 type moduleObjectHandleTestObj struct {
@@ -100,11 +100,11 @@ func (s *moduleObjectTestServer) Server(context.Context) (*dagql.Server, error) 
 	return s.dag, nil
 }
 
-func (s *moduleObjectTestServer) DefaultDeps(context.Context) (*ModDeps, error) {
+func (s *moduleObjectTestServer) DefaultDeps(context.Context) (*SchemaBuilder, error) {
 	if s.defaultDeps != nil {
 		return s.defaultDeps, nil
 	}
-	return NewModDeps(s.root, nil), nil
+	return NewSchemaBuilder(s.root, nil), nil
 }
 
 func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
@@ -273,7 +273,7 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 		NameField:     "Test",
 		OriginalName:  "Test",
 		SDKConfig:     &SDKConfig{},
-		Deps:          NewModDeps(root, nil),
+		Deps:          NewSchemaBuilder(root, nil),
 		ObjectDefs:    dagql.ObjectResultArray[*TypeDef]{objTypeDef},
 		InterfaceDefs: dagql.ObjectResultArray[*TypeDef]{ifaceTypeDefTop},
 		EnumDefs:      dagql.ObjectResultArray[*TypeDef]{enumTypeDefTop},
@@ -344,7 +344,7 @@ func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 	}
 	objDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectObj", objDef)
 	mod := &Module{
-		Deps: NewModDeps(root, nil),
+		Deps: NewSchemaBuilder(root, nil),
 		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
 			newTypeDefDetachedResult(t, dag, "moduleObjectObjTypeDef", (&TypeDef{}).WithObjectTypeDef(objDefRes)),
 		},
@@ -417,7 +417,7 @@ func TestModuleObjectConvertToSDKInputRewritesStoredResults(t *testing.T) {
 	parentObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectRewriteParentObj", parentObjDef)
 	mod := &Module{
 		NameField: "test",
-		Deps:      NewModDeps(nil, nil),
+		Deps:      NewSchemaBuilder(nil, nil),
 		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
 			newTypeDefDetachedResult(t, dag, "moduleObjectRewriteChildTopTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes)),
 			newTypeDefDetachedResult(t, dag, "moduleObjectRewriteParentTopTypeDef", (&TypeDef{}).WithObjectTypeDef(parentObjDefRes)),
@@ -500,7 +500,7 @@ func TestModuleObjectPersistedResultRefsRoundTrip(t *testing.T) {
 	parentObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectPersistedParentObj", parentObjDef)
 	mod := &Module{
 		NameField: "test",
-		Deps:      NewModDeps(nil, nil),
+		Deps:      NewSchemaBuilder(nil, nil),
 		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
 			newTypeDefDetachedResult(t, dag, "moduleObjectPersistedChildTopTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes)),
 			newTypeDefDetachedResult(t, dag, "moduleObjectPersistedParentTopTypeDef", (&TypeDef{}).WithObjectTypeDef(parentObjDefRes)),
@@ -704,7 +704,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 
 		mod := &Module{
 			NameField: "test",
-			Deps:      NewModDeps(nil, nil),
+			Deps:      NewSchemaBuilder(nil, nil),
 			ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
 				newTypeDefDetachedResult(t, dag, "semanticChildTopTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes)),
 				newTypeDefDetachedResult(t, dag, "semanticParentTopTypeDef", (&TypeDef{}).WithObjectTypeDef(parentObjDefRes)),
@@ -733,13 +733,13 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	})
 	producerCtx = dagql.ContextWithCache(producerCtx, producerCache)
 	mod, parentObjDef := buildModule(producerDag)
-	mod.Deps = NewModDeps(producerRoot, nil)
+	mod.Deps = NewSchemaBuilder(producerRoot, nil)
 	installModuleObjectTestModuleClass(producerDag)
 	installModuleObjectSemanticIfaceChildClass(producerDag)
 
 	producerModRes, err := dagql.NewObjectResultForCall(mod, producerDag, moduleObjectTestSyntheticCall("semanticHandleProducerModule", mod))
 	assert.NilError(t, err)
-	mod.Deps = NewModDeps(producerRoot, []Mod{NewUserMod(producerModRes)})
+	mod.Deps = NewSchemaBuilder(producerRoot, []Mod{NewUserMod(producerModRes)})
 	producerSrv.defaultDeps = mod.Deps
 
 	childCall := moduleObjectTestSyntheticCall("semanticHandleChild", &moduleObjectSemanticIfaceChild{})
@@ -800,7 +800,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	consumerMod, _ := buildModule(consumerDag)
 	consumerModRes, err := dagql.NewObjectResultForCall(consumerMod, consumerDag, moduleObjectTestSyntheticCall("semanticHandleConsumerModule", consumerMod))
 	assert.NilError(t, err)
-	consumerMod.Deps = NewModDeps(consumerRoot, []Mod{NewUserMod(consumerModRes)})
+	consumerMod.Deps = NewSchemaBuilder(consumerRoot, []Mod{NewUserMod(consumerModRes)})
 	consumerSrv.defaultDeps = consumerMod.Deps
 
 	var retainedID call.ID

@@ -57,6 +57,8 @@ type ObjectType interface {
 	ExtendLoadByID(spec FieldSpec, fun LoadByIDFunc)
 	// FieldSpec looks up a field spec by name.
 	FieldSpec(name string, view call.View) (FieldSpec, bool)
+	// FieldSpecs returns all field specs visible under the given view.
+	FieldSpecs(view call.View) []FieldSpec
 }
 
 // ForkableObjectType is an installed object type that can be safely cloned

@@ -53,6 +53,26 @@ type Server struct {
 	// WARNING: this is *not* the view of the current query (for that, inspect
 	// the current id)
 	View call.View
+
+	// canonical, if set, is the server without entrypoint sugar.
+	// Entrypoint proxies flatten a module's methods onto the Query root
+	// as syntactic convenience; the canonical server preserves the real
+	// namespace where constructors and core fields live unshadowed.
+	//
+	// Load, LoadType, and callers that need to bypass proxies (proxy
+	// resolvers, SDK plumbing) use Canonical() to reach it.
+	canonical *Server
+}
+
+func (s *Server) Canonical() *Server {
+	if s.canonical != nil {
+		return s.canonical
+	}
+	return s
+}
+
+func (s *Server) SetCanonical(canonical *Server) {
+	s.canonical = canonical
 }
 
 type InstallHook interface {
@@ -83,18 +103,14 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T) *Server {
+func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 	srv := newBlankServer()
-	rootClass := NewClass(srv, ClassOpts[T]{
-		// NB: there's nothing actually stopping this from being a thing, except it
-		// currently confuses the Dagger Go SDK. could be a nifty way to pass
-		// around global config I suppose.
-		NoIDs: true,
-	})
-	srv.root = ObjectResult[T]{
+	rootClass := NewClass(srv, ClassOpts[T]{})
+	rootRes := ObjectResult[T]{
 		Result: newDetachedResult(nil, root),
 		class:  rootClass,
 	}
+	srv.root = rootRes
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
 		srv.InstallScalar(scalar)
@@ -102,7 +118,7 @@ func NewServer[T Typed](root T) *Server {
 	for _, directive := range coreDirectives {
 		srv.InstallDirective(directive)
 	}
-	return srv
+	return srv, nil
 }
 
 func newBlankServer() *Server {
@@ -122,7 +138,7 @@ func newBlankServer() *Server {
 // Fork returns a new server that starts with a clone of the current server's
 // installed schema state but with an independent root object and independently
 // mutable object type tables.
-func (s *Server) Fork(root Typed) (*Server, error) {
+func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	out := newBlankServer()
 	out.telemetry = s.telemetry
 	out.View = s.View
@@ -718,6 +734,11 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 	if id == nil {
 		return nil, fmt.Errorf("load: nil ID")
 	}
+	// Delegate to the canonical server so IDs are always evaluated
+	// against the real schema, not the sugared one.
+	if c := s.canonical; c != nil {
+		return c.Load(ctx, id)
+	}
 	res, err := s.LoadType(ctx, id)
 	if err != nil {
 		return nil, err
@@ -763,6 +784,9 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	ctx = srvToContext(ctx, s)
 	if id == nil {
 		return nil, fmt.Errorf("load type: nil ID")
+	}
+	if c := s.canonical; c != nil {
+		return c.LoadType(ctx, id)
 	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -892,7 +916,6 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		}
 		return nil, fmt.Errorf("load %s: inputs: %w", idInputDebugString(id), err)
 	}
-
 	var base AnyResult
 	if receiver := id.Receiver(); receiver != nil {
 		base = loadedInputs[receiver.Digest().String()]
@@ -1260,7 +1283,14 @@ func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyO
 // given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
 	ctx = srvToContext(ctx, s)
-	if !isNonInternal(ctx) {
+	if isNonInternal(ctx) {
+		// We only want "non internal" to apply to the immediate call, so flip it
+		// from here on; it already did its job in avoiding the withInternal below.
+		//
+		// FIXME: this is an absurd dance, we should maybe just remove the
+		// auto-Internaling, but that'll be a game of wack-a-mole
+		ctx = withInternal(ctx)
+	} else {
 		// Annotate ctx with the internal flag so we can distinguish self-calls from
 		// user-calls in the UI.
 		//
@@ -1651,6 +1681,16 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	}
 
 	if len(sel.Subselections) == 0 {
+		// Check if the value is an object type that requires sub-selections.
+		// Without this check, returning an object without sub-selections
+		// leads to a cryptic JSON marshal error because object values
+		// contain function closures that can't be serialized.
+		if _, ok := val.(AnyObjectResult); ok {
+			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
+		}
+		if _, ok := s.ObjectType(val.Type().Name()); ok {
+			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
+		}
 		return val.Unwrap(), nil
 	}
 

@@ -5,12 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/vektah/gqlparser/v2/ast"
 	"path/filepath"
-	"sort"
+	"strconv"
 	"strings"
 	"time"
-
-	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
@@ -22,7 +21,7 @@ type Module struct {
 	// The source of the module
 	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
 
-	// The source to load contextual dirs/files from, which may be different than Source for blueprints or toolchains
+	// The source to load contextual dirs/files from, which may be different than Source for blueprints or toolchains.
 	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
 
 	// The name of the module
@@ -36,7 +35,7 @@ type Module struct {
 	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK config used by this module."`
 
 	// Deps contains the module's dependency DAG.
-	Deps *ModDeps
+	Deps *SchemaBuilder
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
@@ -55,19 +54,26 @@ type Module struct {
 	// The module's enumerations
 	EnumDefs dagql.ObjectResultArray[*TypeDef] `field:"true" name:"enums" doc:"Enumerations served by this module."`
 
-	// IsToolchain indicates this module was loaded as a toolchain dependency.
-	// Toolchain modules are allowed to share types with the modules that depend on them.
-	IsToolchain bool
-
-	// Toolchains manages all toolchain modules and their configuration.
-	Toolchains *ToolchainRegistry
-
 	persistedResultID uint64
 	IncludeSelfInDeps bool
 
 	// If true, disable the new default function caching behavior for this module. Functions will
 	// instead default to the old behavior of per-session caching.
 	DisableDefaultFunctionCaching bool
+
+	// LegacyDefaultPath, when true, causes +defaultPath to resolve relative to
+	// the workspace root instead of the module's own source directory.
+	// Used for legacy blueprints/toolchains migrated to workspace modules.
+	LegacyDefaultPath bool
+
+	// Config values from workspace config.toml [modules.<name>.config].
+	// Typed map: strings, bools, ints, floats as-is from TOML.
+	// When set, constructor args are resolved from this map first.
+	WorkspaceConfig map[string]any
+
+	// When true and WorkspaceConfig is set, also load .env defaults
+	// for args not found in WorkspaceConfig. Off by default.
+	DefaultsFromDotEnv bool
 }
 
 func (*Module) Type() *ast.Type {
@@ -101,16 +107,32 @@ func (mod *Module) SetPersistedResultID(resultID uint64) {
 		mod.persistedResultID = resultID
 	}
 }
-
-// isToolchainModule checks if a Mod is a toolchain Module.
-// This centralizes the validation logic that was scattered across the codebase.
-func isToolchainModule(m Mod) bool {
-	tcMod, ok := m.(*userMod)
-	return ok && tcMod.self() != nil && tcMod.self().IsToolchain
+func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
+	// Use OriginalName for type lookup: the SDK registers the main object
+	// under the intrinsic module name (from dagger.json), which may differ
+	// from NameField when a workspace config renames the module.
+	name := mod.OriginalName
+	if name == "" {
+		name = mod.NameField
+	}
+	return mod.ObjectByOriginalName(name)
 }
 
-func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
-	return mod.ObjectByName(mod.Name())
+// ObjectByOriginalName finds an object by comparing against its OriginalName
+// (as registered by the SDK), rather than the potentially-namespaced Name.
+// This is needed because namespaceObject rewrites obj.Name to match the
+// module's final name, but obj.OriginalName always reflects the SDK name.
+func (mod *Module) ObjectByOriginalName(name string) (*ObjectTypeDef, bool) {
+	for _, objDef := range mod.ObjectDefs {
+		typeDef := objDef.Self()
+		if typeDef.AsObject.Valid {
+			obj := typeDef.AsObject.Value.Self()
+			if gqlObjectName(obj.OriginalName) == gqlObjectName(name) {
+				return obj, true
+			}
+		}
+	}
+	return nil, false
 }
 
 func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
@@ -207,16 +229,8 @@ func (mod *Module) RuntimeContainer() dagql.Nullable[dagql.ObjectResult[*Contain
 func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	defaults := NewEnvFile(true)
 
-	// Use ContextSource for loading .env files (it has the actual context directory)
-	// but use Source for the module name prefix lookups
-	contextSrc := mod.GetContextSource()
-	if contextSrc != nil && contextSrc.UserDefaults != nil {
-		defaults = defaults.WithEnvFiles(contextSrc.UserDefaults)
-	}
-
 	src := mod.GetSource()
-	if src != nil && src != contextSrc && src.UserDefaults != nil {
-		// Also merge in toolchain source defaults if different from context
+	if src != nil && src.UserDefaults != nil {
 		defaults = defaults.WithEnvFiles(src.UserDefaults)
 	}
 
@@ -235,6 +249,234 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 		return modDefaults, nil
 	}
 	return modDefaults.Namespace(ctx, objName)
+}
+
+// ApplyWorkspaceDefaultsToTypeDefs updates constructor arg typedefs based on
+// WorkspaceConfig, so that --help displays the correct default values.
+// For primitive types (string, int, bool, float), it sets arg.DefaultValue
+// to the JSON representation. For object types (Secret, Directory, etc.),
+// it marks the arg as optional (since a default will be resolved at call time).
+func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
+	if mod.WorkspaceConfig == nil {
+		return
+	}
+	for _, objDef := range mod.ObjectDefs {
+		typeDef := objDef.Self()
+		if !typeDef.AsObject.Valid {
+			continue
+		}
+		obj := typeDef.AsObject.Value.Self()
+		if !obj.Constructor.Valid {
+			continue
+		}
+		ctor := obj.Constructor.Value.Self()
+		for _, arg := range ctor.Args {
+			argSelf := arg.Self()
+			val, ok := lookupConfigCaseInsensitive(mod.WorkspaceConfig, argSelf.OriginalName, argSelf.Name)
+			if !ok {
+				continue
+			}
+			if argSelf.TypeDef.Self().Kind == TypeDefKindObject {
+				// Object types (Secret, Directory, etc.): mark optional
+				// so --help shows it's not required
+				argSelf.TypeDef.Self().Optional = true
+			} else {
+				// Primitive types: set the JSON default value
+				userInput := configValueToString(val)
+				var jsonValue JSON
+				switch argSelf.TypeDef.Self().Kind {
+				case TypeDefKindString:
+					marshaled, err := json.Marshal(userInput)
+					if err != nil {
+						continue
+					}
+					jsonValue = JSON(marshaled)
+				case TypeDefKindInteger:
+					if n, err := strconv.Atoi(userInput); err == nil {
+						marshaled, _ := json.Marshal(n)
+						jsonValue = JSON(marshaled)
+					} else {
+						continue
+					}
+				case TypeDefKindFloat:
+					if f, err := strconv.ParseFloat(userInput, 64); err == nil {
+						marshaled, _ := json.Marshal(f)
+						jsonValue = JSON(marshaled)
+					} else {
+						continue
+					}
+				case TypeDefKindBoolean:
+					b := userInput == "true"
+					marshaled, _ := json.Marshal(b)
+					jsonValue = JSON(marshaled)
+				default:
+					// For other types, try to use the raw value as JSON
+					if json.Valid([]byte(userInput)) {
+						jsonValue = JSON(userInput)
+					} else {
+						marshaled, err := json.Marshal(userInput)
+						if err != nil {
+							continue
+						}
+						jsonValue = JSON(marshaled)
+					}
+				}
+				argSelf.DefaultValue = jsonValue
+			}
+		}
+	}
+}
+
+func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(customizations []*modules.ModuleConfigArgument) {
+	if len(customizations) == 0 {
+		return
+	}
+	for _, cust := range customizations {
+		if cust == nil {
+			continue
+		}
+		fn, found := mod.lookupCustomizationFunction(cust.Function)
+		if !found {
+			continue
+		}
+		arg, found := lookupFunctionArg(fn, cust.Argument)
+		if !found {
+			continue
+		}
+		applyLegacyArgCustomization(arg, cust)
+	}
+}
+
+func (mod *Module) lookupCustomizationFunction(path []string) (*Function, bool) {
+	obj, ok := mod.MainObject()
+	if !ok {
+		return nil, false
+	}
+	if len(path) == 0 {
+		if !obj.Constructor.Valid {
+			return nil, false
+		}
+		return obj.Constructor.Value.Self(), true
+	}
+	for i, segment := range path {
+		fn, ok := functionByOriginalName(obj, segment)
+		if !ok {
+			return nil, false
+		}
+		if i == len(path)-1 {
+			return fn, true
+		}
+		nextObj, ok := mod.lookupCustomizationObject(fn.ReturnType.Self())
+		if !ok {
+			return nil, false
+		}
+		obj = nextObj
+	}
+	return nil, false
+}
+
+func (mod *Module) lookupCustomizationObject(typeDef *TypeDef) (*ObjectTypeDef, bool) {
+	if typeDef == nil || !typeDef.AsObject.Valid {
+		return nil, false
+	}
+
+	obj := typeDef.AsObject.Value
+	if canonical, ok := mod.ObjectByOriginalName(obj.Self().OriginalName); ok {
+		return canonical, true
+	}
+	if canonical, ok := mod.ObjectByName(obj.Self().Name); ok {
+		return canonical, true
+	}
+	return obj.Self(), true
+}
+
+func functionByOriginalName(obj *ObjectTypeDef, name string) (*Function, bool) {
+	for _, fn := range obj.Functions {
+		fnSelf := fn.Self()
+		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, gqlFieldName(name)) {
+			return fnSelf, true
+		}
+	}
+	return nil, false
+}
+
+func lookupFunctionArg(fn *Function, name string) (*FunctionArg, bool) {
+	for _, arg := range fn.Args {
+		argSelf := arg.Self()
+		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, gqlFieldName(name)) {
+			return argSelf, true
+		}
+	}
+	return nil, false
+}
+
+func applyLegacyArgCustomization(arg *FunctionArg, cust *modules.ModuleConfigArgument) {
+	if jsonValue, ok := legacyArgDefaultValue(arg.TypeDef.Self(), cust.Default); ok {
+		arg.DefaultValue = jsonValue
+	}
+	if cust.DefaultPath != "" {
+		arg.DefaultPath = cust.DefaultPath
+		arg.DefaultAddress = ""
+		arg.TypeDef.Self().Optional = true
+	}
+	if cust.DefaultAddress != "" {
+		arg.DefaultAddress = cust.DefaultAddress
+		arg.DefaultPath = ""
+		arg.TypeDef.Self().Optional = true
+	}
+	if len(cust.Ignore) > 0 {
+		arg.Ignore = append([]string(nil), cust.Ignore...)
+	}
+}
+
+func legacyArgDefaultValue(typeDef *TypeDef, value string) (JSON, bool) {
+	if value == "" {
+		return nil, false
+	}
+	switch typeDef.Kind {
+	case TypeDefKindString:
+		marshaled, err := json.Marshal(value)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
+	case TypeDefKindInteger:
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, false
+		}
+		marshaled, err := json.Marshal(n)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
+	case TypeDefKindFloat:
+		f, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return nil, false
+		}
+		marshaled, err := json.Marshal(f)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
+	case TypeDefKindBoolean:
+		b := value == "true"
+		marshaled, err := json.Marshal(b)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
+	default:
+		if json.Valid([]byte(value)) {
+			return JSON(value), true
+		}
+		marshaled, err := json.Marshal(value)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
+	}
 }
 
 func (mod *Module) Evaluate(context.Context) error {
@@ -354,19 +596,19 @@ func (mod *Module) AttachDependencyResults(
 	}
 
 	if mod.Deps != nil {
-		for i, dep := range mod.Deps.mods {
-			depInst := dep.ModuleResult()
+		for i, dep := range mod.Deps.entries {
+			depInst := dep.mod.ModuleResult()
 			if depInst.Self() == nil {
 				continue
 			}
 			attachedInst, attachedRes, err := attachModuleRef(depInst)
 			if err != nil {
-				return nil, fmt.Errorf("attach module dependency %q: %w", dep.Name(), err)
+				return nil, fmt.Errorf("attach module dependency %q: %w", dep.mod.Name(), err)
 			}
 			if attachedRes == nil {
 				continue
 			}
-			mod.Deps.mods[i] = NewUserMod(attachedInst)
+			mod.Deps.entries[i].mod = NewUserMod(attachedInst)
 			owned = append(owned, attachedRes)
 		}
 	}
@@ -383,19 +625,19 @@ func (mod *Module) AttachDependencyResults(
 			return nil, fmt.Errorf("attach module self dependency: self ID: %w", err)
 		}
 		seenSelf := false
-		for i, dep := range mod.Deps.mods {
-			depInst := dep.ModuleResult()
+		for i, dep := range mod.Deps.entries {
+			depInst := dep.mod.ModuleResult()
 			if depInst.Self() == nil {
 				continue
 			}
 			depID, err := depInst.ID()
 			if err != nil {
-				return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.Name(), err)
+				return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.mod.Name(), err)
 			}
 			if depID == nil || depID.EngineResultID() != attachedSelfID.EngineResultID() {
 				continue
 			}
-			mod.Deps.mods[i] = NewUserMod(attachedSelf)
+			mod.Deps.entries[i].mod = NewUserMod(attachedSelf)
 			seenSelf = true
 			break
 		}
@@ -403,52 +645,26 @@ func (mod *Module) AttachDependencyResults(
 			mod.Deps = mod.Deps.Append(NewUserMod(attachedSelf))
 		}
 	}
-	if mod.Toolchains != nil {
-		for name, entry := range mod.Toolchains.entries {
-			if entry == nil || entry.Module.Self() == nil {
-				continue
-			}
-			_, attachedRes, err := attachModuleRef(entry.Module)
-			if err != nil {
-				return nil, fmt.Errorf("attach module toolchain %q: %w", name, err)
-			}
-			if attachedRes == nil {
-				continue
-			}
-			entry.Module = attachedRes.(dagql.ObjectResult[*Module])
-			owned = append(owned, attachedRes)
-		}
-	}
-
 	return owned, nil
 }
 
 type persistedModulePayload struct {
-	SourceResultID                uint64                          `json:"sourceResultID,omitempty"`
-	ContextSourceResultID         uint64                          `json:"contextSourceResultID,omitempty"`
-	RuntimeResultID               uint64                          `json:"runtimeResultID,omitempty"`
-	DepModuleResultIDs            []uint64                        `json:"depModuleResultIDs,omitempty"`
-	ToolchainsInitialized         bool                            `json:"toolchainsInitialized,omitempty"`
-	ToolchainEntries              []persistedModuleToolchainEntry `json:"toolchainEntries,omitempty"`
-	IncludeSelfInDeps             bool                            `json:"includeSelfInDeps,omitempty"`
-	NameField                     string                          `json:"nameField,omitempty"`
-	OriginalName                  string                          `json:"originalName,omitempty"`
-	SDKConfig                     *SDKConfig                      `json:"sdkConfig,omitempty"`
-	Description                   string                          `json:"description,omitempty"`
-	ObjectDefResultIDs            []uint64                        `json:"objectDefResultIDs,omitempty"`
-	InterfaceDefResultIDs         []uint64                        `json:"interfaceDefResultIDs,omitempty"`
-	EnumDefResultIDs              []uint64                        `json:"enumDefResultIDs,omitempty"`
-	IsToolchain                   bool                            `json:"isToolchain,omitempty"`
-	DisableDefaultFunctionCaching bool                            `json:"disableDefaultFunctionCaching,omitempty"`
-}
-
-type persistedModuleToolchainEntry struct {
-	Name             string                          `json:"name,omitempty"`
-	ModuleResultID   uint64                          `json:"moduleResultID,omitempty"`
-	FieldName        string                          `json:"fieldName,omitempty"`
-	ArgumentConfigs  []*modules.ModuleConfigArgument `json:"argumentConfigs,omitempty"`
-	IgnoreChecks     []string                        `json:"ignoreChecks,omitempty"`
-	IgnoreGenerators []string                        `json:"ignoreGenerators,omitempty"`
+	SourceResultID                uint64         `json:"sourceResultID,omitempty"`
+	ContextSourceResultID         uint64         `json:"contextSourceResultID,omitempty"`
+	RuntimeResultID               uint64         `json:"runtimeResultID,omitempty"`
+	DepModuleResultIDs            []uint64       `json:"depModuleResultIDs,omitempty"`
+	IncludeSelfInDeps             bool           `json:"includeSelfInDeps,omitempty"`
+	NameField                     string         `json:"nameField,omitempty"`
+	OriginalName                  string         `json:"originalName,omitempty"`
+	SDKConfig                     *SDKConfig     `json:"sdkConfig,omitempty"`
+	Description                   string         `json:"description,omitempty"`
+	ObjectDefResultIDs            []uint64       `json:"objectDefResultIDs,omitempty"`
+	InterfaceDefResultIDs         []uint64       `json:"interfaceDefResultIDs,omitempty"`
+	EnumDefResultIDs              []uint64       `json:"enumDefResultIDs,omitempty"`
+	LegacyDefaultPath             bool           `json:"legacyDefaultPath,omitempty"`
+	WorkspaceConfig               map[string]any `json:"workspaceConfig,omitempty"`
+	DefaultsFromDotEnv            bool           `json:"defaultsFromDotEnv,omitempty"`
+	DisableDefaultFunctionCaching bool           `json:"disableDefaultFunctionCaching,omitempty"`
 }
 
 func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
@@ -477,46 +693,21 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 
 	persisted.IncludeSelfInDeps = mod.IncludeSelfInDeps
 	if mod.Deps != nil {
+		selfResultID := mod.PersistedResultID()
 		persisted.DepModuleResultIDs = make([]uint64, 0, len(mod.Deps.Mods()))
 		for _, dep := range mod.Deps.Mods() {
 			depInst := dep.ModuleResult()
 			if depInst.Self() == nil {
 				continue
 			}
-			if mod.IncludeSelfInDeps && depInst.Self() == mod {
+			depResultID, err := encodePersistedObjectRef(cache, depInst, fmt.Sprintf("module dependency %q", dep.Name()))
+			if err != nil {
+				return nil, err
+			}
+			if mod.IncludeSelfInDeps && selfResultID != 0 && depResultID == selfResultID {
 				continue
 			}
-			if depInst.Self().PersistedResultID() == 0 {
-				return nil, fmt.Errorf("encode persisted module dependency %q: missing persisted result ID", dep.Name())
-			}
-			persisted.DepModuleResultIDs = append(persisted.DepModuleResultIDs, depInst.Self().PersistedResultID())
-		}
-	}
-
-	persisted.ToolchainsInitialized = mod.Toolchains != nil
-	if mod.Toolchains != nil {
-		toolchainNames := make([]string, 0, len(mod.Toolchains.entries))
-		for name := range mod.Toolchains.entries {
-			toolchainNames = append(toolchainNames, name)
-		}
-		sort.Strings(toolchainNames)
-		persisted.ToolchainEntries = make([]persistedModuleToolchainEntry, 0, len(toolchainNames))
-		for _, name := range toolchainNames {
-			entry := mod.Toolchains.entries[name]
-			if entry == nil || entry.Module.Self() == nil {
-				return nil, fmt.Errorf("encode persisted module toolchain %q: missing module result ID", name)
-			}
-			if entry.Module.Self().PersistedResultID() == 0 {
-				return nil, fmt.Errorf("encode persisted module toolchain %q: missing persisted module result ID", name)
-			}
-			persisted.ToolchainEntries = append(persisted.ToolchainEntries, persistedModuleToolchainEntry{
-				Name:             name,
-				ModuleResultID:   entry.Module.Self().PersistedResultID(),
-				FieldName:        entry.FieldName,
-				ArgumentConfigs:  entry.ArgumentConfigs,
-				IgnoreChecks:     entry.IgnoreChecks,
-				IgnoreGenerators: entry.IgnoreGenerators,
-			})
+			persisted.DepModuleResultIDs = append(persisted.DepModuleResultIDs, depResultID)
 		}
 	}
 
@@ -548,7 +739,9 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 		}
 		persisted.EnumDefResultIDs = append(persisted.EnumDefResultIDs, defID)
 	}
-	persisted.IsToolchain = mod.IsToolchain
+	persisted.LegacyDefaultPath = mod.LegacyDefaultPath
+	persisted.WorkspaceConfig = mod.WorkspaceConfig
+	persisted.DefaultsFromDotEnv = mod.DefaultsFromDotEnv
 	persisted.DisableDefaultFunctionCaching = mod.DisableDefaultFunctionCaching
 
 	jsonBytes, err := json.Marshal(persisted)
@@ -586,14 +779,12 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		return nil, fmt.Errorf("decode persisted module default deps: %w", err)
 	}
 
-	loadedDepMods := make(map[uint64]dagql.ObjectResult[*Module], len(persisted.DepModuleResultIDs))
 	for _, depID := range persisted.DepModuleResultIDs {
 		depRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, depID, "module dependency")
 		if err != nil {
 			return nil, err
 		}
 		deps = deps.Append(NewUserMod(depRes))
-		loadedDepMods[depID] = depRes
 	}
 
 	objectDefs := make(dagql.ObjectResultArray[*TypeDef], 0, len(persisted.ObjectDefResultIDs))
@@ -630,8 +821,10 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		ObjectDefs:                    objectDefs,
 		InterfaceDefs:                 interfaceDefs,
 		EnumDefs:                      enumDefs,
-		IsToolchain:                   persisted.IsToolchain,
 		IncludeSelfInDeps:             persisted.IncludeSelfInDeps,
+		LegacyDefaultPath:             persisted.LegacyDefaultPath,
+		WorkspaceConfig:               persisted.WorkspaceConfig,
+		DefaultsFromDotEnv:            persisted.DefaultsFromDotEnv,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
 	}
 	if mod.SDKConfig == nil {
@@ -645,28 +838,6 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	}
 	if runtimeRes.Self() != nil {
 		mod.Runtime = dagql.NonNull(runtimeRes)
-	}
-	if persisted.ToolchainsInitialized {
-		mod.Toolchains = NewToolchainRegistry(mod)
-		for _, persistedEntry := range persisted.ToolchainEntries {
-			tcRes := loadedDepMods[persistedEntry.ModuleResultID]
-			if tcRes.Self() == nil {
-				var err error
-				tcRes, err = loadPersistedObjectResultByResultID[*Module](ctx, dag, persistedEntry.ModuleResultID, "module toolchain")
-				if err != nil {
-					return nil, err
-				}
-				mod.Deps = mod.Deps.Append(NewUserMod(tcRes))
-				loadedDepMods[persistedEntry.ModuleResultID] = tcRes
-			}
-			mod.Toolchains.entries[persistedEntry.Name] = &ToolchainEntry{
-				Module:           tcRes,
-				FieldName:        persistedEntry.FieldName,
-				ArgumentConfigs:  persistedEntry.ArgumentConfigs,
-				IgnoreChecks:     persistedEntry.IgnoreChecks,
-				IgnoreGenerators: persistedEntry.IgnoreGenerators,
-			}
-		}
 	}
 
 	return mod, nil
@@ -823,17 +994,13 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 		}
 		if ok {
 			sourceMod := fieldType.SourceMod()
-			// fields can reference core types and local types, but not types from
-			// other modules (unless the source module is a toolchain)
+			// fields can reference core types and local types, but not types from other modules
 			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-				// Allow types from toolchain modules
-				if !isToolchainModule(sourceMod) {
-					return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
-						obj.OriginalName,
-						field.OriginalName,
-						sourceMod.Name(),
-					)
-				}
+				return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+					obj.OriginalName,
+					field.OriginalName,
+					sourceMod.Name(),
+				)
 			}
 		}
 		if err := mod.validateTypeDef(ctx, field.TypeDef, state); err != nil {
@@ -852,14 +1019,11 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 		}
 		if ok {
 			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-				// Allow types from toolchain modules
-				if !isToolchainModule(sourceMod) {
-					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
-						obj.OriginalName,
-						fn.OriginalName,
-						sourceMod.Name(),
-					)
-				}
+				return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
+					obj.OriginalName,
+					fn.OriginalName,
+					sourceMod.Name(),
+				)
 			}
 		}
 		if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
@@ -874,15 +1038,12 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 			}
 			if ok {
 				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-					// Allow types from toolchain modules
-					if !isToolchainModule(sourceMod) {
-						return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
-							obj.OriginalName,
-							fn.OriginalName,
-							arg.OriginalName,
-							sourceMod.Name(),
-						)
-					}
+					return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
+						obj.OriginalName,
+						fn.OriginalName,
+						arg.OriginalName,
+						sourceMod.Name(),
+					)
 				}
 			}
 			if err := mod.validateTypeDef(ctx, arg.TypeDef, state); err != nil {
@@ -1616,6 +1777,21 @@ func (mod *Module) LoadRuntime(ctx context.Context) (ModuleRuntime, error) {
 Mod is a module in loaded into the server's DAG of modules; it's the vertex type of the DAG.
 It's an interface so we can abstract over user modules and core and treat them the same.
 */
+
+// InstallOpts controls how a module is installed into a dagql server.
+type InstallOpts struct {
+	// SkipConstructor omits the module's constructor from the Query
+	// root. The module's types are still installed for schema
+	// resolution. Used for transitive dependencies whose types may
+	// be returned through interfaces.
+	SkipConstructor bool
+
+	// Entrypoint installs non-conflicting proxies for the module's
+	// main-object methods on the Query root. The module's namespaced
+	// constructor remains installed separately.
+	Entrypoint bool
+}
+
 type Mod interface {
 	// Name gets the name of the module
 	Name() string
@@ -1629,7 +1805,7 @@ type Mod interface {
 
 	// Install modifies the provided server to install the contents of the
 	// modules declared fields.
-	Install(ctx context.Context, dag *dagql.Server) error
+	Install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error
 
 	// ModTypeFor returns the ModType for the given typedef based on this module's schema.
 	// The returned type will have any namespacing already applied.
@@ -1705,8 +1881,8 @@ func (mod *userMod) View() (call.View, bool) {
 	return "", false
 }
 
-func (mod *userMod) Install(ctx context.Context, dag *dagql.Server) error {
-	return mod.install(ctx, dag)
+func (mod *userMod) Install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error {
+	return mod.install(ctx, dag, opts...)
 }
 
 func (mod *userMod) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
@@ -1784,7 +1960,7 @@ func (mod *userMod) ModuleResult() dagql.ObjectResult[*Module] {
 	return mod.res
 }
 
-func (mod *userMod) install(ctx context.Context, dag *dagql.Server) error {
+func (mod *userMod) install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error {
 	self := mod.self()
 	if self == nil {
 		return fmt.Errorf("install user module: missing module result wrapper")
@@ -1815,7 +1991,7 @@ func (mod *userMod) install(ctx context.Context, dag *dagql.Server) error {
 			Module:  mod.res,
 			TypeDef: objDef,
 		}
-		if err := obj.Install(ctx, dag); err != nil {
+		if err := obj.Install(ctx, dag, opts...); err != nil {
 			return err
 		}
 	}
@@ -1993,10 +2169,12 @@ func (mod Module) Clone() *Module {
 		cp.SDKConfig = cp.SDKConfig.Clone()
 	}
 
-	if cp.Toolchains != nil {
-		cp.Toolchains = cp.Toolchains.Clone(&cp)
+	if mod.WorkspaceConfig != nil {
+		cp.WorkspaceConfig = make(map[string]any, len(mod.WorkspaceConfig))
+		for k, v := range mod.WorkspaceConfig {
+			cp.WorkspaceConfig[k] = v
+		}
 	}
-
 	return &cp
 }
 

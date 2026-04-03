@@ -20,7 +20,7 @@ type Env struct {
 
 	// The full module dependency chain for the environment, including the core
 	// module and any dependencies from the environment's creator
-	deps *ModDeps
+	deps *SchemaBuilder
 
 	// The main module for this environment (the project being worked on)
 	MainModule dagql.ObjectResult[*Module]
@@ -55,18 +55,22 @@ func EnvIDToContext(ctx context.Context, env *call.ID) context.Context {
 func EnvIDFromContext(ctx context.Context) (res *call.ID, ok bool) {
 	// Env overidden via explicit context, i.e. from LLM to tool call
 	env, ok := ctx.Value(envKey{}).(*call.ID)
-	if !ok {
-		q, err := CurrentQuery(ctx)
-		if err == nil && q.CurrentEnv != nil {
-			// Env set on Query, i.e. propagated from LLM to module
-			return q.CurrentEnv, true
-		}
-		return res, false
+	if ok {
+		return env, true
+	}
+
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, false
+	}
+	env, err = q.Server.CurrentEnv(ctx)
+	if err != nil || env == nil {
+		return nil, false
 	}
 	return env, true
 }
 
-func NewEnv(workspace dagql.ObjectResult[*Directory], deps *ModDeps) *Env {
+func NewEnv(workspace dagql.ObjectResult[*Directory], deps *SchemaBuilder) *Env {
 	return &Env{
 		Workspace:     workspace,
 		deps:          deps,

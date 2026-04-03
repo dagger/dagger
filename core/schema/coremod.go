@@ -9,8 +9,8 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -18,9 +18,10 @@ import (
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
 type CoreSchemaBase struct {
-	base  *dagql.Server
-	views map[call.View]*coreSchemaViewState
-	mu    sync.Mutex
+	base    *dagql.Server
+	rootSrv core.Server
+	views   map[call.View]*coreSchemaViewState
+	mu      sync.Mutex
 }
 
 type coreSchemaViewState struct {
@@ -39,16 +40,20 @@ type CoreMod struct {
 
 var _ core.Mod = (*CoreMod)(nil)
 
-func NewCoreSchemaBase(ctx context.Context) (*CoreSchemaBase, error) {
-	base := dagql.NewServer(&core.Query{})
+func NewCoreSchemaBase(ctx context.Context, rootSrv core.Server) (*CoreSchemaBase, error) {
+	base, err := dagql.NewServer(ctx, core.NewRoot(rootSrv))
+	if err != nil {
+		return nil, err
+	}
 	base.Around(core.AroundFunc)
 	coreMod := &CoreMod{}
 	if err := coreMod.Install(ctx, base); err != nil {
 		return nil, err
 	}
 	return &CoreSchemaBase{
-		base:  base,
-		views: map[call.View]*coreSchemaViewState{},
+		base:    base,
+		rootSrv: rootSrv,
+		views:   map[call.View]*coreSchemaViewState{},
 	}, nil
 }
 
@@ -64,7 +69,7 @@ func (base *CoreSchemaBase) Fork(ctx context.Context, root *core.Query, view cal
 	if err != nil {
 		return nil, err
 	}
-	return state.server.Fork(root)
+	return state.server.Fork(ctx, root)
 }
 
 func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*coreSchemaViewState, error) {
@@ -75,7 +80,7 @@ func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*cor
 		return state, nil
 	}
 
-	srv, err := base.base.Fork(&core.Query{})
+	srv, err := base.base.Fork(ctx, core.NewRoot(base.rootSrv))
 	if err != nil {
 		return nil, fmt.Errorf("fork core schema base: %w", err)
 	}
@@ -162,7 +167,7 @@ func (m *CoreMod) WithView(view call.View) *CoreMod {
 	}
 }
 
-func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
+func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.InstallOpts) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{},
 		&environmentSchema{}, // install environment middleware first
@@ -313,7 +318,7 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 		schema.QueryType.Name = *queryName
 	}
 	for _, dagqlType := range dagqlSchema.Types() {
-		codeGenType, err := dagqlToCodegenType(dagqlType)
+		codeGenType, err := core.DagqlToCodegenType(dagqlType)
 		if err != nil {
 			return nil, err
 		}
@@ -324,7 +329,7 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 		return nil, err
 	}
 	for _, dagqlDirective := range directives {
-		dd, err := dagqlToCodegenDirectiveDef(dagqlDirective)
+		dd, err := core.DagqlToCodegenDirectiveDef(dagqlDirective)
 		if err != nil {
 			return nil, err
 		}

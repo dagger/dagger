@@ -91,9 +91,6 @@ type shellCallHandler struct {
 	// builtins is the list of Dagger Shell builtin commands
 	builtins []*ShellCommand
 
-	// stdlib is the list of standard library commands
-	stdlib []*ShellCommand
-
 	// state stores the pipeline state between commands in a chain
 	state *ShellStateStore
 
@@ -220,7 +217,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	var cfg *configuredModule
 
 	if !h.noModule {
-		def, cfg, err = h.maybeLoadModule(ctx, h.moduleURL)
+		def, cfg, err = h.maybeLoadModule(ctx, h.moduleURL, dagger.ModuleServeOpts{Entrypoint: true})
 		if err != nil {
 			return err
 		}
@@ -446,7 +443,7 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 
 	switch h.mode {
 	case modeShell:
-		if def, _ := h.GetModuleDef(nil); def != nil {
+		if def := h.GetDef(nil); def.HasModule() {
 			sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
 			sb.WriteString(out.String(" ").String())
 		}

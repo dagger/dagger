@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type moduleSchema struct{}
@@ -70,6 +71,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			WithInput(dagql.CurrentSchemaInput).
 			Args(
 				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`),
+				dagql.Arg("hideCore").Doc(
+					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
+					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,
+				),
 			).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
@@ -158,6 +163,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`This module plus the given Enum type and associated values`),
 
 		dagql.Func("runtime", s.moduleRuntime).
+			IsPersistable().
 			Doc(`The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.`),
 
 		dagql.NodeFunc("serve", s.moduleServe).
@@ -166,6 +172,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
+				dagql.Arg("entrypoint").Doc("Install the module as the entrypoint, promoting its main-object methods onto the Query root"),
 			),
 
 		dagql.NodeFunc("_implementationScoped", s.moduleImplementationScoped).
@@ -1139,8 +1146,9 @@ func (s *moduleSchema) module(ctx context.Context, query *core.Query, _ struct{}
 }
 
 func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct {
-	Name       string
-	ReturnType core.TypeDefID
+	Name             string
+	ReturnType       core.TypeDefID
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.Function, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1151,7 +1159,11 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
 	}
-	return core.NewFunction(args.Name, returnType), nil
+	fn := core.NewFunction(args.Name, returnType)
+	if args.SourceModuleName.Valid {
+		fn.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return fn, nil
 }
 
 func (s *moduleSchema) sourceMap(ctx context.Context, _ *core.Query, args struct {
@@ -1731,14 +1743,14 @@ func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ st
 		return dagql.Nullable[dagql.ObjectResult[*core.Container]]{}, err
 	}
 	if ctr, ok := runtime.AsContainer(); ok {
-		mod.Runtime = dagql.NonNull(ctr)
-		return mod.Runtime, nil
+		return dagql.NonNull(ctr), nil
 	}
 	return dagql.Nullable[dagql.ObjectResult[*core.Container]]{}, nil
 }
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResult[*core.Module], args struct {
 	IncludeDependencies dagql.Optional[dagql.Boolean]
+	Entrypoint          dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 
@@ -1748,11 +1760,13 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResu
 	}
 
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
-	return void, query.ServeModule(ctx, modMeta, includeDependencies)
+	entrypoint := args.Entrypoint.Valid && args.Entrypoint.Value.Bool()
+	return void, query.ServeModule(ctx, modMeta, includeDependencies, entrypoint)
 }
 
 type currentTypeDefsArgs struct {
 	ReturnAllTypes bool `default:"false"`
+	HideCore       dagql.Optional[dagql.Boolean]
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args currentTypeDefsArgs) (dagql.ObjectResultArray[*core.TypeDef], error) {
@@ -1768,28 +1782,127 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 	if err != nil {
 		return nil, err
 	}
+
 	queryTypeDef, err := currentQueryTypeDef(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load live query typedef: %w", err)
 	}
+	queryReplaced := false
 	for i, typeDef := range typeDefs {
 		if typeDef.Self() == nil || typeDef.Self().Kind != core.TypeDefKindObject {
+			continue
+		}
+		if !typeDef.Self().AsObject.Valid || typeDef.Self().AsObject.Value.Self() == nil {
 			continue
 		}
 		if typeDef.Self().AsObject.Value.Self().Name != "Query" {
 			continue
 		}
 		typeDefs[i] = queryTypeDef
-		if !args.ReturnAllTypes {
-			return typeDefs, nil
-		}
-		return expandTypeDefClosure(ctx, dag, typeDefs)
+		queryReplaced = true
+		break
 	}
-	typeDefs = append(typeDefs, queryTypeDef)
+	if !queryReplaced {
+		typeDefs = append(typeDefs, queryTypeDef)
+	}
+
+	if args.HideCore.GetOr(dagql.NewBoolean(false)).Bool() {
+		typeDefs, err = stripCoreQueryFunctions(ctx, dag, typeDefs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if !args.ReturnAllTypes {
 		return typeDefs, nil
 	}
 	return expandTypeDefClosure(ctx, dag, typeDefs)
+}
+
+func stripCoreQueryFunctions(
+	ctx context.Context,
+	dag *dagql.Server,
+	typeDefs dagql.ObjectResultArray[*core.TypeDef],
+) (dagql.ObjectResultArray[*core.TypeDef], error) {
+	result := make(dagql.ObjectResultArray[*core.TypeDef], 0, len(typeDefs))
+	for _, typeDef := range typeDefs {
+		typeDefSelf := typeDef.Self()
+		if typeDefSelf == nil || typeDefSelf.Kind != core.TypeDefKindObject || !typeDefSelf.AsObject.Valid || typeDefSelf.AsObject.Value.Self() == nil || typeDefSelf.AsObject.Value.Self().Name != "Query" {
+			result = append(result, typeDef)
+			continue
+		}
+
+		queryObj := typeDefSelf.AsObject.Value
+		queryObjSelf := queryObj.Self()
+
+		var sourceMap dagql.ObjectResult[*core.SourceMap]
+		if queryObjSelf.SourceMap.Valid {
+			sourceMap = queryObjSelf.SourceMap.Value
+		}
+
+		var filteredObj dagql.ObjectResult[*core.ObjectTypeDef]
+		if err := dag.Select(ctx, dag.Root(), &filteredObj, dagql.Selector{
+			Field: "__objectTypeDef",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(queryObjSelf.Name)},
+				{Name: "description", Value: dagql.String(queryObjSelf.Description)},
+				{Name: "sourceMap", Value: optID(sourceMap)},
+				{Name: "deprecated", Value: optString(queryObjSelf.Deprecated)},
+				{Name: "sourceModuleName", Value: core.OptSourceModuleName(queryObjSelf.SourceModuleName)},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("create filtered Query object typedef: %w", err)
+		}
+
+		for _, field := range queryObjSelf.Fields {
+			if field.Self() == nil {
+				continue
+			}
+			fieldID, err := core.ResultIDInput(field)
+			if err != nil {
+				return nil, err
+			}
+			if err := dag.Select(ctx, filteredObj, &filteredObj, dagql.Selector{
+				Field: "__withField",
+				Args:  []dagql.NamedInput{{Name: "field", Value: fieldID}},
+			}); err != nil {
+				return nil, fmt.Errorf("add Query field %q to filtered typedef: %w", field.Self().Name, err)
+			}
+		}
+
+		for _, fn := range queryObjSelf.Functions {
+			if fn.Self() == nil {
+				continue
+			}
+			if fn.Self().SourceModuleName == "" && fn.Self().Name != "with" {
+				continue
+			}
+			fnID, err := core.ResultIDInput(fn)
+			if err != nil {
+				return nil, err
+			}
+			if err := dag.Select(ctx, filteredObj, &filteredObj, dagql.Selector{
+				Field: "__withFunction",
+				Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+			}); err != nil {
+				return nil, fmt.Errorf("add Query function %q to filtered typedef: %w", fn.Self().Name, err)
+			}
+		}
+
+		objID, err := core.ResultIDInput(filteredObj)
+		if err != nil {
+			return nil, err
+		}
+		filteredTypeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "__withObjectTypeDef",
+			Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("wrap filtered Query typedef: %w", err)
+		}
+
+		result = append(result, filteredTypeDef)
+	}
+	return result, nil
 }
 
 func expandTypeDefClosure(
@@ -1986,10 +2099,11 @@ func typeDefIsStub(typeDef *core.TypeDef) bool {
 func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectResult[*core.TypeDef], error) {
 	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
 	queryType := dagqlSchema.QueryType()
-	codeGenType, err := dagqlToCodegenType(queryType)
+	codeGenType, err := core.DagqlToCodegenType(queryType)
 	if err != nil {
 		return dagql.ObjectResult[*core.TypeDef]{}, err
 	}
+	queryObjType := dag.Root().ObjectType()
 
 	var obj dagql.ObjectResult[*core.ObjectTypeDef]
 	if err := dag.Select(ctx, dag.Root(), &obj, dagql.Selector{
@@ -2014,12 +2128,19 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, err
 		}
+		var sourceModuleName dagql.Optional[dagql.String]
+		if fieldSpec, ok := queryObjType.FieldSpec(introspectionField.Name, dag.View); ok {
+			if fieldSpec.Module != nil && fieldSpec.Module.ResultRef != nil {
+				sourceModuleName = core.OptSourceModuleName(fieldSpec.Module.Name)
+			}
+		}
 		var fn dagql.ObjectResult[*core.Function]
 		if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
 			Field: "function",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.String(introspectionField.Name)},
 				{Name: "returnType", Value: rtTypeID},
+				{Name: "sourceModuleName", Value: sourceModuleName},
 			},
 		}); err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, err
@@ -2053,6 +2174,35 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 			if err != nil {
 				return dagql.ObjectResult[*core.TypeDef]{}, err
 			}
+			var (
+				defaultPath    string
+				defaultAddress string
+				ignore         []string
+			)
+			if fieldSpec, ok := queryObjType.FieldSpec(introspectionField.Name, dag.View); ok {
+				if argSpec, ok := fieldSpec.Args.Input(introspectionArg.Name, dag.View); ok {
+					for _, directive := range argSpec.Directives {
+						switch directive.Name {
+						case "defaultPath":
+							if arg := directive.Arguments.ForName("path"); arg != nil && arg.Value != nil {
+								defaultPath = arg.Value.Raw
+							}
+						case "defaultAddress":
+							if arg := directive.Arguments.ForName("address"); arg != nil && arg.Value != nil {
+								defaultAddress = arg.Value.Raw
+							}
+						case "ignorePatterns":
+							if arg := directive.Arguments.ForName("patterns"); arg != nil && arg.Value != nil && arg.Value.Kind == ast.ListValue {
+								for _, child := range arg.Value.Children {
+									if child != nil && child.Value != nil {
+										ignore = append(ignore, child.Value.Raw)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 			var defaultValue core.JSON
 			if introspectionArg.DefaultValue != nil {
 				defaultValue = core.JSON(*introspectionArg.DefaultValue)
@@ -2065,6 +2215,9 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 					{Name: "typeDef", Value: argTypeID},
 					{Name: "description", Value: dagql.String(introspectionArg.Description)},
 					{Name: "defaultValue", Value: defaultValue},
+					{Name: "defaultPath", Value: dagql.String(defaultPath)},
+					{Name: "defaultAddress", Value: dagql.String(defaultAddress)},
+					{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
 					{Name: "deprecated", Value: core.OptString(introspectionArg.DeprecationReason)},
 				},
 			}); err != nil {
@@ -2350,6 +2503,13 @@ func (s *moduleSchema) currentModuleDependencies(
 	for _, dep := range mod.Module.Self().Deps.Mods() {
 		if depInst := dep.ModuleResult(); depInst.Self() != nil {
 			depMods = append(depMods, depInst.Self())
+			continue
+		}
+		switch dep.(type) {
+		case *CoreMod:
+			// skip
+		default:
+			return nil, fmt.Errorf("unexpected mod dependency type %T", dep)
 		}
 	}
 	return depMods, nil

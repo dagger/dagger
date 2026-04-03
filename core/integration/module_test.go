@@ -54,7 +54,7 @@ func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=foo-bar"))
 
 		_, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, `invalid SDK: "foo-bar"`)
@@ -69,7 +69,7 @@ func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=go@main"))
 
 		_, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, `the go sdk does not currently support selecting a specific version`)
@@ -379,15 +379,15 @@ export class Test {
 			prop := obj.Get(`fields.#(name="foo")`)
 			require.Equal(t, "foo", prop.Get("name").String())
 
-			out, err := modGen.With(daggerQuery(`{test{set(foo: "abc", bar: "xyz"){hello}}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{set(foo: "abc", bar: "xyz"){hello}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"set":{"hello": "abcxyz"}}}`, out)
+			require.JSONEq(t, `{"set":{"hello": "abcxyz"}}`, out)
 
-			out, err = modGen.With(daggerQuery(`{test{set(foo: "abc", bar: "xyz"){foo}}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{set(foo: "abc", bar: "xyz"){foo}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"set":{"foo": "abc"}}}`, out)
+			require.JSONEq(t, `{"set":{"foo": "abc"}}`, out)
 
-			_, err = modGen.With(daggerQuery(`{test{set(foo: "abc", bar: "xyz"){bar}}}`)).Stdout(ctx)
+			_, err = modGen.With(daggerQuery(`{set(foo: "abc", bar: "xyz"){bar}}`)).Stdout(ctx)
 			requireErrOut(t, err, `Cannot query field \"bar\" on type \"Test\"`)
 		})
 	}
@@ -687,10 +687,10 @@ export class Test {
 			c := connect(ctx, t)
 
 			out, err := modInit(t, c, tc.sdk, tc.source).
-				With(daggerQuery(`{test{fn}}`)).Stdout(ctx)
+				With(daggerQuery(`{fn}`)).Stdout(ctx)
 
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"fn":"foo\n"}}`, out)
+			require.JSONEq(t, `{"fn":"foo\n"}`, out)
 		})
 	}
 }
@@ -808,9 +808,9 @@ func (m *A) Fn(ctx context.Context) (string, error) {
 `,
 		)
 
-	out, err := ctr.With(daggerQuery(`{a{fn}}`)).Stdout(ctx)
+	out, err := ctr.With(daggerQuery(`{fn}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"a":{"fn": "foo123"}}`, out)
+	require.JSONEq(t, `{"fn": "foo123"}`, out)
 
 	types := currentSchema(ctx, t, ctr).Types
 	require.NotNil(t, types.Get("A"))
@@ -854,10 +854,10 @@ func (m *Test) FnB() string {
 }
 `,
 		).
-		With(daggerQuery(`{test{fnA}}`)).
+		With(daggerQuery(`{fnA}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"fnA": "hi from b"}}`, out)
+	require.JSONEq(t, `{"fnA": "hi from b"}`, out)
 }
 
 var useInner = `package main
@@ -935,9 +935,9 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 
-			out, err := modGen.With(daggerQuery(`{test{useHello}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"hello"}}`, out)
+			require.JSONEq(t, `{"useHello":"hello"}`, out)
 
 			// can use direct dependency directly
 			out, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
@@ -988,9 +988,9 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 
-			out, err := modGen.With(daggerQuery(`{test{useHello}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"hello"}}`, out)
+			require.JSONEq(t, `{"useHello":"hello"}`, out)
 
 			// make back-incompatible change to dep
 			newInner := strings.ReplaceAll(useInner, `Hello()`, `Hellov2()`)
@@ -1013,9 +1013,9 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 
 			modGen = modGen.With(sdkSource(tc.sdk, tc.changed))
 
-			out, err = modGen.With(daggerQuery(`{test{useHello}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"hello"}}`, out)
+			require.JSONEq(t, `{"useHello":"hello"}`, out)
 		})
 	}
 }
@@ -1054,10 +1054,10 @@ func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 
-			modGen = modGen.With(daggerQuery(`{test{useHello}}`))
+			modGen = modGen.With(daggerQuery(`{useHello}`))
 			out, err := modGen.Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"hello"}}`, out)
+			require.JSONEq(t, `{"useHello":"hello"}`, out)
 
 			newInner := strings.ReplaceAll(useInner, `"hello"`, `"goodbye"`)
 			modGen = modGen.
@@ -1066,9 +1066,9 @@ func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work").
 				With(daggerExec("develop"))
 
-			out, err = modGen.With(daggerQuery(`{test{useHello}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"goodbye"}}`, out)
+			require.JSONEq(t, `{"useHello":"goodbye"}`, out)
 		})
 	}
 }
@@ -1162,9 +1162,9 @@ export class Test {
 				With(sdkSource(tc.sdk, tc.source)).
 				WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
 
-			out, err := modGen.With(daggerQuery(`{test{names}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{names}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"names":["foo", "bar"]}}`, out)
+			require.JSONEq(t, `{"names":["foo", "bar"]}`, out)
 		})
 	}
 }
@@ -1678,13 +1678,13 @@ export class Test {
 
 			out, err := modInit(t, c, tc.sdk, tc.source).
 				With(daggerQuery(
-					fmt.Sprintf(`{test{container{echo(msg:%q){unwrap{stdout}}}}}`, id),
+					fmt.Sprintf(`{container{echo(msg:%q){unwrap{stdout}}}}`, id),
 				)).
 				Stdout(ctx)
 
 			require.NoError(t, err)
 			require.JSONEq(t,
-				fmt.Sprintf(`{"test":{"container":{"echo":{"unwrap":{"stdout":%q}}}}}`, id),
+				fmt.Sprintf(`{"container":{"echo":{"unwrap":{"stdout":%q}}}}`, id),
 				out)
 		})
 	}
@@ -1702,10 +1702,10 @@ func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work")
 
 	out, err := ctr.
-		With(daggerQuery(`{test{fn(s:"yo")}}`)).
+		With(daggerQuery(`{fn(s:"yo")}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"fn":["*dagger.Sub1Obj made 1:yo", "*dagger.Sub2Obj made 2:yo"]}}`, out)
+	require.JSONEq(t, `{"fn":["*dagger.Sub1Obj made 1:yo", "*dagger.Sub2Obj made 2:yo"]}`, out)
 }
 
 func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
@@ -1785,10 +1785,10 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
 					out, err := modInit(t, c, tc.sdk, tc.source).
-						With(daggerQuery(`{test{fn(id:"YES!!!!")}}`)).
+						With(daggerQuery(`{fn(id:"YES!!!!")}`)).
 						Stdout(ctx)
 					require.NoError(t, err)
-					require.JSONEq(t, `{"test":{"fn":"YES!!!!"}}`, out)
+					require.JSONEq(t, `{"fn":"YES!!!!"}`, out)
 				})
 			}
 		})
@@ -1812,7 +1812,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 						WithWorkdir("/work").
 						With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
 						With(sdkSource(tc.sdk, tc.source)).
-						With(daggerQuery(`{test{fn{id}}}`)).
+						With(daggerQuery(`{fn{id}}`)).
 						Sync(ctx)
 
 					requireErrOut(t, err, "cannot define field with reserved name \"id\"")
@@ -1843,7 +1843,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 						WithWorkdir("/work").
 						With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
 						With(sdkSource(tc.sdk, tc.source)).
-						With(daggerQuery(`{test{id}}`)).
+						With(daggerQuery(`{id}`)).
 						Sync(ctx)
 
 					requireErrOut(t, err, "cannot define function with reserved name \"id\"")
@@ -1884,7 +1884,7 @@ func (p *Playground) DoThing(ctx context.Context) error {
 		)
 
 	_, err := modGen.
-		With(daggerQuery(`{playground{doThing}}`)).
+		With(daggerQuery(`{doThing}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
 }
@@ -2593,12 +2593,12 @@ func (t *Toplevel) TryArg(ctx context.Context) error {
 			)
 
 		t.Run("can pass secrets", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerQuery(`{toplevel{tryArg}}`)).Stdout(ctx)
+			_, err := ctr.With(daggerQuery(`{tryArg}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 
 		t.Run("can return secrets", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerQuery(`{toplevel{tryReturn}}`)).Stdout(ctx)
+			_, err := ctr.With(daggerQuery(`{tryReturn}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 	})
@@ -3072,9 +3072,9 @@ func (m *Test) impl(ctx context.Context, name string) (string, error) {
 `,
 				)
 
-			out, err := ctr.With(daggerQuery("{test{foo,bar}}")).Stdout(ctx)
+			out, err := ctr.With(daggerQuery("{foo,bar}")).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test": {"foo": "FOO\nHELLO FROM MOUNT", "bar": "BAR\nHELLO FROM MOUNT"}}`, out)
+			require.JSONEq(t, `{"foo": "FOO\nHELLO FROM MOUNT", "bar": "BAR\nHELLO FROM MOUNT"}`, out)
 		})
 	})
 
@@ -3280,7 +3280,7 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 `,
 			)
 
-		_, err := ctr.With(daggerQuery(`{toplevel{attempt}}`)).Stdout(ctx)
+		_, err := ctr.With(daggerQuery(`{attempt}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.NoError(t, c.Close())
 	})
@@ -3425,12 +3425,12 @@ func diffSecret(ctx context.Context, first, second *dagger.Secret) error {
 			)
 
 		t.Run("internal secrets cache", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerQuery(`{toplevel{attemptInternal}}`)).Stdout(ctx)
+			_, err := ctr.With(daggerQuery(`{attemptInternal}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 
 		t.Run("external secrets cache", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerQuery(`{toplevel{attemptExternal}}`)).Stdout(ctx)
+			_, err := ctr.With(daggerQuery(`{attemptExternal}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 	})
@@ -3490,10 +3490,10 @@ func (ModuleSuite) TestUnicodePath(ctx context.Context, t *testctx.T) {
  			}
  			`,
 		).
-		With(daggerQuery(`{test{hello}}`)).
+		With(daggerQuery(`{hello}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
+	require.JSONEq(t, `{"hello":"hello"}`, out)
 }
 
 func (ModuleSuite) TestStartServices(ctx context.Context, t *testctx.T) {
@@ -3659,11 +3659,11 @@ type Test struct {
 }
 
 `)).
-			With(daggerQuery("{test{a,b}}")).
+			With(daggerQuery("{a,b}")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test": {"a": "", "b": 0}}`, out)
+		require.JSONEq(t, `{"a": "", "b": 0}`, out)
 		// NOTE:
 		// - trying to get C will try and decode an empty ID
 		// - trying to get D will fail to instantiate an empty enum
@@ -3693,11 +3693,11 @@ func New() *Test {
 	return &Test{}
 }
 `)).
-			With(daggerQuery("{test{a,b}}")).
+			With(daggerQuery("{a,b}")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test": {"a": "", "b": 0}}`, out)
+		require.JSONEq(t, `{"a": "", "b": 0}`, out)
 		// NOTE:
 		// - trying to get C will try and decode an empty ID
 		// ...but, we should be able to get the other values (important for backwards-compat)
@@ -3781,10 +3781,10 @@ func schemaVersion(ctx context.Context) (string, error) {
 `,
 			)
 		out, err := work.
-			With(daggerQuery("{foo{getVersion}}")).
+			With(daggerQuery("{getVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"foo":{"getVersion": "v0.11.0"}}`, out)
+		require.JSONEq(t, `{"getVersion": "v0.11.0"}`, out)
 
 		out, err = work.
 			With(daggerCall("get-version")).
@@ -3865,10 +3865,10 @@ func schemaVersion(ctx context.Context) (string, error) {
 			)
 
 		out, err := work.
-			With(daggerQuery("{foo{getVersion}}")).
+			With(daggerQuery("{getVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"foo":{"getVersion": "v0.10.0 v0.11.0"}}`, out)
+		require.JSONEq(t, `{"getVersion": "v0.10.0 v0.11.0"}`, out)
 
 		out, err = work.
 			With(daggerCall("get-version")).
@@ -6466,18 +6466,18 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 
 			t.Run("can call with arguments", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
-					With(daggerQuery(`{test{print(stringArg:"hello")}}`)).
+					With(daggerQuery(`{print(stringArg:"hello")}`)).
 					Stdout(ctx)
 				require.NoError(t, err)
-				require.JSONEq(t, `{"test":{"print":"hello\n"}}`, out)
+				require.JSONEq(t, `{"print":"hello\n"}`, out)
 			})
 
 			t.Run("can call with optional arguments", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
-					With(daggerQuery(`{test{printDefault}}`)).
+					With(daggerQuery(`{printDefault}`)).
 					Stdout(ctx)
 				require.NoError(t, err)
-				require.JSONEq(t, `{"test":{"printDefault":"Hello Self Calls\n"}}`, out)
+				require.JSONEq(t, `{"printDefault":"Hello Self Calls\n"}`, out)
 			})
 		})
 	}
@@ -7501,17 +7501,17 @@ func (m *Test) ObjsWithNothing() ([]*Test, error) {
 `,
 		)
 
-	out, err := modGen.With(daggerQuery(`{test{nothing{entries}}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{nothing{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"nothing":null}}`, out)
+	require.JSONEq(t, `{"nothing":null}`, out)
 
-	out, err = modGen.With(daggerQuery(`{test{listWithNothing{entries}}}`)).Stdout(ctx)
+	out, err = modGen.With(daggerQuery(`{listWithNothing{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"listWithNothing":[null]}}`, out)
+	require.JSONEq(t, `{"listWithNothing":[null]}`, out)
 
-	out, err = modGen.With(daggerQuery(`{test{objsWithNothing{dirs{entries}}}}`)).Stdout(ctx)
+	out, err = modGen.With(daggerQuery(`{objsWithNothing{dirs{entries}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"objsWithNothing":[null,{"dirs":[null]}]}}`, out)
+	require.JSONEq(t, `{"objsWithNothing":[null,{"dirs":[null]}]}`, out)
 }
 
 func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {

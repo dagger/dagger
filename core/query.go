@@ -29,8 +29,10 @@ import (
 type Query struct {
 	Server
 
-	// An Env value propagated to a module function call, i.e. from LLM.
-	CurrentEnv *call.ID
+	// ConstructorArgs stores arguments to pass to the entrypoint module's
+	// constructor. Set by the `with` field on Query so that entrypoint
+	// proxy resolvers can forward them to the constructor.
+	ConstructorArgs map[string]dagql.Input
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -41,7 +43,7 @@ type Server interface {
 	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata)
 
 	// Stitch in the given module to the list being served to the current client
-	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool) error
+	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
 
 	// If the current client is coming from a function, return the module that function is from
 	CurrentModule(context.Context) (dagql.ObjectResult[*Module], error)
@@ -52,8 +54,11 @@ type Server interface {
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
 
-	// Return the list of deps being served to the current client
-	CurrentServedDeps(context.Context) (*ModDeps, error)
+	// If the current client is bound to an environment, return its ID.
+	CurrentEnv(context.Context) (*call.ID, error)
+
+	// Return the modules being served to the current client
+	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
 
 	// The Client metadata of the main client caller (i.e. the one who created
 	// the session, typically the CLI invoked by the user)
@@ -67,12 +72,15 @@ type Server interface {
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
+	// The cached workspace result from ensureWorkspaceLoaded.
+	CurrentWorkspace(context.Context) (*Workspace, error)
+
 	// The Client metadata of a specific client ID within the same session as the
 	// current client.
 	SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error)
 
 	// The default deps of every user module (currently just core)
-	DefaultDeps(context.Context) (*ModDeps, error)
+	DefaultDeps(context.Context) (*SchemaBuilder, error)
 
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
@@ -196,8 +204,8 @@ func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
 	return srv, nil
 }
 
-func NewRoot(srv Server, envID *call.ID) *Query {
-	return &Query{Server: srv, CurrentEnv: envID}
+func NewRoot(srv Server) *Query {
+	return &Query{Server: srv}
 }
 
 func (*Query) Type() *ast.Type {
@@ -212,7 +220,14 @@ func (*Query) TypeDescription() string {
 }
 
 func (q Query) Clone() *Query {
-	return &q
+	cp := q
+	if q.ConstructorArgs != nil {
+		cp.ConstructorArgs = make(map[string]dagql.Input, len(q.ConstructorArgs))
+		for k, v := range q.ConstructorArgs {
+			cp.ConstructorArgs[k] = v
+		}
+	}
+	return &cp
 }
 
 func (q *Query) WithPipeline(name, desc string) *Query {
@@ -225,12 +240,12 @@ func (q *Query) NewHost() *Host {
 
 func (q *Query) NewModule() *Module {
 	return &Module{
-		Deps: NewModDeps(q, nil),
+		Deps: NewSchemaBuilder(q, nil),
 	}
 }
 
 // ModDepsForCall loads the module dependencies referenced by the given result call.
-func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) (*ModDeps, error) {
+func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) (*SchemaBuilder, error) {
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("default deps: %w", err)
@@ -265,13 +280,6 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 		}
 		seenModuleResultIDs[instID.EngineResultID()] = struct{}{}
 		deps = deps.Append(NewUserMod(inst))
-		if inst.Self().Toolchains != nil {
-			for _, entry := range inst.Self().Toolchains.Entries() {
-				if err := appendModule(entry.Module); err != nil {
-					return fmt.Errorf("toolchain module for %q: %w", inst.Self().Name(), err)
-				}
-			}
-		}
 		return nil
 	}
 

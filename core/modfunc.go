@@ -459,7 +459,33 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 	if !ok {
 		return nil, false, fmt.Errorf("lookup default: function %q has no argument %q", fn.metadata.Name, argName)
 	}
-	// Lookup user default for the requested arg
+
+	isConstructor := fn.metadata.Name == ""
+
+	// TODO(workspace-env-expansion): Implement ${VAR} expansion for workspace config string values.
+	//
+	// Spec:
+	// - $VAR and ${VAR} in string config values should resolve to system environment variables
+	// - NO cascading: $FOO always means the system env var FOO, never another config key
+	// - Resolution should go through the Workspace type (gateway for client context access)
+	// - The Workspace type should expose a method for resolving system env vars,
+	//   which can later be gated by interactive prompts, allow/deny policies, value injection
+	// - Consider docker-compose's variable substitution spec as reference for syntax
+	// - For now, string values pass through as-is (no expansion)
+
+	// PATH A: Workspace config (constructor only, no EnvFile)
+	if fn.mod.Self().WorkspaceConfig != nil && isConstructor {
+		val, ok := lookupConfigCaseInsensitive(fn.mod.Self().WorkspaceConfig, arg.Self().OriginalName, arg.Self().Name)
+		if ok {
+			return fn.newUserDefault(arg.Self(), configValueToString(val)), true, nil
+		}
+		// Not in workspace config — only fall through to .env if enabled
+		if !fn.mod.Self().DefaultsFromDotEnv {
+			return nil, false, nil
+		}
+	}
+
+	// PATH B: existing .env pipeline (completely unchanged)
 	// We need access to the main client's context for resolving system env variables
 	// (otherwise we may resolve them in the module container's context)
 	// so we upgrade the context to the main client.
@@ -668,9 +694,6 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
-	if ctr, ok := runtime.AsContainer(); ok {
-		mod.Runtime = dagql.NonNull(ctr)
-	}
 
 	return runtime, nil
 }
@@ -854,7 +877,7 @@ func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
 func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	props[prefix+"module_name"] = mod.Name()
 
-	source := mod.ContextSource.Value.Self()
+	source := mod.Source.Value.Self()
 	switch source.Kind {
 	case ModuleSourceKindLocal:
 		props[prefix+"source_kind"] = "local"
@@ -933,6 +956,13 @@ func (fn *ModuleFunction) loadContextualArg(
 		return nil, fmt.Errorf("argument %q is not a contextual argument", arg.OriginalName)
 	}
 
+	// Legacy compat: resolve +defaultPath from workspace root for migrated
+	// blueprints/toolchains instead of the module's own source directory.
+	if fn.mod.Self().LegacyDefaultPath {
+		console(ctx, "WARNING: module %q uses legacy-default-path; port to workspace API and remove this flag", fn.mod.Self().Name())
+		return fn.loadLegacyDefaultPathArg(ctx, dag, arg)
+	}
+
 	switch arg.TypeDef.Self().AsObject.Value.Self().Name {
 	case "Directory":
 		dir, err := fn.mod.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, CopyFilter{
@@ -959,101 +989,177 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*File](fileID), nil
 
 	case "GitRepository", "GitRef":
-		// only local sources and git repos sourced from local dirs need special handling
-		// to prevent errant reloads, other module types are reproducible and can be called directly
-		isLocalMod := fn.mod.Self().ContextSource.Value.Self().Kind == ModuleSourceKindLocal
-		cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
-		isLocalGit := cleanedPath == "." || cleanedPath == ".git"
-		if isLocalMod && isLocalGit {
-			switch arg.TypeDef.Self().AsObject.Value.Self().Name {
-			case "GitRepository":
-				repo, err := fn.mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
-				if err != nil {
-					return nil, fmt.Errorf("load contextual git repository %q: %w", arg.DefaultPath, err)
-				}
-				repoID, err := repo.ID()
-				if err != nil {
-					return nil, fmt.Errorf("get contextual git repository ID %q: %w", arg.DefaultPath, err)
-				}
-				return dagql.NewID[*GitRepository](repoID), nil
+		return fn.loadContextualGitArg(ctx, dag, arg)
+	}
 
-			case "GitRef":
-				repo, err := fn.mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
-				if err != nil {
-					return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
-				}
-				var gitRef dagql.ObjectResult[*GitRef]
-				err = dag.Select(ctx, repo, &gitRef,
-					dagql.Selector{
-						Field: "head",
-					},
-				)
-				if err != nil {
-					return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
-				}
-				gitRefID, err := gitRef.ID()
-				if err != nil {
-					return nil, fmt.Errorf("get contextual git ref ID %q: %w", arg.DefaultPath, err)
-				}
-				return dagql.NewID[*GitRef](gitRefID), nil
-			}
-		}
+	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.Self().AsObject.Value.Self().Name)
+}
 
-		var git dagql.ObjectResult[*GitRepository]
-		if isLocalGit {
-			// handle getting the git repo from the current module context
-			var err error
-			git, err = fn.mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
-			if err != nil {
-				return nil, err
-			}
-		} else if gitURL, err := gitutil.ParseURL(arg.DefaultPath); err == nil {
-			// handle an arbitrary git URL
-			args := []dagql.NamedInput{
-				{Name: "url", Value: dagql.String(gitURL.String())},
-			}
-			if gitURL.Fragment != nil {
-				args = append(args, dagql.NamedInput{Name: "ref", Value: dagql.String(gitURL.Fragment.Ref)})
-			}
+// loadContextualGitArg resolves a +defaultPath argument for GitRepository or
+// GitRef types. For local modules with a local git path (. or .git), it uses
+// a cache-keyed selector to prevent errant reloads. Otherwise it loads from
+// the module context or parses a remote git URL.
+func (fn *ModuleFunction) loadContextualGitArg(
+	ctx context.Context,
+	dag *dagql.Server,
+	arg *FunctionArg,
+) (dagql.IDType, error) {
+	isLocalMod := fn.mod.Self().ContextSource.Value.Self().Kind == ModuleSourceKindLocal
+	cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
+	isLocalGit := cleanedPath == "." || cleanedPath == ".git"
 
-			err := dag.Select(ctx, dag.Root(), &git,
-				dagql.Selector{Field: "git", Args: args},
-			)
-			if err != nil {
-				return nil, fmt.Errorf("load contextual git repository: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("parse git URL %q: %w", arg.DefaultPath, err)
-		}
-
+	if isLocalMod && isLocalGit {
 		switch arg.TypeDef.Self().AsObject.Value.Self().Name {
 		case "GitRepository":
-			gitID, err := git.ID()
+			repo, err := fn.mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
 			if err != nil {
-				return nil, fmt.Errorf("get contextual git repository ID: %w", err)
+				return nil, fmt.Errorf("load contextual git repository %q: %w", arg.DefaultPath, err)
 			}
-			return dagql.NewID[*GitRepository](gitID), nil
+			repoID, err := repo.ID()
+			if err != nil {
+				return nil, fmt.Errorf("get contextual git repository ID %q: %w", arg.DefaultPath, err)
+			}
+			return dagql.NewID[*GitRepository](repoID), nil
 
 		case "GitRef":
+			repo, err := fn.mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
+			if err != nil {
+				return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
+			}
 			var gitRef dagql.ObjectResult[*GitRef]
-			err := dag.Select(ctx, git, &gitRef,
-				dagql.Selector{
-					Field: "head",
-				},
+			err = dag.Select(ctx, repo, &gitRef,
+				dagql.Selector{Field: "head"},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("load contextual git ref: %w", err)
+				return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
 			}
-
 			gitRefID, err := gitRef.ID()
 			if err != nil {
-				return nil, fmt.Errorf("get contextual git ref ID: %w", err)
+				return nil, fmt.Errorf("get contextual git ref ID %q: %w", arg.DefaultPath, err)
 			}
 			return dagql.NewID[*GitRef](gitRefID), nil
 		}
 	}
 
-	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.Self().AsObject.Value.Self().Name)
+	var git dagql.ObjectResult[*GitRepository]
+	if isLocalGit {
+		var err error
+		git, err = fn.mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
+		if err != nil {
+			return nil, err
+		}
+	} else if gitURL, err := gitutil.ParseURL(arg.DefaultPath); err == nil {
+		args := []dagql.NamedInput{
+			{Name: "url", Value: dagql.String(gitURL.String())},
+		}
+		if gitURL.Fragment != nil {
+			args = append(args, dagql.NamedInput{Name: "ref", Value: dagql.String(gitURL.Fragment.Ref)})
+		}
+		err := dag.Select(ctx, dag.Root(), &git,
+			dagql.Selector{Field: "git", Args: args},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load contextual git repository: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("parse git URL %q: %w", arg.DefaultPath, err)
+	}
+
+	switch arg.TypeDef.Self().AsObject.Value.Self().Name {
+	case "GitRepository":
+		gitID, err := git.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get contextual git repository ID: %w", err)
+		}
+		return dagql.NewID[*GitRepository](gitID), nil
+	case "GitRef":
+		var gitRef dagql.ObjectResult[*GitRef]
+		err := dag.Select(ctx, git, &gitRef,
+			dagql.Selector{Field: "head"},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load contextual git ref: %w", err)
+		}
+		gitRefID, err := gitRef.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get contextual git ref ID: %w", err)
+		}
+		return dagql.NewID[*GitRef](gitRefID), nil
+	default:
+		return nil, fmt.Errorf("unknown git contextual argument type %q", arg.TypeDef.Self().AsObject.Value.Self().Name)
+	}
+}
+
+// loadLegacyDefaultPathArg resolves a +defaultPath argument from the workspace
+// root instead of the module's own source directory. Used for legacy
+// blueprints/toolchains that relied on ContextSource injection.
+func (fn *ModuleFunction) loadLegacyDefaultPathArg(
+	ctx context.Context,
+	dag *dagql.Server,
+	arg *FunctionArg,
+) (dagql.IDType, error) {
+	switch arg.TypeDef.Self().AsObject.Value.Self().Name {
+	case "Directory":
+		var dir dagql.ObjectResult[*Directory]
+		err := dag.Select(ctx, dag.Root(), &dir,
+			dagql.Selector{
+				Field: "currentWorkspace",
+				Args: []dagql.NamedInput{
+					{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+				},
+			},
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(arg.DefaultPath)},
+					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load legacy default directory %q: %w", arg.DefaultPath, err)
+		}
+		dirID, err := dir.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get legacy default directory ID %q: %w", arg.DefaultPath, err)
+		}
+		return dagql.NewID[*Directory](dirID), nil
+
+	case "File":
+		var f dagql.ObjectResult[*File]
+		err := dag.Select(ctx, dag.Root(), &f,
+			dagql.Selector{
+				Field: "currentWorkspace",
+				Args: []dagql.NamedInput{
+					{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+				},
+			},
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(arg.DefaultPath)},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load legacy default file %q: %w", arg.DefaultPath, err)
+		}
+		fileID, err := f.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get legacy default file ID %q: %w", arg.DefaultPath, err)
+		}
+		return dagql.NewID[*File](fileID), nil
+
+	case "GitRepository", "GitRef":
+		// For git, the legacy path can use the same logic as the regular
+		// contextual path — git doesn't resolve relative to the module
+		// source directory.
+		return fn.loadContextualGitArg(ctx, dag, arg)
+
+	default:
+		return nil, fmt.Errorf("legacy-default-path does not support type %q; port to workspace API",
+			arg.TypeDef.Self().AsObject.Value.Self().Name)
+	}
 }
 
 // loadWorkspaceArg loads a workspace argument by resolving it through the
@@ -1168,5 +1274,50 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		}
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
+	}
+}
+
+// lookupConfigCaseInsensitive performs a case-insensitive lookup in a workspace
+// config map, trying each of the provided names in order.
+func lookupConfigCaseInsensitive(m map[string]any, names ...string) (any, bool) {
+	for _, name := range names {
+		for k, v := range m {
+			if strings.EqualFold(k, name) {
+				return v, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// configValueToString converts a typed config value to its string representation.
+// Strings pass through as-is, bools become "true"/"false", numbers their decimal
+// representation, and arrays are JSON-encoded.
+func configValueToString(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case bool:
+		return strconv.FormatBool(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case int:
+		return strconv.Itoa(val)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case []any:
+		encoded, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Sprint(val)
+		}
+		return string(encoded)
+	case []string:
+		encoded, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Sprint(val)
+		}
+		return string(encoded)
+	default:
+		return fmt.Sprint(v)
 	}
 }

@@ -168,7 +168,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, frame *dagql.ResultCal
 	var ms *ModuleSource
 	if m.Self() != nil {
 		ms = m.Self().GetSource()
-	} else if m, ok := sd.LookupDep(frame.Module.Name); ok {
+	} else if m, ok := sd.Lookup(frame.Module.Name); ok {
 		ms = m.GetSource()
 	}
 

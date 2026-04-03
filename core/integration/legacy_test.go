@@ -57,10 +57,10 @@ func (m *Bare) TestFile(ctx context.Context) (bool, error) {
 		)
 
 	out, err := modGen.
-		With(daggerQuery(`{bare{testContainer, testDirectory, testFile}}`)).
+		With(daggerQuery(`{testContainer, testDirectory, testFile}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"bare": {"testContainer": true, "testDirectory": true, "testFile": true}}`, out)
+	require.JSONEq(t, `{"testContainer": true, "testDirectory": true, "testFile": true}`, out)
 }
 
 func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
@@ -263,11 +263,11 @@ func (m *Test) Default(ctx context.Context) (string, error) {
 }
 `,
 		).
-		With(daggerQuery(`{test{container default}}`)).
+		With(daggerQuery(`{container default}`)).
 		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test": {"container": "bar", "default": ""}}`, out)
+	require.JSONEq(t, `{"container": "bar", "default": ""}`, out)
 }
 
 func (LegacySuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
@@ -401,9 +401,9 @@ func (m *Test) NoExec(ctx context.Context) *dagger.Container {
 `, alpineImage),
 		)
 
-	out, err := modGen.With(daggerQuery(`{test{stdout stderr}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{stdout stderr}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test": {"stdout": "hello\n", "stderr": "goodbye\n"}}`, out)
+	require.JSONEq(t, `{"stdout": "hello\n", "stderr": "goodbye\n"}`, out)
 
 	_, err = modGen.With(daggerCall("no-exec", "stdout")).Stdout(ctx)
 	requireErrOut(t, err, "no command has been set")
@@ -450,11 +450,11 @@ func (m *Dep) Dummy() error {
 		)).
 		WithWorkdir("/work").
 		With(daggerExec("install", "./dep", "--compat=skip")).
-		With(daggerQuery(`{test{test}}`)).
+		With(daggerQuery(`{test}`)).
 		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test": {"test": ""}}`, out)
+	require.JSONEq(t, `{"test": ""}`, out)
 }
 
 func (LegacySuite) TestGoAlias(ctx context.Context, t *testctx.T) {
@@ -638,10 +638,10 @@ func (m *Test) Inactive(ctx context.Context) (string, error) {
 	require.Contains(t, wrapperContents, "type DepStatus = dagger.DepStatus")
 	require.Contains(t, wrapperContents, "DepStatusHere DepStatus = dagger.DepStatusHere")
 
-	out, err := mod.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
+	out, err := mod.With(daggerQuery(`{active inactive}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "here", gjson.Get(out, "test.active").String())
-	require.Equal(t, "there", gjson.Get(out, "test.inactive").String())
+	require.Equal(t, "here", gjson.Get(out, "active").String())
+	require.Equal(t, "there", gjson.Get(out, "inactive").String())
 }
 
 func (LegacySuite) TestGoCodegenOptionals(ctx context.Context, t *testctx.T) {
@@ -1104,10 +1104,10 @@ func (m *Bare) dir() *dagger.Directory {
 `)
 
 	out, err := modGen.
-		With(daggerQuery(`{bare{testEntries, testGlob, testName}}`)).
+		With(daggerQuery(`{testEntries, testGlob, testName}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"bare": {"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"], "testName": "foo"}}`, out)
+	require.JSONEq(t, `{"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"], "testName": "foo"}`, out)
 }
 
 func (LegacySuite) TestLegacyCustomEnum(ctx context.Context, t *testctx.T) {
@@ -1242,19 +1242,19 @@ export class Test {
 				With(daggerExec("develop", "--compat=v0.18.10"))
 
 			// status property
-			out, err := modGen.With(daggerQuery(`{test{status}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{status}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "here", gjson.Get(out, "test.status").String())
+			require.Equal(t, "here", gjson.Get(out, "status").String())
 
 			// fromStatus
-			out, err = modGen.With(daggerQuery(`{test{fromStatus(status: there)}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{fromStatus(status: there)}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "there", gjson.Get(out, "test.fromStatus").String())
+			require.Equal(t, "there", gjson.Get(out, "fromStatus").String())
 
 			// toStatus
-			out, err = modGen.With(daggerQuery(`{test{toStatus(status: "there")}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{toStatus(status: "there")}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "there", gjson.Get(out, "test.toStatus").String())
+			require.Equal(t, "there", gjson.Get(out, "toStatus").String())
 		})
 	}
 }
@@ -1287,13 +1287,13 @@ export class Test {
 	modGen := modInit(t, c, "typescript", tsSrc).
 		With(daggerExec("develop", "--compat=v0.18.10"))
 
-	out, err := modGen.With(daggerQuery(`{test{fromStatus(status: ACTIVE)}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{fromStatus(status: ACTIVE)}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
+	require.Equal(t, "ACTIVE", gjson.Get(out, "fromStatus").String())
 
-	out, err = modGen.With(daggerQuery(`{test{fromStatus(status: INACTIVE)}}`)).Stdout(ctx)
+	out, err = modGen.With(daggerQuery(`{fromStatus(status: INACTIVE)}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "INACTIVE", gjson.Get(out, "test.fromStatus").String())
+	require.Equal(t, "INACTIVE", gjson.Get(out, "fromStatus").String())
 }
 
 func (LegacySuite) TestLegacyCustomExternalEnum(ctx context.Context, t *testctx.T) {
@@ -1437,10 +1437,10 @@ export class Test {
 				With(daggerExec("develop", "-m", "./dep", "--compat=v0.18.10")).
 				With(daggerExec("install", "./dep"))
 
-			out, err := modGen.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{active inactive}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "here", gjson.Get(out, "test.active").String())
-			require.Equal(t, "there", gjson.Get(out, "test.inactive").String())
+			require.Equal(t, "here", gjson.Get(out, "active").String())
+			require.Equal(t, "there", gjson.Get(out, "inactive").String())
 		})
 	}
 }

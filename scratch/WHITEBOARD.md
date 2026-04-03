@@ -1,6 +1,9 @@
 # WHITEBOARD
 
 ## TODO
+* Remove `Module.persistedResultID` and stop mutating typed `*Module` self values with attached result IDs
+  * The remaining read is only for the `IncludeSelfInDeps` skip during `Module.EncodePersistedObject`
+  * Follow up by hard-cutting the persisted-object encoding contract so object encoders receive current result identity directly instead of reading mutable IDs off typed self structs
 * Assess changeset merge decision to always use git path (removed `conflicts.IsEmpty()` no-git fast path), with specific focus on performance impact
    * Compare runtime/cost of old no-git path vs current always-git path in no-conflict workloads
    * Confirm whether correctness/cohesion benefits outweigh any measured regression and document outcome
@@ -159,7 +162,7 @@ Ordered incoming commits:
 * Watchpoints where this matters most:
   * `core/schema_build.go`: build `ModuleObjectType` and interface extension metadata from `mod.ModuleResult()`
   * `core/object.go`: constructor/install/proxy code must keep using wrapped modules and `NewUserMod(obj.Module).ResultCallModule(ctx)`
-  * `core/schema/workspace.go`: `currentWorkspacePrimaryModules()` must unwrap through `ModuleResult().Self()`
+  * `core/schema/workspace.go`: `currentWorkspacePrimaryModules()` must keep returning wrapped `dagql.ObjectResult[*core.Module]` values, and `checks(...)` / `generators(...)` must operate on those wrapped results
   * `engine/server/session_workspaces.go`: resolved modules stay as `dagql.ObjectResult[*core.Module]` until the `serveModule(...)` boundary
   * `core/schema/modulesource.go`: dependency loading and `asModule` return wrapped module results and append them to `SchemaBuilder` as `core.NewUserMod(...)`
 
@@ -204,28 +207,42 @@ Ordered incoming commits:
   * canonical inner server underneath for the real call path
 
 #### Translation requirements
-* We are **not** preserving our current non-IDable root behavior here.
-* The merge plan must explicitly do the following:
-  * keep the upstream change that makes the dagql root ID-able again
-  * remove the current `Query -> nil receiver ref` shortcut in [call_request_input.go](/home/sipsma/repo/github.com/sipsma/dagger/dagql/call_request_input.go#L33)
-  * keep the upstream `with(...)` / proxy / canonical-server behavior working on top of an ID-able `Query`
-* Concretely, that means:
-  * in `dagql/server.go`, do **not** keep `NoIDs: true` on the root class
-  * in `dagql/call_request_input.go`, delete the special case:
+* We are also **not** keeping `CurrentEnv` as part of `Query` self state.
+  * `CurrentEnv` moves behind the `core.Server` interface and is read from client/session state
+* We are keeping the upstream stateful/ID-able `Query` surface, but we are **not** keeping the attached bare-`Query`-root experiment.
+* The merge plan here is:
+  * keep `Query` stateful with `ConstructorArgs`
+  * keep the upstream canonical-server / entrypoint-proxy behavior
+  * keep `dagql.NewServer(ctx, root)` / `(*dagql.Server).Fork(ctx, root)` signatures
+  * keep the root class/schema ID-able
+  * keep the old single-point `Query -> nil receiver ref` special case in [call_request_input.go](/home/sipsma/repo/github.com/sipsma/dagger/dagql/call_request_input.go)
+* The restored rule is:
+  * `resultCallRefFromResult(...)` returns `nil, nil` for any `Query` result
+  * selections off `Query` therefore behave like top-level calls with no structural receiver
+  * this special case stays centralized in that one helper rather than being spread across cache identity, persistence, and recipe reconstruction
+* `dagql.NewServer(ctx, root)` / `Fork(ctx, root)` should keep constructing the root as:
 
 ```go
-if typ := res.Type(); typ != nil && typ.Name() == "Query" {
-	return nil, nil
-}
+newDetachedResult(nil, root)
 ```
 
-* Once those two changes are made, `Query` is no longer just harmless routing state.
-  * chained calls off `Query.with(...)` will carry a real receiver reference
-  * that means `ConstructorArgs` are now potentially part of the dependency/call graph story
-* This creates a concrete implementation checkpoint during the merge:
-  * after making `Query` ID-able and removing the nil-receiver shortcut, verify whether `Query` itself needs `dagql.HasDependencyResults` and/or `dagql.PersistedObject`
-  * specifically for `ConstructorArgs` values that may contain IDs/results
-  * do not assume the current `DoNotCache` marking is sufficient once `Query` itself becomes a real receiver in the graph
+  * do **not** attach the bare `Query` root
+  * do **not** add `attachQueryRoot(...)`
+  * do **not** add root-specific cache fields, registries, or recipe IDs
+  * do **not** add bare-`Query` persistence/import exceptions
+* `Query.with(...)` remains the real user-facing constructor path for entrypoint modules:
+  * it clones `Query`
+  * stores `ConstructorArgs`
+  * returns the cloned `Query` as the result of the current call
+  * proxy methods/fields then read `ConstructorArgs` from the runtime `Query` object and route through `dag.Canonical()`
+* This means:
+  * `Query` stays stateful for runtime routing
+  * the bare root itself is **not** treated as a normal attached cache result
+  * any later requirement to give the bare root its own real cache/persistence identity would be a separate design decision
+* The only Query-specific special handling we are intentionally keeping is:
+  * `CurrentEnv` moved off `Query` and behind `core.Server`
+  * `resultCallRefFromResult(Query) -> nil`
+  * runtime `ConstructorArgs` for `with(...)` / entrypoint proxy routing
 
 ### engine/opts.go
 * Take the upstream metadata additions exactly:
@@ -278,13 +295,11 @@ if c.Workspace != nil {
 * Do not invent a new `Params.ExtraModules`; upstream does not need one here.
 
 ### core/query.go
-* Update `Query` to carry constructor args for entrypoint proxying:
+* Update `Query` to carry constructor args for entrypoint proxying, but remove `CurrentEnv` from Query self:
 
 ```go
 type Query struct {
 	Server
-
-	CurrentEnv *call.ID
 
 	ConstructorArgs map[string]dagql.Input
 }
@@ -300,6 +315,7 @@ type Server interface {
 	CurrentModule(context.Context) (dagql.ObjectResult[*Module], error)
 	ModuleParent(context.Context) (dagql.ObjectResult[*Module], error)
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
+	CurrentEnv(context.Context) (*call.ID, error)
 	CurrentWorkspace(context.Context) (*Workspace, error)
 	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
 	DefaultDeps(context.Context) (*SchemaBuilder, error)
@@ -309,15 +325,16 @@ type Server interface {
 
 * Keep the current `CurrentDagqlServer(ctx)` behavior that prefers a dagql server already attached to the context.
 * `NewModule()` should return `&Module{Deps: NewSchemaBuilder(q, nil)}`.
-* `ConstructorArgs` is not just metadata anymore once we accept the upstream ID-able root.
-  * we are intentionally taking an ID-able `Query`
-  * we are intentionally removing the current nil-receiver shortcut for `Query`
-  * so this field must be treated as part of the real receiver/call-graph design, not as ignorable routing-only state
-* Concretely, after those two changes land, we must audit whether `Query` needs:
-  * `dagql.HasDependencyResults`
-  * `dagql.PersistedObject`
-  * `dagql.PersistedObjectDecoder`
-  for `ConstructorArgs` values that can contain IDs/results.
+* `NewRoot(...)` becomes:
+
+```go
+func NewRoot(srv Server) *Query {
+	return &Query{Server: srv}
+}
+```
+
+* `ConstructorArgs` stays as runtime state on cloned `Query` values created by `with(...)`.
+* Do **not** add special bare-`Query` persistence / root-attachment machinery here.
 
 ### engine/server/session.go
 * Extend `daggerClient` with the upstream workspace/module-loading state:
@@ -341,6 +358,17 @@ type daggerClient struct {
 	defaultDeps *core.SchemaBuilder
 }
 ```
+
+* Move env ownership fully into client/session state:
+  * keep decoding `fnCall.EnvID` during client init
+  * stop storing it on `Query`
+  * implement:
+
+```go
+func (srv *Server) CurrentEnv(ctx context.Context) (*call.ID, error)
+```
+
+  by reading `client.fnCall.EnvID`
 
 * During client initialization:
   * keep current BuildKit / dagql bootstrapping
@@ -665,9 +693,9 @@ func (s *workspaceSchema) resolveRootfs(
 ) (dagql.ObjectResult[*core.Directory], error)
 
 func resolveWorkspacePath(pathArg, workspacePath string) string
-func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, error)
+func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error)
 func toolchainIgnorePatterns(
-	mods []*core.Module,
+	mods []dagql.ObjectResult[*core.Module],
 	getPatterns func(*modules.ModuleConfigDependency) []string,
 ) map[string][]string
 ```
@@ -697,9 +725,15 @@ func toolchainIgnorePatterns(
   * `reparentWorkspaceTreeRoot`
   * `matchWorkspaceInclude`
   * `matchSingleModuleInclude`
-* The one adaptation needed is in `currentWorkspacePrimaryModules`:
+* Hard-cut the workspace helpers to keep wrapped module results all the way through:
+  * `currentWorkspacePrimaryModules(...)` returns `[]dagql.ObjectResult[*core.Module]`, not raw `[]*core.Module`
+  * `checks(...)` and `generators(...)` operate on wrapped module results and pass those results into `mod.Checks(...)` / `mod.Generators(...)`
+  * only unwrap with `.Self()` where we truly need display metadata like the module name for reporting or include/exclude filtering
+* Concretely:
   * our `SchemaBuilder.PrimaryMods()` returns `[]core.Mod` wrappers, not raw `*core.Module`
-  * use `mod.ModuleResult().Self()` rather than casting directly to `*core.Module`
+  * `currentWorkspacePrimaryModules(...)` must collect `mod.ModuleResult()` and reject non-module entries whose `ModuleResult().Self()` is nil
+  * do **not** use `dagql.NewObjectResultForCurrentCall(...)` here; the workspace path is not manufacturing new module identities
+  * do **not** pass bare `*core.Module` values around in this path except as transient `.Self()` reads for names and config
 
 ### dagql/server.go
 * Add only the canonical-server support from upstream:
@@ -722,10 +756,16 @@ func (s *Server) SetCanonical(canonical *Server) {
 }
 ```
 
-* Keep our current constructor/cache model:
-  * `dagql.NewServer(root)`
-  * no per-server cache state
-  * no cache attachment helper layer
+* Hard-cut the constructor signatures to carry context:
+
+```go
+func NewServer[T Typed](ctx context.Context, root T) (*Server, error)
+func (s *Server) Fork(ctx context.Context, root Typed) (*Server, error)
+```
+
+* Keep `newDetachedResult(nil, root)` as the root construction shape.
+* Do **not** attach the bare `Query` root in `NewServer(...)` / `Fork(...)`.
+* The `ctx` plumbing stays even though the current root construction path does not use it yet; that constructor shape is still the agreed substrate for this merge.
 
 ### core/moddeps.go -> core/schema_builder.go
 * Rename the file and type as a hard cut:
@@ -779,8 +819,8 @@ func (b *SchemaBuilder) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModTy
 
 * `Server(ctx)` should build through our current dagql substrate:
   * `coreSchemaForker.ForkSchema(ctx, root, view)` when available
-  * otherwise `dagql.NewServer(root)` plus current introspection install
-  * no per-server cache attachment path
+  * otherwise `dagql.NewServer(ctx, root)` plus current introspection install
+  * root attachment happens in `dagql.NewServer(ctx, root)` / `Fork(ctx, root)` and nowhere else
 
 ### core/schema_build.go
 * Add this file as the shared schema-construction helper.
@@ -861,11 +901,33 @@ type schemaJSONArgs struct {
 * Update only what is required for the new substrate:
 
 ```go
+type CoreSchemaBase struct {
+	base    *dagql.Server
+	rootSrv core.Server
+	...
+}
+```
+
+* `NewCoreSchemaBase(...)` should now take the runtime core server and create the base dagql server from a real bare `Query` root:
+
+```go
+func NewCoreSchemaBase(ctx context.Context, rootSrv core.Server) (*CoreSchemaBase, error)
+```
+
+  using `dagql.NewServer(ctx, core.NewRoot(rootSrv))`
+* Internal view forks should likewise use a real bare `Query` root with the same runtime server:
+  * `base.base.Fork(ctx, core.NewRoot(base.rootSrv))`
+  * `state.server.Fork(ctx, root)`
+
+```go
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, opts ...core.InstallOpts) error
 ```
 
 * Do **not** adopt upstream's raw `CoreMod{Dag}` rewrite.
 * Do **not** add `core/typedef_from_schema.go` in this merge.
+* Keep `CoreMod.TypeDefs(ctx, dag)` returning the cached per-view core typedef set.
+  * It is correct for `CoreMod.TypeDefs(...)` to ignore the live unified `dag`.
+  * The live served `Query` overlay belongs in `currentTypeDefs(...)`, not in `CoreMod.TypeDefs(...)`.
 
 ### core/module.go
 * Keep our current module storage model, but rename deps and add the upstream workspace-compat fields.
@@ -1116,8 +1178,64 @@ func (s *moduleSchema) moduleServe(ctx context.Context, mod dagql.ObjectResult[*
 ```
 
 * Pass that through to the new `Server.ServeModule(..., entrypoint bool)` signature.
-* Keep the current `currentTypeDefs(returnAllTypes)` implementation and its ObjectResult-based closure expansion.
-* Do **not** replace it with upstream's raw `hideCore` variant.
+* Merge the two `currentTypeDefs` variants instead of choosing one:
+  * keep our `returnAllTypes` argument and the current ObjectResult-based closure expansion
+  * add upstream `hideCore` support on the same field
+  * preserve `stripCoreQueryFunctions`, but translate it to operate on canonical `dagql.ObjectResultArray[*core.TypeDef]`
+* Target shape:
+
+```go
+type currentTypeDefsArgs struct {
+	ReturnAllTypes bool `default:"false"`
+	HideCore       dagql.Optional[dagql.Boolean]
+}
+
+func (s *moduleSchema) currentTypeDefs(
+	ctx context.Context,
+	self *core.Query,
+	args currentTypeDefsArgs,
+) (dagql.ObjectResultArray[*core.TypeDef], error)
+```
+
+* Extend the internal `function(...)` schema constructor so the live `Query` typedef can preserve module provenance:
+
+```go
+func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct {
+	Name             string
+	ReturnType       core.TypeDefID
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
+}) (*core.Function, error)
+```
+
+  * when `SourceModuleName` is set, assign it directly to the constructed `core.Function`
+
+* Concrete behavior:
+  * load served typedefs from `served.TypeDefs(ctx, dag)`
+  * always replace the served `Query` typedef with the live `currentQueryTypeDef(ctx, dag)` result
+  * append the live `Query` typedef if the served typedef set does not already contain it
+  * if `hideCore == true`, run `stripCoreQueryFunctions(ctx, dag, typeDefs)` on that live-overlaid typedef set
+  * if `returnAllTypes`, keep using `expandTypeDefClosure(ctx, dag, typeDefs)`
+* `currentQueryTypeDef(...)` must build the live `Query` typedef from the current served schema and preserve module provenance on functions:
+  * inspect the live `Query` `FieldSpec` for each introspected field
+  * if the field has `FieldSpec.Module != nil` and `FieldSpec.Module.ResultRef != nil`, treat it as a user-module field and pass `FieldSpec.Module.Name` into the internal `function(...)` constructor as `sourceModuleName`
+  * if the field has no module result ref, leave `SourceModuleName` empty so core API fields stay core
+  * this keeps the live `Query` typedef both current **and** filterable
+* `stripCoreQueryFunctions` must:
+  * preserve all non-Query typedefs unchanged
+  * preserve all Query functions whose `SourceModuleName != ""`
+  * preserve the `with` field even if it is not module-sourced, since that is the entrypoint constructor surface
+  * rebuild the filtered `Query` object and typedef through the existing canonical schema mutators:
+    * start from `__objectTypeDef`
+    * re-apply kept fields with `__withField`
+    * re-apply kept functions with `__withFunction`
+    * turn the rebuilt object back into a typedef with `core.SelectTypeDefWithServer(... "__withObjectTypeDef" ...)`
+  * do **not** clone-and-mutate `.Self()` values
+  * do **not** use `dagql.NewObjectResultForCurrentCall(...)` here; `currentTypeDefs` is not the constructor identity of these canonical typedef objects
+  * keep core return types (`Container`, `Directory`, etc.) in the typedef list so chaining still works
+* This is the intended responsibility split:
+  * `CoreMod.TypeDefs(...)` stays cached and core-only
+  * `currentTypeDefs(...)` is the one API that overlays the live served `Query`
+  * `hideCore` filtering then operates on that live, provenance-preserving `Query`
 
 ### core/sdk.go and core/sdk/*
 * Hard-cut all SDK interfaces and implementations from `*ModDeps` to `*SchemaBuilder`.
@@ -1134,6 +1252,10 @@ func (s *moduleSchema) moduleServe(ctx context.Context, mod dagql.ObjectResult[*
   * `core/sdk/module_typedefs.go`
   * `core/sdk/module_code_generator.go`
   * `core/sdk/module_client_generator.go`
+* For the nested Go SDK typedef generation path specifically:
+  * scope the partially initialized module with `ScopeModuleForSDKOperation(...)` before launching `codegen generate-typedefs`
+  * encode that scoped module ID into `execMD.EncodedModuleID`
+  * do **not** rely on `cmd/codegen/common.go` `WithSkipWorkspaceModules()` for this path; nested execs attach through the session-env connection path, so that client option is a no-op there
 
 ### core/modfunc.go
 * Mostly keep the current branch behavior.

@@ -27,7 +27,6 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/iancoleman/strcase"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -224,13 +223,6 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped).
 			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
-		dagql.NodeFunc("_asToolchain", s.moduleSourceAsToolchain).
-			Doc(`Internal helper that projects this module source to load as a toolchain in the context of a parent module source.`).
-			Args(
-				dagql.Arg("contextSource").Doc(`The parent module source to use as context for contextual arguments.`),
-				dagql.Arg("toolchainIndex").Doc(`The index of this toolchain in the parent module source configuration.`),
-			),
-
 		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
 			Doc(`The introspection schema JSON file for this module source.`,
 				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
@@ -549,7 +541,6 @@ func (s *moduleSourceSchema) localModuleSource(
 			return nil
 		})
 
-		// Load blueprint
 		eg.Go(func() error {
 			return s.loadBlueprintModule(ctx, bk, localSrc)
 		})
@@ -634,16 +625,13 @@ func (s *moduleSourceSchema) gitModuleSource(
 		// first validate the given path exists at all, otherwise weird things like
 		// `dagger -m github.com/dagger/dagger/not/a/real/dir` can succeed because
 		// they find-up to a real dagger.json
-		statFS := core.StatFSFunc(func(ctx context.Context, path string) (string, *core.Stat, error) {
-			return core.CallDirStat(ctx, gitSrc.ContextDirectory, path)
-		})
+		statFS := &core.DirectoryStatFS{Dir: gitSrc.ContextDirectory}
 
 		if gitSrc.SourceRootSubpath != "" {
-			if _, _, err := statFS.Stat(ctx, gitSrc.SourceRootSubpath); err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					return inst, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
-				}
+			if _, exists, err := core.StatFSExists(ctx, statFS, gitSrc.SourceRootSubpath); err != nil {
 				return inst, fmt.Errorf("failed to stat git module source: %w", err)
+			} else if !exists {
+				return inst, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
 			}
 		}
 
@@ -711,7 +699,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return nil
 	})
 
-	// Load blueprint
 	eg.Go(func() error {
 		return s.loadBlueprintModule(ctx, bk, gitSrc)
 	})
@@ -754,19 +741,16 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 	}
 
 	jobs := parallel.New().WithContextualTracer(true).WithReveal(false)
-	// Load blueprint
 	if src.ConfigBlueprint != nil {
 		jobs = jobs.WithJob("load blueprint: "+src.ConfigBlueprint.Source, func(ctx context.Context) error {
 			blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, src.ConfigBlueprint.Source, src.ConfigBlueprint.Pin, src.ConfigBlueprint.Name)
 			if err != nil {
 				return fmt.Errorf("failed to resolve blueprint to source: %w", err)
 			}
-
 			src.Blueprint = blueprint
 			return nil
 		})
 	}
-	// Load toolchains array
 	if len(src.ConfigToolchains) > 0 {
 		jobs = jobs.WithJob("load toolchains", func(ctx context.Context) error {
 			src.Toolchains = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigToolchains))
@@ -928,7 +912,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
-	// blueprint is incompatible with some dagger.json fields
 	if modCfg.Blueprint != nil {
 		if modCfg.SDK != nil {
 			return fmt.Errorf("blueprint and sdk can't both be set")
@@ -1268,6 +1251,25 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 	}
 	src.SDK.Source = args.Source
 
+	// Default source subpath to source root when an SDK is set but no explicit
+	// source path was configured (e.g. during module init before dagger.json exists).
+	// This mirrors the logic in initFromModConfig for the sdkSource != "" && modCfg.Source == "" case.
+	if src.SourceSubpath == "" {
+		src.SourceSubpath = src.SourceRootSubpath
+
+		// Reload the context directory now that SourceSubpath is set, so that
+		// the source files are included (e.g. an existing main.go). The initial
+		// load may have used empty SourceSubpath which matches no files.
+		err := s.loadModuleSourceContext(ctx, src)
+		switch {
+		case err == nil:
+		case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
+			// tolerate not found during init when context dir doesn't exist yet
+		default:
+			return nil, fmt.Errorf("failed to reload context after setting source subpath: %w", err)
+		}
+	}
+
 	// reload the sdk implementation too
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -1445,7 +1447,8 @@ func (s *moduleSourceSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Contex
 	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
-// moduleRelationTypeAccessor provides unified access to dependencies or toolchains in a ModuleSource
+// moduleRelationTypeAccessor provides unified access to dependencies or
+// toolchains in a ModuleSource.
 type moduleRelationTypeAccessor struct {
 	typ core.ModuleRelationType
 }
@@ -1458,7 +1461,8 @@ func (a moduleRelationTypeAccessor) setItems(src *core.ModuleSource, items []dag
 	src.SetRelatedModules(a.typ, items)
 }
 
-// validateAndCollectRelatedModules validates new related modules and returns all related modules (new + existing)
+// validateAndCollectRelatedModules validates new related modules and returns
+// all related modules (new + existing).
 func (s *moduleSourceSchema) validateAndCollectRelatedModules(
 	parentSrc *core.ModuleSource,
 	newRelatedModules []dagql.ObjectResult[*core.ModuleSource],
@@ -1466,14 +1470,11 @@ func (s *moduleSourceSchema) validateAndCollectRelatedModules(
 ) ([]dagql.ObjectResult[*core.ModuleSource], error) {
 	var allRelatedModules []dagql.ObjectResult[*core.ModuleSource]
 
-	// Validate and collect new related modules
 	for _, newRelatedModule := range newRelatedModules {
 		switch parentSrc.Kind {
 		case core.ModuleSourceKindLocal:
 			switch newRelatedModule.Self().Kind {
 			case core.ModuleSourceKindLocal:
-				// parent=local, item=local
-				// local items must be located in the same context as the parent
 				contextRelPath, err := pathutil.LexicalRelativePath(
 					parentSrc.Local.ContextDirectoryPath,
 					newRelatedModule.Self().Local.ContextDirectoryPath,
@@ -1488,7 +1489,6 @@ func (s *moduleSourceSchema) validateAndCollectRelatedModules(
 				allRelatedModules = append(allRelatedModules, newRelatedModule)
 
 			case core.ModuleSourceKindGit:
-				// parent=local, item=git
 				allRelatedModules = append(allRelatedModules, newRelatedModule)
 
 			default:
@@ -1498,12 +1498,9 @@ func (s *moduleSourceSchema) validateAndCollectRelatedModules(
 		case core.ModuleSourceKindGit:
 			switch newRelatedModule.Self().Kind {
 			case core.ModuleSourceKindLocal:
-				// parent=git, item=local
-				// cannot add a module source that's local to the caller as an item of a git module source
 				return nil, fmt.Errorf("cannot add local module source as %s of git module source", accessor.typ)
 
 			case core.ModuleSourceKindGit:
-				// parent=git, item=git
 				allRelatedModules = append(allRelatedModules, newRelatedModule)
 
 			default:
@@ -1515,18 +1512,16 @@ func (s *moduleSourceSchema) validateAndCollectRelatedModules(
 		}
 	}
 
-	// Append pre-existing items; they need to come later so we prefer new ones over existing ones
 	allRelatedModules = append(allRelatedModules, accessor.getItems(parentSrc)...)
-
 	return allRelatedModules, nil
 }
 
-// deduplicateAndSortItems deduplicates items by symbolic name, validates name uniqueness, and sorts by name
+// deduplicateAndSortItems deduplicates items by symbolic name, validates name
+// uniqueness, and sorts by name.
 func (s *moduleSourceSchema) deduplicateAndSortItems(
 	items []dagql.ObjectResult[*core.ModuleSource],
 	accessor moduleRelationTypeAccessor,
 ) ([]dagql.ObjectResult[*core.ModuleSource], error) {
-	// Deduplicate equivalent items at differing versions, preferring the new item over the existing one
 	symbolicItems := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(items))
 	itemNames := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(items))
 
@@ -1540,8 +1535,6 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 			if item.Self().SourceRootSubpath != "" {
 				symbolicItemStr += "/" + strings.TrimPrefix(item.Self().SourceRootSubpath, "/")
 			}
-			// This enables toolchains to install multiple versions from the same source
-			// For dependencies, we want to deduplicate by base path (without version) so updates work correctly
 			if accessor.typ == core.ModuleRelationTypeToolchain {
 				if item.Self().Git.Version != "" {
 					symbolicItemStr += "@" + item.Self().Git.Version
@@ -1551,23 +1544,17 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 			}
 		}
 
-		_, isDuplicateSymbolic := symbolicItems[symbolicItemStr]
-		if isDuplicateSymbolic {
-			// prefer the new item over the existing one (new items were added first, so we only hit this
-			// if a new item overrides an existing one)
+		if _, isDuplicateSymbolic := symbolicItems[symbolicItemStr]; isDuplicateSymbolic {
 			continue
 		}
 		symbolicItems[symbolicItemStr] = item
 
-		// duplicate names are not allowed
-		_, isDuplicateName := itemNames[item.Self().ModuleName]
-		if isDuplicateName {
+		if _, isDuplicateName := itemNames[item.Self().ModuleName]; isDuplicateName {
 			return nil, fmt.Errorf("duplicate %s name %q", accessor.typ, item.Self().ModuleName)
 		}
 		itemNames[item.Self().ModuleName] = item
 	}
 
-	// Get the final slice of items, sorting by name for determinism
 	finalItems := make([]dagql.ObjectResult[*core.ModuleSource], 0, len(symbolicItems))
 	for _, item := range symbolicItems {
 		finalItems = append(finalItems, item)
@@ -1579,7 +1566,8 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 	return finalItems, nil
 }
 
-// moduleSourceUpdateItems processes update requests for items (dependencies or toolchains)
+// moduleSourceUpdateItems processes update requests for items (dependencies or
+// toolchains).
 func (s *moduleSourceSchema) moduleSourceUpdateItems(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
@@ -1592,8 +1580,8 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 	}
 
 	type updateReq struct {
-		symbolic string // either 1) a name of a dep or 2) the source minus any @version
-		version  string // the version to update to, if any specified
+		symbolic string
+		version  string
 	}
 	updateReqs := make(map[updateReq]struct{}, len(updateArgs))
 	for _, updateArg := range updateArgs {
@@ -1602,15 +1590,10 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 		updateReqs[req] = struct{}{}
 	}
 
-	// loop over the existing deps, checking each one for whether they should be updated based on the args
-	// this is technically O(n^2) but not expected to matter for the relatively low values of n we deal
-	// with here
 	var newUpdatedArgs []core.ModuleSourceID
 	for _, existingItem := range accessor.getItems(parentSrc.Self()) {
-		// If no update requests, implicitly update all items
 		if len(updateReqs) == 0 {
 			if existingItem.Self().Kind == core.ModuleSourceKindLocal {
-				// local dep, skip update
 				continue
 			}
 
@@ -1635,7 +1618,6 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 			continue
 		}
 
-		// if the existingDep is local and requested to be updated, return error, otherwise skip it
 		if existingItem.Self().Kind == core.ModuleSourceKindLocal {
 			for updateReq := range updateReqs {
 				if updateReq.symbolic == existingItem.Self().ModuleName {
@@ -1672,8 +1654,6 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 		if itemSrcRoot := existingItem.Self().SourceRootSubpath; itemSrcRoot != "" {
 			existingSymbolic += "/" + strings.TrimPrefix(itemSrcRoot, "/")
 		}
-		// For matching purposes, include version/commit in symbolic representation to match deduplication logic
-		// This ensures proper matching when updating dependencies with version information
 		existingSymbolicWithVersion := existingSymbolic
 		if existingItem.Self().Git.Version != "" {
 			existingSymbolicWithVersion += "@" + existingItem.Self().Git.Version
@@ -1719,7 +1699,6 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 			break
 		}
 
-		// If this item wasn't matched for update, keep it as-is
 		if !matched {
 			existingItemID, err := existingItem.ID()
 			if err != nil {
@@ -1740,7 +1719,8 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 	return newUpdatedArgs, nil
 }
 
-// moduleSourceRemoveItems processes removal requests for items (dependencies or toolchains)
+// moduleSourceRemoveItems processes removal requests for items (dependencies or
+// toolchains).
 func (s *moduleSourceSchema) moduleSourceRemoveItems(
 	ctx context.Context,
 	parentSrc *core.ModuleSource,
@@ -1829,7 +1809,6 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 
 		if keep {
 			filteredItems = append(filteredItems, existingItem)
-			// Keep config items for toolchains
 			if accessor.typ == core.ModuleRelationTypeToolchain && i < len(parentSrc.ConfigToolchains) {
 				filteredConfigItems = append(filteredConfigItems, parentSrc.ConfigToolchains[i])
 			}
@@ -1864,13 +1843,11 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 
 	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeDependency}
 
-	// Validate and collect all items (new + existing)
 	allDeps, err := s.validateAndCollectRelatedModules(parentSrc, newDeps, accessor)
 	if err != nil {
 		return nil, err
 	}
 
-	// Deduplicate and sort
 	finalDeps, err := s.deduplicateAndSortItems(allDeps, accessor)
 	if err != nil {
 		return nil, err
@@ -1887,13 +1864,13 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 		Blueprint core.ModuleSourceID
 	},
 ) (*core.ModuleSource, error) {
-	// Validate blueprint compatibility
 	if parentSrc.SDK != nil {
 		return nil, fmt.Errorf("cannot set blueprint on module that already has SDK")
 	}
 	if parentSrc.Dependencies.Len() > 0 {
 		return nil, fmt.Errorf("cannot set blueprint on module that has dependencies")
 	}
+
 	tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
 		Dependencies: []core.ModuleSourceID{args.Blueprint},
 	}
@@ -1907,14 +1884,10 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 	if err != nil {
 		return nil, err
 	}
-	// The blueprint is the last dependency added
-	// (dependencies are added LIFO)
-	parentSrc = parentSrc.Clone()
 
-	// Set the blueprint field (for `dagger init --blueprint`)
+	parentSrc = parentSrc.Clone()
 	parentSrc.ConfigBlueprint = tmpConfig.Dependencies[0]
 	parentSrc.Blueprint = tmpSrc.Dependencies[0]
-
 	return parentSrc, nil
 }
 
@@ -1939,13 +1912,11 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 
 	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeToolchain}
 
-	// Validate and collect all items (new + existing)
 	allToolchains, err := s.validateAndCollectRelatedModules(parentSrc, newToolchains, accessor)
 	if err != nil {
 		return nil, err
 	}
 
-	// Deduplicate and sort
 	finalToolchains, err := s.deduplicateAndSortItems(allToolchains, accessor)
 	if err != nil {
 		return nil, err
@@ -1953,9 +1924,6 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 
 	accessor.setItems(parentSrc, finalToolchains)
 
-	// Load the config for all toolchains to populate ConfigToolchains
-	// We need to convert each toolchain into a config entry by loading it as a dependency
-	// Also preserve any existing Customizations configuration
 	configToolchains := make([]*modules.ModuleConfigDependency, len(finalToolchains))
 	for i, toolchain := range finalToolchains {
 		toolchainID, err := toolchain.ID()
@@ -1978,8 +1946,6 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 		}
 		if len(tmpConfig.Dependencies) > 0 {
 			configToolchains[i] = tmpConfig.Dependencies[0]
-
-			// Preserve Customization from the original ConfigToolchains if they exist
 			for _, origToolchain := range parentSrc.ConfigToolchains {
 				if origToolchain.Name == configToolchains[i].Name {
 					configToolchains[i].Customizations = origToolchain.Customizations
@@ -1989,7 +1955,6 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 		}
 	}
 	parentSrc.ConfigToolchains = configToolchains
-
 	return parentSrc, nil
 }
 
@@ -2055,19 +2020,15 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// If no blueprint is set, return without error
 	if parentSrc.Self().Blueprint.Self() == nil {
 		return parentSrc.Result, nil
 	}
 
 	bpSrc := parentSrc.Self().Blueprint.Self()
-
-	// Only update git sources
 	if bpSrc.Kind != core.ModuleSourceKindGit {
 		return parentSrc.Result, nil
 	}
 
-	// Update the blueprint by loading it fresh
 	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
 	err = dag.Select(ctx, dag.Root(), &bpUpdated,
 		dagql.Selector{
@@ -2213,7 +2174,6 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		}
 	}
 
-	// Copy blueprint and toolchains configuration
 	if src.ConfigBlueprint != nil {
 		modCfg.Blueprint = src.ConfigBlueprint
 	}
@@ -2560,6 +2520,11 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
 	}
 
+	// Build the client-facing schema. Dependencies get normal installation;
+	// the self module (when present) is installed as an entrypoint so its
+	// methods are promoted to Query.
+	codegenDeps := deps
+
 	// If the current module source has sources and its SDK implements the `Runtime` interface,
 	// we can transform it into a module to generate self bindings.
 	if srcInst.Self().SDK != nil {
@@ -2573,14 +2538,19 @@ func (s *moduleSourceSchema) runClientGenerator(
 				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
 			}
 
-			deps = mod.Self().Deps.Append(core.NewUserMod(mod))
+			codegenDeps = codegenDeps.With(core.NewUserMod(mod), core.InstallOpts{Entrypoint: true})
 		}
+	}
+
+	schemaJSONFile, err := codegenDeps.SchemaIntrospectionJSONFileForClient(ctx)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to get schema for client generation: %w", err)
 	}
 
 	generatedClientDir, err := clientGeneratorImpl.GenerateClient(
 		ctx,
 		source,
-		deps,
+		schemaJSONFile,
 		clientGeneratorConfig.Directory,
 	)
 	if err != nil {
@@ -2922,6 +2892,55 @@ type toolchainContext struct {
 	src         dagql.ObjectResult[*core.ModuleSource]
 }
 
+// createBaseModule creates the initial module structure with dependencies
+func (s *moduleSourceSchema) createBaseModule(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+) (*core.Module, error) {
+	sdk := src.Self().SDK
+	if sdk == nil {
+		sdk = &core.SDKConfig{}
+	}
+
+	mod := &core.Module{
+		Source:                        dagql.NonNull(src),
+		NameField:                     src.Self().ModuleName,
+		OriginalName:                  src.Self().ModuleOriginalName,
+		SDKConfig:                     sdk,
+		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
+	}
+
+	// Load dependencies as modules
+	deps, err := s.loadDependencyModules(ctx, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load dependencies as modules: %w", err)
+	}
+	mod.Deps = deps
+
+	return mod, nil
+}
+
+// initializeSDKModule initializes a module with SDK implementation
+func (s *moduleSourceSchema) initializeSDKModule(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	mod *core.Module,
+	dag *dagql.Server,
+) (*core.Module, error) {
+	// Run SDK codegen
+	var err error
+	mod, err = s.runModuleDefInSDK(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, ok := src.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(src) {
+		mod.IncludeSelfInDeps = true
+	}
+
+	return mod, nil
+}
+
 // createStubModule creates an empty module definition (no SDK, no blueprints)
 func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) (*core.Module, error) {
 	typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
@@ -2939,676 +2958,6 @@ func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) 
 
 	return mod, nil
 }
-
-// extractToolchainModules finds all blueprint modules from dependencies.
-func extractToolchainModules(mod *core.Module) []dagql.ObjectResult[*core.Module] {
-	var toolchainMods []dagql.ObjectResult[*core.Module]
-	for _, dep := range mod.Deps.Mods() {
-		modInst := dep.ModuleResult()
-		if modInst.Self() != nil && modInst.Self().IsToolchain {
-			toolchainMods = append(toolchainMods, modInst)
-		}
-	}
-	return toolchainMods
-}
-
-func sameResult(a, b dagql.IDable) bool {
-	if a == nil || b == nil {
-		return false
-	}
-	aID, err := a.ID()
-	if err != nil || aID == nil {
-		return false
-	}
-	bID, err := b.ID()
-	if err != nil || bID == nil {
-		return false
-	}
-	return aID.EngineResultID() == bID.EngineResultID()
-}
-
-// applyArgumentConfigToFunction applies argument configuration overrides to a function
-func applyArgumentConfigToFunction(ctx context.Context, dag *dagql.Server, fn dagql.ObjectResult[*core.Function], argConfigs []*modules.ModuleConfigArgument, functionChain []string) (dagql.ObjectResult[*core.Function], error) {
-	updatedFn := fn
-
-	// Apply configs that match the function chain (or empty for constructor)
-	for _, argCfg := range argConfigs {
-		// Check if this config applies to this function
-		// Empty function chain in config means constructor
-		if len(argCfg.Function) == 0 && len(functionChain) == 0 {
-			// This is for the constructor
-		} else if len(argCfg.Function) > 0 && len(functionChain) > 0 {
-			// Check if function chains match
-			if len(argCfg.Function) != len(functionChain) {
-				continue
-			}
-			match := true
-			for i, fnName := range argCfg.Function {
-				if !strings.EqualFold(fnName, functionChain[i]) {
-					match = false
-					break
-				}
-			}
-			if !match {
-				continue
-			}
-		} else {
-			// One is constructor, one is not - skip
-			continue
-		}
-
-		// Find the matching argument and apply overrides
-		for _, argRes := range fn.Self().Args {
-			arg := argRes.Self()
-			if strings.EqualFold(arg.Name, argCfg.Argument) || strings.EqualFold(arg.OriginalName, argCfg.Argument) {
-				updatedArg := argRes
-				argChanged := false
-				// Apply default value if specified
-				if argCfg.Default != "" {
-					// Parse the default value as JSON to determine its type
-					var defaultValue any
-					if err := json.Unmarshal([]byte(argCfg.Default), &defaultValue); err != nil {
-						// If it's not valid JSON, treat it as a string literal
-						defaultValue = argCfg.Default
-					}
-
-					// If the JSON parsed as a non-string type (e.g. number) but
-					// the argument expects a string, use the raw config value
-					// as-is. See https://github.com/dagger/dagger/issues/11882
-					if _, isString := defaultValue.(string); !isString {
-						if _, err := arg.TypeDef.Self().ToInput().Decoder().DecodeInput(defaultValue); err != nil {
-							defaultValue = argCfg.Default
-						}
-					}
-
-					// Validate the type matches the argument type
-					_, err := arg.TypeDef.Self().ToInput().Decoder().DecodeInput(defaultValue)
-					if err != nil {
-						// Log warning but don't fail - allow for flexibility
-						slog.Warn("default value type mismatch",
-							"function", fn.Self().Name,
-							"argument", arg.Name,
-							"error", err)
-					}
-
-					// Marshal back to JSON for storage
-					marshaledValue, err := json.Marshal(defaultValue)
-					if err != nil {
-						slog.Warn("failed to marshal default value",
-							"function", fn.Self().Name,
-							"argument", arg.Name,
-							"error", err)
-					} else {
-						if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-							Field: "__withDefaultValue",
-							Args:  []dagql.NamedInput{{Name: "defaultValue", Value: core.JSON(marshaledValue)}},
-						}); err != nil {
-							return updatedFn, err
-						}
-						argChanged = true
-					}
-				}
-
-				// Apply defaultPath if specified
-				if argCfg.DefaultPath != "" {
-					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-						Field: "__withDefaultPath",
-						Args:  []dagql.NamedInput{{Name: "defaultPath", Value: dagql.String(argCfg.DefaultPath)}},
-					}); err != nil {
-						return updatedFn, err
-					}
-					argChanged = true
-				}
-
-				// Apply defaultAddress if specified
-				if argCfg.DefaultAddress != "" {
-					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-						Field: "__withDefaultAddress",
-						Args:  []dagql.NamedInput{{Name: "defaultAddress", Value: dagql.String(argCfg.DefaultAddress)}},
-					}); err != nil {
-						return updatedFn, err
-					}
-					argChanged = true
-				}
-
-				// Apply ignore patterns if specified
-				if len(argCfg.Ignore) > 0 {
-					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-						Field: "__withIgnore",
-						Args: []dagql.NamedInput{{
-							Name:  "ignore",
-							Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(argCfg.Ignore...)),
-						}},
-					}); err != nil {
-						return updatedFn, err
-					}
-					argChanged = true
-				}
-
-				if argChanged && !sameResult(updatedArg, argRes) {
-					argID, err := core.ResultIDInput(updatedArg)
-					if err != nil {
-						return updatedFn, err
-					}
-					if err := dag.Select(ctx, updatedFn, &updatedFn, dagql.Selector{
-						Field: "__withArg",
-						Args:  []dagql.NamedInput{{Name: "arg", Value: argID}},
-					}); err != nil {
-						return updatedFn, err
-					}
-				}
-				break
-			}
-		}
-	}
-
-	return updatedFn, nil
-}
-
-// applyArgumentConfigsToObjectFunctions applies argument configurations to all functions in an object
-func applyArgumentConfigsToObjectFunctions(ctx context.Context, dag *dagql.Server, objDef dagql.ObjectResult[*core.TypeDef], argConfigs []*modules.ModuleConfigArgument) (dagql.ObjectResult[*core.TypeDef], error) {
-	if !objDef.Self().AsObject.Valid {
-		return objDef, nil
-	}
-
-	obj := objDef.Self().AsObject.Value
-	updatedObj := obj
-
-	// Apply to constructor if it exists
-	if obj.Self().Constructor.Valid {
-		updatedConstructor, err := applyArgumentConfigToFunction(ctx, dag, obj.Self().Constructor.Value, argConfigs, []string{})
-		if err != nil {
-			return objDef, err
-		}
-		if !sameResult(updatedConstructor, obj.Self().Constructor.Value) {
-			constructorID, err := core.ResultIDInput(updatedConstructor)
-			if err != nil {
-				return objDef, err
-			}
-			if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
-				Field: "__withConstructor",
-				Args:  []dagql.NamedInput{{Name: "function", Value: constructorID}},
-			}); err != nil {
-				return objDef, err
-			}
-		}
-	}
-
-	// Apply to all regular functions
-	for _, fn := range obj.Self().Functions {
-		// Function chain is just the function's original name for direct functions
-		updatedFn, err := applyArgumentConfigToFunction(ctx, dag, fn, argConfigs, []string{fn.Self().OriginalName})
-		if err != nil {
-			return objDef, err
-		}
-		if !sameResult(updatedFn, fn) {
-			fnID, err := core.ResultIDInput(updatedFn)
-			if err != nil {
-				return objDef, err
-			}
-			if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
-				Field: "__withFunction",
-				Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
-			}); err != nil {
-				return objDef, err
-			}
-		}
-	}
-
-	if sameResult(updatedObj, obj) {
-		return objDef, nil
-	}
-	objID, err := core.ResultIDInput(updatedObj)
-	if err != nil {
-		return objDef, err
-	}
-	if err := dag.Select(ctx, objDef, &objDef, dagql.Selector{
-		Field: "__withObjectTypeDef",
-		Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
-	}); err != nil {
-		return objDef, err
-	}
-	return objDef, nil
-}
-
-// applyArgumentConfigsToModule applies argument configurations to all functions in a module, including chained functions
-func applyArgumentConfigsToModule(ctx context.Context, dag *dagql.Server, mod *core.Module, argConfigs []*modules.ModuleConfigArgument) error {
-	// Group configs by chain length for efficiency
-	directConfigs := []*modules.ModuleConfigArgument{}
-	chainedConfigs := []*modules.ModuleConfigArgument{}
-
-	for _, cfg := range argConfigs {
-		if len(cfg.Function) <= 1 {
-			directConfigs = append(directConfigs, cfg)
-		} else {
-			chainedConfigs = append(chainedConfigs, cfg)
-		}
-	}
-
-	// Apply direct configs (constructor and single-level functions)
-	for objIdx, objDef := range mod.ObjectDefs {
-		updated, err := applyArgumentConfigsToObjectFunctions(ctx, dag, objDef, directConfigs)
-		if err != nil {
-			return err
-		}
-		mod.ObjectDefs[objIdx] = updated
-	}
-
-	// Apply chained configs
-	for _, cfg := range chainedConfigs {
-		if err := applyChainedArgumentConfig(ctx, dag, mod, cfg); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// applyChainedArgumentConfig applies a configuration to a function in a chain
-func applyChainedArgumentConfig(ctx context.Context, dag *dagql.Server, mod *core.Module, cfg *modules.ModuleConfigArgument) error {
-	if len(cfg.Function) < 2 {
-		return nil // Not a chain
-	}
-
-	// Find the starting object that has the first function in the chain
-	for _, objDef := range mod.ObjectDefs {
-		if !objDef.Self().AsObject.Valid {
-			continue
-		}
-
-		obj := objDef.Self().AsObject.Value
-
-		// Find the first function in the chain
-		firstFn := findFunction(obj, cfg.Function[0])
-		if firstFn.Self() == nil {
-			continue
-		}
-
-		// Follow the chain to find the target function
-		targetObjIdx, targetObj, targetFn := followFunctionChain(mod, firstFn.Self().ReturnType.Self(), cfg.Function[1:])
-		if targetObj.Self() == nil {
-			continue
-		}
-
-		// Apply the configuration to the target function
-		updatedFn, err := applyArgumentConfigToFunction(ctx, dag, targetFn, []*modules.ModuleConfigArgument{cfg}, cfg.Function)
-		if err != nil {
-			return err
-		}
-		if sameResult(updatedFn, targetFn) {
-			return nil
-		}
-		fnID, err := core.ResultIDInput(updatedFn)
-		if err != nil {
-			return err
-		}
-		updatedObj := targetObj
-		if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
-			Field: "__withFunction",
-			Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
-		}); err != nil {
-			return err
-		}
-		objID, err := core.ResultIDInput(updatedObj)
-		if err != nil {
-			return err
-		}
-		if err := dag.Select(ctx, mod.ObjectDefs[targetObjIdx], &mod.ObjectDefs[targetObjIdx], dagql.Selector{
-			Field: "__withObjectTypeDef",
-			Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
-		}); err != nil {
-			return err
-		}
-		return nil
-	}
-	return nil
-}
-
-// findFunction finds a function by name (case-insensitive) in an object
-func findFunction(obj dagql.ObjectResult[*core.ObjectTypeDef], name string) dagql.ObjectResult[*core.Function] {
-	for _, fn := range obj.Self().Functions {
-		if strings.EqualFold(fn.Self().OriginalName, name) {
-			return fn
-		}
-	}
-	return dagql.ObjectResult[*core.Function]{}
-}
-
-// findObjectInModule finds an object in mod.ObjectDefs by OriginalName
-func findObjectInModule(mod *core.Module, originalName string) (int, dagql.ObjectResult[*core.ObjectTypeDef]) {
-	for i, objDef := range mod.ObjectDefs {
-		if objDef.Self().AsObject.Valid && objDef.Self().AsObject.Value.Self().OriginalName == originalName {
-			return i, objDef.Self().AsObject.Value
-		}
-	}
-	return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}
-}
-
-// followFunctionChain traverses a chain of functions through return types
-// Returns the target object and function index if the chain is valid, nil otherwise
-func followFunctionChain(mod *core.Module, startType *core.TypeDef, chain []string) (int, dagql.ObjectResult[*core.ObjectTypeDef], dagql.ObjectResult[*core.Function]) {
-	currentType := startType
-
-	for i, fnName := range chain {
-		// Unwrap the type to get to the object
-		currentType = unwrapType(currentType)
-		if currentType == nil || !currentType.AsObject.Valid {
-			return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}, dagql.ObjectResult[*core.Function]{}
-		}
-
-		// Get the actual module object (not the cloned return type instance)
-		objIdx, obj := findObjectInModule(mod, currentType.AsObject.Value.Self().OriginalName)
-		if obj.Self() == nil {
-			return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}, dagql.ObjectResult[*core.Function]{}
-		}
-
-		// Find the next function in the chain
-		fnIdx := findFunctionIndex(obj, fnName)
-		if fnIdx < 0 {
-			return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}, dagql.ObjectResult[*core.Function]{}
-		}
-
-		// If this is the last function in the chain, we found our target
-		if i == len(chain)-1 {
-			return objIdx, obj, obj.Self().Functions[fnIdx]
-		}
-
-		// Otherwise, continue following the chain
-		currentType = obj.Self().Functions[fnIdx].Self().ReturnType.Self()
-	}
-
-	return -1, dagql.ObjectResult[*core.ObjectTypeDef]{}, dagql.ObjectResult[*core.Function]{}
-}
-
-// unwrapType unwraps optional and list types to get to the underlying type
-func unwrapType(t *core.TypeDef) *core.TypeDef {
-	if t == nil {
-		return nil
-	}
-
-	// Unwrap optional
-	if t.Optional {
-		unwrapped := t.Clone()
-		unwrapped.Optional = false
-		t = unwrapped
-	}
-
-	// Unwrap list
-	if t.AsList.Valid {
-		return unwrapType(t.AsList.Value.Self().ElementTypeDef.Self())
-	}
-
-	return t
-}
-
-// findFunctionIndex finds the index of a function by name (case-insensitive) in an object
-func findFunctionIndex(obj dagql.ObjectResult[*core.ObjectTypeDef], name string) int {
-	for i, fn := range obj.Self().Functions {
-		if strings.EqualFold(fn.Self().OriginalName, name) {
-			return i
-		}
-	}
-	return -1
-}
-
-// addToolchainFieldsToObject adds toolchain fields/functions to an existing TypeDef
-func addToolchainFieldsToObject(
-	ctx context.Context,
-	dag *dagql.Server,
-	objectDef dagql.ObjectResult[*core.TypeDef],
-	toolchainMods []dagql.ObjectResult[*core.Module],
-	mod *core.Module,
-) (dagql.ObjectResult[*core.TypeDef], error) {
-	updatedTypeDef := objectDef
-	updatedObj := objectDef.Self().AsObject.Value
-
-	for _, tcModInst := range toolchainMods {
-		tcMod := tcModInst.Self()
-		if tcMod == nil {
-			continue
-		}
-		for _, obj := range tcMod.ObjectDefs {
-			if obj.Self().AsObject.Value.Self().Name == strcase.ToCamel(tcMod.NameField) {
-				// Use the original name (with hyphens) as the map key,
-				originalName := tcMod.NameField
-
-				// Always add toolchains as functions (treating them as zero-argument constructors
-				// if they don't have an explicit constructor). This ensures consistent behavior
-				// and proper routing to the blueprint module's runtime.
-				constructor, err := core.SelectFunctionWithServer(ctx, dag, originalName, obj)
-				if err != nil {
-					return updatedTypeDef, fmt.Errorf("failed to create toolchain function %q: %w", originalName, err)
-				}
-				if tcMod.Description != "" {
-					if err := dag.Select(ctx, constructor, &constructor, dagql.Selector{
-						Field: "withDescription",
-						Args:  []dagql.NamedInput{{Name: "description", Value: dagql.String(tcMod.Description)}},
-					}); err != nil {
-						return updatedTypeDef, err
-					}
-				}
-				if obj.Self().AsObject.Value.Self().Constructor.Valid {
-					constructorSelf := obj.Self().AsObject.Value.Self().Constructor.Value.Self()
-					if constructorSelf.Deprecated != nil {
-						if err := dag.Select(ctx, constructor, &constructor, dagql.Selector{
-							Field: "withDeprecated",
-							Args:  []dagql.NamedInput{{Name: "reason", Value: core.OptString(constructorSelf.Deprecated)}},
-						}); err != nil {
-							return updatedTypeDef, err
-						}
-					}
-					if constructorSelf.SourceMap.Valid {
-						sourceMapID, err := core.OptionalResultIDInput(constructorSelf.SourceMap.Value)
-						if err != nil {
-							return updatedTypeDef, err
-						}
-						if err := dag.Select(ctx, constructor, &constructor, dagql.Selector{
-							Field: "__withSourceMap",
-							Args:  []dagql.NamedInput{{Name: "sourceMap", Value: sourceMapID}},
-						}); err != nil {
-							return updatedTypeDef, err
-						}
-					}
-					for _, arg := range constructorSelf.Args {
-						argID, err := core.ResultIDInput(arg)
-						if err != nil {
-							return updatedTypeDef, err
-						}
-						if err := dag.Select(ctx, constructor, &constructor, dagql.Selector{
-							Field: "__withArg",
-							Args:  []dagql.NamedInput{{Name: "arg", Value: argID}},
-						}); err != nil {
-							return updatedTypeDef, err
-						}
-					}
-				}
-
-				// Apply argument configuration overrides if present (from registry)
-				if mod.Toolchains != nil {
-					if entry, ok := mod.Toolchains.Get(originalName); ok && entry.ArgumentConfigs != nil {
-						constructor, err = applyArgumentConfigToFunction(ctx, dag, constructor, entry.ArgumentConfigs, []string{})
-						if err != nil {
-							return updatedTypeDef, err
-						}
-					}
-				}
-
-				constructorID, err := core.ResultIDInput(constructor)
-				if err != nil {
-					return updatedTypeDef, err
-				}
-				if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
-					Field: "__withFunction",
-					Args:  []dagql.NamedInput{{Name: "function", Value: constructorID}},
-				}); err != nil {
-					return updatedTypeDef, fmt.Errorf("failed to add toolchain function %q: %w", originalName, err)
-				}
-
-				break
-			}
-		}
-	}
-
-	if !sameResult(updatedObj, objectDef.Self().AsObject.Value) {
-		objID, err := core.ResultIDInput(updatedObj)
-		if err != nil {
-			return updatedTypeDef, err
-		}
-		if err := dag.Select(ctx, updatedTypeDef, &updatedTypeDef, dagql.Selector{
-			Field: "__withObjectTypeDef",
-			Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
-		}); err != nil {
-			return updatedTypeDef, err
-		}
-	}
-
-	return updatedTypeDef, nil
-}
-
-// mergeToolchainsWithSDK merges toolchain fields into SDK's main object
-func mergeToolchainsWithSDK(
-	ctx context.Context,
-	dag *dagql.Server,
-	mod *core.Module,
-	toolchainMods []dagql.ObjectResult[*core.Module],
-) error {
-	mainModuleObjectName := strcase.ToCamel(mod.NameField)
-
-	for i, obj := range mod.ObjectDefs {
-		if obj.Self().AsObject.Valid && obj.Self().AsObject.Value.Self().Name == mainModuleObjectName {
-			mergedObj, err := addToolchainFieldsToObject(ctx, dag, obj, toolchainMods, mod)
-			if err != nil {
-				return err
-			}
-			mod.ObjectDefs[i] = mergedObj
-			return nil
-		}
-	}
-
-	return fmt.Errorf("main module object %q not found", mainModuleObjectName)
-}
-
-// createShadowModuleForToolchains creates a new module object to hold toolchain fields
-func createShadowModuleForToolchains(
-	ctx context.Context,
-	mod *core.Module,
-	toolchainMods []dagql.ObjectResult[*core.Module],
-	dag *dagql.Server,
-) (*core.Module, error) {
-	shadowModule, err := core.SelectTypeDefWithServer(
-		ctx,
-		dag,
-		dagql.Selector{
-			Field: "withObject",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String(mod.NameField)},
-				{Name: "sourceModuleName", Value: core.OptSourceModuleName(mod.OriginalName)},
-			},
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create shadow module typedef: %w", err)
-	}
-
-	shadowModule, err = addToolchainFieldsToObject(ctx, dag, shadowModule, toolchainMods, mod)
-	if err != nil {
-		return nil, err
-	}
-
-	mod, err = mod.WithObject(ctx, shadowModule)
-	if err != nil {
-		return nil, fmt.Errorf("failed to add toolchains to module: %w", err)
-	}
-
-	return mod, nil
-}
-
-// integrateToolchains adds toolchain modules as fields to the main module
-func (s *moduleSourceSchema) integrateToolchains(
-	ctx context.Context,
-	mod *core.Module,
-	dag *dagql.Server,
-) (*core.Module, error) {
-	// Initialize toolchain registry
-	mod.Toolchains = core.NewToolchainRegistry(mod)
-
-	toolchainMods := extractToolchainModules(mod)
-	if len(toolchainMods) == 0 {
-		return mod, nil
-	}
-
-	// Register all toolchains in the registry
-	for _, tcMod := range toolchainMods {
-		originalName := tcMod.Self().NameField
-		fieldName := strcase.ToLowerCamel(tcMod.Self().NameField)
-		mod.Toolchains.Register(originalName, fieldName, tcMod)
-
-		// Apply configurations from config
-		if entry, ok := mod.Toolchains.Get(originalName); ok {
-			// Read configs from the module source
-			src := mod.GetSource()
-			if src != nil {
-				for _, tcCfg := range src.ConfigToolchains {
-					if tcCfg.Name == originalName {
-						if len(tcCfg.Customizations) > 0 {
-							entry.ArgumentConfigs = tcCfg.Customizations
-						}
-						if len(tcCfg.IgnoreChecks) > 0 {
-							entry.IgnoreChecks = tcCfg.IgnoreChecks
-						}
-						if len(tcCfg.IgnoreGenerators) > 0 {
-							entry.IgnoreGenerators = tcCfg.IgnoreGenerators
-						}
-						break
-					}
-				}
-			}
-		}
-	}
-
-	// Check if we have an SDK module (has object definitions)
-	hasSDK := len(mod.ObjectDefs) > 0
-
-	var err error
-	if hasSDK {
-		// Merge toolchain fields into SDK's main object
-		err = mergeToolchainsWithSDK(ctx, dag, mod, toolchainMods)
-	} else {
-		// No SDK - create shadow module to hold toolchain fields
-		mod, err = createShadowModuleForToolchains(ctx, mod, toolchainMods, dag)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return mod, nil
-}
-
-func (s *moduleSourceSchema) moduleSourceAsToolchain(
-	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
-	args struct {
-		ContextSource  core.ModuleSourceID
-		ToolchainIndex int
-	},
-) (*core.ModuleSource, error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dag server: %w", err)
-	}
-
-	contextSource, err := args.ContextSource.Load(ctx, dag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load toolchain context source: %w", err)
-	}
-
-	toolchainSrc := src.Self().Clone()
-	toolchainSrc.ToolchainProjection = true
-	toolchainSrc.ToolchainContextSource = dagql.NonNull(contextSource)
-	toolchainSrc.ToolchainConfigIndex = args.ToolchainIndex
-	return toolchainSrc, nil
-}
-
 func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -3629,7 +2978,6 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	}
 	return inst.WithContentDigest(ctx, scopedDigest)
 }
-
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -3639,6 +2987,28 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// right after function caching is enabled. It can be removed after SDKs have been updated
 		// to latest engine versions.
 		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
+
+		// LegacyDefaultPath, when true, causes +defaultPath to resolve relative
+		// to the workspace root instead of the module's own source directory.
+		// Used for legacy toolchains loaded from dagger.json.
+		LegacyDefaultPath bool `internal:"true" default:"false"`
+
+		// LegacyArgCustomizationsJSON is a JSON-encoded []*modules.ModuleConfigArgument
+		// carrying arg customizations from the workspace dagger.json.
+		// Applied after type defs are populated so constructor arg metadata
+		// (Ignore, DefaultPath, etc.) can be overridden before Install.
+		LegacyArgCustomizationsJSON string `internal:"true" default:""`
+
+		// LegacyNameOverride, when non-empty, overrides the module name.
+		LegacyNameOverride string `internal:"true" default:""`
+
+		// LegacyWorkspaceConfigJSON is a JSON-encoded map[string]any
+		// carrying workspace config defaults from the workspace dagger.json.
+		LegacyWorkspaceConfigJSON string `internal:"true" default:""`
+
+		// LegacyDefaultsFromDotEnv, when true and workspace config is set,
+		// also load .env defaults for args not found in WorkspaceConfig.
+		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -3659,73 +3029,48 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
-	// Set up toolchain context
 	originalSrc := src
-	// Blueprint mode is ONLY when we have the Blueprint field set (from `dagger init --blueprint`)
-	isBlueprintMode := src.Self().Blueprint.Self() != nil
-
-	tcCtx := toolchainContext{
-		originalSrc: originalSrc,
-		src:         src,
-	}
-
-	isToolchainProjection := tcCtx.originalSrc.Self().ToolchainProjection
-	contextSourceForModule := tcCtx.originalSrc
-	toolchainConfigIndex := -1
-	if isToolchainProjection {
-		if !tcCtx.originalSrc.Self().ToolchainContextSource.Valid {
-			return inst, fmt.Errorf("toolchain projection missing context source")
-		}
-		contextSourceForModule = tcCtx.originalSrc.Self().ToolchainContextSource.Value
-		toolchainConfigIndex = tcCtx.originalSrc.Self().ToolchainConfigIndex
-	}
-
-	// In blueprint mode, use the blueprint as the main source
-	// This must happen before creating the module so the SDK loads from blueprint source
-	if isBlueprintMode {
-		src = src.Self().Blueprint
-		tcCtx.src = src
-		// Copy toolchains from original source to blueprint source
-		var sourceIDs []core.ModuleSourceID
-		for _, src := range tcCtx.originalSrc.Self().Toolchains {
-			srcID, err := src.ID()
-			if err != nil {
-				return inst, fmt.Errorf("failed to get toolchain source ID for blueprint: %w", err)
+	execSrc := src
+	contextSrc := src
+	if src.Self().Blueprint.Self() != nil {
+		execSrc = src.Self().Blueprint
+		contextSrc = src
+		if len(originalSrc.Self().Toolchains) > 0 {
+			var sourceIDs []core.ModuleSourceID
+			for _, toolchainSrc := range originalSrc.Self().Toolchains {
+				srcID, err := toolchainSrc.ID()
+				if err != nil {
+					return inst, fmt.Errorf("failed to get toolchain source ID for blueprint: %w", err)
+				}
+				sourceIDs = append(sourceIDs, dagql.NewID[*core.ModuleSource](srcID))
 			}
-			sourceIDs = append(sourceIDs, dagql.NewID[*core.ModuleSource](srcID))
-		}
-		err := dag.Select(ctx, tcCtx.src, &tcCtx.src, dagql.Selector{
-			Field: "withToolchains",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "toolchains",
-					Value: dagql.ArrayInput[core.ModuleSourceID](sourceIDs),
+			if err := dag.Select(ctx, execSrc, &execSrc, dagql.Selector{
+				Field: "withToolchains",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "toolchains",
+						Value: dagql.ArrayInput[core.ModuleSourceID](sourceIDs),
+					},
 				},
-			},
-		})
-		if err != nil {
-			return inst, fmt.Errorf("unable to set toolchains with blueprint: %w", err)
+			}); err != nil {
+				return inst, fmt.Errorf("unable to set toolchains with blueprint: %w", err)
+			}
 		}
-		// Update src to use the modified blueprint with toolchains
-		src = tcCtx.src
 	}
 
-	// Create base module with dependencies
 	mod := &core.Module{
-		Source:                        dagql.NonNull(src),
-		ContextSource:                 dagql.NonNull(contextSourceForModule),
-		NameField:                     tcCtx.originalSrc.Self().ModuleName,
-		OriginalName:                  src.Self().ModuleOriginalName,
-		SDKConfig:                     src.Self().SDK,
-		IsToolchain:                   isToolchainProjection,
-		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
+		Source:                        dagql.NonNull(execSrc),
+		ContextSource:                 dagql.NonNull(contextSrc),
+		NameField:                     originalSrc.Self().ModuleName,
+		OriginalName:                  execSrc.Self().ModuleOriginalName,
+		SDKConfig:                     execSrc.Self().SDK,
+		DisableDefaultFunctionCaching: execSrc.Self().DisableDefaultFunctionCaching,
 	}
 	if mod.SDKConfig == nil {
 		mod.SDKConfig = &core.SDKConfig{}
 	}
 
-	// load the deps
-	mod.Deps, err = s.loadDependencyModules(ctx, src)
+	mod.Deps, err = s.loadDependencyModules(ctx, execSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
@@ -3735,37 +3080,47 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod.DisableDefaultFunctionCaching = false
 	}
 
+	// Apply legacy settings that must be set before Install runs.
+	if args.LegacyNameOverride != "" {
+		mod.NameField = args.LegacyNameOverride
+	}
+	if args.LegacyDefaultPath {
+		mod.LegacyDefaultPath = true
+	}
+	if args.LegacyWorkspaceConfigJSON != "" {
+		var wsConfig map[string]any
+		if err := json.Unmarshal([]byte(args.LegacyWorkspaceConfigJSON), &wsConfig); err != nil {
+			return inst, fmt.Errorf("decoding legacy workspace config: %w", err)
+		}
+		mod.WorkspaceConfig = wsConfig
+		mod.DefaultsFromDotEnv = args.LegacyDefaultsFromDotEnv
+	}
+
 	// Initialize module based on SDK presence
-	if src.Self().SDKImpl != nil {
+	if execSrc.Self().SDKImpl != nil {
 		mod, err = s.runModuleDefInSDK(ctx, mod)
 		if err != nil {
 			return inst, err
 		}
-	} else if len(originalSrc.Self().Toolchains) == 0 {
-		// No SDK, no toolchains, and no blueprint - create stub module
+	} else {
+		// No SDK - create stub module
 		mod, err = createStubModule(ctx, mod, dag)
 		if err != nil {
 			return inst, err
 		}
 	}
 
-	// Integrate toolchain modules as fields
-	mod, err = s.integrateToolchains(ctx, mod, dag)
-	if err != nil {
-		return inst, err
+	// Apply legacy arg customizations and workspace defaults after type defs
+	// are populated (SDK codegen has run) but before the result is cached.
+	if args.LegacyWorkspaceConfigJSON != "" {
+		mod.ApplyWorkspaceDefaultsToTypeDefs()
 	}
-
-	// Apply argument configurations for toolchain projections using the parent
-	// module source config at the provided toolchain index.
-	if isToolchainProjection &&
-		toolchainConfigIndex >= 0 &&
-		toolchainConfigIndex < len(contextSourceForModule.Self().ConfigToolchains) {
-		tcCfg := contextSourceForModule.Self().ConfigToolchains[toolchainConfigIndex]
-		if len(tcCfg.Customizations) > 0 {
-			if err := applyArgumentConfigsToModule(ctx, dag, mod, tcCfg.Customizations); err != nil {
-				return inst, err
-			}
+	if args.LegacyArgCustomizationsJSON != "" {
+		var customizations []*modules.ModuleConfigArgument
+		if err := json.Unmarshal([]byte(args.LegacyArgCustomizationsJSON), &customizations); err != nil {
+			return inst, fmt.Errorf("decoding legacy arg customizations: %w", err)
 		}
+		mod.ApplyLegacyCustomizationsToTypeDefs(customizations)
 	}
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, mod)
@@ -3776,7 +3131,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 }
 
 // load the given module source's dependencies as modules
-func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.ModDeps, rerr error) {
+func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.SchemaBuilder, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -3798,36 +3153,13 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 			)
 		})
 	}
-
-	// Load all toolchains as dependencies
 	tcMods := make([]dagql.ObjectResult[*core.Module], len(src.Self().Toolchains))
-	if len(src.Self().Toolchains) > 0 {
-		contextSourceCallID, err := src.ID()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get toolchain context source ID: %w", err)
-		}
-		contextSourceID := dagql.NewID[*core.ModuleSource](contextSourceCallID)
-		for i, tcSrc := range src.Self().Toolchains {
-			eg.Go(func() error {
-				err := dag.Select(ctx, tcSrc, &tcMods[i],
-					dagql.Selector{
-						Field: "_asToolchain",
-						Args: []dagql.NamedInput{
-							{
-								Name:  "contextSource",
-								Value: contextSourceID,
-							},
-							{
-								Name:  "toolchainIndex",
-								Value: dagql.Int(i),
-							},
-						},
-					},
-					dagql.Selector{Field: "asModule"},
-				)
-				return err
-			})
-		}
+	for i, tcSrc := range src.Self().Toolchains {
+		eg.Go(func() error {
+			return dag.Select(ctx, tcSrc, &tcMods[i],
+				dagql.Selector{Field: "asModule"},
+			)
+		})
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -3844,7 +3176,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 			baseMods[i] = coreMod.WithView(call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion))))
 		}
 	}
-	deps := core.NewModDeps(query, baseMods)
+	deps := core.NewSchemaBuilder(query, baseMods)
 	for _, depMod := range depMods {
 		deps = deps.Append(core.NewUserMod(depMod))
 	}

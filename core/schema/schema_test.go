@@ -12,7 +12,7 @@ import (
 )
 
 type currentTypeDefsTestServer struct {
-	deps *core.ModDeps
+	deps *core.SchemaBuilder
 }
 
 func TestCoreModTypeDefs(t *testing.T) {
@@ -30,7 +30,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 	dag, err := coreSchemaBase.Fork(ctx, root, "")
 	require.NoError(t, err)
 	coreMod := coreSchemaBase.CoreMod("")
-	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
+	coreModDeps := core.NewSchemaBuilder(root, []core.Mod{coreMod})
 	typeDefs, err := coreModDeps.TypeDefs(ctx, dag)
 	require.NoError(t, err)
 
@@ -154,7 +154,7 @@ func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
 	coreSchemaBase, err := NewCoreSchemaBase(ctx)
 	require.NoError(t, err)
 	coreMod := coreSchemaBase.CoreMod("")
-	coreModDeps := core.NewModDeps(nil, []core.Mod{coreMod})
+	coreModDeps := core.NewSchemaBuilder(nil, []core.Mod{coreMod})
 	root := core.NewRoot(&currentTypeDefsTestServer{deps: coreModDeps}, nil)
 	dag, err := coreSchemaBase.Fork(ctx, root, "")
 	require.NoError(t, err)
@@ -219,7 +219,7 @@ func TestCurrentTypeDefsReturnAllTypesAfterSessionRelease(t *testing.T) {
 	coreSchemaBase, err := NewCoreSchemaBase(ctxSessionA)
 	require.NoError(t, err)
 	coreMod := coreSchemaBase.CoreMod("")
-	coreModDeps := core.NewModDeps(nil, []core.Mod{coreMod})
+	coreModDeps := core.NewSchemaBuilder(nil, []core.Mod{coreMod})
 	root := core.NewRoot(&currentTypeDefsTestServer{deps: coreModDeps}, nil)
 	dagA, err := coreSchemaBase.Fork(ctxSessionA, root, "")
 	require.NoError(t, err)

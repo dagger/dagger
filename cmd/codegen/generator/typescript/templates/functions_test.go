@@ -16,7 +16,7 @@ var currentSchema *introspection.Schema
 func init() {
 	ctx := context.Background()
 
-	c, err := dagger.Connect(ctx)
+	c, err := dagger.Connect(ctx, dagger.WithSkipWorkspaceModules())
 	if err != nil {
 		panic(err)
 	}

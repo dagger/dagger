@@ -28,7 +28,7 @@ type ModTreeNode struct {
 	DagqlServer *dagql.Server
 	// This module is the same across all ModTreeNode, this is the root module.
 	Module *Module
-	// This original module is the one in which the node has been defined. Could be one from a toolchain for instance.
+	// This original module is the one in which the node has been defined.
 	OriginalModule *Module
 	Type           *TypeDef
 	IsCheck        bool
@@ -342,7 +342,10 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	if err != nil {
 		return nil, err
 	}
-	srv := dagql.NewServer(q)
+	srv, err := dagql.NewServer(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("create module dagql server: %w", err)
+	}
 	srv.Around(AroundFunc)
 	// Install default "dependencies" (ie the core)
 	defaultDeps, err := q.DefaultDeps(ctx)
@@ -353,14 +356,6 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	for _, defaultDep := range defaultDeps.Mods() {
 		if err := defaultDep.Install(ctx, srv); err != nil {
 			return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
-		}
-	}
-	// Install toolchains
-	if main.Toolchains != nil {
-		for _, entry := range main.Toolchains.Entries() {
-			if err := NewUserMod(entry.Module).Install(ctx, srv); err != nil {
-				return nil, fmt.Errorf("%q: serve toolchain module %q: %w", main.Name(), entry.Module.Self().Name(), err)
-			}
 		}
 	}
 	// Install the main module
@@ -395,7 +390,10 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// FIXME: as an optimization, one-shot when possible?
 	srv := node.DagqlServer
 	// 1. Are we the root? Select the module's main object from Query root.
-	if node.Parent == nil {
+	// A node is also treated as root if its parent is a synthetic naming-only
+	// node (e.g. injected by workspace checks reparenting, which sets
+	// Parent to an empty ModTreeNode with nil Module).
+	if node.Parent == nil || node.Parent.Module == nil {
 		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{Field: gqlFieldName(node.Module.Name())})
 	}
 	// 2. Is parent an object?
@@ -586,22 +584,13 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				continue
 			}
 			returnType := fn.ReturnType.Self().ToType().Name()
-			// toolchains are exposed as a function.
-			// if the function name returns a toolchain, set the right module so children will
-			// know they are coming from a toolchain
-			// other functions can't return a type not defined in the module itself (or core)
-			// so the original module is always the parent one in other cases
-			originalModule := node.OriginalModule
-			if tc, ok := node.Module.Toolchains.GetByFieldName(fn.Name); ok {
-				originalModule = tc.Module.Self()
-			}
 			objectAdded := false
 			// if the type returned by the function is an object, check the children of the return type
 			if returnsObject := fn.ReturnType.Self().AsObject.Valid; returnsObject &&
 				// avoid cycles (X.withFoo: X)
 				returnType != nodeType {
 				// search for the object defined by the return type, in the "originalModule" that can be the toolchain one
-				if subObj, ok := originalModule.ObjectByName(fn.ReturnType.Self().ToType().Name()); ok {
+				if subObj, ok := node.OriginalModule.ObjectByName(fn.ReturnType.Self().ToType().Name()); ok {
 					subObjRes, err := dagql.NewObjectResultForCurrentCall(ctx, node.DagqlServer, subObj)
 					if err != nil {
 						return nil, fmt.Errorf("wrap child object typedef %q: %w", subObj.Name, err)
@@ -612,7 +601,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 						Name:           fn.Name, // use the name of the function and not the name of the type as we want the chain
 						DagqlServer:    node.DagqlServer,
 						Module:         node.Module,
-						OriginalModule: originalModule,
+						OriginalModule: node.OriginalModule,
 						Type: (&TypeDef{
 							Kind:     TypeDefKindObject,
 							AsObject: dagql.NonNull(subObjRes),
@@ -629,7 +618,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 					Name:           fn.Name,
 					DagqlServer:    node.DagqlServer,
 					Module:         node.Module,
-					OriginalModule: originalModule,
+					OriginalModule: node.OriginalModule,
 					Type:           fn.ReturnType.Self(),
 					IsCheck:        fn.IsCheck,
 					IsGenerator:    fn.IsGenerator,

@@ -3,9 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/dagger/dagger/dagql"
@@ -77,17 +75,16 @@ func (Host) FindUpAll(
 	found := make(map[string]string, len(soughtNames))
 	for {
 		for soughtName := range soughtNames {
-			dirName, _, err := statFS.Stat(ctx, filepath.Join(curDirPath, soughtName))
-			if err == nil {
+			dirName, exists, err := StatFSExists(ctx, statFS, filepath.Join(curDirPath, soughtName))
+			if err != nil {
+				return nil, fmt.Errorf("failed to lstat %s: %w", soughtName, err)
+			}
+			if exists {
 				delete(soughtNames, soughtName)
 				// NOTE: important that we use dirName here rather than curDirPath since the stat also
 				// does some normalization of paths when the client is using case-insensitive filesystems
 				// and we are stat'ing caller host filesystems
 				found[soughtName] = dirName
-				continue
-			}
-			if !errors.Is(err, os.ErrNotExist) {
-				return nil, fmt.Errorf("failed to lstat %s: %w", soughtName, err)
 			}
 		}
 

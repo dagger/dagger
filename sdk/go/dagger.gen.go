@@ -276,6 +276,9 @@ type Platform string
 // The `PortID` scalar type represents an identifier for an object of type Port.
 type PortID string
 
+// The `QueryID` scalar type represents an identifier for an object of type Query.
+type QueryID string
+
 // The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
 type SDKConfigID string
 
@@ -7190,10 +7193,11 @@ func (r *File) WithTimestamps(timestamp int) *File {
 type Function struct {
 	query *querybuilder.Selection
 
-	deprecated  *string
-	description *string
-	id          *FunctionID
-	name        *string
+	deprecated       *string
+	description      *string
+	id               *FunctionID
+	name             *string
+	sourceModuleName *string
 }
 type WithFunctionFunc func(r *Function) *Function
 
@@ -7338,6 +7342,19 @@ func (r *Function) SourceMap() *SourceMap {
 	return &SourceMap{
 		query: q,
 	}
+}
+
+// If this function is provided by a module, the name of the module. Unset otherwise.
+func (r *Function) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // FunctionWithArgOpts contains options for Function.WithArg
@@ -10389,6 +10406,8 @@ func (r *Module) SDK() *SDKConfig {
 type ModuleServeOpts struct {
 	// Expose the dependencies of this module to the client
 	IncludeDependencies bool
+	// Install the module as the entrypoint, promoting its main-object methods onto the Query root
+	Entrypoint bool
 }
 
 // Serve a module's API in the current session.
@@ -10403,6 +10422,10 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 		// `includeDependencies` optional argument
 		if !querybuilder.IsZeroValue(opts[i].IncludeDependencies) {
 			q = q.Arg("includeDependencies", opts[i].IncludeDependencies)
+		}
+		// `entrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
+			q = q.Arg("entrypoint", opts[i].Entrypoint)
 		}
 	}
 
@@ -11568,15 +11591,31 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	return response, q.Execute(ctx)
 }
 
-func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
-	return &Client{
-		query:  q,
-		client: r.client,
+// The root of the DAG.
+type Query struct {
+	query *querybuilder.Selection
+
+	defaultPlatform *Platform
+	id              *QueryID
+	version         *string
+}
+type WithQueryFunc func(r *Query) *Query
+
+// With calls the provided function with current Query.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Query) With(f WithQueryFunc) *Query {
+	return f(r)
+}
+
+func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
+	return &Query{
+		query: q,
 	}
 }
 
 // initialize an address to load directories, containers, secrets or other object types.
-func (r *Client) Address(value string) *Address {
+func (r *Query) Address(value string) *Address {
 	q := r.query.Select("address")
 	q = q.Arg("value", value)
 
@@ -11602,7 +11641,7 @@ type CacheVolumeOpts struct {
 }
 
 // Constructs a cache volume for a given cache key.
-func (r *Client) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
+func (r *Query) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
 	q := r.query.Select("cacheVolume")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
@@ -11626,7 +11665,7 @@ func (r *Client) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
 }
 
 // Creates an empty changeset
-func (r *Client) Changeset() *Changeset {
+func (r *Query) Changeset() *Changeset {
 	q := r.query.Select("changeset")
 
 	return &Changeset{
@@ -11635,7 +11674,7 @@ func (r *Client) Changeset() *Changeset {
 }
 
 // Dagger Cloud configuration and state
-func (r *Client) Cloud() *Cloud {
+func (r *Query) Cloud() *Cloud {
 	q := r.query.Select("cloud")
 
 	return &Cloud{
@@ -11643,7 +11682,7 @@ func (r *Client) Cloud() *Cloud {
 	}
 }
 
-// ContainerOpts contains options for Client.Container
+// ContainerOpts contains options for Query.Container
 type ContainerOpts struct {
 	// Platform to initialize the container with. Defaults to the native platform of the current engine
 	Platform Platform
@@ -11652,7 +11691,7 @@ type ContainerOpts struct {
 // Creates a scratch container, with no image or metadata.
 //
 // To pull an image, follow up with the "from" function.
-func (r *Client) Container(opts ...ContainerOpts) *Container {
+func (r *Query) Container(opts ...ContainerOpts) *Container {
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -11673,7 +11712,7 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 // When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
 //
 // Experimental: Programmatic env access is speculative and might be replaced.
-func (r *Client) CurrentEnv() *Env {
+func (r *Query) CurrentEnv() *Env {
 	q := r.query.Select("currentEnv")
 
 	return &Env{
@@ -11684,7 +11723,7 @@ func (r *Client) CurrentEnv() *Env {
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
-func (r *Client) CurrentFunctionCall() *FunctionCall {
+func (r *Query) CurrentFunctionCall() *FunctionCall {
 	q := r.query.Select("currentFunctionCall")
 
 	return &FunctionCall{
@@ -11693,7 +11732,7 @@ func (r *Client) CurrentFunctionCall() *FunctionCall {
 }
 
 // The module currently being served in the session, if any.
-func (r *Client) CurrentModule() *CurrentModule {
+func (r *Query) CurrentModule() *CurrentModule {
 	q := r.query.Select("currentModule")
 
 	return &CurrentModule{
@@ -11701,19 +11740,27 @@ func (r *Client) CurrentModule() *CurrentModule {
 	}
 }
 
-// CurrentTypeDefsOpts contains options for Client.CurrentTypeDefs
+// CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
 type CurrentTypeDefsOpts struct {
 	// Return the full referenced typedef closure instead of only top-level served typedefs.
 	ReturnAllTypes bool
+	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+	//
+	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+	HideCore bool
 }
 
 // The TypeDef representations of the objects currently being served in the session.
-func (r *Client) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
+func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `returnAllTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ReturnAllTypes) {
 			q = q.Arg("returnAllTypes", opts[i].ReturnAllTypes)
+		}
+		// `hideCore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HideCore) {
+			q = q.Arg("hideCore", opts[i].HideCore)
 		}
 	}
 
@@ -11746,23 +11793,11 @@ func (r *Client) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpt
 	return convert(response), nil
 }
 
-// CurrentWorkspaceOpts contains options for Client.CurrentWorkspace
-type CurrentWorkspaceOpts struct {
-	// If true, skip legacy dagger.json migration checks.
-	SkipMigrationCheck bool
-}
-
 // Detect and return the current workspace.
 //
 // Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
-func (r *Client) CurrentWorkspace(opts ...CurrentWorkspaceOpts) *Workspace {
+func (r *Query) CurrentWorkspace() *Workspace {
 	q := r.query.Select("currentWorkspace")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `skipMigrationCheck` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SkipMigrationCheck) {
-			q = q.Arg("skipMigrationCheck", opts[i].SkipMigrationCheck)
-		}
-	}
 
 	return &Workspace{
 		query: q,
@@ -11770,7 +11805,7 @@ func (r *Client) CurrentWorkspace(opts ...CurrentWorkspaceOpts) *Workspace {
 }
 
 // The default platform of the engine.
-func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
+func (r *Query) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.query.Select("defaultPlatform")
 
 	var response Platform
@@ -11780,7 +11815,7 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 }
 
 // Creates an empty directory.
-func (r *Client) Directory() *Directory {
+func (r *Query) Directory() *Directory {
 	q := r.query.Select("directory")
 
 	return &Directory{
@@ -11789,7 +11824,7 @@ func (r *Client) Directory() *Directory {
 }
 
 // The Dagger engine container configuration and state
-func (r *Client) Engine() *Engine {
+func (r *Query) Engine() *Engine {
 	q := r.query.Select("engine")
 
 	return &Engine{
@@ -11797,7 +11832,7 @@ func (r *Client) Engine() *Engine {
 	}
 }
 
-// EnvOpts contains options for Client.Env
+// EnvOpts contains options for Query.Env
 type EnvOpts struct {
 	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
 	Privileged bool
@@ -11808,7 +11843,7 @@ type EnvOpts struct {
 // Initializes a new environment
 //
 // Experimental: Environments are not yet stabilized
-func (r *Client) Env(opts ...EnvOpts) *Env {
+func (r *Query) Env(opts ...EnvOpts) *Env {
 	q := r.query.Select("env")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `privileged` optional argument
@@ -11826,7 +11861,7 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 	}
 }
 
-// EnvFileOpts contains options for Client.EnvFile
+// EnvFileOpts contains options for Query.EnvFile
 type EnvFileOpts struct {
 	// Replace "${VAR}" or "$VAR" with the value of other vars
 	// Deprecated: Variable expansion is now enabled by default
@@ -11834,7 +11869,7 @@ type EnvFileOpts struct {
 }
 
 // Initialize an environment file
-func (r *Client) EnvFile(opts ...EnvFileOpts) *EnvFile {
+func (r *Query) EnvFile(opts ...EnvFileOpts) *EnvFile {
 	q := r.query.Select("envFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `expand` optional argument
@@ -11849,7 +11884,7 @@ func (r *Client) EnvFile(opts ...EnvFileOpts) *EnvFile {
 }
 
 // Create a new error.
-func (r *Client) Error(message string) *Error {
+func (r *Query) Error(message string) *Error {
 	q := r.query.Select("error")
 	q = q.Arg("message", message)
 
@@ -11858,7 +11893,7 @@ func (r *Client) Error(message string) *Error {
 	}
 }
 
-// FileOpts contains options for Client.File
+// FileOpts contains options for Query.File
 type FileOpts struct {
 	// Permissions of the new file. Example: 0600
 	//
@@ -11867,7 +11902,7 @@ type FileOpts struct {
 }
 
 // Creates a file with the specified contents.
-func (r *Client) File(name string, contents string, opts ...FileOpts) *File {
+func (r *Query) File(name string, contents string, opts ...FileOpts) *File {
 	q := r.query.Select("file")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
@@ -11884,7 +11919,7 @@ func (r *Client) File(name string, contents string, opts ...FileOpts) *File {
 }
 
 // Creates a function.
-func (r *Client) Function(name string, returnType *TypeDef) *Function {
+func (r *Query) Function(name string, returnType *TypeDef) *Function {
 	assertNotNil("returnType", returnType)
 	q := r.query.Select("function")
 	q = q.Arg("name", name)
@@ -11896,7 +11931,7 @@ func (r *Client) Function(name string, returnType *TypeDef) *Function {
 }
 
 // Create a code generation result, given a directory containing the generated code.
-func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
+func (r *Query) GeneratedCode(code *Directory) *GeneratedCode {
 	assertNotNil("code", code)
 	q := r.query.Select("generatedCode")
 	q = q.Arg("code", code)
@@ -11906,7 +11941,7 @@ func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 	}
 }
 
-// GitOpts contains options for Client.Git
+// GitOpts contains options for Query.Git
 type GitOpts struct {
 	// DEPRECATED: Set to true to keep .git directory.
 	//
@@ -11928,7 +11963,7 @@ type GitOpts struct {
 }
 
 // Queries a Git repository.
-func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
+func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	q := r.query.Select("git")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `keepGitDir` optional argument
@@ -11968,7 +12003,7 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 }
 
 // Queries the host environment.
-func (r *Client) Host() *Host {
+func (r *Query) Host() *Host {
 	q := r.query.Select("host")
 
 	return &Host{
@@ -11976,7 +12011,7 @@ func (r *Client) Host() *Host {
 	}
 }
 
-// HTTPOpts contains options for Client.HTTP
+// HTTPOpts contains options for Query.HTTP
 type HTTPOpts struct {
 	// File name to use for the file. Defaults to the last part of the URL.
 	Name string
@@ -11991,7 +12026,7 @@ type HTTPOpts struct {
 }
 
 // Returns a file containing an http remote url content.
-func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
+func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.query.Select("http")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `name` optional argument
@@ -12022,8 +12057,45 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// A unique identifier for this Query.
+func (r *Query) ID(ctx context.Context) (QueryID, error) {
+	q := r.query.Select("id")
+
+	var response QueryID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Query) XXX_GraphQLType() string {
+	return "Query"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Query) XXX_GraphQLIDType() string {
+	return "QueryID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Query) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Query) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 // Initialize a JSON value
-func (r *Client) JSON() *JSONValue {
+func (r *Query) JSON() *JSONValue {
 	q := r.query.Select("json")
 
 	return &JSONValue{
@@ -12031,7 +12103,7 @@ func (r *Client) JSON() *JSONValue {
 	}
 }
 
-// LLMOpts contains options for Client.LLM
+// LLMOpts contains options for Query.LLM
 type LLMOpts struct {
 	// Model to use
 	Model string
@@ -12042,7 +12114,7 @@ type LLMOpts struct {
 // Initialize a Large Language Model (LLM)
 //
 // Experimental: LLM support is not yet stabilized
-func (r *Client) LLM(opts ...LLMOpts) *LLM {
+func (r *Query) LLM(opts ...LLMOpts) *LLM {
 	q := r.query.Select("llm")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `model` optional argument
@@ -12061,7 +12133,7 @@ func (r *Client) LLM(opts ...LLMOpts) *LLM {
 }
 
 // Load a Address from its ID.
-func (r *Client) LoadAddressFromID(id AddressID) *Address {
+func (r *Query) LoadAddressFromID(id AddressID) *Address {
 	q := r.query.Select("loadAddressFromID")
 	q = q.Arg("id", id)
 
@@ -12071,7 +12143,7 @@ func (r *Client) LoadAddressFromID(id AddressID) *Address {
 }
 
 // Load a Binding from its ID.
-func (r *Client) LoadBindingFromID(id BindingID) *Binding {
+func (r *Query) LoadBindingFromID(id BindingID) *Binding {
 	q := r.query.Select("loadBindingFromID")
 	q = q.Arg("id", id)
 
@@ -12081,7 +12153,7 @@ func (r *Client) LoadBindingFromID(id BindingID) *Binding {
 }
 
 // Load a CacheVolume from its ID.
-func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
+func (r *Query) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q := r.query.Select("loadCacheVolumeFromID")
 	q = q.Arg("id", id)
 
@@ -12091,7 +12163,7 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 }
 
 // Load a Changeset from its ID.
-func (r *Client) LoadChangesetFromID(id ChangesetID) *Changeset {
+func (r *Query) LoadChangesetFromID(id ChangesetID) *Changeset {
 	q := r.query.Select("loadChangesetFromID")
 	q = q.Arg("id", id)
 
@@ -12101,7 +12173,7 @@ func (r *Client) LoadChangesetFromID(id ChangesetID) *Changeset {
 }
 
 // Load a Check from its ID.
-func (r *Client) LoadCheckFromID(id CheckID) *Check {
+func (r *Query) LoadCheckFromID(id CheckID) *Check {
 	q := r.query.Select("loadCheckFromID")
 	q = q.Arg("id", id)
 
@@ -12111,7 +12183,7 @@ func (r *Client) LoadCheckFromID(id CheckID) *Check {
 }
 
 // Load a CheckGroup from its ID.
-func (r *Client) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
+func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
 	q := r.query.Select("loadCheckGroupFromID")
 	q = q.Arg("id", id)
 
@@ -12121,7 +12193,7 @@ func (r *Client) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
 }
 
 // Load a Cloud from its ID.
-func (r *Client) LoadCloudFromID(id CloudID) *Cloud {
+func (r *Query) LoadCloudFromID(id CloudID) *Cloud {
 	q := r.query.Select("loadCloudFromID")
 	q = q.Arg("id", id)
 
@@ -12131,7 +12203,7 @@ func (r *Client) LoadCloudFromID(id CloudID) *Cloud {
 }
 
 // Load a Container from its ID.
-func (r *Client) LoadContainerFromID(id ContainerID) *Container {
+func (r *Query) LoadContainerFromID(id ContainerID) *Container {
 	q := r.query.Select("loadContainerFromID")
 	q = q.Arg("id", id)
 
@@ -12141,7 +12213,7 @@ func (r *Client) LoadContainerFromID(id ContainerID) *Container {
 }
 
 // Load a CurrentModule from its ID.
-func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
+func (r *Query) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 	q := r.query.Select("loadCurrentModuleFromID")
 	q = q.Arg("id", id)
 
@@ -12151,7 +12223,7 @@ func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 }
 
 // Load a Directory from its ID.
-func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
+func (r *Query) LoadDirectoryFromID(id DirectoryID) *Directory {
 	q := r.query.Select("loadDirectoryFromID")
 	q = q.Arg("id", id)
 
@@ -12161,7 +12233,7 @@ func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
 }
 
 // Load a EngineCacheEntry from its ID.
-func (r *Client) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
+func (r *Query) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
 	q := r.query.Select("loadEngineCacheEntryFromID")
 	q = q.Arg("id", id)
 
@@ -12171,7 +12243,7 @@ func (r *Client) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheE
 }
 
 // Load a EngineCacheEntrySet from its ID.
-func (r *Client) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
+func (r *Query) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
 	q := r.query.Select("loadEngineCacheEntrySetFromID")
 	q = q.Arg("id", id)
 
@@ -12181,7 +12253,7 @@ func (r *Client) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *Engine
 }
 
 // Load a EngineCache from its ID.
-func (r *Client) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
+func (r *Query) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
 	q := r.query.Select("loadEngineCacheFromID")
 	q = q.Arg("id", id)
 
@@ -12191,7 +12263,7 @@ func (r *Client) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
 }
 
 // Load a Engine from its ID.
-func (r *Client) LoadEngineFromID(id EngineID) *Engine {
+func (r *Query) LoadEngineFromID(id EngineID) *Engine {
 	q := r.query.Select("loadEngineFromID")
 	q = q.Arg("id", id)
 
@@ -12201,7 +12273,7 @@ func (r *Client) LoadEngineFromID(id EngineID) *Engine {
 }
 
 // Load a EnumTypeDef from its ID.
-func (r *Client) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
+func (r *Query) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
 	q := r.query.Select("loadEnumTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12211,7 +12283,7 @@ func (r *Client) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
 }
 
 // Load a EnumValueTypeDef from its ID.
-func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
+func (r *Query) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
 	q := r.query.Select("loadEnumValueTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12221,7 +12293,7 @@ func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTyp
 }
 
 // Load a EnvFile from its ID.
-func (r *Client) LoadEnvFileFromID(id EnvFileID) *EnvFile {
+func (r *Query) LoadEnvFileFromID(id EnvFileID) *EnvFile {
 	q := r.query.Select("loadEnvFileFromID")
 	q = q.Arg("id", id)
 
@@ -12231,7 +12303,7 @@ func (r *Client) LoadEnvFileFromID(id EnvFileID) *EnvFile {
 }
 
 // Load a Env from its ID.
-func (r *Client) LoadEnvFromID(id EnvID) *Env {
+func (r *Query) LoadEnvFromID(id EnvID) *Env {
 	q := r.query.Select("loadEnvFromID")
 	q = q.Arg("id", id)
 
@@ -12241,7 +12313,7 @@ func (r *Client) LoadEnvFromID(id EnvID) *Env {
 }
 
 // Load a EnvVariable from its ID.
-func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
+func (r *Query) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 	q := r.query.Select("loadEnvVariableFromID")
 	q = q.Arg("id", id)
 
@@ -12251,7 +12323,7 @@ func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 }
 
 // Load a Error from its ID.
-func (r *Client) LoadErrorFromID(id ErrorID) *Error {
+func (r *Query) LoadErrorFromID(id ErrorID) *Error {
 	q := r.query.Select("loadErrorFromID")
 	q = q.Arg("id", id)
 
@@ -12261,7 +12333,7 @@ func (r *Client) LoadErrorFromID(id ErrorID) *Error {
 }
 
 // Load a ErrorValue from its ID.
-func (r *Client) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
+func (r *Query) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
 	q := r.query.Select("loadErrorValueFromID")
 	q = q.Arg("id", id)
 
@@ -12271,7 +12343,7 @@ func (r *Client) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
 }
 
 // Load a FieldTypeDef from its ID.
-func (r *Client) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
+func (r *Query) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
 	q := r.query.Select("loadFieldTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12281,7 +12353,7 @@ func (r *Client) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
 }
 
 // Load a File from its ID.
-func (r *Client) LoadFileFromID(id FileID) *File {
+func (r *Query) LoadFileFromID(id FileID) *File {
 	q := r.query.Select("loadFileFromID")
 	q = q.Arg("id", id)
 
@@ -12291,7 +12363,7 @@ func (r *Client) LoadFileFromID(id FileID) *File {
 }
 
 // Load a FunctionArg from its ID.
-func (r *Client) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
+func (r *Query) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
 	q := r.query.Select("loadFunctionArgFromID")
 	q = q.Arg("id", id)
 
@@ -12301,7 +12373,7 @@ func (r *Client) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
 }
 
 // Load a FunctionCallArgValue from its ID.
-func (r *Client) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
+func (r *Query) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
 	q := r.query.Select("loadFunctionCallArgValueFromID")
 	q = q.Arg("id", id)
 
@@ -12311,7 +12383,7 @@ func (r *Client) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *Func
 }
 
 // Load a FunctionCall from its ID.
-func (r *Client) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
+func (r *Query) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
 	q := r.query.Select("loadFunctionCallFromID")
 	q = q.Arg("id", id)
 
@@ -12321,7 +12393,7 @@ func (r *Client) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
 }
 
 // Load a Function from its ID.
-func (r *Client) LoadFunctionFromID(id FunctionID) *Function {
+func (r *Query) LoadFunctionFromID(id FunctionID) *Function {
 	q := r.query.Select("loadFunctionFromID")
 	q = q.Arg("id", id)
 
@@ -12331,7 +12403,7 @@ func (r *Client) LoadFunctionFromID(id FunctionID) *Function {
 }
 
 // Load a GeneratedCode from its ID.
-func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
+func (r *Query) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 	q := r.query.Select("loadGeneratedCodeFromID")
 	q = q.Arg("id", id)
 
@@ -12341,7 +12413,7 @@ func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 }
 
 // Load a Generator from its ID.
-func (r *Client) LoadGeneratorFromID(id GeneratorID) *Generator {
+func (r *Query) LoadGeneratorFromID(id GeneratorID) *Generator {
 	q := r.query.Select("loadGeneratorFromID")
 	q = q.Arg("id", id)
 
@@ -12351,7 +12423,7 @@ func (r *Client) LoadGeneratorFromID(id GeneratorID) *Generator {
 }
 
 // Load a GeneratorGroup from its ID.
-func (r *Client) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
+func (r *Query) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
 	q := r.query.Select("loadGeneratorGroupFromID")
 	q = q.Arg("id", id)
 
@@ -12361,7 +12433,7 @@ func (r *Client) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
 }
 
 // Load a GitRef from its ID.
-func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
+func (r *Query) LoadGitRefFromID(id GitRefID) *GitRef {
 	q := r.query.Select("loadGitRefFromID")
 	q = q.Arg("id", id)
 
@@ -12371,7 +12443,7 @@ func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
 }
 
 // Load a GitRepository from its ID.
-func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
+func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	q := r.query.Select("loadGitRepositoryFromID")
 	q = q.Arg("id", id)
 
@@ -12381,7 +12453,7 @@ func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 }
 
 // Load a HealthcheckConfig from its ID.
-func (r *Client) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
+func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
 	q := r.query.Select("loadHealthcheckConfigFromID")
 	q = q.Arg("id", id)
 
@@ -12391,7 +12463,7 @@ func (r *Client) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *Healthchec
 }
 
 // Load a Host from its ID.
-func (r *Client) LoadHostFromID(id HostID) *Host {
+func (r *Query) LoadHostFromID(id HostID) *Host {
 	q := r.query.Select("loadHostFromID")
 	q = q.Arg("id", id)
 
@@ -12401,7 +12473,7 @@ func (r *Client) LoadHostFromID(id HostID) *Host {
 }
 
 // Load a InputTypeDef from its ID.
-func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
+func (r *Query) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
 	q := r.query.Select("loadInputTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12411,7 +12483,7 @@ func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
 }
 
 // Load a InterfaceTypeDef from its ID.
-func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
+func (r *Query) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
 	q := r.query.Select("loadInterfaceTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12421,7 +12493,7 @@ func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTyp
 }
 
 // Load a JSONValue from its ID.
-func (r *Client) LoadJSONValueFromID(id JSONValueID) *JSONValue {
+func (r *Query) LoadJSONValueFromID(id JSONValueID) *JSONValue {
 	q := r.query.Select("loadJSONValueFromID")
 	q = q.Arg("id", id)
 
@@ -12431,7 +12503,7 @@ func (r *Client) LoadJSONValueFromID(id JSONValueID) *JSONValue {
 }
 
 // Load a LLM from its ID.
-func (r *Client) LoadLLMFromID(id LLMID) *LLM {
+func (r *Query) LoadLLMFromID(id LLMID) *LLM {
 	q := r.query.Select("loadLLMFromID")
 	q = q.Arg("id", id)
 
@@ -12441,7 +12513,7 @@ func (r *Client) LoadLLMFromID(id LLMID) *LLM {
 }
 
 // Load a LLMTokenUsage from its ID.
-func (r *Client) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
+func (r *Query) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
 	q := r.query.Select("loadLLMTokenUsageFromID")
 	q = q.Arg("id", id)
 
@@ -12451,7 +12523,7 @@ func (r *Client) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
 }
 
 // Load a Label from its ID.
-func (r *Client) LoadLabelFromID(id LabelID) *Label {
+func (r *Query) LoadLabelFromID(id LabelID) *Label {
 	q := r.query.Select("loadLabelFromID")
 	q = q.Arg("id", id)
 
@@ -12461,7 +12533,7 @@ func (r *Client) LoadLabelFromID(id LabelID) *Label {
 }
 
 // Load a ListTypeDef from its ID.
-func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
+func (r *Query) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 	q := r.query.Select("loadListTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12471,7 +12543,7 @@ func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 }
 
 // Load a ModuleConfigClient from its ID.
-func (r *Client) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
+func (r *Query) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
 	q := r.query.Select("loadModuleConfigClientFromID")
 	q = q.Arg("id", id)
 
@@ -12481,7 +12553,7 @@ func (r *Client) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleCo
 }
 
 // Load a Module from its ID.
-func (r *Client) LoadModuleFromID(id ModuleID) *Module {
+func (r *Query) LoadModuleFromID(id ModuleID) *Module {
 	q := r.query.Select("loadModuleFromID")
 	q = q.Arg("id", id)
 
@@ -12491,7 +12563,7 @@ func (r *Client) LoadModuleFromID(id ModuleID) *Module {
 }
 
 // Load a ModuleSource from its ID.
-func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
+func (r *Query) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
 	q := r.query.Select("loadModuleSourceFromID")
 	q = q.Arg("id", id)
 
@@ -12501,7 +12573,7 @@ func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
 }
 
 // Load a ObjectTypeDef from its ID.
-func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
+func (r *Query) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 	q := r.query.Select("loadObjectTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12511,7 +12583,7 @@ func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 }
 
 // Load a Port from its ID.
-func (r *Client) LoadPortFromID(id PortID) *Port {
+func (r *Query) LoadPortFromID(id PortID) *Port {
 	q := r.query.Select("loadPortFromID")
 	q = q.Arg("id", id)
 
@@ -12520,8 +12592,18 @@ func (r *Client) LoadPortFromID(id PortID) *Port {
 	}
 }
 
+// Load a Query from its ID.
+func (r *Query) LoadQueryFromID(id QueryID) *Query {
+	q := r.query.Select("loadQueryFromID")
+	q = q.Arg("id", id)
+
+	return &Query{
+		query: q,
+	}
+}
+
 // Load a SDKConfig from its ID.
-func (r *Client) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
+func (r *Query) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
 	q := r.query.Select("loadSDKConfigFromID")
 	q = q.Arg("id", id)
 
@@ -12531,7 +12613,7 @@ func (r *Client) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
 }
 
 // Load a ScalarTypeDef from its ID.
-func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
+func (r *Query) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	q := r.query.Select("loadScalarTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12541,7 +12623,7 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 }
 
 // Load a SearchResult from its ID.
-func (r *Client) LoadSearchResultFromID(id SearchResultID) *SearchResult {
+func (r *Query) LoadSearchResultFromID(id SearchResultID) *SearchResult {
 	q := r.query.Select("loadSearchResultFromID")
 	q = q.Arg("id", id)
 
@@ -12551,7 +12633,7 @@ func (r *Client) LoadSearchResultFromID(id SearchResultID) *SearchResult {
 }
 
 // Load a SearchSubmatch from its ID.
-func (r *Client) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
+func (r *Query) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
 	q := r.query.Select("loadSearchSubmatchFromID")
 	q = q.Arg("id", id)
 
@@ -12561,7 +12643,7 @@ func (r *Client) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
 }
 
 // Load a Secret from its ID.
-func (r *Client) LoadSecretFromID(id SecretID) *Secret {
+func (r *Query) LoadSecretFromID(id SecretID) *Secret {
 	q := r.query.Select("loadSecretFromID")
 	q = q.Arg("id", id)
 
@@ -12571,7 +12653,7 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 }
 
 // Load a Service from its ID.
-func (r *Client) LoadServiceFromID(id ServiceID) *Service {
+func (r *Query) LoadServiceFromID(id ServiceID) *Service {
 	q := r.query.Select("loadServiceFromID")
 	q = q.Arg("id", id)
 
@@ -12581,7 +12663,7 @@ func (r *Client) LoadServiceFromID(id ServiceID) *Service {
 }
 
 // Load a Socket from its ID.
-func (r *Client) LoadSocketFromID(id SocketID) *Socket {
+func (r *Query) LoadSocketFromID(id SocketID) *Socket {
 	q := r.query.Select("loadSocketFromID")
 	q = q.Arg("id", id)
 
@@ -12591,7 +12673,7 @@ func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 }
 
 // Load a SourceMap from its ID.
-func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
+func (r *Query) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 	q := r.query.Select("loadSourceMapFromID")
 	q = q.Arg("id", id)
 
@@ -12601,7 +12683,7 @@ func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 }
 
 // Load a Stat from its ID.
-func (r *Client) LoadStatFromID(id StatID) *Stat {
+func (r *Query) LoadStatFromID(id StatID) *Stat {
 	q := r.query.Select("loadStatFromID")
 	q = q.Arg("id", id)
 
@@ -12611,7 +12693,7 @@ func (r *Client) LoadStatFromID(id StatID) *Stat {
 }
 
 // Load a Terminal from its ID.
-func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
+func (r *Query) LoadTerminalFromID(id TerminalID) *Terminal {
 	q := r.query.Select("loadTerminalFromID")
 	q = q.Arg("id", id)
 
@@ -12621,7 +12703,7 @@ func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
 }
 
 // Load a TypeDef from its ID.
-func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
+func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q := r.query.Select("loadTypeDefFromID")
 	q = q.Arg("id", id)
 
@@ -12631,7 +12713,7 @@ func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 }
 
 // Load a Workspace from its ID.
-func (r *Client) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
+func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	q := r.query.Select("loadWorkspaceFromID")
 	q = q.Arg("id", id)
 
@@ -12641,7 +12723,7 @@ func (r *Client) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 }
 
 // Create a new module.
-func (r *Client) Module() *Module {
+func (r *Query) Module() *Module {
 	q := r.query.Select("module")
 
 	return &Module{
@@ -12649,7 +12731,7 @@ func (r *Client) Module() *Module {
 	}
 }
 
-// ModuleSourceOpts contains options for Client.ModuleSource
+// ModuleSourceOpts contains options for Query.ModuleSource
 type ModuleSourceOpts struct {
 	// The pinned version of the module source
 	RefPin string
@@ -12662,7 +12744,7 @@ type ModuleSourceOpts struct {
 }
 
 // Create a new module source instance from a source ref string
-func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
+func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	q := r.query.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `refPin` optional argument
@@ -12689,7 +12771,7 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	}
 }
 
-// SecretOpts contains options for Client.Secret
+// SecretOpts contains options for Query.Secret
 type SecretOpts struct {
 	// If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
 	//
@@ -12700,7 +12782,7 @@ type SecretOpts struct {
 }
 
 // Creates a new secret.
-func (r *Client) Secret(uri string, opts ...SecretOpts) *Secret {
+func (r *Query) Secret(uri string, opts ...SecretOpts) *Secret {
 	q := r.query.Select("secret")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `cacheKey` optional argument
@@ -12718,7 +12800,7 @@ func (r *Client) Secret(uri string, opts ...SecretOpts) *Secret {
 // Sets a secret given a user defined name to its plaintext and returns the secret.
 //
 // The plaintext value is limited to a size of 128000 bytes.
-func (r *Client) SetSecret(name string, plaintext string) *Secret {
+func (r *Query) SetSecret(name string, plaintext string) *Secret {
 	q := r.query.Select("setSecret")
 	q = q.Arg("name", name)
 	q = q.Arg("plaintext", plaintext)
@@ -12729,7 +12811,7 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 }
 
 // Creates source map metadata.
-func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
+func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	q := r.query.Select("sourceMap")
 	q = q.Arg("filename", filename)
 	q = q.Arg("line", line)
@@ -12741,7 +12823,7 @@ func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
 }
 
 // Create a new TypeDef.
-func (r *Client) TypeDef() *TypeDef {
+func (r *Query) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
 	return &TypeDef{
@@ -12750,7 +12832,7 @@ func (r *Client) TypeDef() *TypeDef {
 }
 
 // Get the current Dagger Engine version.
-func (r *Client) Version(ctx context.Context) (string, error) {
+func (r *Query) Version(ctx context.Context) (string, error) {
 	q := r.query.Select("version")
 
 	var response string
@@ -14304,14 +14386,52 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
-	clientId *string
-	findUp   *string
-	id       *WorkspaceID
-	root     *string
+	address     *string
+	clientId    *string
+	configPath  *string
+	findUp      *string
+	hasConfig   *bool
+	id          *WorkspaceID
+	initialized *bool
+	path        *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Canonical Dagger address of the workspace directory.
+func (r *Workspace) Address(ctx context.Context) (string, error) {
+	if r.address != nil {
+		return *r.address, nil
+	}
+	q := r.query.Select("address")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceChecksOpts contains options for Workspace.Checks
+type WorkspaceChecksOpts struct {
+	// Only include checks matching the specified patterns
+	Include []string
+}
+
+// Return all checks from modules loaded in the workspace.
+func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
+	q := r.query.Select("checks")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &CheckGroup{
 		query: q,
 	}
 }
@@ -14322,6 +14442,19 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 		return *r.clientId, nil
 	}
 	q := r.query.Select("clientId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Path to config.toml relative to the workspace boundary (empty if not initialized).
+func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
+	if r.configPath != nil {
+		return *r.configPath, nil
+	}
+	q := r.query.Select("configPath")
 
 	var response string
 
@@ -14341,7 +14474,7 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Path is relative to workspace root. Use "." for the root directory.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -14367,7 +14500,7 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 
 // Returns a File from the workspace.
 //
-// Path is relative to workspace root.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -14379,7 +14512,7 @@ func (r *Workspace) File(path string) *File {
 
 // WorkspaceFindUpOpts contains options for Workspace.FindUp
 type WorkspaceFindUpOpts struct {
-	// Path to start the search from, relative to the workspace root.
+	// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
 	//
 	// Default: "."
 	From string
@@ -14387,9 +14520,11 @@ type WorkspaceFindUpOpts struct {
 
 // Search for a file or directory by walking up from the start path within the workspace.
 //
-// Returns the path relative to the workspace root if found, or null if not found.
+// Returns the absolute workspace path if found, or null if not found.
 //
-// The search stops at the workspace root and will not traverse above it.
+// Relative start paths resolve from the workspace directory.
+//
+// The search stops at the workspace boundary and will not traverse above it.
 func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil
@@ -14404,6 +14539,40 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 	q = q.Arg("name", name)
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceGeneratorsOpts contains options for Workspace.Generators
+type WorkspaceGeneratorsOpts struct {
+	// Only include generators matching the specified patterns
+	Include []string
+}
+
+// Return all generators from modules loaded in the workspace.
+func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup {
+	q := r.query.Select("generators")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &GeneratorGroup{
+		query: q,
+	}
+}
+
+// Whether a config.toml file exists in the workspace.
+func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
+	if r.hasConfig != nil {
+		return *r.hasConfig, nil
+	}
+	q := r.query.Select("hasConfig")
+
+	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14449,12 +14618,25 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Absolute path to the workspace root directory.
-func (r *Workspace) Root(ctx context.Context) (string, error) {
-	if r.root != nil {
-		return *r.root, nil
+// Whether .dagger/config.toml exists.
+func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
+	if r.initialized != nil {
+		return *r.initialized, nil
 	}
-	q := r.query.Select("root")
+	q := r.query.Select("initialized")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Workspace directory path relative to the workspace boundary.
+func (r *Workspace) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
 
 	var response string
 

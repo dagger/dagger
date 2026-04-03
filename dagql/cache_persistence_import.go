@@ -137,14 +137,6 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				maxResultID = resultID
 			}
 
-			if row.CallFrameJSON == "" {
-				return fmt.Errorf("import result %d: empty call_frame_json", resultID)
-			}
-			var frame ResultCall
-			if err := json.Unmarshal([]byte(row.CallFrameJSON), &frame); err != nil {
-				return fmt.Errorf("import result %d call_frame_json: %w", resultID, err)
-			}
-
 			var env PersistedResultEnvelope
 			if len(row.SelfPayload) > 0 {
 				if err := json.Unmarshal(row.SelfPayload, &env); err != nil {
@@ -160,6 +152,17 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("import result %d: empty self payload kind", resultID)
 			}
 
+			var frame *ResultCall
+			if row.CallFrameJSON != "" {
+				var decoded ResultCall
+				if err := json.Unmarshal([]byte(row.CallFrameJSON), &decoded); err != nil {
+					return fmt.Errorf("import result %d call_frame_json: %w", resultID, err)
+				}
+				frame = &decoded
+			} else {
+				return fmt.Errorf("import result %d: empty call_frame_json", resultID)
+			}
+
 			res := &sharedResult{
 				id:                    resultID,
 				isObject:              env.Kind == persistedResultKindObject,
@@ -173,8 +176,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				recordType:            row.RecordType,
 				persistedEnvelope:     &env,
 			}
-			res.storeResultCall(&frame)
-			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, &frame)
+			if frame != nil {
+				res.storeResultCall(frame)
+				c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
+			}
 
 			if env.Kind == persistedResultKindNull {
 				res.hasValue = true
@@ -569,11 +574,11 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	}
 
 	call := res.loadResultCall()
+	dag := resolverServer(resolver)
 	if call == nil {
 		return hit, nil
 	}
 	decodeCtx := ContextWithCall(ctx, call)
-	dag := resolverServer(resolver)
 	if dag == nil {
 		return nil, fmt.Errorf("decode persisted hit payload: type resolver %T does not provide dagql server", resolver)
 	}

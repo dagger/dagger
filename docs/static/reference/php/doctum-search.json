@@ -1098,6 +1098,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\PhpSdk",
+			"p": "Dagger/PhpSdk.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\PhpSdkId",
+			"p": "Dagger/PhpSdkId.html",
+			"d": "<p>The <code>PhpSdkID</code> scalar type represents an identifier for an object of type PhpSdk.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\PipelineLabel",
 			"p": "Dagger/PipelineLabel.html",
 			"d": "<p>Key value object that represents a pipeline label.</p>",
@@ -1141,6 +1161,16 @@
 			"n": "Dagger\\PortId",
 			"p": "Dagger/PortId.html",
 			"d": "<p>The <code>PortID</code> scalar type represents an identifier for an object of type Port.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\QueryId",
+			"p": "Dagger/QueryId.html",
+			"d": "<p>The <code>QueryID</code> scalar type represents an identifier for an object of type Query.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1601,6 +1631,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asPhpSdk",
+			"p": "Dagger/Binding.html#method_asPhpSdk",
+			"d": "<p>Retrieve the binding value, as type PhpSdk</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asSearchResult",
 			"p": "Dagger/Binding.html#method_asSearchResult",
 			"d": "<p>Retrieve the binding value, as type SearchResult</p>"
@@ -1877,6 +1913,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::codegen",
+			"p": "Dagger/Client.html#method_codegen",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::codegenBase",
+			"p": "Dagger/Client.html#method_codegenBase",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::container",
 			"p": "Dagger/Client.html#method_container",
 			"d": "<p>Creates a scratch container, with no image or metadata.</p>"
@@ -1982,6 +2030,12 @@
 			"n": "Dagger\\Client::http",
 			"p": "Dagger/Client.html#method_http",
 			"d": "<p>Returns a file containing an http remote url content.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::id",
+			"p": "Dagger/Client.html#method_id",
+			"d": "<p>A unique identifier for this Query.</p>"
 		},
 		{
 			"t": "M",
@@ -2267,9 +2321,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadPhpSdkFromID",
+			"p": "Dagger/Client.html#method_loadPhpSdkFromID",
+			"d": "<p>Load a PhpSdk from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadPortFromID",
 			"p": "Dagger/Client.html#method_loadPortFromID",
 			"d": "<p>Load a Port from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadQueryFromID",
+			"p": "Dagger/Client.html#method_loadQueryFromID",
+			"d": "<p>Load a Query from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2351,6 +2417,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::moduleRuntime",
+			"p": "Dagger/Client.html#method_moduleRuntime",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::moduleSource",
 			"p": "Dagger/Client.html#method_moduleSource",
 			"d": "<p>Create a new module source instance from a source ref string</p>"
@@ -2369,6 +2441,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::sourceDir",
+			"p": "Dagger/Client.html#method_sourceDir",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::sourceMap",
 			"p": "Dagger/Client.html#method_sourceMap",
 			"d": "<p>Creates source map metadata.</p>"
@@ -2384,6 +2462,12 @@
 			"n": "Dagger\\Client::version",
 			"p": "Dagger/Client.html#method_version",
 			"d": "<p>Get the current Dagger Engine version.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::with",
+			"p": "Dagger/Client.html#method_with",
+			"d": "<p>Configure the php-sdk constructor arguments.</p>"
 		},
 		{
 			"t": "M",
@@ -3755,6 +3839,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withPhpSdkInput",
+			"p": "Dagger/Env.html#method_withPhpSdkInput",
+			"d": "<p>Create or update a binding of type PhpSdk in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withPhpSdkOutput",
+			"p": "Dagger/Env.html#method_withPhpSdkOutput",
+			"d": "<p>Declare a desired PhpSdk output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withSearchResultInput",
 			"p": "Dagger/Env.html#method_withSearchResultInput",
 			"d": "<p>Create or update a binding of type SearchResult in the environment</p>"
@@ -4262,6 +4358,12 @@
 			"n": "Dagger\\Function_::sourceMap",
 			"p": "Dagger/Function_.html#method_sourceMap",
 			"d": "<p>The location of this function declaration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Function_::sourceModuleName",
+			"p": "Dagger/Function_.html#method_sourceModuleName",
+			"d": "<p>If this function is provided by a module, the name of the module. Unset otherwise.</p>"
 		},
 		{
 			"t": "M",
@@ -5489,6 +5591,36 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\PhpSdk::codegen",
+			"p": "Dagger/PhpSdk.html#method_codegen",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::codegenBase",
+			"p": "Dagger/PhpSdk.html#method_codegenBase",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::id",
+			"p": "Dagger/PhpSdk.html#method_id",
+			"d": "<p>A unique identifier for this PhpSdk.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::moduleRuntime",
+			"p": "Dagger/PhpSdk.html#method_moduleRuntime",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::sourceDir",
+			"p": "Dagger/PhpSdk.html#method_sourceDir",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\PipelineLabel::__construct",
 			"p": "Dagger/PipelineLabel.html#method___construct",
 			"d": null
@@ -5927,9 +6059,27 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::address",
+			"p": "Dagger/Workspace.html#method_address",
+			"d": "<p>Canonical Dagger address of the workspace directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::checks",
+			"p": "Dagger/Workspace.html#method_checks",
+			"d": "<p>Return all checks from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::clientId",
 			"p": "Dagger/Workspace.html#method_clientId",
 			"d": "<p>The client ID that owns this workspace's host filesystem.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::configPath",
+			"p": "Dagger/Workspace.html#method_configPath",
+			"d": "<p>Path to config.toml relative to the workspace boundary (empty if not initialized).</p>"
 		},
 		{
 			"t": "M",
@@ -5951,15 +6101,33 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::generators",
+			"p": "Dagger/Workspace.html#method_generators",
+			"d": "<p>Return all generators from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::hasConfig",
+			"p": "Dagger/Workspace.html#method_hasConfig",
+			"d": "<p>Whether a config.toml file exists in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::id",
 			"p": "Dagger/Workspace.html#method_id",
 			"d": "<p>A unique identifier for this Workspace.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::root",
-			"p": "Dagger/Workspace.html#method_root",
-			"d": "<p>Absolute path to the workspace root directory.</p>"
+			"n": "Dagger\\Workspace::initialized",
+			"p": "Dagger/Workspace.html#method_initialized",
+			"d": "<p>Whether .dagger/config.toml exists.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::path",
+			"p": "Dagger/Workspace.html#method_path",
+			"d": "<p>Workspace directory path relative to the workspace boundary.</p>"
 		},
 		{
 			"t": "M",

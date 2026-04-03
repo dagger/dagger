@@ -262,7 +262,9 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	for i := range snapshot.results {
 		resultSnapshot := &snapshot.results[i]
 		if resultSnapshot.frame == nil {
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d: missing result call frame", resultSnapshot.resultID)
+			if resultSnapshot.self == nil || resultSnapshot.self.Type() == nil || resultSnapshot.self.Type().Name() != "Query" {
+				return persistStateSnapshot{}, fmt.Errorf("persist result %d: missing result call frame", resultSnapshot.resultID)
+			}
 		}
 
 		env, err := c.persistResultEnvelope(ctx, resultSnapshot)
@@ -277,12 +279,13 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		if err != nil {
 			return persistStateSnapshot{}, fmt.Errorf("persist result %d payload JSON: %w", resultSnapshot.resultID, err)
 		}
-		callFrameJSON, err := json.Marshal(resultSnapshot.frame)
-		if err != nil {
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
+		if resultSnapshot.frame != nil {
+			callFrameJSON, err := json.Marshal(resultSnapshot.frame)
+			if err != nil {
+				return persistStateSnapshot{}, fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
+			}
+			resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
 		}
-
-		resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
 		resultSnapshot.row.SelfPayload = payload
 	}
 	return snapshot, nil
@@ -394,7 +397,16 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		}, nil
 	}
 	if snapshot.frame == nil {
-		return PersistedResultEnvelope{}, fmt.Errorf("result has no call frame and no persisted envelope")
+		if snapshot.self == nil || snapshot.self.Type() == nil || snapshot.self.Type().Name() != "Query" {
+			return PersistedResultEnvelope{}, fmt.Errorf("result has no call frame and no persisted envelope")
+		}
+		shared := &sharedResult{
+			self:                  snapshot.self,
+			hasValue:              snapshot.hasValue,
+			id:                    snapshot.resultID,
+			sessionResourceHandle: snapshot.sessionResourceHandle,
+		}
+		return DefaultPersistedSelfCodec.EncodeResult(context.WithoutCancel(ctx), c, Result[Typed]{shared: shared})
 	}
 	shared := &sharedResult{
 		self:                  snapshot.self,

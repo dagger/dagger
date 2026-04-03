@@ -30,7 +30,10 @@ func newModuleSDK(
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
 ) (*module, error) {
-	dag := dagql.NewServer(root)
+	dag, err := dagql.NewServer(ctx, root)
+	if err != nil {
+		return nil, fmt.Errorf("create sdk module server: %w", err)
+	}
 	dag.Around(core.AroundFunc)
 
 	if err := core.NewUserMod(sdkModMeta).Install(ctx, dag); err != nil {

@@ -53,11 +53,7 @@ func resultCallRefFromResult(ctx context.Context, res AnyResult) (*ResultCallRef
 		return nil, fmt.Errorf("result %T has no call frame", res)
 	}
 	if shared.id == 0 {
-		call := frame.clone()
-		return &ResultCallRef{Call: call}, nil
-	}
-	if shared == nil {
-		return nil, fmt.Errorf("result %T is not cache-backed", res)
+		return &ResultCallRef{Call: frame.clone()}, nil
 	}
 	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
 }

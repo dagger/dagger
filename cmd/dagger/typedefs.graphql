@@ -6,6 +6,7 @@ fragment TypeDefRefParts on TypeDef {
 fragment FunctionParts on Function {
 	name
 	description
+	sourceModuleName
 	returnType {
 		...TypeDefRefParts
 	}
@@ -22,15 +23,15 @@ fragment FunctionParts on Function {
 }
 
 fragment FieldParts on FieldTypeDef {
-	name
-	description
-	typeDef {
-		...TypeDefRefParts
-	}
+  name
+  description
+  typeDef {
+    ...TypeDefRefParts
+  }
 }
 
-query TypeDefs {
-	typeDefs: currentTypeDefs(returnAllTypes: true) {
+query TypeDefs($hideCore: Boolean) {
+	typeDefs: currentTypeDefs(returnAllTypes: true, hideCore: $hideCore) {
 		name
 		kind
 		optional

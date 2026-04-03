@@ -101,10 +101,10 @@ type DanglingIface interface {
 	require.NoError(t, err)
 
 	out, err := modGen.
-		With(daggerQuery(`{test{hello}}`)).
+		With(daggerQuery(`{hello}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
+	require.JSONEq(t, `{"hello":"hello"}`, out)
 }
 
 func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {
@@ -153,7 +153,7 @@ export class Mallard {
     return "mallard quack"
   }
 }
-			
+
 `,
 			testSource: `import { dag, object, func } from "@dagger.io/dagger"
 
@@ -177,7 +177,7 @@ export class Test {
 @dagger.object_type
 class Mallard:
     @dagger.function
-    def quack(self) -> str: 
+    def quack(self) -> str:
         return "mallard quack"
 `,
 			testSource: `import typing
@@ -192,9 +192,9 @@ class Duck(typing.Protocol):
 
 @dagger.object_type
 class Test:
-    @dagger.function 
+    @dagger.function
     def get_duck(self) -> Duck:
-        return dag.mallard() 
+        return dag.mallard()
 `,
 		},
 	}

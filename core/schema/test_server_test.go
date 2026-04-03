@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
@@ -21,7 +22,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool) error {
+func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool, bool) error {
 	return nil
 }
 
@@ -37,7 +38,15 @@ func (s *currentTypeDefsTestServer) CurrentFunctionCall(context.Context) (*core.
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.ModDeps, error) {
+func (s *currentTypeDefsTestServer) CurrentEnv(context.Context) (*call.ID, error) {
+	return nil, nil
+}
+
+func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Workspace, error) {
+	return nil, nil
+}
+
+func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.SchemaBuilder, error) {
 	return s.deps, nil
 }
 
@@ -57,7 +66,7 @@ func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.ModDeps, error) {
+func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
 	return nil, nil
 }
 
@@ -71,6 +80,9 @@ func (s *currentTypeDefsTestServer) Server(context.Context) (*dagql.Server, erro
 
 func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Handler) error {
 	return nil
+}
+
+func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata) {
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {

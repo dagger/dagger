@@ -23,7 +23,7 @@ var moduleTypesExecMDDigest = digest.FromString("module-types-with-exec-execmd")
 
 func (sdk *moduleTypes) ModuleTypes(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 	partiallyInitializedMod *core.Module,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {

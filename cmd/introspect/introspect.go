@@ -43,7 +43,7 @@ func getIntrospection(ctx context.Context) (*introspection.Response, error) {
 		return nil, err
 	}
 	ctx = dagql.ContextWithCache(ctx, baseCache)
-	coreSchemaBase, err := schema.NewCoreSchemaBase(ctx)
+	coreSchemaBase, err := schema.NewCoreSchemaBase(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

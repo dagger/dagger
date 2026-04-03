@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -20,25 +21,25 @@ import (
 
 type ResolveHTTPRequestVersionOpts struct {
 	URL      string
-	Checksum *string
+	Checksum dagql.Optional[dagql.String]
 }
 
 type ResolvedHTTPVersion struct {
-	ETag         *string
-	LastModified *string
-	Digest       *string
+	ETag         dagql.Optional[dagql.String]
+	LastModified dagql.Optional[dagql.String]
+	Digest       dagql.Optional[dagql.String]
 }
 
 type FetchHTTPRequestOpts struct {
 	URL                 string
 	Filename            string
 	Permissions         int
-	Checksum            *string
+	Checksum            dagql.Optional[dagql.String]
 	AuthorizationHeader string
 
-	ResolvedETag         *string
-	ResolvedLastModified *string
-	ResolvedDigest       *string
+	ResolvedETag         dagql.Optional[dagql.String]
+	ResolvedLastModified dagql.Optional[dagql.String]
+	ResolvedDigest       dagql.Optional[dagql.String]
 }
 
 type HTTPFetchResult struct {
@@ -52,7 +53,7 @@ func ResolveHTTPVersion(
 	query *Query,
 	opts ResolveHTTPRequestVersionOpts,
 ) (*ResolvedHTTPVersion, error) {
-	if opts.Checksum != nil && *opts.Checksum != "" {
+	if opts.Checksum.Valid && opts.Checksum.Value != "" {
 		return &ResolvedHTTPVersion{Digest: opts.Checksum}, nil
 	}
 
@@ -65,10 +66,10 @@ func ResolveHTTPVersion(
 	case err == nil:
 		defer resp.Body.Close()
 		if etag := etagValue(resp.Header.Get("ETag")); etag != "" {
-			return &ResolvedHTTPVersion{ETag: &etag}, nil
+			return &ResolvedHTTPVersion{ETag: dagql.Opt(dagql.String(etag))}, nil
 		}
 		if lastModified := resp.Header.Get("Last-Modified"); lastModified != "" {
-			return &ResolvedHTTPVersion{LastModified: &lastModified}, nil
+			return &ResolvedHTTPVersion{LastModified: dagql.Opt(dagql.String(lastModified))}, nil
 		}
 	case err != nil && (resp == nil || resp.StatusCode != http.StatusMethodNotAllowed):
 		return nil, err
@@ -89,8 +90,7 @@ func ResolveHTTPVersion(
 		return nil, err
 	}
 	dgst := digest.NewDigest(digest.SHA256, h)
-	dgstStr := dgst.String()
-	return &ResolvedHTTPVersion{Digest: &dgstStr}, nil
+	return &ResolvedHTTPVersion{Digest: dagql.Opt(dagql.String(dgst.String()))}, nil
 }
 
 func FetchHTTPFile(
@@ -112,16 +112,16 @@ func FetchHTTPFile(
 	}
 	defer resp.Body.Close()
 
-	if opts.ResolvedETag != nil {
+	if opts.ResolvedETag.Valid {
 		got := etagValue(resp.Header.Get("ETag"))
-		if got != *opts.ResolvedETag {
-			return nil, fmt.Errorf("http ETag mismatch: expected %q, got %q", *opts.ResolvedETag, got)
+		if got != string(opts.ResolvedETag.Value) {
+			return nil, fmt.Errorf("http ETag mismatch: expected %q, got %q", opts.ResolvedETag.Value, got)
 		}
 	}
-	if opts.ResolvedLastModified != nil {
+	if opts.ResolvedLastModified.Valid {
 		got := resp.Header.Get("Last-Modified")
-		if got != *opts.ResolvedLastModified {
-			return nil, fmt.Errorf("http Last-Modified mismatch: expected %q, got %q", *opts.ResolvedLastModified, got)
+		if got != string(opts.ResolvedLastModified.Value) {
+			return nil, fmt.Errorf("http Last-Modified mismatch: expected %q, got %q", opts.ResolvedLastModified.Value, got)
 		}
 	}
 
@@ -223,11 +223,11 @@ func doHTTPClientRequest(ctx context.Context, req *http.Request) (*http.Response
 	return resp, nil
 }
 
-func parseOptionalChecksum(raw *string) (digest.Digest, error) {
-	if raw == nil || *raw == "" {
+func parseOptionalChecksum(raw dagql.Optional[dagql.String]) (digest.Digest, error) {
+	if !raw.Valid || raw.Value == "" {
 		return "", nil
 	}
-	return digest.Parse(*raw)
+	return digest.Parse(string(raw.Value))
 }
 
 func etagValue(v string) string {

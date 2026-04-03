@@ -46,27 +46,27 @@ func (s *httpSchema) Install(srv *dagql.Server) {
 
 type httpArgs struct {
 	URL                     string
-	Name                    *string
-	Permissions             *int
-	Checksum                *string
+	Name                    dagql.Optional[dagql.String]
+	Permissions             dagql.Optional[dagql.Int]
+	Checksum                dagql.Optional[dagql.String]
 	AuthHeader              dagql.Optional[core.SecretID]
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 }
 
 type httpResolvedArgs struct {
 	URL         string
-	Name        *string
-	Permissions *int
-	Checksum    *string
+	Name        dagql.Optional[dagql.String]
+	Permissions dagql.Optional[dagql.Int]
+	Checksum    dagql.Optional[dagql.String]
 
-	ResolvedETag         *string `name:"resolvedETag" internal:"true"`
-	ResolvedLastModified *string `internal:"true"`
-	ResolvedDigest       *string `internal:"true"`
+	ResolvedETag         dagql.Optional[dagql.String] `name:"resolvedETag" internal:"true"`
+	ResolvedLastModified dagql.Optional[dagql.String] `internal:"true"`
+	ResolvedDigest       dagql.Optional[dagql.String] `internal:"true"`
 }
 
 func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args httpArgs) (string, error) {
-	if args.Name != nil {
-		return *args.Name, nil
+	if args.Name.Valid {
+		return string(args.Name.Value), nil
 	}
 
 	parsed, err := url.Parse(args.URL)
@@ -90,7 +90,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	if err != nil {
 		return inst, err
 	}
-	permissions := valueOrDefault(args.Permissions, 0600)
+	permissions := int(args.Permissions.GetOr(dagql.Int(0600)))
 
 	if args.AuthHeader.Valid || args.ExperimentalServiceHost.Valid {
 		authHeader, detach, err := s.resolveHTTPSessionContext(ctx, parent.Self(), srv, args)
@@ -125,23 +125,23 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	selectArgs := []dagql.NamedInput{
 		{Name: "url", Value: dagql.String(args.URL)},
 	}
-	if args.Name != nil {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "name", Value: dagql.String(*args.Name)})
+	if args.Name.Valid {
+		selectArgs = append(selectArgs, dagql.NamedInput{Name: "name", Value: dagql.Opt(args.Name.Value)})
 	}
-	if args.Permissions != nil {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "permissions", Value: dagql.Int(*args.Permissions)})
+	if args.Permissions.Valid {
+		selectArgs = append(selectArgs, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(args.Permissions.Value)})
 	}
-	if args.Checksum != nil {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "checksum", Value: dagql.String(*args.Checksum)})
+	if args.Checksum.Valid {
+		selectArgs = append(selectArgs, dagql.NamedInput{Name: "checksum", Value: dagql.Opt(args.Checksum.Value)})
 	}
-	if resolved.ETag != nil {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "resolvedETag", Value: dagql.String(*resolved.ETag)})
+	if resolved.ETag.Valid {
+		selectArgs = append(selectArgs, dagql.NamedInput{Name: "resolvedETag", Value: dagql.Opt(resolved.ETag.Value)})
 	}
-	if resolved.LastModified != nil {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "resolvedLastModified", Value: dagql.String(*resolved.LastModified)})
+	if resolved.LastModified.Valid {
+		selectArgs = append(selectArgs, dagql.NamedInput{Name: "resolvedLastModified", Value: dagql.Opt(resolved.LastModified.Value)})
 	}
-	if resolved.Digest != nil {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "resolvedDigest", Value: dagql.String(*resolved.Digest)})
+	if resolved.Digest.Valid {
+		selectArgs = append(selectArgs, dagql.NamedInput{Name: "resolvedDigest", Value: dagql.Opt(resolved.Digest.Value)})
 	}
 
 	if err := srv.Select(ctx, parent, &inst, dagql.Selector{
@@ -159,8 +159,8 @@ func (s *httpSchema) httpResolved(ctx context.Context, parent dagql.ObjectResult
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
-	filename := valueOrDefault(args.Name, "index")
-	permissions := valueOrDefault(args.Permissions, 0600)
+	filename := string(args.Name.GetOr(dagql.String("index")))
+	permissions := int(args.Permissions.GetOr(dagql.Int(0600)))
 	fetched, err := core.FetchHTTPFile(ctx, parent.Self(), core.FetchHTTPRequestOpts{
 		URL:                  args.URL,
 		Filename:             filename,
@@ -229,14 +229,14 @@ func (s *httpSchema) newHTTPFileResult(
 	srv *dagql.Server,
 	fetched *core.HTTPFetchResult,
 	permissions int,
-	checksum *string,
+	checksum dagql.Optional[dagql.String],
 ) (inst dagql.ObjectResult[*core.File], err error) {
 	outputDigest := hashutil.HashStrings(
 		fetched.File.File,
 		fmt.Sprint(permissions),
 		fetched.ContentDigest.String(),
 		fetched.LastModified,
-		valueOrDefault(checksum, ""),
+		string(checksum.GetOr(dagql.String(""))),
 	)
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, fetched.File)
 	if err != nil {
@@ -260,11 +260,4 @@ func parseChecksumArg(checksum *string) (digest.Digest, error) {
 		return "", fmt.Errorf("invalid checksum %q: %w", *checksum, err)
 	}
 	return parsed, nil
-}
-
-func valueOrDefault[T any](value *T, defaultValue T) T {
-	if value == nil {
-		return defaultValue
-	}
-	return *value
 }

@@ -194,11 +194,11 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 	case persistedResultKindNull:
 		return nil, nil
 	case persistedResultKindObject:
-		if call == nil {
-			return nil, fmt.Errorf("decode object_id envelope: missing authoritative call")
-		}
 		if dag == nil {
 			return nil, fmt.Errorf("decode object_id envelope: missing current dagql server in context")
+		}
+		if call == nil {
+			return nil, fmt.Errorf("decode object_id envelope: missing authoritative call")
 		}
 		objType, ok := dag.ObjectType(env.TypeName)
 		if !ok {
@@ -208,7 +208,10 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 		if !ok {
 			return nil, fmt.Errorf("decode object_id envelope: object type %q does not implement persisted decode", env.TypeName)
 		}
-		decodeCtx := ContextWithCall(ctx, call)
+		decodeCtx := ctx
+		if call != nil {
+			decodeCtx = ContextWithCall(ctx, call)
+		}
 		valSelf, err := decoder.DecodePersistedObject(decodeCtx, dag, resultID, call, env.ObjectJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode object_id envelope load: %w", err)

@@ -43,7 +43,7 @@ func (sdk *clientGeneratorModule) RequiredClientGenerationFiles(
 func (sdk *clientGeneratorModule) GenerateClient(
 	ctx context.Context,
 	modSource dagql.ObjectResult[*core.ModuleSource],
-	deps *core.ModDeps,
+	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
 	dag, err := sdk.mod.dag(ctx)
@@ -55,12 +55,6 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module source for sdk module %s generate client: %w", sdk.mod.mod.Self().Name(), err)
 	}
-
-	// For standalone clients, we want to include Engine and other types that are hidden from module SDKs
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForClient(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
-	}
 	modSourceID, err := modSource.ID()
 	if err != nil {
 		return inst, fmt.Errorf("failed to get scoped module source ID for sdk module %s generate client: %w", sdk.mod.mod.Self().Name(), err)
@@ -69,7 +63,6 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json ID during module client generation: %w", err)
 	}
-
 	_, ok := sdk.funcs["generateClient"]
 	if !ok {
 		return inst, fmt.Errorf("generateClient is not implemented by this SDK")

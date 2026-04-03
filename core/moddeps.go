@@ -1,3 +1,5 @@
+// DESIGN DOC: hack/designs/entrypoint-proxy.md
+
 package core
 
 import (
@@ -8,7 +10,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	dagintro "github.com/dagger/dagger/dagql/introspection"
 )
 
 const (
@@ -19,275 +20,234 @@ const (
 	ModuleName = "daggercore"
 )
 
-var (
-	TypesToIgnoreForModuleIntrospection = []string{"Host"}
-)
+var TypesToIgnoreForModuleIntrospection = []string{"Host"}
 
 type coreSchemaForker interface {
 	ForkSchema(context.Context, *Query, call.View) (*dagql.Server, error)
 }
 
-/*
-ModDeps represents a set of dependencies for a module or for a caller depending on a
-particular set of modules to be served.
-*/
-type ModDeps struct {
-	root *Query
-	mods []Mod
+type modDepEntry struct {
+	mod  Mod
+	opts InstallOpts
+}
 
-	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
-	lazilyLoadedSchema *dagql.Server
+// SchemaBuilder lazily constructs a dagql server from a set of modules with
+// per-module install policy. It is used both for a module's own dependency
+// graph and for the set of modules served to a client session.
+type SchemaBuilder struct {
+	root    *Query
+	entries []modDepEntry
+
+	lazilyLoadedServer *dagql.Server
 	loadSchemaErr      error
 	loadSchemaLock     sync.Mutex
 }
 
-func NewModDeps(root *Query, mods []Mod) *ModDeps {
-	return &ModDeps{
-		root: root,
-		mods: slices.Clone(mods),
+func NewSchemaBuilder(root *Query, mods []Mod) *SchemaBuilder {
+	entries := make([]modDepEntry, len(mods))
+	for i, m := range mods {
+		entries[i] = modDepEntry{mod: m}
+	}
+	return &SchemaBuilder{
+		root:    root,
+		entries: entries,
 	}
 }
 
-func (d *ModDeps) Clone() *ModDeps {
-	cp := &ModDeps{
-		root: d.root,
-		mods: slices.Clone(d.mods),
+func (b *SchemaBuilder) Clone() *SchemaBuilder {
+	if b == nil {
+		return nil
 	}
-	return cp
+	return &SchemaBuilder{
+		root:    b.root,
+		entries: slices.Clone(b.entries),
+	}
 }
 
-func (d *ModDeps) WithRoot(root *Query) *ModDeps {
-	cp := d.Clone()
+func (b *SchemaBuilder) WithRoot(root *Query) *SchemaBuilder {
+	cp := b.Clone()
 	cp.root = root
 	return cp
 }
 
-func (d *ModDeps) Append(mods ...Mod) *ModDeps {
-	cp := d.Clone()
-	cp.mods = append(cp.mods, mods...)
+func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
+	extra := make([]modDepEntry, len(mods))
+	for i, m := range mods {
+		extra[i] = modDepEntry{mod: m}
+	}
+	return &SchemaBuilder{
+		root:    b.root,
+		entries: append(extra, b.entries...),
+	}
+}
+
+func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
+	extra := make([]modDepEntry, len(mods))
+	for i, m := range mods {
+		extra[i] = modDepEntry{mod: m}
+	}
+	return &SchemaBuilder{
+		root:    b.root,
+		entries: append(slices.Clone(b.entries), extra...),
+	}
+}
+
+func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
+	cp := b.Clone()
+	for i, e := range cp.entries {
+		if e.mod.Name() == mod.Name() {
+			promoted := e.opts
+			if promoted.SkipConstructor && !opts.SkipConstructor {
+				promoted.SkipConstructor = false
+			}
+			if !promoted.Entrypoint && opts.Entrypoint {
+				promoted.Entrypoint = true
+			}
+			cp.entries[i].opts = promoted
+			return cp
+		}
+	}
+	cp.entries = append(cp.entries, modDepEntry{mod: mod, opts: opts})
 	return cp
 }
 
-func (d *ModDeps) Mods() []Mod {
-	if d == nil {
-		return nil
-	}
-	return slices.Clone(d.mods)
-}
-
-func (d *ModDeps) LookupDep(name string) (Mod, bool) {
-	for _, mod := range d.mods {
-		if mod.Name() == name {
-			return mod, true
+func (b *SchemaBuilder) Lookup(name string) (Mod, bool) {
+	for _, e := range b.entries {
+		if e.mod.Name() == name {
+			return e.mod, true
 		}
 	}
-
 	return nil, false
 }
 
-// The combined schema exposed by each mod in this set of dependencies
-func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
-	schema, err := d.lazilyLoadSchema(ctx)
-	if err != nil {
-		return nil, err
+func (b *SchemaBuilder) Mods() []Mod {
+	if b == nil {
+		return nil
 	}
-	return schema, nil
+	mods := make([]Mod, len(b.entries))
+	for i, e := range b.entries {
+		mods[i] = e.mod
+	}
+	return mods
 }
 
-// The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
-// It is meant for consumption from modules, which have some APIs hidden from their codegen.
-func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (inst dagql.Result[*File], _ error) {
-	dag, err := d.Schema(ctx)
-	if err != nil {
-		return inst, err
+func (b *SchemaBuilder) PrimaryMods() []Mod {
+	var mods []Mod
+	for _, e := range b.entries {
+		if !e.opts.SkipConstructor {
+			mods = append(mods, e.mod)
+		}
 	}
-
-	// Generate the JSON file using the cached server. The dagql Select cache
-	// (CachePerSchema) handles caching per-args, so different hiddenTypes
-	// produce correctly different results.
-	var schemaJSONFile dagql.Result[*File]
-	if err := dag.Select(ctx, dag.Root(), &schemaJSONFile,
-		dagql.Selector{
-			Field: "__schemaJSONFile",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "hiddenTypes",
-					Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenTypes...)),
-				},
-			},
-		},
-	); err != nil {
-		return inst, fmt.Errorf("failed to select introspection JSON file: %w", err)
-	}
-	return schemaJSONFile, nil
+	return mods
 }
 
-// The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
-// Some APIs are automatically hidden as they should not be exposed to modules.
-func (d *ModDeps) SchemaIntrospectionJSONFileForModule(ctx context.Context) (inst dagql.Result[*File], _ error) {
-	// Include both the module-specific hidden types and the engine-internal types
+func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
+	srv, err := b.lazilyLoadSchema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load schema: %w", err)
+	}
+	return srv, nil
+}
+
+func (b *SchemaBuilder) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (dagql.Result[*File], error) {
+	dag, err := b.Schema(ctx)
+	if err != nil {
+		return dagql.Result[*File]{}, err
+	}
+	return schemaJSONFileFromServer(ctx, dag, hiddenTypes)
+}
+
+func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context) (dagql.Result[*File], error) {
 	hiddenTypes := append([]string{}, TypesToIgnoreForModuleIntrospection...)
 	for _, typed := range TypesHiddenFromModuleSDKs {
 		hiddenTypes = append(hiddenTypes, typed.Type().Name())
 	}
-	return d.SchemaIntrospectionJSONFile(ctx, hiddenTypes)
+	return b.SchemaIntrospectionJSONFile(ctx, hiddenTypes)
 }
 
-// The introspection json for combined schema for standalone client generation.
-// Unlike module SDKs, standalone clients have access to Engine and other types that are hidden from modules.
-func (d *ModDeps) SchemaIntrospectionJSONFileForClient(ctx context.Context) (inst dagql.Result[*File], _ error) {
-	return d.SchemaIntrospectionJSONFile(ctx, []string{})
+func (b *SchemaBuilder) SchemaIntrospectionJSONFileForClient(ctx context.Context) (dagql.Result[*File], error) {
+	return b.SchemaIntrospectionJSONFile(ctx, []string{})
 }
 
-// All the TypeDefs exposed by this set of dependencies
-func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
+func (b *SchemaBuilder) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
 	var typeDefs dagql.ObjectResultArray[*TypeDef]
-	for _, mod := range d.mods {
-		modTypeDefs, err := mod.TypeDefs(ctx, dag)
+	for _, e := range b.entries {
+		modTypeDefs, err := e.mod.TypeDefs(ctx, dag)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get objects from mod %q: %w", mod.Name(), err)
+			return nil, fmt.Errorf("failed to get type defs for module %q: %w", e.mod.Name(), err)
 		}
 		typeDefs = append(typeDefs, modTypeDefs...)
 	}
 	return typeDefs, nil
 }
 
-func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
-	loadedSchema *dagql.Server,
-	rerr error,
-) {
-	d.loadSchemaLock.Lock()
-	defer d.loadSchemaLock.Unlock()
-	if d.lazilyLoadedSchema != nil {
-		return d.lazilyLoadedSchema, nil
-	}
-	if d.loadSchemaErr != nil {
-		return nil, d.loadSchemaErr
-	}
-	defer func() {
-		d.lazilyLoadedSchema = loadedSchema
-		d.loadSchemaErr = rerr
-	}()
-
-	var coreMod coreSchemaForker
-	for _, mod := range d.mods {
-		if m, ok := mod.(coreSchemaForker); ok {
-			coreMod = m
-			break
-		}
-	}
-
-	var view call.View
-	for _, mod := range d.mods {
-		if version, ok := mod.View(); ok {
-			view = version
-			break
-		}
-	}
-
-	var dag *dagql.Server
-	if coreMod != nil {
-		dag, rerr = coreMod.ForkSchema(ctx, d.root, view)
-		if rerr != nil {
-			return nil, fmt.Errorf("failed to fork core schema base: %w", rerr)
-		}
-	} else {
-		dag = dagql.NewServer(d.root)
-		dag.View = view
-		dag.Around(AroundFunc)
-		dagintro.Install[*Query](dag)
-	}
-
-	var objects []*ModuleObjectType
-	var ifaces []*InterfaceType
-	for _, mod := range d.mods {
-		if _, ok := mod.(coreSchemaForker); ok && coreMod != nil {
-			continue
-		}
-		if err := mod.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
-		}
-
-		// TODO support core interfaces types
-		if userMod, ok := mod.(*userMod); ok {
-			defs, err := mod.TypeDefs(ctx, dag)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
-			}
-			for _, def := range defs {
-				switch def.Self().Kind {
-				case TypeDefKindObject:
-					objects = append(objects, &ModuleObjectType{
-						typeDef: def.Self().AsObject.Value.Self(),
-						mod:     userMod.res,
-					})
-				case TypeDefKindInterface:
-					ifaces = append(ifaces, &InterfaceType{
-						typeDef: def.Self().AsInterface.Value.Self(),
-						mod:     userMod.res,
-					})
-				}
-			}
-		}
-	}
-
-	// add any extensions to objects for the interfaces they implement (if any)
-	// fmt.Fprintf(os.Stderr, "🧪 objects: %d, interfaces: %d\n", len(objects), len(ifaces))
-	for _, objType := range objects {
-		// fmt.Fprintf(os.Stderr, "🔍 object=%s\n", objType.typeDef.Name)
-		obj := objType.typeDef
-		class, found := dag.ObjectType(obj.Name)
-		if !found {
-			return nil, fmt.Errorf("failed to find object %q in schema", obj.Name)
-		}
-		for _, ifaceType := range ifaces {
-			iface := ifaceType.typeDef
-			if !obj.IsSubtypeOf(iface) {
-				continue
-			}
-			ifaceModule, err := NewUserMod(ifaceType.mod).ResultCallModule(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve module identity for interface %q: %w", iface.Name, err)
-			}
-			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
-			class.Extend(
-				dagql.FieldSpec{
-					Name:        asIfaceFieldName,
-					Description: fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
-					Type:        &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:      ifaceModule,
-				},
-				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
-					if !ok {
-						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
-					}
-					return dagql.NewObjectResultForCurrentCall(ctx, dag, &InterfaceAnnotatedValue{
-						TypeDef:        iface,
-						Fields:         inst.Fields,
-						UnderlyingType: objType,
-						IfaceType:      ifaceType,
-					})
-				},
-			)
-		}
-	}
-	return dag, nil
-}
-
-// Search the deps for the given type def, returning the ModType if found. This does not recurse
-// to transitive dependencies; it only returns types directly exposed by the schema of the top-level
-// deps.
-func (d *ModDeps) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bool, error) {
-	for _, mod := range d.mods {
-		modType, ok, err := mod.ModTypeFor(ctx, typeDef, false)
+func (b *SchemaBuilder) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bool, error) {
+	for _, e := range b.entries {
+		modType, ok, err := e.mod.ModTypeFor(ctx, typeDef, false)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to get type from mod %q: %w", mod.Name(), err)
+			return nil, false, fmt.Errorf("failed to get type from mod %q: %w", e.mod.Name(), err)
 		}
-		if !ok {
-			continue
+		if ok {
+			return modType, true, nil
 		}
-		return modType, true, nil
 	}
 	return nil, false, nil
+}
+
+func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dagql.Server, rerr error) {
+	b.loadSchemaLock.Lock()
+	defer b.loadSchemaLock.Unlock()
+	if b.lazilyLoadedServer != nil {
+		return b.lazilyLoadedServer, nil
+	}
+	if b.loadSchemaErr != nil {
+		return nil, b.loadSchemaErr
+	}
+	defer func() {
+		b.lazilyLoadedServer = loadedSchema
+		b.loadSchemaErr = rerr
+	}()
+
+	var nonEntrypoints, entrypoints []modDepEntry
+	for _, e := range b.entries {
+		if e.opts.Entrypoint {
+			entrypoints = append(entrypoints, e)
+		} else {
+			nonEntrypoints = append(nonEntrypoints, e)
+		}
+	}
+
+	if len(entrypoints) == 0 {
+		mods := make([]modInstall, len(b.entries))
+		for i, e := range b.entries {
+			mods[i] = modInstall(e)
+		}
+		return buildSchema(ctx, b.root, mods)
+	}
+
+	innerMods := make([]modInstall, len(b.entries))
+	for i, e := range b.entries {
+		opts := e.opts
+		opts.Entrypoint = false
+		innerMods[i] = modInstall{mod: e.mod, opts: opts}
+	}
+	inner, err := buildSchema(ctx, b.root, innerMods)
+	if err != nil {
+		return nil, err
+	}
+
+	outerMods := make([]modInstall, 0, len(b.entries))
+	for _, e := range nonEntrypoints {
+		outerMods = append(outerMods, modInstall(e))
+	}
+	for _, e := range entrypoints {
+		outerMods = append(outerMods, modInstall(e))
+	}
+	outer, err := buildSchema(ctx, b.root, outerMods)
+	if err != nil {
+		return nil, err
+	}
+	outer.SetCanonical(inner)
+
+	return outer, nil
 }

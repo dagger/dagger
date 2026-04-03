@@ -32,19 +32,22 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 	return def, nil
 }
 
-// initializeDefaultModule loads the module referenced by the -m,--mod flag
+// initializeWorkspace loads type definitions from the workspace.
+// Modules are already served by the engine at connect time.
 //
-// By default, looks for a module in the current directory, or above.
-// Returns an error if the module is not found or invalid.
-func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
-	if moduleNoURL {
-		return nil, fmt.Errorf("cannot load module when --no-mod is specified")
+// The CLI consumes workspace entrypoint methods and module constructors
+// directly from the engine schema's Query root.
+func initializeWorkspace(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rdef *moduleDef, rerr error) {
+	ctx, span := Tracer().Start(ctx, "load workspace: .")
+	defer telemetry.EndWithCause(span, &rerr)
+
+	def := &moduleDef{}
+
+	if err := def.loadTypeDefs(ctx, dag, opts...); err != nil {
+		return nil, err
 	}
-	modRef, _ := getExplicitModuleSourceRef()
-	if modRef == "" {
-		modRef = moduleURLDefault
-	}
-	return initializeModule(ctx, dag, modRef, dag.ModuleSource(modRef))
+
+	return def, nil
 }
 
 // initializeModule loads the module at the given source ref
@@ -55,6 +58,7 @@ func initializeModule(
 	dag *dagger.Client,
 	modRef string,
 	modSrc *dagger.ModuleSource,
+	opts ...dagger.ModuleServeOpts,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module: "+modRef)
 	defer telemetry.EndWithCause(span, &rerr)
@@ -71,7 +75,13 @@ func initializeModule(
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	err = modSrc.AsModule().Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true})
+	serveOpts := dagger.ModuleServeOpts{IncludeDependencies: true}
+	for _, o := range opts {
+		if o.Entrypoint {
+			serveOpts.Entrypoint = true
+		}
+	}
+	err = modSrc.AsModule().Serve(serveCtx, serveOpts)
 	telemetry.EndWithCause(serveSpan, &err)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serve module: %w", err)
@@ -278,17 +288,30 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	return def, nil
 }
 
+// loadTypeDefsOpts configures the loadTypeDefs call.
+type loadTypeDefsOpts struct {
+	// HideCore strips core API functions from the Query type, leaving
+	// only module-sourced functions (constructors, entrypoint proxies).
+	HideCore bool
+}
+
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
-func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr error) {
+func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rerr error) {
 	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(loadSpan, &rerr)
+
+	var o loadTypeDefsOpts
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 
 	var res struct {
 		TypeDefs []*modTypeDef
 	}
 
 	err := dag.Do(ctx, &dagger.Request{
-		Query: loadTypeDefsQuery,
+		Query:     loadTypeDefsQuery,
+		Variables: map[string]any{"hideCore": o.HideCore},
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -345,36 +368,39 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 			return fmt.Errorf("load query function typedefs for %q: %w", fn.Name, err)
 		}
 		if obj := fn.ReturnType.AsObject; obj != nil {
-			if fn.Name == gqlFieldName(obj.Name) {
+			// Detect module constructors: a Query field is a constructor
+			// when its SourceModuleName matches the field name.
+			if fn.SourceModuleName != "" && fn.Name == gqlFieldName(fn.SourceModuleName) {
 				obj.Constructor = fn
 			}
 		}
 	}
 
-	if m.MainObject == nil {
-		for _, typeDef := range m.Objects {
-			if typeDef.AsObject == nil {
-				continue
-			}
-			obj := typeDef.AsObject
-			if obj.SourceModuleName == m.Name && gqlFieldName(obj.Name) == gqlFieldName(m.Name) {
-				m.MainObject = typeDef
+	// There's always a constructor, even for Query, to make it easier to reuse code.
+	// Default to a no-op identity constructor that returns Query itself.
+	rootType.AsObject.Constructor = &modFunction{ReturnType: rootType}
+
+	// MainObject is always Query — all served module constructors and
+	// entrypoint proxy functions live on Query uniformly.
+	m.MainObject = rootType
+
+	// Use Query.with as the constructor so that constructor flags
+	// (e.g. --model) are recognized. If there's no `with` function
+	// (no constructor args), the no-op identity constructor above
+	// is kept.
+	if m.Name != "" {
+		for _, fn := range rootType.AsObject.Functions {
+			if fn.Name == "with" {
+				rootType.AsObject.Constructor = fn
 				break
 			}
 		}
 	}
 
-	// There's always a constructor, even for Query, to make it easier to reuse code.
-	rootType.AsObject.Constructor = &modFunction{ReturnType: rootType}
-
-	// For core API only, main object is the Query type.
-	if m.Name == "" {
-		m.MainObject = rootType
-	}
-
-	if m.Name != "" && m.MainObject == nil {
-		return fmt.Errorf("main object not found, check that your module's name and main object match")
-	}
+	// NOTE: "with" stays in the functions list so that shell states
+	// containing a with() constructor call can be resolved by
+	// GetObjectFunction. Help/completion filter it out via
+	// isHiddenFunction.
 
 	return nil
 }
@@ -537,38 +563,39 @@ func (m *moduleDef) HasModule() bool {
 	return m.Name != ""
 }
 
-func (m *moduleDef) GetCoreFunctions() []*modFunction {
-	all := m.GetFunctionProvider("Query").GetFunctions()
-	fns := make([]*modFunction, 0, len(all))
-
-	for _, fn := range all {
-		if fn.ReturnType.AsObject != nil && !fn.ReturnType.AsObject.IsCore() || fn.Name == "" {
-			continue
-		}
-		fns = append(fns, fn)
+// ModuleConstructor returns the constructor function for the module's
+// named main object. This is the module-specific constructor (e.g.
+// Query.myMod()), as opposed to MainObject.AsObject.Constructor which
+// is Query's synthetic "with" or no-op constructor.
+// Returns nil if no named constructor is available.
+func (m *moduleDef) ModuleConstructor() *modFunction {
+	if obj := m.GetObject(m.Name); obj != nil && obj.Constructor != nil {
+		return obj.Constructor
 	}
-
-	return fns
-}
-
-// GetCoreFunction returns a core function with the given name.
-func (m *moduleDef) GetCoreFunction(name string) *modFunction {
-	for _, fn := range m.GetCoreFunctions() {
-		if fn.Name == name || fn.CmdName() == name {
-			return fn
-		}
+	// Only fall back to MainObject's constructor if it's a real one
+	// (non-empty name). The no-op identity constructor can't produce
+	// a valid GraphQL call.
+	if c := m.MainObject.AsObject.Constructor; c != nil && c.Name != "" {
+		return c
 	}
 	return nil
 }
 
-// HasCoreFunction checks if there's a core function with the given name.
-func (m *moduleDef) HasCoreFunction(name string) bool {
-	fn := m.GetCoreFunction(name)
-	return fn != nil
+func (m *moduleDef) HasMainFunction(name string) bool {
+	return m.GetMainFunction(name) != nil
 }
 
-func (m *moduleDef) HasMainFunction(name string) bool {
-	return m.HasFunction(m.MainObject.AsFunctionProvider(), name)
+// GetMainFunction returns a function from the main object. When entrypoint
+// proxying is active, MainObject is Query and all Query fields — entrypoint
+// proxy functions, installed module constructors, and core functions — are
+// treated uniformly.
+func (m *moduleDef) GetMainFunction(name string) *modFunction {
+	fp := m.MainObject.AsFunctionProvider()
+	if fp == nil {
+		return nil
+	}
+	fn, _ := m.GetFunction(fp, name)
+	return fn
 }
 
 // HasFunction checks if an object has a function with the given name.
@@ -1007,12 +1034,13 @@ func shortDescription(desc string) string {
 
 // modFunction is a representation of dagger.Function.
 type modFunction struct {
-	Name        string
-	Description string
-	ReturnType  *modTypeDef
-	Args        []*modFunctionArg
-	cmdName     string
-	once        sync.Once
+	Name             string
+	Description      string
+	SourceModuleName string
+	ReturnType       *modTypeDef
+	Args             []*modFunctionArg
+	cmdName          string
+	once             sync.Once
 }
 
 func (f *modFunction) CmdName() string {

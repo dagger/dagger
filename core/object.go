@@ -998,9 +998,14 @@ func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 	return def
 }
 
-func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
+func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error {
 	if obj.Module.Self() == nil {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
+	}
+
+	var opt InstallOpts
+	if len(opts) > 0 {
+		opt = opts[0]
 	}
 
 	classOpts := dagql.ClassOpts[*ModuleObject]{
@@ -1014,9 +1019,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	}
 
 	class := dagql.NewClass(dag, classOpts)
-	objDef := obj.TypeDef
-	mod := obj.Module.Self()
-	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) {
+	if obj.isMainObject() && !opt.SkipConstructor && !opt.Entrypoint {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
@@ -1035,7 +1038,17 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	class.Install(fields...)
 	dag.InstallObject(class, installDirectives...)
 
+	if obj.isMainObject() && opt.Entrypoint {
+		if err := obj.installEntrypointMethods(ctx, dag); err != nil {
+			return fmt.Errorf("failed to install entrypoint methods: %w", err)
+		}
+	}
+
 	return nil
+}
+
+func (obj *ModuleObject) isMainObject() bool {
+	return gqlObjectName(obj.TypeDef.OriginalName) == gqlObjectName(obj.Module.Self().OriginalName)
 }
 
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
@@ -1048,8 +1061,16 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
+		// Prefer the object's description; fall back to the module's
+		// description so that dependency constructors on Query always
+		// carry the module's doc string when the struct itself has none.
+		desc := formatGqlDescription(objDef.Description)
+		if desc == "" {
+			desc = formatGqlDescription(mod.Description)
+		}
 		spec := dagql.FieldSpec{
 			Name:             gqlFieldName(mod.Name()),
+			Description:      desc,
 			Type:             obj,
 			Module:           moduleID,
 			DeprecatedReason: objDef.Deprecated,
@@ -1097,6 +1118,12 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
 	spec.Name = gqlFieldName(mod.Name())
+	if spec.Description == "" {
+		spec.Description = formatGqlDescription(objDef.Description)
+	}
+	if spec.Description == "" {
+		spec.Description = formatGqlDescription(mod.Description)
+	}
 	spec.Module = moduleID
 	spec.GetDynamicInput = fn.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, fn.cacheImplicitInputs()...)
@@ -1123,6 +1150,188 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	return nil
 }
 
+func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagql.Server) error {
+	moduleID, err := NewUserMod(obj.Module).ResultCallModule(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to resolve module identity for entrypoint object %q: %w", obj.TypeDef.Name, err)
+	}
+	constructorName := gqlFieldName(obj.Module.Self().Name())
+
+	// Build constructor arg specs from the module's type definition
+	// rather than looking them up from the server — the constructor
+	// is not installed on the outer server when Entrypoint is set.
+	var constructorArgs []dagql.InputSpec
+	if obj.TypeDef.Constructor.Valid {
+		fn, err := NewModFunction(ctx, obj.Module, obj.TypeDef, obj.TypeDef.Constructor.Value.Self())
+		if err != nil {
+			return fmt.Errorf("failed to create constructor function: %w", err)
+		}
+		if err := fn.mergeUserDefaultsTypeDefs(ctx); err != nil {
+			return fmt.Errorf("failed to merge constructor user defaults: %w", err)
+		}
+		spec, err := fn.metadata.FieldSpec(ctx, NewUserMod(obj.Module))
+		if err != nil {
+			return fmt.Errorf("failed to get constructor field spec: %w", err)
+		}
+		constructorArgs = spec.Args.Inputs(dag.View)
+	}
+
+	// Install `with` field on Query that stores constructor args for
+	// entrypoint proxy resolvers to forward to the constructor.
+	// Only installed when the constructor has arguments.
+	if len(constructorArgs) > 0 {
+		// Use the original constructor's description if available,
+		// since `with` IS the user-facing constructor.
+		withDesc := obj.TypeDef.Constructor.Value.Self().Description
+		if withDesc == "" {
+			withDesc = fmt.Sprintf("Configure the %s constructor arguments.", obj.Module.Self().Name())
+		}
+		withSpec := dagql.FieldSpec{
+			Name:        "with",
+			Description: withDesc,
+			Type:        &Query{},
+			Module:      moduleID,
+			Args:        dagql.NewInputSpecs(constructorArgs...),
+			DoNotCache:  "Pure routing; the inner module constructor has its own caching policy.",
+			NoTelemetry: true,
+		}
+		dag.Root().ObjectType().Extend(
+			withSpec,
+			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+				query, ok := dagql.UnwrapAs[*Query](self)
+				if !ok {
+					return nil, fmt.Errorf("expected *Query, got %T", self)
+				}
+				cp := query.Clone()
+				cp.ConstructorArgs = make(map[string]dagql.Input, len(args))
+				for k, v := range args {
+					cp.ConstructorArgs[k] = v
+				}
+				return dagql.NewObjectResultForCurrentCall(ctx, dag, cp)
+			},
+		)
+	}
+
+	for _, fun := range obj.TypeDef.Functions {
+		modFun, err := NewModFunction(ctx, obj.Module, obj.TypeDef, fun.Self())
+		if err != nil {
+			return fmt.Errorf("failed to create function %q: %w", fun.Self().Name, err)
+		}
+		if err := modFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
+			return fmt.Errorf("failed to merge user defaults for %q: %w", fun.Self().Name, err)
+		}
+
+		proxySpec, err := modFun.metadata.FieldSpec(ctx, NewUserMod(obj.Module))
+		if err != nil {
+			return fmt.Errorf("failed to get field spec for %q: %w", fun.Self().Name, err)
+		}
+		// Proxy specs only carry the method's own args — constructor args
+		// are stored on the Query via the `with` field.
+		proxySpec.Module = moduleID
+		proxySpec.DoNotCache = "Entrypoint proxy is pure routing; the inner constructor and method calls cache on their own."
+		proxySpec.NoTelemetry = true
+
+		methodName := proxySpec.Name
+		methodArgs := proxySpec.Args.Inputs(dag.View)
+		dag.Root().ObjectType().Extend(
+			proxySpec,
+			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+				// Prevent dag.Select from marking the inner constructor
+				// and method calls as internal — they are the real
+				// user-facing calls and should appear in telemetry.
+				ctx = dagql.WithNonInternalTelemetry(ctx)
+				// Desugar through the canonical server where the real
+				// constructor lives (not shadowed by proxy fields).
+				canonical := dag.Canonical()
+				// Read constructor args from the Query (set by `with`).
+				query, _ := dagql.UnwrapAs[*Query](self)
+				var ctorNamedArgs []dagql.NamedInput
+				if query != nil && query.ConstructorArgs != nil {
+					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
+				}
+				var result dagql.AnyResult
+				if err := canonical.Select(ctx, canonical.Root(), &result,
+					dagql.Selector{
+						Field: constructorName,
+						Args:  ctorNamedArgs,
+					},
+					dagql.Selector{
+						Field: methodName,
+						Args:  orderedNamedInputs(methodArgs, args),
+					},
+				); err != nil {
+					return nil, err
+				}
+				return result, nil
+			},
+		)
+	}
+
+	for _, field := range obj.TypeDef.Fields {
+		fieldName := gqlFieldName(field.Self().Name)
+
+		proxySpec := dagql.FieldSpec{
+			Name:        fieldName,
+			Description: field.Self().Description,
+			Type:        field.Self().TypeDef.Self().ToTyped(),
+			Module:      moduleID,
+			NoTelemetry: true,
+			DoNotCache:  "Entrypoint proxy is pure routing; the inner constructor and field calls cache on their own.",
+		}
+
+		proxiedFieldName := fieldName
+		dag.Root().ObjectType().Extend(
+			proxySpec,
+			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+				ctx = dagql.WithNonInternalTelemetry(ctx)
+				// Desugar through the canonical server where the real
+				// constructor lives (not shadowed by proxy fields).
+				canonical := dag.Canonical()
+				// Read constructor args from the Query (set by `with`).
+				query, _ := dagql.UnwrapAs[*Query](self)
+				var ctorNamedArgs []dagql.NamedInput
+				if query != nil && query.ConstructorArgs != nil {
+					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
+				}
+				var result dagql.AnyResult
+				if err := canonical.Select(ctx, canonical.Root(), &result,
+					dagql.Selector{
+						Field: constructorName,
+						Args:  ctorNamedArgs,
+					},
+					dagql.Selector{
+						Field: proxiedFieldName,
+					},
+				); err != nil {
+					return nil, err
+				}
+				return result, nil
+			},
+		)
+	}
+
+	return nil
+}
+
+func orderedNamedInputs(specs []dagql.InputSpec, args map[string]dagql.Input) []dagql.NamedInput {
+	if len(args) == 0 {
+		return nil
+	}
+
+	inputs := make([]dagql.NamedInput, 0, len(specs))
+	for _, spec := range specs {
+		arg, ok := args[spec.Name]
+		if !ok {
+			continue
+		}
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  spec.Name,
+			Value: arg,
+		})
+	}
+	return inputs
+}
+
 func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*ModuleObject], err error) {
 	for _, field := range obj.TypeDef.Fields {
 		objField, err := objField(ctx, obj.Module, field.Self())
@@ -1137,20 +1346,7 @@ func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*Modu
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
 	for _, fun := range obj.TypeDef.Functions {
-		funSelf := fun.Self()
-		// Check if this is a toolchain proxy function using the registry
-		if obj.Module.Self().Toolchains != nil {
-			if entry, ok := obj.Module.Self().Toolchains.Get(funSelf.OriginalName); ok {
-				proxyField, err := entry.CreateProxyField(ctx, obj.Module, funSelf, dag)
-				if err != nil {
-					return nil, err
-				}
-				fields = append(fields, proxyField)
-				continue
-			}
-		}
-
-		objFun, err := objFun(ctx, obj.Module, objDef, funSelf, dag)
+		objFun, err := objFun(ctx, obj.Module, objDef, fun.Self(), dag)
 		if err != nil {
 			return nil, err
 		}

@@ -14,12 +14,6 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
-const (
-	shellStdlibCmdName = ".stdlib"
-	shellDepsCmdName   = ".deps"
-	shellCoreCmdName   = ".core"
-)
-
 // ShellCommand is a Dagger Shell builtin or stdlib command
 type ShellCommand struct {
 	// Use is the one-line usage message
@@ -179,28 +173,9 @@ func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
 	return nil, fmt.Errorf("command not found: %q", name)
 }
 
-func (h *shellCallHandler) StdlibCommand(name string) (*ShellCommand, error) {
-	for _, c := range h.stdlib {
-		if c.Name() == name {
-			return c, nil
-		}
-	}
-	return nil, fmt.Errorf("command not found: %q", name)
-}
-
 func (h *shellCallHandler) Builtins() []*ShellCommand {
 	l := make([]*ShellCommand, 0, len(h.builtins))
 	for _, c := range h.builtins {
-		if !c.Hidden {
-			l = append(l, c)
-		}
-	}
-	return l
-}
-
-func (h *shellCallHandler) Stdlib() []*ShellCommand {
-	l := make([]*ShellCommand, 0, len(h.stdlib))
-	for _, c := range h.stdlib {
 		if !c.Hidden {
 			l = append(l, c)
 		}
@@ -307,7 +282,6 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 
 func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 	var builtins []*ShellCommand
-	var stdlib []*ShellCommand
 
 	builtins = append(builtins,
 		&ShellCommand{
@@ -348,6 +322,11 @@ func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 						return h.Print(ctx, shellTypeDoc(t))
 					}
 
+					// "." and the current module name refer to this module.
+					if def := h.GetDef(nil); def.HasModule() && (args[0] == "." || args[0] == def.Name) {
+						return h.Print(ctx, h.ModuleDoc(def))
+					}
+
 					// Use the same function lookup as when executing
 					// so that `> .help wolfi` documents `> wolfi`.
 					st, err = h.StateLookup(ctx, args[0])
@@ -365,55 +344,13 @@ func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 
 				def := h.GetDef(st)
 
-				if st.IsEmpty() {
-					switch {
-					case st.IsStdlib():
-						// Document stdlib
-						// Example: `.stdlib | .help`
-						if len(args) == 0 {
-							return h.Print(ctx, h.StdlibHelp())
-						}
-						// Example: .stdlib | .help <command>`
-						c, err := h.StdlibCommand(args[0])
-						if err != nil {
-							return err
-						}
-						return h.Print(ctx, c.Help())
-
-					case st.IsDeps():
-						// Document dependency
-						// Example: `.deps | .help`
-						if len(args) == 0 {
-							return h.Print(ctx, h.DepsHelp())
-						}
-						// Example: `.deps | .help <dependency>`
-						_, depDef, err := h.GetDependency(ctx, args[0])
-						if err != nil {
-							return err
-						}
-						return h.Print(ctx, h.ModuleDoc(depDef))
-
-					case st.IsCore():
-						// Document core
-						// Example: `.core | .help`
-						if len(args) == 0 {
-							return h.Print(ctx, h.CoreHelp())
-						}
-						// Example: `.core | .help <function>`
-						fn := def.GetCoreFunction(args[0])
-						if fn == nil {
-							return fmt.Errorf("core function %q not found", args[0])
-						}
-						return h.Print(ctx, h.FunctionDoc(def, fn))
-
-					case len(args) == 0:
-						if !def.HasModule() {
-							return fmt.Errorf("module not loaded.\nUse %q to see what's available", shellStdlibCmdName)
-						}
-						// Document module
-						// Example: `.help [module]`
-						return h.Print(ctx, h.ModuleDoc(def))
+				if st.IsEmpty() && len(args) == 0 {
+					if !def.HasModule() {
+						return fmt.Errorf("module not loaded")
 					}
+					// Document module
+					// Example: `.help [module]`
+					return h.Print(ctx, h.ModuleDoc(def))
 				}
 
 				t, err := st.GetTypeDef(def)
@@ -424,6 +361,15 @@ func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 				// Document type
 				// Example: `container | .help`
 				if len(args) == 0 {
+					// When entrypoint proxying is active, the constructor
+					// returns Query. Show the module's named main object
+					// type instead so `. | .help` documents the module
+					// object, not Query.
+					if t.AsFunctionProvider() != nil && t.AsFunctionProvider().ProviderName() == "Query" && def.HasModule() {
+						if mt := def.GetTypeDef(gqlObjectName(def.Name)); mt != nil {
+							t = mt
+						}
+					}
 					return h.Print(ctx, shellTypeDoc(t))
 				}
 
@@ -625,175 +571,20 @@ Without arguments, the current working directory is replaced by the initial cont
 				return nil
 			},
 		},
-		&ShellCommand{
-			Use:         shellDepsCmdName,
-			Description: "Dependencies from the module loaded in the current context",
-			GroupID:     moduleGroup.ID,
-			Hidden:      true,
-			Args:        NoArgs,
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				_, err := h.GetModuleDef(nil)
-				if err != nil {
-					return err
-				}
-				return h.Save(ctx, h.NewDepsState())
-			},
-			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
-				return &CompletionContext{
-					Completer:   ctx.Completer,
-					CmdFunction: shellDepsCmdName,
-				}
-			},
-		},
-		&ShellCommand{
-			Use:         shellStdlibCmdName,
-			Description: "Standard library functions",
-			Hidden:      true,
-			Args:        NoArgs,
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				return h.Save(ctx, h.NewStdlibState())
-			},
-			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
-				return &CompletionContext{
-					Completer:   ctx.Completer,
-					CmdFunction: shellStdlibCmdName,
-				}
-			},
-		},
-		&ShellCommand{
-			Use:         ".core [function]",
-			Description: "Load any core Dagger type",
-			Hidden:      true,
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				return h.Save(ctx, h.NewCoreState())
-			},
-			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
-				return &CompletionContext{
-					Completer:   ctx.Completer,
-					CmdFunction: shellCoreCmdName,
-				}
-			},
-		},
 		cobraToShellCommand(loginCmd),
 		cobraToShellCommand(logoutCmd),
-		cobraToShellCommand(moduleInstallCmd),
+		cobraToShellCommand(moduleDepInstallCmd),
 		cobraToShellCommand(moduleUnInstallCmd),
 		cobraToShellCommand(moduleUpdateCmd),
 	)
 
 	// Add LLM commands
 	builtins = append(builtins, h.llmBuiltins()...)
-
-	def := h.GetDef(nil)
-
-	for _, fn := range def.GetCoreFunctions() {
-		if err := def.LoadFunctionTypeDefs(fn); err != nil {
-			return err
-		}
-
-		// TODO: Don't hardcode this list.
-		promoted := []string{
-			"address",
-			"cache-volume",
-			"checks",
-			"container",
-			"directory",
-			"engine",
-			"env",
-			"env-file",
-			"file",
-			"git",
-			"host",
-			"http",
-			"json",
-			"llm",
-			"secret",
-			"set-secret",
-			"version",
-		}
-
-		if !slices.Contains(promoted, fn.CmdName()) {
-			continue
-		}
-
-		stdlib = append(stdlib,
-			&ShellCommand{
-				Use:         h.FunctionUseLine(def, fn),
-				Description: fn.Description,
-				State:       NoState,
-				HelpFunc: func(cmd *ShellCommand) string {
-					return h.FunctionDoc(def, fn)
-				},
-				// Don't resolve state args since this is calling functionCall
-				// which needs state args to be passed as-is for specialized
-				// flag handling.
-				NoResolveStateArgs: true,
-				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-					emptySt := h.NewState()
-					st, err := h.functionCall(ctx, &emptySt, fn.CmdName(), args)
-					if err != nil {
-						return err
-					}
-					return h.Save(ctx, *st)
-				},
-				Complete: func(ctx *CompletionContext, args []string) *CompletionContext {
-					return &CompletionContext{
-						Completer:   ctx.Completer,
-						ModFunction: fn,
-					}
-				},
-			},
-		)
-	}
-
-	// Add current-env command that creates an env with the current module installed
-	stdlib = append(stdlib, &ShellCommand{
-		Use:         "current-env",
-		Description: "Initialize an environment with the current module installed",
-		State:       NoState,
-		Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-			def := h.GetDef(nil)
-			if def.Source == nil {
-				return fmt.Errorf("no module loaded")
-			}
-			// Get the module ID from the module source
-			moduleID, err := def.Source.AsModule().ID(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module ID: %w", err)
-			}
-			// Create an env state
-			emptySt := h.NewState()
-			envSt, err := h.functionCall(ctx, &emptySt, "env", []string{})
-			if err != nil {
-				return fmt.Errorf("failed to create env: %w", err)
-			}
-			// Get the withModule function definition to bypass argument parsing
-			// which would try to resolve the module ID as a path
-			withModuleFn, err := envSt.Function().GetNextDef(def, "withModule")
-			if err != nil {
-				return fmt.Errorf("failed to get withModule function: %w", err)
-			}
-			// Directly construct the state with the module ID, bypassing parseArgumentValues
-			finalSt := envSt.WithCall(withModuleFn, map[string]any{
-				"module": string(moduleID),
-			})
-			return h.Save(ctx, finalSt)
-		},
-	})
-
 	slices.SortStableFunc(builtins, func(x, y *ShellCommand) int {
 		return cmp.Compare(x.Use, y.Use)
 	})
 
-	slices.SortStableFunc(stdlib, func(x, y *ShellCommand) int {
-		return cmp.Compare(x.Use, y.Use)
-	})
-
 	h.builtins = builtins
-	h.stdlib = stdlib
 	return nil
 }
 
