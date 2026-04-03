@@ -1,7 +1,7 @@
 defmodule Dagger.Core.QueryBuilder do
   @moduledoc false
 
-  defstruct [:name, :args, :prev, alias: ""]
+  defstruct [:name, :args, :prev, alias: "", inline_fragment: nil]
 
   def query(), do: %__MODULE__{}
 
@@ -14,6 +14,13 @@ defmodule Dagger.Core.QueryBuilder do
     %__MODULE__{
       name: name,
       alias: alias,
+      prev: selection
+    }
+  end
+
+  def inline_fragment(%__MODULE__{} = selection, type_name) when is_binary(type_name) do
+    %__MODULE__{
+      name: "... on #{type_name}",
       prev: selection
     }
   end

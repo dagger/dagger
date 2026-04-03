@@ -1,41 +1,62 @@
 {
   "description": "The root of the DAG.",
+  "directives": [],
   "enumValues": [],
   "fields": [
     {
       "args": [
         {
           "defaultValue": null,
+          "deprecationReason": null,
           "description": "",
-          "name": "id",
+          "directives": [
+            {
+              "args": [
+                {
+                  "name": "name",
+                  "value": "\"Directory\""
+                }
+              ],
+              "name": "expectedType"
+            }
+          ],
+          "isDeprecated": false,
+          "name": "code",
           "type": {
             "kind": "NON_NULL",
             "name": null,
             "ofType": {
               "kind": "SCALAR",
-              "name": "ContainerID",
+              "name": "ID",
               "ofType": null
             }
           }
         }
       ],
       "deprecationReason": null,
-      "description": "Load a Container from its ID.",
+      "description": "Create a code generation result, given a directory containing the generated code.",
+      "directives": [],
       "isDeprecated": false,
-      "name": "loadContainerFromID",
+      "name": "generatedCode",
       "type": {
         "kind": "NON_NULL",
         "name": null,
         "ofType": {
           "kind": "OBJECT",
-          "name": "Container",
+          "name": "GeneratedCode",
           "ofType": null
         }
       }
     }
   ],
   "inputFields": [],
-  "interfaces": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
   "kind": "OBJECT",
   "name": "Query",
   "possibleTypes": []

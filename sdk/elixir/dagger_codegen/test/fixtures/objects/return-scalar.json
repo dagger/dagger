@@ -1,11 +1,13 @@
 {
   "description": "A definition of a parameter or return type in a Module.",
+  "directives": [],
   "enumValues": [],
   "fields": [
     {
       "args": [],
       "deprecationReason": null,
       "description": "The kind of type this is (e.g. primitive, list, object).",
+      "directives": [],
       "isDeprecated": false,
       "name": "kind",
       "type": {
@@ -20,7 +22,13 @@
     }
   ],
   "inputFields": [],
-  "interfaces": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
   "kind": "OBJECT",
   "name": "TypeDef",
   "possibleTypes": []
