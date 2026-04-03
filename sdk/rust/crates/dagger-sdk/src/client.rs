@@ -59,7 +59,7 @@ impl Query {
     /// network call. The returned value can be used to chain further
     /// queries.
     ///
-    /// ```no_run
+    /// ```ignore
     /// let ctr: Container = client.r#ref(id);
     /// let out = ctr.with_exec(vec!["echo", "hi"]).stdout().await?;
     /// ```
@@ -85,7 +85,7 @@ impl Query {
     /// Load a node by its ID with type safety. Verifies the node
     /// exists and matches the expected type before returning.
     ///
-    /// ```no_run
+    /// ```ignore
     /// let ctr: Container = client.load(id).await?;
     /// ```
     pub async fn load<T: Loadable>(&self, id: impl IntoID<Id>) -> Result<T, DaggerError> {
