@@ -6,11 +6,13 @@ Depends on: [Artifacts](./artifacts.md), [Execution Plans](./plans.md)
 
 ## Table of Contents
 
+- [Definition](#definition)
 - [Problem](#problem)
 - [Solution](#solution)
 - [Authoring](#authoring)
 - [Schema](#schema)
 - [Plan Construction](#plan-construction)
+- [Caching](#caching)
 - [CLI](#cli)
 - [Out Of Scope](#out-of-scope)
 
@@ -29,11 +31,58 @@ This layer does not choose preview, staging, or prod.
 This layer does not handle approvals, branch gates, secret policy, or
 protected environments.
 This layer also does not define structured ship results yet.
+Ship actions are never cached.
 
 Example:
 
 - A ship handler may create a deploy URL.
 - `dagger ship` still reports only success or failure today.
+
+## Definition
+
+A ship function changes an external system.
+That is what `+ship` is for.
+
+An external system is any system that Dagger does not own.
+
+Examples:
+
+- Push an image to a registry tag like `my-app:latest`
+- Deploy an app to Kubernetes
+- Publish docs to a website
+- Send a release notification
+
+These are not ship functions:
+
+- Build an image
+- Run tests
+- Generate source files
+- Read a deploy status
+
+Why?
+Because these do not change an external system.
+
+For module developers:
+
+- Use `+ship` when your function is meant to make a real outside change.
+- Do not use `+ship` for build, check, generate, or read-only functions.
+
+Example:
+
+- `PublishDocs()` uploads docs to a website. Use `+ship`.
+- `BuildDocs()` builds a static site locally. Do not use `+ship`.
+
+For Dagger users:
+
+- Use `dagger ship` when you want Dagger to make that outside change now.
+- Do not use `dagger ship` when you only want data, checks, or generated
+  files.
+
+Example:
+
+- “Deploy this app now” → `dagger ship`
+- “Run tests” → `dagger check`
+- “Generate code” → `dagger generate`
 
 ## Problem
 
@@ -147,7 +196,7 @@ Example:
 - `check(A)` may check `B` first.
 - `ship(A)` still only ships `A`.
 
-### Examples
+### Plan Examples
 
 Default behavior:
 
@@ -160,6 +209,31 @@ Opt out:
 ```text
 ship(go)
 ```
+
+## Caching
+
+Ship functions are never cached.
+Dagger must always run them.
+In other words, they are always invalidated.
+
+Why?
+Because ship functions have side effects.
+They also have a hidden input: the current state of the external system.
+Dagger does not know that state.
+So Dagger cannot build a safe cache key for a ship action.
+
+Example:
+
+- A ship function deploys to a cluster.
+- The cluster may have changed since the last run.
+- Dagger cannot safely say “cache hit”.
+- So Dagger must run the deploy again.
+
+Another example:
+
+- A ship function pushes `my-app:latest`.
+- The tag may already point to a different image now.
+- Dagger must run the push again.
 
 ## CLI
 
