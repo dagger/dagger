@@ -22,6 +22,7 @@ import (
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -126,6 +127,10 @@ func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID stri
 }
 func (ms *mockServer) EngineName() string { return "mockEngine" }
 func (ms *mockServer) Clients() []string  { return []string{} }
+
+func (ms *mockServer) RegisterSSHFSVolume(context.Context, string, digest.Digest, digest.Digest) (*Volume, error) {
+	return nil, nil
+}
 
 func (ms *mockServer) CloudEngineClient(context.Context, string, string, []string) (*engineclient.Client, bool, error) {
 	return nil, false, nil
