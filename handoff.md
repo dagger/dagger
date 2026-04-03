@@ -4,98 +4,15 @@
 
 The `interfaces` branch replaces per-type `loadFooFromID(id:)` schema
 fields with the Global Object Identification `node(id:)` pattern. The
-Go, Python, and TypeScript SDKs are fully migrated. The CLI, Dang SDK,
-codegen, integration tests, and module dependencies are also fixed.
+Go, Python, TypeScript, and Rust SDKs are fully migrated. The CLI,
+Dang SDK, codegen, integration tests, and module dependencies are also
+fixed. Codegen introspection test fixtures updated.
 
-## Rust SDK interface support — status
-
-### Done
-
-1. **Inline fragments in the query builder** —
-   `Selection::inline_fragment(type_name)` emits `... on TypeName` in
-   queries and skips the fragment during response unpacking (no extra
-   nesting level). Unit tests in `querybuilder::tests`.
-
-2. **Rust traits for interfaces** — Codegen generates `pub trait Node`
-   with async method signatures, a `NodeClient` struct for
-   query-building, `impl Node for NodeClient`, and `impl Node for
-   Container` / etc. for every object that declares the interface.
-   Visitor split into phases so interfaces generate before objects.
-   `format_kind_interface` ensures return types use `FooClient`.
-
-3. **`Loadable` trait + `ref`/`load` helpers** — `Loadable` trait in
-   `sdk/rust/crates/dagger-sdk/src/lib.rs::loadable` provides
-   `graphql_type()` and `from_query()`. Codegen generates
-   `impl Loadable` on every object/interface client with an `id` field.
-   `Query::r#ref<T>(id)` returns a lazy reference via
-   `node(id).inline_fragment(T::graphql_type())`. `Query::load<T>(id)`
-   verifies the node exists first.
-
-4. **`possibleTypes` wiring** — Codegen reads `interfaces` on each
-   object and generates `impl InterfaceTrait for Object` forwarding
-   methods for every declared interface.
-
-5. **`@expectedType` codegen** — Introspection query now requests
-   `directives { name args { name value } }` on fields and arguments.
-   `DirectiveApplication` / `DirectiveApplicationArg` structs and
-   `DirectivesExt::expected_type()` helper added to introspection types.
-
-   - **ConvertID (sync-like fields):** `CommonFunctions::convert_id()`
-     detects fields returning `ID!` where `@expectedType` matches the
-     parent object name. These fields become async methods returning
-     the parent type (not `Id`). The body executes the query to get
-     the ID, then reconstructs the parent via
-     `query.root().select("node").arg("id", id).inline_fragment(name)`.
-     `Selection::root()` added to the query builder.
-
-   - **`id()` field:** Not converted (explicitly excluded by
-     `convert_id`). Still returns `Result<Id, DaggerError>`.
-
-   - **`@expectedType` on arguments:** Already works via `is_id()` →
-     `impl IntoID<Id>` pattern. All objects implement `IntoID<Id>`,
-     so args typed `ID @expectedType(name: "Foo")` accept `Foo`
-     objects directly.
-
-### Regenerated
-
-`gen.rs` regenerated with unified `ID` scalar, ConvertID on sync-like
-fields, interface traits, Loadable impls, and possibleTypes output.
-21 codegen unit tests pass. Integration tests compile but require
-the dev engine (released v0.20.3 lacks `node(id:)`).
-
-### Key files
-
-| What | Where |
-|------|-------|
-| Query builder | `sdk/rust/crates/dagger-sdk/src/querybuilder.rs` |
-| Loadable trait | `sdk/rust/crates/dagger-sdk/src/lib.rs` (loadable module) |
-| ref/load methods | `sdk/rust/crates/dagger-sdk/src/client.rs` |
-| Codegen visitor | `sdk/rust/crates/dagger-codegen/src/visitor.rs` |
-| Interface template | `sdk/rust/crates/dagger-codegen/src/rust/templates/interface_tmpl.rs` |
-| Object template | `sdk/rust/crates/dagger-codegen/src/rust/templates/object_tmpl.rs` |
-| Format helpers | `sdk/rust/crates/dagger-codegen/src/rust/format.rs` |
-| Codegen functions | `sdk/rust/crates/dagger-codegen/src/rust/functions.rs` |
-| Common functions | `sdk/rust/crates/dagger-codegen/src/functions.rs` |
-| Introspection types | `sdk/rust/crates/dagger-sdk/src/core/introspection.rs` |
-| Introspection query | `sdk/rust/crates/dagger-sdk/src/core/graphql/introspection_query.graphql` |
-| Generated client | `sdk/rust/crates/dagger-sdk/src/gen.rs` |
-| Integration tests | `sdk/rust/crates/dagger-sdk/tests/mod.rs` |
-| Codegen tests | `sdk/rust/crates/dagger-codegen/src/lib.rs` (tests module) |
-
-## Other remaining SDKs
+## Remaining SDKs
 
 These still reference `loadFooFromID` and need the same migration
 pattern: add inline fragment support to the query builder, update
 codegen, regenerate, fix tests.
-
-### Codegen introspection test fixtures (trivial)
-
-JSON schema fixtures with `loadDepFromID` / `loadTestFromID` entries.
-Tests filtering logic, not the API. Remove the entries, update
-expected schemas, run `go test ./cmd/codegen/introspection/`.
-
-**Files:** `cmd/codegen/introspection/testdata/schema.json`,
-`keep_dep_expected_schema.json`, `keep_dep_and_test_expected_schema.json`
 
 ### Elixir SDK
 
@@ -117,6 +34,13 @@ Query builder likely needs `inline_fragment` added.
 
 **Test data:** `sdk/dotnet/sdk/Dagger.SDK.SourceGenerator.Tests/TestData.cs`
 
+## Codegen introspection test fixtures
+
+`schema.json` captured from dev engine via `go/namespacing` test
+module. Golden files regenerated with `go test -update`. Tests use
+`sub1`/`sub2`/`test` module names. Could use a `go:generate` script
+to keep it from going stale.
+
 ## Architecture reference
 
 Each SDK migration follows the same pattern:
@@ -133,3 +57,12 @@ func selectNode(q *Selection, id any, typeName string) *Selection {
     return q.Select("node").Arg("id", id).InlineFragment(typeName)
 }
 ```
+
+## Regenerating SDKs
+
+Use `dagger generate <module>:apiclient` where possible (e.g. Rust
+SDK uses `dagger generate rust-sdk:apiclient`). This runs against the
+dev engine from this branch, producing the correct unified ID schema.
+
+For the dev engine: `./hack/dev` builds and starts it,
+`./bin/dagger` runs commands against it.
