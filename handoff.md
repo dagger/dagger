@@ -60,11 +60,15 @@ func selectNode(q *Selection, id any, typeName string) *Selection {
 }
 ```
 
-## Regenerating SDKs
+## Regenerating and checking SDKs
 
-Use `dagger generate <module>:apiclient` where possible (e.g. Rust
-SDK uses `dagger generate rust-sdk:apiclient`). This runs against the
-dev engine from this branch, producing the correct unified ID schema.
+Use `dagger generate -l` and `dagger check -l` to list available
+targets. Then run specific ones:
+
+```bash
+dagger generate php-sdk:api -y    # regenerate
+dagger check 'php-sdk:*'           # run all checks for an SDK
+```
 
 For the dev engine: `./hack/dev` builds and starts it,
 `./bin/dagger` runs commands against it.
