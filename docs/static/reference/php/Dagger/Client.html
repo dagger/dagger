@@ -1027,6 +1027,26 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadUpFromID">loadUpFromID</a>(<abbr title="Dagger\UpId|Dagger\Up">Up</abbr> $id)
+        
+                                            <p><p>Load a Up from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadUpGroupFromID">loadUpGroupFromID</a>(<abbr title="Dagger\UpGroupId|Dagger\UpGroup">UpGroup</abbr> $id)
+        
+                                            <p><p>Load a UpGroup from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -4862,8 +4882,92 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_loadWorkspaceFromID">
+                    <h3 id="method_loadUpFromID">
         <div class="location">at line 939</div>
+        <code>                    <a href="../Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a>
+    <strong>loadUpFromID</strong>(<abbr title="Dagger\UpId|Dagger\Up">Up</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Up from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\UpId|Dagger\Up">Up</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadUpGroupFromID">
+        <div class="location">at line 949</div>
+        <code>                    <a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a>
+    <strong>loadUpGroupFromID</strong>(<abbr title="Dagger\UpGroupId|Dagger\UpGroup">UpGroup</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a UpGroup from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\UpGroupId|Dagger\UpGroup">UpGroup</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadWorkspaceFromID">
+        <div class="location">at line 959</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>loadWorkspaceFromID</strong>(<abbr title="Dagger\WorkspaceId|Dagger\Workspace">Workspace</abbr> $id)
         </code>
@@ -4905,7 +5009,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_module">
-        <div class="location">at line 949</div>
+        <div class="location">at line 969</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>module</strong>()
         </code>
@@ -4937,7 +5041,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleRuntime">
-        <div class="location">at line 955</div>
+        <div class="location">at line 975</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>moduleRuntime</strong>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $modSource, <abbr title="Dagger\FileId|Dagger\File">File</abbr> $introspectionJson)
         </code>
@@ -4985,7 +5089,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleSource">
-        <div class="location">at line 966</div>
+        <div class="location">at line 986</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>moduleSource</strong>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         </code>
@@ -5047,7 +5151,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_secret">
-        <div class="location">at line 993</div>
+        <div class="location">at line 1013</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>(string $uri, string|null $cacheKey = null)
         </code>
@@ -5094,7 +5198,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 1008</div>
+        <div class="location">at line 1028</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -5141,7 +5245,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceDir">
-        <div class="location">at line 1016</div>
+        <div class="location">at line 1036</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>sourceDir</strong>()
         </code>
@@ -5174,7 +5278,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 1025</div>
+        <div class="location">at line 1045</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -5226,7 +5330,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 1037</div>
+        <div class="location">at line 1057</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -5258,7 +5362,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 1046</div>
+        <div class="location">at line 1066</div>
         <code>                    string
     <strong>version</strong>()
         </code>
@@ -5290,7 +5394,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_with">
-        <div class="location">at line 1055</div>
+        <div class="location">at line 1075</div>
         <code>                    <a href="../Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a>
     <strong>with</strong>(<abbr title="Dagger\Dagger\DirectoryId|Dagger\Directory|null">Directory|null</abbr> $sdkSourceDir = null)
         </code>

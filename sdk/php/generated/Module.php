@@ -178,6 +178,18 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return all services defined by the module
+     */
+    public function services(?array $include = null): UpGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The source for the module.
      */
     public function source(): ModuleSource

@@ -103,6 +103,10 @@ func (mod *Module) Generators(ctx context.Context, include []string) (*Generator
 	return NewGeneratorGroup(ctx, mod, include)
 }
 
+func (mod *Module) Services(ctx context.Context, include []string) (*UpGroup, error) {
+	return NewUpGroup(ctx, mod, include)
+}
+
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	// Use OriginalName for type lookup: the SDK registers the main object
 	// under the intrinsic module name (from dagger.json), which may differ

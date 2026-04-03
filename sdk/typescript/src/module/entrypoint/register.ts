@@ -172,6 +172,10 @@ export class Register {
       fnDef = fnDef.withGenerator()
     }
 
+    if ((fct as Method).isUp) {
+      fnDef = fnDef.withUp()
+    }
+
     return fnDef
   }
 
