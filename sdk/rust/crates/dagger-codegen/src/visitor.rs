@@ -48,6 +48,11 @@ impl Visitor {
                 ignore: None,
             },
             SequenceItem {
+                kind: __TypeKind::INTERFACE,
+                handler: self.handlers.visit_object.clone(),
+                ignore: None,
+            },
+            SequenceItem {
                 kind: __TypeKind::ENUM,
                 handler: self.handlers.visit_enum.clone(),
                 ignore: None,

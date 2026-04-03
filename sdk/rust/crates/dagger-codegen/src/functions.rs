@@ -110,7 +110,9 @@ impl CommonFunctions {
                             r = get_type(rf);
                             continue;
                         }
-                        __TypeKind::INTERFACE => break,
+                        __TypeKind::INTERFACE => self
+                            .format_type_funcs
+                            .format_kind_object(&representation, rf.name.as_ref().unwrap()),
                         __TypeKind::UNION => break,
                     },
                     None => break,
@@ -192,7 +194,9 @@ impl TypeRefExt for TypeRef {
     }
 
     fn is_object(&self) -> bool {
-        self.get_non_null().is_kind_or_default(__TypeKind::OBJECT)
+        let inner = self.get_non_null();
+        inner.is_kind_or_default(__TypeKind::OBJECT)
+            || inner.is_kind_or_default(__TypeKind::INTERFACE)
     }
 
     fn is_list_of_objects(&self) -> bool {

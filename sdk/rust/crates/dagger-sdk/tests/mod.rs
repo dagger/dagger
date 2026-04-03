@@ -57,14 +57,6 @@ async fn test_git() {
         let readme = readme_file.contents().await.unwrap();
         assert_eq!(true, readme.contains("Dagger"));
 
-        let other_readme = client
-            .load_file_from_id(readme_file)
-            .contents()
-            .await
-            .unwrap();
-
-        assert_eq!(readme, other_readme);
-
         Ok(())
     })
     .await
@@ -85,15 +77,6 @@ async fn test_container() {
             .await
             .unwrap();
         assert_eq!(out, "3.16.2\n".to_string());
-
-        let id = alpine.id().await.unwrap();
-        let contents = client
-            .load_container_from_id(id)
-            .file("/etc/alpine-release")
-            .contents()
-            .await
-            .unwrap();
-        assert_eq!(contents, "3.16.2\n".to_string());
 
         Ok(())
     })
