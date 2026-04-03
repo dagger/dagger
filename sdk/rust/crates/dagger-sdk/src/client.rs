@@ -73,17 +73,13 @@ impl Query {
                     let id = id.clone();
                     Box::pin(async move {
                         let resolved = id.into_id().await.unwrap();
-                        format!("\"{}\"" , resolved.0)
+                        format!("\"{}\"", resolved.0)
                     })
                 }),
             )
             .inline_fragment(T::graphql_type());
 
-        T::from_query(
-            self.proc.clone(),
-            selection,
-            self.graphql_client.clone(),
-        )
+        T::from_query(self.proc.clone(), selection, self.graphql_client.clone())
     }
 
     /// Load a node by its ID with type safety. Verifies the node
@@ -101,25 +97,20 @@ impl Query {
         let check_selection = self
             .selection
             .select("node")
-            .arg_lazy(
-                "id",
-                {
+            .arg_lazy("id", {
+                let id = id.clone();
+                Box::new(move || {
                     let id = id.clone();
-                    Box::new(move || {
-                        let id = id.clone();
-                        Box::pin(async move {
-                            let resolved = id.into_id().await.unwrap();
-                            format!("\"{}\"" , resolved.0)
-                        })
+                    Box::pin(async move {
+                        let resolved = id.into_id().await.unwrap();
+                        format!("\"{}\"", resolved.0)
                     })
-                },
-            )
+                })
+            })
             .inline_fragment(type_name)
             .select("id");
 
-        let _: Id = check_selection
-            .execute(self.graphql_client.clone())
-            .await?;
+        let _: Id = check_selection.execute(self.graphql_client.clone()).await?;
 
         Ok(self.r#ref(id))
     }

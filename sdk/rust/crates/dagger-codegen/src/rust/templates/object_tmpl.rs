@@ -81,8 +81,8 @@ pub fn render_loadable_impl(
     let graphql_client = rust::import("crate::core::graphql_client", "DynGraphQLClient");
     let arc = rust::import("std::sync", "Arc");
     let name = t.name.pipe(|s| format_name(s));
-    let graphql_name = graphql_name_override
-        .unwrap_or_else(|| t.name.as_deref().unwrap_or_default());
+    let graphql_name =
+        graphql_name_override.unwrap_or_else(|| t.name.as_deref().unwrap_or_default());
 
     Some(quote! {
         impl $loadable for $(name) {

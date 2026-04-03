@@ -4,6 +4,7 @@ use crate::core::cli_session::DaggerSessionProc;
 use crate::core::graphql_client::DynGraphQLClient;
 use crate::errors::DaggerError;
 use crate::id::IntoID;
+use crate::loadable::Loadable;
 use crate::querybuilder::Selection;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
@@ -123,6 +124,22 @@ impl NodeClient {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Loadable for NodeClient {
+    fn graphql_type() -> &'static str {
+        "Node"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl Node for NodeClient {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
@@ -163,6 +180,22 @@ impl IntoID<Id> for Address {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Address {
+    fn graphql_type() -> &'static str {
+        "Address"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Address {
@@ -325,6 +358,22 @@ impl IntoID<Id> for Binding {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Binding {
+    fn graphql_type() -> &'static str {
+        "Binding"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Binding {
@@ -613,6 +662,22 @@ impl IntoID<Id> for CacheVolume {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for CacheVolume {
+    fn graphql_type() -> &'static str {
+        "CacheVolume"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl CacheVolume {
     /// A unique identifier for this CacheVolume.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -650,6 +715,22 @@ impl IntoID<Id> for Changeset {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Changeset {
+    fn graphql_type() -> &'static str {
+        "Changeset"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Changeset {
@@ -842,6 +923,22 @@ impl IntoID<Id> for Check {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for Check {
+    fn graphql_type() -> &'static str {
+        "Check"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl Check {
     /// Whether the check completed
     pub async fn completed(&self) -> Result<bool, DaggerError> {
@@ -926,6 +1023,22 @@ impl IntoID<Id> for CheckGroup {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for CheckGroup {
+    fn graphql_type() -> &'static str {
+        "CheckGroup"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl CheckGroup {
     /// A unique identifier for this CheckGroup.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -978,6 +1091,22 @@ impl IntoID<Id> for Cloud {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Cloud {
+    fn graphql_type() -> &'static str {
+        "Cloud"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Cloud {
@@ -1451,6 +1580,22 @@ impl IntoID<Id> for Container {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Container {
+    fn graphql_type() -> &'static str {
+        "Container"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Container {
@@ -3694,6 +3839,22 @@ impl IntoID<Id> for CurrentModule {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for CurrentModule {
+    fn graphql_type() -> &'static str {
+        "CurrentModule"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl CurrentModule {
     /// The dependencies of the module.
     pub fn dependencies(&self) -> Vec<Module> {
@@ -4012,6 +4173,22 @@ impl IntoID<Id> for Directory {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Directory {
+    fn graphql_type() -> &'static str {
+        "Directory"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Directory {
@@ -4935,6 +5112,22 @@ impl IntoID<Id> for Engine {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for Engine {
+    fn graphql_type() -> &'static str {
+        "Engine"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl Engine {
     /// The list of connected client IDs
     pub async fn clients(&self) -> Result<Vec<String>, DaggerError> {
@@ -5002,6 +5195,22 @@ impl IntoID<Id> for EngineCache {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for EngineCache {
+    fn graphql_type() -> &'static str {
+        "EngineCache"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl EngineCache {
@@ -5116,6 +5325,22 @@ impl IntoID<Id> for EngineCacheEntry {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for EngineCacheEntry {
+    fn graphql_type() -> &'static str {
+        "EngineCacheEntry"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl EngineCacheEntry {
     /// Whether the cache entry is actively being used.
     pub async fn actively_used(&self) -> Result<bool, DaggerError> {
@@ -5173,6 +5398,22 @@ impl IntoID<Id> for EngineCacheEntrySet {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for EngineCacheEntrySet {
+    fn graphql_type() -> &'static str {
+        "EngineCacheEntrySet"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl EngineCacheEntrySet {
     /// The total disk space used by the cache entries in this set.
     pub async fn disk_space_bytes(&self) -> Result<isize, DaggerError> {
@@ -5217,6 +5458,22 @@ impl IntoID<Id> for EnumTypeDef {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for EnumTypeDef {
+    fn graphql_type() -> &'static str {
+        "EnumTypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl EnumTypeDef {
@@ -5287,6 +5544,22 @@ impl IntoID<Id> for EnumValueTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for EnumValueTypeDef {
+    fn graphql_type() -> &'static str {
+        "EnumValueTypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl EnumValueTypeDef {
     /// The reason this enum member is deprecated, if any.
     pub async fn deprecated(&self) -> Result<String, DaggerError> {
@@ -5347,6 +5620,22 @@ impl IntoID<Id> for Env {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Env {
+    fn graphql_type() -> &'static str {
+        "Env"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Env {
@@ -6855,6 +7144,22 @@ impl IntoID<Id> for EnvFile {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for EnvFile {
+    fn graphql_type() -> &'static str {
+        "EnvFile"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl EnvFile {
     /// Return as a file
     pub fn as_file(&self) -> File {
@@ -7003,6 +7308,22 @@ impl IntoID<Id> for EnvVariable {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for EnvVariable {
+    fn graphql_type() -> &'static str {
+        "EnvVariable"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl EnvVariable {
     /// A unique identifier for this EnvVariable.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -7038,6 +7359,22 @@ impl IntoID<Id> for Error {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Error {
+    fn graphql_type() -> &'static str {
+        "Error"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Error {
@@ -7097,6 +7434,22 @@ impl IntoID<Id> for ErrorValue {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for ErrorValue {
+    fn graphql_type() -> &'static str {
+        "ErrorValue"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl ErrorValue {
     /// A unique identifier for this ErrorValue.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -7132,6 +7485,22 @@ impl IntoID<Id> for FieldTypeDef {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for FieldTypeDef {
+    fn graphql_type() -> &'static str {
+        "FieldTypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl FieldTypeDef {
@@ -7259,6 +7628,22 @@ impl IntoID<Id> for File {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for File {
+    fn graphql_type() -> &'static str {
+        "File"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl File {
@@ -7626,6 +8011,22 @@ impl IntoID<Id> for Function {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for Function {
+    fn graphql_type() -> &'static str {
+        "Function"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl Function {
     /// Arguments accepted by the function, if any.
     pub fn args(&self) -> Vec<FunctionArg> {
@@ -7890,6 +8291,22 @@ impl IntoID<Id> for FunctionArg {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for FunctionArg {
+    fn graphql_type() -> &'static str {
+        "FunctionArg"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl FunctionArg {
     /// Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
     pub async fn default_address(&self) -> Result<String, DaggerError> {
@@ -7970,6 +8387,22 @@ impl IntoID<Id> for FunctionCall {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for FunctionCall {
+    fn graphql_type() -> &'static str {
+        "FunctionCall"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl FunctionCall {
     /// A unique identifier for this FunctionCall.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -8047,6 +8480,22 @@ impl IntoID<Id> for FunctionCallArgValue {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for FunctionCallArgValue {
+    fn graphql_type() -> &'static str {
+        "FunctionCallArgValue"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl FunctionCallArgValue {
     /// A unique identifier for this FunctionCallArgValue.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -8082,6 +8531,22 @@ impl IntoID<Id> for GeneratedCode {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GeneratedCode {
+    fn graphql_type() -> &'static str {
+        "GeneratedCode"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl GeneratedCode {
@@ -8154,6 +8619,22 @@ impl IntoID<Id> for Generator {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Generator {
+    fn graphql_type() -> &'static str {
+        "Generator"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Generator {
@@ -8239,6 +8720,22 @@ impl IntoID<Id> for GeneratorGroup {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GeneratorGroup {
+    fn graphql_type() -> &'static str {
+        "GeneratorGroup"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl GeneratorGroup {
@@ -8334,6 +8831,22 @@ impl IntoID<Id> for GitRef {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GitRef {
+    fn graphql_type() -> &'static str {
+        "GitRef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl GitRef {
@@ -8438,6 +8951,22 @@ impl IntoID<Id> for GitRepository {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GitRepository {
+    fn graphql_type() -> &'static str {
+        "GitRepository"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl GitRepository {
@@ -8603,6 +9132,22 @@ impl IntoID<Id> for HealthcheckConfig {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for HealthcheckConfig {
+    fn graphql_type() -> &'static str {
+        "HealthcheckConfig"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl HealthcheckConfig {
     /// Healthcheck command arguments.
     pub async fn args(&self) -> Result<Vec<String>, DaggerError> {
@@ -8708,6 +9253,22 @@ impl IntoID<Id> for Host {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Host {
+    fn graphql_type() -> &'static str {
+        "Host"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Host {
@@ -8962,6 +9523,22 @@ impl IntoID<Id> for InputTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for InputTypeDef {
+    fn graphql_type() -> &'static str {
+        "InputTypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl InputTypeDef {
     /// Static fields defined on this input object, if any.
     pub fn fields(&self) -> Vec<FieldTypeDef> {
@@ -9001,6 +9578,22 @@ impl IntoID<Id> for InterfaceTypeDef {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for InterfaceTypeDef {
+    fn graphql_type() -> &'static str {
+        "InterfaceTypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl InterfaceTypeDef {
@@ -9070,6 +9663,22 @@ impl IntoID<Id> for JsonValue {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for JsonValue {
+    fn graphql_type() -> &'static str {
+        "JSONValue"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl JsonValue {
@@ -9251,6 +9860,22 @@ impl IntoID<Id> for Llm {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Llm {
+    fn graphql_type() -> &'static str {
+        "LLM"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Llm {
@@ -9530,6 +10155,22 @@ impl IntoID<Id> for LlmTokenUsage {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for LlmTokenUsage {
+    fn graphql_type() -> &'static str {
+        "LLMTokenUsage"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl LlmTokenUsage {
     pub async fn cached_token_reads(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("cachedTokenReads");
@@ -9577,6 +10218,22 @@ impl IntoID<Id> for Label {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for Label {
+    fn graphql_type() -> &'static str {
+        "Label"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl Label {
     /// A unique identifier for this Label.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -9612,6 +10269,22 @@ impl IntoID<Id> for ListTypeDef {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ListTypeDef {
+    fn graphql_type() -> &'static str {
+        "ListTypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl ListTypeDef {
@@ -9669,6 +10342,22 @@ impl IntoID<Id> for Module {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Module {
+    fn graphql_type() -> &'static str {
+        "Module"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Module {
@@ -9979,6 +10668,22 @@ impl IntoID<Id> for ModuleConfigClient {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for ModuleConfigClient {
+    fn graphql_type() -> &'static str {
+        "ModuleConfigClient"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl ModuleConfigClient {
     /// The directory the client is generated in.
     pub async fn directory(&self) -> Result<String, DaggerError> {
@@ -10014,6 +10719,22 @@ impl IntoID<Id> for ModuleSource {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ModuleSource {
+    fn graphql_type() -> &'static str {
+        "ModuleSource"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl ModuleSource {
@@ -10563,6 +11284,22 @@ impl IntoID<Id> for ObjectTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for ObjectTypeDef {
+    fn graphql_type() -> &'static str {
+        "ObjectTypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl ObjectTypeDef {
     /// The function used to construct new instances of this object, if any
     pub fn constructor(&self) -> Function {
@@ -10644,6 +11381,22 @@ impl IntoID<Id> for Port {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Port {
+    fn graphql_type() -> &'static str {
+        "Port"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Port {
@@ -10796,6 +11549,22 @@ impl IntoID<Id> for Query {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Query {
+    fn graphql_type() -> &'static str {
+        "Query"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Query {
@@ -11448,6 +12217,22 @@ impl IntoID<Id> for SdkConfig {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for SdkConfig {
+    fn graphql_type() -> &'static str {
+        "SDKConfig"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl SdkConfig {
     /// Whether to start the SDK runtime in debug mode with an interactive terminal.
     pub async fn debug(&self) -> Result<bool, DaggerError> {
@@ -11483,6 +12268,22 @@ impl IntoID<Id> for ScalarTypeDef {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ScalarTypeDef {
+    fn graphql_type() -> &'static str {
+        "ScalarTypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl ScalarTypeDef {
@@ -11525,6 +12326,22 @@ impl IntoID<Id> for SearchResult {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for SearchResult {
+    fn graphql_type() -> &'static str {
+        "SearchResult"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl SearchResult {
@@ -11583,6 +12400,22 @@ impl IntoID<Id> for SearchSubmatch {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for SearchSubmatch {
+    fn graphql_type() -> &'static str {
+        "SearchSubmatch"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl SearchSubmatch {
     /// The match's end offset within the matched lines.
     pub async fn end(&self) -> Result<isize, DaggerError> {
@@ -11623,6 +12456,22 @@ impl IntoID<Id> for Secret {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Secret {
+    fn graphql_type() -> &'static str {
+        "Secret"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Secret {
@@ -11695,6 +12544,22 @@ impl IntoID<Id> for Service {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Service {
+    fn graphql_type() -> &'static str {
+        "Service"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Service {
@@ -11866,6 +12731,22 @@ impl IntoID<Id> for Socket {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for Socket {
+    fn graphql_type() -> &'static str {
+        "Socket"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl Socket {
     /// A unique identifier for this Socket.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -11891,6 +12772,22 @@ impl IntoID<Id> for SourceMap {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for SourceMap {
+    fn graphql_type() -> &'static str {
+        "SourceMap"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl SourceMap {
@@ -11945,6 +12842,22 @@ impl IntoID<Id> for Stat {
         Box::pin(async move { self.id().await })
     }
 }
+impl Loadable for Stat {
+    fn graphql_type() -> &'static str {
+        "Stat"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
 impl Stat {
     /// file type
     pub async fn file_type(&self) -> Result<FileType, DaggerError> {
@@ -11990,6 +12903,22 @@ impl IntoID<Id> for Terminal {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Terminal {
+    fn graphql_type() -> &'static str {
+        "Terminal"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Terminal {
@@ -12092,6 +13021,22 @@ impl IntoID<Id> for TypeDef {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for TypeDef {
+    fn graphql_type() -> &'static str {
+        "TypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl TypeDef {
@@ -12588,6 +13533,22 @@ impl IntoID<Id> for Workspace {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Workspace {
+    fn graphql_type() -> &'static str {
+        "Workspace"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
     }
 }
 impl Workspace {
