@@ -35,46 +35,33 @@ codegen, integration tests, and module dependencies are also fixed.
    object and generates `impl InterfaceTrait for Object` forwarding
    methods for every declared interface.
 
+5. **`@expectedType` codegen** — Introspection query now requests
+   `directives { name args { name value } }` on fields and arguments.
+   `DirectiveApplication` / `DirectiveApplicationArg` structs and
+   `DirectivesExt::expected_type()` helper added to introspection types.
+
+   - **ConvertID (sync-like fields):** `CommonFunctions::convert_id()`
+     detects fields returning `ID!` where `@expectedType` matches the
+     parent object name. These fields become async methods returning
+     the parent type (not `Id`). The body executes the query to get
+     the ID, then reconstructs the parent via
+     `query.root().select("node").arg("id", id).inline_fragment(name)`.
+     `Selection::root()` added to the query builder.
+
+   - **`id()` field:** Not converted (explicitly excluded by
+     `convert_id`). Still returns `Result<Id, DaggerError>`.
+
+   - **`@expectedType` on arguments:** Already works via `is_id()` →
+     `impl IntoID<Id>` pattern. All objects implement `IntoID<Id>`,
+     so args typed `ID @expectedType(name: "Foo")` accept `Foo`
+     objects directly.
+
 ### Regenerated
 
-`gen.rs` has been regenerated with trait, Loadable, and possibleTypes
-output. Integration tests in `tests/mod.rs` (`test_node_load_container`,
-`test_node_load_directory`, `test_node_load_file`) compile. 60 types
-implement `Loadable`.
-
-### Remaining: `@expectedType` codegen
-
-`sync()` still returns `Id` instead of the parent object type. Fixing
-this requires:
-
-1. **Introspection query must request field-level directives.** The
-   Rust introspection types (`FullTypeFields`) don't have a
-   `directives` field. Add `directives { name args { name value } }`
-   to the introspection query's field selections. Add a `directives`
-   field to `FullTypeFields` in
-   `sdk/rust/crates/dagger-sdk/src/core/introspection.rs`.
-
-   Reference: PHP had to rewrite introspection parsing entirely
-   (`42a2e83ab`). The Rust SDK uses `graphql_client` which may or may
-   not preserve custom directives — check before assuming they're
-   available. May need to parse raw introspection JSON.
-
-   Introspection query files:
-   `sdk/rust/crates/dagger-sdk/src/core/graphql/introspection_query.graphql`
-   `sdk/rust/crates/dagger-sdk/src/core/graphql/introspection_schema.graphql`
-
-2. **Read `@expectedType` in codegen.** When a field's return type is
-   the `ID` scalar, check for `@expectedType(name: "Foo")`. If
-   `expectedType == parentObject`, treat it as a sync-like field:
-   query for the ID, then reconstruct the parent via
-   `selectNode(q.Root(), id, typeName)`. See Go's `Container.Sync`
-   pattern in `sdk/go/dagger.gen.go`.
-
-3. **Read `@expectedType` on arguments.** Arguments typed `ID` with
-   `@expectedType(name: "Foo")` should accept `Foo` (via `IntoID`)
-   instead of raw `Id`. The Rust codegen already does this for the
-   old `FooID` pattern — it just needs to check the directive instead
-   of the type name suffix.
+`gen.rs` regenerated with unified `ID` scalar, ConvertID on sync-like
+fields, interface traits, Loadable impls, and possibleTypes output.
+21 codegen unit tests pass. Integration tests compile but require
+the dev engine (released v0.20.3 lacks `node(id:)`).
 
 ### Key files
 
@@ -87,6 +74,8 @@ this requires:
 | Interface template | `sdk/rust/crates/dagger-codegen/src/rust/templates/interface_tmpl.rs` |
 | Object template | `sdk/rust/crates/dagger-codegen/src/rust/templates/object_tmpl.rs` |
 | Format helpers | `sdk/rust/crates/dagger-codegen/src/rust/format.rs` |
+| Codegen functions | `sdk/rust/crates/dagger-codegen/src/rust/functions.rs` |
+| Common functions | `sdk/rust/crates/dagger-codegen/src/functions.rs` |
 | Introspection types | `sdk/rust/crates/dagger-sdk/src/core/introspection.rs` |
 | Introspection query | `sdk/rust/crates/dagger-sdk/src/core/graphql/introspection_query.graphql` |
 | Generated client | `sdk/rust/crates/dagger-sdk/src/gen.rs` |
