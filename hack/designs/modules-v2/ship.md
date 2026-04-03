@@ -40,7 +40,8 @@ Example:
 
 ## Definition
 
-A ship function changes an external system.
+A ship function reconciles external systems with artifact `X`, so repeated
+runs keep converging toward the same result.
 That is what `+ship` is for.
 
 An external system is any system that Dagger does not own.
@@ -60,12 +61,14 @@ These are not ship functions:
 - Read a deploy status
 
 Why?
-Because these do not change an external system.
+Because these do not reconcile external systems with the artifact.
 
 For module developers:
 
-- Use `+ship` when your function is meant to make a real outside change.
-- Do not use `+ship` for build, check, generate, or read-only functions.
+- Use `+ship` when your function is meant to reconcile outside systems with an
+  artifact.
+- Do not use `+ship` for build, check, generate, read-only, or one-off
+  notification functions.
 
 Example:
 
@@ -74,7 +77,8 @@ Example:
 
 For Dagger users:
 
-- Use `dagger ship` when you want Dagger to make that outside change now.
+- Use `dagger ship` when you want Dagger to reconcile outside systems with an
+  artifact now.
 - Do not use `dagger ship` when you only want data, checks, or generated
   files.
 
