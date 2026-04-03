@@ -298,3 +298,19 @@ func TestLookup(t *testing.T) {
 	require.True(t, ok, "Lookup should find BAZ")
 	require.Equal(t, "bar-baz", val)
 }
+
+func TestNoSystemLookupWhenLiteral(t *testing.T) {
+	var called bool
+	lookup := func(name string) string {
+		called = true
+		return ""
+	}
+	environ := []string{
+		"FOO=bar",
+	}
+	val, ok, err := Lookup(environ, "FOO", lookup)
+	require.NoError(t, err)
+	require.True(t, ok, "Lookup should find bar")
+	require.Equal(t, "bar", val)
+	require.False(t, called, "Lookup should not be called")
+}

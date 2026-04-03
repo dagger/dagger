@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/util/hashutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"google.golang.org/grpc/codes"
@@ -989,7 +990,8 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 	var envFilePath dagql.String
 	if err := dag.Select(ctx, dag.Root(), &envFilePath,
 		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "findUp",
+		dagql.Selector{
+			Field: "findUp",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.NewString(".env")},
 			},
@@ -1003,12 +1005,14 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 	var envFile *EnvFile
 	if err := dag.Select(ctx, dag.Root(), &envFile,
 		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "file",
+		dagql.Selector{
+			Field: "file",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: envFilePath},
 			},
 		},
-		dagql.Selector{Field: "asEnvFile",
+		dagql.Selector{
+			Field: "asEnvFile",
 			Args: []dagql.NamedInput{
 				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
 			},
@@ -1028,7 +1032,9 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 // Inner .env (mymodule/.env): FOO=bar
 // Outer .env (found via find-up): MYMODULE_BAZ=qux, OTHER_VAR=ignored
 // Result: FOO=bar, BAZ=qux (prefix "MYMODULE_" removed from outer entries)
-func (src *ModuleSource) LoadUserDefaults(ctx context.Context) error {
+func (src *ModuleSource) LoadUserDefaults(ctx context.Context) (rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "loading user defaults", telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
 	// For local module sources, ensure we have the right client context for filesystem access.
 	// Modules run as their own clients, but need access to the original caller's filesystem.
 	// NonModuleParentClientMetadata is idempotent, so this is safe to call multiple times.
@@ -1944,9 +1950,7 @@ func (f ModuleSourceExperimentalFeature) String() string { return string(f) }
 
 var ModuleSourceExperimentalFeatures = dagql.NewEnum[ModuleSourceExperimentalFeature]()
 
-var (
-	ModuleSourceExperimentalFeatureSelfCalls = ModuleSourceExperimentalFeatures.Register("SELF_CALLS", "Self calls")
-)
+var ModuleSourceExperimentalFeatureSelfCalls = ModuleSourceExperimentalFeatures.Register("SELF_CALLS", "Self calls")
 
 func (f ModuleSourceExperimentalFeature) Type() *ast.Type {
 	return &ast.Type{

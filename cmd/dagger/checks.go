@@ -20,9 +20,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-var (
-	checksListMode bool
-)
+var checksListMode bool
 
 //go:embed checks.graphql
 var loadChecksQuery string

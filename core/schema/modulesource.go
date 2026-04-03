@@ -746,7 +746,8 @@ func (s *moduleSourceSchema) gitModuleSource(
 func (s *moduleSourceSchema) loadBlueprintModule(
 	ctx context.Context,
 	bk *buildkit.Client,
-	src *core.ModuleSource) error {
+	src *core.ModuleSource,
+) error {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get dag server: %w", err)
@@ -1432,13 +1433,15 @@ func (s *moduleSourceSchema) moduleSourceLocalContextDirectoryPath(
 
 func (s *moduleSourceSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-}) (*core.GeneratedCode, error) {
+},
+) (*core.GeneratedCode, error) {
 	return code.WithVCSGeneratedPaths(args.Paths), nil
 }
 
 func (s *moduleSourceSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-}) (*core.GeneratedCode, error) {
+},
+) (*core.GeneratedCode, error) {
 	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
@@ -2041,6 +2044,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutBlueprint(
 	parentSrc.ConfigBlueprint = nil
 	return parentSrc, nil
 }
+
 func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
