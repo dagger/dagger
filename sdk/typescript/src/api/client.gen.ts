@@ -253,6 +253,13 @@ function ChangesetsMergeConflictNameToValue(
       return name as ChangesetsMergeConflict
   }
 }
+export type CheckGroupRunOpts = {
+  /**
+   * If true, stop running checks as soon as any check fails.
+   */
+  failFast?: boolean
+}
+
 /**
  * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
  */
@@ -3732,9 +3739,10 @@ export class CheckGroup extends BaseClient {
 
   /**
    * Execute all selected checks
+   * @param opts.failFast If true, stop running checks as soon as any check fails.
    */
-  run = (): CheckGroup => {
-    const ctx = this._ctx.select("run")
+  run = (opts?: CheckGroupRunOpts): CheckGroup => {
+    const ctx = this._ctx.select("run", { ...opts })
     return new CheckGroup(ctx)
   }
 
