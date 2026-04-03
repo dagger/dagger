@@ -1,196 +1,114 @@
-# Handoff: First-Class Interfaces + node(id:) — Go SDK Integration
+# Handoff: `loadFooFromID` → `node(id:)` Migration
 
 ## Context
 
-See the design doc: https://gist.github.com/vito/158619f941f529244dda00b0d45a8a1c
+The `interfaces` branch replaces per-type `loadFooFromID(id:)` schema
+fields with the Global Object Identification `node(id:)` pattern. The
+Go, Python, and TypeScript SDKs are fully migrated. The CLI, Dang SDK,
+codegen, integration tests, and module dependencies are also fixed.
 
-We're on the `interfaces` branch, implementing first-class interfaces, unified
-IDs, and the `node(id:)` Global Object Identification pattern. The SDK codegen
-(especially Go) needs to work with these engine changes.
+## Next focus: Rust SDK interface support
 
-## What's been done
+The Rust SDK compiles and generates, but its interface support is
+cosmetic. Interface types (like `Node`) are generated as plain structs
+identical to objects. `Query.node(id)` returns a `Node` with only
+`.id()` — you can't access type-specific fields, making `node(id:)`
+unusable for loading typed objects.
 
-### Commit `bd961043c` — querybuilder dependency for codegen
+### What's missing
 
-When `querybuilder` was extracted to `github.com/dagger/querybuilder` (separate
-module), `sdk/go/go.mod` wasn't updated and `ensureDaggerPackage()` only fetched
-`dagger.io/dagger`. Fixed both:
+1. **Inline fragments in the query builder** —
+   `Selection` needs an `inline_fragment(type_name)` method so queries
+   can build `node(id:...){... on Container{...}}`. Without this,
+   `node()` is a dead end. Reference: Go's `querybuilder.InlineFragment`
+   in `github.com/dagger/querybuilder`. Key detail: inline fragments
+   don't add a nesting level when unpacking the response — the Go
+   implementation's `unpack` skips them.
 
-- **`sdk/go/go.mod`** + **`sdk/go/go.sum`** — added `github.com/dagger/querybuilder`
-- **`cmd/codegen/generator/go/generate_typedefs.go`** — `ensureDaggerPackage()`
-  now also `go get`s `github.com/dagger/querybuilder`
+2. **Rust traits for interfaces** — Other SDKs generate native
+   interface types (Go `interface`, Python `Protocol`, TS `interface`).
+   The Rust SDK should generate `trait Node { fn id(...); }` and impl
+   it on all types that declare the interface. The introspection data
+   has `possibleTypes` on interfaces and `interfaces` on objects.
 
-### Commit `36a9958fc` — interface inline fragments on node(id:)
+3. **Downcasting / typed load** — The Go SDK has `Ref[T]` and
+   `Load[T]` generics that use `selectNode` + inline fragments. Rust
+   equivalent could be a generic `fn ref_<T: Loadable>(client, id) -> T`
+   that constructs a `T` with `selection.select("node").arg("id", id)
+   .inline_fragment(T::graphql_type())`.
 
-Three interrelated issues with module-defined interfaces and `node(id:)`:
+4. **`possibleTypes` wiring** — The codegen ignores which objects
+   implement which interfaces. No `impl Node for Container` or enum
+   dispatch is generated.
 
-1. **Schema name mismatch in module codegen** (`module_interfaces.go`):
-   `XXX_GraphQLType()`, `UnmarshalJSON`, and `SelectNode` used Go source names
-   (`CustomIface`) instead of schema-namespaced names (`TestCustomIface`). Added
-   `gqlSchemaName()` helper that mirrors `core/gqlformat.go`'s `namespaceObject()`.
+### Implementation order
 
-2. **PossibleFragmentSpreads validation failure** (`dagql/server.go`):
-   `... on TestCustomIface` within `node(id:)` was rejected because the interface
-   had no concrete implementors in the module's schema view. Fixed by
-   auto-implementing `Node` for interfaces with an `id` field in
-   `InstallInterface`.
+1. Add `inline_fragment` to `Selection` in `querybuilder.rs`
+2. Generate Rust traits for INTERFACE types in codegen
+3. Add `Loadable` trait + `ref_`/`load` helpers
+4. Wire `possibleTypes` → trait impls in codegen
 
-3. **Compile errors from interface PossibleTypes** (`functions.go`, `interface.go.tmpl`):
-   Fixed `possibleTypes()` to filter out interface-kind entries, and updated the
-   template to use the function instead of the raw field.
+### Key files
 
-### Commit `a1640117c` — resolve node(id:) through module-aware loader
-
-The `node(id:)` resolver replayed ID call chains on the *current module's*
-dagql server. When the test module received an `ImplImpl` ID (from a sibling
-`impl` module it doesn't depend on), `LoadType` tried to resolve
-`Query.impl(...)` on the test module's server → `Query has no such field: "impl"`.
-
-On `main`, `loadFromID` used `IDDeps` to build a server with all modules
-referenced in the ID before loading. `node(id:)` was missing this.
-
-**Fix (two parts):**
-
-1. **`dagql/server.go` + `core/schema_build.go`** — Added a `nodeLoader` hook
-   to `dagql.Server`. The Dagger core sets it in `buildSchema` to use `IDDeps`:
-   get the current `Query` from context, call `query.IDDeps(ctx, id)` to collect
-   all modules the ID depends on, build a server with those deps, then load
-   through that server.
-
-2. **`defs.go.tmpl` + `sdk/go/dagger.gen.go`** — Fixed `Load[T]` to query
-   `__typename` *through the inline fragment*. Before, it compared `__typename`
-   directly against the expected type name, which fails for interfaces:
-   `__typename` returns the concrete type (`Impl`), not the interface name
-   (`DepCustomIface`). Now the `__typename` query goes through
-   `SelectNode(c.query, id, expectedType)` so the fragment only matches if the
-   concrete type implements the expected interface.
-
-### Commit `7654a77bb` — register TypeScript interface template
-
-The `interface.ts.gtpl` template file existed but wasn't listed in
-`templateDeps` in `templates.go`, causing `template "interface" not defined`.
-
-### Commit `8b84ebd6c` — Python SDK: node(id:) instead of loadFromID
-
-The Python runtime used the removed `loadFooFromID` fields.
-
-- **`sdk/python/src/dagger/client/_core.py`** — Added `inline_type` slot to
-  `Field` so `to_dsl` wraps children in `DSLInlineFragment`. Added
-  `Context.select_id` to build `Query.node(id:)` with the type condition.
-- **`sdk/python/src/dagger/mod/_converter.py`** — Changed `dagger_type_structure`
-  to call `dag._ctx.select_id` instead of `dag._select("load...FromID")`.
-
-### Commit `5e681548a` — TypeScript SDK: node(id:) instead of loadFromID
-
-- **`sdk/typescript/src/common/graphql/compute_query.ts`** — Added `inlineType`
-  to `QueryTree` and inline fragment support to `buildQuery`.
-- **`sdk/typescript/src/common/context.ts`** — Added `Context.selectNode`.
-- **`cmd/codegen/generator/typescript/templates/src/method_solve.ts.gtpl`** —
-  Changed codegen to emit `selectNode` instead of `loadFromID`.
-- **`sdk/typescript/src/api/client.gen.ts`** — Regenerated: `loadFooFromID`
-  methods now use `selectNode` internally.
-- **`sdk/typescript/src/module/executor.ts`** — Interface loading uses
-  `selectNode`.
-
-### Commit `02658a6d6` — fix Go SDK library loadFooFromID → SelectNode
-
-The Go SDK library (`sdk/go/dagger.gen.go`) still used
-`q.Root().Select("loadFooFromID").Arg("id", id)` in `Sync()` methods and
-array field loaders. These references to the removed `loadFooFromID` schema
-fields caused runtime errors (HTTP 422: `Cannot query field
-"loadContainerFromID" on type "Query"`) in any test that called `.Sync(ctx)`
-on a container/directory/etc.
-
-Used sed to replace all 44 occurrences with
-`SelectNode(q.Root(), id, "Foo")`.
-
-### Commit `9c16a4764` — regenerate all SDK clients and docs
-
-Ran `dagger generate` for all SDK targets (Go, Python, TypeScript, docs).
-The `loadFooFromID` fields are removed from the schema, so the generated
-clients now use `SelectNode`/`selectNode`/`select_id` for ID loading.
-
-### Commit `ce46b1dbb` — fix CLI LoadFooFromID → node(id:)
-
-The CLI code (`cmd/dagger/`) had four references to removed `LoadFooFromID`
-methods:
-- `functions.go`: `LoadChangesetFromID`, `LoadLLMFromID`
-- `llm.go`: `LoadEnvFromID`, `loadBindingFromID`, `loadEnvFromID`
-  (query builder), `load+typeName+FromID` (shell state)
-- `module_inspect.go`: `LoadModuleSourceFromID`
-
-Fixed by:
-1. Using `(&Type{}).WithGraphQLQuery(dagger.SelectNode(...))` for lazy loading
-2. Converting raw query builder calls to `node(id:)` with `InlineFragment()`
-3. Adding `InlineFragment` field to `FunctionCall` and `ShellState.QueryBuilder`
-   so the shell can emit `node(id:) { ... on Foo { ... } }` queries
-
-### Commit `582ede9b1` — fix PossibleFragmentSpreads for interface-implements-interface
-
-The GraphQL spec (§5.5.2.3) says `... on A` is valid in a `B` context when
-interface A declares `implements B`, because any concrete type implementing A
-must also implement B. Both gqlparser and Python's graphql-core only check
-possibleTypes overlap, which fails when an interface has no concrete
-implementors in the current schema view (the implementors live in other
-modules).
-
-- **`dagql/server.go`** — Replaced gqlparser's `PossibleFragmentSpreadsRule`
-  with one that also checks the `implements` relationship for
-  interface-on-interface spreads.
-- **`sdk/python/src/dagger/client/_session.py`** — Disabled client-side query
-  validation since graphql-core has the same bug and the server validates
-  correctly.
-
-## Tests status
-
-| Test | Status |
-|------|--------|
-| `TestInterface/TestIfaceBasic/go` | ✅ PASS (all 32 subtests) |
-| `TestInterface/TestIfaceBasic/typescript` | ✅ PASS (all subtests) |
-| `TestInterface/TestIfaceBasic/python` | ✅ PASS (all subtests) |
-| `TestInterface/TestIfaceGoDanglingInterface` | ✅ PASS |
-| Other `TestInterface/` subtests | ❓ Not yet checked |
-
-## Key files
-
-| Area | Files |
+| What | Where |
 |------|-------|
-| CLI — functions/llm/shell | `cmd/dagger/functions.go`, `cmd/dagger/llm.go`, `cmd/dagger/shell_state.go`, `cmd/dagger/module_inspect.go` |
-| Go codegen — module interface impl | `cmd/codegen/generator/go/templates/module_interfaces.go` |
-| Go codegen — template functions | `cmd/codegen/generator/go/templates/functions.go` |
-| Go codegen — interface template | `cmd/codegen/generator/go/templates/src/_types/interface.go.tmpl` |
-| Go codegen — object template (AsFoo) | `cmd/codegen/generator/go/templates/src/_types/object.go.tmpl` |
-| Go codegen — defs template (SelectNode, Load) | `cmd/codegen/generator/go/templates/src/_dagger.gen.go/defs.go.tmpl` |
-| TS codegen — method template | `cmd/codegen/generator/typescript/templates/src/method_solve.ts.gtpl` |
-| Engine — dagql server (node loader, validation) | `dagql/server.go` |
-| Engine — schema building (nodeLoader setup) | `core/schema_build.go` |
-| Engine — interface type | `dagql/interfaces.go` |
-| Engine — interface install | `core/interface.go` |
-| Engine — type namespacing | `core/gqlformat.go` |
-| Python SDK — query builder (inline fragments) | `sdk/python/src/dagger/client/_core.py` |
-| Python SDK — module converter | `sdk/python/src/dagger/mod/_converter.py` |
-| Python SDK — session (validation) | `sdk/python/src/dagger/client/_session.py` |
-| TS SDK — query builder (inline fragments) | `sdk/typescript/src/common/graphql/compute_query.ts` |
-| TS SDK — context (selectNode) | `sdk/typescript/src/common/context.ts` |
-| TS SDK — module executor | `sdk/typescript/src/module/executor.ts` |
-| TS SDK — generated client | `sdk/typescript/src/api/client.gen.ts` |
-| Test module source | `core/integration/testdata/modules/go/ifaces/` |
-| Test file | `core/integration/module_iface_test.go` |
+| Query builder | `sdk/rust/crates/dagger-sdk/src/querybuilder.rs` |
+| Codegen visitor | `sdk/rust/crates/dagger-codegen/src/visitor.rs` |
+| Codegen functions | `sdk/rust/crates/dagger-codegen/src/functions.rs` |
+| Object template | `sdk/rust/crates/dagger-codegen/src/rust/templates/object_tmpl.rs` |
+| Format helpers | `sdk/rust/crates/dagger-codegen/src/rust/format.rs` |
+| Generated client | `sdk/rust/crates/dagger-sdk/src/gen.rs` |
+| Go query builder ref | `github.com/dagger/querybuilder` (see `InlineFragment`, `unpack`) |
+| Go `selectNode` | `sdk/go/dagger.gen.go:15291` |
+| Go `Ref`/`Load` | `sdk/go/dagger.gen.go` (search `Loadable`) |
 
-## Architecture: How node(id:) loads cross-module IDs
+## Other remaining SDKs
 
-```
-SDK runtime (test module)
-  → UnmarshalJSON / select_id / selectNode
-  → builds query: { node(id: "...") { ... on TestCustomIface { str } } }
-  → server validates with fixed PossibleFragmentSpreads rule
-    → TestCustomIface implements Node → spread is valid
-  → dagql node(id:) resolver
-    → nodeLoader hook (set in core/schema_build.go)
-      → CurrentQuery(ctx) → query.IDDeps(ctx, id)
-        → collects modules referenced in the ID (e.g. impl module)
-      → deps.Server(ctx) → builds server with impl + test + core
-      → idServer.Load(ctx, id)
-        → replays ID call chain on a server that HAS the impl field
-    → returns result, inline fragment scopes to interface fields
+These still reference `loadFooFromID` and need the same migration
+pattern: add inline fragment support to the query builder, update
+codegen, regenerate, fix tests.
+
+### Codegen introspection test fixtures (trivial)
+
+JSON schema fixtures with `loadDepFromID` / `loadTestFromID` entries.
+Tests filtering logic, not the API. Remove the entries, update
+expected schemas, run `go test ./cmd/codegen/introspection/`.
+
+**Files:** `cmd/codegen/introspection/testdata/schema.json`,
+`keep_dep_expected_schema.json`, `keep_dep_and_test_expected_schema.json`
+
+### Elixir SDK
+
+**Codegen:** `sdk/elixir/dagger_codegen/lib/dagger/codegen/elixir_generator/object_renderer.ex`
+**Generated:** `sdk/elixir/lib/dagger/gen/*.ex`
+Query builder likely needs `inline_fragment` added.
+
+### PHP SDK
+
+**Codegen:** `sdk/php/src/Codegen/Introspection/NewCodegenVisitor.php`
+**Generated:** `sdk/php/generated/Client.php`
+
+### Java SDK
+
+**Codegen:** `sdk/java/dagger-codegen-maven-plugin/src/main/java/io/dagger/codegen/introspection/ObjectVisitor.java`
+**Test:** `sdk/java/dagger-java-sdk/src/test/java/io/dagger/client/ClientIT.java`
+
+### .NET SDK (test data only)
+
+**Test data:** `sdk/dotnet/sdk/Dagger.SDK.SourceGenerator.Tests/TestData.cs`
+
+## Architecture reference
+
+Each SDK migration follows the same pattern:
+
+1. **Query builder** — add `inline_fragment(type_name)` support
+2. **Codegen** — change `loadFooFromID` → `node(id:) { ... on Foo }`
+3. **Generated client** — regenerate
+4. **Tests** — update to use new API
+
+The Go SDK's `selectNode` helper is the canonical reference:
+```go
+func selectNode(q *Selection, id any, typeName string) *Selection {
+    return q.Select("node").Arg("id", id).InlineFragment(typeName)
+}
 ```
