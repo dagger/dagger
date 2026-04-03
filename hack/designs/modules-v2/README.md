@@ -18,25 +18,27 @@ and operate Dagger modules.
 
 ## Dependency Graph
 
-```
-                                         Stdlib stage 1
-                                              │
-Workspace API (done) ─────────────────────────┤
-        │                                     │
-        ├──────────────────┐                  ▼
-        ▼                  ▼             Stdlib stage 2
-Workspace plumbing    Lockfile                │
-     (done)                │                  │
-        │                  ▼                  │
-    Artifacts    Workspace configuration      │
-        ├──────────────────┐                  │
-        ▼                  ▼                  │
- Execution Plans      Provenance              │
-        ├──────────┐                          │
-        ▼          ▼                          │
-      Ship    Collections ────────────────────┤
-                                              ▼
-                                         Stdlib stage 3
+```mermaid
+graph TD
+    M(("💡")) --> WP["Workspace plumbing ✅"]
+    M --> WA["Workspace API ✅"]
+    M --> LF["Lockfile 🏗️"]
+
+    WP --> AR["Artifacts 📝"]
+    AR --> EP["Execution Plans 📝"]
+    AR --> PR["Provenance 📝"]
+    WA --> PR
+
+    EP --> SH["Ship 📝"]
+    EP --> CO["Collections 🏗️"]
+
+    WP --> WC["Workspace configuration 🏗️"]
+    LF --> WC
+
+    SH --> E(("🎉"))
+    CO --> E
+    PR --> E
+    WC --> E
 ```
 
 **Main track:** Workspace plumbing → Artifacts. From there the design splits:
