@@ -13,6 +13,7 @@ Depends on: [Artifacts](./artifacts.md)
 - [Tracking and Union](#tracking-and-union)
 - [Matching](#matching)
 - [Filtering Model](#filtering-model)
+- [Lockfile Acceleration](#lockfile-acceleration)
 - [Schema](#schema)
 - [Examples](#examples)
 - [Implementation](#implementation)
@@ -50,64 +51,67 @@ selector to that value.
 
 Provenance is represented by `WorkspaceProvenance`.
 
-It has two parts:
+It is a list of `WorkspaceSelector` values.
 
-- `selectors`: the known workspace regions that were read
-- `workspaceWide`: a broad flag meaning "this may be affected by any workspace
-  path"
+Each selector has:
+
+- a root `path`
+- optional `include`
+- optional `exclude`
+- a `lateBound` flag
 
 Empty provenance is:
 
 ```text
-workspaceWide = false
 selectors = []
 ```
 
-`selectors` are returned in deterministic normalized order. They stay attached
-even when `workspaceWide` is `true`.
+Selectors are returned in deterministic normalized order.
 
-In prose or debug output, `/` can be used as shorthand for
-"workspace-wide provenance". In the API, the source of truth is
-`workspaceWide: true`.
+If `lateBound = false`, the selector is exact.
+
+If `lateBound = true`, the selector is conservative. It means:
+
+- the artifact may be affected by files in this region
+- the exact smaller set may only be known later
 
 ## Workspace-Wide Provenance
 
-This is the simple name for the broad case.
+Workspace-wide provenance is a selector rooted at `/`.
+
+Simple case:
+
+```text
+{ path = /, include = [], exclude = [], lateBound = true }
+```
+
+This means:
+
+- any workspace path may affect this artifact
+
+But workspace-wide provenance can still be narrowed.
+
+Example:
+
+```text
+{ path = /, include = [], exclude = [third_party/**, docs/**], lateBound = true }
+```
+
+This means:
+
+- the artifact may be affected by many workspace paths
+- but definitely not by files under `third_party/**` or `docs/**`
+
+That is useful in large monorepos. It lets broad provenance still avoid many
+irrelevant changes.
 
 An artifact becomes workspace-wide if either is true:
 
 - it stores `Workspace` in a field
 - it exposes any public function that accepts `Workspace`
 
-This rule is conservative. It avoids false negatives.
-
-Example:
-
-```text
-Artifact A
-  ws = Workspace
-```
-
-Result:
-
-```text
-workspaceWide = true
-selectors = []
-```
-
-Example:
-
-```text
-Artifact A
-  check(ws: Workspace): Void
-```
-
-Result:
-
-```text
-workspaceWide = true
-selectors = []
-```
+The baseline representation is a late-bound selector rooted at `/`. Later
+analysis may narrow it with `include` and `exclude`.
 
 ## Tracking and Union
 
@@ -118,32 +122,33 @@ walk is transitive through nested stored objects.
 
 `union(other)` follows these rules:
 
-- `result.workspaceWide = left.workspaceWide OR right.workspaceWide`
-- `result.selectors = semantic union of both selector lists`
-- selectors are kept even when `result.workspaceWide = true`
+- result selectors are the semantic union of both selector lists
+- exact selectors stay exact
+- late-bound selectors stay late-bound
 - equivalent selectors may be deduplicated when practical
 
 ## Matching
 
-Matching is exact.
+Matching is exact with respect to the selector model.
 
-`affectedByPath(path)` returns `true` if either is true:
+`affectedByPath(path)` returns `true` if any selector's effective selected
+region overlaps `path`.
 
-- `workspaceWide = true`
-- at least one selector's effective selected region overlaps `path`
-
-`affectedByDiff(changes)` returns `true` if either is true:
-
-- `workspaceWide = true`
-- at least one selector's effective selected region overlaps the changed-path
-  region from the core `Changeset`
+`affectedByDiff(changes)` returns `true` if any selector's effective selected
+region overlaps the changed-path region from the core `Changeset`.
 
 The important rule is simple:
 
-- match against the final selected file set
+- match against the final selected region
 - not just against the selector root path
 
 So `include` and `exclude` affect the result.
+
+`lateBound` does not change the matching rule. It changes the meaning of the
+selector:
+
+- exact selector: "this region definitely contributes"
+- late-bound selector: "this region may contribute; we will know more later"
 
 ## Filtering Model
 
@@ -167,6 +172,69 @@ These filters:
 The main model is still artifact filtering, not plan filtering. Plans compile
 from the already selected artifact set.
 
+## Lockfile Acceleration
+
+Provenance filtering can be expensive if provenance must be discovered by
+loading artifacts first.
+
+That creates a bad shape:
+
+- load artifact
+- compute provenance
+- then decide the artifact was irrelevant
+
+In large workspaces, this can waste a lot of time.
+
+An optional optimization is to keep a lockfile-backed provenance index.
+
+The idea is:
+
+- store the last known `WorkspaceProvenance` for an artifact
+- use it only for negative pruning
+- if the stored provenance says the artifact is definitely unaffected, skip
+  loading it
+- otherwise load it normally
+
+This index is advisory. It is not the source of truth.
+
+Safety rule:
+
+- every artifact that is actually loaded must recompute its provenance and
+  rewrite its stored entry
+
+This creates a self-healing loop.
+
+Example:
+
+1. a Node artifact currently depends on `package.json`
+2. `package.json` changes to add a new dependency in another part of the repo
+3. the artifact is still selected, because `package.json` was already in its
+   old provenance
+4. the artifact loads
+5. its provenance is recomputed
+6. the lockfile entry is rewritten and now includes the new dependency path
+7. later changes to that new dependency are now caught by pruning
+
+This is safe only if discovery inputs are themselves part of provenance.
+
+In the example above:
+
+- if changing `package.json` can cause new paths to be read later
+- then `package.json` must already be in the old provenance
+
+If that rule does not hold, stale provenance entries can cause false
+negatives.
+
+This optimization is most useful in CI.
+
+Local development can be simpler:
+
+- ignore this optimization
+- or always refresh entries whenever artifacts are loaded
+
+This topic is about artifact provenance only. If plans later gain their own
+provenance layer, the same idea can be extended to actions.
+
 ## Schema
 
 ```graphql
@@ -188,6 +256,14 @@ type WorkspaceSelector {
   Optional exclude globs. Applied after include.
   """
   exclude: [String!]!
+
+  """
+  False means this selector is exact.
+
+  True means this selector is conservative. The actual smaller file set may
+  only be known later.
+  """
+  lateBound: Boolean!
 }
 
 """
@@ -195,43 +271,28 @@ Workspace provenance for one value or artifact.
 """
 type WorkspaceProvenance {
   """
-  True means this provenance may be affected by any workspace path.
-
-  This is the source of truth for workspace-wide provenance. `/` may still be
-  used as shorthand in prose or debug output.
-  """
-  workspaceWide: Boolean!
-
-  """
   Known workspace selectors that contributed to this provenance.
 
-  These selectors are kept even when `workspaceWide` is true. They are returned
-  in deterministic normalized order.
+  A selector rooted at `/` represents workspace-wide provenance. It may still
+  be narrowed by `include` and `exclude`.
   """
   selectors: [WorkspaceSelector!]!
 
   """
-  Returns true if `workspaceWide` is true.
-
-  Otherwise, returns true if any selector's effective selected region, after
-  `include` and `exclude` are applied, overlaps the given path.
+  Returns true if any selector's effective selected region, after `include` and
+  `exclude` are applied, overlaps the given path.
   """
   affectedByPath(path: WorkspacePath!): Boolean!
 
   """
-  Returns true if `workspaceWide` is true.
-
-  Otherwise, returns true if any selector's effective selected region, after
-  `include` and `exclude` are applied, overlaps the changed-path region from
-  the core `Changeset`.
+  Returns true if any selector's effective selected region, after `include` and
+  `exclude` are applied, overlaps the changed-path region from the core
+  `Changeset`.
   """
   affectedByDiff(changes: Changeset!): Boolean!
 
   """
   Returns the semantic union of this provenance and `other`.
-
-  The result is workspace-wide if either input is workspace-wide. The result
-  keeps selectors from both inputs.
   """
   union(other: WorkspaceProvenance!): WorkspaceProvenance!
 }
@@ -240,7 +301,7 @@ extend type Artifact {
   """
   Non-null workspace provenance for this artifact.
 
-  Empty provenance is `workspaceWide = false` and `selectors = []`.
+  Empty provenance is `selectors = []`.
   """
   provenance: WorkspaceProvenance!
 }
@@ -271,9 +332,8 @@ extend type Artifacts {
 Suppose an artifact has:
 
 ```text
-workspaceWide = false
 selectors = [
-  { path = docs, include = **/*.md, exclude = docs/generated/** }
+  { path = docs, include = **/*.md, exclude = docs/generated/**, lateBound = false }
 ]
 ```
 
@@ -306,18 +366,19 @@ So:
 - `affectedByPath("config")` is `true`
 - `affectedByPath("scripts")` is `false`
 
-### Workspace-Wide Provenance
+### Simple Workspace-Wide Provenance
 
 ```text
 Artifact A
   check(ws: Workspace): Void
 ```
 
-This artifact is workspace-wide:
+This artifact may be affected by any workspace path:
 
 ```text
-workspaceWide = true
-selectors = []
+selectors = [
+  { path = /, include = [], exclude = [], lateBound = true }
+]
 ```
 
 So:
@@ -325,7 +386,21 @@ So:
 - `affectedByPath("docs")` is `true`
 - `affectedByPath("src/api")` is `true`
 
-### Workspace-Wide Provenance Keeps Selectors
+### Narrowed Workspace-Wide Provenance
+
+```text
+selectors = [
+  { path = /, include = [], exclude = [third_party/**, docs/**], lateBound = true }
+]
+```
+
+Then:
+
+- `affectedByPath("apps/web")` is `true`
+- `affectedByPath("docs")` is `false`
+- `affectedByPath("third_party/libfoo")` is `false`
+
+### Workspace-Wide Provenance Keeps Exact Selectors
 
 ```text
 Artifact A
@@ -333,48 +408,47 @@ Artifact A
   check(ws: Workspace): Void
 ```
 
-This artifact is still workspace-wide:
+This artifact may have both:
 
 ```text
-workspaceWide = true
-selectors = [{ path = docs }]
+selectors = [
+  { path = docs, include = [], exclude = [], lateBound = false },
+  { path = /, include = [], exclude = [third_party/**], lateBound = true }
+]
 ```
 
-So:
-
-- `affectedByPath("docs")` is `true`
-- `affectedByPath("src/api")` is `true`
-
-The `docs` selector is still useful for inspection and debugging.
+The exact selector is still useful for inspection and debugging. The late-bound
+selector is still useful for broad pruning.
 
 ## Implementation
 
-The initial implementation can be built in four steps.
+The initial implementation can be built in five steps.
 
-### 1. Save selectors on workspace reads
+### 1. Save exact selectors on workspace reads
 
-When the engine returns a workspace-backed `Directory` or `File`, it stores a
-`WorkspaceSelector` on that value.
+When the engine returns a workspace-backed `Directory` or `File`, it stores an
+exact `WorkspaceSelector` on that value.
 
 ```go
 type WorkspaceSelector struct {
-	Path    WorkspacePath
-	Include []string
-	Exclude []string
+	Path      WorkspacePath
+	Include   []string
+	Exclude   []string
+	LateBound bool
 }
 
 type WorkspaceProvenance struct {
-	WorkspaceWide bool
-	Selectors     []WorkspaceSelector
+	Selectors []WorkspaceSelector
 }
 
 func (ws *Workspace) Directory(path WorkspacePath, opts DirOpts) *Directory {
 	return &Directory{
 		Provenance: WorkspaceProvenance{
 			Selectors: []WorkspaceSelector{{
-				Path:    path,
-				Include: opts.Include,
-				Exclude: opts.Exclude,
+				Path:      path,
+				Include:   opts.Include,
+				Exclude:   opts.Exclude,
+				LateBound: false,
 			}},
 		},
 	}
@@ -384,7 +458,8 @@ func (ws *Workspace) File(path WorkspacePath) *File {
 	return &File{
 		Provenance: WorkspaceProvenance{
 			Selectors: []WorkspaceSelector{{
-				Path: path,
+				Path:      path,
+				LateBound: false,
 			}},
 		},
 	}
@@ -414,23 +489,33 @@ func CollectStoredProvenance(v any) WorkspaceProvenance {
 }
 ```
 
-### 3. Add workspace-wide provenance
+### 3. Add late-bound selectors
 
-After collecting precise selectors, the engine sets `workspaceWide = true` if
+After collecting exact selectors, the engine adds a late-bound selector when
 the artifact:
 
 - stores `Workspace` in a field
 - or exposes any public function that accepts `Workspace`
 
+The baseline selector is rooted at `/`.
+
 ```go
 func CollectArtifactProvenance(obj ObjectWithSchema) WorkspaceProvenance {
 	prov := CollectStoredProvenance(obj)
 	if obj.HasStoredWorkspaceField() || obj.HasPublicWorkspaceArgFunction() {
-		prov.WorkspaceWide = true
+		prov = prov.Union(WorkspaceProvenance{
+			Selectors: []WorkspaceSelector{{
+				Path:      "/",
+				LateBound: true,
+			}},
+		})
 	}
 	return NormalizeProvenance(prov)
 }
 ```
+
+Later implementations may narrow that late-bound selector with `include` and
+`exclude`.
 
 ### 4. Implement the `Artifacts` filters in terms of `Artifact.provenance`
 
@@ -448,16 +533,30 @@ func (s *Artifacts) FilterAffectedByDiff(changes Changeset) *Artifacts {
 }
 ```
 
+### 5. Optionally prune with a lockfile-backed provenance index
+
+```go
+func ShouldLoadArtifact(a ArtifactKey, changes Changeset) bool {
+	if cached, ok := LoadCachedProvenance(a); ok && !cached.AffectedByDiff(changes) {
+		return false
+	}
+	return true
+}
+
+func OnArtifactLoaded(a ArtifactKey, obj ObjectWithSchema) {
+	StoreCachedProvenance(a, CollectArtifactProvenance(obj))
+}
+```
+
+This cache is advisory. Any artifact that is actually loaded must refresh its
+entry.
+
 ## Caching Semantics
 
-Workspace-wide provenance and workspace-sensitive caching should line up.
+Late-bound provenance and workspace-sensitive caching should line up.
 
-If an artifact:
-
-- stores `Workspace`
-- or exposes a public `Workspace`-taking function
-
-then it should also be treated as workspace-sensitive for caching.
+If an artifact has a late-bound selector, caching should treat that artifact as
+workspace-sensitive within that selector's region.
 
 Provenance does not replace the engine's content-addressed execution model. It
 exists for selection, inspection, and UX.
