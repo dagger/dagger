@@ -1,9 +1,0 @@
-{
-  "name": "dang",
-  "engineVersion": "v0.19.6",
-  "blueprint": {
-    "name": "dang-sdk",
-    "source": "github.com/vito/dang/dagger-sdk@main",
-    "pin": "352d057a4d4c4d77612104f842671b512495ef30"
-  }
-}

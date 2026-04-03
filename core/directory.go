@@ -2893,6 +2893,24 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 	})
 }
 
+func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
+	snapshot, err := dir.getSnapshot()
+	if err != nil {
+		return err
+	}
+	if snapshot == nil {
+		return errEmptyResultRef
+	}
+
+	return MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
+		src, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		return f(src)
+	}, mountRefAsReadOnly)
+}
+
 func (dir *Directory) WithSymlink(ctx context.Context, parent dagql.ObjectResult[*Directory], target, linkName string) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {

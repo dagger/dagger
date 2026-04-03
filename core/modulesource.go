@@ -536,14 +536,14 @@ func (sdk persistedModuleSourceLazyRuntime) Runtime(
 	ctx context.Context,
 	deps *ModDeps,
 	src dagql.ObjectResult[*ModuleSource],
-) (dagql.ObjectResult[*Container], error) {
+) (ModuleRuntime, error) {
 	loaded, err := sdk.sdk.ensure(ctx)
 	if err != nil {
-		return dagql.ObjectResult[*Container]{}, err
+		return nil, err
 	}
 	runtimeSDK, ok := loaded.AsRuntime()
 	if !ok {
-		return dagql.ObjectResult[*Container]{}, fmt.Errorf("persisted module source sdk does not implement runtime")
+		return nil, fmt.Errorf("persisted module source sdk does not implement runtime")
 	}
 	return runtimeSDK.Runtime(ctx, deps, src)
 }

@@ -5,13 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
@@ -648,20 +645,31 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	return nil
 }
 
-func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], rerr error) {
+func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRuntime, rerr error) {
 	// hide all this internal plumbing making up the call
 	ctx, hideSpan := Tracer(ctx).Start(ctx, "load sdk runtime", telemetry.Internal())
 	defer telemetry.EndWithCause(hideSpan, &rerr)
 
-	srv := dagql.CurrentDagqlServer(ctx)
+	mod := fn.mod.Self()
+	if mod.Runtime.Valid {
+		return &ContainerRuntime{Container: mod.Runtime.Value}, nil
+	}
 
-	err := srv.Select(ctx, fn.mod, &runtime,
-		dagql.Selector{
-			Field: "runtime",
-		},
-	)
+	if !mod.Source.Valid {
+		return nil, fmt.Errorf("no source")
+	}
+
+	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
+	if !ok {
+		return nil, fmt.Errorf("no runtime implemented")
+	}
+
+	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
 	if err != nil {
-		return runtime, fmt.Errorf("failed to load runtime: %w", err)
+		return nil, fmt.Errorf("failed to load runtime: %w", err)
+	}
+	if ctr, ok := runtime.AsContainer(); ok {
+		mod.Runtime = dagql.NonNull(ctr)
 	}
 
 	return runtime, nil
@@ -764,8 +772,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("marshal function call: %w", err)
 	}
 
-	srv := dagql.CurrentDagqlServer(ctx)
-
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -774,104 +780,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
 
-	var metaDir dagql.ObjectResult[*Directory]
-	err = srv.Select(hideCtx, srv.Root(), &metaDir,
-		dagql.Selector{
-			Field: "directory",
-		},
-	)
+	// Delegate the actual function execution to the runtime
+	outputBytes, clientID, err := runtime.Call(ctx, &execMD, fnCall)
 	if err != nil {
-		return nil, fmt.Errorf("create mod metadata directory: %w", err)
+		return nil, err
 	}
-
-	var ctr dagql.ObjectResult[*Container]
-	metaDirID, err := metaDir.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get mod metadata directory ID: %w", err)
-	}
-	err = srv.Select(hideCtx, runtime, &ctr,
-		dagql.Selector{
-			Field: "withMountedDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(modMetaDirPath)},
-				{Name: "source", Value: dagql.NewID[*Directory](metaDirID)},
-			},
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("mount function metadir: %w", err)
-	}
-	// Intentionally bypass the GraphQL withExec selector here. Module function
-	// execution is an internal flow with bespoke metadata plumbing; using the
-	// schema-level selector adds indirection and identity machinery we don't need.
-	execCtr, err := NewContainerChild(hideCtx, ctr)
-	if err != nil {
-		return nil, fmt.Errorf("clone exec container: %w", err)
-	}
-	err = execCtr.WithExec(hideCtx, ctr, ContainerExecOpts{
-		Args:                          []string{},
-		UseEntrypoint:                 true,
-		ExperimentalPrivilegedNesting: true,
-	}, &execMD, true)
-	if err != nil {
-		return nil, fmt.Errorf("exec function: %w", err)
-	}
-
-	err = execCtr.Sync(ctx)
-	if err != nil {
-		var modExecErr *ModuleExecError
-		if errors.As(err, &modExecErr) {
-			errInst, err := modExecErr.ErrorID.Load(ctx, opts.Server)
-			if err != nil {
-				return nil, fmt.Errorf("load error instance: %w", err)
-			}
-			return nil, errInst.Self()
-		}
-		if fn.metadata.OriginalName == "" {
-			return nil, fmt.Errorf("call constructor: %w", err)
-		} else {
-			return nil, fmt.Errorf("call function %q: %w", fn.metadata.OriginalName, err)
-		}
-	}
-
-	var outputDir *Directory
-	for _, ctrMount := range execCtr.Mounts {
-		if ctrMount.Target != modMetaDirPath {
-			continue
-		}
-		if ctrMount.DirectorySource == nil || ctrMount.DirectorySource.self() == nil {
-			return nil, fmt.Errorf("function output directory mount %s is missing directory source", modMetaDirPath)
-		}
-		outputDir = ctrMount.DirectorySource.self()
-		break
-	}
-	if outputDir == nil {
-		return nil, fmt.Errorf("function output directory mount %s not found", modMetaDirPath)
-	}
-
-	snapshot, err := outputDir.getSnapshot()
-	if err != nil {
-		return nil, fmt.Errorf("get function output snapshot: %w", err)
-	}
-	if snapshot == nil {
-		return nil, fmt.Errorf("function output snapshot is nil")
-	}
-
-	root, _, release, err := MountRefCloser(ctx, snapshot, mountRefAsReadOnly)
-	if err != nil {
-		return nil, fmt.Errorf("mount function output snapshot: %w", err)
-	}
-	defer release()
-
-	outputPath, err := containerdfs.RootPath(root, path.Join(outputDir.Dir, modMetaOutputPath))
-	if err != nil {
-		return nil, fmt.Errorf("resolve function output file path: %w", err)
-	}
-
-	outputBytes, err := os.ReadFile(outputPath)
-	if err != nil {
-		return nil, fmt.Errorf("read function output file: %w", err)
-	}
+	_ = clientID
 
 	var returnValueAny any
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))

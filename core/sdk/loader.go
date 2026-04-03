@@ -134,6 +134,8 @@ func (l *Loader) namedSDK(
 	switch sdkNamedParsed {
 	case sdkGo:
 		return &goSDK{root: root, rawConfig: sdk.Config}, nil
+	case sdkDang:
+		return &dangSDK{root: root, rawConfig: sdk.Config}, nil
 	case sdkPython:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case sdkTypescript:
@@ -230,7 +232,7 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 	}
 
 	// inbuilt sdk go/python/typescript currently does not support selecting a specific version
-	if slices.Contains([]sdk{sdkGo, sdkPython, sdkTypescript}, sdk(sdkNameParsed)) && hasVersion {
+	if slices.Contains([]sdk{sdkGo, sdkDang, sdkPython, sdkTypescript}, sdk(sdkNameParsed)) && hasVersion {
 		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
 	}
 

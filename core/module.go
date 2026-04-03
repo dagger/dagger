@@ -196,6 +196,13 @@ func ImplementationScopedModule(
 	return scoped, nil
 }
 
+func (mod *Module) RuntimeContainer() dagql.Nullable[dagql.ObjectResult[*Container]] {
+	if mod.Runtime.Valid {
+		return mod.Runtime
+	}
+	return dagql.Nullable[dagql.ObjectResult[*Container]]{}
+}
+
 // Return all user defaults for this module
 func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	defaults := NewEnvFile(true)
@@ -1587,19 +1594,19 @@ func (mod *Module) Patch(ctx context.Context) error {
 	return nil
 }
 
-func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], err error) {
+func (mod *Module) LoadRuntime(ctx context.Context) (ModuleRuntime, error) {
 	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
 	if !ok {
-		return runtime, fmt.Errorf("no runtime implemented")
+		return nil, fmt.Errorf("no runtime implemented")
 	}
 
 	if !mod.Source.Valid {
-		return runtime, fmt.Errorf("no source")
+		return nil, fmt.Errorf("no source")
 	}
 
-	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
 	if err != nil {
-		return runtime, fmt.Errorf("failed to load runtime: %w", err)
+		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
 
 	return runtime, nil

@@ -37,6 +37,9 @@ var ErrNoCurrentModule = fmt.Errorf("no current module")
 
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
+	// Handle an HTTP request from a nested Dagger client.
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata)
+
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool) error
 

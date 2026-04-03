@@ -2773,7 +2773,9 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		if err != nil {
 			return nil, fmt.Errorf("failed to get module runtime: %w", err)
 		}
-		mod.Runtime = dagql.NonNull(runtime)
+		if ctr, ok := runtime.AsContainer(); ok {
+			mod.Runtime = dagql.NonNull(ctr)
+		}
 
 		// construct a special function with no object or function name, which tells
 		// the SDK to return the module's definition (in terms of objects, fields and
@@ -2876,11 +2878,15 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		if err != nil {
 			return nil, err
 		}
-		mod.Runtime = dagql.NonNull(runtime)
+		ctr, ok := runtime.AsContainer()
+		if !ok {
+			return mod, nil
+		}
+		mod.Runtime = dagql.NonNull(ctr)
 
-		// Force load the runtime to fill the cache
+		// Force load the runtime to fill the cache (only for container-based runtimes)
 		var runtimeRes dagql.ID[*core.Container]
-		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
+		if err = dag.Select(ctx, ctr, &runtimeRes, dagql.Selector{
 			Field: "sync",
 		}); err != nil {
 			return nil, err

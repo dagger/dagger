@@ -1721,12 +1721,20 @@ func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query
 	return self.CurrentFunctionCall(ctx)
 }
 
-func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ struct{}) (dagql.ObjectResult[*core.Container], error) {
+func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Container]], error) {
 	if mod.Runtime.Valid {
-		return mod.Runtime.Value, nil
+		return mod.Runtime, nil
 	}
 
-	return mod.LoadRuntime(ctx)
+	runtime, err := mod.LoadRuntime(ctx)
+	if err != nil {
+		return dagql.Nullable[dagql.ObjectResult[*core.Container]]{}, err
+	}
+	if ctr, ok := runtime.AsContainer(); ok {
+		mod.Runtime = dagql.NonNull(ctr)
+		return mod.Runtime, nil
+	}
+	return dagql.Nullable[dagql.ObjectResult[*core.Container]]{}, nil
 }
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResult[*core.Module], args struct {
