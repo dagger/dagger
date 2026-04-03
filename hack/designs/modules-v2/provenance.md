@@ -113,6 +113,18 @@ An artifact becomes workspace-wide if either is true:
 The baseline representation is a late-bound selector rooted at `/`. Later
 analysis may narrow it with `include` and `exclude`.
 
+The internal selector model supports this narrowing already. A conservative
+selector can be narrower than the whole repo.
+
+Example:
+
+```text
+{ path = /, include = [apps/**], exclude = [apps/legacy/**], lateBound = true }
+```
+
+But the exact author-facing or runtime mechanism for producing that narrower
+conservative selector is not yet defined in this design.
+
 ## Tracking and Union
 
 Known selectors come from stored `Directory` and `File` values.
