@@ -25,6 +25,12 @@ const (
 	goSDKIntrospectionJSONPath  = "/schema.json"
 	goSDKDependenciesConfigPath = "/dependencies.json"
 	GoSDKModuleIDPath           = "typedefs.json"
+
+	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
+	// change is needed in the generated library.
+	// Otherwise, update it to the latest known commit during release.
+	// CURRENT commit: v0.20.3
+	goSDKLibVersion = "9fc3f2f9bef863b0d4a8cab58ee012300f4e608f"
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
@@ -370,6 +376,7 @@ func (sdk *goSDK) ModuleTypes(
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
 						"--introspection-json-path", goSDKIntrospectionJSONPath,
+						"--lib-version", dagql.String(goSDKLibVersion),
 						"--output", GoSDKModuleIDPath,
 					},
 				},
@@ -590,17 +597,11 @@ func (sdk *goSDK) baseWithCodegen(
 		"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
+		"--lib-version", dagql.String(goSDKLibVersion),
 	}
 	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
-
-	/* FIXME: dev version handling is broken because it requires changing imports in code
-	if !engine.IsDevVersion(engine.Version) {
-		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engine.Version))
-	}
-	*/
-	codegenArgs = append(codegenArgs, "--lib-version", dagql.String("v0.19.11"))
 
 	selectors := []dagql.Selector{
 		{
