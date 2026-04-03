@@ -80,6 +80,22 @@ func (UpSuite) TestUpPortCollision(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "8080")
 }
 
+func (UpSuite) TestUpPartialStartupFailure(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := upTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.WithWorkdir("partial-failure")
+
+	// Run all services. The "broken" service fails on startup while "healthy"
+	// is already running. dagger up must cancel the healthy service and exit
+	// with the startup error — not hang forever.
+	out, err := modGen.
+		With(daggerExecFail("up")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "startup failed")
+}
+
 func (UpSuite) TestUpRunService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)

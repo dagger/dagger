@@ -223,8 +223,11 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 // github.com/dagger/otel-go package which we cannot modify.
 const ServiceNameAttr = "dagger.io/service.name"
 
-func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, portMappings []PortForward) error {
-	return node.Run(ctx,
+// RunUp starts the service and returns a result that must be cleaned up.
+// It does NOT block — the caller (UpGroup.Run) handles the blocking wait.
+func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, portMappings []PortForward) (*runUpStartResult, error) {
+	var result *runUpStartResult
+	err := node.Run(ctx,
 		func(n *ModTreeNode) bool { return n.IsUp },
 		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
 			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
@@ -237,16 +240,30 @@ func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, p
 			defer func() {
 				telemetry.EndWithCause(span, &rerr)
 			}()
-			return n.runUpLocally(ctx, span, portMappings)
+			var err error
+			result, err = n.runUpLocally(ctx, span, portMappings)
+			return err
 		},
 		include, exclude)
+	return result, err
 }
 
-func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span, portMappings []PortForward) error {
+// runUpStartResult is the result of starting a single service in runUpLocally.
+// It contains everything needed to display status and clean up after ctx cancellation.
+type runUpStartResult struct {
+	ReadySpan trace.Span
+}
+
+// runUpLocally evaluates the +up function, creates a host tunnel, starts the
+// service, and returns immediately. It does NOT block — the caller is
+// responsible for blocking on ctx.Done() after all services have started.
+// This two-phase design ensures that if one service fails to start, sibling
+// goroutines are not left hanging on <-ctx.Done() forever.
+func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span, portMappings []PortForward) (*runUpStartResult, error) {
 	// Evaluate the +up function to get the Service
 	var svcResult dagql.ObjectResult[*Service]
 	if err := node.DagqlValue(ctx, &svcResult); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Update parent span name with port info.
@@ -269,7 +286,7 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 	// Set up the host tunnel
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var hostSvc dagql.Result[*Service]
@@ -297,20 +314,20 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create host tunnel: %w", err)
+		return nil, fmt.Errorf("failed to create host tunnel: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
+		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
 	runningSvc, err := svcs.Start(ctx, hostSvc.ID(), hostSvc.Self(), true)
 	if err != nil {
-		return fmt.Errorf("failed to start service: %w", err)
+		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
 
 	// Build URL list from the running service's actual ports.
@@ -323,7 +340,7 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 		urls = append(urls, fmt.Sprintf("%s://localhost:%d", scheme, port.Port))
 	}
 
-	// Create a "ready" child span
+	// Create a "ready" child span visible in the TUI.
 	readyName := "ready"
 	if len(urls) > 0 {
 		readyName = "ready " + strings.Join(urls, " ")
@@ -334,11 +351,8 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 			attribute.StringSlice("service.urls", urls),
 		),
 	)
-	defer readySpan.End()
 
-	// Block until the context is canceled (e.g. Ctrl+C).
-	<-ctx.Done()
-	return nil
+	return &runUpStartResult{ReadySpan: readySpan}, nil
 }
 
 func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (*Changeset, error) {

@@ -55,6 +55,7 @@
             "core/integration/testdata/generators/hello-with-generators/",
             "core/integration/testdata/services/hello-with-services/",
             "core/integration/testdata/services/port-collision/",
+            "core/integration/testdata/services/partial-failure/",
             "toolchains/release/testdata/module/"
           ]
         }

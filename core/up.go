@@ -54,6 +54,12 @@ func (ug *UpGroup) List() []*Up {
 }
 
 // Run starts all service functions in the group.
+// Before starting, it evaluates all services to detect port collisions.
+//
+// Uses a two-phase approach: phase 1 starts all services in parallel and
+// returns immediately once each is healthy; phase 2 blocks on ctx.Done().
+// This ensures that if one service fails to start, the error is surfaced
+// immediately without leaving sibling goroutines hanging forever.
 func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 	ug = ug.Clone()
 
@@ -61,14 +67,39 @@ func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 		return nil, err
 	}
 
+	// Phase 1: start all services in parallel. Each RunUp evaluates the
+	// module function, creates the host tunnel, and waits for the health
+	// check — then returns immediately (no blocking).
+	var (
+		mu      sync.Mutex
+		results []*runUpStartResult
+	)
 	jobs := parallel.New().WithContextualTracer(true)
 	for _, up := range ug.Ups {
 		jobs = jobs.WithJob(up.Name(), func(ctx context.Context) error {
-			return up.Node.RunUp(ctx, nil, nil, up.PortMappings)
+			result, err := up.Node.RunUp(ctx, nil, nil, up.PortMappings)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			results = append(results, result)
+			mu.Unlock()
+			return nil
 		})
 	}
 	if err := jobs.Run(ctx); err != nil {
+		// Clean up any ready spans from services that did start.
+		for _, r := range results {
+			r.ReadySpan.End()
+		}
 		return nil, err
+	}
+
+	// Phase 2: all services started successfully. Block until context
+	// cancellation (e.g. Ctrl+C).
+	<-ctx.Done()
+	for _, r := range results {
+		r.ReadySpan.End()
 	}
 	return ug, nil
 }
@@ -198,9 +229,14 @@ func (u *Up) Clone() *Up {
 	return &cp
 }
 
-// Run starts the service returned by this up function.
+// Run starts the service returned by this up function and blocks until ctx is cancelled.
 func (u *Up) Run(ctx context.Context) (*Up, error) {
 	u = u.Clone()
-	err := u.Node.RunUp(ctx, nil, nil, u.PortMappings)
-	return u, err
+	result, err := u.Node.RunUp(ctx, nil, nil, u.PortMappings)
+	if err != nil {
+		return u, err
+	}
+	defer result.ReadySpan.End()
+	<-ctx.Done()
+	return u, nil
 }
