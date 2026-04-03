@@ -4,48 +4,75 @@
 
 Depends on: [Artifacts](./artifacts.md), [Execution Plans](./plans.md)
 
+## Table of Contents
+
+- [Problem](#problem)
+- [Solution](#solution)
+- [Authoring](#authoring)
+- [Schema](#schema)
+- [Plan Construction](#plan-construction)
+- [CLI](#cli)
+- [Out Of Scope](#out-of-scope)
+
 ## Summary
 
-`ship` extends Artifacts and Execution Plans with an explicit authored shipping
-verb. Authors mark direct ship handlers with `+ship`. `filterShip` remains a
-structural artifact projection, while `Artifacts.ship` compiles the selected
-artifacts' local `+ship` handlers into a Plan.
+`ship` is an authored verb.
+Authors mark ship handlers with `+ship`.
+`filterVerb(SHIP)` only picks artifacts.
+`Artifacts.ship` turns the selected local `+ship` handlers into a Plan.
 
-By default, `ship(A)` depends on `check(A)` before running local ship handlers
-on `A`. `noCheck: true` and `dagger ship --no-check` opt out of that
-prerequisite. `ship` does not recursively ship every referenced artifact by
-default.
+By default, `ship(A)` runs after `check(A)`.
+`noCheck: true` and `dagger ship --no-check` remove that edge.
+`ship` does not walk all references and ship them too.
 
-Environment selection, approvals, branch/event gating, secret policy, and
-protected-environment rules are out of scope for this layer.
+This layer does not choose preview, staging, or prod.
+This layer does not handle approvals, branch gates, secret policy, or
+protected environments.
+This layer also does not define structured ship results yet.
+
+Example:
+
+- A ship handler may create a deploy URL.
+- `dagger ship` still reports only success or failure today.
 
 ## Problem
 
-1. **Missing authored verb** - `Execution Plans` defines the generic DAG
-   substrate, but it does not yet define what `ship` means.
-2. **Missing default safety edge** - shipping needs a default validation step
-   before side effects happen.
-3. **Wrong layer for deployment policy** - preview/staging/prod selection and
-   approval policy matter, but they are not Artifacts or Plans concerns.
+1. **No ship meaning yet** - `Execution Plans` gives us the DAG model, but it
+   does not say what `ship` means.
+2. **Need a safe default** - Shipping usually needs a check step before it
+   does side effects.
+3. **Targets are a different problem** - Preview, staging, prod, and approval
+   policy do not belong in Artifacts or Plans.
 
 ## Solution
 
-Introduce `ship` as an authored verb on top of the existing Artifacts/Plans
-stack. `filterShip` selects artifacts structurally. `Artifacts.ship` compiles
-local `+ship` handlers into a Plan and, by default, inserts `check(A) →
-ship(A)` ordering for each selected artifact. Higher-layer deployment policy
-remains out of scope.
+Add `ship` on top of Artifacts and Plans.
+`filterVerb(SHIP)` picks artifacts by structure.
+`Artifacts.ship` compiles local `+ship` handlers into a Plan.
+By default, it adds `check(A) → ship(A)` for each selected artifact.
+Target choice and approval policy stay in a higher layer.
+
+Example:
+
+- Pick one app artifact.
+- Build a plan.
+- Run `check(app)` first.
+- Then run `ship(app)`.
 
 ## Authoring
 
-`+ship` uses the same explicit authored-verb model as `+check` and
-`+generate`.
+`+ship` follows the same authored-verb idea as `+check` and `+generate`.
 
-- Only direct `+ship` handlers participate in ship plan construction.
-- Functions named `deploy`, `publish`, or similar do not participate unless
-  they are marked `+ship`.
-- `filterShip` is structural only. It narrows the artifact scope; it does not
-  compile or execute anything by itself.
+- Only direct `+ship` handlers join ship plan construction.
+- `+ship` marks intent. It does not enforce a function shape by itself.
+- A `+ship` function may have required args in code. That is not an error.
+- But it is only actionable in the default ship UX if Dagger can run it with
+  no user-supplied args after defaults and config are applied.
+- Those values may come from function defaults, user defaults, module config,
+  or workspace config.
+- A function named `deploy` or `publish` does not join `ship` unless it is
+  marked `+ship`.
+- `filterVerb(SHIP)` only filters. It does not compile or run anything.
 
 Example:
 
@@ -53,15 +80,33 @@ Example:
 type Docs struct{}
 
 // +ship
-func (m *Docs) Publish() string {
-	return "https://example.com/docs"
+func (m *Docs) Publish(ctx context.Context) error {
+	// side effects happen inside the function; dagger ship itself returns void
+	return nil
 }
 ```
 
+Another example:
+
+```go
+type App struct{}
+
+// +ship
+func (m *App) Deploy(ctx context.Context, env string) error {
+	return nil
+}
+```
+
+This is still valid.
+If `env` comes from config, then `dagger ship` can run it.
+If `env` does not come from config, then this handler is not actionable in the
+default ship UX.
+
 ## Schema
 
-`filterShip` is part of the Artifacts selector surface defined in
-[artifacts.md](./artifacts.md). This document adds ship plan compilation:
+`filterVerb(SHIP)` is part of the Artifacts selector surface defined in
+[artifacts.md](./artifacts.md).
+This document adds ship plan compilation:
 
 ```graphql
 extend type Artifacts {
@@ -81,17 +126,26 @@ extend type Artifacts {
 - Include local `+ship` handlers on artifact A.
 - Do not recursively ship every referenced artifact by default.
 
-Raw references are too broad to define automatic ship propagation.
+Raw references are too broad for automatic ship propagation.
+
+Example:
+
+- App `A` uses image `B`.
+- `ship(A)` does not also call `ship(B)` by default.
 
 ### Default Validation
 
 - Unless `noCheck` is true, compile `check(A)` before local ship handlers on
-  A.
-- This reuses the existing `check` construction rules from
-  [plans.md](./plans.md), so dependency validation follows `check` semantics.
+  `A`.
+- This reuses the `check` construction rules from [plans.md](./plans.md).
 
-That means default shipping gets recursive validation without recursively
-shipping every referenced artifact.
+So default shipping gets recursive validation, but not recursive shipping.
+
+Example:
+
+- `A` depends on `B`.
+- `check(A)` may check `B` first.
+- `ship(A)` still only ships `A`.
 
 ### Examples
 
@@ -117,10 +171,10 @@ $ dagger ship --module=go --no-check
 # compile ship(go) only
 ```
 
-The CLI is a thin mapping over the engine API:
+The CLI is a thin layer over the engine API:
 
-- `dagger ship` → `workspace.artifacts.filterShip.ship()`
-- `dagger ship --no-check` → `workspace.artifacts.filterShip.ship(noCheck: true)`
+- `dagger ship` → `workspace.artifacts.filterVerb(SHIP).ship()`
+- `dagger ship --no-check` → `workspace.artifacts.filterVerb(SHIP).ship(noCheck: true)`
 
 ## Out Of Scope
 
@@ -129,5 +183,9 @@ The CLI is a thin mapping over the engine API:
 - branch or event gating
 - secret availability and protected-environment policy
 
-Those concerns belong to a higher layer that consumes `ship`, not to the core
-meaning of the verb itself.
+Those concerns belong to a higher layer.
+
+Example:
+
+- Deciding between preview and prod is not part of `ship`.
+- A higher layer must decide that.
