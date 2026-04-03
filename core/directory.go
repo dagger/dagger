@@ -1780,6 +1780,15 @@ func (dir *Directory) WithDirectory(
 		defer newRef.Release(context.WithoutCancel(ctx))
 
 		err = MountRef(ctx, newRef, func(copyDest string, destMnt *mount.Mount) error {
+			var ownership *Ownership
+			if owner != "" {
+				var err error
+				ownership, err = resolveDirectoryOwner(copyDest, owner)
+				if err != nil {
+					return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+				}
+			}
+
 			resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
 			if err != nil {
 				return err
@@ -1794,11 +1803,7 @@ func (dir *Directory) WithDirectory(
 						return fmt.Errorf("failed to chmod %s: %w", resolvedCopyDest, err)
 					}
 				}
-				if owner != "" {
-					ownership, err := parseDirectoryOwner(owner)
-					if err != nil {
-						return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-					}
+				if ownership != nil {
 					if err := os.Chown(resolvedCopyDest, ownership.UID, ownership.GID); err != nil {
 						return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
 					}
@@ -1835,14 +1840,6 @@ func (dir *Directory) WithDirectory(
 			destResolver, err := pathResolverForMount(destMnt, copyDest)
 			if err != nil {
 				return fmt.Errorf("failed to create destination path resolver: %w", err)
-			}
-
-			var ownership *Ownership
-			if owner != "" {
-				ownership, err = parseDirectoryOwner(owner)
-				if err != nil {
-					return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-				}
 			}
 
 			var opts []fscopy.Opt
@@ -2363,9 +2360,18 @@ func (dir *Directory) WithFile(
 		return err
 	}
 
+	var ownership *Ownership
 	var realDestPath string
 	var realUnpackDestPath string
 	if err := MountRef(ctx, newRef, func(root string, destMnt *mount.Mount) (rerr error) {
+		if owner != "" {
+			var err error
+			ownership, err = resolveDirectoryOwner(root, owner)
+			if err != nil {
+				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+			}
+		}
+
 		mntedDestPath, err := containerdfs.RootPath(root, destPath)
 		if err != nil {
 			return err
@@ -2443,14 +2449,6 @@ func (dir *Directory) WithFile(
 		return nil
 	}); err != nil {
 		return err
-	}
-
-	var ownership *Ownership
-	if owner != "" {
-		ownership, err = parseDirectoryOwner(owner)
-		if err != nil {
-			return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-		}
 	}
 
 	unpacked := false
@@ -2984,15 +2982,57 @@ func ParseDirectoryOwner(owner string) (*Ownership, error) {
 	}, nil
 }
 
-func parseDirectoryOwner(owner string) (*Ownership, error) {
-	return ParseDirectoryOwner(owner)
+func resolveDirectoryOwner(root, owner string) (*Ownership, error) {
+	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
+
+	uid, err := parseUID(uidOrName)
+	if err != nil {
+		passwdPath, err := containerdfs.RootPath(root, "/etc/passwd")
+		if err != nil {
+			return nil, err
+		}
+		passwdFile, err := os.Open(passwdPath)
+		if err != nil {
+			return nil, TrimErrPathPrefix(err, root)
+		}
+		defer passwdFile.Close()
+
+		uid, err = findUID(passwdFile, uidOrName)
+		if err != nil {
+			return nil, fmt.Errorf("find uid: %w", err)
+		}
+	}
+
+	var gid int
+	if hasGroup {
+		gid, err = parseUID(gidOrName)
+		if err != nil {
+			groupPath, err := containerdfs.RootPath(root, "/etc/group")
+			if err != nil {
+				return nil, err
+			}
+			groupFile, err := os.Open(groupPath)
+			if err != nil {
+				return nil, TrimErrPathPrefix(err, root)
+			}
+			defer groupFile.Close()
+
+			gid, err = findGID(groupFile, gidOrName)
+			if err != nil {
+				return nil, fmt.Errorf("find gid: %w", err)
+			}
+		}
+	} else {
+		gid = uid
+	}
+
+	return &Ownership{
+		UID: uid,
+		GID: gid,
+	}, nil
 }
 
 func (dir *Directory) Chown(ctx context.Context, parent dagql.ObjectResult[*Directory], chownPath string, owner string) error {
-	ownership, err := parseDirectoryOwner(owner)
-	if err != nil {
-		return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -3019,8 +3059,13 @@ func (dir *Directory) Chown(ctx context.Context, parent dagql.ObjectResult[*Dire
 		return err
 	}
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
+		ownership, err := resolveDirectoryOwner(root, owner)
+		if err != nil {
+			return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+		}
+
 		chownPath := path.Join(dir.Dir, chownPath)
-		chownPath, err := containerdfs.RootPath(root, chownPath)
+		chownPath, err = containerdfs.RootPath(root, chownPath)
 		if err != nil {
 			return err
 		}

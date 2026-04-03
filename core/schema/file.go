@@ -104,7 +104,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			Doc(`Change the owner of the file recursively.`).
 			Args(
 				dagql.Arg("owner").Doc(`A user:group to set for the file.`,
-					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
+					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 		dagql.NodeFunc("asJSON", s.asJSON).
@@ -351,10 +351,6 @@ func (s *fileSchema) chown(
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
-	}
-
-	if _, err := core.ParseFileOwner(args.Owner); err != nil {
-		return inst, fmt.Errorf("failed to parse ownership %s: %w", args.Owner, err)
 	}
 
 	f := core.NewFileChild(parent)

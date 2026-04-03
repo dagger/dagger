@@ -99,7 +99,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("source").Doc(`Identifier of the file to copy.`),
 				dagql.Arg("permissions").Doc(`Permission given to the copied file (e.g., 0600).`),
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
-					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
+					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 		dagql.NodeFunc("withFiles", s.withFiles).
@@ -159,7 +159,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
-					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
+					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 		dagql.NodeFunc("filter", s.filter).
@@ -292,7 +292,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Path of the directory to change ownership of (e.g., "/").`),
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted directory and its contents.`,
-					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
+					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 		dagql.NodeFunc("withError", s.withError).
@@ -1704,9 +1704,6 @@ func (s *directorySchema) chown(
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
-	}
-	if _, err := core.ParseDirectoryOwner(args.Owner); err != nil {
-		return inst, fmt.Errorf("failed to parse ownership %s: %w", args.Owner, err)
 	}
 	dir := core.NewDirectoryChild(parent)
 	dir.Lazy = &core.DirectoryChownLazy{

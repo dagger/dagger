@@ -1308,10 +1308,6 @@ func (file *File) AsEnvFile(ctx context.Context, expand bool) (*EnvFile, error) 
 }
 
 func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], owner string) error {
-	ownership, err := parseDirectoryOwner(owner)
-	if err != nil {
-		return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -1338,8 +1334,13 @@ func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], o
 		return err
 	}
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
+		ownership, err := resolveDirectoryOwner(root, owner)
+		if err != nil {
+			return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+		}
+
 		chownPath := file.File
-		chownPath, err := containerdfs.RootPath(root, chownPath)
+		chownPath, err = containerdfs.RootPath(root, chownPath)
 		if err != nil {
 			return err
 		}

@@ -929,6 +929,37 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 	*/
 }
 
+func (DirectorySuite) TestChown(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := c.Directory().
+		WithNewDirectory("dir").
+		Chown("dir", "555:556").
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
+func (DirectorySuite) TestChownLookup(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	d := c.Container().
+		From(alpineImage).
+		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
+		Rootfs().
+		WithNewDirectory("dir").
+		WithNewFile("dir/file.txt", "hello").
+		Chown("dir", "auser:agroup")
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
+		WithMountedDirectory("/mnt", d.Directory("dir")).
+		WithExec([]string{"stat", "-c", "%u:%g %U:%G", "/mnt/file.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1234:4321 auser:agroup\n", out)
+}
+
 func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()

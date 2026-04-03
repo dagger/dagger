@@ -88,6 +88,27 @@ func (FileSuite) TestNewFile(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "some-content", contents)
 }
 
+func (FileSuite) TestChownLookup(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	f := c.Container().
+		From(alpineImage).
+		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
+		Rootfs().
+		WithNewFile("owned.txt", "hello").
+		File("owned.txt").
+		Chown("auser:agroup")
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
+		WithMountedFile("/mnt/owned.txt", f).
+		WithExec([]string{"stat", "-c", "%u:%g %U:%G", "/mnt/owned.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1234:4321 auser:agroup\n", out)
+}
+
 func (FileSuite) TestNewFileInvalid(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
