@@ -1,0 +1,151 @@
+---
+title: "Artifacts"
+slug: /core-concepts/artifacts
+description: "Discover, select, and act on the objects in your workspace"
+toc_max_heading_level: 2
+---
+
+# Artifacts
+
+Your workspace has modules. Each module exposes objects — containers, directories, build configurations, test suites. Those objects are rich. They carry state. They compose complex data. They are a major part of how Dagger works.
+
+But until now, those objects were invisible. The platform could see workspaces, modules, and functions — but not the objects in between. You could reach a function by spelling its path through the module, but the objects along that path had no identity. You passed through them to get to the function. You couldn't point at them.
+
+**Artifacts change that.** An artifact is an object that the platform can see — discover, name, select, and act on.
+
+## Discovering Artifacts
+
+The engine scans your modules' type graphs, finds the targetable objects, and gives each one a set of coordinates. Think of it as a table. Each column is a **dimension** — like `module`, `platform`, or `stage`. Each artifact is a row.
+
+You explore artifacts with `dagger list`:
+
+```shell
+# What kinds of artifacts are there?
+dagger list --help
+# Output:
+#   --module=<name>       Filter by module
+#   --platform=<name>     Filter by platform
+
+# Which modules are available?
+dagger list module
+# Output:
+#   go
+#   frontend
+
+# Which platforms does the go module have?
+dagger list platform --module=go
+# Output:
+#   linux
+#   darwin
+```
+
+Dimensions are discovered automatically. The engine looks at the type structure your modules already have and creates the dimensions you need to tell artifacts apart.
+
+## Selecting Artifacts
+
+Once you know what's there, you select artifacts with `--dimension=value` flags on any verb:
+
+```shell
+# Check everything
+dagger check
+
+# Check only the go module
+dagger check --module=go
+
+# Check only the linux platform of the go module
+dagger check --module=go --platform=linux
+
+# Generate only for the frontend module
+dagger generate --module=frontend
+```
+
+Each flag narrows the set of artifacts the verb acts on. Flags compose naturally — add more flags to be more specific.
+
+## Where Dimensions Come From
+
+You don't have to define dimensions. The engine synthesizes them from the structure your modules already expose.
+
+Suppose your Go module has this shape:
+
+```
+Go
+├── Platforms
+│   ├── linux → Platform
+│   └── darwin → Platform
+```
+
+The engine sees two `Platform` objects behind a branching point. It creates a `platform` dimension with values `linux` and `darwin`. No annotations needed. No extra code. It comes from the shape you already wrote.
+
+A frontend module with `test` and `release` stages gets a `stage` dimension. A workspace with multiple modules gets a `module` dimension. The engine does the work.
+
+## Scoping by Verb
+
+Not every artifact supports every verb. A module might expose objects with checks but no generators, or vice versa.
+
+When you use a verb like `dagger check`, the artifact set is automatically scoped to objects that have check functions. This scoping also affects discovery:
+
+```shell
+# What dimensions exist for checking?
+dagger list --check
+
+# What platforms can I check?
+dagger list platform --check --module=go
+
+# What dimensions exist for generating?
+dagger list --generate
+```
+
+This keeps things focused. You only see what's relevant to what you're doing.
+
+## How Artifacts Relate to Other Concepts
+
+**Artifacts and modules.** Every module root is an artifact. Modules that expose richer object structure may contribute additional artifacts with extra dimensions.
+
+**Artifacts and functions.** Functions are what you call on artifacts. An artifact is the object; functions are the actions you can take on it. `dagger check` finds the check functions on your selected artifacts and runs them.
+
+**Artifacts and checks.** Today, `dagger check` runs checks across your workspace. Artifacts make that targeting precise. Instead of running all checks, you can say exactly which objects to check.
+
+## Example: A Multi-Platform Build
+
+Here's a workspace with two modules:
+
+```shell
+$ dagger list module
+go
+docs
+
+$ dagger list platform --module=go
+linux
+darwin
+
+$ dagger list --help
+  --module=<name>       Filter by module
+  --platform=<name>     Filter by platform
+```
+
+The `go` module exposes platform-specific builds. The `docs` module is simpler — no platform dimension. The full artifact table looks like:
+
+| module | platform |
+|--------|----------|
+| go     |          |
+| go     | linux    |
+| go     | darwin   |
+| docs   |          |
+
+Now you can target precisely:
+
+```shell
+# Check everything
+dagger check
+
+# Check only the darwin build
+dagger check --module=go --platform=darwin
+
+# Check only docs
+dagger check --module=docs
+```
+
+## Next Steps
+
+- **[Checks](/core-concepts/checks)** — Learn how checks work with artifact selection
+- **[Functions](/core-concepts/functions)** — Understand the building blocks that artifacts expose
