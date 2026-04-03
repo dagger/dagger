@@ -20,10 +20,12 @@ codegen, regenerate, fix tests.
 **Generated:** `sdk/elixir/lib/dagger/gen/*.ex`
 Query builder likely needs `inline_fragment` added.
 
-### PHP SDK
+### PHP SDK ✅
 
-**Codegen:** `sdk/php/src/Codegen/Introspection/NewCodegenVisitor.php`
-**Generated:** `sdk/php/generated/Client.php`
+**Done.** Inline fragment support added to QueryBuilderChain.
+`loadObjectFromId()` helper on AbstractClient replaces dynamic
+`load*FromId()` calls. DecodesValue + IdableHandler updated.
+Generated code regenerated. All checks pass (223 tests, phpstan, phpcs).
 
 ### Java SDK
 
