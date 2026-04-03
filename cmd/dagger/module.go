@@ -45,9 +45,9 @@ var (
 	moduleNoURL       bool
 	allowedLLMModules []string
 
-	sdk           string
-	licenseID     string
-	compatVersion string
+	sdk               string
+	deprecatedLicense string
+	compatVersion     string
 
 	moduleName       string
 	moduleSourcePath string
@@ -117,7 +117,6 @@ func initRequestedChanges(cmd *cobra.Command) bool {
 		"sdk",
 		"name",
 		"source",
-		"license",
 		"include",
 		"blueprint",
 		"with-self-calls",
@@ -131,6 +130,27 @@ func initRequestedChanges(cmd *cobra.Command) bool {
 
 func addWorkspaceInstallFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the module in the workspace. Defaults to the name of the module being installed.")
+}
+
+func addDeprecatedLicenseFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&deprecatedLicense, "license", "false", "Deprecated: automatic license generation has been removed")
+	flag := cmd.Flags().Lookup("license")
+	flag.Hidden = true
+	flag.NoOptDefVal = "true"
+}
+
+func checkDeprecatedLicenseFlag(cmd *cobra.Command) error {
+	flag := cmd.Flags().Lookup("license")
+	if flag == nil || !flag.Changed {
+		return nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(flag.Value.String())) {
+	case "", "false":
+		return nil
+	default:
+		return fmt.Errorf("--license is deprecated and no longer generates a LICENSE file; create one manually")
+	}
 }
 
 func addModuleDependencyInstallFlags(cmd *cobra.Command) {
@@ -184,7 +204,7 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
 	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
-	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
+	addDeprecatedLicenseFlag(moduleInitCmd)
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
 	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
 	moduleInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
@@ -205,7 +225,7 @@ func init() {
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
 	moduleDevelopCmd.Flags().BoolVarP(&developRecursive, "recursive", "r", false, "Develop recursively into local dependencies")
-	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
+	addDeprecatedLicenseFlag(moduleDevelopCmd)
 	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
 	moduleDevelopCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
@@ -257,6 +277,9 @@ dagger module init --sdk=go
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
+		if err := checkDeprecatedLicenseFlag(cmd); err != nil {
+			return err
+		}
 
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
@@ -328,14 +351,13 @@ dagger module init --sdk=go
 					if moduleSourcePath != "" && filepath.IsAbs(moduleSourcePath) {
 						return fmt.Errorf("--source must be relative when initializing a workspace module")
 					}
-					return initWorkspaceModule(ctx, cmd.OutOrStdout(), dag, cwd, workspaceModuleInitOptions{
-						Name:                  moduleName,
-						SDK:                   sdk,
-						Source:                moduleSourcePath,
-						Include:               moduleIncludes,
-						Blueprint:             initBlueprint,
-						SelfCalls:             selfCalls,
-						SearchExistingLicense: !cmd.Flags().Lookup("license").Changed,
+					return initWorkspaceModule(ctx, cmd.OutOrStdout(), dag, workspaceModuleInitOptions{
+						Name:      moduleName,
+						SDK:       sdk,
+						Source:    moduleSourcePath,
+						Include:   moduleIncludes,
+						Blueprint: initBlueprint,
+						SelfCalls: selfCalls,
 					})
 				}
 			}
@@ -400,15 +422,6 @@ dagger module init --sdk=go
 			_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
-			}
-
-			if sdk != "" {
-				// If we're generating code by setting a SDK, we should also generate a license
-				// if it doesn't already exists.
-				searchExisting := !cmd.Flags().Lookup("license").Changed
-				if err := findOrCreateLicense(ctx, srcRootAbsPath, searchExisting); err != nil {
-					return err
-				}
 			}
 
 			// Print success message to user
@@ -540,6 +553,9 @@ This command is idempotent: you can run it at any time, any number of times. It 
 	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
+		if err := checkDeprecatedLicenseFlag(cmd); err != nil {
+			return err
+		}
 		return withEngine(ctx, client.Params{
 			// develop only generates code — it doesn't need workspace
 			// modules loaded (which would fail for codegen-only SDKs).
@@ -681,13 +697,6 @@ This command is idempotent: you can run it at any time, any number of times. It 
 						return fmt.Errorf("failed to apply generated code: %w", err)
 					}
 
-					// If no license has been created yet, and SDK is set, we should create one.
-					if developSDK != "" {
-						searchExisting := !cmd.Flags().Lookup("license").Changed
-						if err := findOrCreateLicense(ctx, srcRootPath, searchExisting); err != nil {
-							return err
-						}
-					}
 					return nil
 				})
 			}

@@ -2,10 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -95,15 +95,15 @@ func TestWriteWorkspaceInfo(t *testing.T) {
 func TestWriteWorkspaceModuleList(t *testing.T) {
 	var out bytes.Buffer
 
-	err := writeWorkspaceModuleList(&out, []dagger.WorkspaceModule{
-		{
-			Name:      "greeter",
-			Blueprint: true,
-			Source:    ".dagger/modules/greeter",
+	err := writeWorkspaceModuleList(context.Background(), &out, []workspaceModuleView{
+		testWorkspaceModuleView{
+			name:      "greeter",
+			blueprint: true,
+			source:    ".dagger/modules/greeter",
 		},
-		{
-			Name:   "wolfi",
-			Source: "github.com/dagger/dagger/modules/wolfi",
+		testWorkspaceModuleView{
+			name:   "wolfi",
+			source: "github.com/dagger/dagger/modules/wolfi",
 		},
 	})
 	require.NoError(t, err)
@@ -116,4 +116,22 @@ func TestWriteWorkspaceModuleList(t *testing.T) {
 			"wolfi      github.com/dagger/dagger/modules/wolfi\n",
 		out.String(),
 	)
+}
+
+type testWorkspaceModuleView struct {
+	name      string
+	source    string
+	blueprint bool
+}
+
+func (m testWorkspaceModuleView) Name(context.Context) (string, error) {
+	return m.name, nil
+}
+
+func (m testWorkspaceModuleView) Source(context.Context) (string, error) {
+	return m.source, nil
+}
+
+func (m testWorkspaceModuleView) Blueprint(context.Context) (bool, error) {
+	return m.blueprint, nil
 }

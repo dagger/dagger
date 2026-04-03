@@ -51,7 +51,7 @@ type Mymod {
 		require.NoError(t, err)
 		require.Contains(t, cfg, `source = "modules/mymod"`)
 
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/mymod/LICENSE"}).Sync(ctx)
+		_, err = ctr.WithExec([]string{"test", "!", "-f", ".dagger/modules/mymod/LICENSE"}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = ctr.WithExec([]string{"test", "!", "-f", "dagger.json"}).Sync(ctx)

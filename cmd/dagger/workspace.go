@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
@@ -116,7 +115,11 @@ Note:
 			if err != nil {
 				return err
 			}
-			return writeWorkspaceModuleList(cmd.OutOrStdout(), modules)
+			moduleViews := make([]workspaceModuleView, len(modules))
+			for i := range modules {
+				moduleViews[i] = &modules[i]
+			}
+			return writeWorkspaceModuleList(ctx, cmd.OutOrStdout(), moduleViews)
 		})
 	},
 }
@@ -178,19 +181,19 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 }
 
 type workspaceModuleInitOptions struct {
-	Name                  string
-	SDK                   string
-	Source                string
-	Include               []string
-	Blueprint             string
-	SelfCalls             bool
-	SearchExistingLicense bool
+	Name      string
+	SDK       string
+	Source    string
+	Include   []string
+	Blueprint string
+	SelfCalls bool
 }
 
-func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, cwd string, opts workspaceModuleInitOptions) error {
+func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, opts workspaceModuleInitOptions) error {
 	ws := dag.CurrentWorkspace()
 
-	msg, err := ws.ModuleInit(ctx, opts.Name, opts.SDK, dagger.WorkspaceModuleInitOpts{
+	msg, err := ws.ModuleInit(ctx, opts.Name, dagger.WorkspaceModuleInitOpts{
+		SDK:       opts.SDK,
 		Source:    opts.Source,
 		Include:   opts.Include,
 		Blueprint: opts.Blueprint,
@@ -200,36 +203,17 @@ func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client,
 		return err
 	}
 
-	if opts.SDK != "" {
-		wsPath, err := ws.Path(ctx)
-		if err != nil {
-			return fmt.Errorf("load workspace path: %w", err)
-		}
-		modulePath, err := workspaceModulePath(cwd, wsPath, opts.Name)
-		if err != nil {
-			return err
-		}
-		if err := findOrCreateLicense(ctx, modulePath, opts.SearchExistingLicense); err != nil {
-			return err
-		}
-	}
-
 	_, err = fmt.Fprintln(out, msg)
 	return err
 }
 
-func workspaceModulePath(cwd, wsPath, name string) (string, error) {
-	boundary := cwd
-	for _, segment := range strings.Split(filepath.ToSlash(filepath.Clean(wsPath)), "/") {
-		if segment == "" || segment == "." {
-			continue
-		}
-		boundary = filepath.Dir(boundary)
-	}
-	return filepath.Join(boundary, ".dagger", "modules", name), nil
+type workspaceModuleView interface {
+	Name(context.Context) (string, error)
+	Source(context.Context) (string, error)
+	Blueprint(context.Context) (bool, error)
 }
 
-func writeWorkspaceModuleList(out io.Writer, modules []dagger.WorkspaceModule) error {
+func writeWorkspaceModuleList(ctx context.Context, out io.Writer, modules []workspaceModuleView) error {
 	if _, err := fmt.Fprintln(out, "Source paths are relative to the workspace root"); err != nil {
 		return err
 	}
@@ -245,11 +229,22 @@ func writeWorkspaceModuleList(out io.Writer, modules []dagger.WorkspaceModule) e
 		return err
 	}
 	for _, mod := range modules {
-		name := mod.Name
-		if mod.Blueprint {
+		name, err := mod.Name(ctx)
+		if err != nil {
+			return err
+		}
+		blueprint, err := mod.Blueprint(ctx)
+		if err != nil {
+			return err
+		}
+		if blueprint {
 			name += "*"
 		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\n", name, mod.Source); err != nil {
+		source, err := mod.Source(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\n", name, source); err != nil {
 			return err
 		}
 	}

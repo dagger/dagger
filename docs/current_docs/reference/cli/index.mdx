@@ -212,7 +212,6 @@ dagger develop [options]
       --allow-llm strings        List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string[="skip"]   Engine API version to target (default "latest")
       --eager-runtime            load module runtime eagerly
-      --license string           License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
   -m, --mod string               Module reference to load, either a local path or a remote git repo (defaults to current directory)
   -r, --recursive                Develop recursively into local dependencies
       --sdk string               Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address
@@ -591,7 +590,6 @@ dagger module init --sdk=go
 ```
       --blueprint string   Reference another module as blueprint
       --include strings    Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).
-      --license string     License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
       --name string        Name of the new module (defaults to parent directory name)
       --sdk string         Optionally install a Dagger SDK
       --source string      Source directory used by the installed SDK. Defaults to module root
