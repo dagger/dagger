@@ -414,6 +414,12 @@ For all other dimensions, the CLI uses the dimension name directly:
 - `dagger list go-test`
 - `dagger list go-module`
 
+Extension docs may define additional CLI aliases that lower to the same
+underlying dimension filters. Those aliases are command syntax, not new
+dimensions. For example, [collections.md](./collections.md) defines
+`--<collection-type>` as sugar for presence filtering on the corresponding
+collection item dimension.
+
 ### Discovery
 
 ```console
@@ -461,6 +467,20 @@ Dimension filters still use repeatable valued flags:
 ```
 
 No comma-separated values.
+
+Presence filtering is part of the API:
+
+```text
+filterDimension("go-test")
+```
+
+CLI parsing should normalize command-specific sugar into this API before
+evaluation. After normalization, Artifacts only sees real dimensions such as
+`type`, `go-test`, and `go-module`.
+
+The generic CLI surface only guarantees valued flags. Extension docs may add
+command-level sugar for presence filtering. Collections does this with
+`--<collection-type>`.
 
 Examples:
 
@@ -643,15 +663,9 @@ means:
 - type is `go-test`
 - and go-test is `TestFoo`
 
-Presence filtering is legal through the API:
+Presence filtering means:
 
-```text
-filterDimension("go-test")
-```
-
-means:
-
-- keep rows where `go-test` is non-null
+- keep rows where the given coordinate is non-null
 
 For CLI usage, users normally spell the same intent with a valued filter:
 

@@ -470,17 +470,62 @@ Collection-provided selector dimensions still use
 **item type** (singular), not collection type. Dedicated provenance filters
 such as `--path` remain separate; collections do not change them.
 
+In addition, each collection may expose one convenience presence flag named by
+the **collection type** itself:
+
+- `--<item-type>=<key>` is the canonical keyed filter
+- `--<collection-type>` is a convenience alias for presence filtering on that
+  item dimension
+
+For example, if collection type `GoTests` publishes item type `GoTest`, then:
+
+```console
+--go-test=TestFoo
+--go-tests
+```
+
+lower to:
+
+```text
+filterDimension("go-test", ["TestFoo"])
+filterDimension("go-test")
+```
+
+These aliases are CLI sugar only. They do not add new dimensions to the
+Artifacts model. After CLI parsing and normalization, the engine sees only the
+real item dimension:
+
+```text
+--go-test=TestFoo              => filterDimension("go-test", ["TestFoo"])
+--go-tests                     => filterDimension("go-test")
+--go-tests --go-test=TestFoo   => filterDimension("go-test", ["TestFoo"])
+```
+
+The alias is positive-only.
+
+- `--go-tests` is legal
+- `--go-tests=true` is invalid
+- `--go-tests=false` is invalid
+- `--no-go-tests` is not part of this design
+
+This keeps the selector model positive-only and avoids introducing one-off
+boolean negation semantics for collections.
+
 Each flag points to `dagger list` for discovery:
 
 ```console
 $ dagger check --help
   --type=<name>         Filter by artifact type (see: dagger list types)
+  --go-tests            Filter to artifacts with a non-null go-test coordinate
   --go-module=<name>    Filter by go module (see: dagger list go-module --check)
   --go-test=<name>      Filter by go test (see: dagger list go-test --check)
 ```
 
-Filter names are derived mechanically from item type names using Dagger's
-existing CLI casing rules.
+Filter names are derived mechanically using Dagger's existing CLI casing
+rules:
+
+- keyed filters use the item type name
+- presence aliases use the collection type name
 
 Each value gets its own flag instance. Comma-separated values in a single
 flag occurrence are forbidden (or treated as a literal key containing a
@@ -491,6 +536,7 @@ Examples:
 ```console
 $ dagger check --type=go --type=nodejs
 $ dagger check --go-test=TestFoo --go-test=TestBar --go-module=./myapp/app2
+$ dagger check --go-tests --go-module=./myapp/app2
 ```
 
 The built-in `type` axis remains available alongside these collection
@@ -499,10 +545,26 @@ dimensions:
 ```console
 $ dagger check --type=go-test --go-test=TestFoo run
 $ dagger check --go-test=TestFoo run
+$ dagger check --go-tests --go-module=./foo/bar run
 ```
 
 The second form is legal because filtering by `--go-test=...` already implies
 that the selected rows are `go-test` artifacts.
+
+The third form is legal because `--go-tests` is just presence-filter sugar for
+`go-test`, further narrowed by `--go-module`.
+
+More generally:
+
+- `--<collection-type>` means: keep rows where the corresponding
+  `--<item-type>` coordinate is non-null
+- `--<collection-type> --<item-type>=...` is equivalent to
+  `--<item-type>=...`
+- repeated `--<item-type>=...` values remain OR within that dimension, exactly
+  like any other repeatable dimension filter
+- repeating `--<collection-type>` has no additional effect
+- `--type=<item-type> --<collection-type>` is equivalent to
+  `--<collection-type>`
 
 These dimension filters are scope-relative constraints, not unique selectors.
 
@@ -515,7 +577,8 @@ If function-path selectors remain temporarily for CLI compatibility, filters do
 not depend on them. They should be treated as a thin transitional alias over
 the typed selector model, not as a separate long-term targeting system.
 
-Type renames are CLI-breaking for these generated filters.
+Type renames are CLI-breaking for both generated keyed filters and collection
+presence aliases.
 
 #### Listing and Discovery
 
@@ -534,6 +597,13 @@ $ dagger list go-test --check \
 
 `dagger list` uses the same filter flags as `check`/`generate`/`ship`/`up`.
 
+Important:
+
+- `dagger list --help` lists real dimensions such as `go-test`
+- it does not list convenience aliases such as `go-tests`, because those are
+  not dimensions
+- command help may still show accepted aliases in the flag list
+
 Listing rules:
 
 - `dagger list <dimension>` lists items in that dimension.
@@ -541,6 +611,19 @@ Listing rules:
 - Parent/child relationships between different filter dimensions are
   intentionally flattened.
 - Output is unique values in stable order.
+
+Example:
+
+```console
+$ dagger check --go-test=TestFoo --go-test=TestBar --go-module=./foo/bar
+# run selected tests
+
+$ dagger check --go-tests
+# run all go tests in scope
+
+$ dagger check --go-tests --go-module=./foo/bar
+# run all go tests for this selected go module
+```
 
 `dagger check -l` and `dagger generate -l` use the table-capable action
 listing defined in [plans.md](./plans.md). Collection dimensions simply become
@@ -708,7 +791,7 @@ door.
 - [x] Locked the design decision that effective `get` takes exactly one non-null key argument and returns a non-null object
 - [x] Locked the design decision that load time checks structure and runtime checks behavior
 - [x] Locked the design decision that collection filters use repeated flags only; comma-separated values are forbidden
-- [x] Locked the design decision that filter flags are named by item type (singular), not collection type
+- [x] Locked the design decision that keyed collection filters are named by item type (singular), while bare presence aliases are named by collection type
 - [x] Locked the design decision that artifact kind selection uses the built-in `--type=<name>` filter
 - [x] Locked the design decision that `dagger list` is the discovery surface for filter values
 - [x] Engine implementation has started with collection typedef metadata and validation
