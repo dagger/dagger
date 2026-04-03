@@ -109,7 +109,8 @@ class QueryBuilder {
     Deque<QueryPart> list = new LinkedList<>();
     list.addAll(this.parts);
     // Unwrap Scalar (e.g. ID) to its inner value — Scalar doesn't override toString()
-    String idStr = (id instanceof Scalar<?>) ? ((Scalar<?>) id).convert().toString() : id.toString();
+    String idStr =
+        (id instanceof Scalar<?>) ? ((Scalar<?>) id).convert().toString() : id.toString();
     list.push(new QueryPart("node", Arguments.newBuilder().add("id", idStr).build()));
     return new QueryBuilder(client, list, new ArrayList<>(), typeName);
   }
