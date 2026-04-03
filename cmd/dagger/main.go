@@ -285,6 +285,10 @@ func findSuggestions(c *cobra.Command, arg string) string {
 }
 
 func checkForUpdates(ctx context.Context, w io.Writer) {
+	if os.Getenv("DAGGER_NO_UPDATE_CHECK") != "" {
+		return
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 
 	updateCh := make(chan string)

@@ -14,7 +14,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.41.0
 	go.opentelemetry.io/proto/otlp v1.9.0
 	golang.org/x/sync v0.19.0
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.3
 )
 
 require github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
