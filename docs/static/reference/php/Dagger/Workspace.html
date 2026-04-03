@@ -183,6 +183,26 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_configRead">configRead</a>(string|null $key = &#039;&#039;)
+        
+                                            <p><p>Read a configuration value from config.toml.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_configWrite">configWrite</a>(string $key, string $value)
+        
+                                            <p><p>Write a configuration value to config.toml.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -243,6 +263,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_init">init</a>()
+        
+                                            <p><p>Initialize a new workspace, creating .dagger/config.toml.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     bool
                 </div>
                 <div class="col-md-8">
@@ -256,9 +286,49 @@
                     string
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_install">install</a>(string $ref, string|null $name = &#039;&#039;)
+        
+                                            <p><p>Install a module into the workspace, writing config.toml to the host.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_moduleInit">moduleInit</a>(string $name, string|null $sdk = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = null, string|null $blueprint = &#039;&#039;, bool|null $selfCalls = false)
+        
+                                            <p><p>Create a new module owned by the workspace and auto-install it in config.toml.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_moduleList">moduleList</a>()
+        
+                                            <p><p>List modules defined in the workspace configuration.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
                     <a href="#method_path">path</a>()
         
                                             <p><p>Workspace directory path relative to the workspace boundary.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_refreshModules">refreshModules</a>(array|null $moduleNames = null)
+        
+                                            <p><p>Refresh lock entries for selected workspace-config modules.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -505,8 +575,99 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_configRead">
+        <div class="location">at line 64</div>
+        <code>                    string
+    <strong>configRead</strong>(string|null $key = &#039;&#039;)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Read a configuration value from config.toml.</p></p>                <p><p>If key is empty, returns the full config.</p>
+<p>If key points to a scalar, returns the value.</p>
+<p>If key points to a table, returns flattened dotted-key output.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$key</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_configWrite">
+        <div class="location">at line 76</div>
+        <code>                    string
+    <strong>configWrite</strong>(string $key, string $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Write a configuration value to config.toml.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$key</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_directory">
-        <div class="location">at line 60</div>
+        <div class="location">at line 89</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>directory</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false)
         </code>
@@ -563,7 +724,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_file">
-        <div class="location">at line 85</div>
+        <div class="location">at line 114</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>file</strong>(string $path)
         </code>
@@ -605,7 +766,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_findUp">
-        <div class="location">at line 101</div>
+        <div class="location">at line 130</div>
         <code>                    string
     <strong>findUp</strong>(string $name, string|null $from = &#039;.&#039;)
         </code>
@@ -654,7 +815,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_generators">
-        <div class="location">at line 114</div>
+        <div class="location">at line 143</div>
         <code>                    <a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a>
     <strong>generators</strong>(array|null $include = null)
         </code>
@@ -696,7 +857,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_hasConfig">
-        <div class="location">at line 126</div>
+        <div class="location">at line 155</div>
         <code>                    bool
     <strong>hasConfig</strong>()
         </code>
@@ -728,7 +889,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 135</div>
+        <div class="location">at line 164</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -759,8 +920,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_init">
+        <div class="location">at line 173</div>
+        <code>                    string
+    <strong>init</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Initialize a new workspace, creating .dagger/config.toml.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_initialized">
-        <div class="location">at line 144</div>
+        <div class="location">at line 182</div>
         <code>                    bool
     <strong>initialized</strong>()
         </code>
@@ -791,8 +984,154 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_install">
+        <div class="location">at line 191</div>
+        <code>                    string
+    <strong>install</strong>(string $ref, string|null $name = &#039;&#039;)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Install a module into the workspace, writing config.toml to the host.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$ref</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_moduleInit">
+        <div class="location">at line 204</div>
+        <code>                    string
+    <strong>moduleInit</strong>(string $name, string|null $sdk = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = null, string|null $blueprint = &#039;&#039;, bool|null $selfCalls = false)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create a new module owned by the workspace and auto-install it in config.toml.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$sdk</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$source</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>array|null</td>
+                <td>$include</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$blueprint</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$selfCalls</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_moduleList">
+        <div class="location">at line 235</div>
+        <code>                    array
+    <strong>moduleList</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>List modules defined in the workspace configuration.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_path">
-        <div class="location">at line 153</div>
+        <div class="location">at line 244</div>
         <code>                    string
     <strong>path</strong>()
         </code>
@@ -823,8 +1162,50 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_refreshModules">
+        <div class="location">at line 255</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>refreshModules</strong>(array|null $moduleNames = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Refresh lock entries for selected workspace-config modules.</p></p>                <p><p>This layers selective workspace refresh on top of the lockfile base.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array|null</td>
+                <td>$moduleNames</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_update">
-        <div class="location">at line 173</div>
+        <div class="location">at line 269</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>update</strong>()
         </code>
