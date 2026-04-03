@@ -43,46 +43,36 @@ Examples:
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		params := client.Params{
+			EnableCloudScaleOut: enableScaleOut,
+		}
 		return withEngine(
 			cmd.Context(),
-			client.Params{
-				EnableCloudScaleOut: enableScaleOut,
-			},
+			params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
-				mod, err := loadModule(ctx, dag)
-				if err != nil {
-					return err
-				}
+				ws := dag.CurrentWorkspace()
 				var checks *dagger.CheckGroup
 				if len(args) > 0 {
-					checks = mod.Checks(dagger.ModuleChecksOpts{Include: args})
+					checks = ws.Checks(dagger.WorkspaceChecksOpts{Include: args})
 				} else {
-					checks = mod.Checks()
+					checks = ws.Checks()
 				}
 				if checksListMode {
 					return listChecks(ctx, dag, checks, cmd)
-				} else {
-					return runChecks(ctx, dag, checks, cmd)
 				}
+				return runChecks(ctx, dag, checks, cmd)
 			},
 		)
 	},
 }
 
-func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error) {
-	modRef, _ := getExplicitModuleSourceRef()
-	if modRef == "" {
-		modRef = moduleURLDefault
-	}
-	ctx, span := Tracer().Start(ctx, "load "+modRef)
-	defer span.End()
-	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
-}
-
 // loadGroupListDetails fetches name+description for every item in a group
-// using a single batch GraphQL query, with tracing suppressed to avoid
-// per-item span noise in list mode.
+// using a single batch GraphQL query.
+//
+// By default, nested spans are suppressed to keep list mode concise.
+// When verbosity is enabled (-v and above), preserve trace context so module
+// loading and selection internals remain visible for debugging.
 func loadGroupListDetails(
 	ctx context.Context,
 	dag *dagger.Client,
@@ -94,9 +84,12 @@ func loadGroupListDetails(
 	ctx, span := Tracer().Start(ctx, spanName)
 	defer span.End()
 
-	noTraceCtx := trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
+	queryCtx := ctx
+	if verbose == 0 {
+		queryCtx = trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
+	}
 
-	id, err := getID(noTraceCtx)
+	id, err := getID(queryCtx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
@@ -108,7 +101,7 @@ func loadGroupListDetails(
 		}
 	}
 
-	err = dag.Do(noTraceCtx, &dagger.Request{
+	err = dag.Do(queryCtx, &dagger.Request{
 		Query:  query,
 		OpName: opName,
 		Variables: map[string]any{

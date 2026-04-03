@@ -50,6 +50,7 @@
               <li><a href="#query-git">git</a></li>
               <li><a href="#query-host">host</a></li>
               <li><a href="#query-http">http</a></li>
+              <li><a href="#query-id">id</a></li>
               <li><a href="#query-json">json</a></li>
               <li><a href="#query-llm">llm</a></li>
               <li><a href="#query-loadAddressFromID">loadAddressFromID</a></li>
@@ -98,6 +99,7 @@
               <li><a href="#query-loadModuleSourceFromID">loadModuleSourceFromID</a></li>
               <li><a href="#query-loadObjectTypeDefFromID">loadObjectTypeDefFromID</a></li>
               <li><a href="#query-loadPortFromID">loadPortFromID</a></li>
+              <li><a href="#query-loadQueryFromID">loadQueryFromID</a></li>
               <li><a href="#query-loadSDKConfigFromID">loadSDKConfigFromID</a></li>
               <li><a href="#query-loadScalarTypeDefFromID">loadScalarTypeDefFromID</a></li>
               <li><a href="#query-loadSearchResultFromID">loadSearchResultFromID</a></li>
@@ -232,6 +234,7 @@
               <li><a href="#definition-Port">Port</a></li>
               <li><a href="#definition-PortForward">PortForward</a></li>
               <li><a href="#definition-PortID">PortID</a></li>
+              <li><a href="#definition-QueryID">QueryID</a></li>
               <li><a href="#definition-ReturnType">ReturnType</a></li>
               <li><a href="#definition-SDKConfig">SDKConfig</a></li>
               <li><a href="#definition-SDKConfigID">SDKConfigID</a></li>
@@ -641,6 +644,28 @@
                     <a href="#definition-TypeDef"><code>[TypeDef!]!</code></a>
                   </p>
                 </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>hideCore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td>
+                          <p>Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).</p>
+                          <p>Core types (Container, Directory, etc.) are kept so return types and method chaining still work.</p>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
             <div class="doc-row">
@@ -673,25 +698,6 @@
                   <p>
                     <a href="#definition-Workspace"><code>Workspace!</code></a>
                   </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>skipMigrationCheck</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
-                        </td>
-                        <td> If true, skip legacy dagger.json migration checks. Default = <code>false</code> </td>
-                      </tr>
-                    </tbody>
-                  </table>
                 </div>
               </div>
             </div>
@@ -1409,6 +1415,39 @@
   }</span></span>
 }</span></span>
 </code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-id" class="operation operation-query" data-traverse-target="query-id">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>id</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A unique identifier for this Query.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-QueryID"><code>QueryID!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
                 </div>
               </div>
             </div>
@@ -3925,6 +3964,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-PortID"><code>PortID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadQueryFromID" class="operation operation-query" data-traverse-target="query-loadQueryFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadQueryFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Query from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Query"><code>Query!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-QueryID"><code>QueryID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -11073,6 +11165,10 @@
                         <td data-property-name=""><a class="property-name" id="Function-sourceMap" href="#Function-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this function declaration. </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Function-sourceModuleName" href="#Function-sourceModuleName"><code>sourceModuleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> If this function is provided by a module, the name of the module. Unset otherwise. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Function-withArg" href="#Function-withArg"><code>withArg</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
                         <td> Returns the function with the provided argument </td>
@@ -13349,6 +13445,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>includeDependencies</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Expose the dependencies of this module to the client</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>entrypoint</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Install the module as the entrypoint, promoting its main-object methods onto the Query root</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -14404,6 +14504,20 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>PortID</code> scalar type represents an identifier for an object of type Port.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-QueryID" class="definition definition-scalar" data-traverse-target="definition-QueryID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">QueryID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>QueryID</code> scalar type represents an identifier for an object of type Query.</p>
                 </div>
               </div>
             </div>
@@ -15723,14 +15837,39 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-address" href="#Workspace-address"><code>address</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Canonical Dagger address of the workspace directory. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-checks" href="#Workspace-checks"><code>checks</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
+                        <td> Return all checks from modules loaded in the workspace. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include checks matching the specified patterns</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-clientId" href="#Workspace-clientId"><code>clientId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The client ID that owns this workspace's host filesystem. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-configPath" href="#Workspace-configPath"><code>configPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Path to config.toml relative to the workspace boundary (empty if not initialized). </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td>
                           <p>Returns a Directory from the workspace.</p>
-                          <p>Path is relative to workspace root. Use &quot;.&quot; for the root directory.</p>
+                          <p>Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15740,7 +15879,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the directory to retrieve, relative to the workspace root (e.g., &quot;src&quot;, &quot;.&quot;).</p>
+                                <p>Location of the directory to retrieve. Relative paths (e.g., &quot;src&quot;) resolve from the workspace directory; absolute paths (e.g., &quot;/src&quot;) resolve from the workspace boundary.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
@@ -15762,7 +15901,7 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-file" href="#Workspace-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
                         <td>
                           <p>Returns a File from the workspace.</p>
-                          <p>Path is relative to workspace root.</p>
+                          <p>Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15772,7 +15911,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the file to retrieve, relative to the workspace root (e.g., &quot;go.mod&quot;).</p>
+                                <p>Location of the file to retrieve. Relative paths (e.g., &quot;go.mod&quot;) resolve from the workspace directory; absolute paths (e.g., &quot;/go.mod&quot;) resolve from the workspace boundary.</p>
                               </div>
                             </div>
                           </div>
@@ -15782,8 +15921,9 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-findUp" href="#Workspace-findUp"><code>findUp</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
                         <td>
                           <p>Search for a file or directory by walking up from the start path within the workspace.</p>
-                          <p>Returns the path relative to the workspace root if found, or null if not found.</p>
-                          <p>The search stops at the workspace root and will not traverse above it.</p>
+                          <p>Returns the absolute workspace path if found, or null if not found.</p>
+                          <p>Relative start paths resolve from the workspace directory.</p>
+                          <p>The search stops at the workspace boundary and will not traverse above it.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15797,19 +15937,44 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>from</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Path to start the search from, relative to the workspace root.</p>
+                                <p>Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-generators" href="#Workspace-generators"><code>generators</code></a> - <span class="property-type"><a href="#definition-GeneratorGroup"><code>GeneratorGroup!</code></a></span> </td>
+                        <td> Return all generators from modules loaded in the workspace. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include generators matching the specified patterns</p>
                               </div>
                             </div>
                           </div>
                         </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-hasConfig" href="#Workspace-hasConfig"><code>hasConfig</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether a config.toml file exists in the workspace. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-id" href="#Workspace-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceID"><code>WorkspaceID!</code></a></span> </td>
                         <td> A unique identifier for this Workspace. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-root" href="#Workspace-root"><code>root</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Absolute path to the workspace root directory. </td>
+                        <td data-property-name=""><a class="property-name" id="Workspace-initialized" href="#Workspace-initialized"><code>initialized</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether .dagger/config.toml exists. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-path" href="#Workspace-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Workspace directory path relative to the workspace boundary. </td>
                       </tr>
                     </tbody>
                   </table>

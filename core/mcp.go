@@ -251,7 +251,7 @@ func (m *MCP) LastResult() dagql.Typed {
 }
 
 func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
-	return m.env.Self().deps.Schema(ctx)
+	return m.env.Self().deps.Server(ctx)
 }
 
 func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {

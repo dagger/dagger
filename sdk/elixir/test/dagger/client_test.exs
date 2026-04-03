@@ -251,8 +251,8 @@ defmodule Dagger.ClientTest do
 
     assert {:ok, _} =
              dag
-             |> Client.host()
-             |> Host.directory(".")
+             |> Client.directory()
+             |> Directory.with_new_file("Dockerfile", dockerfile)
              |> Directory.docker_build(dockerfile: "Dockerfile", secrets: [secret])
              |> Sync.sync()
 
@@ -327,7 +327,7 @@ defmodule Dagger.ClientTest do
              |> Sync.sync()
 
     assert Exception.message(error) =~
-                  ~r/container\.from\.withExec\.sync exit code: 1/
+             ~r/container\.from\.withExec\.sync exit code: 1/
   end
 
   test "iss 8601 - Dagger.Directory.with_directory/4 should not crash", %{dag: dag} do

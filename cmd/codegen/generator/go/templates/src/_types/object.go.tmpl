@@ -1,4 +1,3 @@
-{{- if ne .Name "Query" }}
 {{ .Description | Comment }}
 type {{ .Name | FormatName }} struct {
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
@@ -10,7 +9,6 @@ type {{ .Name | FormatName }} struct {
         {{- end }}
 	{{- end }}
 }
-{{- end }}
 
 {{- if . | IsSelfChainable }}
 type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
@@ -28,9 +26,6 @@ func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{
 func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ $.Name | FormatName }} {
 	return &{{ .Name | FormatName }}{
 		query: q,
-		{{- if eq .Name "Query" }}
-		client: r.client,
-		{{ end }}
 	}
 }
 
@@ -128,9 +123,6 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- else if $field.TypeRef.IsObject }}
 	return &{{ $typeName }} {
 		query: q,
-		{{- if eq $typeName "Client" }}
-		client: r.client,
-		{{ end }}
 	}
 
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
@@ -166,8 +158,6 @@ type {{ $field | FieldOptionsStructName }} struct {
     {{- end  }}
 
 	q = q.Bind(&response)
-	{{- $typeName := $field.TypeRef | FormatOutputType }}
-	{{- if ne $typeName "Client" }}
 	    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
 
 	err := q.Execute(ctx)
@@ -179,9 +169,6 @@ type {{ $field | FieldOptionsStructName }} struct {
 	    {{- else }}
 	return response, q.Execute(ctx)
 	    {{- end }}
-	{{- else }}
-	return response, q.Execute(ctx, r.gql)
-	{{- end }}
 	{{- end }}
 }
 

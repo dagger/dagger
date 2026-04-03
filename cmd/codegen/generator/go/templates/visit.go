@@ -58,7 +58,7 @@ func (funcs goTemplateFuncs) visitTypes(
 	ps := &parseState{
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
-		schema:     funcs.schema,
+		schema:     funcs.fullSchema,
 		moduleName: funcs.cfg.ModuleConfig.ModuleName,
 
 		methods: make(map[string][]method),

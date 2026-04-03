@@ -432,7 +432,7 @@ func main() {
     panic(err)
   }
 
-  res, err := dag.Test().Hello(ctx)
+  res, err := dag.Hello(ctx)
   if err != nil {
     panic(err)
   }
@@ -463,7 +463,7 @@ export class Test {
 
 async function main() {
   await connection(async () => {
-    const res = await dag.test().hello()
+    const res = await dag.hello()
 
     console.log("result:", res)
   })
@@ -688,7 +688,7 @@ main()
 					panic(err)
 				}
 
-				res, err := dag.Test().Hello(ctx)
+				res, err := dag.Hello(ctx)
 				if err != nil {
 					panic(err)
 				}
@@ -721,7 +721,7 @@ export class Test {
 
 async function main() {
   await connection(async () => {
-    const res = await dag.test().hello()
+    const res = await dag.hello()
 
     console.log("result:", res)
   })
@@ -1759,16 +1759,88 @@ main()`, defaultGenDir))
 	}
 }
 
+func (ClientGeneratorTest) TestConstructorArgs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// A module whose constructor takes arguments produces a Query.with field
+	// via entrypoint proxying. The Go SDK also generates a Query.With helper
+	// for chaining closures (WithQueryFunc). These must not conflict.
+	moduleSrc := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+		With(nonNestedDevEngine(c)).
+		With(daggerNonNestedExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+type Test struct {
+	Greeting string
+}
+
+func New(
+	// +default="hello"
+	greeting string,
+) *Test {
+	return &Test{Greeting: greeting}
+}
+
+func (t *Test) Message() string {
+	return t.Greeting + ", world!"
+}
+`).
+		// Ensure the module compiles
+		With(daggerNonNestedExec("functions")).
+		// Generate the Go client. withGoSetup is not used because the
+		// module SDK already created a go.mod.
+		WithNewFile("cmd/main.go", `package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/test/dagger"
+)
+
+func main() {
+	ctx := context.Background()
+
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := dag.With(dagger.WithOpts{Greeting: "hi"}).Message(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("result:", res)
+}
+`).
+		With(daggerClientInstall("go")).
+		WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
+		With(addSDKReplaceToClient(defaultGenDir)).
+		WithExec([]string{"go", "mod", "tidy"})
+
+	out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "./cmd/main.go")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "result: hi, world!")
+}
+
 func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	// Install a dependency at a pinned tag, generate the client (which bakes
+	// in that pin), then manually switch dagger.json to @main (a different
+	// commit). The generated client will try to serve the old pin while the
+	// workspace loads the new one — the engine should detect the conflict.
 	moduleSrc := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
 		With(daggerNonNestedExec("init")).
-		With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+		With(daggerNonNestedExec("install", "github.com/dagger/dagger-test-modules@v1.2.3")).
 		With(withGoSetup(`package main
 
 		import (
@@ -1783,12 +1855,12 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 			ctx := context.Background()
 
 			dag, err := dagger.Connect(ctx)
-      if err != nil {
-			  fmt.Println(err)
+			if err != nil {
+				fmt.Println(err)
 				os.Exit(0)
-      }
+			}
 
-			res, err := dag.Hello().Hello(ctx)
+			res, err := dag.RootMod().Fn(ctx)
 			if err != nil {
 				panic(err)
 			}
@@ -1803,14 +1875,15 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 				WithExec([]string{"go", "mod", "tidy"})
 		}).
 		WithExec([]string{"apk", "add", "jq"}).
-		// Update the dagger.json manually to not rettrigger the generation so we can verify that it triggers an error
-		// on execute
-		WithExec([]string{"sh", "-c", `sh -c 'cat dagger.json | jq '\''(.dependencies[] | select(.name == "hello") | .source) = "github.com/shykes/hello@main" | (.dependencies[] | select(.name == "hello") | .pin) = "2d789671a44c4d559be506a9bc4b71b0ba6e23c9"'\'' > dagger.tmp && mv dagger.tmp dagger.json'`})
+		// Switch the dependency to @main and clear the pin so the engine
+		// resolves HEAD (a different commit than v1.2.3). The generated
+		// client still has the v1.2.3 pin baked in, causing a mismatch.
+		WithExec([]string{"sh", "-c", `jq '(.dependencies[] | select(.name == "root-mod") | .source) = "github.com/dagger/dagger-test-modules@main" | (.dependencies[] | select(.name == "root-mod") | .pin) = ""' dagger.json > dagger.tmp && mv dagger.tmp dagger.json`})
 
 	out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 
 	require.NoError(t, err)
-	require.Contains(t, out, "error serving dependency hello: module hello")
+	require.Contains(t, out, "already exists with different source")
 }
 
 func (ClientGeneratorTest) TestNoGoProjectSetup(ctx context.Context, t *testctx.T) {
@@ -1958,6 +2031,41 @@ func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *test
 		// (dev versions shouldn't be pinned since they don't exist in the registry)
 		require.NotContains(t, goModContents, "dagger.io/dagger v0.19.11")
 		t.Logf("Generated go.mod correctly omits dev version:\n%s", goModContents)
+	})
+
+	t.Run("existing client refreshes pinned version in go.mod", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		moduleSrc := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			With(nonNestedDevEngine(c)).
+			WithNewFile("dagger.json", `{
+  "name": "test",
+  "engineVersion": "v0.19.8"
+}`).
+			With(daggerClientInstall("go"))
+
+		initialGoModContents, err := moduleSrc.
+			File(filepath.Join(defaultGenDir, "go.mod")).
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, initialGoModContents, "dagger.io/dagger v0.19.8")
+
+		moduleSrc = moduleSrc.
+			WithNewFile("dagger.json", `{
+  "name": "test",
+  "engineVersion": "v0.19.9"
+}`).
+			With(daggerClientInstall("go"))
+
+		goModContents, err := moduleSrc.
+			File(filepath.Join(defaultGenDir, "go.mod")).
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, goModContents, "dagger.io/dagger v0.19.9")
+		require.NotContains(t, goModContents, "dagger.io/dagger v0.19.8")
 	})
 }
 

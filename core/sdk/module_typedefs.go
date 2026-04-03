@@ -23,7 +23,7 @@ const (
 
 func (sdk *moduleTypes) ModuleTypes(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 	currentModuleID *call.ID,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {

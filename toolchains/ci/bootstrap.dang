@@ -1,5 +1,6 @@
-pub description = "\"CI in CI\": check that Dagger can still run its own CI"
-
+"""
+"CI in CI": check that Dagger can still run its own CI
+"""
 type CI {
   """
   Build dagger from source, and check that it can bootstrap its own CI
@@ -13,14 +14,18 @@ type CI {
     """
     The Dagger repository to run CI against
     """
-    repo: GitRepository! @defaultPath(path: "/"),
+    source: Workspace!,
+    """
+    Which checks to run
+    """
+    checks: [String!]! = ["**:*lint*"],
   ): Void @check {
-    let source = repo.head.tree.withChanges(repo.uncommitted)
+    let source = source.directory("/", gitignore: true)
     engineDev
       .playground
       .withMountedDirectory("./dagger", source)
       .withWorkdir("./dagger")
-      .withExec(["dagger", "checks", "**:*lint*"])
+      .withExec(["dagger", "checks"] + checks)
       .sync
 
     null

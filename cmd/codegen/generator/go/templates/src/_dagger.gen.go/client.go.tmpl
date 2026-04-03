@@ -1,8 +1,8 @@
 // Client is the Dagger Engine Client
 type Client struct {
 	{{- /*  The standalone client in not dev mode needs to store the dagger client for the global client to work */ -}}
+	*Query
 	dag *dagger.Client
-	query  *querybuilder.Selection
 	client graphql.Client
 }
 
@@ -44,7 +44,9 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	}
 
 	c := &Client{
-		query:  dag.QueryBuilder(),
+		Query: &Query{
+			query: dag.QueryBuilder(),
+		},
 		client: dag.GraphQLClient(),
 		dag:    dag,
 	}
@@ -68,7 +70,7 @@ func (c *Client) GraphQLClient() graphql.Client {
 
 // QueryBuilder returns the underlying query builder
 func (c *Client) QueryBuilder() *querybuilder.Selection {
-	return c.query
+	return c.Query.query
 }
 
 // Do executes a raw GraphQL request using the client's session
