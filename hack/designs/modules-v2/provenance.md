@@ -113,6 +113,43 @@ An artifact becomes workspace-wide if either is true:
 The baseline representation is a conservative selector rooted at `/`. Later
 analysis may narrow it with `include` and `exclude`.
 
+This tradeoff is intentional.
+
+A public function that accepts `Workspace` can read workspace files later, after
+artifact provenance has already been inspected.
+
+If artifact provenance ignored that function, filtering could skip an artifact
+that is actually affected. That would be a false negative.
+
+So this design chooses a conservative result instead:
+
+- no false negatives at the artifact layer
+- possible false positives
+- lower precision for some artifacts
+
+Example:
+
+```text
+Artifact A
+  src = ws.directory("docs")
+  check(ws: Workspace): Void
+```
+
+This artifact may have both:
+
+```text
+selectors = [
+  { path = docs, include = [], exclude = [], conservative = false },
+  { path = /, include = [], exclude = [], conservative = true }
+]
+```
+
+The exact selector is still useful for inspection. The conservative selector
+keeps filtering safe.
+
+A later action-layer provenance pass can recover precision here. It can track a
+specific action or function call, instead of widening the whole artifact.
+
 The internal selector model already supports this. A conservative selector can
 be narrower than the whole repo.
 
@@ -183,6 +220,10 @@ These filters:
 
 The main model is still artifact filtering, not plan filtering. Plans compile
 from the already selected artifact set.
+
+Later, the engine may add a second provenance layer on actions. That would make
+some currently conservative artifact matches narrower at execution time, without
+changing the artifact-level no-false-negative rule.
 
 ## Lockfile Acceleration
 
@@ -565,9 +606,9 @@ entry.
 
 ## Caching Semantics
 
-Late-bound provenance and workspace-sensitive caching should line up.
+Conservative provenance and workspace-sensitive caching should line up.
 
-If an artifact has a late-bound selector, caching should treat that artifact as
+If an artifact has a conservative selector, caching should treat that artifact as
 workspace-sensitive within that selector's region.
 
 Provenance does not replace the engine's content-addressed execution model. It
@@ -575,7 +616,7 @@ exists for selection, inspection, and UX.
 
 ## Open Questions
 
-1. Should plans gain a second, narrower provenance layer later for late
+1. Should actions gain a second, narrower provenance layer later for late
    workspace reads?
 2. Should built outputs like containers, packages, or services also carry
    `WorkspaceProvenance`, or should provenance stop at source-backed objects?
