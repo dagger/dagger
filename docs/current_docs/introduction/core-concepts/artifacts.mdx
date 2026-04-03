@@ -7,17 +7,15 @@ toc_max_heading_level: 2
 
 # Artifacts
 
-Your workspace has modules. Each module exposes objects — containers, directories, build configurations, test suites. Those objects are rich. They carry state. They compose complex data. They are a major part of how Dagger works.
+Your workspace has modules. Each module exposes objects. Those objects are a major part of how Dagger works — but the platform sees workspaces, modules, and functions, not the objects in between. You can reach a function by spelling its path through a module, but the objects along that path have no identity. You pass through them to get to the function. You can't point at them.
 
-But until now, those objects were invisible. The platform could see workspaces, modules, and functions — but not the objects in between. You could reach a function by spelling its path through the module, but the objects along that path had no identity. You passed through them to get to the function. You couldn't point at them.
-
-**Artifacts change that.** An artifact is an object that the platform can see — discover, name, select, and act on.
+Artifacts add the missing layer. An artifact is an object that the platform can see — discover, name, select, and act on.
 
 ## Discovering Artifacts
 
 The engine scans your modules' type graphs, finds the targetable objects, and gives each one a set of coordinates. Think of it as a table. Each column is a **dimension** — like `module`, `platform`, or `stage`. Each artifact is a row.
 
-You explore artifacts with `dagger list`:
+You explore this table with `dagger list`:
 
 ```shell
 # What kinds of artifacts are there?
@@ -39,7 +37,7 @@ dagger list platform --module=go
 #   darwin
 ```
 
-Dimensions are discovered automatically. The engine looks at the type structure your modules already have and creates the dimensions you need to tell artifacts apart.
+Dimensions are discovered automatically. The engine looks at the type structure your modules already have and creates the dimensions needed to tell artifacts apart. If your workspace has only one module, the `module` dimension still exists — it just has one value.
 
 ## Selecting Artifacts
 
@@ -57,6 +55,9 @@ dagger check --module=go --platform=linux
 
 # Generate only for the frontend module
 dagger generate --module=frontend
+
+# Ship only the darwin build
+dagger ship --module=go --platform=darwin
 ```
 
 Each flag narrows the set of artifacts the verb acts on. Flags compose naturally — add more flags to be more specific.
@@ -74,15 +75,15 @@ Go
 │   └── darwin → Platform
 ```
 
-The engine sees two `Platform` objects behind a branching point. It creates a `platform` dimension with values `linux` and `darwin`. No annotations needed. No extra code. It comes from the shape you already wrote.
+The engine sees two `Platform` objects behind a branching point. It creates a `platform` dimension with values `linux` and `darwin`. The `Platforms` object in the middle is structural glue — the engine looks through it to find the `Platform` objects underneath. No annotations needed. No extra code. It comes from the shape you already wrote.
 
-A frontend module with `test` and `release` stages gets a `stage` dimension. A workspace with multiple modules gets a `module` dimension. The engine does the work.
+Every module root is also an artifact. A workspace with multiple modules gets a `module` dimension automatically. Modules that expose richer object structure — like platform variants or build stages — contribute additional artifacts with extra dimensions.
 
 ## Scoping by Verb
 
 Not every artifact supports every verb. A module might expose objects with checks but no generators, or vice versa.
 
-When you use a verb like `dagger check`, the artifact set is automatically scoped to objects that have check functions. This scoping also affects discovery:
+When you use a verb like `dagger check`, the artifact set is automatically scoped to objects that have check functions. Pass a verb flag to `dagger list` to scope discovery the same way:
 
 ```shell
 # What dimensions exist for checking?
@@ -95,15 +96,7 @@ dagger list platform --check --module=go
 dagger list --generate
 ```
 
-This keeps things focused. You only see what's relevant to what you're doing.
-
-## How Artifacts Relate to Other Concepts
-
-**Artifacts and modules.** Every module root is an artifact. Modules that expose richer object structure may contribute additional artifacts with extra dimensions.
-
-**Artifacts and functions.** Functions are what you call on artifacts. An artifact is the object; functions are the actions you can take on it. `dagger check` finds the check functions on your selected artifacts and runs them.
-
-**Artifacts and checks.** Today, `dagger check` runs checks across your workspace. Artifacts make that targeting precise. Instead of running all checks, you can say exactly which objects to check.
+You only see what's relevant to what you're doing.
 
 ## Example: A Multi-Platform Build
 
@@ -132,6 +125,8 @@ The `go` module exposes platform-specific builds. The `docs` module is simpler �
 | go     | darwin   |
 | docs   |          |
 
+The `go` row with no platform is the module root artifact — it represents the Go module as a whole, above the platform-specific builds. Checks defined on the root run regardless of platform selection.
+
 Now you can target precisely:
 
 ```shell
@@ -143,9 +138,12 @@ dagger check --module=go --platform=darwin
 
 # Check only docs
 dagger check --module=docs
+
+# Generate for go only
+dagger generate --module=go
 ```
 
 ## Next Steps
 
-- **[Checks](/core-concepts/checks)** — Learn how checks work with artifact selection
-- **[Functions](/core-concepts/functions)** — Understand the building blocks that artifacts expose
+- **[Checks](/core-concepts/checks)** — Learn how checks work
+- **[Functions](/core-concepts/functions)** — The building blocks that artifacts expose
