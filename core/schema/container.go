@@ -1119,6 +1119,25 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	}
 	args.Args = expandedArgs
 
+	if args.RedirectStdout != "" {
+		args.RedirectStdout, err = expandEnvVar(ctx, parent.Self(), args.RedirectStdout, args.Expand)
+		if err != nil {
+			return inst, err
+		}
+	}
+	if args.RedirectStderr != "" {
+		args.RedirectStderr, err = expandEnvVar(ctx, parent.Self(), args.RedirectStderr, args.Expand)
+		if err != nil {
+			return inst, err
+		}
+	}
+	if args.RedirectStdin != "" {
+		args.RedirectStdin, err = expandEnvVar(ctx, parent.Self(), args.RedirectStdin, args.Expand)
+		if err != nil {
+			return inst, err
+		}
+	}
+
 	var md *buildkit.ExecutionMetadata
 	if args.ExecMD.Self != nil {
 		md = args.ExecMD.Self
