@@ -557,6 +557,93 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 	require.Equal(t, "https://github.com/vito/dang.git", out)
 }
 
+func (LegacySuite) TestGoDepAlias(ctx context.Context, t *testctx.T) {
+	// Ensure that legacy wrapper aliases still include dependency-owned types.
+
+	c := connect(ctx, t)
+
+	mod := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", `package main
+
+type Test struct {}
+
+func (m *Test) Placeholder() string {
+	return "placeholder"
+}
+`).
+		WithWorkdir("/work/dep").
+		With(daggerExec("init", "--name=dep", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+type Status string
+
+const (
+	Here Status = "here"
+	There Status = "there"
+)
+
+type Dep struct{}
+
+func (m *Dep) Active() Status {
+	return Here
+}
+
+func (m *Dep) Invert(status Status) Status {
+	switch status {
+	case Here:
+		return There
+	case There:
+		return Here
+	default:
+		panic("invalid status")
+	}
+}
+`).
+		WithWorkdir("/work").
+		With(daggerExec("install", "./dep", "--compat=skip")).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {
+	Status DepStatus // +private
+}
+
+func New() *Test {
+	return &Test{Status: DepStatusHere}
+}
+
+func (m *Test) Active() string {
+	return string(m.Status)
+}
+
+func (m *Test) Inactive(ctx context.Context) (string, error) {
+	status, err := dag.Dep().Active(ctx)
+	if err != nil {
+		return "", err
+	}
+	status, err = dag.Dep().Invert(ctx, status)
+	if err != nil {
+		return "", err
+	}
+	return string(status), nil
+}
+`).
+		With(daggerExec("develop", "--compat=v0.11.9"))
+
+	wrapperContents, err := mod.File("dagger.gen.go").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, wrapperContents, "type DepStatus = dagger.DepStatus")
+	require.Contains(t, wrapperContents, "DepStatusHere DepStatus = dagger.DepStatusHere")
+
+	out, err := mod.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "here", gjson.Get(out, "test.active").String())
+	require.Equal(t, "there", gjson.Get(out, "test.inactive").String())
+}
+
 func (LegacySuite) TestGoCodegenOptionals(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#8106
 	//

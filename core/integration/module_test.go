@@ -1000,7 +1000,14 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work").
 				With(daggerExec("develop"))
 
-			codegenContents, err := modGen.File(sdkCodegenFile(t, tc.sdk)).Contents(ctx)
+			var codegenContents string
+			if tc.sdk == "go" {
+				// If go, the changes will be in `dep.gen.go`
+				codegenContents, err = modGen.File("internal/dagger/dep.gen.go").Contents(ctx)
+			} else {
+				codegenContents, err = modGen.File(sdkCodegenFile(t, tc.sdk)).Contents(ctx)
+			}
+
 			require.NoError(t, err)
 			require.Contains(t, codegenContents, tc.expected)
 
@@ -6339,7 +6346,7 @@ export class Dep {
 				With(withModInitAt("./dep", tc.sdk, tc.src)).
 				With(daggerExec("install", "./dep"))
 
-			codegenContents, err := modGen.File(sdkCodegenFile(t, "go")).Contents(ctx)
+			codegenContents, err := modGen.File("internal/dagger/dep.gen.go").Contents(ctx)
 			require.NoError(t, err)
 
 			for _, match := range tc.matches.golang {
