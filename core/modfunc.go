@@ -1060,6 +1060,10 @@ func (fn *ModuleFunction) loadContextualArg(
 						Value: dagql.String(fn.mod.Source.Value.Self().AsString()),
 					},
 					{
+						Name:  "pin",
+						Value: dagql.String(fn.mod.Source.Value.Self().Pin()),
+					},
+					{
 						Name:  "digest",
 						Value: dagql.String(contentCacheKey),
 					},
@@ -1085,6 +1089,10 @@ func (fn *ModuleFunction) loadContextualArg(
 					{
 						Name:  "module",
 						Value: dagql.String(fn.mod.Source.Value.Self().AsString()),
+					},
+					{
+						Name:  "pin",
+						Value: dagql.String(fn.mod.Source.Value.Self().Pin()),
 					},
 					{
 						Name:  "digest",
@@ -1130,6 +1138,7 @@ func (fn *ModuleFunction) loadContextualGitArg(
 					Field: "_contextGitRepository",
 					Args: []dagql.NamedInput{
 						{Name: "module", Value: dagql.String(fn.mod.Source.Value.Self().AsString())},
+						{Name: "pin", Value: dagql.String(fn.mod.Source.Value.Self().Pin())},
 						{Name: "digest", Value: dagql.String(contentCacheKey)},
 					},
 				},
@@ -1146,6 +1155,7 @@ func (fn *ModuleFunction) loadContextualGitArg(
 					Field: "_contextGitRef",
 					Args: []dagql.NamedInput{
 						{Name: "module", Value: dagql.String(fn.mod.Source.Value.Self().AsString())},
+						{Name: "pin", Value: dagql.String(fn.mod.Source.Value.Self().Pin())},
 						{Name: "digest", Value: dagql.String(contentCacheKey)},
 					},
 				},
