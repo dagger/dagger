@@ -8,24 +8,51 @@ Go, Python, TypeScript, and Rust SDKs are fully migrated. The CLI,
 Dang SDK, codegen, integration tests, and module dependencies are also
 fixed. Codegen introspection test fixtures updated.
 
+## Completed SDKs
+
+### Elixir SDK ✅
+
+`inline_fragment/2` added to QueryBuilder. Codegen updated:
+`@expectedType` directive support on args and fields, unified `ID`
+scalar, `INTERFACE` kind handling, `node(id:)` + inline fragment
+replaces all `loadFooFromID` calls. 52 per-type `FooID` scalar files
+removed. `Node` interface type generated. Nestru.Decoder uses
+`node(id:)` directly. Test fixtures regenerated from
+`cmd/codegen/introspection/testdata/schema.json`. All 19 codegen
+tests pass.
+
+**Toolchain:** `updateCodegenTests` function added to
+`elixir-sdk.dang` for auto-accepting Mneme snapshot changes.
+`codegenTest` sets `CI=true` to reject mode.
+
+**Regenerating:** Use the introspection JSON from the test fixtures
+or the dev engine:
+```bash
+python3 -c "import json; s=json.load(open('cmd/codegen/introspection/testdata/schema.json')); json.dump({'__schema':s}, open('/tmp/introspection.json','w'))"
+cd toolchains/elixir-sdk-dev && dagger call generate --introspection-json /tmp/introspection.json -y
+```
+
+**Updating codegen test snapshots:**
+```bash
+dagger call elixir-sdk update-codegen-tests -y
+```
+
+**Not yet tested:** SDK integration tests (`sdkTest`) require the dev
+engine which is blocked by Dang SDK `@expectedType` support.
+
+### PHP SDK ✅
+
+Inline fragment support added to QueryBuilderChain.
+`loadObjectFromId()` helper on AbstractClient replaces dynamic
+`load*FromId()` calls. DecodesValue + IdableHandler updated.
+Generated code regenerated. All checks pass (223 tests, phpstan,
+phpcs).
+
 ## Remaining SDKs
 
 These still reference `loadFooFromID` and need the same migration
 pattern: add inline fragment support to the query builder, update
 codegen, regenerate, fix tests.
-
-### Elixir SDK
-
-**Codegen:** `sdk/elixir/dagger_codegen/lib/dagger/codegen/elixir_generator/object_renderer.ex`
-**Generated:** `sdk/elixir/lib/dagger/gen/*.ex`
-Query builder likely needs `inline_fragment` added.
-
-### PHP SDK ✅
-
-**Done.** Inline fragment support added to QueryBuilderChain.
-`loadObjectFromId()` helper on AbstractClient replaces dynamic
-`load*FromId()` calls. DecodesValue + IdableHandler updated.
-Generated code regenerated. All checks pass (223 tests, phpstan, phpcs).
 
 ### Java SDK
 
@@ -72,3 +99,8 @@ dagger check 'php-sdk:*'           # run all checks for an SDK
 
 For the dev engine: `./hack/dev` builds and starts it,
 `./bin/dagger` runs commands against it.
+
+**Note:** The outer `dagger` CLI (stable release) works for running
+toolchain functions. `./bin/dagger` (dev engine) is needed for
+integration tests but is currently blocked for modules with Dang
+SDK dependencies due to missing `@expectedType` support in Dang.
