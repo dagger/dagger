@@ -1000,6 +1000,179 @@ func (ContainerSuite) TestWithEnvVariableExpand(ctx context.Context, t *testctx.
 	})
 }
 
+func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("cache ignores value changes", func(ctx context.Context, t *testctx.T) {
+		base := c.Container().From(alpineImage)
+
+		run := func(runID string) string {
+			out, err := base.
+				WithVolatileVariable("RUN_ID", runID).
+				WithExec([]string{"sh", "-c", "head -c 32 /dev/random | sha256sum | cut -d ' ' -f1"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(out)
+		}
+
+		out1 := run(identity.NewID())
+		out2 := run(identity.NewID())
+		require.Equal(t, out1, out2, "execution was re-run when only a volatile variable changed")
+	})
+
+	t.Run("cache ignores value changes through from", func(ctx context.Context, t *testctx.T) {
+		run := func(runID string) string {
+			out, err := c.Container().
+				WithVolatileVariable("RUN_ID", runID).
+				From(alpineImage).
+				WithExec([]string{"sh", "-c", "head -c 32 /dev/random | sha256sum | cut -d ' ' -f1"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(out)
+		}
+
+		out1 := run(identity.NewID())
+		out2 := run(identity.NewID())
+		require.Equal(t, out1, out2, "execution was re-run when only a volatile variable changed below from")
+	})
+
+	t.Run("rerun sees latest value when another input changes", func(ctx context.Context, t *testctx.T) {
+		run := func(marker, runID string) string {
+			out, err := c.Container().
+				From(alpineImage).
+				WithNewFile("/marker", marker).
+				WithVolatileVariable("RUN_ID", runID).
+				WithExec([]string{"sh", "-c", `printf '%s:%s' "$RUN_ID" "$(cat /marker)"`}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+
+		out1 := run("a", "one")
+		out2 := run("b", "two")
+		require.Equal(t, "one:a", out1)
+		require.Equal(t, "two:b", out2)
+	})
+
+	t.Run("visibility excludes volatile vars", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithEnvVariable("PERSIST", "persist").
+			WithVolatileVariable("VOL", "volatile")
+
+		vars, err := ctr.EnvVariables(ctx)
+		require.NoError(t, err)
+		for _, envVar := range vars {
+			name, err := envVar.Name(ctx)
+			require.NoError(t, err)
+			require.NotEqual(t, "VOL", name)
+		}
+
+		persistentVal, err := ctr.EnvVariable(ctx, "PERSIST")
+		require.NoError(t, err)
+		require.Equal(t, "persist", persistentVal)
+
+		volatileVal, err := ctr.EnvVariable(ctx, "VOL")
+		require.NoError(t, err)
+		require.Empty(t, volatileVal)
+
+		out, err := ctr.WithExec([]string{"sh", "-c", `printf '%s:%s' "$PERSIST" "$VOL"`}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "persist:volatile", out)
+	})
+
+	t.Run("volatile value overrides persistent env and can be removed", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithEnvVariable("FOO", "persist").
+			WithVolatileVariable("FOO", "first").
+			WithVolatileVariable("FOO", "second")
+
+		envVal, err := ctr.EnvVariable(ctx, "FOO")
+		require.NoError(t, err)
+		require.Equal(t, "persist", envVal)
+
+		out, err := ctr.WithExec([]string{"sh", "-c", `printf '%s' "$FOO"`}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "second", out)
+
+		out, err = ctr.
+			WithoutVolatileVariable("FOO").
+			WithExec([]string{"sh", "-c", `printf '%s' "$FOO"`}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "persist", out)
+	})
+
+	t.Run("removing a volatile variable with no persistent fallback unsets it", func(ctx context.Context, t *testctx.T) {
+		out, err := c.Container().
+			From(alpineImage).
+			WithVolatileVariable("FOO", "volatile").
+			WithoutVolatileVariable("FOO").
+			WithExec([]string{"sh", "-c", `printf '%s' "${FOO-unset}"`}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "unset", out)
+	})
+
+	t.Run("service start does not see volatile vars", func(ctx context.Context, t *testctx.T) {
+		svc := c.Container().
+			From(alpineImage).
+			WithDefaultArgs([]string{"sh", "-c", `test -z "$VOL" && sleep 1`}).
+			WithVolatileVariable("VOL", "volatile").
+			AsService()
+
+		_, err := svc.Start(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("export excludes volatile vars", func(ctx context.Context, t *testctx.T) {
+		imagePath := filepath.Join(t.TempDir(), identity.NewID()+".tar")
+
+		ctr := c.Container().
+			From(alpineImage).
+			WithEnvVariable("PERSIST", "persist").
+			WithVolatileVariable("VOL", "volatile")
+
+		actual, err := ctr.Export(ctx, imagePath)
+		require.NoError(t, err)
+		require.Equal(t, imagePath, actual)
+
+		dockerManifestBytes := readTarFile(t, imagePath, "manifest.json")
+		var dockerManifest []struct {
+			Config string
+		}
+		require.NoError(t, json.Unmarshal(dockerManifestBytes, &dockerManifest))
+		require.Len(t, dockerManifest, 1)
+
+		configBytes := readTarFile(t, imagePath, dockerManifest[0].Config)
+		var img ocispecs.Image
+		require.NoError(t, json.Unmarshal(configBytes, &img))
+		require.Contains(t, img.Config.Env, "PERSIST=persist")
+		require.NotContains(t, img.Config.Env, "VOL=volatile")
+	})
+
+	t.Run("expand rejects volatile vars", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Container().
+			From(alpineImage).
+			WithVolatileVariable("RUN_ID", "123").
+			WithExec([]string{"sh", "-c", `test "${RUN_ID}" = "123"`}, dagger.ContainerWithExecOpts{Expand: true}).
+			Sync(ctx)
+
+		requireErrOut(t, err, `expand cannot be used with volatile env variable "RUN_ID"`)
+	})
+
+	t.Run("with env variable expand rejects volatile vars", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Container().
+			From(alpineImage).
+			WithVolatileVariable("RUN_ID", "123").
+			WithEnvVariable("COPY", "$RUN_ID", dagger.ContainerWithEnvVariableOpts{Expand: true}).
+			Sync(ctx)
+
+		requireErrOut(t, err, `expand cannot be used with volatile env variable "RUN_ID"`)
+	})
+}
+
 func (ContainerSuite) TestLabel(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
