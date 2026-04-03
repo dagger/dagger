@@ -241,11 +241,11 @@ Another example:
 
 ## CLI
 
-```bash
-$ dagger ship --module=go
+```console
+$ dagger ship --type=go
 # compile default check(go) -> ship(go) behavior
 
-$ dagger ship --module=go --no-check
+$ dagger ship --type=go --no-check
 # compile ship(go) only
 ```
 
