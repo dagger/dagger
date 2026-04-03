@@ -101,6 +101,60 @@ source = "github.com/dagger/dagger/modules/wolfi@main"
 		require.Error(t, err)
 		requireErrOut(t, err, "workspace module(s) not found: missing")
 	})
+
+	t.Run("top-level update refreshes the selected workspace module lock entry", func(ctx context.Context, t *testctx.T) {
+		const (
+			wolfiSource = "github.com/dagger/dagger/modules/wolfi@main"
+			ghaSource   = "github.com/dagger/dagger/modules/gha@main"
+			wolfiPin    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			ghaPin      = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		)
+
+		lock := workspacecfg.NewLock()
+		require.NoError(t, lock.SetModuleResolve(wolfiSource, workspacecfg.LookupResult{
+			Value:  wolfiPin,
+			Policy: workspacecfg.PolicyFloat,
+		}))
+		require.NoError(t, lock.SetModuleResolve(ghaSource, workspacecfg.LookupResult{
+			Value:  ghaPin,
+			Policy: workspacecfg.PolicyFloat,
+		}))
+		lockBytes, err := lock.Marshal()
+		require.NoError(t, err)
+
+		configTOML := `[modules.wolfi]
+source = "` + wolfiSource + `"
+
+[modules.gha]
+source = "` + ghaSource + `"
+`
+
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", configTOML).
+			WithNewFile(".dagger/lock", string(lockBytes))
+
+		updated := ctr.With(daggerExecRaw("update", "wolfi"))
+		out, err := updated.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Updated .dagger/lock", strings.TrimSpace(out))
+
+		upToDate := updated.With(daggerExecRaw("update", "wolfi"))
+		out, err = upToDate.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+
+		lockOut, err := upToDate.File(".dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+
+		wolfiEntry := requireModuleResolveLockEntry(t, []byte(lockOut), wolfiSource)
+		require.NotEqual(t, wolfiPin, wolfiEntry.Value)
+		require.Equal(t, workspacecfg.PolicyFloat, wolfiEntry.Policy)
+
+		ghaEntry := requireModuleResolveLockEntry(t, []byte(lockOut), ghaSource)
+		require.Equal(t, ghaPin, ghaEntry.Value)
+		require.Equal(t, workspacecfg.PolicyFloat, ghaEntry.Policy)
+	})
 }
 
 func requireModuleResolveLockEntry(t *testctx.T, lockBytes []byte, source string) workspacecfg.LookupResult {

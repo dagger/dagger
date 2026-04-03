@@ -80,7 +80,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceInstall(ctx context.Context, t *testct
 source = "../existing"
 `)
 
-		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "install", "--name=dep", "./dep")
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "--name=dep", "./dep")
 		require.Error(t, err)
 		requireErrOut(t, err, `module "dep" already exists in workspace config with source "../existing" (new source "../dep")`)
 
@@ -102,7 +102,7 @@ func readInstalledWorkspaceConfig(t *testctx.T, workdir string) *workspacecfg.Co
 }
 
 func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testctx.T) {
-	t.Run("falls back to workspace install when no module is targeted", func(ctx context.Context, t *testctx.T) {
+	t.Run("installs into the workspace when no workspace config exists yet", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")
 
@@ -112,7 +112,7 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "install", "./dep")
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
 		require.Equal(t, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName), strings.TrimSpace(string(out)))
 
@@ -126,7 +126,7 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		initGitRepo(ctx, t, workdir)
 
 		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "install", ref)
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", ref)
 		require.NoError(t, err)
 		require.Equal(t, `Installed module "wolfi" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName), strings.TrimSpace(string(out)))
 
@@ -135,7 +135,7 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		assertModuleResolveLockEntry(t, lockBytes, ref, workspacecfg.PolicyPin)
 	})
 
-	t.Run("keeps module dependency installs for the current module", func(ctx context.Context, t *testctx.T) {
+	t.Run("creates workspace config instead of editing dagger.json for standalone modules", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")
 
@@ -147,44 +147,26 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--name=app", "--sdk=go")
 		require.NoError(t, err)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "install", "./dep")
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
-		require.Equal(t, `Installed module dependency "dep"`, strings.TrimSpace(string(out)))
+		require.Equal(t, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName), strings.TrimSpace(string(out)))
 
 		moduleConfig, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ModuleConfigFileName))
 		require.NoError(t, err)
-		require.Contains(t, string(moduleConfig), `"name": "dep"`)
-
-		_, err = os.Stat(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
-		require.ErrorIs(t, err, os.ErrNotExist)
-	})
-
-	t.Run("keeps module dependency installs for explicit --mod targets", func(ctx context.Context, t *testctx.T) {
-		workdir := t.TempDir()
-		appDir := filepath.Join(workdir, "app")
-		depDir := filepath.Join(workdir, "dep")
-
-		require.NoError(t, os.MkdirAll(appDir, 0o755))
-		require.NoError(t, os.MkdirAll(depDir, 0o755))
-		initGitRepo(ctx, t, workdir)
-
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
-		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--name=app", "--sdk=go", ".")
-		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go", ".")
-		require.NoError(t, err)
-
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "install", "--mod=./app", "./dep")
-		require.NoError(t, err)
-		require.Equal(t, `Installed module dependency "dep"`, strings.TrimSpace(string(out)))
-
-		moduleConfig, err := os.ReadFile(filepath.Join(appDir, workspacecfg.ModuleConfigFileName))
-		require.NoError(t, err)
-		require.Contains(t, string(moduleConfig), `"name": "dep"`)
+		require.NotContains(t, string(moduleConfig), `"name": "dep"`)
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
-		require.Empty(t, cfg.Modules)
+		require.Contains(t, cfg.Modules, "dep")
+		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
+	})
+
+	t.Run("rejects module-specific flags", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "--mod=.", "./dep")
+		require.Error(t, err)
+		requireErrOut(t, err, "unknown flag: --mod")
 	})
 }
 

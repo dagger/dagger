@@ -69,10 +69,16 @@ With no module names, refresh entries already recorded in .dagger/lock.
 With module names, refresh only those modules from .dagger/config.toml.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger(), args)
-		})
+		return runWorkspaceUpdate(cmd, args)
 	},
+}
+
+func runWorkspaceUpdate(cmd *cobra.Command, moduleNames []string) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger(), moduleNames)
+	})
 }
 
 func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client, moduleNames []string) error {

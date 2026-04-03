@@ -8056,7 +8056,7 @@ func (m *Test) Str() string {
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
-	args = rewriteLegacyModuleInitTestArgs(args)
+	args = rewriteLegacyModuleCommandTestArgs(args)
 	return daggerExecRaw(args...)
 }
 
@@ -8069,7 +8069,7 @@ func daggerExecRaw(args ...string) dagger.WithContainerFunc {
 }
 
 func daggerExecFail(args ...string) dagger.WithContainerFunc {
-	args = rewriteLegacyModuleInitTestArgs(args)
+	args = rewriteLegacyModuleCommandTestArgs(args)
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
@@ -8079,7 +8079,7 @@ func daggerExecFail(args ...string) dagger.WithContainerFunc {
 }
 
 func daggerNonNestedExec(args ...string) dagger.WithContainerFunc {
-	args = rewriteLegacyModuleInitTestArgs(args)
+	args = rewriteLegacyModuleCommandTestArgs(args)
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
 			// Don't persist stable client id between runs. this matches the behavior
@@ -8202,7 +8202,7 @@ func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerF
 
 // command for a dagger cli call direct on the host
 func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
-	args = rewriteLegacyModuleInitTestArgs(args)
+	args = rewriteLegacyModuleCommandTestArgs(args)
 	return hostDaggerCommandRaw(ctx, t, workdir, args...)
 }
 
@@ -8236,18 +8236,54 @@ func hostDaggerExecRaw(ctx context.Context, t testing.TB, workdir string, args .
 	return output, err
 }
 
-// Most integration tests still express module creation as top-level `dagger init`.
-// Translate those calls to `dagger module init` while the product command surface
-// moves to workspace-first `dagger init`.
-func rewriteLegacyModuleInitTestArgs(args []string) []string {
-	if len(args) == 0 || args[0] != "init" {
+// Most integration tests still express module mutation through the old top-level
+// commands. Translate those calls to `dagger module ...` while the product
+// command surface moves to workspace-first top-level commands.
+func rewriteLegacyModuleCommandTestArgs(args []string) []string {
+	cmdIdx := firstTestCommandArg(args)
+	if cmdIdx < 0 {
+		return args
+	}
+
+	subcmd := ""
+	switch args[cmdIdx] {
+	case "init":
+		subcmd = "init"
+	case "install", "use":
+		subcmd = "install"
+	case "update":
+		subcmd = "update"
+	default:
 		return args
 	}
 
 	rewritten := make([]string, 0, len(args)+1)
-	rewritten = append(rewritten, "module", "init")
-	rewritten = append(rewritten, args[1:]...)
+	rewritten = append(rewritten, args[:cmdIdx]...)
+	rewritten = append(rewritten, "module", subcmd)
+	rewritten = append(rewritten, args[cmdIdx+1:]...)
 	return rewritten
+}
+
+func firstTestCommandArg(args []string) int {
+	skipValue := false
+	for i, arg := range args {
+		if skipValue {
+			skipValue = false
+			continue
+		}
+		if arg == "--" {
+			return -1
+		}
+		if strings.HasPrefix(arg, "-") {
+			switch arg {
+			case "--workdir", "--progress", "--lock", "--dot-output", "--dot-focus-field", "--interactive-command":
+				skipValue = true
+			}
+			continue
+		}
+		return i
+	}
+	return -1
 }
 
 func cleanupExec(t testing.TB, cmd *exec.Cmd) {

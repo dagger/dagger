@@ -18,6 +18,30 @@ func TestInitCommandRouting(t *testing.T) {
 	require.Same(t, moduleInitCmd, cmd)
 }
 
+func TestInstallAndUpdateCommandFlags(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"install"})
+	require.NoError(t, err)
+	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("compat"))
+	require.NotNil(t, cmd.Flags().Lookup("name"))
+
+	cmd, _, err = rootCmd.Find([]string{"module", "install"})
+	require.NoError(t, err)
+	require.NotNil(t, cmd.Flags().Lookup("mod"))
+	require.NotNil(t, cmd.Flags().Lookup("compat"))
+	require.NotNil(t, cmd.Flags().Lookup("name"))
+
+	cmd, _, err = rootCmd.Find([]string{"update"})
+	require.NoError(t, err)
+	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("compat"))
+
+	cmd, _, err = rootCmd.Find([]string{"module", "update"})
+	require.NoError(t, err)
+	require.NotNil(t, cmd.Flags().Lookup("mod"))
+	require.NotNil(t, cmd.Flags().Lookup("compat"))
+}
+
 func TestWriteWorkspaceInfo(t *testing.T) {
 	t.Run("prints config path when present", func(t *testing.T) {
 		var out bytes.Buffer

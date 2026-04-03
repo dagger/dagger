@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/go-git/go-git/v5"
@@ -130,6 +129,10 @@ func initRequestedChanges(cmd *cobra.Command) bool {
 	return false
 }
 
+func addWorkspaceInstallFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the module in the workspace. Defaults to the name of the module being installed.")
+}
+
 func addModuleDependencyInstallFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	cmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
@@ -189,13 +192,12 @@ func init() {
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
 
-	addModuleDependencyInstallFlags(moduleDepInstallCmd)
+	addWorkspaceInstallFlags(moduleDepInstallCmd)
 	addModuleDependencyInstallFlags(moduleModInstallCmd)
 
 	moduleUnInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(moduleUnInstallCmd, moduleUnInstallCmd.Flags(), false)
 
-	addModuleDependencyUpdateFlags(moduleUpdateCmd)
 	addModuleDependencyUpdateFlags(moduleModUpdateCmd)
 
 	moduleCmd.AddCommand(moduleInitCmd, moduleModInstallCmd, moduleModUpdateCmd)
@@ -422,30 +424,25 @@ dagger module init --sdk=go
 }
 
 var moduleUpdateCmd = &cobra.Command{
-	Use:     "update [options] [<DEPENDENCY>...]",
-	Aliases: []string{"use"},
-	Short:   "Update a module's dependencies",
-	Long: `Update the dependencies of a local module.
+	Use:   "update [module...]",
+	Short: "Refresh workspace-managed state",
+	Long: `Refresh workspace-managed state.
 
-To update only specific dependencies, specify their short names or a complete address.
+With no module names, refresh entries already recorded in .dagger/lock.
 
-If no dependency is specified, all dependencies are updated.
+With module names, refresh only those modules from .dagger/config.toml.
 `,
-	Example: `"dagger update" or "dagger update hello" "dagger update github.com/shykes/daggerverse/hello@v0.3.0"`,
+	Example: `"dagger update" or "dagger update wolfi"`,
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		return runModuleDependencyUpdate(cmd, extraArgs)
+		return runWorkspaceUpdate(cmd, extraArgs)
 	},
 }
 
 var moduleDepInstallCmd = &cobra.Command{
 	Use:     "install [options] <module>",
-	Aliases: []string{"use"},
 	Short:   "Install a module",
-	Long: `Install a module into the current workspace.
-
-If the current context targets a standalone module instead of a workspace, this
-falls back to installing the module as a dependency in dagger.json.`,
+	Long:    "Install a module into the current workspace.",
 	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
@@ -453,90 +450,8 @@ falls back to installing the module as a dependency in dagger.json.`,
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
-			EagerRuntime:         eagerRuntime,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
-			dest, err := resolveInstallDestination(ctx, dag)
-			if err != nil {
-				return err
-			}
-			if dest.Workspace {
-				if cmd.Flags().Lookup("compat").Changed {
-					return fmt.Errorf("--compat only applies to module dependency installs; pass --mod to target a module explicitly")
-				}
-				return installWorkspaceModule(ctx, cmd.OutOrStdout(), dag, extraArgs[0], installName)
-			}
-
-			depRefStr := extraArgs[0]
-			depSrc := dag.ModuleSource(depRefStr, dagger.ModuleSourceOpts{
-				DisableFindUp: true,
-			})
-
-			origDepName, err := depSrc.ModuleName(ctx)
-			if err != nil {
-				return err
-			}
-			if installName != "" {
-				depSrc = depSrc.WithName(installName)
-			}
-
-			depName, err := installModuleDependencyTo(ctx, dag, dest.Module, dest.ContextDirPath, extraArgs[0])
-			if err != nil {
-				return err
-			}
-
-			sdk, err := depSrc.SDK().Source(ctx)
-			if err != nil {
-				return err
-			}
-			depRootSubpath, err := depSrc.SourceRootSubpath(ctx)
-			if err != nil {
-				return err
-			}
-			depSrcKind, err := depSrc.Kind(ctx)
-			if err != nil {
-				return err
-			}
-
-			switch depSrcKind {
-			case dagger.ModuleSourceKindLocalSource:
-				analyticsType := "module_install"
-				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
-					"module_name":   origDepName,
-					"install_name":  installName,
-					"module_sdk":    sdk,
-					"source_kind":   "local",
-					"local_subpath": depRootSubpath,
-				})
-			case dagger.ModuleSourceKindGitSource:
-				gitURL, err := depSrc.CloneRef(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get git clone URL: %w", err)
-				}
-				gitVersion, err := depSrc.Version(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get git version: %w", err)
-				}
-				gitCommit, err := depSrc.Commit(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get git commit: %w", err)
-				}
-
-				analyticsType := "module_install"
-				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
-					"module_name":   origDepName,
-					"install_name":  installName,
-					"module_sdk":    sdk,
-					"source_kind":   "git",
-					"git_subpath":   depRootSubpath,
-					"git_symbolic":  filepath.Join(gitURL, depRootSubpath),
-					"git_clone_url": gitURL,
-					"git_version":   gitVersion,
-					"git_commit":    gitCommit,
-				})
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Installed module dependency %q\n", depName)
-			return nil
+			return installWorkspaceModule(ctx, cmd.OutOrStdout(), engineClient.Dagger(), extraArgs[0], installName)
 		})
 	},
 }
@@ -564,46 +479,6 @@ initialized workspace.`,
 			return nil
 		})
 	},
-}
-
-type installDestination struct {
-	Workspace      bool
-	Module         *dagger.ModuleSource
-	ContextDirPath string
-}
-
-// resolveInstallDestination keeps top-level `dagger install` workspace-aware
-// while preserving explicit module-targeting behavior.
-func resolveInstallDestination(ctx context.Context, dag *dagger.Client) (*installDestination, error) {
-	modRef, explicitModuleRef := getExplicitModuleSourceRef()
-	if !explicitModuleRef {
-		modRef = moduleURLDefault
-	}
-
-	modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-		RequireKind: dagger.ModuleSourceKindLocalSource,
-	})
-
-	alreadyExists, err := modSrc.ConfigExists(ctx)
-	if err != nil {
-		return nil, localModuleErrorf("failed to check if module already exists: %w", err)
-	}
-	if !alreadyExists {
-		if !explicitModuleRef {
-			return &installDestination{Workspace: true}, nil
-		}
-		return nil, fmt.Errorf("module must be fully initialized")
-	}
-
-	contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-	if err != nil {
-		return nil, localModuleErrorf("failed to get local context directory path: %w", err)
-	}
-
-	return &installDestination{
-		Module:         modSrc,
-		ContextDirPath: contextDirPath,
-	}, nil
 }
 
 var moduleUnInstallCmd = &cobra.Command{
