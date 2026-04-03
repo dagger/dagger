@@ -10,12 +10,16 @@ Depends on: Workspace plumbing (done)
 - [What Artifacts Are](#what-artifacts-are)
 - [Why They're Useful on Their Own](#why-theyre-useful-on-their-own)
 - [What They Make Possible](#what-they-make-possible)
+- [Detailed Design](#detailed-design)
 - [Selector Model](#selector-model)
 - [Selector Algebra](#selector-algebra)
 - [CLI](#cli)
+- [Acceptance Criteria](#acceptance-criteria)
 - [Schema](#schema)
-- [Notes](#notes)
+- [Filter Algebra](#filter-algebra)
+- [Synthesis Constraints](#synthesis-constraints)
 - [Implementation](#implementation)
+- [Locked Decisions](#locked-decisions)
 - [Open Questions](#open-questions)
 
 ## What Problem Does This Solve?
@@ -86,15 +90,19 @@ artifacts establish:
 
 One selection model. Everything else layers on top.
 
-## Design Summary
+## Detailed Design
+
+The sections below define the formal selector model, schema, and
+implementation constraints.
 
 `Workspace.artifacts` returns a filterable, introspection-driven view over
 workspace objects. The CLI is a generic client — no per-workspace codegen.
 
-Artifacts owns the general selector model:
-- workspace/module dimensions such as `module`
-- synthesized non-collection object-field selector dimensions
-- later, collection-provided dimensions
+Artifacts owns the general selector model: workspace/module dimensions such as
+`module`, synthesized non-collection object-field selector dimensions, and
+later, collection-provided dimensions.
+
+## Selector Model
 
 ### Identity
 
@@ -108,22 +116,7 @@ public address layer.
   rendering semantics for filter values, not identity semantics.
 - **Collections extend the selector model.** They are not the basis of it.
 
-## Selector Model
-
-Artifacts owns the public selector model. A selector dimension may come from:
-
-1. **Workspace structure** — for example `module`
-2. **Non-collection object-field selectors** — synthesized from ordinary
-   object traversal when needed to keep distinct artifact objects targetable
-3. **Collections** — keyed dimensions added later
-
-Target UX:
-
-- users discover dimensions with `dagger list` and `dagger <verb> --help`
-- users target selector dimensions with repeatable `--<dimension>=<value>`
-  flags
-- existing schema-path notation is compat-only; it is not the intended
-  steady-state UX
+### Scope Kinds
 
 Artifacts has two related scope kinds:
 
@@ -163,22 +156,81 @@ corresponding verb-projected `dagger list` scope such as
 The engine should synthesize enough public selector dimensions to make current
 artifact objects positively selectable without a separate path grammar.
 
-For one verb `V`, a projection retains the object nodes whose subtree contains
-at least one direct `V` member, plus the ancestor path to those nodes.
-Descendants therefore compose with **OR** inside a single verb projection.
+Verb projections compose: they are order-independent, idempotent, and
+structural only (they do not compile or execute anything). See
+[Selector Algebra](#selector-algebra) for the formal composition rules.
 
-Chaining verb projections accumulates predicates over the same underlying
-structural tree. A node remains in scope only if its subtree satisfies every
-active verb predicate. Chained verb projections therefore compose with **AND**,
-are order-independent, and are idempotent:
+## Selector Algebra
+
+This section defines how selector dimensions are synthesized from the object
+tree already present in the current `Artifacts` scope, and how verb
+projections compose over that tree.
+
+For root discovery (`workspace.artifacts.dimensions`, `dagger list`,
+`dagger list --help`), that tree is the exposed module tree across the current
+workspace modules.
+
+For a verb scope, the scoped tree is derived from that same structural tree by
+applying the accumulated verb predicates:
+
+```text
+hasVerb(node, V) =
+  hasDirectVerbMember(node, V)
+  OR any(hasVerb(child, V) for child in objectChildren(node))
+
+retain(node, activeVerbs) =
+  all(hasVerb(node, V) for V in activeVerbs)
+```
+
+Only zero-arg object-valued members participate in `objectChildren`. Verb
+projection never follows cross-artifact references.
+
+This means:
+
+- one verb projection uses **OR** over descendants
+- chained verb projections use **AND** across verbs
+- composition is evaluated over the same underlying tree, not by re-pruning an
+  already-pruned intermediate result
+- verb projections are order-independent and idempotent:
 
 ```text
 filterVerb(CHECK).filterVerb(GENERATE) == filterVerb(GENERATE).filterVerb(CHECK)
 filterVerb(CHECK).filterVerb(CHECK) == filterVerb(CHECK)
 ```
 
-Verb projection is structural only. It does not follow cross-artifact
-references and it does not compile or execute anything.
+For example:
+
+```text
+module
+├── test   # subtree contains a check
+└── sdk    # subtree contains a generate
+```
+
+Then:
+
+```text
+workspace.artifacts.filterVerb(CHECK).items                    => [module, test]
+workspace.artifacts.filterVerb(GENERATE).items                 => [module, sdk]
+workspace.artifacts.filterVerb(CHECK).filterVerb(GENERATE).items   => [module]
+```
+
+### Artifacts vs. Structural Glue
+
+Not every scoped object becomes a public artifact row:
+
+- the workspace-reparented module root is always an artifact
+- a retained non-root leaf object is an artifact candidate
+- grouping objects remain structural glue unless the selector algebra needs a
+  public dimension at that point
+- once a branching point is promoted to a public dimension, the selected child
+  subtree roots become artifacts in that scope
+
+Here, a retained leaf object means an object node in the current scope with no
+retained object-valued children beneath it.
+
+A public dimension corresponds to one promoted branching point in the object
+graph. The grouping object at that branching point is structural glue; the
+selected child objects are the new artifact boundary.
 
 ### Example: Non-Collection Disambiguation
 
@@ -198,17 +250,18 @@ type Platform {
 }
 ```
 
-The public artifact dimension is:
+- `Go` is an artifact (module root)
+- `Platforms` is structural glue — the engine looks through it
+- `Platform(linux)` and `Platform(darwin)` are artifacts
+
+The engine synthesizes a `platform` dimension with values `linux` and `darwin`:
 
 ```text
-platform
-```
+dimensions: [module, platform]
 
-with values:
-
-```text
-linux
-darwin
+module=go                          # the module root artifact
+module=go, platform=linux          # the linux platform artifact
+module=go, platform=darwin         # the darwin platform artifact
 ```
 
 CLI discovery:
@@ -247,75 +300,6 @@ scope
 Collections later add more dimensions to the same model; see
 [collections.md](./collections.md).
 
-## Selector Algebra
-
-This section defines how selector dimensions are synthesized from the object
-tree already present in the current `Artifacts` scope.
-
-For root discovery (`workspace.artifacts.dimensions`, `dagger list`,
-`dagger list --help`), that tree is the exposed module tree across the current
-workspace modules.
-
-For a verb scope, the scoped tree is derived from that same structural tree by
-applying the accumulated verb predicates:
-
-```text
-hasVerb(node, V) =
-  hasDirectVerbMember(node, V)
-  OR any(hasVerb(child, V) for child in objectChildren(node))
-
-retain(node, activeVerbs) =
-  all(hasVerb(node, V) for V in activeVerbs)
-```
-
-Only zero-arg object-valued members participate in `objectChildren`. Verb
-projection never follows cross-artifact references.
-
-This means:
-
-- one verb projection uses **OR** over descendants
-- chained verb projections use **AND** across verbs
-- composition is evaluated over the same underlying tree, not by re-pruning an
-  already-pruned intermediate result
-
-For example:
-
-```text
-module
-├── test   # subtree contains a check
-└── sdk    # subtree contains a generate
-```
-
-Then:
-
-```text
-workspace.artifacts.filterVerb(CHECK).items                    => [module, test]
-workspace.artifacts.filterVerb(GENERATE).items                 => [module, sdk]
-workspace.artifacts.filterVerb(CHECK).filterVerb(GENERATE).items   => [module]
-```
-
-Not every scoped object becomes a public artifact row:
-
-- the workspace-reparented module root is always an artifact
-- a retained non-root leaf object is an artifact candidate
-- grouping objects remain structural glue unless the selector algebra needs a
-  public dimension at that point
-- once a branching point is promoted to a public dimension, the selected child
-  subtree roots become artifacts in that scope
-
-Here, a retained leaf object means an object node in the current scope with no
-retained object-valued children beneath it.
-
-A public dimension corresponds to one promoted branching point in the object
-graph. The grouping object at that branching point is structural glue; the
-selected child objects are the new artifact boundary.
-
-For example, in the `Go -> Platforms -> Platform` example above:
-
-- `Go` is an artifact
-- `Platforms` is structural glue
-- `Platform(linux)` and `Platform(darwin)` are artifacts
-
 In one scope, the retained artifact rows might look like:
 
 ```text
@@ -352,7 +336,11 @@ Rules:
   CLI-cased type name of `T`; type names should already be singular by
   convention (`Platform` → `platform`)
 - otherwise, fall back to one qualified singleton dimension per selected child
-  field/function name; its only non-null coordinate value is that same name
+  field/function name; its only non-null coordinate value is that same name.
+  For example, if a branching point selects among `logs: Logs!` and
+  `metrics: Metrics!` (heterogeneous types), the fallback produces two
+  singleton dimensions: `logs` (with value `logs`) and `metrics` (with value
+  `metrics`)
 - their keys are always `String`
 - their values are the selected child segment, also in CLI case
 - scalar fields do not create dimensions
@@ -479,7 +467,8 @@ frontend-stage, backend-stage
 
 Prepend successive ancestor names in CLI case until the name is unique in the
 current scope. If exhausting ancestors still collides, append a deterministic
-numeric suffix.
+numeric suffix. See the [CI Collision / Qualification](#ci-collision--qualification)
+acceptance test for a worked example.
 
 The same rule applies if a synthesized field dimension would collide with an
 existing public dimension such as `module`.
@@ -511,7 +500,7 @@ hello test artifact    -> module=hello, stage=test
 hello release artifact -> module=hello, stage=release
 ```
 
-In a scope with `dimensions = [module, platform]`:
+In a different scope — the Go module's `dimensions = [module, platform]`:
 
 ```text
 go root artifact             -> ["go", null]
@@ -619,6 +608,281 @@ dagger list platform --check
 dagger check --help        → workspace.artifacts.filterVerb(CHECK).dimensions
 ```
 
+## Acceptance Criteria
+
+These examples intentionally split into two layers:
+
+1. **UI output tests** — the CLI is given a fixed resolved `Artifacts` scope;
+   every byte of input and output matters.
+2. **Dimension detection tests** — a schema is given; only the detected
+   dimensions matter. CLI formatting and help wording are noise.
+
+These two test classes should not be coupled.
+
+### UI Output Tests
+
+The following are golden-output tests for CLI rendering. They assume the
+selector engine has already resolved the current scope's `dimensions`,
+`keyType`s, and any statically enumerable flag values.
+
+Fixture:
+
+- root dimensions: `module`, `sdk`, `release-lane`
+- statically enumerable module values in scope: `sdks`, `release`
+- statically enumerable `release-lane` values in scope: `stable`,
+  `experimental`
+
+Expected:
+
+```console
+$ dagger list --help
+Usage:
+  dagger list <dimension> [flags]
+
+Available dimensions:
+  module         List available modules
+  release-lane   List values for the artifact dimension "release-lane"
+  sdk            List values for the artifact dimension "sdk"
+```
+
+Expected:
+
+```console
+$ dagger list sdk --help
+Usage:
+  dagger list sdk [flags]
+
+Flags:
+  --module=sdks|release                  Narrow to selected modules
+  --release-lane=stable|experimental     Narrow to selected release lanes
+```
+
+Fixture:
+
+- check-projected dimensions: `module`, `engine-test`
+- statically enumerable module values in scope: `test-split`, `ci`
+- `engine-test` values are dynamic
+
+Expected:
+
+```console
+$ dagger check --help
+Flags:
+  --module=test-split|ci   Filter by module
+  --engine-test=<name>     Filter by engine-test
+```
+
+Expected:
+
+```console
+$ dagger list engine-test --module=test-split
+base
+provision
+telemetry
+call-and-shell
+cli-engine
+client-generator
+```
+
+### Dimension Detection Tests
+
+The following examples are selector-synthesis tests. The expected result is the
+set of dimensions detected for each scope.
+
+#### SDK Family
+
+Inspired by the real `sdks`, `go-sdk`, `java-sdk`, and `typescript-sdk`
+toolchains.
+
+```dang
+type AllSdks {
+  pub go: Sdk! {
+    Sdk(name: "go", sourcePath: "sdk/go")
+  }
+
+  pub java: Sdk! {
+    Sdk(name: "java", sourcePath: "sdk/java")
+  }
+
+  pub typescript: Sdk! {
+    Sdk(name: "typescript", sourcePath: "sdk/typescript")
+  }
+}
+
+type Sdk {
+  pub name: String!
+  pub sourcePath: String!
+}
+```
+
+Expected detected dimensions:
+
+```console
+root: { module, sdk }
+```
+
+#### Release Lanes
+
+Inspired by the repo's `release` flows plus SDK publishing.
+
+```dang
+type Release {
+  pub stable: ReleaseLane! {
+    ReleaseLane()
+  }
+
+  pub experimental: ReleaseLane! {
+    ReleaseLane()
+  }
+}
+
+type ReleaseLane {
+  pub go: Sdk! {
+    Sdk(name: "go")
+  }
+
+  pub java: Sdk! {
+    Sdk(name: "java")
+  }
+
+  pub typescript: Sdk! {
+    Sdk(name: "typescript")
+  }
+}
+
+type Sdk {
+  pub name: String!
+}
+```
+
+Expected detected dimensions:
+
+```console
+root: { module, release-lane, sdk }
+```
+
+#### Engine Test Split Collection
+
+Inspired directly by `toolchains/test-split`.
+
+```dang
+type TestSplit {
+  pub engineTests: EngineTests! {
+    EngineTests(keys: [
+      "base",
+      "provision",
+      "telemetry",
+      "call-and-shell",
+      "cli-engine",
+      "client-generator",
+    ])
+  }
+}
+
+type EngineTests @collection {
+  pub keys: [String!]
+
+  pub get(name: String!): EngineTest! {
+    EngineTest(name: name)
+  }
+}
+
+type EngineTest {
+  pub name: String!
+}
+```
+
+Expected detected dimensions:
+
+```console
+root: { module, engine-test }
+check: { module, engine-test }
+```
+
+#### CI Collision / Qualification
+
+Inspired by the real split between engine-focused and SDK-focused CI work.
+
+```dang
+type Ci {
+  pub engine: EngineChecks! {
+    EngineChecks()
+  }
+
+  pub sdks: SdkChecks! {
+    SdkChecks()
+  }
+}
+
+type EngineChecks {
+  pub lint: CheckStage! {
+    CheckStage(name: "lint")
+  }
+
+  pub test: CheckStage! {
+    CheckStage(name: "test")
+  }
+}
+
+type SdkChecks {
+  pub lint: CheckStage! {
+    CheckStage(name: "lint")
+  }
+
+  pub test: CheckStage! {
+    CheckStage(name: "test")
+  }
+}
+
+type CheckStage {
+  pub name: String!
+}
+```
+
+Expected detected dimensions:
+
+```console
+root: { module, engine, sdks, engine-check-stage, sdks-check-stage }
+```
+
+#### Verb Projection Composition
+
+Inspired by a monorepo root that contains engine checks and SDK generation in
+different subtrees.
+
+```dang
+type Ci {
+  pub engine: EngineSuite! {
+    EngineSuite()
+  }
+
+  pub sdks: SdkSuite! {
+    SdkSuite()
+  }
+}
+
+type EngineSuite {
+  pub lint: Void @check {
+    null
+  }
+}
+
+type SdkSuite {
+  pub generateClients: Directory! @generate {
+    directory
+  }
+}
+```
+
+Expected detected dimensions:
+
+```console
+root: { module, engine, sdks }
+check: { module, engine }
+generate: { module, sdks }
+check+generate: { module }
+```
+
 ## Schema
 
 ```graphql
@@ -674,6 +938,7 @@ enum Verb {
   CHECK
   GENERATE
   SHIP
+  """Reserved for a future design."""
   UP
 }
 
@@ -724,46 +989,25 @@ type FieldValue {
 }
 ```
 
-## Notes
+## Filter Algebra
 
-- **Static synthesis (no user-object evaluation):** root dimensions,
-  verb-scoped artifact dimensions, filter flag generation
-- **Dynamic enumeration:** items, item counts, coordinate values in the current
-  scope, collection-derived selector value discovery
-
-Non-collection selector synthesis is static. It should require only workspace
-module discovery plus schema/object introspection; it should not require
-evaluating user objects.
-
-For ordinary zero-arg object-returning members, selector synthesis uses the
-declared member name and return type only. It does not execute the function
-body to discover rows or dimensions.
-
-`Artifact.fields` is instance inspection only over already-materialized
-non-object fields. It does not call functions and does not surface
-object-valued traversal members.
-
-`items()` is the one enumeration surface. An implementation may satisfy it
-statically for ordinary object-structure scopes and dynamically for
-collection-backed scopes, but the API contract is the same.
-
-Root discovery and verb scopes may expose different dimensions. That is
-expected: `workspace.artifacts` shows the full root selector space, while
-`filterVerb(CHECK)`, `filterVerb(GENERATE)`, and other verb projections may
-prune that
-space before selector synthesis runs.
-
-### Filter Algebra
-
-- Every chained `filterDimension` / `filterVerb(...)` / etc. is **AND**
+- Every chained `filterDimension` / `filterVerb(...)` is **AND**
 - Multiple values within one `filterDimension` call is **OR** (list of values)
 - `filterDimension("X")` (no values) → select all items where dimension `X` is
-  present in the current scope
+  present in the current scope (non-null coordinate)
 - `filterDimension("X", ...)` is only valid if `X` is present in the current
-  scope's
-  `dimensions`
+  scope's `dimensions`
+- `filterDimension("X", [])` (empty list) is invalid; omit `values` for
+  presence filtering. The engine returns an error at call time.
 - `filterDimension` preserves the current scope's header row; it narrows only
   `items`
+- `filterDimension("X").filterDimension("X", ["a"])` is equivalent to
+  `filterDimension("X", ["a"])` — the value-filter is strictly narrower than
+  the presence-filter
+- `filterDimension("X", ["a"]).filterDimension("X", ["b"])` → intersection
+  (AND) — empty if no overlap
+- for a singleton dimension, `filterDimension("X")` and
+  `filterDimension("X", ["X"])` are equivalent
 - `filterVerb(...)` creates a new projected scope and may
   resynthesize `dimensions`
 - one verb projection is **OR** over descendants in the structural tree
@@ -771,12 +1015,29 @@ space before selector synthesis runs.
   structural tree
 - verb projection order does not matter, and repeating the same verb
   projection is a no-op
-- for a singleton dimension, `filterDimension("X")` and
-  `filterDimension("X", ["X"])` are
-  equivalent
-- `filterDimension("X", ["a"]).filterDimension("X", ["b"])` → intersection
-  (AND) — empty if no overlap
 - verb projections do not follow cross-artifact references
+
+## Synthesis Constraints
+
+- **Static synthesis (no user-object evaluation):** non-collection selector
+  synthesis requires only workspace module discovery plus schema/object
+  introspection. It does not require evaluating user objects.
+- **Dynamic enumeration:** `items()`, item counts, and coordinate values in
+  the current scope are dynamic. Collection-derived selector value discovery
+  is also dynamic.
+- For ordinary zero-arg object-returning members, selector synthesis uses the
+  declared member name and return type only. It does not execute the function
+  body to discover rows or dimensions.
+- `Artifact.fields` is instance inspection only over already-materialized
+  non-object fields. It does not call functions and does not surface
+  object-valued traversal members.
+- `items()` is the one enumeration surface. An implementation may satisfy it
+  statically for ordinary object-structure scopes and dynamically for
+  collection-backed scopes, but the API contract is the same.
+- Root discovery and verb scopes may expose different dimensions. That is
+  expected: `workspace.artifacts` shows the full root selector space, while
+  `filterVerb(CHECK)`, `filterVerb(GENERATE)`, and other verb projections may
+  prune that space before selector synthesis runs.
 
 ## Implementation
 
