@@ -46,6 +46,7 @@
         }
       ],
       "interfaces": [],
+      "possibleTypes": null,
       "directives": []
     },
     {
@@ -59,13 +60,23 @@
             "kind": "NON_NULL",
             "ofType": {
               "kind": "SCALAR",
-              "name": "DepID"
+              "name": "ID"
             }
           },
           "args": [],
           "isDeprecated": false,
           "deprecationReason": null,
-          "directives": []
+          "directives": [
+            {
+              "name": "expectedType",
+              "args": [
+                {
+                  "name": "name",
+                  "value": "\"Dep\""
+                }
+              ]
+            }
+          ]
         },
         {
           "name": "method1",
@@ -180,6 +191,7 @@
         }
       ],
       "interfaces": [],
+      "possibleTypes": null,
       "directives": [
         {
           "name": "sourceMap",
@@ -242,10 +254,20 @@
                 "kind": "NON_NULL",
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "DepID"
+                  "name": "ID"
                 }
               },
-              "directives": [],
+              "directives": [
+                {
+                  "name": "expectedType",
+                  "args": [
+                    {
+                      "name": "name",
+                      "value": "\"Dep\""
+                    }
+                  ]
+                }
+              ],
               "isDeprecated": false,
               "deprecationReason": null
             },
@@ -361,6 +383,7 @@
         }
       ],
       "interfaces": [],
+      "possibleTypes": null,
       "directives": []
     },
     {
@@ -404,62 +427,10 @@
               ]
             }
           ]
-        },
-        {
-          "name": "loadDepFromID",
-          "description": "Load a Dep from its ID.",
-          "type": {
-            "kind": "NON_NULL",
-            "ofType": {
-              "kind": "OBJECT",
-              "name": "Dep"
-            }
-          },
-          "args": [
-            {
-              "name": "id",
-              "description": "",
-              "defaultValue": null,
-              "type": {
-                "kind": "NON_NULL",
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "DepID"
-                }
-              },
-              "directives": [],
-              "isDeprecated": false,
-              "deprecationReason": null
-            }
-          ],
-          "isDeprecated": false,
-          "deprecationReason": null,
-          "directives": [
-            {
-              "name": "sourceMap",
-              "args": [
-                {
-                  "name": "module",
-                  "value": "\"dep\""
-                },
-                {
-                  "name": "filename",
-                  "value": "\"main.go\""
-                },
-                {
-                  "name": "line",
-                  "value": "5"
-                },
-                {
-                  "name": "column",
-                  "value": "6"
-                }
-              ]
-            }
-          ]
         }
       ],
       "interfaces": [],
+      "possibleTypes": null,
       "directives": []
     }
   ],
@@ -467,13 +438,17 @@
     {
       "name": "check",
       "description": "Indicates that this function is a check.",
-      "locations": ["FIELD_DEFINITION"],
+      "locations": [
+        "FIELD_DEFINITION"
+      ],
       "args": []
     },
     {
       "name": "defaultAddress",
       "description": "Indicates that the argument defaults to a container address.",
-      "locations": ["ARGUMENT_DEFINITION"],
+      "locations": [
+        "ARGUMENT_DEFINITION"
+      ],
       "args": [
         {
           "name": "address",
@@ -481,7 +456,10 @@
           "defaultValue": null,
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "String" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
           },
           "directives": [],
           "isDeprecated": false,
@@ -492,7 +470,9 @@
     {
       "name": "defaultPath",
       "description": "Indicates that the argument defaults to a contextual path.",
-      "locations": ["ARGUMENT_DEFINITION"],
+      "locations": [
+        "ARGUMENT_DEFINITION"
+      ],
       "args": [
         {
           "name": "path",
@@ -500,7 +480,10 @@
           "defaultValue": null,
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "String" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
           },
           "directives": [],
           "isDeprecated": false,
@@ -524,7 +507,10 @@
           "defaultValue": "\"No longer supported\"",
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "String" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
           },
           "directives": [],
           "isDeprecated": false,
@@ -535,7 +521,9 @@
     {
       "name": "enumValue",
       "description": "Indicates the underlying value of an enum member.",
-      "locations": ["ENUM_VALUE"],
+      "locations": [
+        "ENUM_VALUE"
+      ],
       "args": [
         {
           "name": "value",
@@ -543,7 +531,10 @@
           "defaultValue": null,
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "String" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
           },
           "directives": [],
           "isDeprecated": false,
@@ -567,7 +558,10 @@
           "defaultValue": "\"Not stabilized\"",
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "String" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
           },
           "directives": [],
           "isDeprecated": false,
@@ -578,13 +572,17 @@
     {
       "name": "generate",
       "description": "Indicates that this function is a generate function.",
-      "locations": ["FIELD_DEFINITION"],
+      "locations": [
+        "FIELD_DEFINITION"
+      ],
       "args": []
     },
     {
       "name": "ignorePatterns",
       "description": "Filter directory contents using .gitignore-style glob patterns.",
-      "locations": ["ARGUMENT_DEFINITION"],
+      "locations": [
+        "ARGUMENT_DEFINITION"
+      ],
       "args": [
         {
           "name": "patterns",
@@ -596,7 +594,10 @@
               "kind": "LIST",
               "ofType": {
                 "kind": "NON_NULL",
-                "ofType": { "kind": "SCALAR", "name": "String" }
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
               }
             }
           },
@@ -626,7 +627,10 @@
           "defaultValue": null,
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "String" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
           },
           "directives": [],
           "isDeprecated": false,
@@ -638,7 +642,10 @@
           "defaultValue": null,
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "String" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
           },
           "directives": [],
           "isDeprecated": false,
@@ -650,7 +657,10 @@
           "defaultValue": null,
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "Int" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int"
+            }
           },
           "directives": [],
           "isDeprecated": false,
@@ -662,7 +672,10 @@
           "defaultValue": null,
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "Int" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int"
+            }
           },
           "directives": [],
           "isDeprecated": false,
@@ -674,7 +687,10 @@
           "defaultValue": null,
           "type": {
             "kind": "NON_NULL",
-            "ofType": { "kind": "SCALAR", "name": "String" }
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
           },
           "directives": [],
           "isDeprecated": false,

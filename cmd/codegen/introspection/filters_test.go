@@ -2,12 +2,15 @@ package introspection
 
 import (
 	"encoding/json"
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+var update = flag.Bool("update", false, "update golden files")
 
 const testDataDir = "./testdata"
 
@@ -20,10 +23,17 @@ func TestKeepOnlyDep(t *testing.T) {
 
 	result := schema.Include("dep")
 
-	resultJSON, err := json.Marshal(result)
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
 	assert.NoError(t, err)
 
-	expectedJSON, err := os.ReadFile(filepath.Join(testDataDir, "keep_dep_expected_schema.json"))
+	goldenPath := filepath.Join(testDataDir, "keep_dep_expected_schema.json")
+	if *update {
+		err = os.WriteFile(goldenPath, append(resultJSON, '\n'), 0o644)
+		assert.NoError(t, err)
+		return
+	}
+
+	expectedJSON, err := os.ReadFile(goldenPath)
 	assert.NoError(t, err)
 
 	assert.JSONEq(t, string(expectedJSON), string(resultJSON))
@@ -38,10 +48,17 @@ func TestKeepDepAndTest(t *testing.T) {
 
 	result := schema.Include("dep", "test")
 
-	resultJSON, err := json.Marshal(result)
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
 	assert.NoError(t, err)
 
-	expectedJSON, err := os.ReadFile(filepath.Join(testDataDir, "keep_dep_and_test_expected_schema.json"))
+	goldenPath := filepath.Join(testDataDir, "keep_dep_and_test_expected_schema.json")
+	if *update {
+		err = os.WriteFile(goldenPath, append(resultJSON, '\n'), 0o644)
+		assert.NoError(t, err)
+		return
+	}
+
+	expectedJSON, err := os.ReadFile(goldenPath)
 	assert.NoError(t, err)
 
 	assert.JSONEq(t, string(expectedJSON), string(resultJSON))
@@ -88,10 +105,17 @@ func TestExcludeDepAndTest(t *testing.T) {
 
 	result := schema.Exclude("dep", "test")
 
-	resultJSON, err := json.Marshal(result)
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
 	assert.NoError(t, err)
 
-	expectedJSON, err := os.ReadFile(filepath.Join(testDataDir, "keep_core_only_expected_schema.json"))
+	goldenPath := filepath.Join(testDataDir, "keep_core_only_expected_schema.json")
+	if *update {
+		err = os.WriteFile(goldenPath, append(resultJSON, '\n'), 0o644)
+		assert.NoError(t, err)
+		return
+	}
+
+	expectedJSON, err := os.ReadFile(goldenPath)
 	assert.NoError(t, err)
 
 	assert.JSONEq(t, string(expectedJSON), string(resultJSON))
