@@ -69,10 +69,24 @@ type ElixirSdkDev {
   """
   pub codegenTest: Void! @check {
     withCodegen(devContainer)
+      .withEnvVariable("CI", "true")
       .withExec(["mix", "test"])
       .sync
 
     null
+  }
+
+  """
+  Update codegen test snapshots (auto-accept Mneme changes)
+  """
+  pub updateCodegenTests: Changeset! {
+    let ctr = withCodegen(devContainer)
+    ctr
+      .withEnvVariable("MNEME_ACCEPT", "1")
+      .withExec(["mix", "test"])
+      .directory(".")
+      .withoutDirectory("_build")
+      .changes(ctr.directory("."))
   }
 
   """
