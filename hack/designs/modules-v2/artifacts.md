@@ -702,7 +702,8 @@ Flags:
 Fixture:
 
 - root dimensions: `type`, `go-module`, `go-test`
-- statically enumerable `type` values in scope: `go`, `js`, `go-test`
+- statically enumerable `type` values in scope: `go`, `js`, `go-module`,
+  `go-test`
 - statically enumerable `go-module` values in scope: `./my-app`, `./lib`
 - `go-test` values are dynamic
 

@@ -353,7 +353,7 @@ Base Artifacts scope:
 ```text
 workspace.artifacts
   .filterVerb(CHECK)
-  .filterDimension("type", ["go"])
+  .filterDimension("type", ["go-test"])
 ```
 
 Expanded by a collection:
@@ -361,7 +361,7 @@ Expanded by a collection:
 ```text
 workspace.artifacts
   .filterVerb(CHECK)
-  .filterDimension("type", ["go"])
+  .filterDimension("type", ["go-test"])
   .filterDimension("go-test", ["TestFoo"])
 ```
 
@@ -382,7 +382,7 @@ Example:
 ```text
 workspace.artifacts
   .filterVerb(CHECK)
-  .filterDimension("type", ["go"])
+  .filterDimension("type", ["go-test"])
   .filterDimension("go-test", ["TestFoo", "TestBar"])
   .check
 ```
