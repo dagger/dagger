@@ -150,11 +150,24 @@ async fn test_node_load_file() {
     .unwrap();
 }
 
-// TODO: test_container_sync_roundtrip — requires @expectedType codegen
-//   so that sync() returns Container instead of Id.
-//   connect(|client| async move {
-//       let synced: Container = client.container().from("alpine:3.16.2")
-//           .sync().await?;
-//       let out = synced.with_exec(vec!["cat", "/etc/alpine-release"]).stdout().await?;
-//       assert_eq!(out, "3.16.2\n");
-//   })
+#[tokio::test]
+async fn test_container_sync_roundtrip() {
+    connect(|client| async move {
+        let synced = client
+            .container()
+            .from("alpine:3.16.2")
+            .sync()
+            .await
+            .unwrap();
+        let out = synced
+            .with_exec(vec!["cat", "/etc/alpine-release"])
+            .stdout()
+            .await
+            .unwrap();
+        assert_eq!(out, "3.16.2\n".to_string());
+
+        Ok(())
+    })
+    .await
+    .unwrap();
+}
