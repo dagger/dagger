@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * Source location information.
  */
-class SourceMap extends Client\AbstractObject implements Client\IdAble
+class SourceMap extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The column number within the line.

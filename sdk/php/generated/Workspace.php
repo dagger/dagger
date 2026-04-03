@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A Dagger workspace detected from the current working directory.
  */
-class Workspace extends Client\AbstractObject implements Client\IdAble
+class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Canonical Dagger address of the workspace directory.

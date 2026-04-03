@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class PhpSdk extends Client\AbstractObject implements Client\IdAble
+class PhpSdk extends Client\AbstractObject implements Client\IdAble, Node
 {
     public function codegen(ModuleSource $modSource, File $introspectionJson): GeneratedCode
     {

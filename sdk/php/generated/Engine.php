@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * The Dagger engine configuration and state
  */
-class Engine extends Client\AbstractObject implements Client\IdAble
+class Engine extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The list of connected client IDs

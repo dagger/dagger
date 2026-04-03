@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class Check extends Client\AbstractObject implements Client\IdAble
+class Check extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Whether the check completed

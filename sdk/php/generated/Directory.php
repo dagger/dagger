@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A directory.
  */
-class Directory extends Client\AbstractObject implements Client\IdAble
+class Directory extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Converts this directory to a local git repository

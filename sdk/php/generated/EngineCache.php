@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A cache storage for the Dagger engine
  */
-class EngineCache extends Client\AbstractObject implements Client\IdAble
+class EngineCache extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The current set of entries in the cache

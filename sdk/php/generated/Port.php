@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A port exposed by a container.
  */
-class Port extends Client\AbstractObject implements Client\IdAble
+class Port extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The port description.

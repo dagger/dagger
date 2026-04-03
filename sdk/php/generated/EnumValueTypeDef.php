@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a value in a custom enum defined in a Module.
  */
-class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble
+class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The reason this enum member is deprecated, if any.

@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * An environment variable name and value.
  */
-class EnvVariable extends Client\AbstractObject implements Client\IdAble
+class EnvVariable extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this EnvVariable.

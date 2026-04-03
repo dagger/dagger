@@ -9,13 +9,10 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A directory whose contents persist across runs.
+ * Query-builder client for the Node interface.
  */
-class CacheVolume extends Client\AbstractObject implements Client\IdAble, Node
+class NodeClient extends Client\AbstractObject implements Node, Client\IdAble
 {
-    /**
-     * A unique identifier for this CacheVolume.
-     */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');

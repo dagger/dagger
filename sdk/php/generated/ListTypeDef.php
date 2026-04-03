@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a list type in a Module.
  */
-class ListTypeDef extends Client\AbstractObject implements Client\IdAble
+class ListTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The type of the elements in the list.

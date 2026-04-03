@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * An active function call.
  */
-class FunctionCall extends Client\AbstractObject implements Client\IdAble
+class FunctionCall extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this FunctionCall.

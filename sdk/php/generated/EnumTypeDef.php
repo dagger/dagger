@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a custom enum defined in a Module.
  */
-class EnumTypeDef extends Client\AbstractObject implements Client\IdAble
+class EnumTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A doc string for the enum, if any.

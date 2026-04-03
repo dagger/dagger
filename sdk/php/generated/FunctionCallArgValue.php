@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A value passed as a named argument to a function call.
  */
-class FunctionCallArgValue extends Client\AbstractObject implements Client\IdAble
+class FunctionCallArgValue extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this FunctionCallArgValue.

@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A file.
  */
-class File extends Client\AbstractObject implements Client\IdAble
+class File extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Parse as an env file

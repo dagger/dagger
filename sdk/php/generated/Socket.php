@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A Unix or TCP/IP socket that can be mounted into a container.
  */
-class Socket extends Client\AbstractObject implements Client\IdAble
+class Socket extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this Socket.

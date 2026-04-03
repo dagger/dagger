@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class Env extends Client\AbstractObject implements Client\IdAble
+class Env extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Return the check with the given name from the installed modules. Must match exactly one check.

@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * The client generated for the module.
  */
-class ModuleConfigClient extends Client\AbstractObject implements Client\IdAble
+class ModuleConfigClient extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The directory the client is generated in.

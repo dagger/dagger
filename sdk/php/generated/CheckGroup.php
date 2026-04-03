@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class CheckGroup extends Client\AbstractObject implements Client\IdAble
+class CheckGroup extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this CheckGroup.

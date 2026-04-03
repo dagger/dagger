@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a custom scalar defined in a Module.
  */
-class ScalarTypeDef extends Client\AbstractObject implements Client\IdAble
+class ScalarTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A doc string for the scalar, if any.

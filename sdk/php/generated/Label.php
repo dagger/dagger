@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A simple key value object that represents a label.
  */
-class Label extends Client\AbstractObject implements Client\IdAble
+class Label extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this Label.

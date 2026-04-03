@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class Error extends Client\AbstractObject implements Client\IdAble
+class Error extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this Error.

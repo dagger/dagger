@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class SearchResult extends Client\AbstractObject implements Client\IdAble
+class SearchResult extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The byte offset of this line within the file.

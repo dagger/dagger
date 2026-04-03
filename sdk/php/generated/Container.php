@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * An OCI-compatible container, also known as a Docker container.
  */
-class Container extends Client\AbstractObject implements Client\IdAble
+class Container extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Turn the container into a Service.

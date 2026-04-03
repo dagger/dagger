@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class JsonValue extends Client\AbstractObject implements Client\IdAble
+class JsonValue extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Decode an array from json

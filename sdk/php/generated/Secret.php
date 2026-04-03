@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
-class Secret extends Client\AbstractObject implements Client\IdAble
+class Secret extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this Secret.

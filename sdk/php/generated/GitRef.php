@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A git ref (tag, branch, or commit).
  */
-class GitRef extends Client\AbstractObject implements Client\IdAble
+class GitRef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The resolved commit id at this ref.

@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class GeneratorGroup extends Client\AbstractObject implements Client\IdAble
+class GeneratorGroup extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The combined changes from the generators execution

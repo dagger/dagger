@@ -13,7 +13,7 @@ namespace Dagger;
  *
  * A function always evaluates against a parent object and is given a set of named arguments.
  */
-class Function_ extends Client\AbstractObject implements Client\IdAble
+class Function_ extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Arguments accepted by the function, if any.

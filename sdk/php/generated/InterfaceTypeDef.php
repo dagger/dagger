@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a custom interface defined in a Module.
  */
-class InterfaceTypeDef extends Client\AbstractObject implements Client\IdAble
+class InterfaceTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The doc string for the interface, if any.

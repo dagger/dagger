@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A file or directory status object.
  */
-class Stat extends Client\AbstractObject implements Client\IdAble
+class Stat extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * file type

@@ -66,9 +66,8 @@ final readonly class IdableHandler implements SubscribingHandlerInterface
             IdableSubscriber::ORIGINAL_CLASS_NAME
         ];
 
-        $shortName = (new ReflectionClass($originalClassName))->getShortName();
-        $method = sprintf('load%sFromId', $shortName);
-
-        return $this->client->$method(new Id($idAble));
+        $result = $this->client->loadObjectFromId($originalClassName, new Id($idAble));
+        assert($result instanceof IdAble);
+        return $result;
     }
 }

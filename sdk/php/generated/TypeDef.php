@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a parameter or return type in a Module.
  */
-class TypeDef extends Client\AbstractObject implements Client\IdAble
+class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.

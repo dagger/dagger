@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a custom object defined in a Module.
  */
-class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble
+class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The function used to construct new instances of this object, if any

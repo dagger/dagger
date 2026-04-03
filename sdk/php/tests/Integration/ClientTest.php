@@ -61,8 +61,10 @@ class ClientTest extends TestCase
         $stdout = $alpine->withExec(['cat', '/etc/alpine-release'])->stdout();
         $this->assertEquals('3.16.2', trim($stdout));
 
-        $contents = $client->loadContainerFromID($alpine->id())
-            ->rootfs()
+        $contents = $client->loadObjectFromId(
+            \Dagger\Container::class,
+            $alpine->id(),
+        )->rootfs()
             ->file('/etc/alpine-release')
             ->contents();
 

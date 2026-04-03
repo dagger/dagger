@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class Generator extends Client\AbstractObject implements Client\IdAble
+class Generator extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The generated changeset

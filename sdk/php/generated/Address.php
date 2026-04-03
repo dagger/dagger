@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
  */
-class Address extends Client\AbstractObject implements Client\IdAble
+class Address extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Load a container from the address.

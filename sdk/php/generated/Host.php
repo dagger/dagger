@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * Information about the host environment.
  */
-class Host extends Client\AbstractObject implements Client\IdAble
+class Host extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Accesses a container image on the host.

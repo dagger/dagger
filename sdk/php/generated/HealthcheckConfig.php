@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * Image healthcheck configuration.
  */
-class HealthcheckConfig extends Client\AbstractObject implements Client\IdAble
+class HealthcheckConfig extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Healthcheck command arguments.

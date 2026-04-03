@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A set of cache entries returned by a query to a cache
  */
-class EngineCacheEntrySet extends Client\AbstractObject implements Client\IdAble
+class EngineCacheEntrySet extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The total disk space used by the cache entries in this set.

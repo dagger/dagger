@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * Reflective module API provided to functions at runtime.
  */
-class CurrentModule extends Client\AbstractObject implements Client\IdAble
+class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The dependencies of the module.

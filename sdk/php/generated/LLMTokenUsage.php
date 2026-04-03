@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble
+class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble, Node
 {
     public function cachedTokenReads(): int
     {

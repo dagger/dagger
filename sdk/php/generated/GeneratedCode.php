@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * The result of running an SDK's codegen.
  */
-class GeneratedCode extends Client\AbstractObject implements Client\IdAble
+class GeneratedCode extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The directory containing the generated code.

@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class SearchSubmatch extends Client\AbstractObject implements Client\IdAble
+class SearchSubmatch extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The match's end offset within the matched lines.

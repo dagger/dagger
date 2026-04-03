@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * Dagger Cloud configuration and state
  */
-class Cloud extends Client\AbstractObject implements Client\IdAble
+class Cloud extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this Cloud.

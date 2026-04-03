@@ -13,7 +13,7 @@ namespace Dagger;
  *
  * A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
  */
-class FieldTypeDef extends Client\AbstractObject implements Client\IdAble
+class FieldTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The reason this enum member is deprecated, if any.

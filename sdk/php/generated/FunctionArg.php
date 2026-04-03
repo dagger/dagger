@@ -13,7 +13,7 @@ namespace Dagger;
  *
  * This is a specification for an argument at function definition time, not an argument passed at function call time.
  */
-class FunctionArg extends Client\AbstractObject implements Client\IdAble
+class FunctionArg extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)

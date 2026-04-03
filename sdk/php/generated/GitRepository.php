@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A git repository.
  */
-class GitRepository extends Client\AbstractObject implements Client\IdAble
+class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Returns details of a branch.
