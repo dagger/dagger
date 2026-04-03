@@ -266,6 +266,28 @@ func (ElixirSuite) TestReqAdapter(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "hello-from-req-adapter\n", out)
 }
 
+func (ElixirSuite) TestSelfCalls(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("can call with arguments", func(ctx context.Context, t *testctx.T) {
+		out, err := elixirModule(t, c, "self-calls").
+			With(daggerCall("print", "--string-arg", "hello")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+
+	t.Run("can call with default arguments", func(ctx context.Context, t *testctx.T) {
+		out, err := elixirModule(t, c, "self-calls").
+			With(daggerCall("print-default")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "Hello Self Calls\n", out)
+	})
+}
+
 func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/elixir", moduleName))
