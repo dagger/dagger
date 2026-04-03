@@ -81,12 +81,14 @@ type ElixirSdkDev {
   """
   pub updateCodegenTests: Changeset! {
     let ctr = withCodegen(devContainer)
+    let before = ctr.directory("/").filter(include: ["sdk/elixir/**"])
     ctr
       .withEnvVariable("MNEME_ACCEPT", "1")
       .withExec(["mix", "test"])
-      .directory(".")
       .withoutDirectory("_build")
-      .changes(ctr.directory("."))
+      .directory("/")
+      .filter(include: ["sdk/elixir/**"])
+      .changes(before)
   }
 
   """
