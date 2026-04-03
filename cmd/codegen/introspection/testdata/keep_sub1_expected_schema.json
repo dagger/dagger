@@ -8,13 +8,13 @@
       "name": "Binding",
       "fields": [
         {
-          "name": "asDep",
-          "description": "Retrieve the binding value, as type Dep",
+          "name": "asSub1",
+          "description": "Retrieve the binding value, as type Sub1",
           "type": {
             "kind": "NON_NULL",
             "ofType": {
               "kind": "OBJECT",
-              "name": "Dep"
+              "name": "Sub1"
             }
           },
           "args": [],
@@ -26,15 +26,52 @@
               "args": [
                 {
                   "name": "module",
-                  "value": "\"dep\""
+                  "value": "\"sub1\""
                 },
                 {
                   "name": "filename",
-                  "value": "\"main.go\""
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
                 },
                 {
                   "name": "line",
-                  "value": "5"
+                  "value": "3"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "asSub1Obj",
+          "description": "Retrieve the binding value, as type Sub1Obj",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Sub1Obj"
+            }
+          },
+          "args": [],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "9"
                 },
                 {
                   "name": "column",
@@ -45,184 +82,25 @@
           ]
         }
       ],
-      "interfaces": [],
-      "possibleTypes": null,
-      "directives": []
-    },
-    {
-      "kind": "OBJECT",
-      "name": "Dep",
-      "fields": [
+      "interfaces": [
         {
-          "name": "id",
-          "description": "A unique identifier for this Dep.",
-          "type": {
-            "kind": "NON_NULL",
-            "ofType": {
-              "kind": "SCALAR",
-              "name": "ID"
-            }
-          },
-          "args": [],
-          "isDeprecated": false,
-          "deprecationReason": null,
-          "directives": [
-            {
-              "name": "expectedType",
-              "args": [
-                {
-                  "name": "name",
-                  "value": "\"Dep\""
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "method1",
-          "description": "",
-          "type": {
-            "kind": "NON_NULL",
-            "ofType": {
-              "kind": "SCALAR",
-              "name": "String"
-            }
-          },
-          "args": [],
-          "isDeprecated": false,
-          "deprecationReason": null,
-          "directives": [
-            {
-              "name": "sourceMap",
-              "args": [
-                {
-                  "name": "module",
-                  "value": "\"dep\""
-                },
-                {
-                  "name": "filename",
-                  "value": "\"main.go\""
-                },
-                {
-                  "name": "line",
-                  "value": "7"
-                },
-                {
-                  "name": "column",
-                  "value": "1"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "method2",
-          "description": "",
-          "type": {
-            "kind": "NON_NULL",
-            "ofType": {
-              "kind": "SCALAR",
-              "name": "String"
-            }
-          },
-          "args": [],
-          "isDeprecated": false,
-          "deprecationReason": null,
-          "directives": [
-            {
-              "name": "sourceMap",
-              "args": [
-                {
-                  "name": "module",
-                  "value": "\"dep\""
-                },
-                {
-                  "name": "filename",
-                  "value": "\"main.go\""
-                },
-                {
-                  "name": "line",
-                  "value": "11"
-                },
-                {
-                  "name": "column",
-                  "value": "1"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "method3",
-          "description": "",
-          "type": {
-            "kind": "NON_NULL",
-            "ofType": {
-              "kind": "SCALAR",
-              "name": "String"
-            }
-          },
-          "args": [],
-          "isDeprecated": false,
-          "deprecationReason": null,
-          "directives": [
-            {
-              "name": "sourceMap",
-              "args": [
-                {
-                  "name": "module",
-                  "value": "\"dep\""
-                },
-                {
-                  "name": "filename",
-                  "value": "\"main.go\""
-                },
-                {
-                  "name": "line",
-                  "value": "15"
-                },
-                {
-                  "name": "column",
-                  "value": "1"
-                }
-              ]
-            }
-          ]
+          "kind": "INTERFACE",
+          "name": "Node",
+          "interfaces": null,
+          "possibleTypes": null,
+          "directives": null
         }
       ],
-      "interfaces": [],
       "possibleTypes": null,
-      "directives": [
-        {
-          "name": "sourceMap",
-          "args": [
-            {
-              "name": "module",
-              "value": "\"dep\""
-            },
-            {
-              "name": "filename",
-              "value": "\"main.go\""
-            },
-            {
-              "name": "line",
-              "value": "5"
-            },
-            {
-              "name": "column",
-              "value": "6"
-            }
-          ]
-        }
-      ]
+      "directives": []
     },
     {
       "kind": "OBJECT",
       "name": "Env",
       "fields": [
         {
-          "name": "withDepInput",
-          "description": "Create or update a binding of type Dep in the environment",
+          "name": "withSub1Input",
+          "description": "Create or update a binding of type Sub1 in the environment",
           "type": {
             "kind": "NON_NULL",
             "ofType": {
@@ -248,7 +126,7 @@
             },
             {
               "name": "value",
-              "description": "The Dep value to assign to the binding",
+              "description": "The Sub1 value to assign to the binding",
               "defaultValue": null,
               "type": {
                 "kind": "NON_NULL",
@@ -257,17 +135,7 @@
                   "name": "ID"
                 }
               },
-              "directives": [
-                {
-                  "name": "expectedType",
-                  "args": [
-                    {
-                      "name": "name",
-                      "value": "\"Dep\""
-                    }
-                  ]
-                }
-              ],
+              "directives": [],
               "isDeprecated": false,
               "deprecationReason": null
             },
@@ -295,15 +163,15 @@
               "args": [
                 {
                   "name": "module",
-                  "value": "\"dep\""
+                  "value": "\"sub1\""
                 },
                 {
                   "name": "filename",
-                  "value": "\"main.go\""
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
                 },
                 {
                   "name": "line",
-                  "value": "5"
+                  "value": "3"
                 },
                 {
                   "name": "column",
@@ -314,8 +182,91 @@
           ]
         },
         {
-          "name": "withDepOutput",
-          "description": "Declare a desired Dep output to be assigned in the environment",
+          "name": "withSub1ObjInput",
+          "description": "Create or update a binding of type Sub1Obj in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "value",
+              "description": "The Sub1Obj value to assign to the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "The purpose of the input",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "9"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "withSub1ObjOutput",
+          "description": "Declare a desired Sub1Obj output to be assigned in the environment",
           "type": {
             "kind": "NON_NULL",
             "ofType": {
@@ -363,15 +314,83 @@
               "args": [
                 {
                   "name": "module",
-                  "value": "\"dep\""
+                  "value": "\"sub1\""
                 },
                 {
                   "name": "filename",
-                  "value": "\"main.go\""
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
                 },
                 {
                   "name": "line",
-                  "value": "5"
+                  "value": "9"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "withSub1Output",
+          "description": "Declare a desired Sub1 output to be assigned in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "A description of the desired value of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "3"
                 },
                 {
                   "name": "column",
@@ -382,7 +401,15 @@
           ]
         }
       ],
-      "interfaces": [],
+      "interfaces": [
+        {
+          "kind": "INTERFACE",
+          "name": "Node",
+          "interfaces": null,
+          "possibleTypes": null,
+          "directives": null
+        }
+      ],
       "possibleTypes": null,
       "directives": []
     },
@@ -392,13 +419,13 @@
       "description": "The root of the DAG.",
       "fields": [
         {
-          "name": "dep",
+          "name": "sub1",
           "description": "",
           "type": {
             "kind": "NON_NULL",
             "ofType": {
               "kind": "OBJECT",
-              "name": "Dep"
+              "name": "Sub1"
             }
           },
           "args": [],
@@ -410,15 +437,15 @@
               "args": [
                 {
                   "name": "module",
-                  "value": "\"dep\""
+                  "value": "\"sub1\""
                 },
                 {
                   "name": "filename",
-                  "value": "\"main.go\""
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
                 },
                 {
                   "name": "line",
-                  "value": "5"
+                  "value": "3"
                 },
                 {
                   "name": "column",
@@ -429,9 +456,278 @@
           ]
         }
       ],
-      "interfaces": [],
+      "interfaces": [
+        {
+          "kind": "INTERFACE",
+          "name": "Node",
+          "interfaces": null,
+          "possibleTypes": null,
+          "directives": null
+        }
+      ],
       "possibleTypes": null,
       "directives": []
+    },
+    {
+      "kind": "OBJECT",
+      "name": "Sub1",
+      "fields": [
+        {
+          "name": "fn",
+          "description": "",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Sub1Obj"
+            }
+          },
+          "args": [
+            {
+              "name": "s",
+              "description": "",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [
+                {
+                  "name": "sourceMap",
+                  "args": [
+                    {
+                      "name": "module",
+                      "value": "\"sub1\""
+                    },
+                    {
+                      "name": "filename",
+                      "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                    },
+                    {
+                      "name": "line",
+                      "value": "5"
+                    },
+                    {
+                      "name": "column",
+                      "value": "19"
+                    }
+                  ]
+                }
+              ],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "5"
+                },
+                {
+                  "name": "column",
+                  "value": "1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "id",
+          "description": "A unique identifier for this Sub1.",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID"
+            }
+          },
+          "args": [],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": []
+        }
+      ],
+      "interfaces": [
+        {
+          "kind": "INTERFACE",
+          "name": "Node",
+          "interfaces": null,
+          "possibleTypes": null,
+          "directives": null
+        }
+      ],
+      "possibleTypes": [],
+      "directives": [
+        {
+          "name": "sourceMap",
+          "args": [
+            {
+              "name": "module",
+              "value": "\"sub1\""
+            },
+            {
+              "name": "filename",
+              "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+            },
+            {
+              "name": "line",
+              "value": "3"
+            },
+            {
+              "name": "column",
+              "value": "6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "OBJECT",
+      "name": "Sub1Obj",
+      "fields": [
+        {
+          "name": "foo",
+          "description": "",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": [],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "10"
+                },
+                {
+                  "name": "column",
+                  "value": "2"
+                }
+              ]
+            },
+            {
+              "name": "trivialResolveField",
+              "args": []
+            }
+          ]
+        },
+        {
+          "name": "getFoo",
+          "description": "",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": [],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "13"
+                },
+                {
+                  "name": "column",
+                  "value": "1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "id",
+          "description": "A unique identifier for this Sub1Obj.",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID"
+            }
+          },
+          "args": [],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": []
+        }
+      ],
+      "interfaces": [
+        {
+          "kind": "INTERFACE",
+          "name": "Node",
+          "interfaces": null,
+          "possibleTypes": null,
+          "directives": null
+        }
+      ],
+      "possibleTypes": [],
+      "directives": [
+        {
+          "name": "sourceMap",
+          "args": [
+            {
+              "name": "module",
+              "value": "\"sub1\""
+            },
+            {
+              "name": "filename",
+              "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+            },
+            {
+              "name": "line",
+              "value": "9"
+            },
+            {
+              "name": "column",
+              "value": "6"
+            }
+          ]
+        }
+      ]
     }
   ],
   "directives": [
@@ -528,6 +824,31 @@
         {
           "name": "value",
           "description": "",
+          "defaultValue": null,
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "directives": [],
+          "isDeprecated": false,
+          "deprecationReason": null
+        }
+      ]
+    },
+    {
+      "name": "expectedType",
+      "description": "Indicates the expected object or interface type for an ID value. On arguments, indicates what type of ID is expected. On fields, indicates the type of the returned ID.",
+      "locations": [
+        "ARGUMENT_DEFINITION",
+        "FIELD_DEFINITION"
+      ],
+      "args": [
+        {
+          "name": "name",
+          "description": "The name of the expected type.",
           "defaultValue": null,
           "type": {
             "kind": "NON_NULL",
