@@ -84,35 +84,74 @@ async fn test_container() {
     .unwrap();
 }
 
-// These tests document the expected API for node(id) loading and
-// sync() roundtrips. They are commented out because they reference
-// APIs that don't exist yet (Loadable trait, @expectedType codegen).
-// Uncomment as each feature lands.
-//
-// TODO: test_node_load_container — requires Loadable trait + codegen
-//   connect(|client| async move {
-//       let id = client.container().from("alpine:3.16.2").id().await?;
-//       let loaded: Container = client.load(id);
-//       let out = loaded.with_exec(vec!["cat", "/etc/alpine-release"]).stdout().await?;
-//       assert_eq!(out, "3.16.2\n");
-//   })
-//
-// TODO: test_node_load_directory — requires Loadable trait + codegen
-//   connect(|client| async move {
-//       let id = client.directory().with_new_file("/hello.txt", "world").id().await?;
-//       let loaded: Directory = client.load(id);
-//       assert_eq!(loaded.file("/hello.txt").contents().await?, "world");
-//   })
-//
-// TODO: test_node_load_file — requires Loadable trait + codegen
-//   connect(|client| async move {
-//       let id = client.directory().with_new_file("/hello.txt", "from-id")
-//           .file("/hello.txt").id().await?;
-//       let loaded: File = client.load(id);
-//       assert_eq!(loaded.contents().await?, "from-id");
-//   })
-//
+// Test that a Container can be loaded from its ID via node() + inline fragment.
+#[tokio::test]
+async fn test_node_load_container() {
+    connect(|client| async move {
+        let id = client.container().from("alpine:3.16.2").id().await.unwrap();
+
+        let loaded: dagger_sdk::Container = client.r#ref(id);
+        let out = loaded
+            .with_exec(vec!["cat", "/etc/alpine-release"])
+            .stdout()
+            .await
+            .unwrap();
+
+        assert_eq!(out, "3.16.2\n".to_string());
+
+        Ok(())
+    })
+    .await
+    .unwrap();
+}
+
+// Test that a Directory can be loaded from its ID via node().
+#[tokio::test]
+async fn test_node_load_directory() {
+    connect(|client| async move {
+        let id = client
+            .directory()
+            .with_new_file("/hello.txt", "world")
+            .id()
+            .await
+            .unwrap();
+
+        let loaded: dagger_sdk::Directory = client.r#ref(id);
+        let contents = loaded.file("/hello.txt").contents().await.unwrap();
+
+        assert_eq!("world", contents);
+
+        Ok(())
+    })
+    .await
+    .unwrap();
+}
+
+// Test that a File can be loaded from its ID via node().
+#[tokio::test]
+async fn test_node_load_file() {
+    connect(|client| async move {
+        let id = client
+            .directory()
+            .with_new_file("/hello.txt", "from-id")
+            .file("/hello.txt")
+            .id()
+            .await
+            .unwrap();
+
+        let loaded: dagger_sdk::File = client.r#ref(id);
+        let contents = loaded.contents().await.unwrap();
+
+        assert_eq!("from-id", contents);
+
+        Ok(())
+    })
+    .await
+    .unwrap();
+}
+
 // TODO: test_container_sync_roundtrip — requires @expectedType codegen
+//   so that sync() returns Container instead of Id.
 //   connect(|client| async move {
 //       let synced: Container = client.container().from("alpine:3.16.2")
 //           .sync().await?;

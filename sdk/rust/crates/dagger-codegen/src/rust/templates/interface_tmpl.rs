@@ -6,7 +6,7 @@ use crate::functions::{CommonFunctions, TypeRefExt};
 use crate::rust::functions::{format_name, format_struct_comment, format_struct_name};
 use crate::utility::OptionExt;
 
-use super::object_tmpl::render_object;
+use super::object_tmpl::{render_loadable_impl, render_object_without_loadable};
 
 /// Render an interface type as:
 ///   1. A Rust trait with async method signatures
@@ -17,6 +17,7 @@ pub fn render_interface(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<r
 
     // Rename the type to FooClient for the struct, so it doesn't
     // collide with the trait name.
+    let original_graphql_name = t.name.as_deref().unwrap_or_default();
     let client_name = t.name.as_ref().map(|n| format!("{n}Client"));
     let mut client_type = t.clone();
     client_type.name = client_name;
@@ -27,7 +28,11 @@ pub fn render_interface(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<r
             field.parent_type = Some(parent_snapshot.clone());
         }
     }
-    let client_tokens = render_object(funcs, &client_type)?;
+    let client_tokens = render_object_without_loadable(funcs, &client_type)?;
+
+    // Override the GraphQL name for Loadable: the Rust struct is
+    // NodeClient but the GraphQL type is Node.
+    let loadable_tokens = render_loadable_impl(&client_type, Some(original_graphql_name));
 
     let trait_impl_tokens = render_trait_impl_for_client(funcs, t);
 
@@ -35,6 +40,8 @@ pub fn render_interface(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<r
         $trait_tokens
 
         $client_tokens
+
+        $loadable_tokens
 
         $trait_impl_tokens
     })

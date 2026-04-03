@@ -208,4 +208,40 @@ mod tests {
             "expected node() to return NodeClient, not Node"
         );
     }
+
+    #[test]
+    fn loadable_impl_on_objects() {
+        let code = generate_from_json(interface_schema());
+        assert!(
+            code.contains("impl Loadable for Container"),
+            "expected 'impl Loadable for Container'"
+        );
+        assert!(
+            code.contains("impl Loadable for Directory"),
+            "expected 'impl Loadable for Directory'"
+        );
+    }
+
+    #[test]
+    fn loadable_impl_on_interface_client() {
+        let code = generate_from_json(interface_schema());
+        assert!(
+            code.contains("impl Loadable for NodeClient"),
+            "expected 'impl Loadable for NodeClient'"
+        );
+        // The GraphQL name must be the interface name, not the Rust struct name.
+        assert!(
+            code.contains(r#""Node""#),
+            "NodeClient.graphql_type() should return \"Node\", not \"NodeClient\""
+        );
+    }
+
+    #[test]
+    fn no_loadable_on_query() {
+        let code = generate_from_json(interface_schema());
+        assert!(
+            !code.contains("impl Loadable for Query"),
+            "Query should not implement Loadable (no id field)"
+        );
+    }
 }
