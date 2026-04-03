@@ -108,7 +108,9 @@ class QueryBuilder {
   QueryBuilder chainNode(String typeName, Object id) {
     Deque<QueryPart> list = new LinkedList<>();
     list.addAll(this.parts);
-    list.push(new QueryPart("node", Arguments.newBuilder().add("id", id.toString()).build()));
+    // Unwrap Scalar (e.g. ID) to its inner value — Scalar doesn't override toString()
+    String idStr = (id instanceof Scalar<?>) ? ((Scalar<?>) id).convert().toString() : id.toString();
+    list.push(new QueryPart("node", Arguments.newBuilder().add("id", idStr).build()));
     return new QueryBuilder(client, list, new ArrayList<>(), typeName);
   }
 
