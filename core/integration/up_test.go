@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"dagger.io/dagger"
@@ -17,6 +18,46 @@ func TestUp(t *testing.T) {
 
 func upTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
 	return specificTestEnv(t, c, "services")
+}
+
+// daggerUpVerify starts "dagger up" with the given args in the background,
+// polls the given URL until it responds, verifies the body matches the
+// expected content (case-insensitive grep), then stops the process.
+// Returns a WithContainerFunc suitable for use with Container.WithExec.
+func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec([]string{"sh", "-c", fmt.Sprintf(`
+			dagger up %s &
+			DAGGER_PID=$!
+
+			TIMEOUT=%d
+			ELAPSED=0
+			while ! wget -q --spider %s 2>/dev/null; do
+				sleep 2
+				ELAPSED=$((ELAPSED + 2))
+				if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+					echo "TIMEOUT: service did not become ready within ${TIMEOUT}s"
+					kill $DAGGER_PID 2>/dev/null
+					exit 1
+				fi
+			done
+
+			BODY=$(wget -qO- %s 2>/dev/null)
+			echo "$BODY" | grep -qi "%s" || {
+				echo "FAIL: expected %s in response, got: $BODY"
+				kill $DAGGER_PID 2>/dev/null
+				exit 1
+			}
+
+			echo "%s"
+			kill $DAGGER_PID 2>/dev/null
+			wait $DAGGER_PID 2>/dev/null
+			exit 0
+		`, upArgs, timeoutSecs, url, url, expectBodyContains, expectBodyContains, okMsg,
+		)}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
 }
 
 func (UpSuite) TestUpDirectSDK(ctx context.Context, t *testctx.T) {
@@ -54,7 +95,7 @@ func (UpSuite) TestUpEnvServices(ctx context.Context, t *testctx.T) {
 	modGen = modGen.WithWorkdir("hello-with-services")
 
 	// Call the module's CurrentEnvServices function which queries
-	// dag.CurrentWorkspace().Services().List() to verify services are visible
+	// dag.CurrentEnv().Services().List() to verify services are visible
 	// from within the module execution context.
 	out, err := modGen.
 		With(daggerExec("call", "current-env-services")).
@@ -80,6 +121,45 @@ func (UpSuite) TestUpPortCollision(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "8080")
 }
 
+func (UpSuite) TestUpServiceBinding(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := upTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.WithWorkdir("service-binding")
+
+	// Verify both services are listed
+	out, err := modGen.
+		With(daggerExec("up", "-l")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "backend")
+	require.Contains(t, out, "frontend")
+
+	t.Run("single service with binding", func(ctx context.Context, t *testctx.T) {
+		// Run "dagger up frontend" — frontend (nginx:80) depends on backend
+		// (redis:6379) via withServiceBinding. Backend starts as an internal
+		// service binding. Only frontend gets a host tunnel on port 80.
+		out, err := modGen.
+			With(daggerUpVerify("frontend", "http://localhost:80", "nginx",
+				"OK: single service with binding works", 120)).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "OK: single service with binding works")
+	})
+
+	t.Run("all services with dedup", func(ctx context.Context, t *testctx.T) {
+		// Run "dagger up" (all services). Backend (redis:6379) is both a
+		// standalone +up service AND a service binding inside frontend
+		// (nginx:80). Dagql dedup ensures only one backend instance runs.
+		out, err := modGen.
+			With(daggerUpVerify("", "http://localhost:80", "nginx",
+				"OK: all services with dedup works", 180)).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "OK: all services with dedup works")
+	})
+}
+
 func (UpSuite) TestUpPartialStartupFailure(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
@@ -103,42 +183,10 @@ func (UpSuite) TestUpRunService(ctx context.Context, t *testctx.T) {
 	modGen = modGen.WithWorkdir("hello-with-services")
 
 	// Run "dagger up web" in the background, wait for the tunneled port to
-	// respond, verify the nginx welcome page, then stop. A timeout ensures
-	// the test never hangs.
+	// respond, verify the nginx welcome page, then stop.
 	out, err := modGen.
-		WithExec([]string{"sh", "-c", `
-			# Start dagger up in the background
-			dagger up web &
-			DAGGER_PID=$!
-
-			# Poll until the tunneled port responds (nginx on port 80)
-			TIMEOUT=120
-			ELAPSED=0
-			while ! wget -q --spider http://localhost:80 2>/dev/null; do
-				sleep 2
-				ELAPSED=$((ELAPSED + 2))
-				if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-					echo "TIMEOUT: service did not become ready within ${TIMEOUT}s"
-					kill $DAGGER_PID 2>/dev/null
-					exit 1
-				fi
-			done
-
-			# Verify the service responds with nginx content
-			BODY=$(wget -qO- http://localhost:80 2>/dev/null)
-			echo "$BODY" | grep -qi "nginx" || {
-				echo "FAIL: expected nginx response, got: $BODY"
-				kill $DAGGER_PID 2>/dev/null
-				exit 1
-			}
-
-			echo "OK: service responded"
-			kill $DAGGER_PID 2>/dev/null
-			wait $DAGGER_PID 2>/dev/null
-			exit 0
-		`}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		With(daggerUpVerify("web", "http://localhost:80", "nginx",
+			"OK: service responded", 120)).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "OK: service responded")
@@ -218,39 +266,8 @@ func (UpSuite) TestUpPortMapping(ctx context.Context, t *testctx.T) {
 	// Run dagger up in the background with port mapping, verify service
 	// is accessible on the remapped port.
 	out, err := modGen.
-		WithExec([]string{"sh", "-c", `
-			# Start dagger up in the background
-			dagger up &
-			DAGGER_PID=$!
-
-			# Poll until the remapped port responds (nginx on port 3000)
-			TIMEOUT=120
-			ELAPSED=0
-			while ! wget -q --spider http://localhost:3000 2>/dev/null; do
-				sleep 2
-				ELAPSED=$((ELAPSED + 2))
-				if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-					echo "TIMEOUT: service did not become ready within ${TIMEOUT}s"
-					kill $DAGGER_PID 2>/dev/null
-					exit 1
-				fi
-			done
-
-			# Verify the service responds with nginx content on the remapped port
-			BODY=$(wget -qO- http://localhost:3000 2>/dev/null)
-			echo "$BODY" | grep -qi "nginx" || {
-				echo "FAIL: expected nginx response on port 3000, got: $BODY"
-				kill $DAGGER_PID 2>/dev/null
-				exit 1
-			}
-
-			echo "OK: port mapping works"
-			kill $DAGGER_PID 2>/dev/null
-			wait $DAGGER_PID 2>/dev/null
-			exit 0
-		`}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		With(daggerUpVerify("", "http://localhost:3000", "nginx",
+			"OK: port mapping works", 120)).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "OK: port mapping works")

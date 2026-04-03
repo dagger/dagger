@@ -56,6 +56,7 @@
             "core/integration/testdata/services/hello-with-services/",
             "core/integration/testdata/services/port-collision/",
             "core/integration/testdata/services/partial-failure/",
+            "core/integration/testdata/services/service-binding/",
             "toolchains/release/testdata/module/"
           ]
         }
