@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"dagger.io/dagger"
@@ -40,6 +41,22 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cmd.Flags().Lookup("mod"))
 	require.NotNil(t, cmd.Flags().Lookup("compat"))
+}
+
+func TestGenHelpDoesNotPanicWithModuleSubcommands(t *testing.T) {
+	oldOut := rootCmd.OutOrStdout()
+	oldErr := rootCmd.ErrOrStderr()
+	rootCmd.SetOut(io.Discard)
+	rootCmd.SetErr(io.Discard)
+	rootCmd.SetArgs([]string{"gen", "--help"})
+	t.Cleanup(func() {
+		rootCmd.SetOut(oldOut)
+		rootCmd.SetErr(oldErr)
+		rootCmd.SetArgs(nil)
+	})
+
+	_, err := rootCmd.ExecuteC()
+	require.NoError(t, err)
 }
 
 func TestWriteWorkspaceInfo(t *testing.T) {

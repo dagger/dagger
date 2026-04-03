@@ -254,8 +254,7 @@ dagger module init --blueprint=../my/blueprints/simple-webapp
 # Implement a standalone module in Go
 dagger module init --sdk=go
 `,
-	GroupID: moduleGroup.ID,
-	Args:    cobra.MaximumNArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 
