@@ -557,6 +557,16 @@ func (ss *Services) startWithKey(
 				cancel(err)
 				return nil, nil, err
 			}
+			if running.Wait == nil {
+				err := fmt.Errorf("service %s started without Wait callback", network.HostHash(key.Digest))
+				start.err = err
+				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
+				ss.l.Lock()
+				delete(ss.starting, key)
+				ss.l.Unlock()
+				cancel(err)
+				return nil, nil, err
+			}
 
 			ss.l.Lock()
 			delete(ss.starting, key)

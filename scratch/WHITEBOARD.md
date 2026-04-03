@@ -2938,6 +2938,7 @@ func FetchHTTPFile(
 - [x] Change `Service.Start(...)` and `runAndSnapshotChanges(...)` to operate on `*RunningService`.
 - [x] Move late-bound workspace refs onto `RunningService` ownership.
 - [x] Switch service startup to the sessionless `prepareMounts(...)` path and stop building fake client session groups for service mounts.
+- [x] Make tunnel and reverse-tunnel runtimes set a real `running.Wait` and stop through one idempotent shutdown path.
 
 #### Pure service values, runtime-owned refs
 * `Service` should be a pure declarative value.
@@ -3024,6 +3025,12 @@ func (svc *Service) runAndSnapshotChanges(
 * If `NewDirectoryWithSnapshot(...)` itself fails there, release the committed immutable snapshot handle directly.
 * Do not defer `immutableRef.Release(...)` after that handoff.
 * If result construction fails after the `Directory` is created, release the constructed `Directory` object before returning.
+* Tunnel runtimes must satisfy the same `RunningService` contract as container runtimes.
+  * `startTunnel(...)` and `startReverseTunnel(...)` must both set `running.Wait`.
+  * A successfully started service with `running.Wait == nil` is not a valid runtime state.
+  * Tunnel/reverse-tunnel shutdown must be idempotent, because explicit stop and spontaneous upstream/listener exit can race.
+  * Tunnel runtime should stop itself if its upstream exits; keeping a dead host-listener around as "running" is wrong.
+  * Reverse-tunnel runtime should likewise clean up its network namespace and report exit through `running.Wait`.
 
 ### core/container_exec.go
 #### Status
@@ -3147,6 +3154,7 @@ func unpackArchiveFile(
 - [x] Replace `starting map[ServiceKey]*sync.WaitGroup` with explicit `startingService` state.
 - [x] Make `Services` own `starting` / `running` / `exited` transitions and spontaneous-exit cleanup.
 - [x] Ensure session teardown cancels in-flight starts and stops running services without late publish.
+- [x] Reject any successfully started runtime that does not provide `running.Wait`.
 
 #### Session-owned runtime manager
 * `Services` is the authoritative owner of live service runtime state for a Dagger session.
@@ -3302,6 +3310,9 @@ func (ss *Services) handleExit(running *RunningService, err error)
   * stop all matching `running` services
 * When startup succeeds and the service is published, `Services` should launch a wait goroutine for that `RunningService`.
   * When `running.Wait(...)` returns, `Services.handleExit(...)` should remove that exact entry from `ss.running`, clear its binding count, and release tracked runtime refs.
+* `running.Wait` is a required part of the service runtime contract, not an optional best-effort callback.
+  * If `svc.Start(...)` returns success without filling in `running.Wait`, that is a startup bug and `startWithKey(...)` should fail immediately rather than publishing and then silently auto-evicting the runtime.
+  * This is especially important for tunnel runtimes, because `Endpoint(...)` and `Get(...)` rely on the service still being present in `ss.running` after `Start(...)` returns.
 * The manager-owned shutdown path should be idempotent.
   * `RunningService` should guard stop/ref-release with a `sync.Once` so explicit stop, session teardown, startup failure cleanup, and spontaneous-exit cleanup cannot double-release runtime refs.
 * MCP and any other code that needs to mutate a running service workspace should operate on `*RunningService`, not by smuggling runtime ownership through the pure `Service` value.

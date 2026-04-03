@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -775,13 +776,13 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService) (r
 	if err != nil {
 		return fmt.Errorf("start upstream: %w", err)
 	}
+	const bindHost = "0.0.0.0"
+	const dialHost = "127.0.0.1"
+	stopErr := errors.New("service stop called")
+	upstreamExitedErr := errors.New("upstream exited")
 
 	closers := make([]func() error, len(svc.TunnelPorts))
 	ports := make([]Port, len(svc.TunnelPorts))
-
-	// TODO: make these configurable?
-	const bindHost = "0.0.0.0"
-	const dialHost = "127.0.0.1"
 
 	for i, forward := range svc.TunnelPorts {
 		var frontend int
@@ -821,16 +822,48 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService) (r
 		closers[i] = closeListener
 	}
 
+	var shutdownOnce sync.Once
+	var shutdownErr error
+	shutdown := func(cause error) error {
+		shutdownOnce.Do(func() {
+			stop(cause)
+			svcs.Detach(svcCtx, upstream)
+			var errs []error
+			for _, closeListener := range closers {
+				errs = append(errs, closeListener())
+			}
+			shutdownErr = errors.Join(errs...)
+		})
+		return shutdownErr
+	}
+
+	go func() {
+		if upstream.Wait == nil {
+			return
+		}
+		err := upstream.Wait(context.Background())
+		if err != nil {
+			_ = shutdown(fmt.Errorf("%w: %w", upstreamExitedErr, err))
+			return
+		}
+		_ = shutdown(upstreamExitedErr)
+	}()
+
 	running.Host = dialHost
 	running.Ports = ports
 	running.Stop = func(_ context.Context, _ bool) error {
-		stop(errors.New("service stop called"))
-		svcs.Detach(svcCtx, upstream)
-		var errs []error
-		for _, closeListener := range closers {
-			errs = append(errs, closeListener())
+		return shutdown(stopErr)
+	}
+	running.Wait = func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-svcCtx.Done():
+			if errors.Is(context.Cause(svcCtx), stopErr) {
+				return nil
+			}
+			return context.Cause(svcCtx)
 		}
-		return errors.Join(errs...)
 	}
 	return nil
 }
@@ -901,6 +934,8 @@ func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningServ
 
 	// NB: decouple from the incoming ctx cancel and add our own
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
+	stopErr := errors.New("service stop called")
+	proxyExitedErr := errors.New("proxy exited")
 
 	exited := make(chan struct{}, 1)
 	var exitErr error
@@ -923,19 +958,39 @@ func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningServ
 			return err
 		}
 
+		var shutdownOnce sync.Once
+		var shutdownErr error
+		shutdown := func(cause error, ignoreExitErr bool) error {
+			shutdownOnce.Do(func() {
+				stop(cause)
+				waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
+				defer waitCancel()
+				netNS.Release(waitCtx)
+				select {
+				case <-waitCtx.Done():
+					shutdownErr = fmt.Errorf("timeout waiting for tunnel to stop: %w", waitCtx.Err())
+				case <-exited:
+					if !ignoreExitErr && exitErr != nil {
+						shutdownErr = exitErr
+					}
+				}
+				telemetryErr := shutdownErr
+				telemetry.EndWithCause(span, &telemetryErr)
+			})
+			return shutdownErr
+		}
+
 		running.Host = fullHost
 		running.Ports = checkPorts
 		running.Stop = func(context.Context, bool) (rerr error) {
-			defer telemetry.EndWithCause(span, &rerr)
-			stop(errors.New("service stop called"))
-			waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
-			defer waitCancel()
-			netNS.Release(waitCtx)
+			return shutdown(stopErr, true)
+		}
+		running.Wait = func(ctx context.Context) error {
 			select {
-			case <-waitCtx.Done():
-				return fmt.Errorf("timeout waiting for tunnel to stop: %w", waitCtx.Err())
+			case <-ctx.Done():
+				return context.Cause(ctx)
 			case <-exited:
-				return nil
+				return shutdown(proxyExitedErr, false)
 			}
 		}
 		return nil

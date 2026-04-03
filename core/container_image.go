@@ -242,7 +242,7 @@ func (container *Container) AsTarball(
 	}()
 
 	err = MountRef(ctx, bkref, func(out string, _ *mount.Mount) error {
-		file, err := os.Create(filepath.Join(out, filePath))
+		file, err := os.OpenFile(filepath.Join(out, filePath), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 		if err != nil {
 			return err
 		}

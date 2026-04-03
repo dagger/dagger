@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
@@ -831,38 +834,47 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}
 
-	if srv == nil {
-		return nil, fmt.Errorf("failed to get dagql server")
+	var outputDir *Directory
+	for _, ctrMount := range execCtr.Mounts {
+		if ctrMount.Target != modMetaDirPath {
+			continue
+		}
+		if ctrMount.DirectorySource == nil || ctrMount.DirectorySource.self() == nil {
+			return nil, fmt.Errorf("function output directory mount %s is missing directory source", modMetaDirPath)
+		}
+		outputDir = ctrMount.DirectorySource.self()
+		break
 	}
-	execCtrResult, err := dagql.NewObjectResultForCurrentCall(ctx, srv, execCtr)
+	if outputDir == nil {
+		return nil, fmt.Errorf("function output directory mount %s not found", modMetaDirPath)
+	}
+
+	snapshot, err := outputDir.getSnapshot()
 	if err != nil {
-		return nil, fmt.Errorf("create function output container result: %w", err)
+		return nil, fmt.Errorf("get function output snapshot: %w", err)
 	}
-	var ctrOutputDir dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, execCtrResult, &ctrOutputDir, dagql.Selector{
-		Field: "directory",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(modMetaDirPath)},
-		},
-	}); err != nil {
-		return nil, fmt.Errorf("get function output directory: %w", err)
+	if snapshot == nil {
+		return nil, fmt.Errorf("function output snapshot is nil")
 	}
-	var output dagql.String
-	err = srv.Select(ctx, ctrOutputDir, &output,
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(modMetaOutputPath)},
-			},
-		},
-		dagql.Selector{Field: "contents"},
-	)
+
+	root, _, release, err := MountRefCloser(ctx, snapshot, mountRefAsReadOnly)
+	if err != nil {
+		return nil, fmt.Errorf("mount function output snapshot: %w", err)
+	}
+	defer release()
+
+	outputPath, err := containerdfs.RootPath(root, path.Join(outputDir.Dir, modMetaOutputPath))
+	if err != nil {
+		return nil, fmt.Errorf("resolve function output file path: %w", err)
+	}
+
+	outputBytes, err := os.ReadFile(outputPath)
 	if err != nil {
 		return nil, fmt.Errorf("read function output file: %w", err)
 	}
 
 	var returnValueAny any
-	dec := json.NewDecoder(strings.NewReader(string(output)))
+	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
 	dec.UseNumber()
 	if err := dec.Decode(&returnValueAny); err != nil {
 		return nil, fmt.Errorf("unmarshal result: %w", err)
