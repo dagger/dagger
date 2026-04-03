@@ -750,7 +750,7 @@ class Env extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Create or update a binding of type UpGroup in the environment
      */
-    public function withUpGroupInput(string $name, UpGroupId|UpGroup $value, string $description): Env
+    public function withUpGroupInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpGroupInput');
         $innerQueryBuilder->setArgument('name', $name);
@@ -773,7 +773,7 @@ class Env extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Create or update a binding of type Up in the environment
      */
-    public function withUpInput(string $name, UpId|Up $value, string $description): Env
+    public function withUpInput(string $name, Id $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpInput');
         $innerQueryBuilder->setArgument('name', $name);

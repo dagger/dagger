@@ -637,6 +637,24 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Retrieve the binding value, as type Up
+func (r *Binding) AsUp() *Up {
+	q := r.query.Select("asUp")
+
+	return &Up{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type UpGroup
+func (r *Binding) AsUpGroup() *UpGroup {
+	q := r.query.Select("asUpGroup")
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type Workspace
 func (r *Binding) AsWorkspace() *Workspace {
 	q := r.query.Select("asWorkspace")
@@ -1317,9 +1335,21 @@ func (r *CheckGroup) Report() *File {
 	}
 }
 
+// CheckGroupRunOpts contains options for CheckGroup.Run
+type CheckGroupRunOpts struct {
+	// If true, stop running checks as soon as any check fails.
+	FailFast bool
+}
+
 // Execute all selected checks
-func (r *CheckGroup) Run() *CheckGroup {
+func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
 	q := r.query.Select("run")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
+		}
+	}
 
 	return &CheckGroup{
 		query: q,
@@ -5429,6 +5459,29 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	return convert(response), nil
 }
 
+// EnvServicesOpts contains options for Env.Services
+type EnvServicesOpts struct {
+	// Only include services matching the specified patterns
+	Include []string
+}
+
+// Return all services defined by the installed modules
+//
+// Experimental: Services API is highly experimental and may be removed or replaced entirely.
+func (r *Env) Services(opts ...EnvServicesOpts) *UpGroup {
+	q := r.query.Select("services")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Address in the environment
 func (r *Env) WithAddressInput(name string, value ID, description string) *Env {
 	q := r.query.Select("withAddressInput")
@@ -6058,6 +6111,52 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 // Declares a desired string output binding
 func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type UpGroup in the environment
+func (r *Env) WithUpGroupInput(name string, value ID, description string) *Env {
+	q := r.query.Select("withUpGroupInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired UpGroup output to be assigned in the environment
+func (r *Env) WithUpGroupOutput(name string, description string) *Env {
+	q := r.query.Select("withUpGroupOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Up in the environment
+func (r *Env) WithUpInput(name string, value ID, description string) *Env {
+	q := r.query.Select("withUpInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Up output to be assigned in the environment
+func (r *Env) WithUpOutput(name string, description string) *Env {
+	q := r.query.Select("withUpOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -7458,6 +7557,15 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 	assertNotNil("sourceMap", sourceMap)
 	q := r.query.Select("withSourceMap")
 	q = q.Arg("sourceMap", sourceMap)
+
+	return &Function{
+		query: q,
+	}
+}
+
+// Returns the function with a flag indicating it returns a service for dagger up.
+func (r *Function) WithUp() *Function {
+	q := r.query.Select("withUp")
 
 	return &Function{
 		query: q,
@@ -10539,6 +10647,29 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 	}
 
 	return q.Execute(ctx)
+}
+
+// ModuleServicesOpts contains options for Module.Services
+type ModuleServicesOpts struct {
+	// Only include services matching the specified patterns
+	Include []string
+}
+
+// Return all services defined by the module
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Module) Services(opts ...ModuleServicesOpts) *UpGroup {
+	q := r.query.Select("services")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &UpGroup{
+		query: q,
+	}
 }
 
 // The source for the module.
@@ -13996,6 +14127,240 @@ func (r *TypeDef) AsNode() Node {
 	}
 }
 
+type Up struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	name        *string
+}
+type WithUpFunc func(r *Up) *Up
+
+// With calls the provided function with current Up.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Up) With(f WithUpFunc) *Up {
+	return f(r)
+}
+
+func (r *Up) WithGraphQLQuery(q *querybuilder.Selection) *Up {
+	return &Up{
+		query: q,
+	}
+}
+
+// The description of the service
+func (r *Up) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Up.
+func (r *Up) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Up) XXX_GraphQLType() string {
+	return "Up"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Up) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Up) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Up) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return the fully qualified name of the service
+func (r *Up) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The original module in which the service has been defined
+func (r *Up) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The path of the service within its module
+func (r *Up) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Execute the service function
+func (r *Up) Run() *Up {
+	q := r.query.Select("run")
+
+	return &Up{
+		query: q,
+	}
+}
+
+// AsNode returns this Up as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Up) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type UpGroup struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+type WithUpGroupFunc func(r *UpGroup) *UpGroup
+
+// With calls the provided function with current UpGroup.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *UpGroup) With(f WithUpGroupFunc) *UpGroup {
+	return f(r)
+}
+
+func (r *UpGroup) WithGraphQLQuery(q *querybuilder.Selection) *UpGroup {
+	return &UpGroup{
+		query: q,
+	}
+}
+
+// A unique identifier for this UpGroup.
+func (r *UpGroup) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *UpGroup) XXX_GraphQLType() string {
+	return "UpGroup"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *UpGroup) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *UpGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *UpGroup) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return a list of individual services and their details
+func (r *UpGroup) List(ctx context.Context) ([]Up, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id ID
+	}
+
+	convert := func(fields []list) []Up {
+		out := []Up{}
+
+		for i := range fields {
+			val := Up{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Up")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Execute all selected service functions
+func (r *UpGroup) Run() *UpGroup {
+	q := r.query.Select("run")
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
+// AsNode returns this UpGroup as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *UpGroup) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A Dagger workspace detected from the current working directory.
 type Workspace struct {
 	query *querybuilder.Selection
@@ -14256,6 +14621,27 @@ func (r *Workspace) Path(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// WorkspaceServicesOpts contains options for Workspace.Services
+type WorkspaceServicesOpts struct {
+	// Only include services matching the specified patterns
+	Include []string
+}
+
+// Return all services from modules loaded in the workspace.
+func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
+	q := r.query.Select("services")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &UpGroup{
+		query: q,
+	}
 }
 
 // AsNode returns this Workspace as a Node.
