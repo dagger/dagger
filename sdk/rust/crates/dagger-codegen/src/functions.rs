@@ -18,6 +18,7 @@ pub trait FormatTypeFuncs {
         input: bool,
     ) -> String;
     fn format_kind_object(&self, representation: &str, ref_name: &str) -> String;
+    fn format_kind_interface(&self, representation: &str, ref_name: &str) -> String;
     fn format_kind_input_object(&self, representation: &str, ref_name: &str) -> String;
     fn format_kind_enum(&self, representation: &str, ref_name: &str) -> String;
 }
@@ -112,7 +113,7 @@ impl CommonFunctions {
                         }
                         __TypeKind::INTERFACE => self
                             .format_type_funcs
-                            .format_kind_object(&representation, rf.name.as_ref().unwrap()),
+                            .format_kind_interface(&representation, rf.name.as_ref().unwrap()),
                         __TypeKind::UNION => break,
                     },
                     None => break,
