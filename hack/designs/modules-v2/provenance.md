@@ -51,14 +51,14 @@ selector to that value.
 
 Provenance is represented by `WorkspaceProvenance`.
 
-It is a list of `WorkspaceSelector` values.
+It stores a list of `WorkspaceSelector` values.
 
 Each selector has:
 
 - a root `path`
 - optional `include`
 - optional `exclude`
-- a `lateBound` flag
+- a `conservative` flag
 
 Empty provenance is:
 
@@ -68,21 +68,21 @@ selectors = []
 
 Selectors are returned in deterministic normalized order.
 
-If `lateBound = false`, the selector is exact.
+If `conservative = false`, the selector is exact.
 
-If `lateBound = true`, the selector is conservative. It means:
+If `conservative = true`, the selector is a safe upper bound. It means:
 
 - the artifact may be affected by files in this region
 - the exact smaller set may only be known later
 
 ## Workspace-Wide Provenance
 
-Workspace-wide provenance is a selector rooted at `/`.
+A selector rooted at `/` means workspace-wide provenance.
 
 Simple case:
 
 ```text
-{ path = /, include = [], exclude = [], lateBound = true }
+{ path = /, include = [], exclude = [], conservative = true }
 ```
 
 This means:
@@ -94,7 +94,7 @@ But workspace-wide provenance can still be narrowed.
 Example:
 
 ```text
-{ path = /, include = [], exclude = [third_party/**, docs/**], lateBound = true }
+{ path = /, include = [], exclude = [third_party/**, docs/**], conservative = true }
 ```
 
 This means:
@@ -110,16 +110,16 @@ An artifact becomes workspace-wide if either is true:
 - it stores `Workspace` in a field
 - it exposes any public function that accepts `Workspace`
 
-The baseline representation is a late-bound selector rooted at `/`. Later
+The baseline representation is a conservative selector rooted at `/`. Later
 analysis may narrow it with `include` and `exclude`.
 
-The internal selector model supports this narrowing already. A conservative
-selector can be narrower than the whole repo.
+The internal selector model already supports this. A conservative selector can
+be narrower than the whole repo.
 
 Example:
 
 ```text
-{ path = /, include = [apps/**], exclude = [apps/legacy/**], lateBound = true }
+{ path = /, include = [apps/**], exclude = [apps/legacy/**], conservative = true }
 ```
 
 But the exact author-facing or runtime mechanism for producing that narrower
@@ -136,7 +136,7 @@ walk is transitive through nested stored objects.
 
 - result selectors are the semantic union of both selector lists
 - exact selectors stay exact
-- late-bound selectors stay late-bound
+- conservative selectors stay conservative
 - equivalent selectors may be deduplicated when practical
 
 ## Matching
@@ -156,11 +156,11 @@ The important rule is simple:
 
 So `include` and `exclude` affect the result.
 
-`lateBound` does not change the matching rule. It changes the meaning of the
-selector:
+`conservative` does not change the matching rule. It only changes the meaning of
+the selector:
 
 - exact selector: "this region definitely contributes"
-- late-bound selector: "this region may contribute; we will know more later"
+- conservative selector: "this region may contribute; we will know more later"
 
 ## Filtering Model
 
@@ -272,10 +272,10 @@ type WorkspaceSelector {
   """
   False means this selector is exact.
 
-  True means this selector is conservative. The actual smaller file set may
-  only be known later.
+  True means this selector is conservative. It is a safe upper bound. The
+  actual smaller file set may only be known later.
   """
-  lateBound: Boolean!
+  conservative: Boolean!
 }
 
 """
@@ -345,7 +345,7 @@ Suppose an artifact has:
 
 ```text
 selectors = [
-  { path = docs, include = **/*.md, exclude = docs/generated/**, lateBound = false }
+  { path = docs, include = **/*.md, exclude = docs/generated/**, conservative = false }
 ]
 ```
 
@@ -389,7 +389,7 @@ This artifact may be affected by any workspace path:
 
 ```text
 selectors = [
-  { path = /, include = [], exclude = [], lateBound = true }
+  { path = /, include = [], exclude = [], conservative = true }
 ]
 ```
 
@@ -402,7 +402,7 @@ So:
 
 ```text
 selectors = [
-  { path = /, include = [], exclude = [third_party/**, docs/**], lateBound = true }
+  { path = /, include = [], exclude = [third_party/**, docs/**], conservative = true }
 ]
 ```
 
@@ -424,13 +424,13 @@ This artifact may have both:
 
 ```text
 selectors = [
-  { path = docs, include = [], exclude = [], lateBound = false },
-  { path = /, include = [], exclude = [third_party/**], lateBound = true }
+  { path = docs, include = [], exclude = [], conservative = false },
+  { path = /, include = [], exclude = [third_party/**], conservative = true }
 ]
 ```
 
-The exact selector is still useful for inspection and debugging. The late-bound
-selector is still useful for broad pruning.
+The exact selector is still useful for inspection and debugging. The
+conservative selector is still useful for broad pruning.
 
 ## Implementation
 
@@ -443,10 +443,10 @@ exact `WorkspaceSelector` on that value.
 
 ```go
 type WorkspaceSelector struct {
-	Path      WorkspacePath
-	Include   []string
-	Exclude   []string
-	LateBound bool
+	Path         WorkspacePath
+	Include      []string
+	Exclude      []string
+	Conservative bool
 }
 
 type WorkspaceProvenance struct {
@@ -457,10 +457,10 @@ func (ws *Workspace) Directory(path WorkspacePath, opts DirOpts) *Directory {
 	return &Directory{
 		Provenance: WorkspaceProvenance{
 			Selectors: []WorkspaceSelector{{
-				Path:      path,
-				Include:   opts.Include,
-				Exclude:   opts.Exclude,
-				LateBound: false,
+				Path:         path,
+				Include:      opts.Include,
+				Exclude:      opts.Exclude,
+				Conservative: false,
 			}},
 		},
 	}
@@ -470,8 +470,8 @@ func (ws *Workspace) File(path WorkspacePath) *File {
 	return &File{
 		Provenance: WorkspaceProvenance{
 			Selectors: []WorkspaceSelector{{
-				Path:      path,
-				LateBound: false,
+				Path:         path,
+				Conservative: false,
 			}},
 		},
 	}
@@ -501,9 +501,9 @@ func CollectStoredProvenance(v any) WorkspaceProvenance {
 }
 ```
 
-### 3. Add late-bound selectors
+### 3. Add conservative selectors
 
-After collecting exact selectors, the engine adds a late-bound selector when
+After collecting exact selectors, the engine adds a conservative selector when
 the artifact:
 
 - stores `Workspace` in a field
@@ -517,8 +517,8 @@ func CollectArtifactProvenance(obj ObjectWithSchema) WorkspaceProvenance {
 	if obj.HasStoredWorkspaceField() || obj.HasPublicWorkspaceArgFunction() {
 		prov = prov.Union(WorkspaceProvenance{
 			Selectors: []WorkspaceSelector{{
-				Path:      "/",
-				LateBound: true,
+				Path:         "/",
+				Conservative: true,
 			}},
 		})
 	}
@@ -526,7 +526,7 @@ func CollectArtifactProvenance(obj ObjectWithSchema) WorkspaceProvenance {
 }
 ```
 
-Later implementations may narrow that late-bound selector with `include` and
+Later implementations may narrow that conservative selector with `include` and
 `exclude`.
 
 ### 4. Implement the `Artifacts` filters in terms of `Artifact.provenance`
