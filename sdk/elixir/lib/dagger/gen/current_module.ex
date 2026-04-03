@@ -29,8 +29,9 @@ defmodule Dagger.CurrentModule do
          %Dagger.Module{
            query_builder:
              QB.query()
-             |> QB.select("loadModuleFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Module"),
            client: current_module.client
          }
        end}
@@ -52,9 +53,29 @@ defmodule Dagger.CurrentModule do
   end
 
   @doc """
+  Return all generators defined by the module
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec generators(t(), [{:include, [String.t()]}]) :: Dagger.GeneratorGroup.t()
+  def generators(%__MODULE__{} = current_module, optional_args \\ []) do
+    query_builder =
+      current_module.query_builder
+      |> QB.select("generators")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.GeneratorGroup{
+      query_builder: query_builder,
+      client: current_module.client
+    }
+  end
+
+  @doc """
   A unique identifier for this CurrentModule.
   """
-  @spec id(t()) :: {:ok, Dagger.CurrentModuleID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = current_module) do
     query_builder =
       current_module.query_builder |> QB.select("id")
@@ -134,6 +155,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.CurrentModule do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_current_module_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.CurrentModule{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("CurrentModule"),
+       client: dag.client
+     }}
   end
 end

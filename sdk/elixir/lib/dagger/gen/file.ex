@@ -106,7 +106,7 @@ defmodule Dagger.File do
   @doc """
   A unique identifier for this File.
   """
-  @spec id(t()) :: {:ok, Dagger.FileID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = file) do
     query_builder =
       file.query_builder |> QB.select("id")
@@ -165,8 +165,9 @@ defmodule Dagger.File do
          %Dagger.SearchResult{
            query_builder:
              QB.query()
-             |> QB.select("loadSearchResultFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("SearchResult"),
            client: file.client
          }
        end}
@@ -185,6 +186,20 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Return file status
+  """
+  @spec stat(t()) :: Dagger.Stat.t() | nil
+  def stat(%__MODULE__{} = file) do
+    query_builder =
+      file.query_builder |> QB.select("stat")
+
+    %Dagger.Stat{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   Force evaluation in the engine.
   """
   @spec sync(t()) :: {:ok, Dagger.File.t()} | {:error, term()}
@@ -197,8 +212,9 @@ defmodule Dagger.File do
        %Dagger.File{
          query_builder:
            QB.query()
-           |> QB.select("loadFileFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("File"),
          client: file.client
        }}
     end
@@ -272,6 +288,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.File do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_file_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.File{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("File"),
+       client: dag.client
+     }}
   end
 end

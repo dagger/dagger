@@ -170,6 +170,34 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type Generator
+  """
+  @spec as_generator(t()) :: Dagger.Generator.t()
+  def as_generator(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asGenerator")
+
+    %Dagger.Generator{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type GeneratorGroup
+  """
+  @spec as_generator_group(t()) :: Dagger.GeneratorGroup.t()
+  def as_generator_group(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asGeneratorGroup")
+
+    %Dagger.GeneratorGroup{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type GitRef
   """
   @spec as_git_ref(t()) :: Dagger.GitRef.t()
@@ -324,6 +352,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type Stat
+  """
+  @spec as_stat(t()) :: Dagger.Stat.t() | nil
+  def as_stat(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asStat")
+
+    %Dagger.Stat{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Returns the binding's string value
   """
   @spec as_string(t()) :: {:ok, String.t() | nil} | {:error, term()}
@@ -332,6 +374,90 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asString")
 
     Client.execute(binding.client, query_builder)
+  end
+
+  @doc """
+  Retrieve the binding value, as type Sub1
+  """
+  @spec as_sub1(t()) :: Dagger.Sub1.t()
+  def as_sub1(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSub1")
+
+    %Dagger.Sub1{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Sub1Obj
+  """
+  @spec as_sub1_obj(t()) :: Dagger.Sub1Obj.t()
+  def as_sub1_obj(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSub1Obj")
+
+    %Dagger.Sub1Obj{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Sub2
+  """
+  @spec as_sub2(t()) :: Dagger.Sub2.t()
+  def as_sub2(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSub2")
+
+    %Dagger.Sub2{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Sub2Obj
+  """
+  @spec as_sub2_obj(t()) :: Dagger.Sub2Obj.t()
+  def as_sub2_obj(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSub2Obj")
+
+    %Dagger.Sub2Obj{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Test
+  """
+  @spec as_test(t()) :: Dagger.Test.t()
+  def as_test(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asTest")
+
+    %Dagger.Test{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Workspace
+  """
+  @spec as_workspace(t()) :: Dagger.Workspace.t()
+  def as_workspace(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asWorkspace")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: binding.client
+    }
   end
 
   @doc """
@@ -348,7 +474,7 @@ defmodule Dagger.Binding do
   @doc """
   A unique identifier for this Binding.
   """
-  @spec id(t()) :: {:ok, Dagger.BindingID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("id")
@@ -399,6 +525,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Binding do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_binding_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Binding{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Binding"),
+       client: dag.client
+     }}
   end
 end

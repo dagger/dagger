@@ -38,9 +38,23 @@ defmodule Dagger.Check do
   end
 
   @doc """
+  If the check failed, this is the error
+  """
+  @spec error(t()) :: Dagger.Error.t() | nil
+  def error(%__MODULE__{} = check) do
+    query_builder =
+      check.query_builder |> QB.select("error")
+
+    %Dagger.Error{
+      query_builder: query_builder,
+      client: check.client
+    }
+  end
+
+  @doc """
   A unique identifier for this Check.
   """
-  @spec id(t()) :: {:ok, Dagger.CheckID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = check) do
     query_builder =
       check.query_builder |> QB.select("id")
@@ -57,6 +71,20 @@ defmodule Dagger.Check do
       check.query_builder |> QB.select("name")
 
     Client.execute(check.client, query_builder)
+  end
+
+  @doc """
+  The original module in which the check has been defined
+  """
+  @spec original_module(t()) :: Dagger.Module.t()
+  def original_module(%__MODULE__{} = check) do
+    query_builder =
+      check.query_builder |> QB.select("originalModule")
+
+    %Dagger.Module{
+      query_builder: query_builder,
+      client: check.client
+    }
   end
 
   @doc """
@@ -116,6 +144,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Check do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_check_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Check{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Check"),
+       client: dag.client
+     }}
   end
 end

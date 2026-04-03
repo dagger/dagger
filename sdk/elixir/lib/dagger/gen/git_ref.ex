@@ -45,7 +45,7 @@ defmodule Dagger.GitRef do
   @doc """
   A unique identifier for this GitRef.
   """
-  @spec id(t()) :: {:ok, Dagger.GitRefID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = git_ref) do
     query_builder =
       git_ref.query_builder |> QB.select("id")
@@ -67,14 +67,18 @@ defmodule Dagger.GitRef do
   @doc """
   The filesystem tree at this ref.
   """
-  @spec tree(t(), [{:discard_git_dir, boolean() | nil}, {:depth, integer() | nil}]) ::
-          Dagger.Directory.t()
+  @spec tree(t(), [
+          {:discard_git_dir, boolean() | nil},
+          {:depth, integer() | nil},
+          {:include_tags, boolean() | nil}
+        ]) :: Dagger.Directory.t()
   def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
     query_builder =
       git_ref.query_builder
       |> QB.select("tree")
       |> QB.maybe_put_arg("discardGitDir", optional_args[:discard_git_dir])
       |> QB.maybe_put_arg("depth", optional_args[:depth])
+      |> QB.maybe_put_arg("includeTags", optional_args[:include_tags])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -92,6 +96,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.GitRef do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_git_ref_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.GitRef{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("GitRef"),
+       client: dag.client
+     }}
   end
 end

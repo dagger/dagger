@@ -40,7 +40,7 @@ defmodule Dagger.ModuleConfigClient do
   @doc """
   A unique identifier for this ModuleConfigClient.
   """
-  @spec id(t()) :: {:ok, Dagger.ModuleConfigClientID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = module_config_client) do
     query_builder =
       module_config_client.query_builder |> QB.select("id")
@@ -58,6 +58,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.ModuleConfigClient do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_module_config_client_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.ModuleConfigClient{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("ModuleConfigClient"),
+       client: dag.client
+     }}
   end
 end

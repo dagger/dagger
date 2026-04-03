@@ -29,8 +29,9 @@ defmodule Dagger.JSONValue do
          %Dagger.JSONValue{
            query_builder:
              QB.query()
-             |> QB.select("loadJSONValueFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("JSONValue"),
            client: json_value.client
          }
        end}
@@ -113,7 +114,7 @@ defmodule Dagger.JSONValue do
   @doc """
   A unique identifier for this JSONValue.
   """
-  @spec id(t()) :: {:ok, Dagger.JSONValueID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = json_value) do
     query_builder =
       json_value.query_builder |> QB.select("id")
@@ -204,6 +205,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.JSONValue do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_json_value_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.JSONValue{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("JSONValue"),
+       client: dag.client
+     }}
   end
 end
