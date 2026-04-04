@@ -18,6 +18,87 @@ func TestGo(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(GoSuite{})
 }
 
+func (GoSuite) TestModuleTypesUsesCodegenOverlay(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+
+	t.Run("fresh edits are visible immediately", func(ctx context.Context, t *testctx.T) {
+		first := base.WithNewFile("main.go", `package main
+
+type Test struct{}
+
+// doc for alpha
+func (m *Test) Alpha() string {
+	return "alpha"
+}
+`)
+
+		out, err := first.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "alpha")
+		require.Contains(t, out, "doc for alpha")
+
+		second := first.WithNewFile("main.go", `package main
+
+type Test struct{}
+
+// doc for beta
+func (m *Test) Beta() string {
+	return "beta"
+}
+`)
+
+		out, err = second.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "beta")
+		require.Contains(t, out, "doc for beta")
+		require.NotContains(t, out, "alpha")
+	})
+
+	t.Run("body-only compile errors do not break typedef loading", func(ctx context.Context, t *testctx.T) {
+		mod := base.WithNewFile("main.go", `package main
+
+type Test struct{}
+
+// doc for hello
+func (m *Test) Hello() string {
+	return doesNotExist
+}
+`)
+
+		out, err := mod.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello")
+		require.Contains(t, out, "doc for hello")
+	})
+
+	t.Run("user init does not run during typedef loading", func(ctx context.Context, t *testctx.T) {
+		mod := base.WithNewFile("main.go", `package main
+
+func init() {
+	panic("init should not run during dagger functions")
+}
+
+// doc for hello
+type Test struct{}
+
+// doc for hello
+func (m *Test) Hello() string {
+	return "hello"
+}
+`)
+
+		out, err := mod.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello")
+		require.Contains(t, out, "doc for hello")
+	})
+}
+
 func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 	t.Run("from scratch", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

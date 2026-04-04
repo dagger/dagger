@@ -236,18 +236,12 @@ func (sdk *goSDK) ModuleTypes(
 		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
 	}
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
-	}
-
 	var ctr dagql.ObjectResult[*core.Container]
 
 	modName := src.Self().ModuleOriginalName
-	contextDir := src.Self().ContextDirectory
 	srcSubpath := src.Self().SourceSubpath
 
-	ctr, err = sdk.base(ctx)
+	ctr, err = sdk.baseWithCodegen(ctx, deps, src)
 	if err != nil {
 		return inst, err
 	}
@@ -265,50 +259,6 @@ func (sdk *goSDK) ModuleTypes(
 
 	var modDefsID string
 	err = dag.Select(ctx, ctr, &modDefsID,
-		dagql.Selector{
-			Field: "withMountedFile",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(goSDKIntrospectionJSONPath),
-				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withMountedDirectory",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(goSDKUserModContextDirPath),
-				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.Directory](contextDir.ID()),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withoutFile",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath, "dagger.gen.go")),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withoutDirectory",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath, "internal")),
-				},
-			},
-		},
 		dagql.Selector{
 			Field: "withWorkdir",
 			Args: []dagql.NamedInput{
