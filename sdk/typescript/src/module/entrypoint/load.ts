@@ -177,11 +177,15 @@ export async function loadValue(
       }
 
       // Core type: construct a typed SDK client via node(id:)
-      const ctx = new Context([], new Connection(dag.getGQLClient()))
-        .selectNode(value, objectType)
+      const ctx = new Context(
+        [],
+        new Connection(dag.getGQLClient()),
+      ).selectNode(value, objectType)
       // Look up the class from the generated client exports (e.g. "Directory" -> Directory class)
       // Some names collide with JS builtins and get a _ suffix (e.g. "Module" -> Module_)
-      const className = (clientGen as any)[objectType] ? objectType : `${objectType}_`
+      const className = (clientGen as any)[objectType]
+        ? objectType
+        : `${objectType}_`
       const cls = (clientGen as any)[className]
       if (cls) {
         return new cls(ctx)

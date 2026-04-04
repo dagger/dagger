@@ -30,7 +30,10 @@ export class Context {
    */
   selectNode(id: string, typeName: string): Context {
     return new Context(
-      [...this._queryTree, { operation: "node", args: { id }, inlineType: typeName }],
+      [
+        ...this._queryTree,
+        { operation: "node", args: { id }, inlineType: typeName },
+      ],
       this._connection,
     )
   }

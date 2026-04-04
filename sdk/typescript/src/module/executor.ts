@@ -220,9 +220,13 @@ class InterfaceWrapper {
             // Otherwise, we can just load the objects from the API
             // using node(id:) with an inline fragment.
             return ids.map(({ id }) => {
-              const ctx = new Context([], new Connection(dag.getGQLClient()))
-                .selectNode(id, typedef.name)
-              const className = (clientGen as any)[typedef.name] ? typedef.name : `${typedef.name}_`
+              const ctx = new Context(
+                [],
+                new Connection(dag.getGQLClient()),
+              ).selectNode(id, typedef.name)
+              const className = (clientGen as any)[typedef.name]
+                ? typedef.name
+                : `${typedef.name}_`
               const cls = (clientGen as any)[className]
               if (cls) {
                 return new cls(ctx)
