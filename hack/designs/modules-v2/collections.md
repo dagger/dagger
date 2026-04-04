@@ -353,7 +353,7 @@ Base Artifacts scope:
 ```text
 workspace.artifacts
   .filterVerb(CHECK)
-  .filterDimension("type", ["go-test"])
+  .filterCoordinates("type", ["go-test"])
 ```
 
 Expanded by a collection:
@@ -361,8 +361,8 @@ Expanded by a collection:
 ```text
 workspace.artifacts
   .filterVerb(CHECK)
-  .filterDimension("type", ["go-test"])
-  .filterDimension("go-test", ["TestFoo"])
+  .filterCoordinates("type", ["go-test"])
+  .filterCoordinates("go-test", ["TestFoo"])
 ```
 
 The base dimensions remain valid. Collections add new selector space rather
@@ -382,8 +382,8 @@ Example:
 ```text
 workspace.artifacts
   .filterVerb(CHECK)
-  .filterDimension("type", ["go-test"])
-  .filterDimension("go-test", ["TestFoo", "TestBar"])
+  .filterCoordinates("type", ["go-test"])
+  .filterCoordinates("go-test", ["TestFoo", "TestBar"])
   .check
 ```
 
@@ -470,6 +470,8 @@ Collection-provided selector dimensions still use
 **item type** (singular), not collection type. Dedicated provenance filters
 such as `--path` remain separate; collections do not change them.
 
+Those valued flags lower to `filterCoordinates(...)`.
+
 In addition, each collection may expose one convenience presence flag named by
 the **collection type** itself:
 
@@ -487,7 +489,7 @@ For example, if collection type `GoTests` publishes item type `GoTest`, then:
 lower to:
 
 ```text
-filterDimension("go-test", ["TestFoo"])
+filterCoordinates("go-test", ["TestFoo"])
 filterDimension("go-test")
 ```
 
@@ -496,9 +498,9 @@ Artifacts model. After CLI parsing and normalization, the engine sees only the
 real item dimension:
 
 ```text
---go-test=TestFoo              => filterDimension("go-test", ["TestFoo"])
+--go-test=TestFoo              => filterCoordinates("go-test", ["TestFoo"])
 --go-tests                     => filterDimension("go-test")
---go-tests --go-test=TestFoo   => filterDimension("go-test", ["TestFoo"])
+--go-tests --go-test=TestFoo   => filterCoordinates("go-test", ["TestFoo"])
 ```
 
 The alias is positive-only.
