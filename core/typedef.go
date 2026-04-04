@@ -57,8 +57,12 @@ var _ dagql.PersistedObjectDecoder = (*Function)(nil)
 var _ dagql.HasDependencyResults = (*Function)(nil)
 
 func NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function {
+	gqlName := strcase.ToLowerCamel(name)
+	if strings.HasSuffix(gqlName, "Id") {
+		gqlName = strings.TrimSuffix(gqlName, "Id") + "ID"
+	}
 	return &Function{
-		Name:         strcase.ToLowerCamel(name),
+		Name:         gqlName,
 		ReturnType:   returnType,
 		OriginalName: name,
 	}

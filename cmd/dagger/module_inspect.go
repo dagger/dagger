@@ -569,13 +569,13 @@ func (m *moduleDef) HasModule() bool {
 // is Query's synthetic "with" or no-op constructor.
 // Returns nil if no named constructor is available.
 func (m *moduleDef) ModuleConstructor() *modFunction {
-	if obj := m.GetObject(m.Name); obj != nil && obj.Constructor != nil {
+	if obj := m.GetObject(m.Name); obj != nil && obj.Constructor != nil && obj.Constructor.Name != "" {
 		return obj.Constructor
 	}
 	// Only fall back to MainObject's constructor if it's a real one
-	// (non-empty name). The no-op identity constructor can't produce
-	// a valid GraphQL call.
-	if c := m.MainObject.AsObject.Constructor; c != nil && c.Name != "" {
+	// or the Query-side shell constructor path. The object typedef constructor
+	// can be metadata-only with an empty name.
+	if c := m.MainObject.AsObject.Constructor; c != nil {
 		return c
 	}
 	return nil
