@@ -257,7 +257,7 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 				})
 			}
 
-			argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
+			argType, ok, err := resolveArgTypeDef(introspectionArg)
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to convert argument type: %w", err)
 			}
@@ -346,7 +346,7 @@ func introspectionInterfaceToTypeDef(introspectionType *introspection.Type) (*Ty
 				})
 			}
 
-			argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
+			argType, ok, err := resolveArgTypeDef(introspectionArg)
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to convert argument type: %w", err)
 			}
@@ -367,14 +367,35 @@ func introspectionInterfaceToTypeDef(introspectionType *introspection.Type) (*Ty
 	}, true, nil
 }
 
+// resolveArgTypeDef converts an introspection arg's TypeRef into a TypeDef,
+// also handling the unified ID scalar via @expectedType directives.
+func resolveArgTypeDef(arg introspection.InputValue) (*TypeDef, bool, error) {
+	argType, ok, err := introspectionRefToTypeDef(arg.TypeRef, false, true)
+	if err != nil || !ok {
+		return argType, ok, err
+	}
+
+	// Handle unified ID scalar: when an arg is typed as the bare "ID" scalar,
+	// resolve the actual object/interface type from @expectedType.
+	if argType.Kind == TypeDefKindScalar && argType.AsScalar.Valid && argType.AsScalar.Value.Name == "ID" {
+		if expectedName := arg.Directives.ExpectedType(); expectedName != "" {
+			argType.Kind = TypeDefKindObject
+			argType.AsScalar = dagql.Nullable[*ScalarTypeDef]{}
+			argType.AsObject = dagql.NonNull(&ObjectTypeDef{Name: expectedName})
+		}
+	}
+
+	return argType, true, nil
+}
+
 func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*TypeDef, bool, error) {
 	switch introspectionType.Kind {
 	case introspection.TypeKindNonNull:
 		return introspectionRefToTypeDef(introspectionType.OfType, true, isInput)
 
 	case introspection.TypeKindScalar:
-		if isInput && strings.HasSuffix(introspectionType.Name, "ID") {
-			// convert ID inputs to the actual object
+		if isInput && introspectionType.Name != "ID" && strings.HasSuffix(introspectionType.Name, "ID") {
+			// convert per-type FooID inputs to the actual object
 			objName := strings.TrimSuffix(introspectionType.Name, "ID")
 			return &TypeDef{
 				Kind:     TypeDefKindObject,
