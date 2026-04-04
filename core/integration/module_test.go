@@ -3309,7 +3309,7 @@ import (
 type Leaker struct {}
 
 func (l *Leaker) Leak(ctx context.Context, target string) string {
-	secret, _ := dag.LoadSecretFromID(dagger.ID(target)).Plaintext(ctx)
+	secret, _ := dagger.Ref[*dagger.Secret](dag, dagger.ID(target)).Plaintext(ctx)
 	return secret
 }
 `,
@@ -3324,6 +3324,8 @@ func (l *Leaker) Leak(ctx context.Context, target string) string {
 import (
 	"context"
 	"fmt"
+
+	"dagger/toplevel/internal/dagger"
 )
 
 type Toplevel struct {}
@@ -3335,7 +3337,7 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 	}
 
 	// loading secret-by-id in the same module should succeed
-	plaintext, err := dag.LoadSecretFromID(secretID).Plaintext(ctx)
+	plaintext, err := dagger.Ref[*dagger.Secret](dag, secretID).Plaintext(ctx)
 	if err != nil {
 		return err
 	}
@@ -4895,7 +4897,7 @@ func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger
 	}
 
 
-	return dag.LoadDirectoryFromID(dagger.ID(directoryIDRes.Dep.GetSource.ID)), nil
+	return dagger.Ref[*dagger.Directory](dag, dagger.ID(directoryIDRes.Dep.GetSource.ID)), nil
 }
 
 func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
@@ -4924,7 +4926,7 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 	}
 
 
-	return dag.LoadDirectoryFromID(dagger.ID(directoryIDRes.Dep.GetRelSource.ID)), nil
+	return dagger.Ref[*dagger.Directory](dag, dagger.ID(directoryIDRes.Dep.GetRelSource.ID)), nil
 }
 			`,
 			)
@@ -6279,9 +6281,9 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18:5\)\n`,
 
 					// interface
-					`\ntype DepMyInterface struct { // dep \(../../dep/main.go:22:6\)\n`,
-					// interface func
-					`\nfunc \(.* \*DepMyInterface\) Do\(.* // dep \(../../dep/main.go:24:4\)\n`,
+					`\ntype DepMyInterface interface { // dep \(../../dep/main.go:22:6\)`,
+					// interface func (on the client type)
+					`\nfunc \(.* \*DepMyInterfaceClient\) Do\(.* // dep \(../../dep/main.go:24:4\)\n`,
 				},
 				typescript: []string{
 					// struct
