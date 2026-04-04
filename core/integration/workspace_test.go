@@ -307,6 +307,19 @@ type Myapp {
 		assertModuleResolveLockEntry(t, []byte(lockOut), source, workspace.PolicyFloat)
 	})
 
+	t.Run("prints a migration summary when refreshing migrated remote refs", func(ctx context.Context, t *testctx.T) {
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "wolfi", "source": "github.com/dagger/dagger/modules/wolfi@main", "pin": "main"}
+  ]
+}`)
+
+		out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Migrated to workspace format")
+	})
+
 	t.Run("prints a migration summary", func(ctx context.Context, t *testctx.T) {
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",

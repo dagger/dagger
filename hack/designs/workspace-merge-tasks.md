@@ -15,7 +15,7 @@ Status legend:
 - [x] Make `dagger update` behave sanely in an empty initialized workspace.
   Current behavior: `dagger init` followed by `dagger update` fails with `workspace lockfile does not exist`.
 
-- [ ] Restore normal `dagger migrate` summary output when migration includes remote lookup sources.
+- [x] Restore normal `dagger migrate` summary output when migration includes remote lookup sources.
   Current behavior: migration succeeds, but the summary is suppressed.
 
 - [ ] Remove false `NotFound` progress noise from `dagger module init <path>` inside a workspace.
