@@ -36,6 +36,7 @@ public class CodeGenerator(ICodeRenderer renderer)
             "SCALAR" => renderer.RenderScalar(type),
             "INPUT_OBJECT" => renderer.RenderInputObject(type),
             "ENUM" => renderer.RenderEnum(type),
+            "INTERFACE" => "", // TODO: generate native interface types
             _ => throw new Exception($"Type kind {type.Kind} is not supported"),
         };
     }
