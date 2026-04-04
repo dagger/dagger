@@ -229,7 +229,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 			var err error
 			defaultVal, err = input.Decoder().DecodeInput(val)
 			if err != nil {
-				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", argSelf.Name, err)
+				return spec, fmt.Errorf("failed to decode dagql default value for arg %q: %w", argSelf.Name, err)
 			}
 		}
 

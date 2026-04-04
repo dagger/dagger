@@ -23,8 +23,10 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-const MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
-const MinFunctionCacheTTLSeconds = 1
+const (
+	MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
+	MinFunctionCacheTTLSeconds = 1
+)
 
 type ModuleFunction struct {
 	mod    dagql.ObjectResult[*Module]
@@ -241,7 +243,14 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 			return fmt.Errorf("find function arg %q on %s", argName, uiFnName)
 		}
 		updatedArgRes := currentArgRes
-		if argDefault.IsObject() {
+		argTypeDef := currentArgRes.Self().TypeDef.Self()
+		if argDefault.IsObject() || (argDefault.IsList() &&
+			argTypeDef != nil &&
+			argTypeDef.Kind == TypeDefKindList &&
+			argTypeDef.AsList.Valid &&
+			argTypeDef.AsList.Value.Self() != nil &&
+			argTypeDef.AsList.Value.Self().ElementTypeDef.Self() != nil &&
+			argTypeDef.AsList.Value.Self().ElementTypeDef.Self().Kind == TypeDefKindObject) {
 			var optionalType dagql.ObjectResult[*TypeDef]
 			if err := dag.Select(ctx, currentArgRes.Self().TypeDef, &optionalType, dagql.Selector{
 				Field: "withOptional",
@@ -327,6 +336,8 @@ func (udp *UserDefaultPrimitive) Value() (any, error) {
 	switch udp.Arg.TypeDef.Self().Kind {
 	case TypeDefKindString:
 		return udp.UserInput, nil
+	case TypeDefKindList:
+		return strings.Split(udp.UserInput, ","), nil
 	case TypeDefKindInteger:
 		v, err := strconv.Atoi(udp.UserInput)
 		if err != nil {
@@ -383,8 +394,20 @@ func (ud *UserDefault) IsObject() bool {
 	return ud.Arg.TypeDef.Self().Kind == TypeDefKindObject
 }
 
+func (ud *UserDefault) IsList() bool {
+	return ud.Arg.TypeDef.Self().Kind == TypeDefKindList
+}
+
 func (ud *UserDefault) Value(ctx context.Context) (any, error) {
-	if !ud.IsObject() {
+	if !ud.IsObject() && !ud.IsList() {
+		return ud.UserDefaultPrimitive.Value()
+	}
+	// List of non-object elements (e.g. []string) is handled by the primitive path
+	if ud.IsList() &&
+		ud.Arg.TypeDef.Self().AsList.Valid &&
+		ud.Arg.TypeDef.Self().AsList.Value.Self() != nil &&
+		ud.Arg.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self() != nil &&
+		ud.Arg.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self().Kind != TypeDefKindObject {
 		return ud.UserDefaultPrimitive.Value()
 	}
 	query, err := CurrentQuery(ctx)
@@ -398,46 +421,78 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
 	// Resolve object from user-supplied "address"
 	srv := dagql.CurrentDagqlServer(mainCtx)
+
+	resolveOne := func(userInput, typename string) (any, error) {
+		var result dagql.AnyObjectResult
+		if err := srv.Select(mainCtx, srv.Root(), &result,
+			dagql.Selector{
+				Field: "address",
+				Args: []dagql.NamedInput{{
+					Name:  "value",
+					Value: dagql.NewString(userInput),
+				}},
+			},
+			dagql.Selector{
+				Field: strings.ToLower(typename),
+			},
+		); err != nil {
+			return nil, ud.errorf(err, "resolve object (%q)", typename)
+		}
+
+		id, err := result.Select(mainCtx, srv, dagql.Selector{
+			Field: "id",
+		})
+		if err != nil {
+			return nil, ud.errorf(err, "get object ID")
+		}
+		return id.Unwrap(), nil
+	}
+
+	if ud.IsList() {
+		// "Secret" -> "secret", "GitRef" -> "gitRef", etc (from the element type)
+		typename := ud.Arg.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self().ToType().Name()
+		elements := strings.Split(ud.UserInput, ",")
+		ids := make([]any, 0, len(elements))
+		for _, elem := range elements {
+			id, err := resolveOne(strings.TrimSpace(elem), typename)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		return ids, nil
+	}
+
 	// "Secret" -> "secret", "GitRef" -> "gitRef", etc
 	typename := ud.Arg.TypeDef.Self().ToType().Name()
-	typename = strings.ToLower(typename[0:1]) + typename[1:]
-	var result dagql.AnyObjectResult
-	if err := srv.Select(mainCtx, srv.Root(), &result,
-		dagql.Selector{
-			Field: "address",
-			Args: []dagql.NamedInput{{
-				Name:  "value",
-				Value: dagql.NewString(ud.UserInput),
-			}},
-		},
-		dagql.Selector{
-			Field: strings.ToLower(typename),
-		},
-	); err != nil {
-		return nil, ud.errorf(err, "resolve object (%q)", typename)
-	}
-
-	id, err := result.Select(mainCtx, srv, dagql.Selector{
-		Field: "id",
-	})
-	if err != nil {
-		return nil, ud.errorf(err, "get object ID")
-	}
-
-	return id.Unwrap(), nil
+	return resolveOne(ud.UserInput, typename)
 }
 
-func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.IDType, error) {
-	if !ud.IsObject() {
-		return nil, ud.errorf(nil, "DagqlID(): primitive type has not ID")
+func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.Input, error) {
+	if !ud.IsObject() && !ud.IsList() {
+		return nil, ud.errorf(nil, "DagqlID(): primitive type has no ID")
 	}
 	value, err := ud.Value(ctx)
 	if err != nil {
 		return nil, ud.errorf(err, "DagqlInput(): decode value")
 	}
-	id, isID := value.(dagql.IDType)
-	if isID {
+	// Object case: single ID
+	if id, isID := value.(dagql.IDType); isID {
 		return id, nil
+	}
+	// List of objects case: build a DynamicArrayInput from the resolved IDs
+	if ids, isList := value.([]any); isList {
+		arr := dagql.DynamicArrayInput{
+			Elem: ud.Arg.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self().ToInput(),
+		}
+		for _, rawID := range ids {
+			input, ok := rawID.(dagql.Input)
+			if !ok {
+				return nil, ud.errorf(nil, "DagqlID(): list element is not an input: %T", rawID)
+			}
+			arr.Values = append(arr.Values, input)
+		}
+		return arr, nil
 	}
 	return nil, ud.errorf(nil, "DagqlID(): not an id: %q", value)
 }
@@ -543,7 +598,12 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			// was explicitly set by the user, skip
 			continue
 		}
-		if argMetadata.TypeDef.Self().Kind != TypeDefKindObject {
+		if argMetadata.TypeDef.Self().Kind != TypeDefKindObject &&
+			(argMetadata.TypeDef.Self().Kind != TypeDefKindList ||
+				!argMetadata.TypeDef.Self().AsList.Valid ||
+				argMetadata.TypeDef.Self().AsList.Value.Self() == nil ||
+				argMetadata.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self() == nil ||
+				argMetadata.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self().Kind != TypeDefKindObject) {
 			// Only default objects need processing at this time.
 			// Primitive default values were already processes earlier
 			//  in the flow.
@@ -619,18 +679,22 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			})
 		}
 
-		// Process user-defined user defaults for objects
-		userDefaultVals := make([]*argInput, len(userDefaults))
+		// Process user-defined user defaults for objects (and lists of objects)
+		type userDefaultArgInput struct {
+			argName string
+			val     dagql.Input
+		}
+		userDefaultVals := make([]*userDefaultArgInput, len(userDefaults))
 		for i, userDefault := range userDefaults {
 			eg.Go(func() error {
-				id, err := userDefault.DagqlID(ctx)
+				input, err := userDefault.DagqlID(ctx)
 				if err != nil {
 					return err
 				}
 				arg := userDefault.Arg
-				userDefaultVals[i] = &argInput{
+				userDefaultVals[i] = &userDefaultArgInput{
 					argName: arg.Name,
-					val:     id,
+					val:     input,
 				}
 				return nil
 			})
