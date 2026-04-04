@@ -1,0 +1,9 @@
+kind: Added
+body: Add GitHub Copilot as a first-class LLM provider via the copilot-sdk/go SDK.
+  Requires GITHUB_TOKEN (fine-grained PAT with copilot: read scope). Supports
+  multi-turn sessions, streaming, tool calling, BYOK provider config, and sidecar
+  crash recovery. Legacy container fallback available via GITHUB_COPILOT_LEGACY=true.
+time: 2026-03-28T17:47:53.000000000Z
+custom:
+    Author: raykao
+    PR: "12872"
