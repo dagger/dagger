@@ -18,11 +18,16 @@ func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*par
 	}
 
 	if named == nil {
-		return nil, fmt.Errorf("struct types must be named")
+		return nil, fmt.Errorf("interface types must be named")
 	}
 	spec.name = named.Obj().Name()
 	if spec.name == "" {
-		return nil, fmt.Errorf("struct types must be named")
+		return nil, fmt.Errorf("interface types must be named")
+	}
+
+	// Skip interfaces from generated code (e.g. Node alias from pre-v0.12.0 compat)
+	if ps.isDaggerGenerated(named.Obj()) {
+		return nil, nil
 	}
 
 	// It's safe to compare objects directly: https://github.com/golang/example/tree/1d6d2400d4027025cb8edc86a139c9c581d672f7/gotypes#objects
