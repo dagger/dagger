@@ -16,7 +16,7 @@ Depends on: [Artifacts](./artifacts.md)
 - [Lockfile Acceleration](#lockfile-acceleration)
 - [Schema](#schema)
 - [Examples](#examples)
-- [Implementation](#implementation)
+- [Implementation Notes](#implementation-notes)
 - [Caching Semantics](#caching-semantics)
 - [Open Questions](#open-questions)
 
@@ -473,7 +473,7 @@ selectors = [
 The exact selector is still useful for inspection and debugging. The
 conservative selector is still useful for broad pruning.
 
-## Implementation
+## Implementation Notes
 
 The initial implementation can be built in five steps.
 
