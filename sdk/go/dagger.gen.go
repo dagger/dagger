@@ -3104,19 +3104,6 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	}
 }
 
-// Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
-//
-// This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
-func (r *Container) WithVolatileVariable(name string, value string) *Container {
-	q := r.query.Select("withVolatileVariable")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &Container{
-		query: q,
-	}
-}
-
 // Establish a runtime dependency from a container to a network service.
 //
 // The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
@@ -3196,6 +3183,19 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 func (r *Container) WithUser(name string) *Container {
 	q := r.query.Select("withUser")
 	q = q.Arg("name", name)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+//
+// This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+func (r *Container) WithVolatileVariable(name string, value string) *Container {
+	q := r.query.Select("withVolatileVariable")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
 
 	return &Container{
 		query: q,
@@ -3425,16 +3425,6 @@ func (r *Container) WithoutSecretVariable(name string) *Container {
 	}
 }
 
-// Retrieves this container minus the given volatile environment variable.
-func (r *Container) WithoutVolatileVariable(name string) *Container {
-	q := r.query.Select("withoutVolatileVariable")
-	q = q.Arg("name", name)
-
-	return &Container{
-		query: q,
-	}
-}
-
 // ContainerWithoutUnixSocketOpts contains options for Container.WithoutUnixSocket
 type ContainerWithoutUnixSocketOpts struct {
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -3462,6 +3452,16 @@ func (r *Container) WithoutUnixSocket(path string, opts ...ContainerWithoutUnixS
 // Should default to root.
 func (r *Container) WithoutUser() *Container {
 	q := r.query.Select("withoutUser")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieves this container minus the given volatile environment variable.
+func (r *Container) WithoutVolatileVariable(name string) *Container {
+	q := r.query.Select("withoutVolatileVariable")
+	q = q.Arg("name", name)
 
 	return &Container{
 		query: q,

@@ -480,9 +480,9 @@
 <abbr title="Dagger\Container">Container</abbr>::entrypoint</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Return the container's OCI entrypoint.</p></dd><dt><a href="Dagger/Container.html#method_envVariable">
 <abbr title="Dagger\Container">Container</abbr>::envVariable</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves the value of the specified environment variable.</p></dd><dt><a href="Dagger/Container.html#method_envVariables">
+                    <dd><p>Retrieves the value of the specified persistent environment variable.</p></dd><dt><a href="Dagger/Container.html#method_envVariables">
 <abbr title="Dagger\Container">Container</abbr>::envVariables</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves the list of environment variables passed to commands.</p></dd><dt><a href="Dagger/Container.html#method_exists">
+                    <dd><p>Retrieves the list of persistent environment variables configured on the container.</p></dd><dt><a href="Dagger/Container.html#method_exists">
 <abbr title="Dagger\Container">Container</abbr>::exists</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>check if a file or directory exists</p></dd><dt><a href="Dagger/Container.html#method_exitCode">
 <abbr title="Dagger\Container">Container</abbr>::exitCode</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1500,7 +1500,9 @@
 <abbr title="Dagger\Container">Container</abbr>::withUnixSocket</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus a socket forwarded to the given Unix socket path.</p></dd><dt><a href="Dagger/Container.html#method_withUser">
 <abbr title="Dagger\Container">Container</abbr>::withUser</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container with a different command user.</p></dd><dt><a href="Dagger/Container.html#method_withWorkdir">
+                    <dd><p>Retrieves this container with a different command user.</p></dd><dt><a href="Dagger/Container.html#method_withVolatileVariable">
+<abbr title="Dagger\Container">Container</abbr>::withVolatileVariable</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
+                    <dd><p>Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.</p></dd><dt><a href="Dagger/Container.html#method_withWorkdir">
 <abbr title="Dagger\Container">Container</abbr>::withWorkdir</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Change the container's working directory. Like WORKDIR in Dockerfile.</p></dd><dt><a href="Dagger/Container.html#method_withoutAnnotation">
 <abbr title="Dagger\Container">Container</abbr>::withoutAnnotation</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1532,7 +1534,9 @@
 <abbr title="Dagger\Container">Container</abbr>::withoutUnixSocket</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container with a previously added Unix socket removed.</p></dd><dt><a href="Dagger/Container.html#method_withoutUser">
 <abbr title="Dagger\Container">Container</abbr>::withoutUser</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container with an unset command user.</p></dd><dt><a href="Dagger/Container.html#method_withoutWorkdir">
+                    <dd><p>Retrieves this container with an unset command user.</p></dd><dt><a href="Dagger/Container.html#method_withoutVolatileVariable">
+<abbr title="Dagger\Container">Container</abbr>::withoutVolatileVariable</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
+                    <dd><p>Retrieves this container minus the given volatile environment variable.</p></dd><dt><a href="Dagger/Container.html#method_withoutWorkdir">
 <abbr title="Dagger\Container">Container</abbr>::withoutWorkdir</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Unset the container's working directory.</p></dd><dt><a href="Dagger/Container.html#method_workdir">
 <abbr title="Dagger\Container">Container</abbr>::workdir</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>

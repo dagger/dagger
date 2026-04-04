@@ -6054,7 +6054,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-envVariable" href="#Container-envVariable"><code>envVariable</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
-                        <td> Retrieves the value of the specified environment variable. </td>
+                        <td> Retrieves the value of the specified persistent environment variable. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -6071,7 +6071,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-envVariables" href="#Container-envVariables"><code>envVariables</code></a> - <span class="property-type"><a href="#definition-EnvVariable"><code>[EnvVariable!]!</code></a></span> </td>
-                        <td> Retrieves the list of environment variables passed to commands. </td>
+                        <td> Retrieves the list of persistent environment variables configured on the container. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-exists" href="#Container-exists"><code>exists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
@@ -7254,6 +7254,30 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withVolatileVariable" href="#Container-withVolatileVariable"><code>withVolatileVariable</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td>
+                          <p>Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.</p>
+                          <p>This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Name of the volatile variable (e.g., &quot;CI_RUN_ID&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Value of the volatile variable.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withWorkdir" href="#Container-withWorkdir"><code>withWorkdir</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td> Change the container's working directory. Like WORKDIR in Dockerfile. </td>
                       </tr>
@@ -7516,6 +7540,23 @@
                         <td>
                           <p>Retrieves this container with an unset command user.</p>
                           <p>Should default to root.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withoutVolatileVariable" href="#Container-withoutVolatileVariable"><code>withoutVolatileVariable</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieves this container minus the given volatile environment variable. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the volatile environment variable (e.g., &quot;CI_RUN_ID&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                       <tr>

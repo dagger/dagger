@@ -3935,7 +3935,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves the value of the specified environment variable.
+   * Retrieves the value of the specified persistent environment variable.
    * @param name The name of the environment variable to retrieve (e.g., "PATH").
    */
   envVariable = async (name: string): Promise<string> => {
@@ -3951,7 +3951,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves the list of environment variables passed to commands.
+   * Retrieves the list of persistent environment variables configured on the container.
    */
   envVariables = async (): Promise<EnvVariable[]> => {
     type envVariables = {
@@ -4875,6 +4875,18 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+   *
+   * This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+   * @param name Name of the volatile variable (e.g., "CI_RUN_ID").
+   * @param value Value of the volatile variable.
+   */
+  withVolatileVariable = (name: string, value: string): Container => {
+    const ctx = this._ctx.select("withVolatileVariable", { name, value })
+    return new Container(ctx)
+  }
+
+  /**
    * Change the container's working directory. Like WORKDIR in Dockerfile.
    * @param path The path to set as the working directory (e.g., "/app").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -5046,6 +5058,15 @@ export class Container extends BaseClient {
    */
   withoutUser = (): Container => {
     const ctx = this._ctx.select("withoutUser")
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieves this container minus the given volatile environment variable.
+   * @param name The name of the volatile environment variable (e.g., "CI_RUN_ID").
+   */
+  withoutVolatileVariable = (name: string): Container => {
+    const ctx = this._ctx.select("withoutVolatileVariable", { name })
     return new Container(ctx)
   }
 

@@ -3462,7 +3462,7 @@ impl Container {
         let query = self.selection.select("entrypoint");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieves the value of the specified environment variable.
+    /// Retrieves the value of the specified persistent environment variable.
     ///
     /// # Arguments
     ///
@@ -3472,7 +3472,7 @@ impl Container {
         query = query.arg("name", name.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieves the list of environment variables passed to commands.
+    /// Retrieves the list of persistent environment variables configured on the container.
     pub fn env_variables(&self) -> Vec<EnvVariable> {
         let query = self.selection.select("envVariables");
         vec![EnvVariable {
@@ -5122,6 +5122,27 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+    /// This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the volatile variable (e.g., "CI_RUN_ID").
+    /// * `value` - Value of the volatile variable.
+    pub fn with_volatile_variable(
+        &self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Container {
+        let mut query = self.selection.select("withVolatileVariable");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Change the container's working directory. Like WORKDIR in Dockerfile.
     ///
     /// # Arguments
@@ -5510,6 +5531,20 @@ impl Container {
     /// Should default to root.
     pub fn without_user(&self) -> Container {
         let query = self.selection.select("withoutUser");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container minus the given volatile environment variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the volatile environment variable (e.g., "CI_RUN_ID").
+    pub fn without_volatile_variable(&self, name: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withoutVolatileVariable");
+        query = query.arg("name", name.into());
         Container {
             proc: self.proc.clone(),
             selection: query,
