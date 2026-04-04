@@ -3,10 +3,96 @@
 ## Context
 
 The `interfaces` branch replaces per-type `loadFooFromID(id:)` schema
-fields with the Global Object Identification `node(id:)` pattern. The
-Go, Python, TypeScript, and Rust SDKs are fully migrated. The CLI,
-Dang SDK, codegen, integration tests, and module dependencies are also
-fixed. Codegen introspection test fixtures updated.
+fields with the Global Object Identification `node(id:)` pattern. All
+SDKs are migrated. Now fixing integration test failures in the engine
+and CLI.
+
+## Current status: fixing integration tests
+
+All SDK migrations are done. The focus is now on engine/CLI
+integration test failures caused by the unified `ID` scalar and
+`node(id:)` changes.
+
+### Recently fixed
+
+**TypeScript SDK tests** — `typescript-sdk:test-bunjs` and
+`typescript-sdk:lint-typescript` both pass. Query builder closing
+brace spacing updated in test expectations; prettier formatting
+applied. A `format` generator was added to the TS SDK toolchain
+(`dagger generate typescript-sdk:format -y`).
+
+**Go codegen: pre-v0.12.0 module interfaces** — `parseGoIface` was
+missing the `isDaggerGenerated` early-return that `parseGoStruct`
+already had. Pre-v0.12.0 Go modules generate type aliases for all
+schema types, including the new `Node` interface. When dealiased,
+`Node` has an `ID()` method not in `DaggerObject`/`GraphQLMarshaller`,
+causing "no decl for ID" errors. Fixed in `module_interfaces.go`.
+This fixed `TestContainer/TestSystemGoProxy` (all 4 VCS subtests).
+
+**CLI flag registration for unified ID args** — The CLI's
+`introspectionRefToTypeDef` had legacy logic converting `FooID`
+scalar inputs to object types by stripping the `ID` suffix. The
+unified `ID` scalar matched (`strings.HasSuffix("ID", "ID")` →
+empty object name), causing args to be silently skipped as
+unsupported flags. Fixed in `core/typedef_from_schema.go`:
+- Bare `ID` scalar excluded from legacy `FooID` stripping
+- New `resolveArgTypeDef` helper reads `@expectedType` directives
+  to map unified `ID` → correct object type (Directory, File, etc.)
+- Applied to both object and interface TypeDef construction
+
+This fixed the "unknown flag: --dir" errors in `TestModule/TestIgnore`.
+
+### Next: CLI not resolving flag values to IDs
+
+**The immediate problem:** After the CLI flag fix, `TestIgnore`
+progresses past flag parsing but fails with:
+
+```
+parse field "ignoreAll": init arg "dir" value as dagql.DynamicOptional (ID)
+using dagql.DynamicOptional: invalid ID string: failed to decode base64:
+illegal base64 data at input byte 0
+```
+
+**Root cause:** The CLI is sending the raw path string as the
+argument value instead of resolving it to a Directory and sending
+its ID. The GraphQL query being sent is:
+
+```
+query Query {ignoreAll(dir:"."){entries}}
+```
+
+The `"."` should be a base64 Directory ID, but the CLI is passing
+the raw flag value through without calling `directoryValue.Get()`
+(which would load the Directory from the path and return its ID).
+
+**Where to look:** The issue is in how the CLI's `selectFunc`
+(in `cmd/dagger/functions.go`) builds the GraphQL query from flag
+values. With the old per-type `DirectoryID` scalar, the arg's
+TypeDef kind was `ObjectKind` and the CLI knew to call `Get()` on
+the flag value to resolve the path → Directory → ID. Now that
+`resolveArgTypeDef` maps `ID` → `ObjectKind(Directory)`, the flag
+is registered correctly, but `selectFunc` may not be invoking the
+`Get()` method on the flag value — perhaps it falls through to a
+code path that just sends the raw string.
+
+Trace the path from `selectFunc` → flag value resolution to see
+where object-typed args get their `Get()` called vs where the raw
+string is used. The `DaggerValue` interface and its `Get()` method
+in `cmd/dagger/flags.go` is the key — `directoryValue.Get()` does
+the path → Directory → ID conversion.
+
+**Other tests likely affected:** Any test that passes object-typed
+arguments via the CLI (Container, Directory, File, Secret, etc.)
+will hit this same issue. Search for `invalid ID string` in test
+output to find them.
+
+**Key files:**
+- `cmd/dagger/flags.go` — `DaggerValue` interface, flag value
+  types (`directoryValue`, `fileValue`, etc.) and `Get()` methods
+- `cmd/dagger/functions.go` — `selectFunc` builds the GraphQL
+  query from flag values; look at how it decides whether to call
+  `Get()` or use the raw string
+- `core/typedef_from_schema.go` — `resolveArgTypeDef` (just added)
 
 ## Completed SDKs
 
@@ -25,20 +111,6 @@ tests pass.
 `elixir-sdk.dang` for auto-accepting Mneme snapshot changes.
 `codegenTest` sets `CI=true` to reject mode.
 
-**Regenerating:** Use the introspection JSON from the test fixtures
-or the dev engine:
-```bash
-python3 -c "import json; s=json.load(open('cmd/codegen/introspection/testdata/schema.json')); json.dump({'__schema':s}, open('/tmp/introspection.json','w'))"
-cd toolchains/elixir-sdk-dev && dagger call generate --introspection-json /tmp/introspection.json -y
-```
-
-**Updating codegen test snapshots:**
-```bash
-dagger call elixir-sdk update-codegen-tests -y
-```
-
-**SDK integration tests (`sdkTest`):** Run via `dagger check elixir-sdk:sdk-test`.
-
 ### PHP SDK ✅
 
 Inline fragment support added to QueryBuilderChain.
@@ -51,58 +123,15 @@ phpcs).
 
 Inline fragment support added to `QueryBuilder` via `chainNode()`
 method and `InlineFragment.on()` from SmallRye GraphQL client.
-`executeObjectListQuery` now takes a GraphQL type name string and
-uses `node(id:)` + inline fragment instead of `loadFooFromID`.
-
 `loadObjectFromID(Class<T>, ID)` and `nodeQueryBuilder(String, ID)`
-helpers generated on Client class. Deserializers use
-`nodeQueryBuilder` to construct typed objects from IDs.
-Annotation processor test fixture updated (import ordering).
-
-35 unit tests pass (23 SDK + 12 annotation processor). Codegen test
-fixture (`cmd/codegen/introspection/testdata/schema.json`) required
-for maven build:
-```bash
-python3 -c "import json; s=json.load(open('cmd/codegen/introspection/testdata/schema.json')); json.dump({'__schema':s}, open('/tmp/introspection.json','w'))"
-cd sdk/java && ./mvnw test -Ddaggerengine.version=local -Ddaggerengine.schema=/tmp/introspection.json
-```
-
-**Integration tests (`ClientIT`):** Run via `dagger check java-sdk:sdk-test`.
-
-## Remaining SDKs
-
-None — all SDKs are migrated.
+helpers generated on Client class. 35 unit tests pass.
 
 ### .NET SDK ✅
 
-Directive types added to `Types/Directive.cs`. Introspection models
-updated: `Field`, `InputValue`, and `Type` now deserialize
-`directives`, `interfaces`, and `possibleTypes`. `@expectedType`
-resolved on args (including lists) and fields (sync-like fields
-execute and return parent via `node(id:)`). Per-type `FooId` scalars
-replaced by unified `Id` class in base SDK. `QueryBuilder` supports
-inline fragments for `node(id:)` pattern. `INTERFACE` schema types
-generate C# `interface` + `*Client` class pairs. `IId` simplified
-to unified interface. `IdValue` no longer generic.
-
-`QueryExecutor` now checks for GraphQL errors and handles null
-JSON traversal. `TestReturnArray` test fixed to use async/await
-properly. Three new `QueryBuilder` tests for inline fragments.
-
-**Toolchain:** `test` in `main.dang` uses `dagger run` instead of
-`experimentalPrivilegedNesting` so integration tests use the dev
-engine with `node(id:)` support. All 20 tests pass (3 codegen +
-17 integration).
-
-**Note:** The .NET SDK is intentionally not registered in root
-`dagger.json`. Run it directly via `dagger -m toolchains/dotnet-sdk-dev call`.
-
-## Codegen introspection test fixtures
-
-`schema.json` captured from dev engine via `go/namespacing` test
-module. Golden files regenerated with `go test -update`. Tests use
-`sub1`/`sub2`/`test` module names. Could use a `go:generate` script
-to keep it from going stale.
+Directive types, introspection models, `@expectedType` support,
+unified `Id` class, inline fragments, C# interface generation.
+All 20 tests pass. Not registered in root `dagger.json` — run via
+`dagger -m toolchains/dotnet-sdk-dev call`.
 
 ## Architecture reference
 
@@ -123,12 +152,9 @@ func selectNode(q *Selection, id any, typeName string) *Selection {
 
 ## Regenerating and checking SDKs
 
-Use `dagger generate -l` and `dagger check -l` to list available
-targets. Then run specific ones:
-
 ```bash
-dagger generate php-sdk:api -y    # regenerate
-dagger check 'php-sdk:*'           # run all checks for an SDK
+dagger generate -l              # list all generate targets
+dagger check -l                 # list all check targets
+dagger generate php-sdk:api -y  # regenerate
+dagger check 'php-sdk:*'       # run all checks for an SDK
 ```
-
-The `dagger` CLI handles running the correct engine internally.
