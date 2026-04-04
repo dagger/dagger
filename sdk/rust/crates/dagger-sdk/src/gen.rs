@@ -2898,6 +2898,12 @@ pub struct CheckGroup {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct CheckGroupRunOpts {
+    /// If true, stop running checks as soon as any check fails.
+    #[builder(setter(into, strip_option), default)]
+    pub fail_fast: Option<bool>,
+}
 impl CheckGroup {
     /// A unique identifier for this CheckGroup.
     pub async fn id(&self) -> Result<CheckGroupId, DaggerError> {
@@ -2923,8 +2929,28 @@ impl CheckGroup {
         }
     }
     /// Execute all selected checks
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn run(&self) -> CheckGroup {
         let query = self.selection.select("run");
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Execute all selected checks
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn run_opts(&self, opts: CheckGroupRunOpts) -> CheckGroup {
+        let mut query = self.selection.select("run");
+        if let Some(fail_fast) = opts.fail_fast {
+            query = query.arg("failFast", fail_fast);
+        }
         CheckGroup {
             proc: self.proc.clone(),
             selection: query,

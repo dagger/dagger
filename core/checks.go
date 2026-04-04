@@ -57,10 +57,10 @@ func (r *CheckGroup) List() []*Check {
 }
 
 // Run all the checks in the group
-func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
+func (r *CheckGroup) Run(ctx context.Context, failFast bool) (*CheckGroup, error) {
 	r = r.Clone()
 
-	jobs := parallel.New().WithContextualTracer(true)
+	jobs := parallel.New().WithContextualTracer(true).WithFailFast(failFast)
 	for _, check := range r.Checks {
 		// Reset output fields, in case we're re-running
 		check.Completed = false

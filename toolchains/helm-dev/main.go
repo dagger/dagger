@@ -39,6 +39,49 @@ func (h *HelmDev) Lint(ctx context.Context) error {
 	return err
 }
 
+// Test that custom probe settings can override the defaults without producing duplicate YAML keys
+// +check
+func (h *HelmDev) TestCustomProbes(ctx context.Context) error {
+	customValues := `
+engine:
+  readinessProbeSettings:
+    exec:
+      command:
+        - sh
+        - -c
+        - "echo ready"
+    initialDelaySeconds: 10
+    periodSeconds: 20
+  livenessProbeSettings:
+    exec:
+      command:
+        - sh
+        - -c
+        - "echo alive"
+    initialDelaySeconds: 15
+    periodSeconds: 30
+`
+	out, err := h.chart().
+		WithNewFile("/tmp/custom-probes.yaml", customValues).
+		WithExec([]string{"helm", "template", ".", "-f", "/tmp/custom-probes.yaml"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	// Check that the custom command appears
+	if !strings.Contains(out, "echo ready") {
+		return fmt.Errorf("custom readiness probe command not found in rendered template")
+	}
+	if !strings.Contains(out, "echo alive") {
+		return fmt.Errorf("custom liveness probe command not found in rendered template")
+	}
+	// Check that the default command does NOT appear (it should be fully overridden)
+	if strings.Contains(out, "dagger core version") {
+		return fmt.Errorf("default probe command still present after override")
+	}
+	return nil
+}
+
 // +check
 // Test the helm chart on an ephemeral K3S service
 func (h *HelmDev) Test(ctx context.Context) error {

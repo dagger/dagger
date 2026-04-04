@@ -4565,6 +4565,42 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "/some-arg/bar\n", output)
 	})
 
+	t.Run("env variable is expanded in WithExec RedirectStdout", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("OUT", "/tmp/out").
+			WithEnvVariable("ERR", "/tmp/err").
+			WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
+				Expand:         true,
+				RedirectStdout: "${OUT}",
+				RedirectStderr: "${ERR}",
+			})
+
+		stdout, err := ctr.File("/tmp/out").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", stdout)
+
+		stderr, err := ctr.File("/tmp/err").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye\n", stderr)
+	})
+
+	t.Run("env variable is expanded in WithExec RedirectStdin", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("IN", "/tmp/input.txt").
+			WithNewFile("/tmp/input.txt", "hello from stdin\n").
+			WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+				Expand:         true,
+				RedirectStdin:  "${IN}",
+				RedirectStdout: "/tmp/out",
+			})
+
+		stdout, err := ctr.File("/tmp/out").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from stdin\n", stdout)
+	})
+
 	t.Run("env variable is expanded in WithoutMount", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().
 			From("alpine:latest").
