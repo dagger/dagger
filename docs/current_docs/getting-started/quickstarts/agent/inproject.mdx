@@ -56,7 +56,7 @@ To give the agent these tools, create a Dagger submodule called `workspace`. Thi
     Start by creating the submodule:
 
     ```shell
-    dagger init --sdk=go .dagger/workspace
+    dagger module init --sdk=go .dagger/workspace
     ```
 
     Replace the `.dagger/workspace/main.go` file with the following contents:
@@ -67,7 +67,7 @@ To give the agent these tools, create a Dagger submodule called `workspace`. Thi
     Start by creating the submodule:
 
     ```shell
-    dagger init --sdk=python .dagger/workspace
+    dagger module init --sdk=python .dagger/workspace
     ```
 
     Replace the `.dagger/workspace/src/workspace/main.py` file with the following contents:
@@ -78,7 +78,7 @@ To give the agent these tools, create a Dagger submodule called `workspace`. Thi
     Start by creating the submodule:
 
     ```shell
-    dagger init --sdk=typescript .dagger/workspace
+    dagger module init --sdk=typescript .dagger/workspace
     ```
 
     Replace the `.dagger/workspace/src/index.ts` file with the following contents:
@@ -89,7 +89,7 @@ To give the agent these tools, create a Dagger submodule called `workspace`. Thi
     Start by creating the submodule:
 
     ```shell
-    dagger init --sdk=php .dagger/workspace
+    dagger module init --sdk=php .dagger/workspace
     ```
 
     Replace the `.dagger/workspace/src/Workspace.php` file with the following contents:
@@ -100,7 +100,7 @@ To give the agent these tools, create a Dagger submodule called `workspace`. Thi
     Start by creating the submodule:
 
     ```shell
-    dagger init --sdk=java .dagger/workspace
+    dagger module init --sdk=java .dagger/workspace
     ```
 
     Replace the `.dagger/workspace/src/main/java/io/dagger/modules/workspace/Workspace.java` file with the following contents:
@@ -135,7 +135,7 @@ write-file   Write a file to the Workspace
 Now install the new submodule as a dependency to the main module:
 
 ```shell
-dagger install ./.dagger/workspace
+dagger module install ./.dagger/workspace
 ```
 
 ## Create an agentic function
@@ -292,7 +292,7 @@ The `develop-issue` function will use the [github-issue](https://daggerverse.dev
 Install the dependency:
 
 ```shell
-dagger install github.com/kpenfound/dag/github-issue@b316e472d3de5bb0e54fe3991be68dc85e33ef38
+dagger module install github.com/kpenfound/dag/github-issue@b316e472d3de5bb0e54fe3991be68dc85e33ef38
 ```
 
 <Tabs groupId="language" queryString="sdk">

@@ -41,5 +41,9 @@ Status legend:
 
 ## Follow-Up
 
-- [ ] Sweep docs after behavior settles.
-  This is already on the broader branch task list and should happen after the command/help/runtime fixes land.
+- [x] Sweep docs after behavior settles.
+  Covered:
+  - workspace vs module command split in public docs and shared partials
+  - module dependency docs updated to `dagger module install` / `dagger module update`
+  - user-facing templates and SDK READMEs updated for `dagger module init`
+  - CLI reference updated for implicit workspace bootstrap on `dagger install`
