@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -30,18 +31,32 @@ func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithExec([]string{"git", "init"})
 }
 
+func legacyWorkspaceBase(t testing.TB, c *dagger.Client, config string, ops ...dagger.WithContainerFunc) *dagger.Container {
+	t.Helper()
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("dagger.json", config)
+	for _, op := range ops {
+		ctr = ctr.With(op)
+	}
+
+	return ctr.
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+}
+
 // initDangModule creates a Dang module in the workspace with the given name
-// and source code. Uses "dagger init" and "dagger toolchain install" to
-// scaffold the workspace and module, then overwrites main.dang with the
-// provided source.
+// and source code. Uses `dagger module init`, `dagger init`, and
+// `dagger toolchain install` to scaffold the module and workspace, then
+// overwrites main.dang with the provided source.
 func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithWorkdir("toolchains/"+name).
-			With(daggerExec("init", "--sdk=dang", "--name="+name)).
+			With(daggerExec("module", "init", "--sdk=dang", "--name="+name)).
 			WithNewFile("main.dang", source).
 			WithWorkdir("../../").
-			With(daggerExec("init")).
+			With(daggerExecRaw("init")).
 			With(daggerExec("toolchain", "install", "./toolchains/"+name))
 	}
 }
@@ -51,7 +66,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(daggerExec("init", "--sdk=dang", "--source=.", "--name="+name)).
+			With(daggerExec("module", "init", "--sdk=dang", "--source=.", "--name="+name)).
 			WithNewFile("main.dang", source)
 	}
 }
@@ -64,11 +79,12 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 		return ctr.
 			// Create the blueprint module
 			WithWorkdir("blueprints/"+name).
-			With(daggerExec("init", "--sdk=dang", "--name="+name)).
+			With(daggerExec("module", "init", "--sdk=dang", "--name="+name)).
 			WithNewFile("main.dang", source).
 			WithWorkdir("../../").
-			// Init the workspace root module using the blueprint
-			With(daggerExec("init", "--blueprint=./blueprints/"+name))
+			// Initialize the workspace, then create a blueprint-owned workspace module.
+			With(daggerExecRaw("init")).
+			With(daggerExec("module", "init", "--blueprint=./blueprints/"+name))
 	}
 }
 
@@ -208,6 +224,123 @@ type Paths {
 	out, err = ctr.With(daggerCall("workspace-address")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "file:///work/app", strings.TrimSpace(out))
+}
+
+func (WorkspaceSuite) TestMigrate(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("moves non-local source into workspace module", func(ctx context.Context, t *testctx.T) {
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from migrated source"
+  }
+}
+`)
+		}).With(daggerExec("migrate"))
+
+		_, err := ctr.WithExec([]string{"test", "-d", "ci"}).Sync(ctx)
+		require.Error(t, err, "old source directory 'ci' should have been removed")
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
+		require.NoError(t, err, "source file should exist at new location")
+
+		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "myapp"`)
+		require.NotContains(t, djson, `"source": "ci"`)
+
+		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, "modules/myapp")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		require.Error(t, err, "root dagger.json should have been removed")
+	})
+
+	t.Run("keeps root source modules at the project root", func(ctx context.Context, t *testctx.T) {
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"}
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from root source"
+  }
+}
+`)
+		}).With(daggerExec("migrate"))
+
+		_, err := ctr.WithExec([]string{"test", "-f", "main.dang"}).Sync(ctx)
+		require.NoError(t, err, "source file should remain at root for source='.'")
+
+		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "myapp"`)
+		require.Contains(t, djson, `"source": "../../../"`)
+
+		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, "modules/myapp")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		require.Error(t, err, "root dagger.json should have been removed")
+	})
+
+	t.Run("writes generic lock entries for migrated remote refs", func(ctx context.Context, t *testctx.T) {
+		source := "github.com/dagger/dagger/modules/wolfi@main"
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "tc", "source": "`+source+`"}
+  ]
+}`).With(daggerExec("migrate"))
+
+		lockOut, err := ctr.File("/work/.dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+		assertModuleResolveLockEntry(t, []byte(lockOut), source, workspace.PolicyFloat)
+	})
+
+	t.Run("prints a migration summary when refreshing migrated remote refs", func(ctx context.Context, t *testctx.T) {
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "wolfi", "source": "github.com/dagger/dagger/modules/wolfi@main", "pin": "main"}
+  ]
+}`)
+
+		out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Migrated to workspace format")
+	})
+
+	t.Run("prints a migration summary", func(ctx context.Context, t *testctx.T) {
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci",
+  "dependencies": [
+    {"name": "dep1", "source": "./lib/dep1"}
+  ],
+  "include": ["extra/"]
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! { "hi" }
+}
+`)
+		})
+
+		out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Migrated to workspace format")
+	})
 }
 
 // TestWorkspaceArg verifies that a module function accepting a Workspace
@@ -1140,7 +1273,7 @@ func (WorkspaceSuite) TestEntrypointProxyDirectoryField(ctx context.Context, t *
 	base := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=playground", "--sdk=go", "--source=.")).
+		With(daggerExec("module", "init", "--name=playground", "--sdk=go", "--source=.")).
 		WithNewFile("main.go", `package main
 
 import (
@@ -1247,7 +1380,7 @@ func (WorkspaceSuite) TestRenamedToolchainModule(ctx context.Context, t *testctx
 	// Create a module named "hello-world" but install it as "greeter".
 	base := workspaceBase(t, c).
 		WithWorkdir("toolchains/hello-world").
-		With(daggerExec("init", "--sdk=dang", "--name=hello-world")).
+		With(daggerExec("module", "init", "--sdk=dang", "--name=hello-world")).
 		WithNewFile("main.dang", `
 type HelloWorld {
   pub greet(name: String! = "world"): String! {
@@ -1256,7 +1389,7 @@ type HelloWorld {
 }
 `).
 		WithWorkdir("../../").
-		With(daggerExec("init")).
+		With(daggerExec("module", "init")).
 		WithNewFile("dagger.json", `
 {
   "name": "app",

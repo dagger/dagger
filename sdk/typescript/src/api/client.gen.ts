@@ -2727,6 +2727,13 @@ export type WorkspaceChecksOpts = {
   include?: string[]
 }
 
+export type WorkspaceConfigReadOpts = {
+  /**
+   * Dotted key path (e.g. modules.greeter.source). Empty for full config.
+   */
+  key?: string
+}
+
 export type WorkspaceDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -2758,10 +2765,56 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
+export type WorkspaceInstallOpts = {
+  /**
+   * Override name for the installed module entry.
+   */
+  name?: string
+}
+
+export type WorkspaceModuleInitOpts = {
+  /**
+   * SDK to use for the new module.
+   */
+  sdk?: string
+
+  /**
+   * Source subpath within the new module.
+   */
+  source?: string
+
+  /**
+   * Additional include patterns for the module.
+   */
+  include?: string[]
+
+  /**
+   * Blueprint module reference to apply to the new module.
+   */
+  blueprint?: string
+
+  /**
+   * Enable the self-calls experimental feature for the new module.
+   */
+  selfCalls?: boolean
+}
+
+export type WorkspaceRefreshModulesOpts = {
+  /**
+   * Workspace module names to refresh.
+   */
+  moduleNames?: string[]
+}
+
 /**
  * The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
  */
 export type WorkspaceID = string & { __WorkspaceID: never }
+
+/**
+ * The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
+ */
+export type WorkspaceModuleID = string & { __WorkspaceModuleID: never }
 
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
@@ -3161,6 +3214,14 @@ export class Binding extends BaseClient {
   asWorkspace = (): Workspace => {
     const ctx = this._ctx.select("asWorkspace")
     return new Workspace(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceModule
+   */
+  asWorkspaceModule = (): WorkspaceModule => {
+    const ctx = this._ctx.select("asWorkspaceModule")
+    return new WorkspaceModule(ctx)
   }
 
   /**
@@ -7267,6 +7328,38 @@ export class Env extends BaseClient {
     const ctx = this._ctx.select("withWorkspaceInput", {
       name,
       value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceModule in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceModule value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceModuleInput = (
+    name: string,
+    value: WorkspaceModule,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceModule output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceModuleOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleOutput", {
+      name,
       description,
     })
     return new Env(ctx)
@@ -12473,6 +12566,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a WorkspaceModule from its ID.
+   */
+  loadWorkspaceModuleFromID = (id: WorkspaceModuleID): WorkspaceModule => {
+    const ctx = this._ctx.select("loadWorkspaceModuleFromID", { id })
+    return new WorkspaceModule(ctx)
+  }
+
+  /**
    * Create a new module.
    */
   module_ = (): Module_ => {
@@ -13777,9 +13878,14 @@ export class Workspace extends BaseClient {
   private readonly _address?: string = undefined
   private readonly _clientId?: string = undefined
   private readonly _configPath?: string = undefined
+  private readonly _configRead?: string = undefined
+  private readonly _configWrite?: string = undefined
   private readonly _findUp?: string = undefined
   private readonly _hasConfig?: boolean = undefined
+  private readonly _init?: string = undefined
   private readonly _initialized?: boolean = undefined
+  private readonly _install?: string = undefined
+  private readonly _moduleInit?: string = undefined
   private readonly _path?: string = undefined
 
   /**
@@ -13791,9 +13897,14 @@ export class Workspace extends BaseClient {
     _address?: string,
     _clientId?: string,
     _configPath?: string,
+    _configRead?: string,
+    _configWrite?: string,
     _findUp?: string,
     _hasConfig?: boolean,
+    _init?: string,
     _initialized?: boolean,
+    _install?: string,
+    _moduleInit?: string,
     _path?: string,
   ) {
     super(ctx)
@@ -13802,9 +13913,14 @@ export class Workspace extends BaseClient {
     this._address = _address
     this._clientId = _clientId
     this._configPath = _configPath
+    this._configRead = _configRead
+    this._configWrite = _configWrite
     this._findUp = _findUp
     this._hasConfig = _hasConfig
+    this._init = _init
     this._initialized = _initialized
+    this._install = _install
+    this._moduleInit = _moduleInit
     this._path = _path
   }
 
@@ -13871,6 +13987,45 @@ export class Workspace extends BaseClient {
     }
 
     const ctx = this._ctx.select("configPath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Read a configuration value from config.toml.
+   *
+   * If key is empty, returns the full config.
+   *
+   * If key points to a scalar, returns the value.
+   *
+   * If key points to a table, returns flattened dotted-key output.
+   * @param opts.key Dotted key path (e.g. modules.greeter.source). Empty for full config.
+   */
+  configRead = async (opts?: WorkspaceConfigReadOpts): Promise<string> => {
+    if (this._configRead) {
+      return this._configRead
+    }
+
+    const ctx = this._ctx.select("configRead", { ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Write a configuration value to config.toml.
+   * @param key Dotted key path (e.g. modules.greeter.source).
+   * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+   */
+  configWrite = async (key: string, value: string): Promise<string> => {
+    if (this._configWrite) {
+      return this._configWrite
+    }
+
+    const ctx = this._ctx.select("configWrite", { key, value })
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -13953,6 +14108,21 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Initialize a new workspace, creating .dagger/config.toml.
+   */
+  init = async (): Promise<string> => {
+    if (this._init) {
+      return this._init
+    }
+
+    const ctx = this._ctx.select("init")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Whether .dagger/config.toml exists.
    */
   initialized = async (): Promise<boolean> => {
@@ -13965,6 +14135,67 @@ export class Workspace extends BaseClient {
     const response: Awaited<boolean> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Install a module into the workspace, writing config.toml to the host.
+   * @param ref Module reference to install.
+   * @param opts.name Override name for the installed module entry.
+   */
+  install = async (
+    ref: string,
+    opts?: WorkspaceInstallOpts,
+  ): Promise<string> => {
+    if (this._install) {
+      return this._install
+    }
+
+    const ctx = this._ctx.select("install", { ref, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Create a new module owned by the workspace and auto-install it in config.toml.
+   * @param name Name of the new module.
+   * @param opts.sdk SDK to use for the new module.
+   * @param opts.source Source subpath within the new module.
+   * @param opts.include Additional include patterns for the module.
+   * @param opts.blueprint Blueprint module reference to apply to the new module.
+   * @param opts.selfCalls Enable the self-calls experimental feature for the new module.
+   */
+  moduleInit = async (
+    name: string,
+    opts?: WorkspaceModuleInitOpts,
+  ): Promise<string> => {
+    if (this._moduleInit) {
+      return this._moduleInit
+    }
+
+    const ctx = this._ctx.select("moduleInit", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List modules defined in the workspace configuration.
+   */
+  moduleList = async (): Promise<WorkspaceModule[]> => {
+    type moduleList = {
+      id: WorkspaceModuleID
+    }
+
+    const ctx = this._ctx.select("moduleList").select("id")
+
+    const response: Awaited<moduleList[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadWorkspaceModuleFromID(r.id),
+    )
   }
 
   /**
@@ -13983,6 +14214,18 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Refresh lock entries for selected workspace-config modules.
+   *
+   * This layers selective workspace refresh on top of the lockfile base.
+   * @param opts.moduleNames Workspace module names to refresh.
+   * @experimental
+   */
+  refreshModules = (opts?: WorkspaceRefreshModulesOpts): Changeset => {
+    const ctx = this._ctx.select("refreshModules", { ...opts })
+    return new Changeset(ctx)
+  }
+
+  /**
    * Refresh workspace-managed state and return the resulting changeset.
    *
    * Currently this refreshes existing lockfile entries only.
@@ -13991,6 +14234,94 @@ export class Workspace extends BaseClient {
   update = (): Changeset => {
     const ctx = this._ctx.select("update")
     return new Changeset(ctx)
+  }
+}
+
+/**
+ * A module entry in the workspace configuration.
+ */
+export class WorkspaceModule extends BaseClient {
+  private readonly _id?: WorkspaceModuleID = undefined
+  private readonly _blueprint?: boolean = undefined
+  private readonly _name?: string = undefined
+  private readonly _source?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: WorkspaceModuleID,
+    _blueprint?: boolean,
+    _name?: string,
+    _source?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._blueprint = _blueprint
+    this._name = _name
+    this._source = _source
+  }
+
+  /**
+   * A unique identifier for this WorkspaceModule.
+   */
+  id = async (): Promise<WorkspaceModuleID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<WorkspaceModuleID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the module is a blueprint (functions aliased to Query root).
+   */
+  blueprint = async (): Promise<boolean> => {
+    if (this._blueprint) {
+      return this._blueprint
+    }
+
+    const ctx = this._ctx.select("blueprint")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module source path.
+   */
+  source = async (): Promise<string> => {
+    if (this._source) {
+      return this._source
+    }
+
+    const ctx = this._ctx.select("source")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

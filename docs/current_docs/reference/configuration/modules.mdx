@@ -7,7 +7,7 @@ slug: /reference/configuration/modules
 ---
 
 
-Modules can be configured by editing their `dagger.json` file. The configuration in there contains all module metadata - from the name of the module and the SDK it uses, to the dependencies it requires. An initial configuration is automatically generated when using `dagger init` or `dagger develop` for the first time, and is kept up-to-date with `dagger config`/`dagger install`/etc.
+Modules can be configured by editing their `dagger.json` file. The configuration in there contains all module metadata - from the name of the module and the SDK it uses, to the dependencies it requires. An initial configuration is automatically generated when using `dagger module init` or `dagger develop` for the first time, and is kept up-to-date with `dagger config`/`dagger module install`/etc.
 
 For more information, refer to the [JSON schema for the Dagger module configuration file](https://docs.dagger.io/reference/dagger.schema.json).
 
@@ -79,7 +79,7 @@ If `dagger.runtime` is not set, but a `bun.lock` or `bun.lockb` file is present,
 ```shell
 bun init
 bun install // to generate the bun.lock file
-dagger init --sdk=typescript --name=example --source=.
+dagger module init --sdk=typescript --name=example --source=.
 ```
 
 :::important
@@ -96,7 +96,7 @@ If a `deno.json` file is present, Dagger will [automatically detect](#automatic-
 
 ```shell
 deno init
-dagger init --sdk=typescript --name=example --source=.
+dagger module init --sdk=typescript --name=example --source=.
 ```
 
 :::important

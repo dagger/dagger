@@ -974,7 +974,7 @@ func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
 
 	_, err := modInit(t, c, "go", "").
 		With(daggerExec("init", "--sdk=go", "dep")).
-		With(daggerShell(".install dep")).
+		With(daggerShell(".module install dep")).
 		WithExec([]string{"grep", "dep", "dagger.json"}).
 		Sync(ctx)
 

@@ -365,13 +365,16 @@ func (LockfileSuite) TestWorkspaceUpdate(ctx context.Context, t *testctx.T) {
 	assertContainerFromLockEntry(t, lockBytes, workspace.PolicyFloat)
 }
 
-func (LockfileSuite) TestWorkspaceUpdateRequiresLockfile(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestWorkspaceUpdateWithoutLockfileIsNoop(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	updateQueryPath := writeQueryDoc(t, workdir, "update.graphql", workspaceUpdateQuery)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", updateQueryPath)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "workspace lockfile does not exist")
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", updateQueryPath)
+	require.NoError(t, err)
+	require.NotContains(t, string(out), ".dagger/lock")
+
+	_, err = os.Stat(filepath.Join(workdir, ".dagger", "lock"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func (LockfileSuite) TestWorkspaceUpdateNestedQuery(ctx context.Context, t *testctx.T) {

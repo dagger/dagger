@@ -151,6 +151,9 @@ type Binding {
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
+  """Retrieve the binding value, as type WorkspaceModule"""
+  asWorkspaceModule: WorkspaceModule!
+
   """Returns the digest of the binding value"""
   digest: String!
 
@@ -2948,6 +2951,29 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type WorkspaceModule in the environment"""
+  withWorkspaceModuleInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceModule value to assign to the binding"""
+    value: WorkspaceModuleID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceModule output to be assigned in the environment
+  """
+  withWorkspaceModuleOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Declare a desired Workspace output to be assigned in the environment"""
   withWorkspaceOutput(
     """The name of the binding"""
@@ -5108,6 +5134,9 @@ type Query {
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
+  """Load a WorkspaceModule from its ID."""
+  loadWorkspaceModuleFromID(id: WorkspaceModuleID!): WorkspaceModule!
+
   """Create a new module."""
   module: Module!
 
@@ -5774,6 +5803,31 @@ type Workspace {
   configPath: String!
 
   """
+  Read a configuration value from config.toml.
+
+  If key is empty, returns the full config.
+
+  If key points to a scalar, returns the value.
+
+  If key points to a table, returns flattened dotted-key output.
+  """
+  configRead(
+    """Dotted key path (e.g. modules.greeter.source). Empty for full config."""
+    key: String = ""
+  ): String!
+
+  """Write a configuration value to config.toml."""
+  configWrite(
+    """Dotted key path (e.g. modules.greeter.source)."""
+    key: String!
+
+    """
+    Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+    """
+    value: String!
+  ): String!
+
+  """
   Returns a Directory from the workspace.
 
   Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
@@ -5846,11 +5900,59 @@ type Workspace {
   """A unique identifier for this Workspace."""
   id: WorkspaceID!
 
+  """Initialize a new workspace, creating .dagger/config.toml."""
+  init: String!
+
   """Whether .dagger/config.toml exists."""
   initialized: Boolean!
 
+  """Install a module into the workspace, writing config.toml to the host."""
+  install(
+    """Module reference to install."""
+    ref: String!
+
+    """Override name for the installed module entry."""
+    name: String = ""
+  ): String!
+
+  """
+  Create a new module owned by the workspace and auto-install it in config.toml.
+  """
+  moduleInit(
+    """Name of the new module."""
+    name: String!
+
+    """SDK to use for the new module."""
+    sdk: String = ""
+
+    """Source subpath within the new module."""
+    source: String = ""
+
+    """Additional include patterns for the module."""
+    include: [String!] = []
+
+    """Blueprint module reference to apply to the new module."""
+    blueprint: String = ""
+
+    """Enable the self-calls experimental feature for the new module."""
+    selfCalls: Boolean = false
+  ): String!
+
+  """List modules defined in the workspace configuration."""
+  moduleList: [WorkspaceModule!]!
+
   """Workspace directory path relative to the workspace boundary."""
   path: String!
+
+  """
+  Refresh lock entries for selected workspace-config modules.
+
+  This layers selective workspace refresh on top of the lockfile base.
+  """
+  refreshModules(
+    """Workspace module names to refresh."""
+    moduleNames: [String!] = []
+  ): Changeset! @experimental(reason: "Experimental selective workspace lock refresh API.")
 
   """
   Refresh workspace-managed state and return the resulting changeset.
@@ -5864,5 +5966,25 @@ type Workspace {
 The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 """
 scalar WorkspaceID
+
+"""A module entry in the workspace configuration."""
+type WorkspaceModule {
+  """Whether the module is a blueprint (functions aliased to Query root)."""
+  blueprint: Boolean!
+
+  """A unique identifier for this WorkspaceModule."""
+  id: WorkspaceModuleID!
+
+  """The module name."""
+  name: String!
+
+  """The module source path."""
+  source: String!
+}
+
+"""
+The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
+"""
+scalar WorkspaceModuleID
 
 

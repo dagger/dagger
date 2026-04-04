@@ -144,7 +144,10 @@ func init() {
 		configCmd,
 		checksCmd,
 		generateCmd,
-		moduleInitCmd,
+		initCmd,
+		workspaceCmd,
+		migrateCmd,
+		moduleCmd,
 		moduleDepInstallCmd,
 		moduleUnInstallCmd,
 		moduleUpdateCmd,
@@ -161,6 +164,7 @@ func init() {
 		mcpCmd,
 	)
 
+	rootCmd.AddGroup(workspaceGroup)
 	rootCmd.AddGroup(moduleGroup)
 	rootCmd.AddGroup(execGroup)
 

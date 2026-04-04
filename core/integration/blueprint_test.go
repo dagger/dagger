@@ -94,7 +94,7 @@ func (BlueprintSuite) TestBlueprintNoSDK(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
 			WithExec(
-				[]string{"dagger", "init", "--sdk=go", "--blueprint=../myblueprint"},
+				[]string{"dagger", "module", "init", "--sdk=go", "--blueprint=../myblueprint"},
 				dagger.ContainerWithExecOpts{
 					ExperimentalPrivilegedNesting: true,
 					Expect:                        dagger.ReturnTypeFailure,

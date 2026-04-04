@@ -212,10 +212,14 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 
 	// Direct command stdout/stderr to span stdio via OpenTelemetry.
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	oldOut := rootCmd.OutOrStdout()
+	oldErr := rootCmd.ErrOrStderr()
 	rootCmd.SetOut(stdio.Stdout)
 	rootCmd.SetErr(stdio.Stderr)
 
 	return ctx, func(rerr error) {
+		rootCmd.SetOut(oldOut)
+		rootCmd.SetErr(oldErr)
 		stdio.Close()
 		telemetry.EndWithCause(span, &rerr)
 		telemetry.Close()

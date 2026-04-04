@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
 
@@ -104,6 +105,43 @@ func TestWorkspaceAPIPath(t *testing.T) {
 
 	t.Run("nested path is absolute from boundary", func(t *testing.T) {
 		require.Equal(t, "/services/payment", workspaceAPIPath("services/payment"))
+	})
+}
+
+func TestResolveWorkspaceRefreshModules(t *testing.T) {
+	t.Run("explicit selection keeps order and removes duplicates", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"alpha": {Source: "github.com/example/alpha@main"},
+				"beta":  {Source: "github.com/example/beta@main"},
+				"gamma": {Source: "github.com/example/gamma@main"},
+			},
+		}
+
+		mods, err := resolveWorkspaceRefreshModules(cfg, []string{"gamma", "alpha", "gamma"})
+		require.NoError(t, err)
+		require.Equal(t, []workspaceRefreshModule{
+			{Name: "gamma", Source: "github.com/example/gamma@main"},
+			{Name: "alpha", Source: "github.com/example/alpha@main"},
+		}, mods)
+	})
+
+	t.Run("missing modules return error", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"alpha": {Source: "github.com/example/alpha@main"},
+			},
+		}
+
+		_, err := resolveWorkspaceRefreshModules(cfg, []string{"alpha", "missing", "other"})
+		require.ErrorContains(t, err, "workspace module(s) not found: missing, other")
+	})
+
+	t.Run("selection is required", func(t *testing.T) {
+		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{}}
+
+		_, err := resolveWorkspaceRefreshModules(cfg, nil)
+		require.ErrorContains(t, err, "at least one workspace module name is required")
 	})
 }
 

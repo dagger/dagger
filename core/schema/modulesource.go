@@ -982,6 +982,9 @@ func (s *moduleSourceSchema) contextDirectory(
 		// the human-readable name of the module, currently just to help telemetry look nicer
 		Module string
 
+		// the pinned version of the module source, when relevant
+		Pin string
+
 		// the content digest of the module
 		Digest string
 	},
@@ -995,12 +998,12 @@ func (s *moduleSourceSchema) contextDirectory(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	src, err := s.loadContextualModuleSource(ctx, dag, args.Module, args.Pin, args.Digest)
 	if err != nil {
 		return inst, err
 	}
 
-	dir, err := mod.Self().Source.Value.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
+	dir, err := src.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
 	}
@@ -1033,6 +1036,9 @@ func (s *moduleSourceSchema) contextFile(
 		// the human-readable name of the module, currently just to help telemetry look nicer
 		Module string
 
+		// the pinned version of the module source, when relevant
+		Pin string
+
 		// the content digest of the module
 		Digest string
 	},
@@ -1041,11 +1047,11 @@ func (s *moduleSourceSchema) contextFile(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	src, err := s.loadContextualModuleSource(ctx, dag, args.Module, args.Pin, args.Digest)
 	if err != nil {
 		return inst, err
 	}
-	f, err := mod.Self().Source.Value.Self().LoadContextFile(ctx, dag, args.Path)
+	f, err := src.Self().LoadContextFile(ctx, dag, args.Path)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
 	}
@@ -1076,6 +1082,9 @@ func (s *moduleSourceSchema) contextGitRepository(
 		// the human-readable name of the module, currently just to help telemetry look nicer
 		Module string
 
+		// the pinned version of the module source, when relevant
+		Pin string
+
 		// the content digest of the module
 		Digest string
 	},
@@ -1084,11 +1093,11 @@ func (s *moduleSourceSchema) contextGitRepository(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	src, err := s.loadContextualModuleSource(ctx, dag, args.Module, args.Pin, args.Digest)
 	if err != nil {
 		return inst, err
 	}
-	f, err := mod.Self().Source.Value.Self().LoadContextGit(ctx, dag)
+	f, err := src.Self().LoadContextGit(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
 	}
@@ -1116,6 +1125,9 @@ func (s *moduleSourceSchema) contextGitRef(
 		// the human-readable name of the module, currently just to help telemetry look nicer
 		Module string
 
+		// the pinned version of the module source, when relevant
+		Pin string
+
 		// the content digest of the module
 		Digest string
 	},
@@ -1124,11 +1136,11 @@ func (s *moduleSourceSchema) contextGitRef(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	src, err := s.loadContextualModuleSource(ctx, dag, args.Module, args.Pin, args.Digest)
 	if err != nil {
 		return inst, err
 	}
-	f, err := mod.Self().Source.Value.Self().LoadContextGit(ctx, dag)
+	f, err := src.Self().LoadContextGit(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual git ref: %w", err)
 	}
@@ -1157,6 +1169,57 @@ func (s *moduleSourceSchema) contextGitRef(
 	dgst := hashutil.HashStrings(fDgst.String(), "contextualGitRef")
 	inst = inst.WithContentDigest(dgst)
 	return inst, nil
+}
+
+func (s *moduleSourceSchema) loadContextualModuleSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	moduleRef string,
+	modulePin string,
+	digestKey string,
+) (src dagql.ObjectResult[*core.ModuleSource], err error) {
+	mod, err := core.GetModuleFromContentDigest(ctx, dag, moduleRef, digestKey)
+	switch {
+	case err == nil:
+		if !mod.Self().Source.Valid {
+			return src, fmt.Errorf("module %q has no source", moduleRef)
+		}
+		return mod.Self().Source.Value, nil
+	case !errors.Is(err, core.ErrModuleContentDigestCacheMiss):
+		return src, err
+	case moduleRef == "":
+		return src, err
+	}
+
+	args := []dagql.NamedInput{
+		{Name: "refString", Value: dagql.String(moduleRef)},
+		{Name: "disableFindUp", Value: dagql.Boolean(true)},
+	}
+	if modulePin != "" {
+		args = append(args, dagql.NamedInput{Name: "refPin", Value: dagql.String(modulePin)})
+	}
+	if err := dag.Select(ctx, dag.Root(), &src, dagql.Selector{
+		Field: "moduleSource",
+		Args:  args,
+	}); err != nil {
+		return src, fmt.Errorf("reload module source %q: %w", moduleRef, err)
+	}
+
+	reloadedDigestKey := hashutil.HashStrings(
+		src.Self().Digest,
+		src.Self().ContentCacheScope(),
+		"asModule",
+	).String()
+	if reloadedDigestKey != digestKey {
+		return src, fmt.Errorf(
+			"reloaded module source %q has content digest %q, expected %q",
+			moduleRef,
+			reloadedDigestKey,
+			digestKey,
+		)
+	}
+
+	return src, nil
 }
 
 // set values in the given src using values read from the module config file provided as bytes

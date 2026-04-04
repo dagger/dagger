@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/stretchr/testify/require"
@@ -69,6 +71,46 @@ func TestPendingLegacyModule(t *testing.T) {
 		require.True(t, mod.LegacyDefaultPath)
 		require.Nil(t, mod.ConfigDefaults)
 	})
+}
+
+func TestWorkspaceConfigPendingModules(t *testing.T) {
+	t.Parallel()
+
+	ws := &workspace.Workspace{Root: "/repo", Path: "."}
+	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
+		return "/resolved/" + filepath.Clean(relPath)
+	}
+
+	pending, err := workspaceConfigPendingModules(ws, &workspace.Config{
+		DefaultsFromDotEnv: true,
+		Modules: map[string]workspace.ModuleEntry{
+			"zeta": {
+				Source:    "github.com/acme/zeta@main",
+				Blueprint: true,
+				Config:    map[string]any{"message": "hello"},
+			},
+			"alpha": {
+				Source: "modules/alpha",
+			},
+		},
+	}, resolveLocalRef)
+	require.NoError(t, err)
+	require.Len(t, pending, 2)
+
+	require.Equal(t, "alpha", pending[0].Name)
+	require.Equal(t, "/resolved/.dagger/modules/alpha", pending[0].Ref)
+	require.Empty(t, pending[0].RefPin)
+	require.False(t, pending[0].Entrypoint)
+	require.True(t, pending[0].DisableFindUp)
+	require.True(t, pending[0].DefaultsFromDotEnv)
+
+	require.Equal(t, "zeta", pending[1].Name)
+	require.Equal(t, "github.com/acme/zeta@main", pending[1].Ref)
+	require.Empty(t, pending[1].RefPin)
+	require.True(t, pending[1].Entrypoint)
+	require.True(t, pending[1].DisableFindUp)
+	require.True(t, pending[1].DefaultsFromDotEnv)
+	require.Equal(t, map[string]any{"message": "hello"}, pending[1].ConfigDefaults)
 }
 
 func TestIsSameModuleReference(t *testing.T) {
@@ -194,6 +236,45 @@ func TestWorkspaceBindingMode(t *testing.T) {
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingInherit, mode)
 		require.Equal(t, "", workspaceRef)
+	})
+}
+
+func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "main-client",
+	})
+
+	t.Run("initialized workspace", func(t *testing.T) {
+		t.Parallel()
+
+		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+			Root:        "/repo",
+			Path:        "services/payment",
+			Initialized: true,
+		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		require.NoError(t, err)
+		require.Equal(t, "file:///repo/services/payment", ws.Address)
+		require.Equal(t, "services/payment", ws.Path)
+		require.True(t, ws.Initialized)
+		require.True(t, ws.HasConfig)
+		require.Equal(t, filepath.Join("services/payment", workspace.LockDirName, workspace.ConfigFileName), ws.ConfigPath)
+		require.Equal(t, "/repo", ws.HostPath())
+	})
+
+	t.Run("uninitialized workspace", func(t *testing.T) {
+		t.Parallel()
+
+		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+			Root: "/repo",
+			Path: ".",
+		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		require.NoError(t, err)
+		require.False(t, ws.Initialized)
+		require.False(t, ws.HasConfig)
+		require.Empty(t, ws.ConfigPath)
 	})
 }
 

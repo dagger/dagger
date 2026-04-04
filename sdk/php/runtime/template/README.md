@@ -17,7 +17,7 @@ The intended workflow for reusable modules is to install them through the Dagger
 To initialise the module, call the following:
 
 ```
-dagger init --sdk="php" <path-to-module>
+dagger module init --sdk="php" <path-to-module>
 ```
 
 This will create a `dagger.json` configuration file.
