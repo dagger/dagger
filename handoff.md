@@ -71,49 +71,28 @@ cd sdk/java && ./mvnw test -Ddaggerengine.version=local -Ddaggerengine.schema=/t
 
 ## Remaining SDKs
 
-### .NET SDK — needs full codegen migration
+None — all SDKs are migrated.
 
-**What's done:**
-- `TestData.cs` updated with the new unified ID schema from
-  `cmd/codegen/introspection/testdata/schema.json`
-- `CodeGenerator.cs` skips `INTERFACE` types (returns empty string)
-  so the generator doesn't crash on the new schema
+### .NET SDK ✅
 
-**What's broken:**
-- `DotnetSdkDev.test` in `main.dang` uses
-  `experimentalPrivilegedNesting: true` — should switch to
-  `daggerEngine.installClient()` like the other SDKs
-- The source generator produces 212 compile errors against the live
-  introspection schema. Key issues:
-  - **No `@expectedType` handling:** Args typed as `ID` aren't
-    resolved to their concrete types. The generator needs to read
-    `@expectedType` directives (see `Types/Field.cs`,
-    `Types/InputValue.cs`) and map `ID` args to the named type.
-  - **Per-type `FooId` scalars gone:** Code in `CodeRenderer.cs`
-    checks `type.EndsWith("Id")` to detect ID types and generates
-    `IdValue<FooId>` wrappers + `load{typeName}FromID` calls for
-    list returns. These need replacing with the `node(id:)` +
-    inline fragment pattern.
-  - **`INTERFACE` types:** Currently skipped. Should generate C#
-    `interface` types + client classes (follow Java/Go pattern).
-  - **Reserved word collisions:** The new schema has types with
-    fields named `module`, `value`, `workspace` etc. that collide
-    with C# reserved words or produce invalid identifiers. The
-    `Formatter` class needs escaping (prefix with `@`).
-  - **Introspection types don't model directives:** `Types/Field.cs`
-    and `Types/InputValue.cs` have no `Directives` property. Need
-    to add directive deserialization (see PHP SDK's approach in
-    `42a2e83ab` as a reference for parsing raw introspection JSON).
+Directive types added to `Types/Directive.cs`. Introspection models
+updated: `Field`, `InputValue`, and `Type` now deserialize
+`directives`, `interfaces`, and `possibleTypes`. `@expectedType`
+resolved on args (including lists) and fields (sync-like fields
+execute and return parent via `node(id:)`). Per-type `FooId` scalars
+replaced by unified `Id` class in base SDK. `QueryBuilder` supports
+inline fragments for `node(id:)` pattern. `INTERFACE` schema types
+generate C# `interface` + `*Client` class pairs. `IId` simplified
+to unified interface. `IdValue` no longer generic.
 
-**Migration plan (follow sdk-migration skill checklist):**
-1. Add directive types to `Types/` and update introspection query
-2. Read `@expectedType` on args → resolve `ID` to concrete types
-3. Read `@expectedType` on fields → handle `sync`/`id` returns
-4. Remove per-type `FooId` scalar generation, emit single `Id` type
-5. Replace `loadFooFromID` codegen with `node(id:)` + inline fragment
-6. Generate `INTERFACE` types (C# `interface` + client class)
-7. Fix reserved word escaping in `Formatter.cs`
-8. Switch `test` in `main.dang` to `daggerEngine.installClient()`
+`QueryExecutor` now checks for GraphQL errors and handles null
+JSON traversal. `TestReturnArray` test fixed to use async/await
+properly. Three new `QueryBuilder` tests for inline fragments.
+
+**Toolchain:** `test` in `main.dang` uses `dagger run` instead of
+`experimentalPrivilegedNesting` so integration tests use the dev
+engine with `node(id:)` support. All 20 tests pass (3 codegen +
+17 integration).
 
 **Note:** The .NET SDK is intentionally not registered in root
 `dagger.json`. Run it directly via `dagger -m toolchains/dotnet-sdk-dev call`.
