@@ -12,7 +12,7 @@ Status legend:
 
 ## Runtime Bugs
 
-- [ ] Make `dagger update` behave sanely in an empty initialized workspace.
+- [x] Make `dagger update` behave sanely in an empty initialized workspace.
   Current behavior: `dagger init` followed by `dagger update` fails with `workspace lockfile does not exist`.
 
 - [ ] Restore normal `dagger migrate` summary output when migration includes remote lookup sources.

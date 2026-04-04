@@ -10,6 +10,19 @@ import (
 )
 
 func (WorkspaceSuite) TestWorkspaceLockUpdateCommand(ctx context.Context, t *testctx.T) {
+	t.Run("top-level update is a no-op in an empty initialized workspace", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			With(daggerExec("workspace", "init"))
+
+		out, err := ctr.With(daggerExecRaw("update")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+
+		_, err = ctr.File(".dagger/lock").Contents(ctx)
+		require.Error(t, err)
+	})
+
 	t.Run("refreshes only the selected workspace module lock entry", func(ctx context.Context, t *testctx.T) {
 		const (
 			wolfiSource = "github.com/dagger/dagger/modules/wolfi@main"
