@@ -72,6 +72,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- $convertID := $field | ConvertID }}
 {{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
 {{ InterfaceClientMethod $.Name $field }} {
+{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- range $arg := $field.Args }}
 	    {{- if and (IsPointer $arg) (not (IsArgOptional $arg)) }}
         assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})
