@@ -16,7 +16,6 @@ Depends on: [Artifacts](./artifacts.md)
 - [Lockfile Acceleration](#lockfile-acceleration)
 - [Schema](#schema)
 - [Examples](#examples)
-- [Implementation Notes](#implementation-notes)
 - [Caching Semantics](#caching-semantics)
 - [Open Questions](#open-questions)
 
@@ -46,6 +45,48 @@ It does not try to model:
 
 When these APIs return a `Directory` or `File`, they attach a workspace
 selector to that value.
+
+Implementation sketch:
+
+When the engine returns a workspace-backed `Directory` or `File`, it stores an
+exact `WorkspaceSelector` on that value.
+
+```go
+type WorkspaceSelector struct {
+	Path         WorkspacePath
+	Include      []string
+	Exclude      []string
+	Conservative bool
+}
+
+type WorkspaceProvenance struct {
+	Selectors []WorkspaceSelector
+}
+
+func (ws *Workspace) Directory(path WorkspacePath, opts DirOpts) *Directory {
+	return &Directory{
+		Provenance: WorkspaceProvenance{
+			Selectors: []WorkspaceSelector{{
+				Path:         path,
+				Include:      opts.Include,
+				Exclude:      opts.Exclude,
+				Conservative: false,
+			}},
+		},
+	}
+}
+
+func (ws *Workspace) File(path WorkspacePath) *File {
+	return &File{
+		Provenance: WorkspaceProvenance{
+			Selectors: []WorkspaceSelector{{
+				Path:         path,
+				Conservative: false,
+			}},
+		},
+	}
+}
+```
 
 ## Workspace Provenance
 
@@ -162,6 +203,34 @@ Example:
 But the exact author-facing or runtime mechanism for producing that narrower
 conservative selector is not yet defined in this design.
 
+Implementation sketch:
+
+After collecting exact selectors, the engine adds a conservative selector when
+the artifact:
+
+- stores `Workspace` in a field
+- or exposes any public function that accepts `Workspace`
+
+The baseline selector is rooted at `/`.
+
+```go
+func CollectArtifactProvenance(obj ObjectWithSchema) WorkspaceProvenance {
+	prov := CollectStoredProvenance(obj)
+	if obj.HasStoredWorkspaceField() || obj.HasPublicWorkspaceArgFunction() {
+		prov = prov.Union(WorkspaceProvenance{
+			Selectors: []WorkspaceSelector{{
+				Path:         "/",
+				Conservative: true,
+			}},
+		})
+	}
+	return NormalizeProvenance(prov)
+}
+```
+
+Later implementations may narrow that conservative selector with `include` and
+`exclude`.
+
 ## Tracking and Union
 
 Known selectors come from stored `Directory` and `File` values.
@@ -175,6 +244,29 @@ walk is transitive through nested stored objects.
 - exact selectors stay exact
 - conservative selectors stay conservative
 - equivalent selectors may be deduplicated when practical
+
+Implementation sketch:
+
+The engine walks stored fields. It also walks nested stored objects.
+
+```go
+func CollectStoredProvenance(v any) WorkspaceProvenance {
+	switch x := v.(type) {
+	case *Directory:
+		return x.Provenance
+	case *File:
+		return x.Provenance
+	case ObjectWithFields:
+		var out WorkspaceProvenance
+		for _, f := range x.MaterializedFields() {
+			out = out.Union(CollectStoredProvenance(f.Value))
+		}
+		return out
+	default:
+		return WorkspaceProvenance{}
+	}
+}
+```
 
 ## Matching
 
@@ -224,6 +316,24 @@ from the already selected artifact set.
 Later, the engine may add a second provenance layer on actions. That would make
 some currently conservative artifact matches narrower at execution time, without
 changing the artifact-level no-false-negative rule.
+
+Implementation sketch:
+
+The `Artifacts` filters lower directly to `Artifact.provenance`.
+
+```go
+func (s *Artifacts) FilterAffectedByPath(path WorkspacePath) *Artifacts {
+	return s.FilterRows(func(a ArtifactRow) bool {
+		return a.Provenance.AffectedByPath(path)
+	})
+}
+
+func (s *Artifacts) FilterAffectedByDiff(changes Changeset) *Artifacts {
+	return s.FilterRows(func(a ArtifactRow) bool {
+		return a.Provenance.AffectedByDiff(changes)
+	})
+}
+```
 
 ## Lockfile Acceleration
 
@@ -287,6 +397,24 @@ Local development can be simpler:
 
 This topic is about artifact provenance only. If plans later gain their own
 provenance layer, the same idea can be extended to actions.
+
+Implementation sketch:
+
+```go
+func ShouldLoadArtifact(a ArtifactKey, changes Changeset) bool {
+	if cached, ok := LoadCachedProvenance(a); ok && !cached.AffectedByDiff(changes) {
+		return false
+	}
+	return true
+}
+
+func OnArtifactLoaded(a ArtifactKey, obj ObjectWithSchema) {
+	StoreCachedProvenance(a, CollectArtifactProvenance(obj))
+}
+```
+
+This cache is advisory. Any artifact that is actually loaded must refresh its
+entry.
 
 ## Schema
 
@@ -472,137 +600,6 @@ selectors = [
 
 The exact selector is still useful for inspection and debugging. The
 conservative selector is still useful for broad pruning.
-
-## Implementation Notes
-
-The initial implementation can be built in five steps.
-
-### 1. Save exact selectors on workspace reads
-
-When the engine returns a workspace-backed `Directory` or `File`, it stores an
-exact `WorkspaceSelector` on that value.
-
-```go
-type WorkspaceSelector struct {
-	Path         WorkspacePath
-	Include      []string
-	Exclude      []string
-	Conservative bool
-}
-
-type WorkspaceProvenance struct {
-	Selectors []WorkspaceSelector
-}
-
-func (ws *Workspace) Directory(path WorkspacePath, opts DirOpts) *Directory {
-	return &Directory{
-		Provenance: WorkspaceProvenance{
-			Selectors: []WorkspaceSelector{{
-				Path:         path,
-				Include:      opts.Include,
-				Exclude:      opts.Exclude,
-				Conservative: false,
-			}},
-		},
-	}
-}
-
-func (ws *Workspace) File(path WorkspacePath) *File {
-	return &File{
-		Provenance: WorkspaceProvenance{
-			Selectors: []WorkspaceSelector{{
-				Path:         path,
-				Conservative: false,
-			}},
-		},
-	}
-}
-```
-
-### 2. Collect and union through stored fields
-
-The engine walks stored fields. It also walks nested stored objects.
-
-```go
-func CollectStoredProvenance(v any) WorkspaceProvenance {
-	switch x := v.(type) {
-	case *Directory:
-		return x.Provenance
-	case *File:
-		return x.Provenance
-	case ObjectWithFields:
-		var out WorkspaceProvenance
-		for _, f := range x.MaterializedFields() {
-			out = out.Union(CollectStoredProvenance(f.Value))
-		}
-		return out
-	default:
-		return WorkspaceProvenance{}
-	}
-}
-```
-
-### 3. Add conservative selectors
-
-After collecting exact selectors, the engine adds a conservative selector when
-the artifact:
-
-- stores `Workspace` in a field
-- or exposes any public function that accepts `Workspace`
-
-The baseline selector is rooted at `/`.
-
-```go
-func CollectArtifactProvenance(obj ObjectWithSchema) WorkspaceProvenance {
-	prov := CollectStoredProvenance(obj)
-	if obj.HasStoredWorkspaceField() || obj.HasPublicWorkspaceArgFunction() {
-		prov = prov.Union(WorkspaceProvenance{
-			Selectors: []WorkspaceSelector{{
-				Path:         "/",
-				Conservative: true,
-			}},
-		})
-	}
-	return NormalizeProvenance(prov)
-}
-```
-
-Later implementations may narrow that conservative selector with `include` and
-`exclude`.
-
-### 4. Implement the `Artifacts` filters in terms of `Artifact.provenance`
-
-```go
-func (s *Artifacts) FilterAffectedByPath(path WorkspacePath) *Artifacts {
-	return s.FilterRows(func(a ArtifactRow) bool {
-		return a.Provenance.AffectedByPath(path)
-	})
-}
-
-func (s *Artifacts) FilterAffectedByDiff(changes Changeset) *Artifacts {
-	return s.FilterRows(func(a ArtifactRow) bool {
-		return a.Provenance.AffectedByDiff(changes)
-	})
-}
-```
-
-### 5. Optionally prune with a lockfile-backed provenance index
-
-```go
-func ShouldLoadArtifact(a ArtifactKey, changes Changeset) bool {
-	if cached, ok := LoadCachedProvenance(a); ok && !cached.AffectedByDiff(changes) {
-		return false
-	}
-	return true
-}
-
-func OnArtifactLoaded(a ArtifactKey, obj ObjectWithSchema) {
-	StoreCachedProvenance(a, CollectArtifactProvenance(obj))
-}
-```
-
-This cache is advisory. Any artifact that is actually loaded must refresh its
-entry.
 
 ## Caching Semantics
 
