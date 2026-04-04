@@ -22,7 +22,11 @@ func (WorkspaceSuite) TestCurrentWorkspaceInstall(ctx context.Context, t *testct
 
 		msg, err := c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
 		require.NoError(t, err)
-		require.Equal(t, `Installed module "mywolfi" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName), msg)
+		require.Equal(t,
+			"Initialized workspace in "+filepath.Join(workdir, ".dagger")+"\n"+
+				`Installed module "mywolfi" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName),
+			msg,
+		)
 
 		configBytes, err := os.ReadFile(filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName))
 		require.NoError(t, err)
@@ -33,10 +37,13 @@ func (WorkspaceSuite) TestCurrentWorkspaceInstall(ctx context.Context, t *testct
 		require.Equal(t, ref, cfg.Modules["mywolfi"].Source)
 		require.False(t, cfg.Modules["mywolfi"].Blueprint)
 
+		require.NoError(t, c.Close())
+
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.LockFileName))
 		require.NoError(t, err)
 		assertModuleResolveLockEntry(t, lockBytes, ref, workspacecfg.PolicyPin)
 
+		c = connect(ctx, t, dagger.WithWorkdir(workdir))
 		msg, err = c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
 		require.NoError(t, err)
 		require.Equal(t, `Module "mywolfi" is already installed`, msg)
@@ -55,7 +62,11 @@ func (WorkspaceSuite) TestCurrentWorkspaceInstall(ctx context.Context, t *testct
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		msg, err := c.CurrentWorkspace().Install(ctx, "./dep")
 		require.NoError(t, err)
-		require.Equal(t, `Installed module "dep" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName), msg)
+		require.Equal(t,
+			"Initialized workspace in "+filepath.Join(workdir, ".dagger")+"\n"+
+				`Installed module "dep" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName),
+			msg,
+		)
 
 		configBytes, err := os.ReadFile(filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName))
 		require.NoError(t, err)
@@ -114,7 +125,11 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
-		require.Equal(t, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName), strings.TrimSpace(string(out)))
+		require.Equal(t,
+			"Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName)+"\n"+
+				`Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName),
+			strings.TrimSpace(string(out)),
+		)
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Contains(t, cfg.Modules, "dep")
@@ -128,7 +143,11 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", ref)
 		require.NoError(t, err)
-		require.Equal(t, `Installed module "wolfi" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName), strings.TrimSpace(string(out)))
+		require.Equal(t,
+			"Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName)+"\n"+
+				`Installed module "wolfi" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName),
+			strings.TrimSpace(string(out)),
+		)
 
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.LockFileName))
 		require.NoError(t, err)
@@ -149,7 +168,11 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
-		require.Equal(t, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName), strings.TrimSpace(string(out)))
+		require.Equal(t,
+			"Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName)+"\n"+
+				`Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName),
+			strings.TrimSpace(string(out)),
+		)
 
 		moduleConfig, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ModuleConfigFileName))
 		require.NoError(t, err)

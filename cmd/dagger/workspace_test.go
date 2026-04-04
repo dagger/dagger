@@ -26,6 +26,7 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.Nil(t, cmd.Flags().Lookup("mod"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 	require.NotNil(t, cmd.Flags().Lookup("name"))
+	require.Contains(t, cmd.Long, "If the current directory is not yet a workspace, this initializes one first.")
 
 	cmd, _, err = rootCmd.Find([]string{"module", "install"})
 	require.NoError(t, err)

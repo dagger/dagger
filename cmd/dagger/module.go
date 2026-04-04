@@ -468,9 +468,11 @@ With module names, refresh only those modules from .dagger/config.toml.
 }
 
 var moduleDepInstallCmd = &cobra.Command{
-	Use:     "install [options] <module>",
-	Short:   "Install a module",
-	Long:    "Install a module into the current workspace.",
+	Use:   "install [options] <module>",
+	Short: "Install a module",
+	Long: `Install a module into the current workspace.
+
+If the current directory is not yet a workspace, this initializes one first.`,
 	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
 	GroupID: workspaceGroup.ID,
 	Args:    cobra.ExactArgs(1),

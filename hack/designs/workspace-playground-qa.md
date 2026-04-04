@@ -169,9 +169,9 @@ Notes:
 
 Severity: medium
 
-## Open Questions
+## Resolved Decisions
 
-### 6. Should `dagger install` implicitly initialize a workspace?
+### 6. `dagger install` should implicitly initialize a workspace
 
 Repro:
 
@@ -192,9 +192,8 @@ Installed module "wolfi" in /tmp/.../.dagger/config.toml
 
 Notes:
 - this is convenient
-- but it also means `dagger install` bootstraps a workspace without saying so
-- if the intended UX is that `dagger init` is the explicit workspace entry point, this is a semantic leak
-- if the implicit bootstrap is intentional, help text should say so
+- the product decision is to keep this implicit bootstrap
+- command help and output should say so clearly
 
 ## Good
 
@@ -213,4 +212,4 @@ Notes:
 2. Restore migration summary output for remote-lookup migrations.
 3. Remove or suppress the false `NotFound` noise from explicit-path `dagger module init`.
 4. Fix root help grouping and tighten help/examples.
-5. Decide whether implicit workspace bootstrap from `dagger install` is intended. If yes, document it. If no, gate it behind `dagger init`.
+5. Document the implicit workspace bootstrap behavior of `dagger install`.

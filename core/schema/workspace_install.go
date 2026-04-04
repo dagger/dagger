@@ -26,12 +26,9 @@ func (s *workspaceSchema) install(
 		return "", err
 	}
 
-	cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{}}
-	if parent.HasConfig {
-		cfg, err = readWorkspaceConfig(ctx, parent)
-		if err != nil {
-			return "", err
-		}
+	cfg, initialized, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing)
+	if err != nil {
+		return "", err
 	}
 
 	if existing, ok := cfg.Modules[name]; ok {
@@ -46,14 +43,6 @@ func (s *workspaceSchema) install(
 		)
 	}
 
-	bk, err := workspaceBuildkit(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := ensureWorkspaceInitialized(ctx, bk, parent); err != nil {
-		return "", fmt.Errorf("initialize workspace: %w", err)
-	}
-
 	cfg.Modules[name] = workspace.ModuleEntry{
 		Source: sourcePath,
 	}
@@ -65,7 +54,12 @@ func (s *workspaceSchema) install(
 	if err != nil {
 		return "", err
 	}
-	return dagql.String(fmt.Sprintf("Installed module %q in %s", name, cfgPath)), nil
+
+	msg := fmt.Sprintf("Installed module %q in %s", name, cfgPath)
+	if initialized {
+		msg = fmt.Sprintf("Initialized workspace in %s\n%s", filepath.Dir(cfgPath), msg)
+	}
+	return dagql.String(msg), nil
 }
 
 func (s *workspaceSchema) resolveWorkspaceInstall(

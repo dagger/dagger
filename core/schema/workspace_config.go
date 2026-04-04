@@ -63,6 +63,41 @@ func workspaceBuildkit(ctx context.Context) (*buildkit.Client, error) {
 	return bk, nil
 }
 
+type workspaceConfigMutationPolicy int
+
+const (
+	workspaceConfigMustExist workspaceConfigMutationPolicy = iota
+	workspaceConfigInitIfMissing
+)
+
+// loadWorkspaceConfigForMutation is the single policy choke point for commands
+// that need a writable workspace config. Future flags like --require-init should
+// only need to change the policy passed here.
+func loadWorkspaceConfigForMutation(
+	ctx context.Context,
+	ws *core.Workspace,
+	policy workspaceConfigMutationPolicy,
+) (*workspace.Config, bool, error) {
+	if ws.HasConfig {
+		cfg, err := readWorkspaceConfig(ctx, ws)
+		return cfg, false, err
+	}
+
+	if policy == workspaceConfigMustExist {
+		return nil, false, fmt.Errorf("no config.toml found in workspace")
+	}
+
+	bk, err := workspaceBuildkit(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := ensureWorkspaceInitialized(ctx, bk, ws); err != nil {
+		return nil, false, fmt.Errorf("initialize workspace: %w", err)
+	}
+
+	return &workspace.Config{Modules: map[string]workspace.ModuleEntry{}}, true, nil
+}
+
 func ensureWorkspaceInitialized(ctx context.Context, bk *buildkit.Client, ws *core.Workspace) error {
 	if ws.HasConfig {
 		return nil

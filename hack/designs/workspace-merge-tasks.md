@@ -32,12 +32,12 @@ Status legend:
 
 ## Product Decision
 
-- [-] Decide whether top-level `dagger install` should implicitly initialize a workspace.
-  Observed behavior:
-  - in a clean directory, `dagger install <module>` creates `.dagger/config.toml` and `.dagger/lock`
-  Decision needed:
-  - keep implicit bootstrap and document it
-  - or require explicit `dagger init`
+- [x] Decide whether top-level `dagger install` should implicitly initialize a workspace.
+  Decision:
+  - keep implicit bootstrap
+  Follow-through:
+  - document it in command help and output
+  - keep the behavior behind a single schema policy choke point for a future `--require-init` style option
 
 ## Follow-Up
 
