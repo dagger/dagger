@@ -18,7 +18,7 @@ Status legend:
 - [x] Restore normal `dagger migrate` summary output when migration includes remote lookup sources.
   Current behavior: migration succeeds, but the summary is suppressed.
 
-- [ ] Remove false `NotFound` progress noise from `dagger module init <path>` inside a workspace.
+- [x] Remove false `NotFound` progress noise from `dagger module init <path>` inside a workspace.
   Current behavior: command succeeds but emits scary transient errors before export creates the target directory.
 
 ## CLI Polish

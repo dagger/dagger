@@ -342,6 +342,17 @@ dagger module init --sdk=go
 				moduleName = filepath.Base(srcRootAbsPath)
 			}
 
+			// Standalone init supports targeting a directory that does not exist yet.
+			// Create it before SDK setup probes the host path so progress output
+			// does not show false "not found" errors for a path we are about to export.
+			if _, err := os.Stat(srcRootAbsPath); os.IsNotExist(err) {
+				if err := os.MkdirAll(srcRootAbsPath, 0o755); err != nil {
+					return fmt.Errorf("failed to create module directory: %w", err)
+				}
+			} else if err != nil {
+				return fmt.Errorf("failed to stat module directory: %w", err)
+			}
+
 			if len(extraArgs) == 0 {
 				hasConfig, err := dag.CurrentWorkspace().HasConfig(ctx)
 				if err != nil {

@@ -78,10 +78,24 @@ type Mymod {
 	})
 
 	t.Run("explicit path keeps standalone init inside a workspace", func(ctx context.Context, t *testctx.T) {
-		ctr := base.
+		initCtr := base.
 			With(daggerExec("workspace", "init")).
-			WithExec([]string{"mkdir", "-p", "submod"}).
-			With(daggerExec("module", "init", "--sdk=dang", "--name=standalone", "./submod")).
+			WithExec([]string{"dagger", "module", "init", "--sdk=dang", "--name=standalone", "./submod"}, dagger.ContainerWithExecOpts{
+				Expect:                        dagger.ReturnTypeAny,
+				ExperimentalPrivilegedNesting: true,
+			})
+
+		initCode, err := initCtr.ExitCode(ctx)
+		require.NoError(t, err)
+		initOut, err := initCtr.Stdout(ctx)
+		require.NoError(t, err)
+		initErr, err := initCtr.Stderr(ctx)
+		require.NoError(t, err)
+		require.Zero(t, initCode, "stdout:\n%s\nstderr:\n%s", initOut, initErr)
+		require.NotContains(t, initErr, "failed to receive stat message")
+		require.NotContains(t, initErr, "failed to get content hash")
+
+		ctr := initCtr.
 			WithNewFile("submod/main.dang", `
 type Standalone {
   pub greet: String! {
