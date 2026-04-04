@@ -87,13 +87,12 @@ Likely tricky buckets:
   * CI/workflow small changes
 
 Ordered incoming commits:
-1. `db59252ad` `workspace: plumbing & compat (#11995)`
-2. `83529b0cb` `bump tuist for new API + tmux/vim alt screen (#12874)`
-3. `a626c862a` `test(dagger up): don't use a tty (#12895)`
-4. `946fe96bb` `feat: go toolchain tag support (#12896)`
-5. `fb5a380b5` `chore: add a test for dockerfile COPY --exclude (#12897)`
-6. `7a2a10e53` `fix: ensure image layer blobs are local before ContainerDagOp returns (#12861)`
-7. `9db1734ca` `add support to set secret arrays with local defaults (#12898)`
+1. `83529b0cb` `bump tuist for new API + tmux/vim alt screen (#12874)`
+2. `a626c862a` `test(dagger up): don't use a tty (#12895)`
+3. `946fe96bb` `feat: go toolchain tag support (#12896)`
+4. `fb5a380b5` `chore: add a test for dockerfile COPY --exclude (#12897)`
+5. `7a2a10e53` `fix: ensure image layer blobs are local before ContainerDagOp returns (#12861)`
+6. `9db1734ca` `add support to set secret arrays with local defaults (#12898)`
 
 ## a189dc9b2 add native Dang runtime
 * Keep:

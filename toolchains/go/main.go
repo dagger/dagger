@@ -42,9 +42,13 @@ func New(
 	// +optional
 	base *dagger.Container,
 
-	// Pass arguments to 'go build -ldflags''
+	// Pass arguments to 'go build -ldflags'
 	// +optional
 	ldflags []string,
+
+	// Pass arguments to 'go build -tags'
+	// +optional
+	tags []string,
 
 	// Add string value definition of the form importpath.name=value
 	// Example: "github.com/my/module.Foo=bar"
@@ -117,6 +121,7 @@ func New(
 		BuildCache:  buildCache,
 		Base:        base,
 		Ldflags:     ldflags,
+		Tags:        tags,
 		Values:      values,
 		Cgo:         cgo,
 		Race:        race,
@@ -141,8 +146,11 @@ type Go struct {
 	// Base container from which to run all operations
 	Base *dagger.Container
 
-	// Pass arguments to 'go build -ldflags''
+	// Pass arguments to 'go build -ldflags'
 	Ldflags []string
+
+	// Pass arguments to 'go build -tags'
+	Tags []string
 
 	// Add string value definition of the form importpath.name=value
 	Values []string
@@ -295,7 +303,7 @@ func (p *Go) Build(
 	env := p.Env(platform)
 	cmd := []string{"go", "build", "-o", output}
 	for _, pkg := range mainPkgs {
-		env = env.WithExec(goCommand(cmd, []string{pkg}, ldflags, p.Values, p.Race))
+		env = env.WithExec(goCommand(cmd, []string{pkg}, ldflags, p.Tags, p.Values, p.Race))
 	}
 	return dag.Directory().WithDirectory(output, env.Directory(output)), nil
 }
@@ -386,7 +394,7 @@ func (p *Go) Test(
 	}
 	_, err := p.
 		Env(defaultPlatform).
-		WithExec(goCommand(cmd, pkgs, p.Ldflags, p.Values, p.Race)).
+		WithExec(goCommand(cmd, pkgs, p.Ldflags, p.Tags, p.Values, p.Race)).
 		Sync(ctx)
 	return err
 }
@@ -424,6 +432,7 @@ func goCommand(
 	cmd []string,
 	pkgs []string,
 	ldflags []string,
+	tags []string,
 	values []string,
 	race bool,
 ) []string {
@@ -432,6 +441,9 @@ func goCommand(
 	}
 	if len(ldflags) > 0 {
 		cmd = append(cmd, "-ldflags", strings.Join(ldflags, " "))
+	}
+	if len(tags) > 0 {
+		cmd = append(cmd, "-tags", strings.Join(tags, ","))
 	}
 	if race {
 		cmd = append(cmd, "-race")

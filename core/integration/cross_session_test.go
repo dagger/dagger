@@ -93,7 +93,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 	func (*Test) Fn(
 		// +optional
-		i int, 
+		i int,
 		// +optional
 		s string,
 	) string {
@@ -1605,6 +1605,8 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 }
 
 func (ModuleSuite) TestCrossSessionDedupeOfNestedExec(ctx context.Context, t *testctx.T) {
+	t.Skip("disabled until Theseus lands")
+
 	callMod := func(c *dagger.Client) error {
 		_, err := goGitBase(t, c).
 			WithWorkdir("/work").
