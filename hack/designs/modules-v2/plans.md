@@ -237,7 +237,7 @@ One artifact:
 
 ```text
 workspace.artifacts
-  .filterDimension("type", ["go"])
+  .filterCoordinates("type", ["go"])
   .items[0]
   .actions
 ```
@@ -254,7 +254,7 @@ Several selected artifacts:
 
 ```text
 workspace.artifacts
-  .filterDimension("type", ["go-test"])
+  .filterCoordinates("type", ["go-test"])
   .actions
 ```
 
@@ -269,7 +269,7 @@ Batched action lookup:
 
 ```text
 workspace.artifacts
-  .filterDimension("type", ["go-test"])
+  .filterCoordinates("type", ["go-test"])
   .action("run")
 ```
 

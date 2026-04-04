@@ -457,7 +457,8 @@ TestBar
 
 ### Filter Flags
 
-Dimension filters still use repeatable valued flags:
+Valued dimension flags still use repeatable valued flags and lower to
+`filterCoordinates(...)`:
 
 ```console
 --type=<value>
@@ -471,6 +472,12 @@ Presence filtering is part of the API:
 
 ```text
 filterDimension("go-test")
+```
+
+Coordinate filtering is a separate operation:
+
+```text
+filterCoordinates("go-test", ["TestFoo", "TestBar"])
 ```
 
 CLI parsing should normalize command-specific sugar into this API before
@@ -539,14 +546,20 @@ Chainable: every filter returns a narrowed Artifacts.
 """
 type Artifacts {
   """
-  Narrow by a dimension, optionally to specific values. With no values,
-  selects rows whose coordinate row has a non-null cell for that dimension.
+  Keep rows whose coordinate row has a non-null cell for the given dimension.
+  Errors if the dimension is not present in the current scope.
+  Preserves the current scope's dimension order and narrows only the row set.
+  """
+  filterDimension(dimension: String!): Artifacts!
+
+  """
+  Keep rows whose coordinate for the given dimension matches one of `values`.
   Errors if the dimension is not present in the current scope.
   Preserves the current scope's dimension order and narrows only the row set.
   Values are parsed and validated according to that dimension's `keyType`.
-  An empty values list is invalid; omit `values` for presence filtering.
+  `values` must be non-empty.
   """
-  filterDimension(dimension: String!, values: [String!]): Artifacts!
+  filterCoordinates(dimension: String!, values: [String!]!): Artifacts!
 
   """
   Keep only artifact rows that can reach at least one handler for the given
@@ -634,7 +647,7 @@ type FieldValue {
 
 ## Filter Algebra
 
-Dimension filters use repeatable valued flags and compose in the obvious way:
+Coordinate filters use repeatable valued flags and compose in the obvious way:
 
 - values within one dimension are **OR**
 - different dimensions are **AND**
@@ -665,6 +678,16 @@ means:
 Presence filtering means:
 
 - keep rows where the given coordinate is non-null
+
+Coordinate filtering means:
+
+- keep rows whose coordinate value matches one of the given values
+
+These combine in the obvious way:
+
+- `filterDimension("go-test").filterCoordinates("go-test", ["TestFoo"])`
+  is equivalent to `filterCoordinates("go-test", ["TestFoo"])`
+- `filterCoordinates("type", ["go", "js"])` means `go OR js`
 
 For CLI usage, users normally spell the same intent with a valued filter:
 
