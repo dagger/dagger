@@ -41,6 +41,9 @@ type Function struct {
 	// IsGenerator indicates whether this function is a generator
 	IsGenerator bool
 
+	// IsUp indicates whether this function returns a service to be started with `dagger up`
+	IsUp bool
+
 	// OriginalName of the parent object
 	ParentOriginalName string
 
@@ -161,6 +164,11 @@ func (fn *Function) Directives() []*ast.Directive {
 	if fn.IsCheck {
 		directives = append(directives, &ast.Directive{
 			Name: "check",
+		})
+	}
+	if fn.IsUp {
+		directives = append(directives, &ast.Directive{
+			Name: "up",
 		})
 	}
 	return directives
@@ -309,6 +317,12 @@ func (fn *Function) WithCheck() *Function {
 func (fn *Function) WithGenerator() *Function {
 	fn = fn.Clone()
 	fn.IsGenerator = true
+	return fn
+}
+
+func (fn *Function) WithUp() *Function {
+	fn = fn.Clone()
+	fn.IsUp = true
 	return fn
 }
 
@@ -2652,6 +2666,7 @@ type persistedFunction struct {
 	CacheTTLSeconds    *int64              `json:"cacheTTLSeconds,omitempty"`
 	IsCheck            bool                `json:"isCheck,omitempty"`
 	IsGenerator        bool                `json:"isGenerator,omitempty"`
+	IsUp               bool                `json:"isUp,omitempty"`
 	ParentOriginalName string              `json:"parentOriginalName,omitempty"`
 	OriginalName       string              `json:"originalName,omitempty"`
 }
@@ -2826,6 +2841,7 @@ func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*p
 		CachePolicy:        fn.CachePolicy,
 		IsCheck:            fn.IsCheck,
 		IsGenerator:        fn.IsGenerator,
+		IsUp:               fn.IsUp,
 		ParentOriginalName: fn.ParentOriginalName,
 		OriginalName:       fn.OriginalName,
 	}
@@ -2872,6 +2888,7 @@ func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persist
 		CachePolicy:        fn.CachePolicy,
 		IsCheck:            fn.IsCheck,
 		IsGenerator:        fn.IsGenerator,
+		IsUp:               fn.IsUp,
 		ParentOriginalName: fn.ParentOriginalName,
 		OriginalName:       fn.OriginalName,
 	}

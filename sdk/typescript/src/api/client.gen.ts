@@ -1267,6 +1267,13 @@ export type EnvChecksOpts = {
   include?: string[]
 }
 
+export type EnvServicesOpts = {
+  /**
+   * Only include services matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type EnvFileGetOpts = {
   /**
    * Return the value exactly as written to the file. No quote removal or variable expansion
@@ -1946,6 +1953,13 @@ export type ModuleServeOpts = {
    * Install the module as the entrypoint, promoting its main-object methods onto the Query root
    */
   entrypoint?: boolean
+}
+
+export type ModuleServicesOpts = {
+  /**
+   * Only include services matching the specified patterns
+   */
+  include?: string[]
 }
 
 /**
@@ -2714,6 +2728,16 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
   }
 }
 /**
+ * The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
+ */
+export type UpGroupID = string & { __UpGroupID: never }
+
+/**
+ * The `UpID` scalar type represents an identifier for an object of type Up.
+ */
+export type UpID = string & { __UpID: never }
+
+/**
  * The absence of a value.
  *
  * A Null Void is used as a placeholder for resolvers that do not return anything.
@@ -2754,6 +2778,13 @@ export type WorkspaceFindUpOpts = {
 export type WorkspaceGeneratorsOpts = {
   /**
    * Only include generators matching the specified patterns
+   */
+  include?: string[]
+}
+
+export type WorkspaceServicesOpts = {
+  /**
+   * Only include services matching the specified patterns
    */
   include?: string[]
 }
@@ -3153,6 +3184,22 @@ export class Binding extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Retrieve the binding value, as type Up
+   */
+  asUp = (): Up => {
+    const ctx = this._ctx.select("asUp")
+    return new Up(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type UpGroup
+   */
+  asUpGroup = (): UpGroup => {
+    const ctx = this._ctx.select("asUpGroup")
+    return new UpGroup(ctx)
   }
 
   /**
@@ -6494,6 +6541,16 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Return all services defined by the installed modules
+   * @param opts.include Only include services matching the specified patterns
+   * @experimental
+   */
+  services = (opts?: EnvServicesOpts): UpGroup => {
+    const ctx = this._ctx.select("services", { ...opts })
+    return new UpGroup(ctx)
+  }
+
+  /**
    * Create or update a binding of type Address in the environment
    * @param name The name of the binding
    * @param value The Address value to assign to the binding
@@ -7241,6 +7298,56 @@ export class Env extends BaseClient {
    */
   withStringOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withStringOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type UpGroup in the environment
+   * @param name The name of the binding
+   * @param value The UpGroup value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withUpGroupInput = (
+    name: string,
+    value: UpGroup,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withUpGroupInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired UpGroup output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withUpGroupOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withUpGroupOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Up in the environment
+   * @param name The name of the binding
+   * @param value The Up value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withUpInput = (name: string, value: Up, description: string): Env => {
+    const ctx = this._ctx.select("withUpInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Up output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withUpOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withUpOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -8254,6 +8361,14 @@ export class Function_ extends BaseClient {
    */
   withSourceMap = (sourceMap: SourceMap): Function_ => {
     const ctx = this._ctx.select("withSourceMap", { sourceMap })
+    return new Function_(ctx)
+  }
+
+  /**
+   * Returns the function with a flag indicating it returns a service for dagger up.
+   */
+  withUp = (): Function_ => {
+    const ctx = this._ctx.select("withUp")
     return new Function_(ctx)
   }
 
@@ -10617,6 +10732,16 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Return all services defined by the module
+   * @param opts.include Only include services matching the specified patterns
+   * @experimental
+   */
+  services = (opts?: ModuleServicesOpts): UpGroup => {
+    const ctx = this._ctx.select("services", { ...opts })
+    return new UpGroup(ctx)
+  }
+
+  /**
    * The source for the module.
    */
   source = (): ModuleSource => {
@@ -12465,6 +12590,22 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Up from its ID.
+   */
+  loadUpFromID = (id: UpID): Up => {
+    const ctx = this._ctx.select("loadUpFromID", { id })
+    return new Up(ctx)
+  }
+
+  /**
+   * Load a UpGroup from its ID.
+   */
+  loadUpGroupFromID = (id: UpGroupID): UpGroup => {
+    const ctx = this._ctx.select("loadUpGroupFromID", { id })
+    return new UpGroup(ctx)
+  }
+
+  /**
    * Load a Workspace from its ID.
    */
   loadWorkspaceFromID = (id: WorkspaceID): Workspace => {
@@ -13769,6 +13910,169 @@ export class TypeDef extends BaseClient {
   }
 }
 
+export class Up extends BaseClient {
+  private readonly _id?: UpID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: UpID,
+    _description?: string,
+    _name?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this Up.
+   */
+  id = async (): Promise<UpID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<UpID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The description of the service
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the fully qualified name of the service
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The original module in which the service has been defined
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * The path of the service within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Execute the service function
+   */
+  run = (): Up => {
+    const ctx = this._ctx.select("run")
+    return new Up(ctx)
+  }
+
+  /**
+   * Call the provided function with current Up.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Up) => Up) => {
+    return arg(this)
+  }
+}
+
+export class UpGroup extends BaseClient {
+  private readonly _id?: UpGroupID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: UpGroupID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this UpGroup.
+   */
+  id = async (): Promise<UpGroupID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<UpGroupID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return a list of individual services and their details
+   */
+  list = async (): Promise<Up[]> => {
+    type list = {
+      id: UpID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadUpFromID(r.id))
+  }
+
+  /**
+   * Execute all selected service functions
+   */
+  run = (): UpGroup => {
+    const ctx = this._ctx.select("run")
+    return new UpGroup(ctx)
+  }
+
+  /**
+   * Call the provided function with current UpGroup.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: UpGroup) => UpGroup) => {
+    return arg(this)
+  }
+}
+
 /**
  * A Dagger workspace detected from the current working directory.
  */
@@ -13980,6 +14284,15 @@ export class Workspace extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Return all services from modules loaded in the workspace.
+   * @param opts.include Only include services matching the specified patterns
+   */
+  services = (opts?: WorkspaceServicesOpts): UpGroup => {
+    const ctx = this._ctx.select("services", { ...opts })
+    return new UpGroup(ctx)
   }
 }
 

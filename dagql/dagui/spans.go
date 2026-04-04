@@ -259,6 +259,9 @@ type SpanSnapshot struct {
 	// Generator name
 	GeneratorName string `json:",omitempty"`
 
+	// Service name
+	ServiceName string `json:",omitempty"`
+
 	ActorEmoji  string `json:",omitempty"`
 	Message     string `json:",omitempty"`
 	ContentType string `json:",omitempty"`
@@ -355,6 +358,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.GeneratorNameAttr:
 		snapshot.GeneratorName = val.(string)
+
+	case "dagger.io/service.name":
+		snapshot.ServiceName = val.(string)
 
 	case telemetry.LLMRoleAttr:
 		snapshot.LLMRole = val.(string)

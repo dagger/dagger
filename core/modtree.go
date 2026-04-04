@@ -33,6 +33,7 @@ type ModTreeNode struct {
 	Type           *TypeDef
 	IsCheck        bool
 	IsGenerator    bool
+	IsUp           bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -220,6 +221,151 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 	}
 
 	return true, nil
+}
+
+// ServiceNameAttr is the telemetry attribute key for the service name.
+// Defined locally because the canonical constant lives in the external
+// github.com/dagger/otel-go package which we cannot modify.
+const ServiceNameAttr = "dagger.io/service.name"
+
+// RunUp starts the service and returns a result that must be cleaned up.
+// It does NOT block — the caller (UpGroup.Run) handles the blocking wait.
+func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, portMappings []PortForward) (*runUpStartResult, error) {
+	var result *runUpStartResult
+	err := node.Run(ctx,
+		func(n *ModTreeNode) bool { return n.IsUp },
+		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
+			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
+				telemetry.Reveal(),
+				trace.WithAttributes(
+					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+					attribute.String(ServiceNameAttr, n.PathString()),
+				),
+			)
+			defer func() {
+				telemetry.EndWithCause(span, &rerr)
+			}()
+			var err error
+			result, err = n.runUpLocally(ctx, span, portMappings)
+			return err
+		},
+		include, exclude)
+	return result, err
+}
+
+// runUpStartResult is the result of starting a single service in runUpLocally.
+// It contains everything needed to display status and clean up after ctx cancellation.
+type runUpStartResult struct {
+	ReadySpan trace.Span
+}
+
+// runUpLocally evaluates the +up function, creates a host tunnel, starts the
+// service, and returns immediately. It does NOT block — the caller is
+// responsible for blocking on ctx.Done() after all services have started.
+// This two-phase design ensures that if one service fails to start, sibling
+// goroutines are not left hanging on <-ctx.Done() forever.
+func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span, portMappings []PortForward) (*runUpStartResult, error) {
+	// Evaluate the +up function to get the Service
+	var svcResult dagql.ObjectResult[*Service]
+	if err := node.DagqlValue(ctx, &svcResult); err != nil {
+		return nil, err
+	}
+
+	// Update parent span name with port info.
+	var portStrs []string
+	if len(portMappings) > 0 {
+		portStrs = make([]string, 0, len(portMappings))
+		for _, pf := range portMappings {
+			portStrs = append(portStrs, fmt.Sprintf(":%d→%d", pf.FrontendOrBackendPort(), pf.Backend))
+		}
+	} else if svc := svcResult.Self(); svc != nil && svc.Container.Self() != nil {
+		portStrs = make([]string, 0, len(svc.Container.Self().Ports))
+		for _, p := range svc.Container.Self().Ports {
+			portStrs = append(portStrs, fmt.Sprintf(":%d", p.Port))
+		}
+	}
+	if len(portStrs) > 0 {
+		parentSpan.SetName(fmt.Sprintf("%s %s", node.PathString(), strings.Join(portStrs, ", ")))
+	}
+
+	// Set up the host tunnel
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var hostSvc dagql.Result[*Service]
+	svcID, err := svcResult.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service ID: %w", err)
+	}
+	tunnelArgs := []dagql.NamedInput{
+		{Name: "service", Value: dagql.NewID[*Service](svcID)},
+	}
+	if len(portMappings) > 0 {
+		// Use explicit port mappings instead of native 1:1 tunneling.
+		portInputs := make([]dagql.InputObject[PortForward], len(portMappings))
+		for i, pf := range portMappings {
+			portInputs[i] = dagql.InputObject[PortForward]{Value: pf}
+		}
+		tunnelArgs = append(tunnelArgs, dagql.NamedInput{
+			Name:  "ports",
+			Value: dagql.ArrayInput[dagql.InputObject[PortForward]](portInputs),
+		})
+	} else {
+		tunnelArgs = append(tunnelArgs, dagql.NamedInput{Name: "native", Value: dagql.Boolean(true)})
+	}
+	err = srv.Select(ctx, srv.Root(), &hostSvc,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "tunnel",
+			Args:  tunnelArgs,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create host tunnel: %w", err)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	hostSvcDig, err := hostSvc.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get host service digest: %w", err)
+	}
+	runningSvc, err := svcs.Start(ctx, hostSvcDig, hostSvc.Self(), true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start service: %w", err)
+	}
+
+	// Build URL list from the running service's actual ports.
+	var urls []string
+	for _, port := range runningSvc.Ports {
+		scheme := "http"
+		if port.Port == 443 {
+			scheme = "https"
+		}
+		urls = append(urls, fmt.Sprintf("%s://localhost:%d", scheme, port.Port))
+	}
+
+	// Create a "ready" child span visible in the TUI.
+	readyName := "ready"
+	if len(urls) > 0 {
+		readyName = "ready " + strings.Join(urls, " ")
+	}
+	_, readySpan := Tracer(ctx).Start(ctx, readyName,
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.StringSlice("service.urls", urls),
+		),
+	)
+
+	return &runUpStartResult{ReadySpan: readySpan}, nil
 }
 
 func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (*Changeset, error) {
@@ -445,6 +591,11 @@ func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeN
 	slices.SortStableFunc(res, func(a, b *ModTreeNode) int {
 		return strings.Compare(a.PathString(), b.PathString())
 	})
+	// Deduplicate by path — a function and its object subtree can both
+	// produce the same leaf (e.g. toolchain services appear in both).
+	res = slices.CompactFunc(res, func(a, b *ModTreeNode) bool {
+		return a.PathString() == b.PathString()
+	})
 	return res, err
 }
 
@@ -459,6 +610,13 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
 	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
 		return n.IsGenerator
+	}, include, exclude)
+}
+
+// Walk the tree and return all up (service) nodes, with include and exclude filters applied.
+func (node *ModTreeNode) RollupUp(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
+		return n.IsUp
 	}, include, exclude)
 }
 
@@ -555,6 +713,12 @@ func (node *ModTreeNode) PathString() string {
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)
 
 func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
+	return node.walk(ctx, fn, make(map[string]bool))
+}
+
+func (node *ModTreeNode) walk(ctx context.Context, fn WalkFunc, visiting map[string]bool) error {
+	// The callback is always called so that leaves (checks, services, etc.)
+	// are always discovered regardless of cycle state.
 	enter, err := fn(ctx, node)
 	if err != nil {
 		return err
@@ -562,18 +726,41 @@ func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	if !enter {
 		return nil
 	}
+
+	// Cycle detection: if this node's object type has already been seen
+	// along the current path, don't descend into its children.
+	// This prevents infinite recursion when e.g. Service.start() returns
+	// Service, which has start(), which returns Service, etc.
+	var typeName string
+	if obj := node.ObjectType(); obj != nil {
+		typeName = obj.Name
+	}
+	if typeName != "" {
+		if visiting[typeName] {
+			return nil
+		}
+		visiting[typeName] = true
+		defer delete(visiting, typeName)
+	}
+
 	children, err := node.Children(ctx)
 	if err != nil {
 		return err
 	}
 	for _, child := range children {
-		if err := child.Walk(ctx, fn); err != nil {
+		if err := child.walk(ctx, fn, visiting); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// Children returns child nodes for tree walking.
+// NOTE: When a function returns a module-defined object, both a function leaf
+// (preserving IsCheck/IsGenerator/IsUp) and an object subtree child are
+// added with the same Name. This is intentional so that leaf flags are preserved
+// while the object's nested functions are still discoverable via the subtree.
+// Callers that need unique results should deduplicate by path (see RollupNodes).
 func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	var children []*ModTreeNode
 	if objType := node.ObjectType(); objType != nil {
@@ -584,21 +771,30 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				continue
 			}
 			returnType := fn.ReturnType.Self().ToType().Name()
-			objectAdded := false
-			// if the type returned by the function is an object, check the children of the return type
+			children = append(children, &ModTreeNode{
+				Parent:         node,
+				Name:           fn.Name,
+				DagqlServer:    node.DagqlServer,
+				Module:         node.Module,
+				OriginalModule: node.OriginalModule,
+				Type:           fn.ReturnType.Self(),
+				IsCheck:        fn.IsCheck,
+				IsGenerator:    fn.IsGenerator,
+				IsUp:           fn.IsUp,
+				Description:    fn.Description,
+			})
+			// if the type returned by the function is an object, also add the object subtree
 			if returnsObject := fn.ReturnType.Self().AsObject.Valid; returnsObject &&
 				// avoid cycles (X.withFoo: X)
 				returnType != nodeType {
-				// search for the object defined by the return type, in the "originalModule" that can be the toolchain one
 				if subObj, ok := node.OriginalModule.ObjectByName(fn.ReturnType.Self().ToType().Name()); ok {
 					subObjRes, err := dagql.NewObjectResultForCurrentCall(ctx, node.DagqlServer, subObj)
 					if err != nil {
 						return nil, fmt.Errorf("wrap child object typedef %q: %w", subObj.Name, err)
 					}
-					objectAdded = true
 					children = append(children, &ModTreeNode{
 						Parent:         node,
-						Name:           fn.Name, // use the name of the function and not the name of the type as we want the chain
+						Name:           fn.Name,
 						DagqlServer:    node.DagqlServer,
 						Module:         node.Module,
 						OriginalModule: node.OriginalModule,
@@ -608,22 +804,10 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 						}).syncName(),
 						IsCheck:     false,
 						IsGenerator: false,
+						IsUp:        false,
 						Description: subObj.Description,
 					})
 				}
-			}
-			if !objectAdded {
-				children = append(children, &ModTreeNode{
-					Parent:         node,
-					Name:           fn.Name,
-					DagqlServer:    node.DagqlServer,
-					Module:         node.Module,
-					OriginalModule: node.OriginalModule,
-					Type:           fn.ReturnType.Self(),
-					IsCheck:        fn.IsCheck,
-					IsGenerator:    fn.IsGenerator,
-					Description:    fn.Description,
-				})
 			}
 		}
 		for _, fieldRes := range objType.Fields {
@@ -637,6 +821,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				Type:           field.TypeDef.Self(),
 				IsCheck:        false,
 				IsGenerator:    false,
+				IsUp:           false,
 				Description:    field.Description,
 			})
 		}

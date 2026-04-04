@@ -193,6 +193,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&addressSchema{},
 		&checksSchema{},
 		&generatorsSchema{},
+		&upSchema{},
 		&workspaceSchema{},
 	} {
 		schema.Install(dag)

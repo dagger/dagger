@@ -141,6 +141,7 @@ func init() {
 		traceCmd,
 		configCmd,
 		checksCmd,
+		upCmd,
 		generateCmd,
 		moduleInitCmd,
 		moduleDepInstallCmd,

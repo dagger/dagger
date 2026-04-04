@@ -30,6 +30,7 @@ import io.dagger.module.annotation.Generate;
 import io.dagger.module.annotation.Ignore;
 import io.dagger.module.annotation.Module;
 import io.dagger.module.annotation.Object;
+import io.dagger.module.annotation.Up;
 import io.dagger.module.info.EnumInfo;
 import io.dagger.module.info.EnumValueInfo;
 import io.dagger.module.info.FieldInfo;
@@ -180,7 +181,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                 ((ExecutableElement) elt).getReturnType().getKind().name()),
                             parseParameters((ExecutableElement) elt).toArray(new ParameterInfo[0]),
                             false, // constructors are never checks
-                            false)); // constructors are never generators
+                            false, // constructors are never generators
+                            false)); // constructors are never up services
               } else if (constructorDefs.size() > 1) {
                 // There's more than one non-empty constructor, but Dagger only supports to expose a
                 // single one
@@ -237,6 +239,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                           TypeKind tk = tm.getKind();
                           boolean isCheck = elt.getAnnotation(Check.class) != null;
                           boolean isGenerate = elt.getAnnotation(Generate.class) != null;
+                          boolean isUp = elt.getAnnotation(Up.class) != null;
                           FunctionInfo functionInfo =
                               new FunctionInfo(
                                   fName,
@@ -245,7 +248,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                   new TypeInfo(tm.toString(), tk.name()),
                                   parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]),
                                   isCheck,
-                                  isGenerate);
+                                  isGenerate,
+                                  isUp);
                           return functionInfo;
                         })
                     .toList();
@@ -719,6 +723,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     }
     if (fnInfo.isGenerate()) {
       code.add("\n                    .withGenerator()");
+    }
+    if (fnInfo.isUp()) {
+      code.add("\n                    .withUp()");
     }
     for (var parameterInfo : fnInfo.parameters()) {
       code.add("\n                    .withArg($S, ", parameterInfo.name())
