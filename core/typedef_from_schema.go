@@ -377,7 +377,9 @@ func resolveArgTypeDef(arg introspection.InputValue) (*TypeDef, bool, error) {
 
 	// Handle unified ID scalar: when an arg is typed as the bare "ID" scalar,
 	// resolve the actual object/interface type from @expectedType.
-	if argType.Kind == TypeDefKindScalar && argType.AsScalar.Valid && argType.AsScalar.Value.Name == "ID" {
+	// Note: NewScalarTypeDef applies strcase.ToCamel, so "ID" becomes "Id".
+	// Check OriginalName for the raw GraphQL scalar name.
+	if argType.Kind == TypeDefKindScalar && argType.AsScalar.Valid && argType.AsScalar.Value.OriginalName == "ID" {
 		if expectedName := arg.Directives.ExpectedType(); expectedName != "" {
 			argType.Kind = TypeDefKindObject
 			argType.AsScalar = dagql.Nullable[*ScalarTypeDef]{}
