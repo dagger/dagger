@@ -70,7 +70,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"]) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"]) } } }`,
     )
   })
 
@@ -80,7 +80,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(pkg["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo bar"]) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo bar"]) } } }`,
     )
   })
 
@@ -108,7 +108,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(pkg["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) } } }`,
     )
   })
 
@@ -117,12 +117,12 @@ describe("TypeScript SDK api", function () {
     const a = image.withExec(["echo", "hello", "world"])
     assert.strictEqual(
       querySanitizer(buildQuery(a["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","hello","world"]) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","hello","world"]) } } }`,
     )
     const b = image.withExec(["echo", "foo", "bar"])
     assert.strictEqual(
       querySanitizer(buildQuery(b["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo","bar"]) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo","bar"]) } } }`,
     )
   })
 
