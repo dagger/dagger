@@ -353,6 +353,7 @@ An optional optimization is to keep a lockfile-backed provenance index.
 The idea is:
 
 - store the last known `WorkspaceProvenance` for an artifact
+- store invalidation data for the Dagger module that defines that artifact
 - use it only for negative pruning
 - if the stored provenance says the artifact is definitely unaffected, skip
   loading it
@@ -364,6 +365,13 @@ Safety rule:
 
 - every artifact that is actually loaded must recompute its provenance and
   rewrite its stored entry
+- any change to the Dagger module that defines an artifact must invalidate that
+  artifact
+
+So negative pruning is only allowed if both are true:
+
+- the cached `WorkspaceProvenance` is unaffected by the current diff
+- the Dagger module that defines the artifact is unchanged
 
 This creates a self-healing loop.
 
@@ -388,6 +396,13 @@ In the example above:
 If that rule does not hold, stale provenance entries can cause false
 negatives.
 
+The module-source rule closes another blind spot:
+
+- an artifact can change because its Dagger module changed, even if no workspace
+  path in its old `WorkspaceProvenance` changed
+- so the pruning lookup must also consult the defining module's source
+- if the defining module changed, the artifact must load and refresh its entry
+
 This optimization is most useful in CI.
 
 Local development can be simpler:
@@ -402,6 +417,9 @@ Implementation sketch:
 
 ```go
 func ShouldLoadArtifact(a ArtifactKey, changes Changeset) bool {
+	if ModuleSourceChanged(a, changes) {
+		return true
+	}
 	if cached, ok := LoadCachedProvenance(a); ok && !cached.AffectedByDiff(changes) {
 		return false
 	}
