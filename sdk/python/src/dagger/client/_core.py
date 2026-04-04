@@ -19,7 +19,15 @@ import graphql
 import httpx
 from beartype.door import TypeHint
 from cattrs.preconf.json import make_converter as make_json_converter
-from gql.dsl import DSLField, DSLInlineFragment, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
+from gql.dsl import (
+    DSLField,
+    DSLInlineFragment,
+    DSLQuery,
+    DSLSchema,
+    DSLSelectable,
+    DSLType,
+    dsl_gql,
+)
 from gql.transport.exceptions import (
     TransportClosed,
     TransportConnectionFailed,
@@ -71,14 +79,11 @@ class Field:
         field_ = getattr(type_, self.name)(**self.args)
         if self.children:
             child_fields = {
-                name: child.to_dsl(schema)
-                for name, child in self.children.items()
+                name: child.to_dsl(schema) for name, child in self.children.items()
             }
             if self.inline_type is not None:
                 frag_type: DSLType = getattr(schema, self.inline_type)
-                inline = DSLInlineFragment().on(frag_type).select(
-                    **child_fields
-                )
+                inline = DSLInlineFragment().on(frag_type).select(**child_fields)
                 field_ = field_.select(inline)
             else:
                 field_ = field_.select(**child_fields)

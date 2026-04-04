@@ -93,7 +93,7 @@ class ClientSession(ResourceManager):
             execute_timeout=None,
         )
         # Disable client-side query validation.  See comment above.
-        client.validate = lambda request: None  # type: ignore[method-assign]
+        client.validate = lambda _request: None  # type: ignore[method-assign]
 
         self.client = retrying_client(client, cfg.retry) if cfg.retry else client
         self._session: AsyncClientSession | None = None
