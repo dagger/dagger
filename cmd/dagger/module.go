@@ -30,6 +30,11 @@ import (
 )
 
 var (
+	workspaceGroup = &cobra.Group{
+		ID:    "workspace",
+		Title: "Dagger Workspace Commands",
+	}
+
 	moduleGroup = &cobra.Group{
 		ID:    "module",
 		Title: "Dagger Module Commands",
@@ -456,7 +461,7 @@ With no module names, refresh entries already recorded in .dagger/lock.
 With module names, refresh only those modules from .dagger/config.toml.
 `,
 	Example: `"dagger update" or "dagger update wolfi"`,
-	GroupID: moduleGroup.ID,
+	GroupID: workspaceGroup.ID,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		return runWorkspaceUpdate(cmd, extraArgs)
 	},
@@ -467,7 +472,7 @@ var moduleDepInstallCmd = &cobra.Command{
 	Short:   "Install a module",
 	Long:    "Install a module into the current workspace.",
 	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
-	GroupID: moduleGroup.ID,
+	GroupID: workspaceGroup.ID,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()

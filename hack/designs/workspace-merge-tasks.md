@@ -23,9 +23,9 @@ Status legend:
 
 ## CLI Polish
 
-- [ ] Fix root help grouping so workspace-native commands are not shown under `DAGGER MODULE COMMANDS`.
+- [x] Fix root help grouping so workspace-native commands are not shown under `DAGGER MODULE COMMANDS`.
 
-- [ ] Tighten workspace command help/output wording where the QA pass found ambiguity.
+- [x] Tighten workspace command help/output wording where the QA pass found ambiguity.
   Current focus:
   - `workspace list` vs `workspace config` local source path wording
   - any related examples/usages touched by the grouping fix

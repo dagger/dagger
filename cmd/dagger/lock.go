@@ -52,8 +52,9 @@ func init() {
 }
 
 var lockCmd = &cobra.Command{
-	Use:   "lock",
-	Short: "Manage workspace lockfiles",
+	Use:     "lock",
+	Short:   "Manage workspace lockfiles",
+	GroupID: workspaceGroup.ID,
 	Annotations: map[string]string{
 		"experimental": "true",
 	},

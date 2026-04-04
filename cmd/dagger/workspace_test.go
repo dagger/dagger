@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -41,6 +42,45 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cmd.Flags().Lookup("mod"))
 	require.NotNil(t, cmd.Flags().Lookup("compat"))
+}
+
+func TestWorkspaceCommandGrouping(t *testing.T) {
+	require.Equal(t, workspaceGroup.ID, initCmd.GroupID)
+	require.Equal(t, workspaceGroup.ID, workspaceCmd.GroupID)
+	require.Equal(t, workspaceGroup.ID, moduleDepInstallCmd.GroupID)
+	require.Equal(t, workspaceGroup.ID, moduleUpdateCmd.GroupID)
+	require.Equal(t, workspaceGroup.ID, migrateCmd.GroupID)
+	require.Equal(t, workspaceGroup.ID, lockCmd.GroupID)
+}
+
+func TestRootHelpShowsWorkspaceCommandGroup(t *testing.T) {
+	oldOut := rootCmd.OutOrStdout()
+	oldErr := rootCmd.ErrOrStderr()
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&out)
+	t.Cleanup(func() {
+		rootCmd.SetOut(oldOut)
+		rootCmd.SetErr(oldErr)
+	})
+
+	require.NoError(t, rootCmd.Help())
+
+	help := out.String()
+	require.Contains(t, help, "DAGGER WORKSPACE COMMANDS")
+
+	workspaceIdx := strings.Index(help, "DAGGER WORKSPACE COMMANDS")
+	moduleIdx := strings.Index(help, "DAGGER MODULE COMMANDS")
+	require.NotEqual(t, -1, workspaceIdx)
+	require.NotEqual(t, -1, moduleIdx)
+
+	workspaceSection := help[workspaceIdx:moduleIdx]
+	require.Contains(t, workspaceSection, "  init")
+	require.Contains(t, workspaceSection, "  install")
+	require.Contains(t, workspaceSection, "  update")
+	require.Contains(t, workspaceSection, "  workspace")
+	require.Contains(t, workspaceSection, "  migrate")
+	require.Contains(t, workspaceSection, "  lock")
 }
 
 func TestGenHelpDoesNotPanicWithModuleSubcommands(t *testing.T) {
@@ -108,10 +148,11 @@ func TestWriteWorkspaceModuleList(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t,
-		"Source paths are relative to the workspace root\n"+
+		"Source paths below are resolved and shown relative to the workspace root\n"+
+			"\"dagger workspace config\" prints the raw values stored in .dagger/config.toml, so local sources may look different there\n"+
 			"* indicates a module is a blueprint, with all its functions aliased to the root level\n"+
 			"\n"+
-			"Name       Source\n"+
+			"Name       Resolved Source\n"+
 			"greeter*   .dagger/modules/greeter\n"+
 			"wolfi      github.com/dagger/dagger/modules/wolfi\n",
 		out.String(),

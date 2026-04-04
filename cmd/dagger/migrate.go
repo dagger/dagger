@@ -18,10 +18,11 @@ import (
 var migrateList bool
 
 var migrateCmd = &cobra.Command{
-	Use:   "migrate",
-	Short: "Migrate a legacy dagger.json project to the workspace format",
-	Long:  "Converts a legacy dagger.json to the .dagger/config.toml workspace format.",
-	Args:  cobra.NoArgs,
+	Use:     "migrate",
+	Short:   "Migrate a legacy dagger.json project to the workspace format",
+	Long:    "Converts a legacy dagger.json to the .dagger/config.toml workspace format.",
+	GroupID: workspaceGroup.ID,
+	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if migrateList {
 			return migrateListModules(cmd)

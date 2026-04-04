@@ -164,6 +164,7 @@ func init() {
 		mcpCmd,
 	)
 
+	rootCmd.AddGroup(workspaceGroup)
 	rootCmd.AddGroup(moduleGroup)
 	rootCmd.AddGroup(execGroup)
 

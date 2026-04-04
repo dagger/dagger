@@ -16,7 +16,7 @@ import (
 var workspaceCmd = &cobra.Command{
 	Use:     "workspace",
 	Short:   "Manage the current workspace",
-	GroupID: moduleGroup.ID,
+	GroupID: workspaceGroup.ID,
 }
 
 var workspaceInfoCmd = &cobra.Command{
@@ -65,7 +65,7 @@ var initCmd = &cobra.Command{
 	Short:   "Initialize a new workspace",
 	Long:    "Alias for `dagger workspace init`. Initializes a new workspace in the current directory, creating .dagger/config.toml.",
 	Args:    cobra.NoArgs,
-	GroupID: moduleGroup.ID,
+	GroupID: workspaceGroup.ID,
 	RunE:    runWorkspaceInit,
 }
 
@@ -76,7 +76,10 @@ var workspaceConfigCmd = &cobra.Command{
 
 With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
-With two arguments, sets the value at the given key.`,
+With two arguments, sets the value at the given key.
+
+Local module source values are stored relative to .dagger/config.toml, so they may
+look different from the resolved paths shown by "dagger workspace list".`,
 	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), client.Params{
@@ -104,7 +107,8 @@ var workspaceListCmd = &cobra.Command{
 	Long: `List all modules defined in the workspace configuration.
 
 Note:
-- Source paths are relative to the workspace root.
+- Source paths are resolved and shown relative to the workspace root.
+- "dagger workspace config" prints the raw config values stored in .dagger/config.toml, so local sources may look different there.
 - * means the module is a blueprint, with all its functions aliased to the root level.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -214,7 +218,10 @@ type workspaceModuleView interface {
 }
 
 func writeWorkspaceModuleList(ctx context.Context, out io.Writer, modules []workspaceModuleView) error {
-	if _, err := fmt.Fprintln(out, "Source paths are relative to the workspace root"); err != nil {
+	if _, err := fmt.Fprintln(out, "Source paths below are resolved and shown relative to the workspace root"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, `"dagger workspace config" prints the raw values stored in .dagger/config.toml, so local sources may look different there`); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintln(out, "* indicates a module is a blueprint, with all its functions aliased to the root level"); err != nil {
@@ -225,7 +232,7 @@ func writeWorkspaceModuleList(ctx context.Context, out io.Writer, modules []work
 	}
 
 	tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	if _, err := fmt.Fprintln(tw, "Name\tSource"); err != nil {
+	if _, err := fmt.Fprintln(tw, "Name\tResolved Source"); err != nil {
 		return err
 	}
 	for _, mod := range modules {
