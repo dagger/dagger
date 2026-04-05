@@ -223,7 +223,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("localContextDirectoryPath", s.moduleSourceLocalContextDirectoryPath).
 			Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
 
-		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
+		dagql.NodeFuncWithCacheKey("asModule", s.moduleSourceAsModule, dagql.CachePerSession).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 
 		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
