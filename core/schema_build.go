@@ -68,7 +68,7 @@ func buildSchema(
 		return nil, err
 	}
 
-	registerInterfaceToInterfaceImpls(dag, ifaces)
+	registerInterfaceToInterfaceImpls(dag, objects, ifaces)
 
 	return dag, nil
 }
@@ -192,8 +192,10 @@ func registerInterfaceImpls(
 // relationships via duck typing.
 func registerInterfaceToInterfaceImpls(
 	dag *dagql.Server,
+	objects []*ModuleObjectType,
 	ifaces []*InterfaceType,
 ) {
+	checker := makeImplementsChecker(dag, objects, ifaces)
 	for _, ifaceTypeA := range ifaces {
 		dagqlIfaceA, okA := dag.InterfaceType(ifaceTypeA.typeDef.Name)
 		if !okA {
@@ -211,7 +213,11 @@ func registerInterfaceToInterfaceImpls(
 			if _, alreadyReverse := dagqlIfaceB.Interfaces()[dagqlIfaceA.TypeName()]; alreadyReverse {
 				continue
 			}
-			if dagqlIfaceB.SatisfiedByInterface(dagqlIfaceA, dag.View) {
+			// Check core semantic conformance first (includes contravariance).
+			if !ifaceTypeA.typeDef.IsSubtypeOf(ifaceTypeB.typeDef) {
+				continue
+			}
+			if dagqlIfaceB.SatisfiedByInterface(dagqlIfaceA, dag.View, checker) {
 				dagqlIfaceA.ImplementInterface(dagqlIfaceB)
 			}
 		}

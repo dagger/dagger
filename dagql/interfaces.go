@@ -175,11 +175,12 @@ func (iface *Interface) Definition(view call.View) *ast.Definition {
 
 // Satisfies returns true if the given object type structurally satisfies this
 // interface — i.e. it has all fields required by the interface with compatible
-// return types.
+// return types and arguments.
 //
 // The optional implementsChecker allows covariant return type checking: if the
 // interface declares `foo: SomeIface` and the object has `foo: ConcreteObj`,
-// the checker verifies that ConcreteObj implements SomeIface.
+// the checker verifies that ConcreteObj implements SomeIface. The same checker
+// is used in reverse for contravariant argument type checking.
 func (iface *Interface) Satisfies(obj ObjectType, view call.View, checkers ...ImplementsChecker) bool {
 	var checker ImplementsChecker
 	if len(checkers) > 0 {
@@ -193,22 +194,33 @@ func (iface *Interface) Satisfies(obj ObjectType, view call.View, checkers ...Im
 		if !typeCompatible(ifaceField.Type.Type(), objField.Type.Type(), checker) {
 			return false
 		}
-		// Note: argument contravariance checking is intentionally omitted for
-		// Phase 1. Core can still layer on its own semantic rules.
+		if !argsCompatible(ifaceField.Args, objField.Args, view, checker) {
+			return false
+		}
 	}
 	return true
 }
 
 // SatisfiedByInterface returns true if the given interface structurally satisfies
 // this interface — i.e. it has all fields required by this interface with
-// compatible return types (exact name match).
-func (iface *Interface) SatisfiedByInterface(other *Interface, view call.View) bool {
+// compatible return types and arguments.
+//
+// The optional implementsChecker allows covariant return type checking and
+// contravariant argument type checking, same as Satisfies.
+func (iface *Interface) SatisfiedByInterface(other *Interface, view call.View, checkers ...ImplementsChecker) bool {
+	var checker ImplementsChecker
+	if len(checkers) > 0 {
+		checker = checkers[0]
+	}
 	for _, ifaceField := range iface.FieldSpecs(view) {
 		otherField, ok := other.FieldSpec(ifaceField.Name, view)
 		if !ok {
 			return false
 		}
-		if !typeCompatible(ifaceField.Type.Type(), otherField.Type.Type(), nil) {
+		if !typeCompatible(ifaceField.Type.Type(), otherField.Type.Type(), checker) {
+			return false
+		}
+		if !argsCompatible(ifaceField.Args, otherField.Args, view, checker) {
 			return false
 		}
 	}
@@ -218,6 +230,68 @@ func (iface *Interface) SatisfiedByInterface(other *Interface, view call.View) b
 // ImplementsChecker is a function that checks whether a type (by name) implements
 // a given interface (by name). This is used for covariant return type checking.
 type ImplementsChecker func(typeName, ifaceName string) bool
+
+// argsCompatible checks whether the implementing type's arguments are compatible
+// with the interface's declared arguments.
+//
+// Every argument declared by the interface must be present on the implementing
+// type with a compatible type. Extra arguments on the implementing type are
+// allowed (they must have defaults or be optional).
+//
+// Argument types are checked with contravariant rules: the implementing type's
+// argument may accept a wider (more permissive) type than the interface declares.
+func argsCompatible(ifaceArgs, objArgs InputSpecs, view call.View, checker ImplementsChecker) bool {
+	for _, ifaceArg := range ifaceArgs.Inputs(view) {
+		objArg, ok := objArgs.Input(ifaceArg.Name, view)
+		if !ok {
+			return false
+		}
+		if !argTypeCompatible(ifaceArg.Type.Type(), objArg.Type.Type(), checker) {
+			return false
+		}
+	}
+	return true
+}
+
+// argTypeCompatible checks whether an implementing type's argument type is
+// compatible with the interface's declared argument type.
+//
+// This applies contravariant rules:
+//   - Type names must match (or the interface's arg type must implement the
+//     object's arg type — the reverse of covariant return type checking)
+//   - The implementing type's argument may be nullable when the interface
+//     requires non-null (accepting more values), but not vice versa
+func argTypeCompatible(ifaceArgType, objArgType *ast.Type, checker ImplementsChecker) bool {
+	if ifaceArgType == nil || objArgType == nil {
+		return ifaceArgType == objArgType
+	}
+	// list types
+	if ifaceArgType.Elem != nil || objArgType.Elem != nil {
+		if ifaceArgType.Elem == nil || objArgType.Elem == nil {
+			return false
+		}
+		return argTypeCompatible(ifaceArgType.Elem, objArgType.Elem, checker)
+	}
+	// named types: exact match
+	if ifaceArgType.NamedType == objArgType.NamedType {
+		// Contravariant nullability: object arg requiring NonNull when interface
+		// allows nullable is too restrictive.
+		if objArgType.NonNull && !ifaceArgType.NonNull {
+			return false
+		}
+		return true
+	}
+	// contravariant: interface's arg type is a subtype of object's arg type.
+	// This is the reverse of covariant return type checking — the implementing
+	// type accepts a wider input type.
+	if checker != nil && checker(ifaceArgType.NamedType, objArgType.NamedType) {
+		if objArgType.NonNull && !ifaceArgType.NonNull {
+			return false
+		}
+		return true
+	}
+	return false
+}
 
 // typeCompatible checks whether the object's return type is compatible with
 // the interface's declared return type.

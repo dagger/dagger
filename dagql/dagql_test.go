@@ -3198,6 +3198,146 @@ func TestInterfaces(t *testing.T) {
 		}(), "Implements should panic for unsatisfied interface")
 	})
 
+	t.Run("Satisfies checks argument compatibility", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		pointType, ok := srv.ObjectType("Point")
+		assert.Assert(t, ok)
+
+		// Interface with matching args should satisfy.
+		// Point.shift(direction: Direction!, amount: Int = 1): Point!
+		shiftable := dagql.NewInterface("Shiftable", "Can be shifted.")
+		shiftable.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "shift",
+				Type: &points.Point{},
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "direction", Type: points.Direction("")},
+					dagql.InputSpec{Name: "amount", Type: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(shiftable)
+		assert.Assert(t, shiftable.Satisfies(pointType, ""), "Point should satisfy Shiftable (matching args)")
+
+		// Interface requiring a subset of args should also satisfy
+		// (extra args on object are allowed).
+		shiftableSubset := dagql.NewInterface("ShiftableSubset", "Can be shifted (subset args).")
+		shiftableSubset.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "shift",
+				Type: &points.Point{},
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "direction", Type: points.Direction("")},
+				),
+			},
+		})
+		srv.InstallInterface(shiftableSubset)
+		assert.Assert(t, shiftableSubset.Satisfies(pointType, ""), "Point should satisfy ShiftableSubset (subset of args)")
+
+		// Interface requiring an arg the object doesn't have should fail.
+		badArgs := dagql.NewInterface("BadArgs", "Requires unknown arg.")
+		badArgs.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "shift",
+				Type: &points.Point{},
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "direction", Type: points.Direction("")},
+					dagql.InputSpec{Name: "velocity", Type: dagql.Int(0)}, // doesn't exist on Point.shift
+				),
+			},
+		})
+		srv.InstallInterface(badArgs)
+		assert.Assert(t, !badArgs.Satisfies(pointType, ""), "Point should NOT satisfy BadArgs (missing arg)")
+
+		// Interface with wrong arg type should fail.
+		wrongArgType := dagql.NewInterface("WrongArgType", "Wrong arg type.")
+		wrongArgType.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "shift",
+				Type: &points.Point{},
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "direction", Type: dagql.String("")}, // wrong type: String vs Direction
+				),
+			},
+		})
+		srv.InstallInterface(wrongArgType)
+		assert.Assert(t, !wrongArgType.Satisfies(pointType, ""), "Point should NOT satisfy WrongArgType")
+	})
+
+	t.Run("SatisfiedByInterface checks argument compatibility", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+
+		// Interface A: transform(x: Int!, y: Int!): String!
+		ifaceA := dagql.NewInterface("TransformA", "Transform interface A.")
+		ifaceA.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "y", Type: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(ifaceA)
+
+		// Interface B: transform(x: Int!, y: Int!): String! — same args
+		ifaceB := dagql.NewInterface("TransformB", "Transform interface B.")
+		ifaceB.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "y", Type: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(ifaceB)
+
+		// A satisfies B and vice versa (same fields, same args)
+		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceB, ""), "B should satisfy A")
+		assert.Assert(t, ifaceB.SatisfiedByInterface(ifaceA, ""), "A should satisfy B")
+
+		// Interface C: transform(x: Int!, y: Int!, z: Int!): String! — extra arg
+		ifaceC := dagql.NewInterface("TransformC", "Transform interface C with extra arg.")
+		ifaceC.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "y", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "z", Type: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(ifaceC)
+
+		// C satisfies A (has all of A's args plus more)
+		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceC, ""), "C should satisfy A (superset of args)")
+		// A does NOT satisfy C (missing z arg)
+		assert.Assert(t, !ifaceC.SatisfiedByInterface(ifaceA, ""), "A should NOT satisfy C (missing arg)")
+
+		// Interface D: transform(x: String!): String! — different arg type
+		ifaceD := dagql.NewInterface("TransformD", "Transform interface D with wrong arg type.")
+		ifaceD.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.String("")}, // String instead of Int
+				),
+			},
+		})
+		srv.InstallInterface(ifaceD)
+
+		// D does NOT satisfy A (arg type mismatch)
+		assert.Assert(t, !ifaceA.SatisfiedByInterface(ifaceD, ""), "D should NOT satisfy A (arg type mismatch)")
+	})
+
 	t.Run("auto Node interface", func(t *testing.T) {
 		srv := dagql.NewServer(Query{}, newCache(t))
 		introspection.Install[Query](srv)
