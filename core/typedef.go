@@ -58,8 +58,8 @@ var _ dagql.HasDependencyResults = (*Function)(nil)
 
 func NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function {
 	gqlName := strcase.ToLowerCamel(name)
-	if strings.HasSuffix(gqlName, "Id") {
-		gqlName = strings.TrimSuffix(gqlName, "Id") + "ID"
+	if strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID") && strings.HasSuffix(gqlName, "FromId") {
+		gqlName = strings.TrimSuffix(gqlName, "FromId") + "FromID"
 	}
 	return &Function{
 		Name:         gqlName,
