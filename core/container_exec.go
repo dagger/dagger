@@ -380,6 +380,50 @@ type materializedExecPlan struct {
 	States []*execMountState
 }
 
+func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query for cache locks: %w", err)
+	}
+	locker := query.Locker()
+	if locker == nil {
+		return nil, fmt.Errorf("missing engine locker")
+	}
+
+	lockSet := make(map[string]struct{})
+	for i, ctrMount := range mounts {
+		if ctrMount.Readonly || ctrMount.CacheSource == nil || ctrMount.CacheSource.Volume.Self() == nil {
+			continue
+		}
+		cacheSelf := ctrMount.CacheSource.Volume.Self()
+		if cacheSelf.Sharing != CacheSharingModeLocked {
+			continue
+		}
+		payload, err := cacheSelf.EncodePersistedObject(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("encode cache lock key for mount %d: %w", i, err)
+		}
+		lockSet["cache-volume:"+string(payload)] = struct{}{}
+	}
+	if len(lockSet) == 0 {
+		return func() {}, nil
+	}
+
+	lockKeys := make([]string, 0, len(lockSet))
+	for lockKey := range lockSet {
+		lockKeys = append(lockKeys, lockKey)
+	}
+	sort.Strings(lockKeys)
+	for _, lockKey := range lockKeys {
+		locker.Lock(lockKey)
+	}
+	return func() {
+		for i := len(lockKeys) - 1; i >= 0; i-- {
+			locker.Unlock(lockKeys[i])
+		}
+	}, nil
+}
+
 func (plan *materializedExecPlan) releaseActives(ctx context.Context) error {
 	var rerr error
 	for i := len(plan.States) - 1; i >= 0; i-- {
@@ -1035,6 +1079,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 		if err != nil {
 			return fmt.Errorf("get current query: %w", err)
 		}
+		releaseLockedCaches, err := lockMountedCaches(ctx, inputMounts)
+		if err != nil {
+			return err
+		}
+		defer releaseLockedCaches()
 
 		secretEnv, err := container.secretEnvValues(ctx)
 		if err != nil {

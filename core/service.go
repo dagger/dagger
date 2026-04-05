@@ -415,6 +415,15 @@ func (svc *Service) startContainer(
 
 	svcID := identity.NewID()
 
+	releaseLockedCaches, err := lockMountedCaches(ctx, ctr.Mounts)
+	if err != nil {
+		return fmt.Errorf("lock mounted caches: %w", err)
+	}
+	cleanup.Add("release locked cache volume access", func() error {
+		releaseLockedCaches()
+		return nil
+	})
+
 	p, err := prepareMounts(ctx, ctr, nil, nil, nil, cache, "", runtime.GOOS, func(_ string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
 		return cache.New(ctx, ref)
 	})
