@@ -692,6 +692,9 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// else to sub-select. In that case `q` will be nil to signal that we
 		// just want to return the object's name, without making an API request.
 		if q == nil {
+			if fn.ReturnType.Name() == "Query" {
+				return printEncodedID(o, "")
+			}
 			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e, autoApply)
 		}
 
@@ -746,6 +749,10 @@ func handleObjectLeaf(md *moduleDef, q *querybuilder.Selection, typeDef *modType
 	// TODO: Replace with interface when possible.
 	if hasSync {
 		return q.SelectWithAlias("id", "sync"), nil
+	}
+
+	if typeDef.Name() == "Query" {
+		return nil, nil
 	}
 
 	return q.Select("id"), nil
