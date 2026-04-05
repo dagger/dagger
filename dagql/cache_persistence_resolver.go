@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/dagger/dagger/engine"
 )
 
 type sharedResultLookupMode uint8
@@ -152,21 +150,27 @@ func (c *Cache) LoadResultByResultID(ctx context.Context, sessionID string, dag 
 	return c.loadResultByResultID(ctx, sessionID, dag, resultID)
 }
 
-func (c *Cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *ResultCall, visit func(AnyResult) error) error {
-	if dag == nil {
-		return fmt.Errorf("walk result call: nil dagql server")
+func (c *Cache) ResultCallByResultID(ctx context.Context, sessionID string, resultID uint64) (*ResultCall, error) {
+	mode := sharedResultLookupExact
+	if sessionID != "" {
+		mode = sharedResultLookupCanonicalEquivalent
 	}
+
+	shared, _, _, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID), mode)
+	if err != nil {
+		return nil, err
+	}
+	frame := shared.loadResultCall()
+	if frame == nil {
+		return nil, fmt.Errorf("resolve result %d call frame: missing result call frame", resultID)
+	}
+	return frame.clone(), nil
+}
+
+func (c *Cache) WalkResultCall(rootCall *ResultCall, visit func(*ResultCallRef, *ResultCall) error) error {
 	if rootCall == nil {
 		return nil
 	}
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("walk result call: current client metadata: %w", err)
-	}
-	if clientMetadata.SessionID == "" {
-		return fmt.Errorf("walk result call: empty session ID")
-	}
-	sessionID := clientMetadata.SessionID
 	seenCalls := map[*ResultCall]struct{}{}
 	seenResultIDs := map[uint64]struct{}{}
 
@@ -204,30 +208,26 @@ func (c *Cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *Resul
 		if ref == nil {
 			return nil
 		}
-		if ref.Call != nil {
-			return walkCall(ref.Call)
-		}
-		if ref.ResultID == 0 {
-			return nil
-		}
-		if _, seen := seenResultIDs[ref.ResultID]; seen {
-			return nil
-		}
-		seenResultIDs[ref.ResultID] = struct{}{}
-		res, err := c.loadResultByResultID(ctx, sessionID, dag, ref.ResultID)
-		if err != nil {
-			return fmt.Errorf("load result %d: %w", ref.ResultID, err)
+		frame := ref.Call
+		if frame == nil {
+			if ref.ResultID == 0 {
+				return nil
+			}
+			if _, seen := seenResultIDs[ref.ResultID]; seen {
+				return nil
+			}
+			seenResultIDs[ref.ResultID] = struct{}{}
+			frame = c.resultCallByResultID(sharedResultID(ref.ResultID))
+			if frame == nil {
+				return fmt.Errorf("missing result call frame for result %d", ref.ResultID)
+			}
 		}
 		if visit != nil {
-			if err := visit(res); err != nil {
+			if err := visit(ref, frame); err != nil {
 				return err
 			}
 		}
-		call, err := res.ResultCall()
-		if err != nil {
-			return fmt.Errorf("result %d call: %w", ref.ResultID, err)
-		}
-		return walkCall(call)
+		return walkCall(frame)
 	}
 
 	walkCall = func(call *ResultCall) error {

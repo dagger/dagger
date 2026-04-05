@@ -217,6 +217,8 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 		}
 	}
 	switch modType := modType.(type) {
+	case *PrimitiveType:
+		return value, nil
 	case *ListType:
 		if value == nil {
 			return nil, nil

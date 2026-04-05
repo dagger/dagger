@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -132,12 +133,31 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	if err != nil {
 		return nil, fmt.Errorf("current query: %w", err)
 	}
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("current dagql server: %w", err)
-	}
 	if id == nil || id.EngineResultID() == 0 {
 		return nil, fmt.Errorf("load interface implementation: expected attached result ID")
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("load interface implementation: empty session ID")
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("engine cache: %w", err)
+	}
+	call, err := cache.ResultCallByResultID(ctx, clientMetadata.SessionID, id.EngineResultID())
+	if err != nil {
+		return nil, fmt.Errorf("load interface implementation call: %w", err)
+	}
+	deps, err := query.ModDepsForCall(ctx, call)
+	if err != nil {
+		return nil, fmt.Errorf("schema: %w", err)
+	}
+	dag, err := deps.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load dependency schema: %w", err)
 	}
 	val, err := dag.Load(ctx, id)
 	if err != nil {
@@ -146,14 +166,6 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	objVal, ok := val.(dagql.AnyObjectResult)
 	if !ok {
 		return nil, fmt.Errorf("load interface implementation: unexpected result %T", val)
-	}
-	call, err := val.ResultCall()
-	if err != nil {
-		return nil, fmt.Errorf("load interface implementation call: %w", err)
-	}
-	deps, err := query.ModDepsForCall(ctx, call)
-	if err != nil {
-		return nil, fmt.Errorf("schema: %w", err)
 	}
 
 	typeName := objVal.ObjectType().TypeName()

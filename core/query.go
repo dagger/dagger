@@ -287,10 +287,24 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	if err != nil {
 		return nil, fmt.Errorf("engine cache: %w", err)
 	}
-	if err := cache.WalkResultCall(ctx, dag, rootCall, func(res dagql.AnyResult) error {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("empty session ID")
+	}
+	if err := cache.WalkResultCall(rootCall, func(ref *dagql.ResultCallRef, frame *dagql.ResultCall) error {
+		if ref == nil || ref.ResultID == 0 || frame == nil || frame.Type == nil || frame.Type.NamedType != "Module" {
+			return nil
+		}
+		res, err := cache.LoadResultByResultID(ctx, clientMetadata.SessionID, dag, ref.ResultID)
+		if err != nil {
+			return fmt.Errorf("load module result %d: %w", ref.ResultID, err)
+		}
 		modInst, ok := res.(dagql.ObjectResult[*Module])
 		if !ok {
-			return nil
+			return fmt.Errorf("result %d is %T, not module result", ref.ResultID, res)
 		}
 		return appendModule(modInst)
 	}); err != nil {

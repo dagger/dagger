@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -65,15 +66,34 @@ func resultCallRefFromIDInput(ctx context.Context, id *call.ID) (*ResultCallRef,
 	if !id.IsHandle() {
 		return nil, fmt.Errorf("recipe-form IDs are not valid inputs: %s", idInputDebugString(id))
 	}
-	srv := CurrentDagqlServer(ctx)
-	if srv == nil {
-		return nil, fmt.Errorf("cannot resolve ID input %q without dagql server", idInputDebugString(id))
-	}
-	val, err := srv.Load(ctx, id)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("load ID input %q: %w", idInputDebugString(id), err)
+		return nil, fmt.Errorf("resolve ID input %q: current client metadata: %w", idInputDebugString(id), err)
 	}
-	return resultCallRefFromResult(ctx, val)
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("resolve ID input %q: empty session ID", idInputDebugString(id))
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ID input %q: current dagql cache: %w", idInputDebugString(id), err)
+	}
+	shared, _, _, err := cache.sharedResultByResultID(
+		ctx,
+		clientMetadata.SessionID,
+		sharedResultID(id.EngineResultID()),
+		sharedResultLookupCanonicalEquivalent,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ID input %q: %w", idInputDebugString(id), err)
+	}
+	frame := shared.loadResultCall()
+	if frame == nil {
+		return nil, fmt.Errorf("resolve ID input %q: missing result call frame", idInputDebugString(id))
+	}
+	if frame.Type != nil && frame.Type.NamedType == "Query" {
+		return nil, nil
+	}
+	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
 }
 
 func resultCallArgFromInput(ctx context.Context, name string, input Input, sensitive bool) (*ResultCallArg, error) {
