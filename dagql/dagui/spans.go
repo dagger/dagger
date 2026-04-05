@@ -656,7 +656,7 @@ func (span *Span) Errors() SpanSet {
 }
 
 func (span *Span) IsFailedOrCausedFailure() bool {
-	return span.IsFailed() || len(span.FailedLinks.Order) > 0 || (span.Final && span.Failed_)
+	return span.IsFailed() || (span.FailedLinks != nil && len(span.FailedLinks.Order) > 0) || (span.Final && span.Failed_)
 }
 
 func (span *Span) FailedReason() (bool, []string) {
