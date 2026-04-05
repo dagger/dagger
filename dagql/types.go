@@ -829,12 +829,6 @@ func NewID[T Typed](id *call.ID) ID[T] {
 	}
 }
 
-func NewDynamicID[T Typed](id *call.ID, typed T) ID[T] {
-	return ID[T]{
-		id:    id,
-		inner: typed,
-	}
-}
 
 func IDTypeNameFor(t Typed) string {
 	return t.Type().Name() + "ID"
