@@ -2071,11 +2071,19 @@ func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *test
 
 // addSDKReplaceToClient adds SDK replace directive and runs go mod tidy for testing.
 // This is test-specific - production code doesn't need this.
+//
+// Go ignores replace directives in non-main modules, so we add the replace
+// in both the client's go.mod (for direct builds) and the parent go.mod
+// (for when the parent is the main module importing the client).
 func addSDKReplaceToClient(clientDir string) func(*dagger.Container) *dagger.Container {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", clientDir)}).
 			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", clientDir)}).
+			// Also add the replace to the parent module — Go ignores replace
+			// directives in dependency modules, so the parent must map the
+			// SDK path itself.
+			WithExec([]string{"go", "mod", "edit", fmt.Sprintf("-replace=dagger.io/dagger=./%s/sdk", clientDir)}).
 			WithExec([]string{"go", "mod", "tidy"})
 	}
 }
