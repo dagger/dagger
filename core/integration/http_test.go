@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -263,52 +264,73 @@ func (HTTPSuite) TestHTTPETag(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	const hostname = "testhttpetag"
-
-	// query in first session
 	port := counterService(ctx, t, true)
 	svc := c.Host().Service([]dagger.PortForward{{
 		Backend:  port,
 		Frontend: port,
 	}}).WithHostname(hostname)
+
+	devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding(hostname, svc)
+	})
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	c1, err := dagger.Connect(
+		ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithSkipWorkspaceModules(),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { c1.Close() })
+
+	c2, err := dagger.Connect(
+		ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithSkipWorkspaceModules(),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { c2.Close() })
+
 	url := fmt.Sprintf("http://%s:%d", hostname, port)
 
-	f := c.HTTP(url+"?query=1", dagger.HTTPOpts{ExperimentalServiceHost: svc})
+	f := c1.HTTP(url + "?query=1")
 	contents, err := f.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "count: 0", contents)
 
 	// query in second session, the http client should present If-None-Match using the etag
-	c2 := connect(ctx, t)
-	svc2 := c2.Host().Service([]dagger.PortForward{{
-		Backend:  port,
-		Frontend: port,
-	}}).WithHostname(hostname)
-
-	f2 := c2.HTTP(url+"?query=1", dagger.HTTPOpts{ExperimentalServiceHost: svc2})
+	f2 := c2.HTTP(url + "?query=1")
 	contents, err = f2.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "count: 0", contents)
 
 	// check that we did actually hit the cache!
-	cacheF := c.HTTP(url+"?cache=1", dagger.HTTPOpts{ExperimentalServiceHost: svc})
+	cacheF := c1.HTTP(url + "?cache=1")
 	contents, err = cacheF.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "cache: 1", contents)
 
 	// part2! we bump now
-	bumpF := c.HTTP(url+"?add=2", dagger.HTTPOpts{ExperimentalServiceHost: svc})
+	bumpF := c1.HTTP(url + "?add=2")
 	contents, err = bumpF.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "count: 1", contents)
 
 	// query in second session, the http client should present, but there shouldn't be an ETag match
-	f2 = c2.HTTP(url+"?query=2", dagger.HTTPOpts{ExperimentalServiceHost: svc2})
+	f2 = c2.HTTP(url + "?query=2")
 	contents, err = f2.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "count: 1", contents)
 
 	// check that the cache wasn't hit
-	cacheF = c.HTTP(url+"?cache=2", dagger.HTTPOpts{ExperimentalServiceHost: svc})
+	cacheF = c1.HTTP(url + "?cache=2")
 	contents, err = cacheF.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "cache: 1", contents)

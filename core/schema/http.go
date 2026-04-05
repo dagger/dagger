@@ -29,17 +29,23 @@ func (s *httpSchema) Install(srv *dagql.Server) {
 				dagql.Arg("authHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the URL is fetched.`),
 			),
-		dagql.NodeFunc("_httpResolved", s.httpResolved).
+		dagql.NodeFunc("_httpState", s.httpState).
 			IsPersistable().
-			Doc(`(Internal-only) Returns a file containing an http remote url content.`).
+			Doc(`(Internal-only) Returns a persistent HTTP state object.`).
 			Args(
 				dagql.Arg("url").Doc(`HTTP url to get the content from.`),
-				dagql.Arg("name").Doc(`Resolved file name to use for the file.`),
-				dagql.Arg("permissions").Doc(`Permissions to set on the file.`),
+			),
+	}.Install(srv)
+
+	dagql.Fields[*core.HTTPState]{
+		dagql.NodeFunc("_resolve", s.httpStateResolve).
+			IsPersistable().
+			WithInput(dagql.PerSessionInput).
+			Doc(`(Internal-only) Resolve the HTTP state once per session and return the resulting file.`).
+			Args(
 				dagql.Arg("checksum").Doc(`Expected digest of the downloaded content.`),
-				dagql.Arg("resolvedETag").Doc(`(Internal-only) resolved ETag version.`),
-				dagql.Arg("resolvedLastModified").Doc(`(Internal-only) resolved Last-Modified version.`),
-				dagql.Arg("resolvedDigest").Doc(`(Internal-only) resolved digest version.`),
+				dagql.Arg("permissions").Doc(`Permissions to set on the file.`),
+				dagql.Arg("name").Doc(`Resolved file name to use for the file.`),
 			),
 	}.Install(srv)
 }
@@ -53,15 +59,14 @@ type httpArgs struct {
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 }
 
-type httpResolvedArgs struct {
-	URL         string
-	Name        dagql.Optional[dagql.String]
-	Permissions dagql.Optional[dagql.Int]
-	Checksum    dagql.Optional[dagql.String]
+type httpStateArgs struct {
+	URL string
+}
 
-	ResolvedETag         dagql.Optional[dagql.String] `name:"resolvedETag" internal:"true"`
-	ResolvedLastModified dagql.Optional[dagql.String] `internal:"true"`
-	ResolvedDigest       dagql.Optional[dagql.String] `internal:"true"`
+type httpStateResolveArgs struct {
+	Checksum    dagql.Optional[dagql.String]
+	Permissions int
+	Name        string
 }
 
 func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args httpArgs) (string, error) {
@@ -114,66 +119,42 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		return s.newHTTPFileResult(ctx, srv, fetched, permissions, args.Checksum)
 	}
 
-	resolved, err := core.ResolveHTTPVersion(ctx, parent.Self(), core.ResolveHTTPRequestVersionOpts{
-		URL:      args.URL,
-		Checksum: args.Checksum,
-	})
-	if err != nil {
-		return inst, err
-	}
-
-	selectArgs := []dagql.NamedInput{
-		{Name: "url", Value: dagql.String(args.URL)},
-	}
-	if args.Name.Valid {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "name", Value: dagql.Opt(args.Name.Value)})
-	}
-	if args.Permissions.Valid {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(args.Permissions.Value)})
-	}
-	if args.Checksum.Valid {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "checksum", Value: dagql.Opt(args.Checksum.Value)})
-	}
-	if resolved.ETag.Valid {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "resolvedETag", Value: dagql.Opt(resolved.ETag.Value)})
-	}
-	if resolved.LastModified.Valid {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "resolvedLastModified", Value: dagql.Opt(resolved.LastModified.Value)})
-	}
-	if resolved.Digest.Valid {
-		selectArgs = append(selectArgs, dagql.NamedInput{Name: "resolvedDigest", Value: dagql.Opt(resolved.Digest.Value)})
-	}
-
 	if err := srv.Select(ctx, parent, &inst, dagql.Selector{
-		Field: "_httpResolved",
-		Args:  selectArgs,
+		Field: "_httpState",
+		Args: []dagql.NamedInput{
+			{Name: "url", Value: dagql.String(args.URL)},
+		},
+	}, dagql.Selector{
+		Field: "_resolve",
+		Args: []dagql.NamedInput{
+			{Name: "checksum", Value: args.Checksum},
+			{Name: "permissions", Value: dagql.Int(permissions)},
+			{Name: "name", Value: dagql.String(filename)},
+		},
 	}); err != nil {
 		return inst, err
 	}
 	return inst, nil
 }
 
-func (s *httpSchema) httpResolved(ctx context.Context, parent dagql.ObjectResult[*core.Query], args httpResolvedArgs) (inst dagql.ObjectResult[*core.File], err error) {
+func (s *httpSchema) httpState(ctx context.Context, parent dagql.ObjectResult[*core.Query], args httpStateArgs) (*core.HTTPState, error) {
+	return &core.HTTPState{URL: args.URL}, nil
+}
+
+func (s *httpSchema) httpStateResolve(ctx context.Context, parent dagql.ObjectResult[*core.HTTPState], args httpStateResolveArgs) (inst dagql.ObjectResult[*core.File], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
-
-	filename := string(args.Name.GetOr(dagql.String("index")))
-	permissions := int(args.Permissions.GetOr(dagql.Int(0600)))
-	fetched, err := core.FetchHTTPFile(ctx, parent.Self(), core.FetchHTTPRequestOpts{
-		URL:                  args.URL,
-		Filename:             filename,
-		Permissions:          permissions,
-		Checksum:             args.Checksum,
-		ResolvedETag:         args.ResolvedETag,
-		ResolvedLastModified: args.ResolvedLastModified,
-		ResolvedDigest:       args.ResolvedDigest,
-	})
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("current query: %w", err)
+	}
+	fetched, err := parent.Self().Resolve(ctx, query, args.Checksum, args.Permissions, args.Name)
 	if err != nil {
 		return inst, err
 	}
-	return s.newHTTPFileResult(ctx, srv, fetched, permissions, args.Checksum)
+	return s.newHTTPFileResult(ctx, srv, fetched, args.Permissions, args.Checksum)
 }
 
 func (s *httpSchema) resolveHTTPSessionContext(
