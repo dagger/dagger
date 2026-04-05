@@ -35,8 +35,9 @@ type Server struct {
 	root       AnyObjectResult
 	telemetry  AroundFunc
 	objects    map[string]ObjectType
-	interfaces map[string]*Interface
-	scalars    map[string]ScalarType
+	interfaces     map[string]*Interface
+	autoInterfaces []*Interface // core interfaces auto-implemented by qualifying types
+	scalars        map[string]ScalarType
 	typeDefs   map[string]TypeDef
 	directives map[string]DirectiveSpec
 
@@ -173,8 +174,10 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		class:  rootClass,
 	}
 
-	// Install the Node interface before any objects so that InstallObject
-	// can auto-implement it for every class with an ID.
+	// Install core interfaces before any objects so that InstallObject
+	// can auto-implement them for qualifying classes.
+	//
+	// autoInterfaces are checked in order for every installed object/interface.
 	nodeIface := NewInterface("Node", "An object with a globally unique ID.")
 	nodeIface.AddField(InterfaceFieldSpec{
 		FieldSpec: FieldSpec{
@@ -183,6 +186,39 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		},
 	})
 	srv.interfaces[nodeIface.TypeName()] = nodeIface
+
+	syncerIface := NewInterface("Syncer", FormatDescription(
+		`An object that can be force-evaluated.`,
+		`Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.`,
+	))
+	syncerIface.AddField(InterfaceFieldSpec{
+		FieldSpec: FieldSpec{
+			Name: "id",
+			Type: AnyID{},
+		},
+	})
+	syncerIface.AddField(InterfaceFieldSpec{
+		FieldSpec: FieldSpec{
+			Name: "sync",
+			Type: AnyID{},
+		},
+	})
+	srv.interfaces[syncerIface.TypeName()] = syncerIface
+
+	srv.autoInterfaces = []*Interface{nodeIface, syncerIface}
+
+	// Resolve interface-implements-interface among core interfaces.
+	// Syncer has id: ID!, so it implements Node.
+	for _, iface := range srv.autoInterfaces {
+		for _, other := range srv.autoInterfaces {
+			if other.TypeName() == iface.TypeName() {
+				continue
+			}
+			if other.SatisfiedByInterface(iface, "") {
+				iface.ImplementInterface(other)
+			}
+		}
+	}
 
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
@@ -474,13 +510,11 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 
 	s.objects[class.TypeName()] = class
 
-	// Auto-implement the "Node" interface for any class that has IDs.
-	if _, hasID := class.IDType(); hasID {
-		if nodeIface, ok := s.interfaces["Node"]; ok {
-			if nodeIface.Satisfies(class, "") {
-				if impl, ok := class.(InterfaceImplementor); ok {
-					impl.ImplementInterface(nodeIface)
-				}
+	// Auto-implement core interfaces for qualifying classes.
+	if impl, ok := class.(InterfaceImplementor); ok {
+		for _, iface := range s.autoInterfaces {
+			if iface.Satisfies(class, "") {
+				impl.ImplementInterface(iface)
 			}
 		}
 	}
@@ -491,6 +525,26 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	}
 
 	return class
+}
+
+// AutoImplementInterfaces re-checks whether the given object type satisfies
+// any auto-interfaces that it didn't qualify for at InstallObject time. This
+// is needed because fields like "sync" are installed after InstallObject.
+func (s *Server) AutoImplementInterfaces(class ObjectType) {
+	impl, ok := class.(InterfaceImplementor)
+	if !ok {
+		return
+	}
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	for _, iface := range s.autoInterfaces {
+		if _, already := iface.Implementors()[class.TypeName()]; already {
+			continue
+		}
+		if iface.Satisfies(class, "") {
+			impl.ImplementInterface(iface)
+		}
+	}
 }
 
 // InstallInterface installs the given Interface type into the schema.
@@ -506,15 +560,13 @@ func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive
 	}
 	s.interfaces[iface.TypeName()] = iface
 
-	// Auto-implement "Node" for interfaces that have an "id" field, just
-	// like objects.  This lets inline fragments like `... on SomeIface` be
-	// valid within `node(id:)` even when the interface has no concrete
-	// implementors in the current schema view.
-	if iface.TypeName() != "Node" {
-		if nodeIface, ok := s.interfaces["Node"]; ok {
-			if nodeIface.SatisfiedByInterface(iface, "") {
-				iface.ImplementInterface(nodeIface)
-			}
+	// Auto-implement core interfaces for qualifying interfaces.
+	for _, autoIface := range s.autoInterfaces {
+		if autoIface.TypeName() == iface.TypeName() {
+			continue
+		}
+		if autoIface.SatisfiedByInterface(iface, "") {
+			iface.ImplementInterface(autoIface)
 		}
 	}
 

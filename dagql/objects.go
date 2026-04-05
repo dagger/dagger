@@ -1208,6 +1208,10 @@ func (fields Fields[T]) Install(server *Server) {
 		})
 	}
 	class.Install(fields...)
+
+	// Re-check auto-interfaces now that all fields (including sync, etc.)
+	// have been installed. InstallObject only sees the id field.
+	server.AutoImplementInterfaces(class)
 }
 
 type GenericGetCacheConfigFunc func(
