@@ -454,11 +454,8 @@ func shellTypeDoc(t *modTypeDef) string {
 }
 
 // isHiddenFunction returns true for internal functions that are callable
-// but should not clutter .help output: load-<type>-from-id helpers and
-// the synthetic "with" constructor mechanism.
+// but should not clutter .help output: the synthetic "with" constructor
+// mechanism.
 func isHiddenFunction(name string) bool {
-	if name == "with" {
-		return true
-	}
-	return strings.HasPrefix(name, "load-") && strings.HasSuffix(name, "-from-id")
+	return name == "with"
 }
