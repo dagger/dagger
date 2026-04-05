@@ -446,6 +446,27 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		})
 	})
 
+	t.Run("missing secret fails when required is set", func(ctx context.Context, t *testctx.T) {
+		dockerfile := `FROM ` + alpineImage + `
+RUN --mount=type=secret,id=my-secret,required=true echo this should not run
+`
+		dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+		_, err := dir.DockerBuild().Sync(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, `secret "my-secret" is required but no secret mappings were provided`)
+	})
+
+	t.Run("missing secret is ok when required is false", func(ctx context.Context, t *testctx.T) {
+		dockerfile := `FROM ` + alpineImage + `
+RUN --mount=type=secret,id=my-secret,required=false echo this is fine
+`
+		dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+		_, err := dir.DockerBuild().Sync(ctx)
+		require.NoError(t, err)
+	})
+
 	t.Run("with unknown build secrets", func(ctx context.Context, t *testctx.T) {
 		dockerfile := `FROM ` + alpineImage + `
 WORKDIR /src
@@ -567,7 +588,7 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 			WithNewFile("Dockerfile",
 				`FROM `+pushedRef+`
 	`).DockerBuild().Sync(ctx)
-		require.ErrorContains(t, err, "\"/some-file-that-might-exist\": not found")
+		require.ErrorContains(t, err, "lstat /some-file-that-might-exist: no such file or directory")
 
 		// Test again, after some-file-that-might-exist is created.
 		s, err := baseDir.
@@ -577,6 +598,39 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 	`).DockerBuild().File("some-file-that-might-exist").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "existence is futile", s)
+	})
+
+	t.Run("healthcheck", func(ctx context.Context, t *testctx.T) {
+		dockerfile := `FROM ` + alpineImage + `
+HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --retries=5 CMD ["sh","-c","test -d /"]
+`
+		dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+		healthcheck := dir.DockerBuild().DockerHealthcheck()
+
+		interval, err := healthcheck.Interval(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "21s", interval)
+
+		timeout, err := healthcheck.Timeout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "4s", timeout)
+
+		startPeriod, err := healthcheck.StartPeriod(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "9s", startPeriod)
+
+		startInterval, err := healthcheck.StartInterval(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "2s", startInterval)
+
+		retries, err := healthcheck.Retries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 5, retries)
+
+		args, err := healthcheck.Args(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"sh", "-c", "test -d /"}, args)
 	})
 }
 
@@ -753,6 +807,41 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 		_, err := dir.DockerBuild().Sync(ctx)
 		require.Error(t, err)
 	})
+}
+
+func (DockerfileSuite) TestAddHTTPDoesNotUnpack(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srv := c.Container().
+		From(busyboxImage).
+		WithWorkdir("/srv").
+		WithExec([]string{"sh", "-c", "mkdir mydir && echo remotedata > mydir/data && tar czf remotedir.tar.gz mydir"}).
+		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("fileserver")
+
+	_, err := srv.Start(ctx)
+	require.NoError(t, err)
+
+	dir := c.Container().
+		From(alpineImage).
+		Directory(".").
+		WithNewFile("Dockerfile",
+			`FROM `+golangImage+`
+WORKDIR /work
+ADD http://fileserver/remotedir.tar.gz this-should-not-unpack
+`)
+
+	ctr, err := dir.DockerBuild().Sync(ctx)
+	require.NoError(t, err)
+
+	_, err = ctr.WithExec([]string{"test", "-f", "this-should-not-unpack"}).Sync(ctx)
+	require.NoError(t, err)
+
+	s, err := ctr.WithExec([]string{"sh", "-c", "mkdir the-dir && tar xzf this-should-not-unpack -C the-dir"}).File("the-dir/mydir/data").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "remotedata\n", s)
 }
 
 func (DockerfileSuite) TestCopyExclude(ctx context.Context, t *testctx.T) {

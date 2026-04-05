@@ -121,28 +121,20 @@ type FileFromContainerLazy struct {
 
 type ContainerWithDirectoryLazy struct {
 	LazyState
-	Parent                           dagql.ObjectResult[*Container]
-	Path                             string
-	Source                           dagql.ObjectResult[*Directory]
-	Filter                           CopyFilter
-	Owner                            string
-	Permissions                      *int
-	DoNotCreateDestPath              bool
-	AttemptUnpackDockerCompatibility bool
-	RequiredSourcePath               string
-	DestPathHintIsDirectory          bool
-	CopySourcePathContentsWhenDir    bool
+	Parent dagql.ObjectResult[*Container]
+	Path   string
+	Source dagql.ObjectResult[*Directory]
+	Filter CopyFilter
+	Owner  string
 }
 
 type ContainerWithFileLazy struct {
 	LazyState
-	Parent                           dagql.ObjectResult[*Container]
-	Path                             string
-	Source                           dagql.ObjectResult[*File]
-	Permissions                      *int
-	Owner                            string
-	DoNotCreateDestPath              bool
-	AttemptUnpackDockerCompatibility bool
+	Parent      dagql.ObjectResult[*Container]
+	Path        string
+	Source      dagql.ObjectResult[*File]
+	Permissions *int
+	Owner       string
 }
 
 type ContainerWithoutPathLazy struct {
@@ -493,15 +485,22 @@ func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
 	}
 	topLevelLazy := container.Lazy
 	hasPendingChildren := false
-	if container.FS != nil && container.FS.Value != nil && container.FS.Value.Lazy != nil {
+	switch {
+	case container.FS != nil && container.FS.Value != nil && container.FS.Value.LazyEvalFunc() != nil:
+		hasPendingChildren = true
+	case container.FS != nil && container.FS.Result != nil && container.FS.Result.Self() != nil && container.FS.Result.Self().LazyEvalFunc() != nil:
 		hasPendingChildren = true
 	}
 	if !hasPendingChildren {
 		for _, mnt := range container.Mounts {
 			switch {
-			case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil && mnt.DirectorySource.Value.Lazy != nil:
+			case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil && mnt.DirectorySource.Value.LazyEvalFunc() != nil:
 				hasPendingChildren = true
-			case mnt.FileSource != nil && mnt.FileSource.Value != nil && mnt.FileSource.Value.Lazy != nil:
+			case mnt.DirectorySource != nil && mnt.DirectorySource.Result != nil && mnt.DirectorySource.Result.Self() != nil && mnt.DirectorySource.Result.Self().LazyEvalFunc() != nil:
+				hasPendingChildren = true
+			case mnt.FileSource != nil && mnt.FileSource.Value != nil && mnt.FileSource.Value.LazyEvalFunc() != nil:
+				hasPendingChildren = true
+			case mnt.FileSource != nil && mnt.FileSource.Result != nil && mnt.FileSource.Result.Self() != nil && mnt.FileSource.Result.Self().LazyEvalFunc() != nil:
 				hasPendingChildren = true
 			}
 			if hasPendingChildren {
@@ -518,20 +517,39 @@ func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
 				return err
 			}
 		}
-		if container.FS != nil && container.FS.Value != nil && container.FS.Value.Lazy != nil {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		switch {
+		case container.FS != nil && container.FS.Value != nil && container.FS.Value.LazyEvalFunc() != nil:
 			if err := container.FS.Value.Lazy.Evaluate(ctx, container.FS.Value); err != nil {
+				return err
+			}
+		case container.FS != nil && container.FS.Result != nil && container.FS.Result.Self() != nil && container.FS.Result.Self().LazyEvalFunc() != nil:
+			if err := cache.Evaluate(ctx, *container.FS.Result); err != nil {
 				return err
 			}
 		}
 		for i := range container.Mounts {
 			mnt := &container.Mounts[i]
-			if mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil && mnt.DirectorySource.Value.Lazy != nil {
+			switch {
+			case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil && mnt.DirectorySource.Value.LazyEvalFunc() != nil:
 				if err := mnt.DirectorySource.Value.Lazy.Evaluate(ctx, mnt.DirectorySource.Value); err != nil {
 					return err
 				}
+			case mnt.DirectorySource != nil && mnt.DirectorySource.Result != nil && mnt.DirectorySource.Result.Self() != nil && mnt.DirectorySource.Result.Self().LazyEvalFunc() != nil:
+				if err := cache.Evaluate(ctx, *mnt.DirectorySource.Result); err != nil {
+					return err
+				}
 			}
-			if mnt.FileSource != nil && mnt.FileSource.Value != nil && mnt.FileSource.Value.Lazy != nil {
+			switch {
+			case mnt.FileSource != nil && mnt.FileSource.Value != nil && mnt.FileSource.Value.LazyEvalFunc() != nil:
 				if err := mnt.FileSource.Value.Lazy.Evaluate(ctx, mnt.FileSource.Value); err != nil {
+					return err
+				}
+			case mnt.FileSource != nil && mnt.FileSource.Result != nil && mnt.FileSource.Result.Self() != nil && mnt.FileSource.Result.Self().LazyEvalFunc() != nil:
+				if err := cache.Evaluate(ctx, *mnt.FileSource.Result); err != nil {
 					return err
 				}
 			}
@@ -1074,27 +1092,19 @@ type persistedContainerFromLazy struct {
 }
 
 type persistedContainerWithDirectoryLazy struct {
-	ParentResultID                   uint64     `json:"parentResultID"`
-	Path                             string     `json:"path"`
-	SourceResultID                   uint64     `json:"sourceResultID"`
-	Filter                           CopyFilter `json:"filter,omitempty"`
-	Owner                            string     `json:"owner,omitempty"`
-	Permissions                      *int       `json:"permissions,omitempty"`
-	DoNotCreateDestPath              bool       `json:"doNotCreateDestPath,omitempty"`
-	AttemptUnpackDockerCompatibility bool       `json:"attemptUnpackDockerCompatibility,omitempty"`
-	RequiredSourcePath               string     `json:"requiredSourcePath,omitempty"`
-	DestPathHintIsDirectory          bool       `json:"destPathHintIsDirectory,omitempty"`
-	CopySourcePathContentsWhenDir    bool       `json:"copySourcePathContentsWhenDir,omitempty"`
+	ParentResultID uint64     `json:"parentResultID"`
+	Path           string     `json:"path"`
+	SourceResultID uint64     `json:"sourceResultID"`
+	Filter         CopyFilter `json:"filter,omitempty"`
+	Owner          string     `json:"owner,omitempty"`
 }
 
 type persistedContainerWithFileLazy struct {
-	ParentResultID                   uint64 `json:"parentResultID"`
-	Path                             string `json:"path"`
-	SourceResultID                   uint64 `json:"sourceResultID"`
-	Permissions                      *int   `json:"permissions,omitempty"`
-	Owner                            string `json:"owner,omitempty"`
-	DoNotCreateDestPath              bool   `json:"doNotCreateDestPath,omitempty"`
-	AttemptUnpackDockerCompatibility bool   `json:"attemptUnpackDockerCompatibility,omitempty"`
+	ParentResultID uint64 `json:"parentResultID"`
+	Path           string `json:"path"`
+	SourceResultID uint64 `json:"sourceResultID"`
+	Permissions    *int   `json:"permissions,omitempty"`
+	Owner          string `json:"owner,omitempty"`
 }
 
 type persistedContainerWithoutPathLazy struct {
@@ -1781,7 +1791,7 @@ func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container 
 		if err != nil {
 			return err
 		}
-		if err := dir.WithDirectory(ctx, targetParent, subpath, lazy.Source, lazy.Filter, lazy.Owner, lazy.Permissions, lazy.DoNotCreateDestPath, lazy.AttemptUnpackDockerCompatibility, lazy.RequiredSourcePath, lazy.DestPathHintIsDirectory, lazy.CopySourcePathContentsWhenDir); err != nil {
+		if err := dir.WithDirectory(ctx, targetParent, subpath, lazy.Source, lazy.Filter, lazy.Owner, nil); err != nil {
 			return err
 		}
 		container.Lazy = nil
@@ -1813,17 +1823,11 @@ func (lazy *ContainerWithDirectoryLazy) EncodePersisted(ctx context.Context, cac
 		return nil, err
 	}
 	return json.Marshal(persistedContainerWithDirectoryLazy{
-		ParentResultID:                   parentID,
-		Path:                             lazy.Path,
-		SourceResultID:                   sourceID,
-		Filter:                           lazy.Filter,
-		Owner:                            lazy.Owner,
-		Permissions:                      lazy.Permissions,
-		DoNotCreateDestPath:              lazy.DoNotCreateDestPath,
-		AttemptUnpackDockerCompatibility: lazy.AttemptUnpackDockerCompatibility,
-		RequiredSourcePath:               lazy.RequiredSourcePath,
-		DestPathHintIsDirectory:          lazy.DestPathHintIsDirectory,
-		CopySourcePathContentsWhenDir:    lazy.CopySourcePathContentsWhenDir,
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+		SourceResultID: sourceID,
+		Filter:         lazy.Filter,
+		Owner:          lazy.Owner,
 	})
 }
 
@@ -1855,7 +1859,7 @@ func (lazy *ContainerWithFileLazy) Evaluate(ctx context.Context, container *Cont
 		if err != nil {
 			return err
 		}
-		if err := dir.WithFile(ctx, targetParent, subpath, lazy.Source, lazy.Permissions, lazy.Owner, lazy.DoNotCreateDestPath, lazy.AttemptUnpackDockerCompatibility); err != nil {
+		if err := dir.WithFile(ctx, targetParent, subpath, lazy.Source, lazy.Permissions, lazy.Owner, false, false); err != nil {
 			return err
 		}
 		container.Lazy = nil
@@ -1887,13 +1891,11 @@ func (lazy *ContainerWithFileLazy) EncodePersisted(ctx context.Context, cache da
 		return nil, err
 	}
 	return json.Marshal(persistedContainerWithFileLazy{
-		ParentResultID:                   parentID,
-		Path:                             lazy.Path,
-		SourceResultID:                   sourceID,
-		Permissions:                      lazy.Permissions,
-		Owner:                            lazy.Owner,
-		DoNotCreateDestPath:              lazy.DoNotCreateDestPath,
-		AttemptUnpackDockerCompatibility: lazy.AttemptUnpackDockerCompatibility,
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+		SourceResultID: sourceID,
+		Permissions:    lazy.Permissions,
+		Owner:          lazy.Owner,
 	})
 }
 
@@ -2048,18 +2050,12 @@ func decodePersistedContainerLazy(
 			return err
 		}
 		container.Lazy = &ContainerWithDirectoryLazy{
-			LazyState:                        NewLazyState(),
-			Parent:                           parent,
-			Path:                             persisted.Path,
-			Source:                           source,
-			Filter:                           persisted.Filter,
-			Owner:                            persisted.Owner,
-			Permissions:                      persisted.Permissions,
-			DoNotCreateDestPath:              persisted.DoNotCreateDestPath,
-			AttemptUnpackDockerCompatibility: persisted.AttemptUnpackDockerCompatibility,
-			RequiredSourcePath:               persisted.RequiredSourcePath,
-			DestPathHintIsDirectory:          persisted.DestPathHintIsDirectory,
-			CopySourcePathContentsWhenDir:    persisted.CopySourcePathContentsWhenDir,
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Path:      persisted.Path,
+			Source:    source,
+			Filter:    persisted.Filter,
+			Owner:     persisted.Owner,
 		}
 		return markDirectoryFromContainerLazy(container, persisted.Path)
 	case "withFile":
@@ -2076,14 +2072,12 @@ func decodePersistedContainerLazy(
 			return err
 		}
 		container.Lazy = &ContainerWithFileLazy{
-			LazyState:                        NewLazyState(),
-			Parent:                           parent,
-			Path:                             persisted.Path,
-			Source:                           source,
-			Permissions:                      persisted.Permissions,
-			Owner:                            persisted.Owner,
-			DoNotCreateDestPath:              persisted.DoNotCreateDestPath,
-			AttemptUnpackDockerCompatibility: persisted.AttemptUnpackDockerCompatibility,
+			LazyState:   NewLazyState(),
+			Parent:      parent,
+			Path:        persisted.Path,
+			Source:      source,
+			Permissions: persisted.Permissions,
+			Owner:       persisted.Owner,
 		}
 		return markDirectoryFromContainerLazy(container, persisted.Path)
 	case "withoutDirectory", "withoutFile", "withoutFiles":
@@ -2493,12 +2487,6 @@ func (container *Container) WithDirectory(
 	src dagql.ObjectResult[*Directory],
 	filter CopyFilter,
 	owner string,
-	permissions *int,
-	doNotCreateDestPath bool,
-	attemptUnpackDockerCompatibility bool,
-	requiredSourcePath string,
-	destPathHintIsDirectory bool,
-	copySourcePathContentsWhenDir bool,
 ) (*Container, error) {
 	mnt, mntSubpath, err := locatePath(container, subdir)
 	if err != nil {
@@ -2517,7 +2505,7 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithDirectory(ctx, parent, subdir, src, filter, owner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
+		return container.WithDirectory(ctx, parent, subdir, src, filter, owner)
 	}
 
 	resolvedOwner := owner
@@ -2549,24 +2537,6 @@ func (container *Container) WithDirectory(
 	if resolvedOwner != "" {
 		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(resolvedOwner)})
 	}
-	if permissions != nil {
-		args = append(args, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
-	}
-	if doNotCreateDestPath {
-		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
-	}
-	if attemptUnpackDockerCompatibility {
-		args = append(args, dagql.NamedInput{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(true)})
-	}
-	if requiredSourcePath != "" {
-		args = append(args, dagql.NamedInput{Name: "requiredSourcePath", Value: dagql.String(requiredSourcePath)})
-	}
-	if destPathHintIsDirectory {
-		args = append(args, dagql.NamedInput{Name: "destPathHintIsDirectory", Value: dagql.Boolean(true)})
-	}
-	if copySourcePathContentsWhenDir {
-		args = append(args, dagql.NamedInput{Name: "copySourcePathContentsWhenDir", Value: dagql.Boolean(true)})
-	}
 
 	//nolint:dupl
 	switch {
@@ -2577,18 +2547,12 @@ func (container *Container) WithDirectory(
 		}
 		if container.FS != nil && container.FS.Value != nil {
 			container.Lazy = &ContainerWithDirectoryLazy{
-				LazyState:                        NewLazyState(),
-				Parent:                           parent,
-				Path:                             subdir,
-				Source:                           src,
-				Filter:                           filter,
-				Owner:                            resolvedOwner,
-				Permissions:                      permissions,
-				DoNotCreateDestPath:              doNotCreateDestPath,
-				AttemptUnpackDockerCompatibility: attemptUnpackDockerCompatibility,
-				RequiredSourcePath:               requiredSourcePath,
-				DestPathHintIsDirectory:          destPathHintIsDirectory,
-				CopySourcePathContentsWhenDir:    copySourcePathContentsWhenDir,
+				LazyState: NewLazyState(),
+				Parent:    parent,
+				Path:      subdir,
+				Source:    src,
+				Filter:    filter,
+				Owner:     resolvedOwner,
 			}
 			if err := markDirectoryFromContainerLazy(container, subdir); err != nil {
 				return nil, err
@@ -2604,18 +2568,12 @@ func (container *Container) WithDirectory(
 	case mnt.DirectorySource != nil: // directory mount
 		if mnt.DirectorySource.Value != nil {
 			container.Lazy = &ContainerWithDirectoryLazy{
-				LazyState:                        NewLazyState(),
-				Parent:                           parent,
-				Path:                             subdir,
-				Source:                           src,
-				Filter:                           filter,
-				Owner:                            resolvedOwner,
-				Permissions:                      permissions,
-				DoNotCreateDestPath:              doNotCreateDestPath,
-				AttemptUnpackDockerCompatibility: attemptUnpackDockerCompatibility,
-				RequiredSourcePath:               requiredSourcePath,
-				DestPathHintIsDirectory:          destPathHintIsDirectory,
-				CopySourcePathContentsWhenDir:    copySourcePathContentsWhenDir,
+				LazyState: NewLazyState(),
+				Parent:    parent,
+				Path:      subdir,
+				Source:    src,
+				Filter:    filter,
+				Owner:     resolvedOwner,
 			}
 			if err := markDirectoryFromContainerLazy(container, subdir); err != nil {
 				return nil, err
@@ -2650,8 +2608,6 @@ func (container *Container) WithFile(
 	src dagql.ObjectResult[*File],
 	permissions *int,
 	owner string,
-	doNotCreateDestPath bool,
-	attemptUnpackDockerCompatibility bool,
 ) (*Container, error) {
 	mnt, mntSubpath, err := locatePath(container, destPath)
 	if err != nil {
@@ -2665,7 +2621,7 @@ func (container *Container) WithFile(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithFile(ctx, parent, srv, destPath, src, permissions, owner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
+		return container.WithFile(ctx, parent, srv, destPath, src, permissions, owner)
 	}
 
 	resolvedOwner := owner
@@ -2691,12 +2647,6 @@ func (container *Container) WithFile(
 	if resolvedOwner != "" {
 		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(resolvedOwner)})
 	}
-	if doNotCreateDestPath {
-		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
-	}
-	if attemptUnpackDockerCompatibility {
-		args = append(args, dagql.NamedInput{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(true)})
-	}
 
 	//nolint:dupl
 	switch {
@@ -2707,14 +2657,12 @@ func (container *Container) WithFile(
 		}
 		if container.FS != nil && container.FS.Value != nil {
 			container.Lazy = &ContainerWithFileLazy{
-				LazyState:                        NewLazyState(),
-				Parent:                           parent,
-				Path:                             destPath,
-				Source:                           src,
-				Permissions:                      permissions,
-				Owner:                            resolvedOwner,
-				DoNotCreateDestPath:              doNotCreateDestPath,
-				AttemptUnpackDockerCompatibility: attemptUnpackDockerCompatibility,
+				LazyState:   NewLazyState(),
+				Parent:      parent,
+				Path:        destPath,
+				Source:      src,
+				Permissions: permissions,
+				Owner:       resolvedOwner,
 			}
 			if err := markDirectoryFromContainerLazy(container, destPath); err != nil {
 				return nil, err
@@ -2734,14 +2682,12 @@ func (container *Container) WithFile(
 	case mnt.DirectorySource != nil: // directory mount
 		if mnt.DirectorySource.Value != nil {
 			container.Lazy = &ContainerWithFileLazy{
-				LazyState:                        NewLazyState(),
-				Parent:                           parent,
-				Path:                             destPath,
-				Source:                           src,
-				Permissions:                      permissions,
-				Owner:                            resolvedOwner,
-				DoNotCreateDestPath:              doNotCreateDestPath,
-				AttemptUnpackDockerCompatibility: attemptUnpackDockerCompatibility,
+				LazyState:   NewLazyState(),
+				Parent:      parent,
+				Path:        destPath,
+				Source:      src,
+				Permissions: permissions,
+				Owner:       resolvedOwner,
 			}
 			if err := markDirectoryFromContainerLazy(container, destPath); err != nil {
 				return nil, err
@@ -2877,7 +2823,7 @@ func (container *Container) WithFiles(
 	for _, file := range src {
 		destPath := filepath.Join(destDir, filepath.Base(file.Self().File))
 		var err error
-		container, err = container.WithFile(ctx, parent, srv, destPath, file, permissions, owner, false, false)
+		container, err = container.WithFile(ctx, parent, srv, destPath, file, permissions, owner)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add file %s: %w", destPath, err)
 		}
@@ -2918,7 +2864,7 @@ func (container *Container) WithNewFile(
 		return nil, fmt.Errorf("failed to create new file %s: %w", dest, err)
 	}
 
-	return container.WithFile(ctx, parent, srv, dest, newFile, nil, owner, false, false)
+	return container.WithFile(ctx, parent, srv, dest, newFile, nil, owner)
 }
 
 // mutates container caller must have handled cloning or creating a new child.

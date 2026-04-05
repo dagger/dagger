@@ -2,7 +2,6 @@ package llbtodagger
 
 import (
 	"fmt"
-	"path"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -389,69 +388,40 @@ func applyCopy(
 		return nil, nil, unsupported(opDgst, "file.copy", "alwaysReplaceExistingDestPaths is unsupported")
 	}
 
-	sourceSubdir, include := deriveCopySelection(cp)
-	sourceDirID := sourceID
-	if sourceSubdir != "/" {
-		sourceDirID = appendCall(sourceID, directoryType(), "directory", argString("path", sourceSubdir))
-	}
-
 	owner, err := chownOwnerString(cp.Owner)
 	if err != nil {
 		return nil, nil, unsupported(opDgst, "file.copy", err.Error())
 	}
-	if ownerRequiresContainerResolution(owner) {
-		if baseContainerID == nil {
-			return nil, nil, unsupported(opDgst, "file.copy", "named user/group chown requires container context")
-		}
-		id, ctrID := applyCopyViaContainer(baseID, baseContainerID, sourceDirID, cp, include, owner)
-		return id, ctrID, nil
-	}
-
-	if filePath, ok := explicitFileCopyPath(cp, include); ok && !cp.AttemptUnpackDockerCompatibility {
-		fileID := appendCall(sourceDirID, fileType(), "file", argString("path", filePath))
-		args := []*call.Argument{
-			argString("path", cleanPath(cp.Dest)),
-			argID("source", fileID),
-			argBool("allowDirectorySourceFallback", true),
-		}
-		if !cp.CreateDestPath {
-			args = append(args, argBool("doNotCreateDestPath", true))
-		}
-		if owner != "" {
-			args = append(args, argString("owner", owner))
-		}
-		if cp.Mode >= 0 {
-			args = append(args, argInt("permissions", int64(cp.Mode)))
-		}
-		return appendCall(baseID, directoryType(), "withFile", args...), baseContainerID, nil
-	}
 
 	args := []*call.Argument{
+		argString("srcPath", cleanPath(cp.Src)),
 		argString("path", cleanPath(cp.Dest)),
-		argID("source", sourceDirID),
+		argID("source", sourceID),
 	}
-	if copyDestPathHintIsDirectory(cp.Dest) {
-		args = append(args, argBool("destPathHintIsDirectory", true))
+	if cp.FollowSymlink {
+		args = append(args, argBool("followSymlink", true))
 	}
-	if copySourcePathContentsWhenDir(cp) {
-		args = append(args, argBool("copySourcePathContentsWhenDir", true))
-	}
-	if !cp.CreateDestPath {
-		args = append(args, argBool("doNotCreateDestPath", true))
-	}
-	if len(include) > 0 {
-		args = append(args, argStringList("include", include))
-	}
-	if len(cp.ExcludePatterns) > 0 {
-		args = append(args, argStringList("exclude", cp.ExcludePatterns))
+	if cp.DirCopyContents {
+		args = append(args, argBool("dirCopyContents", true))
 	}
 	if cp.AttemptUnpackDockerCompatibility {
 		args = append(args, argBool("attemptUnpackDockerCompatibility", true))
 	}
-	if requiredSourcePath, ok := requiredSourcePathForCopy(cp, include); ok {
-		args = append(args, argString("requiredSourcePath", requiredSourcePath))
+	if cp.CreateDestPath {
+		args = append(args, argBool("createDestPath", true))
 	}
-
+	if cp.AllowWildcard {
+		args = append(args, argBool("allowWildcard", true))
+	}
+	if cp.AllowEmptyWildcard {
+		args = append(args, argBool("allowEmptyWildcard", true))
+	}
+	if len(cp.IncludePatterns) > 0 {
+		args = append(args, argStringList("include", cp.IncludePatterns))
+	}
+	if len(cp.ExcludePatterns) > 0 {
+		args = append(args, argStringList("exclude", cp.ExcludePatterns))
+	}
 	if owner != "" {
 		args = append(args, argString("owner", owner))
 	}
@@ -459,171 +429,7 @@ func applyCopy(
 		args = append(args, argInt("permissions", int64(cp.Mode)))
 	}
 
-	return appendCall(baseID, directoryType(), "withDirectory", args...), baseContainerID, nil
-}
-
-func applyCopyViaContainer(
-	baseID *call.ID,
-	baseContainerID *call.ID,
-	sourceDirID *call.ID,
-	cp *pb.FileActionCopy,
-	include []string,
-	owner string,
-) (*call.ID, *call.ID) {
-	// Ensure the container context used for owner name resolution matches the
-	// current directory view for this action input.
-	workingContainerID := appendCall(
-		baseContainerID,
-		containerType(),
-		"withRootfs",
-		argID("directory", baseID),
-	)
-
-	var nextContainerID *call.ID
-	if filePath, ok := explicitFileCopyPath(cp, include); ok && !cp.AttemptUnpackDockerCompatibility {
-		fileID := appendCall(sourceDirID, fileType(), "file", argString("path", filePath))
-		args := []*call.Argument{
-			argString("path", cleanPath(cp.Dest)),
-			argID("source", fileID),
-			argString("owner", owner),
-			argBool("allowDirectorySourceFallback", true),
-		}
-		if !cp.CreateDestPath {
-			args = append(args, argBool("doNotCreateDestPath", true))
-		}
-		if cp.Mode >= 0 {
-			args = append(args, argInt("permissions", int64(cp.Mode)))
-		}
-		nextContainerID = appendCall(workingContainerID, containerType(), "withFile", args...)
-	} else {
-		args := []*call.Argument{
-			argString("path", cleanPath(cp.Dest)),
-			argID("source", sourceDirID),
-			argString("owner", owner),
-		}
-		if copyDestPathHintIsDirectory(cp.Dest) {
-			args = append(args, argBool("destPathHintIsDirectory", true))
-		}
-		if copySourcePathContentsWhenDir(cp) {
-			args = append(args, argBool("copySourcePathContentsWhenDir", true))
-		}
-		if !cp.CreateDestPath {
-			args = append(args, argBool("doNotCreateDestPath", true))
-		}
-		if len(include) > 0 {
-			args = append(args, argStringList("include", include))
-		}
-		if len(cp.ExcludePatterns) > 0 {
-			args = append(args, argStringList("exclude", cp.ExcludePatterns))
-		}
-		if cp.AttemptUnpackDockerCompatibility {
-			args = append(args, argBool("attemptUnpackDockerCompatibility", true))
-		}
-		if requiredSourcePath, ok := requiredSourcePathForCopy(cp, include); ok {
-			args = append(args, argString("requiredSourcePath", requiredSourcePath))
-		}
-		if cp.Mode >= 0 {
-			args = append(args, argInt("permissions", int64(cp.Mode)))
-		}
-		nextContainerID = appendCall(workingContainerID, containerType(), "withDirectory", args...)
-	}
-
-	return appendCall(nextContainerID, directoryType(), "rootfs"), nextContainerID
-}
-
-func deriveCopySelection(cp *pb.FileActionCopy) (sourceSubdir string, include []string) {
-	src := cleanPath(cp.Src)
-	include = append([]string{}, cp.IncludePatterns...)
-
-	switch {
-	case cp.AllowWildcard:
-		sourceSubdir = cleanPath(path.Dir(src))
-		pattern := path.Base(src)
-		if pattern != "." && pattern != "/" {
-			include = append([]string{pattern}, include...)
-		}
-	case cp.DirCopyContents:
-		sourceSubdir = src
-	case src == "/" || src == ".":
-		sourceSubdir = "/"
-	default:
-		sourceSubdir = cleanPath(path.Dir(src))
-		item := path.Base(src)
-		if item != "." && item != "/" {
-			include = append([]string{item}, include...)
-		}
-	}
-
-	if sourceSubdir == "" {
-		sourceSubdir = "/"
-	}
-	return sourceSubdir, include
-}
-
-func explicitFileCopyPath(cp *pb.FileActionCopy, include []string) (string, bool) {
-	if cp == nil {
-		return "", false
-	}
-	if strings.HasSuffix(cp.Dest, "/") || strings.HasSuffix(cp.Dest, "/.") {
-		return "", false
-	}
-	if len(cp.IncludePatterns) > 0 || len(cp.ExcludePatterns) > 0 {
-		return "", false
-	}
-	if len(include) != 1 {
-		return "", false
-	}
-	inc := path.Clean(include[0])
-	if inc == "." || inc == "/" || strings.HasPrefix(inc, "../") {
-		return "", false
-	}
-	if hasPathWildcard(inc) {
-		return "", false
-	}
-	srcBase := path.Base(cleanPath(cp.Src))
-	if srcBase == "." || srcBase == "/" || hasPathWildcard(srcBase) {
-		return "", false
-	}
-	return strings.TrimPrefix(inc, "/"), true
-}
-
-func copyDestPathHintIsDirectory(dest string) bool {
-	return strings.HasSuffix(dest, "/") || strings.HasSuffix(dest, "/.")
-}
-
-func copySourcePathContentsWhenDir(cp *pb.FileActionCopy) bool {
-	if cp == nil {
-		return false
-	}
-	if !cp.AllowWildcard {
-		return false
-	}
-	src := cleanPath(cp.Src)
-	return !hasPathWildcard(src)
-}
-
-func requiredSourcePathForCopy(cp *pb.FileActionCopy, include []string) (string, bool) {
-	if cp == nil {
-		return "", false
-	}
-	if len(cp.ExcludePatterns) > 0 {
-		return "", false
-	}
-	if len(include) != 1 {
-		return "", false
-	}
-	req := path.Clean(include[0])
-	if req == "." || req == "/" || strings.HasPrefix(req, "../") {
-		return "", false
-	}
-	if hasPathWildcard(req) {
-		return "", false
-	}
-	return strings.TrimPrefix(req, "/"), true
-}
-
-func hasPathWildcard(p string) bool {
-	return strings.ContainsAny(p, "*?[")
+	return appendCall(baseID, directoryType(), "__withDirectoryDockerfileCompat", args...), baseContainerID, nil
 }
 
 func chownOwnerString(chown *pb.ChownOpt) (string, error) {

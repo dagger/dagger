@@ -252,9 +252,13 @@ func cleanPath(p string) string {
 	if p == "" {
 		return "/"
 	}
+	trailingSlash := strings.HasSuffix(p, "/") || strings.HasSuffix(p, "/.")
 	p = path.Clean(p)
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
+	}
+	if trailingSlash && !strings.HasSuffix(p, "/") {
+		p += "/"
 	}
 	return p
 }

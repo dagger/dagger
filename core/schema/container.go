@@ -69,31 +69,27 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
 				),
 			),
-		/*
-			TODO: re-implement Dockerfile.
-
-			dagql.NodeFunc("build", s.build).
-				View(BeforeVersion("v0.19.0")).
-				Deprecated("Use `Directory.build` instead").
-				Doc(`Initializes this container from a Dockerfile build.`).
-				Args(
-					dagql.Arg("context").Doc("Directory context used by the Dockerfile."),
-					dagql.Arg("dockerfile").Doc("Path to the Dockerfile to use."),
-					dagql.Arg("target").Doc("Target build stage to build."),
-					dagql.Arg("buildArgs").Doc("Additional build arguments."),
-					dagql.Arg("secrets").Doc(`Secrets to pass to the build.`,
-						`They will be mounted at /run/secrets/[secret-name] in the build container`,
-						`They can be accessed in the Dockerfile using the "secret" mount type
-						and mount path /run/secrets/[secret-name], e.g. RUN
-						--mount=type=secret,id=my-secret curl [http://example.com?token=$(cat
-						/run/secrets/my-secret)](http://example.com?token=$(cat
-							/run/secrets/my-secret))`),
-					dagql.Arg("noInit").Doc(`If set, skip the automatic init process injected into containers created by RUN statements.`,
-						`This should only be used if the user requires that their exec processes be the
-						pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
-					),
+		dagql.NodeFunc("build", s.build).
+			View(BeforeVersion("v0.19.0")).
+			Deprecated("Use `Directory.build` instead").
+			Doc(`Initializes this container from a Dockerfile build.`).
+			Args(
+				dagql.Arg("context").Doc("Directory context used by the Dockerfile."),
+				dagql.Arg("dockerfile").Doc("Path to the Dockerfile to use."),
+				dagql.Arg("target").Doc("Target build stage to build."),
+				dagql.Arg("buildArgs").Doc("Additional build arguments."),
+				dagql.Arg("secrets").Doc(`Secrets to pass to the build.`,
+					`They will be mounted at /run/secrets/[secret-name] in the build container`,
+					`They can be accessed in the Dockerfile using the "secret" mount type
+					and mount path /run/secrets/[secret-name], e.g. RUN
+					--mount=type=secret,id=my-secret curl [http://example.com?token=$(cat
+					/run/secrets/my-secret)](http://example.com?token=$(cat
+						/run/secrets/my-secret))`),
+				dagql.Arg("noInit").Doc(`If set, skip the automatic init process injected into containers created by RUN statements.`,
+					`This should only be used if the user requires that their exec processes be the
+					pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
 				),
-		*/
+			),
 
 		dagql.NodeFunc("rootfs", s.rootfs).
 			Doc(`Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.`),
@@ -1011,6 +1007,61 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	return inst, nil
+}
+
+type containerBuildArgs struct {
+	Context    core.DirectoryID
+	Dockerfile string                             `default:"Dockerfile"`
+	Target     string                             `default:""`
+	BuildArgs  []dagql.InputObject[core.BuildArg] `default:"[]"`
+	Secrets    []core.SecretID                    `default:"[]"`
+	NoInit     bool                               `default:"false"`
+}
+
+func (s *containerSchema) build(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerBuildArgs,
+) (*core.Container, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	contextDir, err := args.Context.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	buildctxDir, err := applyDockerIgnore(ctx, srv, contextDir, args.Dockerfile)
+	if err != nil {
+		return nil, err
+	}
+
+	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
+	if err != nil {
+		return nil, err
+	}
+
+	buildctxDirID, err := buildctxDir.RecipeID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get build context recipe ID: %w", err)
+	}
+
+	return parent.Self().Build(
+		ctx,
+		contextDir.Self(),
+		buildctxDirID,
+		args.Dockerfile,
+		collectInputsSlice(args.BuildArgs),
+		args.Target,
+		secrets,
+		args.NoInit,
+		dagql.ObjectResult[*core.Socket]{},
+	)
 }
 
 type containerWithRootFSArgs struct {
@@ -2419,12 +2470,6 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 		return nil, err
 	}
 
-	var perms *int
-	if args.Permissions.Valid {
-		p := int(args.Permissions.Value)
-		perms = &p
-	}
-
 	ctr, err := core.NewContainerChild(ctx, parent)
 	if err != nil {
 		return nil, err
@@ -2436,12 +2481,6 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 		dir,
 		args.CopyFilter,
 		args.Owner,
-		perms,
-		args.DoNotCreateDestPath,
-		args.AttemptUnpackDockerCompatibility,
-		args.RequiredSourcePath,
-		args.DestPathHintIsDirectory,
-		args.CopySourcePathContentsWhenDir,
 	)
 }
 
@@ -2479,42 +2518,6 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 
 	file, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
-			// FIXME: this fallback is still based on reconstructing a sibling
-			// `.directory(path)` selection from the source file recipe ID.
-			// That hack does not fit the handle-only ID model, but this is an
-			// obscure Dockerfile-fidelity path and we can tolerate it failing
-			// until it is redesigned or removed.
-			fileSourceID, idErr := args.Source.ID()
-			if idErr == nil {
-				if dirSourceID, ok := directorySourceIDFromFileSourceID(fileSourceID); ok {
-					dirSource, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
-					if dirErr == nil {
-						ctr, err := core.NewContainerChild(ctx, parent)
-						if err != nil {
-							return inst, err
-						}
-						ctr, fallbackErr := ctr.WithDirectory(
-							ctx,
-							parent,
-							path,
-							dirSource,
-							core.CopyFilter{},
-							args.Owner,
-							perms,
-							args.DoNotCreateDestPath,
-							args.AttemptUnpackDockerCompatibility,
-							"",
-							false,
-							false,
-						)
-						if fallbackErr == nil {
-							return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
-						}
-					}
-				}
-			}
-		}
 		return inst, err
 	}
 
@@ -2530,8 +2533,6 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		file,
 		perms,
 		args.Owner,
-		args.DoNotCreateDestPath,
-		args.AttemptUnpackDockerCompatibility,
 	)
 	if err != nil {
 		return inst, err

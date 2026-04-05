@@ -161,6 +161,22 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
+			),
+		dagql.NodeFunc("__withDirectoryDockerfileCompat", s.withDirectoryDockerfileCompat).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`(Internal-only) Dockerfile-compat directory copy path.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/src/").`),
+				dagql.Arg("source").Doc(`Identifier of the directory to copy.`),
+				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
+				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
+				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
+					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
+					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 			),
 		dagql.NodeFunc("filter", s.filter).
 			Doc(`Return a snapshot with some paths included or excluded`).
@@ -461,21 +477,6 @@ type WithDirectoryArgs struct {
 	Path        string
 	Owner       string `default:""`
 	Permissions dagql.Optional[dagql.Int]
-	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
-	DoNotCreateDestPath bool `internal:"true" default:"false"`
-	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
-	// BuildKit ADD archive auto-unpack compatibility semantics.
-	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
-	// Hidden internal arg used for LLB fidelity; when set, withDirectory errors
-	// if the requested source path does not exist.
-	RequiredSourcePath string `internal:"true" default:""`
-	// Hidden internal arg used for LLB fidelity; indicates destination should be
-	// treated as a directory path even if it does not yet exist.
-	DestPathHintIsDirectory bool `internal:"true" default:"false"`
-	// Hidden internal arg used for LLB fidelity: when include points at a source
-	// directory path segment, copy that directory's contents (not the segment
-	// itself), while preserving file semantics when include points at a file.
-	CopySourcePathContentsWhenDir bool `internal:"true" default:"false"`
 
 	Source    core.DirectoryID
 	Directory core.DirectoryID // legacy, use Source instead
@@ -500,18 +501,70 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 	}
 	dir := core.NewDirectoryChild(parent)
 	dir.Lazy = &core.DirectoryWithDirectoryLazy{
+		LazyState:   core.NewLazyState(),
+		Parent:      parent,
+		DestDir:     args.Path,
+		Source:      srcDir,
+		Filter:      args.CopyFilter,
+		Owner:       args.Owner,
+		Permissions: perms,
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+type WithDirectoryDockerfileCompatArgs struct {
+	Path        string
+	Owner       string `default:""`
+	Permissions dagql.Optional[dagql.Int]
+
+	SrcPath                          string `internal:"true" default:""`
+	FollowSymlink                    bool   `internal:"true" default:"false"`
+	DirCopyContents                  bool   `internal:"true" default:"false"`
+	AttemptUnpackDockerCompatibility bool   `internal:"true" default:"false"`
+	CreateDestPath                   bool   `internal:"true" default:"false"`
+	AllowWildcard                    bool   `internal:"true" default:"false"`
+	AllowEmptyWildcard               bool   `internal:"true" default:"false"`
+	AlwaysReplaceExistingDestPaths   bool   `internal:"true" default:"false"`
+
+	Source core.DirectoryID
+
+	core.CopyFilter
+}
+
+func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryDockerfileCompatArgs) (dagql.ObjectResult[*core.Directory], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+
+	srcDir, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
+	}
+
+	dir := core.NewDirectoryChild(parent)
+	dir.Lazy = &core.DirectoryWithDirectoryDockerfileCompatLazy{
 		LazyState:                        core.NewLazyState(),
 		Parent:                           parent,
 		DestDir:                          args.Path,
+		SrcPath:                          args.SrcPath,
 		Source:                           srcDir,
 		Filter:                           args.CopyFilter,
 		Owner:                            args.Owner,
 		Permissions:                      perms,
-		DoNotCreateDestPath:              args.DoNotCreateDestPath,
+		FollowSymlink:                    args.FollowSymlink,
+		DirCopyContents:                  args.DirCopyContents,
 		AttemptUnpackDockerCompatibility: args.AttemptUnpackDockerCompatibility,
-		RequiredSourcePath:               args.RequiredSourcePath,
-		DestPathHintIsDirectory:          args.DestPathHintIsDirectory,
-		CopySourcePathContentsWhenDir:    args.CopySourcePathContentsWhenDir,
+		CreateDestPath:                   args.CreateDestPath,
+		AllowWildcard:                    args.AllowWildcard,
+		AllowEmptyWildcard:               args.AllowEmptyWildcard,
+		AlwaysReplaceExistingDestPaths:   args.AlwaysReplaceExistingDestPaths,
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -766,10 +819,6 @@ type WithFileArgs struct {
 	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
 	// BuildKit ADD archive auto-unpack compatibility semantics.
 	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
-	// Hidden internal arg used for LLB fidelity; if true and source file loading
-	// fails, attempt directory-source fallback for ambiguous Dockerfile COPY
-	// lowerings where the source can be a directory.
-	AllowDirectorySourceFallback bool `internal:"true" default:"false"`
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
@@ -786,30 +835,6 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 
 	file, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
-			// FIXME: this fallback is still based on reconstructing a sibling
-			// `.directory(path)` selection from the source file recipe ID.
-			// That hack does not fit the handle-only ID model, but this is an
-			// obscure Dockerfile-fidelity path and we can tolerate it failing
-			// until we redesign or remove it.
-			fileSourceID, idErr := args.Source.ID()
-			if idErr == nil {
-				if dirSourceID, ok := directorySourceIDFromFileSourceID(fileSourceID); ok {
-					if err := srv.Select(ctx, parent, &inst, dagql.Selector{
-						Field: "withDirectory",
-						Args: []dagql.NamedInput{
-							{Name: "path", Value: dagql.String(args.Path)},
-							{Name: "source", Value: dagql.NewID[*core.Directory](dirSourceID)},
-							{Name: "owner", Value: dagql.String(args.Owner)},
-							{Name: "doNotCreateDestPath", Value: dagql.Boolean(args.DoNotCreateDestPath)},
-							{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(args.AttemptUnpackDockerCompatibility)},
-						},
-					}); err == nil {
-						return inst, nil
-					}
-				}
-			}
-		}
 		return inst, err
 	}
 	dir := core.NewDirectoryChild(parent)
@@ -824,41 +849,6 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		AttemptUnpackDockerCompatibility: args.AttemptUnpackDockerCompatibility,
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-}
-
-func directorySourceIDFromFileSourceID(fileSourceID *call.ID) (*call.ID, bool) {
-	if fileSourceID == nil || fileSourceID.Field() != "file" {
-		return nil, false
-	}
-
-	receiver := fileSourceID.Receiver()
-	if receiver == nil {
-		return nil, false
-	}
-
-	pathArg := fileSourceID.Arg("path")
-	if pathArg == nil {
-		return nil, false
-	}
-	pathVal, ok := pathArg.Value().ToInput().(string)
-	if !ok {
-		return nil, false
-	}
-
-	return receiver.Append(
-		(&core.Directory{}).Type(),
-		"directory",
-		call.WithArgs(call.NewArgument("path", call.NewLiteralString(pathVal), false)),
-	), true
-}
-
-func shouldAttemptDirectorySourceFallback(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Only fallback for the specific "path is a directory" case. Missing files
-	// or other load failures should remain hard errors.
-	return strings.Contains(err.Error(), "is a directory, not a file")
 }
 
 type WithFilesArgs struct {
