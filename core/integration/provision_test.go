@@ -182,9 +182,15 @@ func (ProvisionSuite) TestImageDriverGarbageCollectEngines(ctx context.Context, 
 		return strings.Split(out, "\n")
 	}
 
+	runSerial := func(ctx context.Context, t *testctx.T, name string, fn func(context.Context, *testctx.T)) {
+		t.Unwrap().Run(name, func(st *testing.T) {
+			fn(ctx, testctx.New(st).WithContext(ctx))
+		})
+	}
+
 	for _, tc := range driverTestCases {
-		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			t.Run("cleanup", func(ctx context.Context, t *testctx.T) {
+		runSerial(ctx, t, tc.name, func(ctx context.Context, t *testctx.T) {
+			runSerial(ctx, t, "cleanup", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				dockerc := tc.provision(ctx, t, c, containerSetupOpts{name: t.Name()})
 				dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
@@ -204,7 +210,7 @@ func (ProvisionSuite) TestImageDriverGarbageCollectEngines(ctx context.Context, 
 				require.Len(t, dockerPs(ctx, t, dockerc, tc.name), 1)
 			})
 
-			t.Run("no cleanup", func(ctx context.Context, t *testctx.T) {
+			runSerial(ctx, t, "no cleanup", func(ctx context.Context, t *testctx.T) {
 				if tc.name == "podman" {
 					// this is weiiird, nested podman uses host networking everywhere
 					t.Skip("nested podman doesn't support multiple running containers")
