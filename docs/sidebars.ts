@@ -35,6 +35,7 @@ module.exports = {
           items: [
             "introduction/core-concepts/toolchains",
             "introduction/core-concepts/checks",
+            "introduction/core-concepts/artifacts",
             "introduction/core-concepts/functions",
           ],
         },

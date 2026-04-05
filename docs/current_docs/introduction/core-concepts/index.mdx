@@ -54,6 +54,26 @@ dagger check security-*
 
 ---
 
+## [Artifacts](/core-concepts/artifacts)
+
+**Discover, select, and act on the objects in your workspace.**
+
+Artifacts give your workspace objects an identity. The engine scans your modules, finds the targetable objects, and gives each one a set of coordinates. You discover them with `dagger list` and select them with `--dimension=value` flags on any verb.
+
+**Perfect for:** Targeting specific parts of your workspace — a single module, a specific platform build, or a particular stage.
+
+```shell
+# What's in my workspace?
+dagger list module
+
+# Check only the linux build
+dagger check --module=go --platform=linux
+```
+
+[Learn about Artifacts →](/core-concepts/artifacts)
+
+---
+
 ## [Functions](/core-concepts/functions)
 
 **Building blocks for creating custom workflows.**
