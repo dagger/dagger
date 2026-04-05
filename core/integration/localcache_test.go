@@ -30,7 +30,12 @@ func (EngineSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {
 	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
-	c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	c2, err := dagger.Connect(
+		ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithSkipWorkspaceModules(),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
@@ -88,7 +93,12 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 			endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 			require.NoError(t, err)
 
-			c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			c2, err := dagger.Connect(
+				ctx,
+				dagger.WithRunnerHost(endpoint),
+				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithSkipWorkspaceModules(),
+			)
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
 
@@ -198,7 +208,12 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 			require.NoError(t, err)
 
-			c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			c2, err := dagger.Connect(
+				ctx,
+				dagger.WithRunnerHost(endpoint),
+				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithSkipWorkspaceModules(),
+			)
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
 
@@ -223,7 +238,12 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			newUsedBytes := previousUsedBytes
 
 			// sanity check that creating a new file increases cache disk space
-			c3, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			c3, err := dagger.Connect(
+				ctx,
+				dagger.WithRunnerHost(endpoint),
+				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithSkipWorkspaceModules(),
+			)
 			require.NoError(t, err)
 			_, err = c3.Directory().WithNewFile("/tmp/foo", "foo").Sync(ctx)
 			require.NoError(t, err)
@@ -250,7 +270,12 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			previousUsedBytes = newUsedBytes
 
 			// consume 2GB blocks of space, greater than configured keepstorage of 1GB
-			c4, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			c4, err := dagger.Connect(
+				ctx,
+				dagger.WithRunnerHost(endpoint),
+				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithSkipWorkspaceModules(),
+			)
 			require.NoError(t, err)
 			for i := range tc.blocks {
 				_, err = c4.Container().From(alpineImage).WithExec([]string{"dd", "if=/dev/zero", "of=/bigfile" + fmt.Sprint(i), "bs=1M", "count=2048"}).Sync(ctx)
@@ -367,14 +392,24 @@ func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *tes
 		endpoint, err = engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 
-		c2, err = dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		c2, err = dagger.Connect(
+			ctx,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithSkipWorkspaceModules(),
+		)
 		require.NoError(t, err)
 		t.Cleanup(func() { c2.Close() })
 
 		nextBlockID := 0
 		addCacheBlock = func(t *testctx.T, inputDevice string, sizeMB int) {
 			t.Helper()
-			c3, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			c3, err := dagger.Connect(
+				ctx,
+				dagger.WithRunnerHost(endpoint),
+				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithSkipWorkspaceModules(),
+			)
 			require.NoError(t, err)
 			_, err = c3.Container().From(alpineImage).WithExec([]string{
 				"dd",

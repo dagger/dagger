@@ -572,7 +572,12 @@ func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunNetworkHostDeniedWhen
 	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
-	c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(io.Discard))
+	c2, err := dagger.Connect(
+		ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(io.Discard),
+		dagger.WithSkipWorkspaceModules(),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
