@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
+	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -85,6 +86,9 @@ type Container struct {
 	// Secrets to expose to the container.
 	Secrets []ContainerSecret
 
+	// Volatile env vars exposed to future execs but not persisted in image config.
+	VolatileEnv []string
+
 	// Sockets to expose to the container.
 	Sockets []ContainerSocket
 
@@ -138,6 +142,7 @@ func (container *Container) Clone() *Container {
 	cp.Config.Labels = maps.Clone(cp.Config.Labels)
 	cp.Mounts = slices.Clone(cp.Mounts)
 	cp.Secrets = slices.Clone(cp.Secrets)
+	cp.VolatileEnv = slices.Clone(cp.VolatileEnv)
 	cp.Sockets = slices.Clone(cp.Sockets)
 	cp.Ports = slices.Clone(cp.Ports)
 	cp.Services = slices.Clone(cp.Services)
@@ -150,6 +155,7 @@ func (container *Container) WithoutInputs() *Container {
 
 	container.FS = nil
 	container.Meta = nil
+	container.VolatileEnv = nil
 
 	for i, mount := range container.Mounts {
 		mount.DirectorySource = nil
@@ -1480,6 +1486,34 @@ func (container *Container) WithSecretVariable(
 	container.ImageRef = ""
 
 	return container, nil
+}
+
+func (container *Container) WithVolatileVariable(name string, value string) *Container {
+	container = container.Clone()
+
+	container.VolatileEnv = AddEnv(container.VolatileEnv, name, value)
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container
+}
+
+func (container *Container) WithoutVolatileVariable(name string) *Container {
+	container = container.Clone()
+
+	newEnv := []string{}
+	WalkEnv(container.VolatileEnv, func(k, _, env string) {
+		if !shell.EqualEnvKeys(k, name) {
+			newEnv = append(newEnv, env)
+		}
+	})
+	container.VolatileEnv = newEnv
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container
 }
 
 func (container *Container) WithoutSecretVariable(ctx context.Context, name string) (*Container, error) {

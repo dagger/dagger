@@ -252,6 +252,8 @@ This means:
 If you need a specific step to always re-run, add a cache-busting input to that step (for example, a
 timestamp environment variable used only for that operation).
 
+If you need non-secret metadata to be visible to a `withExec` step without invalidating cache when only that metadata changes, use `withVolatileVariable` on the `Container`. This is an expert-only escape hatch: cached `withExec` results may be reused even when the volatile value changes, and reruns caused by other inputs will see the latest volatile value. See the [container cookbook](../../cookbook/containers.mdx#use-volatile-variables-for-exec-time-metadata).
+
 ### Secrets and caching
 
 [Secrets](../../getting-started/types/secret.mdx) are never cached on disk by Dagger. Function calls that return Secrets or values that reference Secrets (e.g. a Container that has a secret set as an environment variable) *may* be cached provided that the Secret in question was sourced using a secret provider (e.g. `env://MY_SECRET`). In these cases, Dagger is able to cache the source of the secret without having to write the plaintext to disk, [instead using a securely derived hash of the secret plaintext](secrets.mdx#caching).

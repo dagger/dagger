@@ -513,13 +513,15 @@ type Container {
   """Return the container's OCI entrypoint."""
   entrypoint: [String!]!
 
-  """Retrieves the value of the specified environment variable."""
+  """Retrieves the value of the specified persistent environment variable."""
   envVariable(
     """The name of the environment variable to retrieve (e.g., "PATH")."""
     name: String!
   ): String
 
-  """Retrieves the list of environment variables passed to commands."""
+  """
+  Retrieves the list of persistent environment variables configured on the container.
+  """
   envVariables: [EnvVariable!]!
 
   """check if a file or directory exists"""
@@ -1460,6 +1462,20 @@ type Container {
     name: String!
   ): Container!
 
+  """
+  Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+
+  This is an expert-only escape hatch. If a volatile value affects observable
+  exec results, stale cached results may be reused.
+  """
+  withVolatileVariable(
+    """Name of the volatile variable (e.g., "CI_RUN_ID")."""
+    name: String!
+
+    """Value of the volatile variable."""
+    value: String!
+  ): Container!
+
   """Change the container's working directory. Like WORKDIR in Dockerfile."""
   withWorkdir(
     """The path to set as the working directory (e.g., "/app")."""
@@ -1607,6 +1623,14 @@ type Container {
   Should default to root.
   """
   withoutUser: Container!
+
+  """
+  Retrieves this container minus the given volatile environment variable.
+  """
+  withoutVolatileVariable(
+    """The name of the volatile environment variable (e.g., "CI_RUN_ID")."""
+    name: String!
+  ): Container!
 
   """
   Unset the container's working directory.
