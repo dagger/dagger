@@ -302,13 +302,11 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 			gitGeneratedFiles: []string{
 				"/dagger.gen.go",
 				"/internal/dagger/**",
-				"/internal/querybuilder/**",
 				"/internal/telemetry/**",
 			},
 			gitIgnoredFiles: []string{
 				"/dagger.gen.go",
 				"/internal/dagger",
-				"/internal/querybuilder",
 				"/internal/telemetry",
 			},
 		},
