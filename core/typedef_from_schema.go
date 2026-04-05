@@ -375,19 +375,32 @@ func resolveArgTypeDef(arg introspection.InputValue) (*TypeDef, bool, error) {
 		return argType, ok, err
 	}
 
+	expectedName := arg.Directives.ExpectedType()
+	if expectedName != "" {
+		resolveIDScalar(argType, expectedName)
+	}
+
+	return argType, true, nil
+}
+
+// resolveIDScalar replaces bare "ID" scalar TypeDefs with ObjectKind,
+// recursing into list element types.
+func resolveIDScalar(argType *TypeDef, expectedName string) {
 	// Handle unified ID scalar: when an arg is typed as the bare "ID" scalar,
 	// resolve the actual object/interface type from @expectedType.
 	// Note: NewScalarTypeDef applies strcase.ToCamel, so "ID" becomes "Id".
 	// Check OriginalName for the raw GraphQL scalar name.
 	if argType.Kind == TypeDefKindScalar && argType.AsScalar.Valid && argType.AsScalar.Value.OriginalName == "ID" {
-		if expectedName := arg.Directives.ExpectedType(); expectedName != "" {
-			argType.Kind = TypeDefKindObject
-			argType.AsScalar = dagql.Nullable[*ScalarTypeDef]{}
-			argType.AsObject = dagql.NonNull(&ObjectTypeDef{Name: expectedName})
-		}
+		argType.Kind = TypeDefKindObject
+		argType.AsScalar = dagql.Nullable[*ScalarTypeDef]{}
+		argType.AsObject = dagql.NonNull(&ObjectTypeDef{Name: expectedName})
+		return
 	}
 
-	return argType, true, nil
+	// Recurse into list element types (e.g. [ID!]! → [File!]!).
+	if argType.Kind == TypeDefKindList && argType.AsList.Valid {
+		resolveIDScalar(argType.AsList.Value.ElementTypeDef, expectedName)
+	}
 }
 
 func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*TypeDef, bool, error) {
