@@ -1295,11 +1295,71 @@ export type EnvFileVariablesOpts = {
   raw?: boolean
 }
 
+export type EnvFileWithVariableOpts = {
+  /**
+   * Control how the variable value is parsed. "RAW": the values is used directly in the .env file, users will have to manually escape special characters, "STATIC": no variable expansion is performed, and all special characters are escaped, "AUTO" quotes will be automatically escaped, users will have to escape the $ character when it is used outside of a quoted string, and all \\ instances.
+   */
+  variableType?: EnvFileVariableType
+}
+
 /**
  * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
  */
 export type EnvFileID = string & { __EnvFileID: never }
 
+/**
+ * File type.
+ */
+export enum EnvFileVariableType {
+  /**
+   * automatically escape quotes
+   */
+  Auto = "AUTO",
+
+  /**
+   * do not apply any escaping logic to the variable value
+   */
+  Raw = "RAW",
+
+  /**
+   * escape all special characters, effectively disallowing variable substitution
+   */
+  Static = "STATIC",
+}
+
+/**
+ * Utility function to convert a EnvFileVariableType value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function EnvFileVariableTypeValueToName(value: EnvFileVariableType): string {
+  switch (value) {
+    case EnvFileVariableType.Auto:
+      return "AUTO"
+    case EnvFileVariableType.Raw:
+      return "RAW"
+    case EnvFileVariableType.Static:
+      return "STATIC"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a EnvFileVariableType name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function EnvFileVariableTypeNameToValue(name: string): EnvFileVariableType {
+  switch (name) {
+    case "AUTO":
+      return EnvFileVariableType.Auto
+    case "RAW":
+      return EnvFileVariableType.Raw
+    case "STATIC":
+      return EnvFileVariableType.Static
+    default:
+      return name as EnvFileVariableType
+  }
+}
 /**
  * The `EnvID` scalar type represents an identifier for an object of type Env.
  */
@@ -7530,9 +7590,26 @@ export class EnvFile extends BaseClient {
    * Add a variable
    * @param name Variable name
    * @param value Variable value
+   * @param opts.variableType Control how the variable value is parsed. "RAW": the values is used directly in the .env file, users will have to manually escape special characters, "STATIC": no variable expansion is performed, and all special characters are escaped, "AUTO" quotes will be automatically escaped, users will have to escape the $ character when it is used outside of a quoted string, and all \\ instances.
    */
-  withVariable = (name: string, value: string): EnvFile => {
-    const ctx = this._ctx.select("withVariable", { name, value })
+  withVariable = (
+    name: string,
+    value: string,
+    opts?: EnvFileWithVariableOpts,
+  ): EnvFile => {
+    const metadata = {
+      variableType: {
+        is_enum: true,
+        value_to_name: EnvFileVariableTypeValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("withVariable", {
+      name,
+      value,
+      ...opts,
+      __metadata: metadata,
+    })
     return new EnvFile(ctx)
   }
 

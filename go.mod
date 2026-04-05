@@ -13,6 +13,7 @@ replace (
 )
 
 require (
+	al.essio.dev/pkg/shellescape v1.6.0
 	charm.land/lipgloss/v2 v2.0.1
 	cloud.google.com/go/secretmanager v1.14.7
 	github.com/1password/onepassword-sdk-go v0.3.1

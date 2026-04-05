@@ -375,6 +375,19 @@ class ChangesetsMergeConflict(Enum):
     """Fail before attempting merge if file-level conflicts are detected between any changesets"""
 
 
+class EnvFileVariableType(Enum):
+    """File type."""
+
+    AUTO = "AUTO"
+    """automatically escape quotes"""
+
+    RAW = "RAW"
+    """do not apply any escaping logic to the variable value"""
+
+    STATIC = "STATIC"
+    """escape all special characters, effectively disallowing variable substitution"""
+
+
 class ExistsType(Enum):
     """File type."""
 
@@ -7021,7 +7034,13 @@ class EnvFile(Type):
         _ctx = self._select("variables", _args)
         return await _ctx.execute_object_list(EnvVariable)
 
-    def with_variable(self, name: str, value: str) -> Self:
+    def with_variable(
+        self,
+        name: str,
+        value: str,
+        *,
+        variable_type: EnvFileVariableType | None = None,
+    ) -> Self:
         """Add a variable
 
         Parameters
@@ -7030,10 +7049,18 @@ class EnvFile(Type):
             Variable name
         value:
             Variable value
+        variable_type:
+            Control how the variable value is parsed. "RAW": the values is
+            used directly in the .env file, users will have to manually escape
+            special characters, "STATIC": no variable expansion is performed,
+            and all special characters are escaped, "AUTO" quotes will be
+            automatically escaped, users will have to escape the $ character
+            when it is used outside of a quoted string, and all \\ instances.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
+            Arg("variableType", variable_type, None),
         ]
         _ctx = self._select("withVariable", _args)
         return EnvFile(_ctx)
@@ -14925,6 +14952,7 @@ __all__ = [
     "Env",
     "EnvFile",
     "EnvFileID",
+    "EnvFileVariableType",
     "EnvID",
     "EnvVariable",
     "EnvVariableID",

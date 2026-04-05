@@ -79,11 +79,14 @@ class EnvFile extends Client\AbstractObject implements Client\IdAble
     /**
      * Add a variable
      */
-    public function withVariable(string $name, string $value): EnvFile
+    public function withVariable(string $name, string $value, ?EnvFileVariableType $variableType = null): EnvFile
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVariable');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('value', $value);
+        if (null !== $variableType) {
+        $innerQueryBuilder->setArgument('variableType', $variableType);
+        }
         return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

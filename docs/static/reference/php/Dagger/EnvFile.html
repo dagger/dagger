@@ -206,7 +206,7 @@
                     <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withVariable">withVariable</a>(string $name, string $value)
+                    <a href="#method_withVariable">withVariable</a>(string $name, string $value, <abbr title="Dagger\Dagger\EnvFileVariableType">EnvFileVariableType</abbr>|null $variableType = null)
         
                                             <p><p>Add a variable</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -557,7 +557,7 @@
                     <h3 id="method_withVariable">
         <div class="location">at line 82</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
-    <strong>withVariable</strong>(string $name, string $value)
+    <strong>withVariable</strong>(string $name, string $value, <abbr title="Dagger\Dagger\EnvFileVariableType">EnvFileVariableType</abbr>|null $variableType = null)
         </code>
     </h3>
     <div class="details">    
@@ -581,6 +581,11 @@
                 <td>$value</td>
                 <td></td>
             </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\EnvFileVariableType">EnvFileVariableType</abbr>|null</td>
+                <td>$variableType</td>
+                <td></td>
+            </tr>
             </table>
 
             
@@ -602,7 +607,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutVariable">
-        <div class="location">at line 93</div>
+        <div class="location">at line 96</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>withoutVariable</strong>(string $name)
         </code>

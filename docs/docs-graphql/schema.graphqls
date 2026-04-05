@@ -3073,6 +3073,16 @@ type EnvFile {
 
     """Variable value"""
     value: String!
+
+    """
+    Control how the variable value is parsed. "RAW": the values is used directly
+    in the .env file, users will have to manually escape special characters,
+    "STATIC": no variable expansion is performed, and all special characters are
+    escaped, "AUTO" quotes will be automatically escaped, users will have to
+    escape the $ character when it is used outside of a quoted string, and all
+    \\ instances.
+    """
+    variableType: EnvFileVariableType
   ): EnvFile!
 
   """Remove all occurrences of the named variable"""
@@ -3086,6 +3096,20 @@ type EnvFile {
 The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
 """
 scalar EnvFileID
+
+"""File type."""
+enum EnvFileVariableType {
+  """do not apply any escaping logic to the variable value"""
+  RAW
+
+  """automatically escape quotes"""
+  AUTO
+
+  """
+  escape all special characters, effectively disallowing variable substitution
+  """
+  STATIC
+}
 
 """
 The `EnvID` scalar type represents an identifier for an object of type Env.

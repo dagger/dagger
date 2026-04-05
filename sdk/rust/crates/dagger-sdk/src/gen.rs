@@ -8834,6 +8834,12 @@ pub struct EnvFileVariablesOpts {
     #[builder(setter(into, strip_option), default)]
     pub raw: Option<bool>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EnvFileWithVariableOpts {
+    /// Control how the variable value is parsed. "RAW": the values is used directly in the .env file, users will have to manually escape special characters, "STATIC": no variable expansion is performed, and all special characters are escaped, "AUTO" quotes will be automatically escaped, users will have to escape the $ character when it is used outside of a quoted string, and all \\ instances.
+    #[builder(setter(into, strip_option), default)]
+    pub variable_type: Option<EnvFileVariableType>,
+}
 impl EnvFile {
     /// Return as a file
     pub fn as_file(&self) -> File {
@@ -8937,10 +8943,36 @@ impl EnvFile {
     ///
     /// * `name` - Variable name
     /// * `value` - Variable value
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_variable(&self, name: impl Into<String>, value: impl Into<String>) -> EnvFile {
         let mut query = self.selection.select("withVariable");
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add a variable
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Variable name
+    /// * `value` - Variable value
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_variable_opts(
+        &self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+        opts: EnvFileWithVariableOpts,
+    ) -> EnvFile {
+        let mut query = self.selection.select("withVariable");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        if let Some(variable_type) = opts.variable_type {
+            query = query.arg("variableType", variable_type);
+        }
         EnvFile {
             proc: self.proc.clone(),
             selection: query,
@@ -15364,6 +15396,15 @@ pub enum ChangesetsMergeConflict {
     Fail,
     #[serde(rename = "FAIL_EARLY")]
     FailEarly,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum EnvFileVariableType {
+    #[serde(rename = "AUTO")]
+    Auto,
+    #[serde(rename = "RAW")]
+    Raw,
+    #[serde(rename = "STATIC")]
+    Static,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ExistsType {

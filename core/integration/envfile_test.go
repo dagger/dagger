@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -139,186 +138,72 @@ func envFileMap(t *testctx.T, env *dagger.EnvFile) map[string]string {
 	return result
 }
 
-// Test that the Dagger type matches the behavior of the underlying dotenv library,
-// when evaluating values.
-// This covers variable expansion, quotes and escape handling, etc.
-//
-// Since the underlying library is well-tested, this avoids duplicating those tests here.
-// Instead we can focus on tests specific to this layer.
-func (EnvFileSuite) TestEvalMatch(ctx context.Context, t *testctx.T) {
-	tests := []struct {
-		name string
-		vars map[string]string
-	}{
-		{
-			name: "simple",
-			vars: map[string]string{
-				"FOO":     "bar",
-				"hello":   "world",
-				"StoRy":   "once upon a time...",
-				"various": "lots of (weird) characters &^",
-			},
-		},
-		{
-			name: "expansion",
-			vars: map[string]string{
-				"animal":    "dog",
-				"superhero": "${animal}man",
-				"message":   "hello, nice $animal !",
-				"message2":  "hello, nice ${animal}",
-				"message3":  "hello, nice '${animal}'",
-			},
-		},
-		{
-			name: "quoted_values",
-			vars: map[string]string{
-				"animal":            `"dog"`,
-				"message":           `"hello, nice ${animal}"`,
-				"message2":          `"hello, nice $animal"`,
-				"story":             `"once upon a time, there was a man who said $message"`,
-				"QUOTES":            `"this sentence is double-quoted (with \"), 'and this is single-quoted'"`,
-				"single_quoted_var": `"hello, nice '$animal'"`,
-			},
-		},
-		{
-			name: "raw_simple",
-			vars: map[string]string{
-				"simple": "hello world",
-			},
-		},
-		{
-			name: "raw_quotes",
-			vars: map[string]string{
-				"quotes": `"hello world"`,
-			},
-		},
-		{
-			name: "raw_single_quotes",
-			vars: map[string]string{
-				"single_quotes": `'hello world'`,
-			},
-		},
-		{
-			name: "raw_dollar_sign",
-			vars: map[string]string{
-				"dollar_sign": "$FOO",
-			},
-		},
-		{
-			name: "raw_expansion",
-			vars: map[string]string{
-				"expansion": "${FOO}",
-			},
-		},
-		{
-			name: "raw_command_sub",
-			vars: map[string]string{
-				"command_sub": "$(echo hello)",
-			},
-		},
-		{
-			name: "raw_backticks",
-			vars: map[string]string{
-				"backticks": "`echo hello`",
-			},
-		},
-		{
-			name: "raw_backslash",
-			vars: map[string]string{
-				"backslash": `hello\nworld`,
-			},
-		},
-		{
-			name: "raw_mixed",
-			vars: map[string]string{
-				"mixed": `"$FOO ${BAR} $(cmd)" and 'more'`,
-			},
-		},
-		{
-			name: "raw_special_chars",
-			vars: map[string]string{
-				"special_chars": "()&^%$#@!",
-			},
-		},
-		{
-			name: "remove_referenced_variable",
-			vars: map[string]string{
-				"GREETING": "bonjour",
-				"NAME":     "monde",
-				"message":  "$GREETING, $NAME!",
-			},
-		},
-		{
-			name: "get_unset",
-			vars: map[string]string{
-				"FOO":   "bar",
-				"HELLO": "world",
-				"DOG":   "${FOO}-${HELLO}",
-			},
-		},
-		{
-			name: "override",
-			vars: map[string]string{
-				"FOO": "newbar",
-			},
-		},
-		{
-			name: "file",
-			vars: map[string]string{
-				"animal":            "dog",
-				"message":           "hello, nice ${animal}",
-				"message2":          `"hello, nice $animal"`,
-				"story":             "once upon a time, there was a man who said $message",
-				"QUOTED":            `"this sentence is double-quoted (with \"), 'and this is single-quoted'"`,
-				"single_quoted_var": `"hello, nice '$animal'"`,
-			},
-		},
+func (EnvFileSuite) TestUnboundVariable(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	_, err := c.EnvFile().WithVariable("TEST_THIS_VAR", `$THISDOESNTEXIST`).Variables(ctx)
+	require.ErrorContains(t, err, "THISDOESNTEXIST: unbound variable")
+}
 
-		{
-			name: "JSON array must be protected with quotes",
-			vars: map[string]string{
-				`no_quotes`:     `["ga", "bu", "zo", "meu", 42]`,
-				`single_quotes`: `'["ga", "bu", "zo", "meu", 42]'`,
-				`double_quotes`: `"[\"ga\", \"bu\", \"zo\", \"meu\", 42]"`,
-			},
-		},
-		{
-			name: "JSON object must be protected with quotes",
-			vars: map[string]string{
-				`no_quotes`:     `{"name": "John Wick", "age": 58, "occupation": "assassin"}`,
-				`single_quotes`: `'{"name": "John Wick", "age": 58, "occupation": "assassin"}'`,
-				`double_quotes`: `"{\"name\": \"John Wick\", \"age\": 58, \"occupation\": \"assassin\"}"`,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
+func (EnvFileSuite) TestWithVariableAuto(ctx context.Context, t *testctx.T) {
+	// these values should remain the same
+	for i, testStr := range []string{
+		`'`,
+		`"`,
+		`{"foo": "bar"}`,
+		`{"data": "we want the literal $dollar to stay here since it is inside quotes"}`,
+		`{"data": "the same applies to the \ (backslash) characters"}`,
+		`{"msg": "it's possible this could happen"}`,
+		`{"hardmode": ["it's", "possible", "this could happen"]}`,
+		"-----BEGIN OPENSSH PRIVATE KEY-----\nbmljZSB0cnkgaGFja2VyLCBhbmQgaGVyZSB5b3UgdGhvdWdodCB5b3UgY291bGQgZmluZCBteSBr\nZXkuIEl0IHdpbGwgdHJ5IGEgZmV3IG1vcmUgYXR0ZW1wdHMgYmVmb3JlIHlvdSB3aWxsIGJlIGFi\nbGUgdG8gZmluZCBpdA==\n-----END OPENSSH PRIVATE KEY-----",
+	} {
+		t.Run(fmt.Sprintf("%d", i), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			env := c.EnvFile()
-			var environ []string
-			for name, inputValue := range tt.vars {
-				environ = append(environ, name+"="+inputValue)
-				env = env.WithVariable(name, inputValue)
-			}
-
-			for name := range tt.vars {
-				expectedValue, expectedFound, expectedErr := dotenv.Lookup(environ, name, nil)
-				if !expectedFound {
-					expectedValue = ""
-				}
-				actualValue, actualErr := env.Get(ctx, name)
-				if expectedErr != nil {
-					require.Error(t, actualErr, tt.name)
-				} else {
-					require.NoError(t, actualErr, tt.name)
-				}
-				if expectedErr == nil {
-					require.Equal(t, expectedValue, actualValue, tt.name)
-				}
-			}
+			s, err := c.Container().From(alpineImage).WithEnvFileVariables(
+				c.EnvFile().WithVariable("TEST_THIS_VAR", testStr),
+			).WithExec([]string{"sh", "-c", "echo -n \"$TEST_THIS_VAR\""}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testStr, s)
 		})
 	}
+
+	// these values will change, since they are not quotted by the user
+	for i, tt := range []struct {
+		input  string
+		output string
+	}{
+		{input: `hello \$MYVAR`, output: `hello $MYVAR`},
+		{input: `hello $MYVAR`, output: `hello myvalue`},
+		{input: `\\n`, output: `\n`},
+	} {
+		t.Run(fmt.Sprintf("%d", i), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			s, err := c.Container().From(alpineImage).WithEnvFileVariables(
+				c.EnvFile().
+					WithVariable("MYVAR", "myvalue").
+					WithVariable("TEST_THIS_VAR", tt.input),
+			).WithExec([]string{"sh", "-c", "echo -n \"$TEST_THIS_VAR\""}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tt.output, s)
+		})
+	}
+}
+
+func (EnvFileSuite) TestWithVariableRaw(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	s, err := c.Container().From(alpineImage).WithEnvFileVariables(
+		c.EnvFile().WithVariable("MODE", "raw").WithVariable("TEST_THIS_VAR", `{\"mode\": \"$MODE\"}`, dagger.EnvFileWithVariableOpts{VariableType: dagger.EnvFileVariableTypeRaw}),
+	).WithExec([]string{"sh", "-c", "echo -n \"$TEST_THIS_VAR\""}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `{"mode": "raw"}`, s)
+}
+
+func (EnvFileSuite) TestWithVariableStatic(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	s, err := c.Container().From(alpineImage).WithEnvFileVariables(
+		c.EnvFile().WithVariable("MODE", "this-shouldnt-be-used").WithVariable("TEST_THIS_VAR", `{"mode": "$MODE"}`, dagger.EnvFileWithVariableOpts{VariableType: dagger.EnvFileVariableTypeStatic}),
+	).WithExec([]string{"sh", "-c", "echo -n \"$TEST_THIS_VAR\""}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `{"mode": "$MODE"}`, s)
 }
 
 func (EnvFileSuite) TestFile(ctx context.Context, t *testctx.T) {
@@ -547,4 +432,30 @@ func (EnvFileSuite) TestUpdateVariableWithTheSameValue(ctx context.Context, t *t
 	// Note that ef.Contents() does not trigger the bug, we must load it into a Directory
 	_, err := c.Directory().WithFile(".env", ef).Sync(ctx)
 	require.NoError(t, err)
+}
+
+func (EnvFileSuite) TestQuotesArePreserved(ctx context.Context, t *testctx.T) {
+	for i, testStr := range []string{
+		`"`,
+		`{"foo": "bar"}`,
+	} {
+		t.Run(fmt.Sprintf("str%d", i), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			vars, err := c.EnvFile().WithVariable("TEST_THIS_VAR", testStr).Variables(ctx)
+			require.NoError(t, err)
+			require.Len(t, vars, 1)
+
+			varName, err := vars[0].Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "TEST_THIS_VAR", varName)
+
+			varValue, err := vars[0].Value(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testStr, varValue)
+
+			s, err := c.EnvFile().WithVariable("TEST_THIS_VAR", testStr).Get(ctx, "TEST_THIS_VAR")
+			require.NoError(t, err)
+			require.Equal(t, testStr, s)
+		})
+	}
 }
