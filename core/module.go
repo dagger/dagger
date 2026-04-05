@@ -373,6 +373,22 @@ func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(customizations []*modules
 	}
 }
 
+func nameMatches(pattern string, names ...string) bool {
+	norm := func(s string) string {
+		s = strings.ToLower(s)
+		s = strings.ReplaceAll(s, "-", "")
+		s = strings.ReplaceAll(s, "_", "")
+		return s
+	}
+	p := norm(pattern)
+	for _, name := range names {
+		if matched, err := filepath.Match(p, norm(name)); err == nil && matched {
+			return true
+		}
+	}
+	return false
+}
+
 func (mod *Module) lookupCustomizationFunction(path []string) (*Function, bool) {
 	obj, ok := mod.MainObject()
 	if !ok {
@@ -383,6 +399,14 @@ func (mod *Module) lookupCustomizationFunction(path []string) (*Function, bool) 
 			return nil, false
 		}
 		return obj.Constructor.Value, true
+	}
+	if len(path) == 1 {
+		for _, fn := range obj.Functions {
+			if nameMatches(path[0], fn.OriginalName, fn.Name) {
+				return fn, true
+			}
+		}
+		return nil, false
 	}
 	for i, segment := range path {
 		fn, ok := functionByOriginalName(obj, segment)
@@ -418,7 +442,7 @@ func (mod *Module) lookupCustomizationObject(typeDef *TypeDef) (*ObjectTypeDef, 
 
 func functionByOriginalName(obj *ObjectTypeDef, name string) (*Function, bool) {
 	for _, fn := range obj.Functions {
-		if strings.EqualFold(fn.OriginalName, name) || strings.EqualFold(fn.Name, gqlFieldName(name)) {
+		if nameMatches(name, fn.OriginalName, fn.Name) {
 			return fn, true
 		}
 	}
@@ -427,7 +451,7 @@ func functionByOriginalName(obj *ObjectTypeDef, name string) (*Function, bool) {
 
 func lookupFunctionArg(fn *Function, name string) (*FunctionArg, bool) {
 	for _, arg := range fn.Args {
-		if strings.EqualFold(arg.OriginalName, name) || strings.EqualFold(arg.Name, gqlFieldName(name)) {
+		if nameMatches(name, arg.OriginalName, arg.Name) {
 			return arg, true
 		}
 	}
