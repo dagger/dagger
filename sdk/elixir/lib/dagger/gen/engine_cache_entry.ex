@@ -80,6 +80,17 @@ defmodule Dagger.EngineCacheEntry do
 
     Client.execute(engine_cache_entry.client, query_builder)
   end
+
+  @doc """
+  The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+  """
+  @spec record_type(t()) :: {:ok, String.t()} | {:error, term()}
+  def record_type(%__MODULE__{} = engine_cache_entry) do
+    query_builder =
+      engine_cache_entry.query_builder |> QB.select("recordType")
+
+    Client.execute(engine_cache_entry.client, query_builder)
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.EngineCacheEntry do
