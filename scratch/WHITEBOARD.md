@@ -53,1298 +53,977 @@
 * A lot of eval'ing of lazy stuff is just triggered inline now; would be nice if dagql cache scheduler knew about these and could do that in parallel for ya
    * This is partially a pre-existing condition though, so not a big deal yet. But will probably make a great optimization in the near-ish future
 
-# Rebase
+# Dockerfile Rebase
 
-Current branch: `egraph` @ `4f4b8713b`
-Upstream target: `upstream/main` @ `9db1734ca`
-Merge base: `cae179bb9`
-Incoming commits: `47`
-Local-only commits: `287`
+## Initial Scope Work
 
-## Status
-* This rebase is not a mechanical conflict-resolution exercise; the important runtime/cache commits need translation into the current dagql-owned ownership and cache model.
-* For `a189dc9b2`, we kept the native runtime abstraction and builtin `dang` support, but explicitly did **not** bring over the old BuildKit custom-op caching design.
-* `Module.Runtime` stays container-only state on `Module`, and `module.runtime` is nullable so native runtimes do not have to pretend they are containers.
-* Old temporary module/result bookkeeping stays dead; no `DangEvalOp`, no `FunctionCall.Module`, no `Module.ResultID`, no BuildKit custom-op registration for Dang.
-* Internal `dagger.json` files that already pin the external Dang SDK stay pinned; we did **not** hard-cut those to `"dang"`.
+Command used to inspect the requested range while filtering out upstream merge noise:
 
-Likely tricky buckets:
-* Runtime / cache / module generation changes:
-  * `a189dc9b2` `add native Dang runtime (#12008)`
-  * `7006d26d5` `feat(secretprovider): add Google Cloud Secret Manager support (#10510)`
-  * `fb9776fd5` `Implement OIDC integration for vault secrets provider (#11929)`
-  * `630e6c290` `Handle missing cached git auth secrets (#12021)`
-  * `249a4a706` `feat: correctly pin the go pkg in module generation (#11826)`
-  * `f5d96c785` `feat: directory.chown supports username/groupname (#12128)`
-  * `f285b51a0` `feat: generate dependencies in their own files. (#11962)`
-  * `db59252ad` `workspace: plumbing & compat (#11995)`
-  * `946fe96bb` `feat: go toolchain tag support (#12896)`
-  * `7a2a10e53` `fix: ensure image layer blobs are local before ContainerDagOp returns (#12861)`
-* Lower-risk churn:
-  * dependency bumps
-  * docs updates
-  * release prep/version bumps
-  * CI/workflow small changes
-
-Ordered incoming commits:
-1. `83529b0cb` `bump tuist for new API + tmux/vim alt screen (#12874)`
-2. `a626c862a` `test(dagger up): don't use a tty (#12895)`
-3. `946fe96bb` `feat: go toolchain tag support (#12896)`
-4. `fb5a380b5` `chore: add a test for dockerfile COPY --exclude (#12897)`
-5. `7a2a10e53` `fix: ensure image layer blobs are local before ContainerDagOp returns (#12861)`
-6. `9db1734ca` `add support to set secret arrays with local defaults (#12898)`
-
-## a189dc9b2 add native Dang runtime
-* Keep:
-  * `ModuleRuntime` and `ContainerRuntime` as the execution abstraction
-  * builtin `dang` parsing/loading in the SDK loader
-  * native Dang evaluation directly in-process against the current session
-  * `module.runtime` as a nullable field
-  * `Module.Runtime` as container-only cached state
-  * the current container exec path for container-backed runtimes
-  * `ServeHTTPToNestedClient` on the core server interface
-  * `Directory.Mount` as the missing exported helper needed by the native runtime
-* Remove:
-  * `DangEvalOp`
-  * BuildKit custom-op registration / solver / LLB cache plumbing for Dang
-  * old temporary module/result bookkeeping like `FunctionCall.Module`, `Module.ResultID`, and related scaffolding
-  * `sdk/dang/dagger.json`
-* Modify:
-  * translate runtime loading and eager runtime sync to the new `ModuleRuntime` abstraction, but only persist/store container-backed runtimes
-  * keep internal `dagger.json` files on the existing pinned external Dang SDK ref instead of hard-cutting them to `"dang"`
-  * keep the native Dang helper logic in local SDK helper files instead of the old custom-op split
-* Validation:
-  * `go test ./core/sdk -run TestParseSDKName -count=1`
-  * `go test ./core -run TestDoesNotExist -count=0`
-  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestWorkspace/TestWorkspaceArg'`
-
-## f5d96c785 feat: directory.chown supports username/groupname
-* Keep:
-  * the feature itself: `Directory` and `File` ownership paths should accept user/group names in addition to numeric IDs
-  * mounted-root lookup via `/etc/passwd` and `/etc/group` using the existing `findUID` / `findGID` helpers
-  * exported numeric-only `ParseDirectoryOwner` / `ParseFileOwner` as pure parse helpers
-* Remove:
-  * the old numeric-only schema validation for `directory.chown` / `file.chown`
-  * the stale “must be an ID” wording in the `Directory` / `File` owner docs
-* Modify:
-  * translate the feature into the current `Directory.WithDirectory`, `Directory.WithFile`, `Directory.Chown`, and `File.Chown` flows rather than replaying the old patch mechanically
-  * resolve named ownership inside the mounted destination/root context, especially in the newer two-phase `WithFile` path
-  * strengthen direct API coverage with explicit `Directory.Chown` and `File.Chown` lookup tests, while disregarding the stale `llbtodagger` `COPY --chown` coverage because it currently fails earlier on an unrelated `loadContainerFromID` recipe-ID issue
-* Validation:
-  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDirectory/TestChownLookup'`
-  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestFile/TestChownLookup'`
-  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestContainer/TestWith(File|Directory)Owner'`
-
-## db59252ad workspace: plumbing & compat
-* Summary:
-  * Take the upstream workspace/session foundation and current-directory compatibility behavior.
-  * Follow upstream's reduced toolchain footprint exactly:
-    * keep toolchains where `db59252ad` still uses them
-    * delete only our branch-local toolchain registry / projection / shadow-module machinery that upstream no longer has
-  * Hard-cut `ModDeps` to `SchemaBuilder`, but preserve the newer substrate from our branch:
-    * no per-server/session cache fields
-    * keep `coreSchemaForker` / `CoreSchemaBase`
-    * keep `Mod` interface extras like `Same`, `ResultCallModule`, and `ModuleResult`
-    * keep typedefs as `dagql.ObjectResultArray[*TypeDef]`
-  * Keep the post-`a189dc9b2` runtime/storage decisions:
-    * `Module.Runtime` stays container-only cached state
-    * the runtime abstraction is not stored arbitrarily on `Module`
-    * no `Module.ResultID`
-    * no BuildKit custom-op substrate
-
-### Cross-file invariant
-* The `SchemaBuilder` merge must preserve our wrapped-module model end to end.
-* Concretely:
-  * `SchemaBuilder` stores `[]core.Mod`, not raw `[]*core.Module`
-  * whenever code needs module provenance or install semantics, it must go through `userMod` / `NewUserMod(...)` / `ModuleResult()`
-  * typedefs stay `dagql.ObjectResult[*TypeDef]` all the way through
-* Watchpoints where this matters most:
-  * `core/schema_build.go`: build `ModuleObjectType` and interface extension metadata from `mod.ModuleResult()`
-  * `core/object.go`: constructor/install/proxy code must keep using wrapped modules and `NewUserMod(obj.Module).ResultCallModule(ctx)`
-  * `core/schema/workspace.go`: `currentWorkspacePrimaryModules()` must keep returning wrapped `dagql.ObjectResult[*core.Module]` values, and `checks(...)` / `generators(...)` must operate on those wrapped results
-  * `engine/server/session_workspaces.go`: resolved modules stay as `dagql.ObjectResult[*core.Module]` until the `serveModule(...)` boundary
-  * `core/schema/modulesource.go`: dependency loading and `asModule` return wrapped module results and append them to `SchemaBuilder` as `core.NewUserMod(...)`
-
-### IDable Query and dagql Root
-#### Incoming changes
-* In upstream `db59252ad`, `Query` becomes stateful:
-  * [core/query.go](/home/sipsma/repo/github.com/sipsma/dagger/core/query.go) adds `ConstructorArgs map[string]dagql.Input`
-  * the intent is to store constructor arguments for an entrypoint module on the root `Query` object
-* In upstream `db59252ad`, the dagql root becomes ID-able again:
-  * [dagql/server.go](/home/sipsma/repo/github.com/sipsma/dagger/dagql/server.go) changes `NewServer(...)` so the root class is created with `ClassOpts[T]{}` instead of `NoIDs: true`
-  * that means `Query` would become ID-able if we take that part mechanically
-* Upstream does not add the `with(...)` field in `core/schema/query.go`.
-  * It is installed dynamically in [core/object.go](/home/sipsma/repo/github.com/sipsma/dagger/core/object.go), inside `ModuleObject.installEntrypointMethods(...)`
-  * this only happens when a module is installed as an entrypoint
-* The entrypoint install path adds three kinds of root-level sugar on `Query`:
-  * `with(...)`, when the constructor has arguments
-  * proxy methods for each method on the module’s main object
-  * proxy fields for each field on the module’s main object
-* The `with(...)` field returns a cloned `Query` carrying `ConstructorArgs`.
-  * that `Query` is then used as the receiver for chained proxy method/field selections
-* The proxy methods/fields are not meant to be the real semantic execution path.
-  * they desugar through `dag.Canonical()` into:
-    * the real constructor call
-    * then the real method/field call on the constructed object
-* Upstream adds canonical-server support in [dagql/server.go](/home/sipsma/repo/github.com/sipsma/dagger/dagql/server.go):
-  * `canonical *Server`
-  * `Canonical()`
-  * `SetCanonical(...)`
-  * `Load(...)` / `LoadType(...)` delegate to the canonical server when present
-* The reason for canonical routing is that the outer server contains Query sugar, while IDs and real constructor paths are supposed to resolve against the unsugared inner server.
-* Upstream also marks the entrypoint proxy path as `DoNotCache`:
-  * `with(...)`
-  * proxy methods
-  * proxy fields
-* The surrounding feature flow that makes this relevant is:
-  * [core/schema/module.go](/home/sipsma/repo/github.com/sipsma/dagger/core/schema/module.go) adds `entrypoint` to `module.serve(...)`
-  * [engine/server/session_workspaces.go](/home/sipsma/repo/github.com/sipsma/dagger/engine/server/session_workspaces.go) uses that to install workspace-selected / blueprint / extra modules as entrypoints
-* So the incoming upstream shape in this area is:
-  * stateful `Query`
-  * ID-able root
-  * root-level entrypoint sugar on `Query`
-  * canonical inner server underneath for the real call path
-
-#### Translation requirements
-* We are also **not** keeping `CurrentEnv` as part of `Query` self state.
-  * `CurrentEnv` moves behind the `core.Server` interface and is read from client/session state
-* We are keeping the upstream stateful/ID-able `Query` surface, but we are **not** keeping the attached bare-`Query`-root experiment.
-* The merge plan here is:
-  * keep `Query` stateful with `ConstructorArgs`
-  * keep the upstream canonical-server / entrypoint-proxy behavior
-  * keep `dagql.NewServer(ctx, root)` / `(*dagql.Server).Fork(ctx, root)` signatures
-  * keep the root class/schema ID-able
-  * keep the old single-point `Query -> nil receiver ref` special case in [call_request_input.go](/home/sipsma/repo/github.com/sipsma/dagger/dagql/call_request_input.go)
-* The restored rule is:
-  * `resultCallRefFromResult(...)` returns `nil, nil` for any `Query` result
-  * selections off `Query` therefore behave like top-level calls with no structural receiver
-  * this special case stays centralized in that one helper rather than being spread across cache identity, persistence, and recipe reconstruction
-* `dagql.NewServer(ctx, root)` / `Fork(ctx, root)` should keep constructing the root as:
-
-```go
-newDetachedResult(nil, root)
+```bash
+git -C /home/sipsma/repo/github.com/sipsma/dagger/wts/dagger3 \
+  log --first-parent --cherry-pick --right-only --oneline \
+  main...05ab2db9aaa2c018fe7ef5fee08ee773b6c48d77 \
+  --ancestry-path 3e7f151a5b840842bfc99dbd988d42502d7bf43b^..05ab2db9aaa2c018fe7ef5fee08ee773b6c48d77
 ```
 
-  * do **not** attach the bare `Query` root
-  * do **not** add `attachQueryRoot(...)`
-  * do **not** add root-specific cache fields, registries, or recipe IDs
-  * do **not** add bare-`Query` persistence/import exceptions
-* `Query.with(...)` remains the real user-facing constructor path for entrypoint modules:
-  * it clones `Query`
-  * stores `ConstructorArgs`
-  * returns the cloned `Query` as the result of the current call
-  * proxy methods/fields then read `ConstructorArgs` from the runtime `Query` object and route through `dag.Canonical()`
-* This means:
-  * `Query` stays stateful for runtime routing
-  * the bare root itself is **not** treated as a normal attached cache result
-  * any later requirement to give the bare root its own real cache/persistence identity would be a separate design decision
-* The only Query-specific special handling we are intentionally keeping is:
-  * `CurrentEnv` moved off `Query` and behind `core.Server`
-  * `resultCallRefFromResult(Query) -> nil`
-  * runtime `ConstructorArgs` for `with(...)` / entrypoint proxy routing
+I also used the corresponding net diff over the exact inclusive range to inspect the actual file changes:
 
-### engine/opts.go
-* Take the upstream metadata additions exactly:
-
-```go
-type ExtraModule struct {
-	Ref        string `json:"ref"`
-	Name       string `json:"name,omitempty"`
-	Entrypoint bool   `json:"entrypoint,omitempty"`
-}
-
-type ClientMetadata struct {
-	...
-	ExtraModules         []ExtraModule `json:"extra_modules,omitempty"`
-	SkipWorkspaceModules bool          `json:"skip_workspace_modules,omitempty"`
-	Workspace            *string       `json:"workspace,omitempty"`
-}
+```bash
+git -C /home/sipsma/repo/github.com/sipsma/dagger/wts/dagger3 \
+  diff --stat \
+  3e7f151a5b840842bfc99dbd988d42502d7bf43b^ \
+  05ab2db9aaa2c018fe7ef5fee08ee773b6c48d77 \
+  -- \
+  core/container.go \
+  core/directory.go \
+  core/host.go \
+  core/integration/dockerfile_test.go \
+  core/integration/llbtodagger_test.go \
+  core/schema/container.go \
+  core/schema/directory.go \
+  util/llbtodagger \
+  engine/filesync
 ```
 
-* Keep every existing metadata field from our branch.
-* This file remains serialization only.
+Most important framing:
 
-### engine/client/client.go
-* Add only the upstream client params:
+- This range does not contain the original introduction of the new Dockerfile / `llbtodagger` subsystem.
+- That earlier big work is before `3e7f151a5`.
+- So this range is mostly follow-up refinement, parity fixes, test additions, cleanup/simplification, and some unrelated branch noise.
+- That is the key correction versus the earlier broader analysis.
+
+What actually changed in this range:
+
+### 1. Follow-up copy semantics and path-shape fixes
+
+This is the biggest real production change in the range.
+
+Files involved:
+
+- `util/llbtodagger/convert.go`
+- `util/llbtodagger/file.go`
+- `util/llbtodagger/exec.go`
+- `util/llbtodagger/source.go`
+- `core/directory.go`
+- `core/schema/directory.go`
+- `engine/filesync/filesyncer.go`
+- `engine/filesync/localfs.go`
+- `engine/filesync/remotefs.go`
+
+Concrete semantic themes from the commits in this range:
+
+- `5d287f449` explicitly fixes `createDestPath` handling.
+- `4dff1967d` explicitly fixes local `ADD` auto-unpack behavior.
+- `5927d0736` changes `cleanPath` so it preserves a trailing slash.
+- `630c741ad` removes `AllowDirectorySourceFallback`.
+- `1bdcbec84` removes `destPathHintIsDirectory`.
+
+Practical meaning:
+
+- This range is tightening and simplifying ambiguous Dockerfile `COPY` / `ADD` behavior.
+- Especially around destination-path interpretation and archive unpacking.
+- It is backing away from some heuristics that had been introduced earlier.
+- So the branch is not adding a brand-new capability here. It is mostly deciding which hidden compatibility knobs were actually wrong or unnecessary, and how strict the copy semantics should be.
+
+### 2. Dockerfile parity tests were expanded
+
+This range adds real integration coverage around behavior that already existed or was being refined.
+
+Main file:
+
+- `core/integration/dockerfile_test.go`
+
+The branch-added subtests in this range, compared to the earlier state, are:
+
+- `healthcheck`
+- `missing secret fails when required is set`
+- `missing secret is ok when required is false`
+- the case that `ADD` of an HTTP URL should not unpack automatically
+
+That lines up with these commits:
+
+- `795db6d39` test for healthcheck
+- `e94f70cae` add test for missing secret
+- `aee7a93de` test for non-required missing secret
+- `9fc6b4a3c` test for the case that an `ADD` of a http method doesnt unpack
+
+This is probably the cleanest high-signal payload in the range:
+
+- these are real parity expectations
+- they are not just churn
+- and they tell us what branch-side behavior the author was trying to lock in
+
+### 3. `container.build(...)` / schema-core Dockerfile wiring was touched
+
+Files involved:
+
+- `core/container.go`
+- `core/schema/container.go`
+- `core/host.go`
+
+The commit messages in this range do not isolate this cleanly because a lot of it came in under `wip` / `fix` / `cleanup` commits, but by the end of the range the branch state clearly includes:
+
+- public `container.build(...)` re-enabled in schema
+- continued wiring of Dockerfile build through the hard-cutover path
+- related support code in `core/container.go` / `core/host.go`
+
+So this range is not where the hard-cutover Dockerfile path was born, but it does include branch-side work to make that path actually usable from schema-facing APIs and parity tests.
+
+### 4. A local copy of `directory.chown` work also landed in the range
+
+Files involved:
+
+- `core/directory.go`
+- `core/schema/directory.go`
+
+Commits:
+
+- `b4f3c06f9` feat: directory.chown supports username/groupname
+- `bf178a5f0` remove dir permission (dont think its actually needed)
+
+This is a little messy because the same feature later exists upstream too, but within the requested range it is part of the branch’s local evolution, and it intersects directly with Dockerfile `COPY --chown` / ownership semantics.
+
+So it is part of the production surface touched by this range, even though it is not exclusively “new Dockerfile implementation” work.
+
+### 5. There is unrelated branch noise in the range
+
+The clearest unrelated item is:
+
+- `c8fc29c8c` feat: go toolchain tag support
+
+And then there is a lot of:
+
+- `wip`
+- `cleanup`
+- `lint cleanup`
+- `removed some unneeded lines for linting`
+- `regenerated`
+- `update golden tests`
+
+So the history in this exact range is not a clean series of intention-revealing commits.
+The real semantic payload is much smaller than the commit count makes it look.
+
+Net relevant files touched in this range:
+
+If I limit to the Dockerfile / `llbtodagger` area and ignore the broader repo churn, the range touches:
+
+- `core/container.go`
+- `core/directory.go`
+- `core/host.go`
+- `core/integration/dockerfile_test.go`
+- `core/integration/llbtodagger_test.go`
+- `core/schema/container.go`
+- `core/schema/directory.go`
+- `engine/filesync/filesyncer.go`
+- `engine/filesync/localfs.go`
+- `engine/filesync/remotefs.go`
+- `util/llbtodagger/convert.go`
+- `util/llbtodagger/exec.go`
+- `util/llbtodagger/file.go`
+- `util/llbtodagger/metadata.go`
+- `util/llbtodagger/source.go`
+
+Corrected takeaway:
+
+- The earlier broad look overestimated how much “new subsystem” was in play here.
+- For this exact range, the branch is mostly doing:
+  - refinement of already-existing `llbtodagger` copy / add semantics
+  - rethinking some copy heuristics
+  - adding Dockerfile parity tests for healthcheck, missing secret required vs optional, and HTTP `ADD` should not auto-unpack
+  - plus some schema/core wiring to keep the hard-cutover Dockerfile path usable
+  - plus unrelated noise like go toolchain tag support
+- The high-signal items from this range are:
+  - the parity tests
+  - the copy-path semantic decisions
+  - the trailing-slash / `createDestPath` / unpack fixes
+  - and the schema re-exposure of `container.build(...)`
+- The low-signal items are:
+  - the merge commits themselves
+  - generated churn
+  - lint-only cleanup
+  - unrelated toolchain work
+
+## Implementation Plan
+
+This implementation pass should only change files that close the still-missing, high-signal gaps from the requested range on top of our current branch.
+
+The key correction from the earlier draft is this:
+
+- For Dockerfile-specific features, hidden knobs, and compatibility behavior, the final state of the requested branch range is the source of truth.
+- That means we do not keep our current `requiredSourcePath` / `destPathHintIsDirectory` / `copySourcePathContentsWhenDir` model just because it exists on our branch.
+- Instead, we follow the branch’s final split:
+  - generic container-level `withDirectory` / `withFile` stay generic
+  - Dockerfile directory-copy fidelity moves to a dedicated internal `__withDirectoryDockerfileCompat(...)` path
+  - lower-level directory `withFile(...)` keeps the branch-final hidden file-copy knobs that were not superseded in this range (`doNotCreateDestPath`, `attemptUnpackDockerCompatibility`)
+  - `cleanPath` preserves trailing slashes so path shape itself carries part of the directory-destination intent
+
+We are still adapting that branch model onto our current architecture. So we are not porting older unrelated schema/core/filesync scaffolding wholesale. But for Dockerfile-specific behavior, the branch range leads.
+
+In particular:
+
+- We **will** restore the deprecated public `container.build(...)` wrapper on top of our current hard-cutover `Container.Build(...)`.
+- We **will** import the Dockerfile parity coverage added in the branch range.
+- We **will** move Dockerfile directory-copy semantics out of generic `withDirectory` and into a dedicated internal `__withDirectoryDockerfileCompat(...)` path.
+- We **will** keep the branch-final lower-level `withFile(...)` hidden args that still exist in the branch range for file-copy fidelity, while removing the fallback hacks and the branch-superseded directory-copy knobs.
+- We **will** remove the current branch-only Dockerfile knobs that the range superseded:
+  - `AllowDirectorySourceFallback`
+  - `RequiredSourcePath`
+  - `DestPathHintIsDirectory`
+  - `CopySourcePathContentsWhenDir`
+- We **will** preserve destination trailing slash in `cleanPath(...)` because the branch range relies on path shape instead of those removed knobs.
+- We **will not** port the branch’s older DagOp/buildkit schema rewrites in unrelated files.
+
+### core/schema/container.go
+
+Restore the deprecated `container.build(...)` entrypoint and strip generic container copy plumbing back to the generic behavior expected by the final branch state.
+
+1. Re-enable the public schema field in `Install` instead of leaving the old TODO block commented out.
 
 ```go
-type Params struct {
-	...
-	SkipWorkspaceModules bool
-	Workspace            *string
-}
+dagql.NodeFunc("build", s.build).
+	View(BeforeVersion("v0.19.0")).
+	Deprecated("Use `Directory.build` instead").
+	Doc(`Initializes this container from a Dockerfile build.`).
+	Args(
+		dagql.Arg("context").Doc("Directory context used by the Dockerfile."),
+		dagql.Arg("dockerfile").Doc("Path to the Dockerfile to use."),
+		dagql.Arg("target").Doc("Target build stage to build."),
+		dagql.Arg("buildArgs").Doc("Additional build arguments."),
+		dagql.Arg("secrets").Doc(`Secrets to pass to the build.`),
+		dagql.Arg("noInit").Doc(`If set, skip the automatic init process injected into containers created by RUN statements.`),
+	),
 ```
 
-* Keep `Params.Module` as the CLI's current "load this module as entrypoint" knob.
-* In `clientMetadata()`, take the upstream logic literally:
+2. Add a concrete `containerBuildArgs` type local to this file.
 
 ```go
-if c.Module != "" {
-	md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Entrypoint: true}}
-	md.SkipWorkspaceModules = true
-}
-if c.SkipWorkspaceModules {
-	md.SkipWorkspaceModules = true
-}
-if c.Workspace != nil {
-	md.Workspace = c.Workspace
-}
-```
-
-* Do not invent a new `Params.ExtraModules`; upstream does not need one here.
-
-### core/query.go
-* Update `Query` to carry constructor args for entrypoint proxying, but remove `CurrentEnv` from Query self:
-
-```go
-type Query struct {
-	Server
-
-	ConstructorArgs map[string]dagql.Input
-}
-```
-
-* Update `Clone()` to deep-copy `ConstructorArgs`.
-* Extend the `Server` interface to the real target shape:
-
-```go
-type Server interface {
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata)
-	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
-	CurrentModule(context.Context) (dagql.ObjectResult[*Module], error)
-	ModuleParent(context.Context) (dagql.ObjectResult[*Module], error)
-	CurrentFunctionCall(context.Context) (*FunctionCall, error)
-	CurrentEnv(context.Context) (*call.ID, error)
-	CurrentWorkspace(context.Context) (*Workspace, error)
-	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
-	DefaultDeps(context.Context) (*SchemaBuilder, error)
-	...
+type containerBuildArgs struct {
+	Context    core.DirectoryID
+	Dockerfile string                             `default:"Dockerfile"`
+	Target     string                             `default:""`
+	BuildArgs  []dagql.InputObject[core.BuildArg] `default:"[]"`
+	Secrets    []core.SecretID                    `default:"[]"`
+	NoInit     bool                               `default:"false"`
 }
 ```
 
-* Keep the current `CurrentDagqlServer(ctx)` behavior that prefers a dagql server already attached to the context.
-* `NewModule()` should return `&Module{Deps: NewSchemaBuilder(q, nil)}`.
-* `NewRoot(...)` becomes:
+Deliberate design choice: do **not** add `ssh` here. This field is restored under `View(BeforeVersion("v0.19.0"))`, so we should preserve the historical legacy API shape instead of retrofitting newer `Directory.dockerBuild(...)` arguments onto an old-version compatibility surface.
+
+3. Add the `build` resolver as a thin wrapper over the existing hard-cutover build path, mirroring `directorySchema.dockerBuild(...)` as closely as possible.
 
 ```go
-func NewRoot(srv Server) *Query {
-	return &Query{Server: srv}
-}
-```
-
-* `ConstructorArgs` stays as runtime state on cloned `Query` values created by `with(...)`.
-* Do **not** add special bare-`Query` persistence / root-attachment machinery here.
-
-### engine/server/session.go
-* Extend `daggerClient` with the upstream workspace/module-loading state:
-
-```go
-type daggerClient struct {
-	...
-	pendingWorkspaceLoad bool
-	workspaceMu          sync.Mutex
-	workspaceLoaded      bool
-	workspaceErr         error
-	workspace            *core.Workspace
-
-	pendingModules      []pendingModule
-	pendingExtraModules []engine.ExtraModule
-	modulesMu           sync.Mutex
-	modulesLoaded       bool
-	modulesErr          error
-
-	deps        *core.SchemaBuilder
-	defaultDeps *core.SchemaBuilder
-}
-```
-
-* Move env ownership fully into client/session state:
-  * keep decoding `fnCall.EnvID` during client init
-  * stop storing it on `Query`
-  * implement:
-
-```go
-func (srv *Server) CurrentEnv(ctx context.Context) (*call.ID, error)
-```
-
-  by reading `client.fnCall.EnvID`
-
-* During client initialization:
-  * keep current BuildKit / dagql bootstrapping
-  * rename `core.NewModDeps(...)` to `core.NewSchemaBuilder(...)`
-  * if this client should detect or inherit workspace binding, seed `pendingWorkspaceLoad = true`
-  * if `clientMetadata.ExtraModules` is already present, seed `pendingExtraModules`
-
-* Update the serving path so that request handling calls:
-
-```go
-if err := srv.ensureWorkspaceLoaded(ctx, client); err != nil { ... }
-if err := srv.ensureModulesLoaded(ctx, client); err != nil { ... }
-```
-
-* Update `ServeModule` and the internal serving helper to carry install policy:
-
-```go
-func (srv *Server) ServeModule(
+func (s *containerSchema) build(
 	ctx context.Context,
-	mod dagql.ObjectResult[*core.Module],
-	includeDependencies bool,
-	entrypoint bool,
-) error
-
-func (srv *Server) serveModule(
-	client *daggerClient,
-	mod core.Mod,
-	opts core.InstallOpts,
-) error
-```
-
-* `serveModule(...)` should stop doing plain append and instead preserve policy:
-
-```go
-client.deps = client.deps.With(mod, opts)
-```
-
-* Public `ServeModule(...)` behavior:
-  * serve the selected module with `Entrypoint: entrypoint`
-  * if `includeDependencies` is set, serve direct deps with `SkipConstructor: true`
-
-### engine/server/session_workspaces.go
-* Add this file from upstream, but adapt it to our result-wrapper/module-storage model.
-* Keep the high-level structure:
-
-```go
-func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error)
-func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClient) error
-func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerClient) error
-func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *daggerClient) error
-func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *daggerClient, hostPath string) error
-func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *daggerClient, workspaceRef string) error
-func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerClient, remoteRef string) error
-func (srv *Server) detectAndLoadWorkspaceWithRootfs(...) error
-func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient) error
-```
-
-* Keep the upstream `pendingModule` shape, including toolchain compat fields:
-
-```go
-type pendingModule struct {
-	Ref        string
-	RefPin     string
-	Name       string
-	Entrypoint bool
-
-	LegacyDefaultPath  bool
-	ConfigDefaults     map[string]any
-	DefaultsFromDotEnv bool
-	ArgCustomizations  []*modules.ModuleConfigArgument
-
-	LegacyCallerModuleDir string
-	DisableFindUp         bool
-}
-```
-
-* Keep the upstream legacy gathering flow inside `detectAndLoadWorkspaceWithRootfs(...)`:
-  * `workspace.Detect(...)`
-  * `workspace.ParseLegacyToolchains(...)`
-  * `workspace.ParseLegacyBlueprint(...)`
-  * implicit module near CWD
-  * `client.pendingExtraModules`
-
-* The concrete pending-module order should stay upstream-compatible:
-  1. legacy toolchains
-  2. legacy blueprint
-  3. implicit root module near CWD
-  4. extra modules from client metadata
-
-* `buildCoreWorkspace(...)` needs one translation beyond upstream:
-  * in addition to `Path`, `Address`, and `ClientID`, set config metadata by statting `.dagger/config.toml` through the same `statFS`
-
-```go
-configRelPath := filepath.Join(detected.Path, ".dagger", "config.toml")
-_, hasConfig, err := core.StatFSExists(ctx, statFS, filepath.Join(detected.Root, configRelPath))
-coreWS.HasConfig = hasConfig
-coreWS.Initialized = hasConfig
-if hasConfig {
-	coreWS.ConfigPath = filepath.ToSlash(configRelPath)
-}
-```
-
-* Use result wrappers, not raw `*core.Module`, in the resolve/serve pipeline:
-
-```go
-type resolvedServedModule struct {
-	mod        dagql.ObjectResult[*core.Module]
-	entrypoint bool
-}
-
-type resolvedModuleLoad struct {
-	primary           dagql.ObjectResult[*core.Module]
-	primaryEntrypoint bool
-	related           []resolvedServedModule
-}
-```
-
-* `resolveModuleSourceAsModule(...)` should return `dagql.ObjectResult[*core.Module]`.
-* `serveAllResolvedModuleLoads(...)` should wrap user modules with `core.NewUserMod(...)` and pass `core.InstallOpts{Entrypoint: ...}` / `core.InstallOpts{SkipConstructor: true}`.
-* Keep upstream related-module serving:
-  * serve blueprint modules as `entrypoint: true`
-  * serve toolchain modules as `entrypoint: false`
-
-### core/workspace.go
-* Replace our minimal `Workspace` struct with the richer upstream shape:
-* Target shape:
-
-```go
-type Workspace struct {
-	rootfs dagql.ObjectResult[*Directory]
-
-	Path        string `field:"true" doc:"Workspace directory path relative to the workspace boundary."`
-	Address     string `field:"true" doc:"Canonical Dagger address of the workspace directory."`
-	Initialized bool   `field:"true" doc:"Whether .dagger/config.toml exists."`
-	ConfigPath  string `field:"true" doc:"Path to config.toml relative to the workspace boundary (empty if not initialized)."`
-	HasConfig   bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
-	ClientID    string `field:"true" doc:"The client ID that owns this workspace's host filesystem."`
-
-	hostPath string
-}
-```
-
-* Keep helper methods:
-
-```go
-func (ws *Workspace) Rootfs() dagql.ObjectResult[*Directory]
-func (ws *Workspace) SetRootfs(r dagql.ObjectResult[*Directory])
-func (ws *Workspace) HostPath() string
-func (ws *Workspace) SetHostPath(p string)
-```
-
-* Add `dagql.HasDependencyResults` for `rootfs`:
-
-```go
-var _ dagql.HasDependencyResults = (*Workspace)(nil)
-
-func (ws *Workspace) AttachDependencyResults(
-	ctx context.Context,
-	_ dagql.AnyResult,
-	attach func(dagql.AnyResult) (dagql.AnyResult, error),
-) ([]dagql.AnyResult, error)
-```
-
-* `Workspace` also needs to implement persisted-object support.
-  * Reason: `Workspace` can appear as a function-call input dependency via `loadWorkspaceArg(...)` in [modfunc.go](/home/sipsma/repo/github.com/sipsma/dagger/core/modfunc.go#L1062), so cached call graphs must not fail persistence/import just because a `Workspace` appeared in the dependency graph.
-  * This is similar in spirit to host/path-backed inputs: some fields are session-affine, but the object still has to be representable in the persisted graph.
-
-```go
-var _ dagql.PersistedObject = (*Workspace)(nil)
-var _ dagql.PersistedObjectDecoder = (*Workspace)(nil)
-
-type persistedWorkspace struct {
-	Path        string `json:"path,omitempty"`
-	Address     string `json:"address,omitempty"`
-	Initialized bool   `json:"initialized,omitempty"`
-	ConfigPath  string `json:"configPath,omitempty"`
-	HasConfig   bool   `json:"hasConfig,omitempty"`
-	ClientID    string `json:"clientID,omitempty"`
-	HostPath    string `json:"hostPath,omitempty"`
-
-	RootfsResultID uint64 `json:"rootfsResultID,omitempty"`
-}
-
-func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error)
-func (*Workspace) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error)
-```
-
-* Encoding/decoding rules:
-  * always persist scalar metadata:
-    * `Path`
-    * `Address`
-    * `Initialized`
-    * `ConfigPath`
-    * `HasConfig`
-    * `ClientID`
-    * `HostPath`
-  * if `rootfs` is set, persist it with `encodePersistedObjectRef(...)`
-  * on decode, restore scalar metadata first, then reload `rootfs` via `loadPersistedObjectResultByResultID[*Directory](...)`
-
-* Semantics to preserve:
-  * remote workspace:
-    * persisted metadata + `rootfs` should be functionally usable after reload
-  * local workspace:
-    * persisted metadata + `hostPath` + `ClientID` is enough to keep the dependency graph valid
-    * host filesystem operations remain session-affine, which is acceptable; the important thing is that persisted call graphs do not fail to load
-
-### core/workspace/detect.go and core/workspace/legacy.go
-* Add these new helper files from upstream as the detection/compat substrate.
-
-#### core/workspace/detect.go
-* Add this new package file essentially as upstream:
-
-```go
-package workspace
-
-type Workspace struct {
-	Root string
-	Path string
-}
-
-type PathExistsFunc func(ctx context.Context, path string) (parentDir string, exists bool, err error)
-
-func Detect(
-	ctx context.Context,
-	pathExists PathExistsFunc,
-	readFile func(ctx context.Context, path string) ([]byte, error),
-	cwd string,
-) (*Workspace, error)
-
-func findUpAll(
-	ctx context.Context,
-	pathExists PathExistsFunc,
-	curDirPath string,
-	names ...string,
-) (map[string]string, error)
-```
-
-* Keep the two-step detection behavior:
-  * `.git` found => boundary is git root, `Path` is `Rel(gitRoot, cwd)`
-  * otherwise => boundary/root is `cwd`, `Path = "."`
-
-#### core/workspace/legacy.go
-* Add this new package file essentially as upstream and keep its toolchain support intact:
-
-```go
-package workspace
-
-type LegacyToolchain struct {
-	Name           string
-	Source         string
-	Pin            string
-	ConfigDefaults map[string]any
-	Customizations []*modules.ModuleConfigArgument
-}
-
-type LegacyBlueprint struct {
-	Name   string
-	Source string
-	Pin    string
-}
-
-func ParseLegacyBlueprint(data []byte) (*LegacyBlueprint, error)
-func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error)
-func parseLegacyConfig(data []byte) (*modules.ModuleConfig, error)
-func extractConfigDefaults(customizations []*modules.ModuleConfigArgument) map[string]any
-func cloneCustomizations(customizations []*modules.ModuleConfigArgument) []*modules.ModuleConfigArgument
-```
-
-* This file is where we follow upstream on toolchains rather than inventing a new policy.
-
-### core/schema/workspace.go
-* Replace the current experimental workspace schema with the upstream richer behavior, but adapt it to **current** dagql APIs.
-* Install shape should be:
-
-```go
-dagql.Fields[*core.Query]{
-	dagql.Func("currentWorkspace", s.currentWorkspace).
-		WithInput(dagql.PerCallInput).
-		Doc("Detect and return the current workspace."),
-}.Install(srv)
-
-dagql.Fields[*core.Workspace]{
-	dagql.NodeFunc("directory", s.directory).
-		WithInput(dagql.PerClientInput).
-		Doc(...),
-	dagql.NodeFunc("file", s.file).
-		WithInput(dagql.PerClientInput).
-		Doc(...),
-	dagql.NodeFunc("findUp", s.findUp).
-		WithInput(dagql.PerClientInput).
-		Doc(...),
-	dagql.Func("checks", s.checks).
-		Doc(...),
-	dagql.Func("generators", s.generators).
-		Doc(...),
-}.Install(srv)
-```
-
-* `currentWorkspace` should become:
-
-```go
-func (s *workspaceSchema) currentWorkspace(
-	ctx context.Context,
-	parent *core.Query,
-	_ struct{},
-) (*core.Workspace, error) {
-	return parent.Server.CurrentWorkspace(ctx)
-}
-```
-
-* Keep `withWorkspaceClientContext(...)` from the current branch; it is still the right bridge for local workspaces passed into module functions.
-
-* Add the upstream helper flow in our current resolver/input style:
-
-```go
-func (s *workspaceSchema) resolveRootfs(
-	ctx context.Context,
-	ws *core.Workspace,
-	resolvedPath string,
-	filter core.CopyFilter,
-	gitignore bool,
-) (dagql.ObjectResult[*core.Directory], error)
-
-func resolveWorkspacePath(pathArg, workspacePath string) string
-func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error)
-func toolchainIgnorePatterns(
-	mods []dagql.ObjectResult[*core.Module],
-	getPatterns func(*modules.ModuleConfigDependency) []string,
-) map[string][]string
-```
-
-* `resolveRootfs(...)` behavior:
-  * local workspace:
-    * use `withWorkspaceClientContext`
-    * resolve against `ws.HostPath()`
-    * select `host.directory(...)`
-  * remote workspace:
-    * start from `ws.Rootfs()`
-    * `directory(path: ...)` into subdirs
-    * apply include/exclude filtering by re-wrapping through `directory().withDirectory(...)`
-
-* Keep the upstream absolute-vs-relative input contract:
-  * relative args resolve from `ws.Path`
-  * absolute args resolve from the workspace boundary
-* But preserve the current branch's `findUp` return contract:
-  * return a workspace-boundary-relative path like `a/b/file.txt`
-  * do **not** switch to the upstream leading-`/` output shape
-  * this matches the current public tests in `core/integration/workspace_test.go`
-
-* Keep the upstream check/generator helpers and toolchain-aware check filtering:
-  * `currentWorkspacePrimaryModules`
-  * `toolchainIgnorePatterns`
-  * `filterNodesByExclude`
-  * `reparentWorkspaceTreeRoot`
-  * `matchWorkspaceInclude`
-  * `matchSingleModuleInclude`
-* Hard-cut the workspace helpers to keep wrapped module results all the way through:
-  * `currentWorkspacePrimaryModules(...)` returns `[]dagql.ObjectResult[*core.Module]`, not raw `[]*core.Module`
-  * `checks(...)` and `generators(...)` operate on wrapped module results and pass those results into `mod.Checks(...)` / `mod.Generators(...)`
-  * only unwrap with `.Self()` where we truly need display metadata like the module name for reporting or include/exclude filtering
-* Concretely:
-  * our `SchemaBuilder.PrimaryMods()` returns `[]core.Mod` wrappers, not raw `*core.Module`
-  * `currentWorkspacePrimaryModules(...)` must collect `mod.ModuleResult()` and reject non-module entries whose `ModuleResult().Self()` is nil
-  * do **not** use `dagql.NewObjectResultForCurrentCall(...)` here; the workspace path is not manufacturing new module identities
-  * do **not** pass bare `*core.Module` values around in this path except as transient `.Self()` reads for names and config
-
-### dagql/server.go
-* Add only the canonical-server support from upstream:
-
-```go
-type Server struct {
-	...
-	canonical *Server
-}
-
-func (s *Server) Canonical() *Server {
-	if s.canonical != nil {
-		return s.canonical
+	parent dagql.ObjectResult[*core.Container],
+	args containerBuildArgs,
+) (*core.Container, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s
-}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
 
-func (s *Server) SetCanonical(canonical *Server) {
-	s.canonical = canonical
+	contextDir, err := args.Context.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	buildctxDir, err := applyDockerIgnore(ctx, srv, contextDir, args.Dockerfile)
+	if err != nil {
+		return nil, err
+	}
+
+	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
+	if err != nil {
+		return nil, err
+	}
+
+	buildctxDirID, err := buildctxDir.RecipeID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get build context recipe ID: %w", err)
+	}
+
+	return parent.Self().Build(
+		ctx,
+		contextDir.Self(),
+		buildctxDirID,
+		args.Dockerfile,
+		collectInputsSlice(args.BuildArgs),
+		args.Target,
+		secrets,
+		args.NoInit,
+		dagql.ObjectResult[*core.Socket]{},
+	)
 }
 ```
 
-* Hard-cut the constructor signatures to carry context:
+4. Simplify `containerWithDirectoryArgs` and `containerWithFileArgs` to match the branch’s final container-facing shape. In particular:
+
+- `withDirectory(...)` should stop passing the Dockerfile-only directory-copy knobs into `core.Container.WithDirectory(...)`.
+- `withFile(...)` should stop threading Dockerfile-only copy knobs into `core.Container.WithFile(...)`.
+- the lower-level directory-schema `withFile(...)` path still keeps the branch-final hidden file-copy args; this point is specifically about the container-facing wrappers matching the branch’s final split.
+
+5. Remove the current file-source fallback branch from `withFile(...)` entirely. The final branch state does not keep `AllowDirectorySourceFallback`, and once `llbtodagger` emits `__withDirectoryDockerfileCompat(...)` for Dockerfile copy actions, this reconstruction hack should disappear with it.
+
+The resulting load path should be just:
 
 ```go
-func NewServer[T Typed](ctx context.Context, root T) (*Server, error)
-func (s *Server) Fork(ctx context.Context, root Typed) (*Server, error)
+file, err := args.Source.Load(ctx, srv)
+if err != nil {
+	return inst, err
+}
 ```
 
-* Keep `newDetachedResult(nil, root)` as the root construction shape.
-* Do **not** attach the bare `Query` root in `NewServer(...)` / `Fork(...)`.
-* The `ctx` plumbing stays even though the current root construction path does not use it yet; that constructor shape is still the agreed substrate for this merge.
+6. No generated SDK/docs work is planned from this file restoration.
 
-### core/moddeps.go -> core/schema_builder.go
-* Rename the file and type as a hard cut:
-  * `core/moddeps.go` -> `core/schema_builder.go`
-  * `type ModDeps` -> `type SchemaBuilder`
-* Target shape:
+Because the restored field remains gated by:
 
 ```go
-type schemaEntry struct {
-	mod  Mod
-	opts InstallOpts
-}
-
-type SchemaBuilder struct {
-	root *Query
-
-	entries []schemaEntry
-
-	lazilyLoadedServer *dagql.Server
-	loadSchemaErr      error
-	loadSchemaLock     sync.Mutex
-}
-
-func NewSchemaBuilder(root *Query, mods []Mod) *SchemaBuilder
-func (b *SchemaBuilder) Clone() *SchemaBuilder
-func (b *SchemaBuilder) WithRoot(root *Query) *SchemaBuilder
-func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder
-func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder
-func (b *SchemaBuilder) Lookup(name string) (Mod, bool)
-func (b *SchemaBuilder) Mods() []Mod
-func (b *SchemaBuilder) PrimaryMods() []Mod
-func (b *SchemaBuilder) Server(ctx context.Context) (*dagql.Server, error)
-func (b *SchemaBuilder) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (dagql.Result[*File], error)
-func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context) (dagql.Result[*File], error)
-func (b *SchemaBuilder) SchemaIntrospectionJSONFileForClient(ctx context.Context) (dagql.Result[*File], error)
-func (b *SchemaBuilder) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error)
-func (b *SchemaBuilder) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bool, error)
+View(BeforeVersion("v0.19.0"))
 ```
 
-* Preserve the current branch's substantive behavior:
-  * `WithRoot(root *Query)`
-  * `TypeDefs(...)` returning `dagql.ObjectResultArray[*TypeDef]`
-  * `coreSchemaForker` support
-  * current interface-extension wiring
+it should not affect current-version codegen outputs. We should still confirm that empirically after implementation, but we should not plan to hand-edit or regenerate SDK/docs files as part of this pass unless the actual generation diff proves otherwise.
 
-* Take from upstream:
-  * per-entry `InstallOpts`
-  * `PrimaryMods()`
-  * `With(mod, opts)` with promotion rules for `SkipConstructor` / `Entrypoint`
-  * inner/outer server split when any entry has `Entrypoint`
+### core/schema/directory.go
 
-* `Server(ctx)` should build through our current dagql substrate:
-  * `coreSchemaForker.ForkSchema(ctx, root, view)` when available
-  * otherwise `dagql.NewServer(ctx, root)` plus current introspection install
-  * root attachment happens in `dagql.NewServer(ctx, root)` / `Fork(ctx, root)` and nowhere else
+Split generic directory copy from Dockerfile-specific directory copy, following the final branch model.
 
-### core/schema_build.go
-* Add this file as the shared schema-construction helper.
-* Target shape:
+1. Simplify the generic `WithDirectoryArgs` back down to a generic copy API with no Dockerfile-only hidden args.
+
+Target:
 
 ```go
-type schemaInstall struct {
-	mod  Mod
-	opts InstallOpts
-}
+type WithDirectoryArgs struct {
+	Path  string
+	Owner string `default:""`
 
-func buildSchema(
+	Source    core.DirectoryID
+	Directory core.DirectoryID // legacy, use Source instead
+
+	core.CopyFilter
+}
+```
+
+2. Add a dedicated Dockerfile-only internal args type and internal schema field, matching the final branch surface.
+
+```go
+type WithDirectoryDockerfileCompatArgs struct {
+	Path        string
+	Owner       string `default:""`
+	Permissions dagql.Optional[dagql.Int]
+
+	SrcPath                          string `internal:"true" default:""`
+	FollowSymlink                    bool   `internal:"true" default:"false"`
+	DirCopyContents                  bool   `internal:"true" default:"false"`
+	AttemptUnpackDockerCompatibility bool   `internal:"true" default:"false"`
+	CreateDestPath                   bool   `internal:"true" default:"false"`
+	AllowWildcard                    bool   `internal:"true" default:"false"`
+	AllowEmptyWildcard               bool   `internal:"true" default:"false"`
+	AlwaysReplaceExistingDestPaths   bool   `internal:"true" default:"false"`
+
+	Source core.DirectoryID
+	core.CopyFilter
+}
+```
+
+Install it as a new internal field:
+
+```go
+dagql.NodeFunc("__withDirectoryDockerfileCompat", s.withDirectoryDockerfileCompat).
+	Doc(`(Internal-only) Dockerfile-compat directory copy path.`).
+	Args(
+		dagql.Arg("path"),
+		dagql.Arg("source"),
+		dagql.Arg("owner"),
+		dagql.Arg("permissions"),
+		dagql.Arg("include"),
+		dagql.Arg("exclude"),
+		dagql.Arg("gitignore"),
+	)
+```
+
+The hidden Dockerfile-compat knobs stay on the args struct itself. They are intentionally **not** added to the public `.Args(...)` list; the converter is the only caller and it should keep using the hidden/internal surface.
+
+3. Implement the new resolver in our current lazy style: load the source ID, create a child directory, and install a Dockerfile-compat lazy payload on it. Do **not** eagerly execute the copy in schema.
+
+```go
+func (s *directorySchema) withDirectoryDockerfileCompat(
 	ctx context.Context,
-	root *Query,
-	installs []schemaInstall,
-) (*dagql.Server, error)
+	parent dagql.ObjectResult[*core.Directory],
+	args WithDirectoryDockerfileCompatArgs,
+) (dagql.ObjectResult[*core.Directory], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	srcDir, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
 
-func schemaJSONFileFromServer(
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
+	}
+
+	dir := core.NewDirectoryChild(parent)
+	dir.Lazy = &core.DirectoryWithDirectoryDockerfileCompatLazy{
+		LazyState:                        core.NewLazyState(),
+		Parent:                           parent,
+		DestDir:                          args.Path,
+		SrcPath:                          args.SrcPath,
+		Source:                           srcDir,
+		Filter:                           args.CopyFilter,
+		Owner:                            args.Owner,
+		Permissions:                      perms,
+		FollowSymlink:                    args.FollowSymlink,
+		DirCopyContents:                  args.DirCopyContents,
+		AttemptUnpackDockerCompatibility: args.AttemptUnpackDockerCompatibility,
+		CreateDestPath:                   args.CreateDestPath,
+		AllowWildcard:                    args.AllowWildcard,
+		AllowEmptyWildcard:               args.AllowEmptyWildcard,
+		AlwaysReplaceExistingDestPaths:   args.AlwaysReplaceExistingDestPaths,
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+```
+
+4. Simplify `WithFileArgs` by removing `AllowDirectorySourceFallback`, and remove the current fallback branch from `withFile(...)`.
+
+Target shape:
+
+```go
+type WithFileArgs struct {
+	Path        string
+	Source      core.FileID
+	Permissions dagql.Optional[dagql.Int]
+	Owner       string `default:""`
+	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
+}
+```
+
+### core/container.go
+
+Strip the generic container copy paths back to generic semantics, again following the final branch model.
+
+1. Simplify `Container.WithDirectory(...)` so it no longer carries Dockerfile-only knobs.
+
+Target:
+
+```go
+func (container *Container) WithDirectory(
 	ctx context.Context,
-	dag *dagql.Server,
-	hiddenTypes []string,
-) (dagql.Result[*File], error)
+	parent dagql.ObjectResult[*Container],
+	subdir string,
+	src dagql.ObjectResult[*Directory],
+	filter CopyFilter,
+	owner string,
+) (*Container, error)
 ```
 
-* `buildSchema(...)` must be adapted to our current world, not copied verbatim from upstream:
-  * resolve the view exactly once from installed modules
-  * use `coreSchemaForker` when present
-  * install each module with its `InstallOpts`
-  * collect object/interface typedefs through the current `dagql.ObjectResultArray[*TypeDef]` API
-  * build `ModuleObjectType{mod: mod.ModuleResult()}` and `InterfaceType{mod: mod.ModuleResult()}` so interface extension remains result-wrapper-aware
+This method should keep our current ownership-aware structure, but the only semantics it should preserve are:
 
-### core/schema_codegen.go
-* Add only the pure introspection conversion helpers:
+- locate mount path
+- resolve owner names if needed
+- select generic `withDirectory`
+- update rootfs / mounted-directory cases
 
-```go
-func DagqlToCodegenType(...)
-func DagqlToCodegenDirective(...)
-func DagqlToCodegenDirectiveArg(...)
-func DagqlToCodegenDirectiveDef(...)
-func DagqlToCodegenField(...)
-func DagqlToCodegenInputValue(...)
-func DagqlToCodegenEnumValue(...)
-func DagqlToCodegenTypeRef(...)
-```
+2. Simplify `Container.WithFile(...)` the same way. Following the final branch state, it should no longer carry Dockerfile-only flags like `DoNotCreateDestPath` or `AttemptUnpackDockerCompatibility`.
 
-* This file only converts `dagql/introspection` types into `cmd/codegen/introspection` types.
-* It does **not** touch our `core.TypeDef` graph and therefore does **not** regress the ObjectResult-based typedef work.
-
-### core/schema/query.go
-* Keep the current `querySchema` structure:
+Target:
 
 ```go
-type querySchema struct{}
-```
-
-* Keep the current `__schemaJSONFile` registration style:
-
-```go
-dagql.NodeFunc("__schemaJSONFile", s.schemaJSONFile).
-	IsPersistable().
-	WithInput(dagql.CurrentSchemaInput)
-```
-
-* Keep the current `schemaJSONArgs`:
-
-```go
-type schemaJSONArgs struct {
-	HiddenTypes []string `default:"[]"`
-}
-```
-
-* Replace the local `dagqlToCodegen*` helpers with calls to the new exported `core.DagqlToCodegen*` helpers.
-* Keep the current persistable `__schemaJSONFile` implementation shape; do not rewrite it into a different execution path as part of this merge.
-
-### core/schema/coremod.go
-* Keep the current `CoreSchemaBase` / `coreSchemaViewState` architecture.
-* Keep the current retained `dagql.ObjectResultArray[*core.TypeDef]` caches and per-view maps.
-* Update only what is required for the new substrate:
-
-```go
-type CoreSchemaBase struct {
-	base    *dagql.Server
-	rootSrv core.Server
-	...
-}
-```
-
-* `NewCoreSchemaBase(...)` should now take the runtime core server and create the base dagql server from a real bare `Query` root:
-
-```go
-func NewCoreSchemaBase(ctx context.Context, rootSrv core.Server) (*CoreSchemaBase, error)
-```
-
-  using `dagql.NewServer(ctx, core.NewRoot(rootSrv))`
-* Internal view forks should likewise use a real bare `Query` root with the same runtime server:
-  * `base.base.Fork(ctx, core.NewRoot(base.rootSrv))`
-  * `state.server.Fork(ctx, root)`
-
-```go
-func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, opts ...core.InstallOpts) error
-```
-
-* Do **not** adopt upstream's raw `CoreMod{Dag}` rewrite.
-* Do **not** add `core/typedef_from_schema.go` in this merge.
-* Keep `CoreMod.TypeDefs(ctx, dag)` returning the cached per-view core typedef set.
-  * It is correct for `CoreMod.TypeDefs(...)` to ignore the live unified `dag`.
-  * The live served `Query` overlay belongs in `currentTypeDefs(...)`, not in `CoreMod.TypeDefs(...)`.
-
-### core/module.go
-* Keep our current module storage model, but rename deps and add the upstream workspace-compat fields.
-* Target `Module` shape:
-
-```go
-type Module struct {
-	Source        dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
-	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
-
-	NameField    string
-	OriginalName string
-	SDKConfig    *SDKConfig
-
-	Deps *SchemaBuilder
-
-	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
-
-	Description   string
-	ObjectDefs    dagql.ObjectResultArray[*TypeDef]
-	InterfaceDefs dagql.ObjectResultArray[*TypeDef]
-	EnumDefs      dagql.ObjectResultArray[*TypeDef]
-
-	LegacyDefaultPath  bool
-	WorkspaceConfig    map[string]any
-	DefaultsFromDotEnv bool
-
-	persistedResultID uint64
-	IncludeSelfInDeps bool
-
-	DisableDefaultFunctionCaching bool
-}
-```
-
-* Remove the branch-local toolchain-only fields:
-  * `IsToolchain`
-  * `Toolchains *ToolchainRegistry`
-  * `isToolchainModule(...)`
-
-* Add upstream install policy near the `Mod` interface:
-
-```go
-type InstallOpts struct {
-	SkipConstructor bool
-	Entrypoint      bool
-}
-
-type Mod interface {
-	Name() string
-	Same(Mod) (bool, error)
-	View() (call.View, bool)
-	Install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error
-	ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error)
-	TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error)
-	GetSource() *ModuleSource
-	ResultCallModule(context.Context) (*dagql.ResultCallModule, error)
-	ModuleResult() dagql.ObjectResult[*Module]
-}
-```
-
-* Keep the current branch's interface extras. Do not regress to upstream's smaller `Mod` interface.
-* Update the persisted payload to match the new real state:
-
-```go
-type persistedModulePayload struct {
-	SourceResultID        uint64   `json:"sourceResultID,omitempty"`
-	ContextSourceResultID uint64   `json:"contextSourceResultID,omitempty"`
-	RuntimeResultID       uint64   `json:"runtimeResultID,omitempty"`
-	DepModuleResultIDs    []uint64 `json:"depModuleResultIDs,omitempty"`
-	IncludeSelfInDeps     bool     `json:"includeSelfInDeps,omitempty"`
-
-	NameField    string
-	OriginalName string
-	SDKConfig    *SDKConfig
-	Description  string
-
-	ObjectDefResultIDs    []uint64
-	InterfaceDefResultIDs []uint64
-	EnumDefResultIDs      []uint64
-
-	LegacyDefaultPath  bool
-	WorkspaceConfig    map[string]any
-	DefaultsFromDotEnv bool
-
-	DisableDefaultFunctionCaching bool
-}
-```
-
-* Keep current source/context/runtime/typedef attachment and decode logic.
-* Do **not** add upstream `Module.Runtime ModuleRuntime` or `Module.ResultID`.
-* Do **not** import upstream `ContentDigestCacheKey` / `GetModuleFromContentDigest` / `CacheModuleByContentDigest`; keep the current implementation-scoped module flow instead.
-
-### core/object.go
-* Remove the branch-local toolchain registry path:
-  * delete the `ToolchainRegistry` proxy branch from `functions(ctx, dag)`
-* Update `ModuleObject.Install(...)` to accept `InstallOpts`:
-
-```go
-func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error
-```
-
-* Keep the current wrapper/provenance substrate:
-  * `obj.Module` remains `dagql.ObjectResult[*Module]`
-  * constructor/module provenance still comes from `NewUserMod(obj.Module).ResultCallModule(ctx)`
-
-* Add the upstream entrypoint proxy behavior, adapted to the current result-wrapper world:
-  * `installConstructor(...)` skips installation when `SkipConstructor`
-  * `installEntrypointMethods(...)` installs:
-    * `Query.with(...)`
-    * method proxies
-    * field proxies
-  * proxies call through `dag.Canonical()` and read constructor args from `Query.ConstructorArgs`
-
-```go
-func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagql.Server) error
-```
-
-### core/modulesource.go
-* Keep the current persisted/lazy-SDK machinery.
-* Remove only the branch-local toolchain projection fields and their persistence:
-
-```go
-// delete from ModuleSource:
-ToolchainContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
-ToolchainConfigIndex   int
-ToolchainProjection    bool
-```
-
-* Keep:
-  * `ConfigToolchains`
-  * `Toolchains`
-  * `ConfigBlueprint`
-  * `Blueprint`
-  * `ContextDirectory`
-  * `UserDefaults`
-  * all current persisted-object encoding/decoding for dependencies, blueprint, and toolchain result IDs
-
-* Keep the current digest story:
-  * `SourceImplementationDigest(ctx)`
-  * `moduleSourceDigest(...)`
-  * `ImplementationScopedModuleSource(...)`
-* Do **not** import upstream's stored `Digest string` field or old `CalcDigest`/`ContentCacheScope` helpers.
-
-* Rename all SDK/deps signatures from `*ModDeps` to `*SchemaBuilder`.
-
-### core/schema/modulesource.go
-* This is the biggest manual reconciliation hotspot.
-* Keep the public authoring surface that already aligns with upstream:
-  * `withBlueprint`
-  * `withToolchains`
-  * `withUpdateToolchains`
-  * `withoutToolchains`
-  * `withUpdateBlueprint`
-  * `withoutBlueprint`
-
-* Delete the branch-local toolchain projection/integration machinery:
-  * `_asToolchain`
-  * `toolchainContext`
-  * `extractToolchainModules`
-  * `addToolchainFieldsToObject`
-  * `mergeToolchainsWithSDK`
-  * `createShadowModuleForToolchains`
-  * `integrateToolchains`
-
-* Rewrite `moduleSourceAsModule(...)` to the upstream compat shape while keeping our current module storage model:
-
-```go
-func (s *moduleSourceSchema) moduleSourceAsModule(
+func (container *Container) WithFile(
 	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
-	args struct {
-		ForceDefaultFunctionCaching bool   `internal:"true" default:"false"`
-		LegacyDefaultPath           bool   `internal:"true" default:"false"`
-		LegacyArgCustomizationsJSON string `internal:"true" default:""`
-		LegacyNameOverride          string `internal:"true" default:""`
-		LegacyWorkspaceConfigJSON   string `internal:"true" default:""`
-		LegacyDefaultsFromDotEnv    bool   `internal:"true" default:"false"`
-	},
-) (dagql.ObjectResult[*core.Module], error)
+	parent dagql.ObjectResult[*Container],
+	srv *dagql.Server,
+	destPath string,
+	src dagql.ObjectResult[*File],
+	permissions *int,
+	owner string,
+) (*Container, error)
 ```
 
-* Concrete body plan:
-  * keep the current engine-version compatibility checks
-  * keep `ForceDefaultFunctionCaching`
-  * keep `ContextSource`
-  * if `src.Blueprint` is set:
-    * use the blueprint as the execution source
-    * keep the original `src` as `ContextSource`
-    * copy original `Toolchains` onto the blueprint source before dependency loading, matching upstream behavior
-  * build the base module inline:
+3. Remove Dockerfile-only fields from the container lazy/persisted structs:
+
+- `ContainerWithDirectoryLazy`
+- `persistedContainerWithDirectoryLazy`
+- `ContainerWithFileLazy`
+- `persistedContainerWithFileLazy`
+
+Specifically remove:
+
+- `DoNotCreateDestPath`
+- `AttemptUnpackDockerCompatibility`
+- `RequiredSourcePath`
+- `DestPathHintIsDirectory`
+- `CopySourcePathContentsWhenDir`
+
+from the generic container-copy path. This is specifically about the container-owned lazy structs; it does **not** imply that the lower-level directory `withFile(...)` path drops the branch-final hidden args that still exist there.
+
+4. Update all callsites in `core/schema/container.go` and internal lazy evaluation so the generic path only uses the simplified generic signatures above.
+
+### core/directory.go
+
+Mirror the final branch split in core:
+
+- generic `Directory.WithDirectory(...)` becomes generic again
+- a new `Directory.WithDirectoryDockerfileCompat(...)` owns Dockerfile-only copy semantics
+
+1. Simplify `DirectoryWithDirectoryLazy` and `persistedDirectoryWithDirectoryLazy` to the generic form.
+
+Target:
 
 ```go
-mod := &core.Module{
-	Source:                        dagql.NonNull(execSrc),
-	ContextSource:                 dagql.NonNull(contextSrc),
-	NameField:                     originalSrc.Self().ModuleName,
-	OriginalName:                  execSrc.Self().ModuleOriginalName,
-	SDKConfig:                     execSrc.Self().SDK,
-	DisableDefaultFunctionCaching: execSrc.Self().DisableDefaultFunctionCaching,
+type DirectoryWithDirectoryLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Directory]
+	DestDir string
+	Source dagql.ObjectResult[*Directory]
+	Filter CopyFilter
+	Owner string
 }
-mod.Deps, err = s.loadDependencyModules(ctx, execSrc)
 ```
 
-  * apply compat settings before module install:
-    * `LegacyNameOverride`
-    * `LegacyDefaultPath`
-    * `LegacyWorkspaceConfigJSON`
-    * `LegacyDefaultsFromDotEnv`
-  * initialize via existing helpers:
-    * SDK present => existing `runModuleDefInSDK(...)`
-    * no SDK => existing `createStubModule(...)`
-  * after typedefs exist, apply:
-    * `mod.ApplyWorkspaceDefaultsToTypeDefs()`
-    * `mod.ApplyLegacyCustomizationsToTypeDefs(customizations)`
-
-* `loadDependencyModules(...)` should return `*core.SchemaBuilder` and load both dependencies and toolchains via plain `asModule`:
+with a matching persisted JSON struct carrying only:
 
 ```go
-func (s *moduleSourceSchema) loadDependencyModules(
+ParentResultID uint64
+DestDir string
+SourceResultID uint64
+Filter CopyFilter
+Owner string
+```
+
+2. Add a new Dockerfile-specific lazy/persisted pair.
+
+```go
+type DirectoryWithDirectoryDockerfileCompatLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Directory]
+	DestDir string
+	SrcPath string
+	Source dagql.ObjectResult[*Directory]
+	Filter CopyFilter
+	Owner string
+	Permissions *int
+	FollowSymlink bool
+	DirCopyContents bool
+	AttemptUnpackDockerCompatibility bool
+	CreateDestPath bool
+	AllowWildcard bool
+	AllowEmptyWildcard bool
+	AlwaysReplaceExistingDestPaths bool
+}
+```
+
+with a matching persisted JSON struct carrying the same fields.
+
+3. Wire the new lazy type into the same persistence/evaluation machinery as the rest of our directory lazy model.
+
+That means adding:
+
+- a `decodePersistedDirectoryLazy(...)` case for the new persisted compat payload
+- `Evaluate(...)`, `AttachDependencies(...)`, and `EncodePersisted(...)` methods on `DirectoryWithDirectoryDockerfileCompatLazy`
+
+Target shape:
+
+```go
+func (lazy *DirectoryWithDirectoryDockerfileCompatLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	return lazy.LazyState.Evaluate(ctx, "Directory.withDirectoryDockerfileCompat", func(ctx context.Context) error {
+		return dir.WithDirectoryDockerfileCompat(
+			ctx,
+			lazy.Parent,
+			lazy.DestDir,
+			lazy.SrcPath,
+			lazy.Source,
+			lazy.Filter,
+			lazy.Owner,
+			lazy.Permissions,
+			lazy.FollowSymlink,
+			lazy.DirCopyContents,
+			lazy.AttemptUnpackDockerCompatibility,
+			lazy.CreateDestPath,
+			lazy.AllowWildcard,
+			lazy.AllowEmptyWildcard,
+			lazy.AlwaysReplaceExistingDestPaths,
+		)
+	})
+}
+```
+
+4. Add a new core method matching the branch’s Dockerfile-specific compat surface, but expressed in our current lazy/mutating `Directory` model:
+
+```go
+func (dir *Directory) WithDirectoryDockerfileCompat(
 	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
-) (*core.SchemaBuilder, error)
+	parent dagql.ObjectResult[*Directory],
+	destDir string,
+	srcPath string,
+	src dagql.ObjectResult[*Directory],
+	filter CopyFilter,
+	owner string,
+	permissions *int,
+	followSymlink bool,
+	dirCopyContents bool,
+	attemptUnpackDockerCompatibility bool,
+	createDestPath bool,
+	allowWildcard bool,
+	allowEmptyWildcard bool,
+	alwaysReplaceExistingDestPaths bool,
+) error
 ```
 
-* Concrete behavior:
-  * load `src.Dependencies` with `asModule`
-  * load `src.Toolchains` with `asModule`
-  * do **not** call `_asToolchain`
-  * start from `query.DefaultDeps(ctx)`
-  * replace the core view for `src.EngineVersion`
-  * append dependency and toolchain modules as `core.NewUserMod(...)`
+This is where we adapt the branch’s compat API shape onto our branch’s lazy architecture. The external compat knobs still match what the converter emits, but the implementation follows our existing `Directory.WithDirectory(...)` mutation/evaluation pattern rather than the branch’s eager clone-returning shape.
 
-* Keep the current implementation-scoped helpers:
-  * `_implementationScoped`
-  * `ImplementationScopedModuleSource(...)`
-  * `moduleSourceDigest(...)`
-* Do **not** switch these sites to upstream's `GetModuleFromContentDigest` helpers.
-
-### core/schema/module.go
-* Keep our current richer module schema surface and current `module.runtime` nullable behavior.
-* Take only the workspace-entrypoint-serving change from upstream:
+5. The important body should follow the branch’s final semantics, not our current generic hidden-arg approach:
 
 ```go
-func (s *moduleSchema) moduleServe(ctx context.Context, mod dagql.ObjectResult[*core.Module], args struct {
-	IncludeDependencies dagql.Optional[dagql.Boolean]
-	Entrypoint          dagql.Optional[dagql.Boolean]
-}) (dagql.Nullable[core.Void], error)
-```
-
-* Pass that through to the new `Server.ServeModule(..., entrypoint bool)` signature.
-* Merge the two `currentTypeDefs` variants instead of choosing one:
-  * keep our `returnAllTypes` argument and the current ObjectResult-based closure expansion
-  * add upstream `hideCore` support on the same field
-  * preserve `stripCoreQueryFunctions`, but translate it to operate on canonical `dagql.ObjectResultArray[*core.TypeDef]`
-* Target shape:
-
-```go
-type currentTypeDefsArgs struct {
-	ReturnAllTypes bool `default:"false"`
-	HideCore       dagql.Optional[dagql.Boolean]
+dagqlCache, err := dagql.EngineCache(ctx)
+if err != nil {
+	return err
+}
+if err := dagqlCache.Evaluate(ctx, parent, src); err != nil {
+	return err
 }
 
-func (s *moduleSchema) currentTypeDefs(
-	ctx context.Context,
-	self *core.Query,
-	args currentTypeDefsArgs,
-) (dagql.ObjectResultArray[*core.TypeDef], error)
-```
-
-* Extend the internal `function(...)` schema constructor so the live `Query` typedef can preserve module provenance:
-
-```go
-func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct {
-	Name             string
-	ReturnType       core.TypeDefID
-	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
-}) (*core.Function, error)
-```
-
-  * when `SourceModuleName` is set, assign it directly to the constructed `core.Function`
-
-* Concrete behavior:
-  * load served typedefs from `served.TypeDefs(ctx, dag)`
-  * always replace the served `Query` typedef with the live `currentQueryTypeDef(ctx, dag)` result
-  * append the live `Query` typedef if the served typedef set does not already contain it
-  * if `hideCore == true`, run `stripCoreQueryFunctions(ctx, dag, typeDefs)` on that live-overlaid typedef set
-  * if `returnAllTypes`, keep using `expandTypeDefClosure(ctx, dag, typeDefs)`
-* `currentQueryTypeDef(...)` must build the live `Query` typedef from the current served schema and preserve module provenance on functions:
-  * inspect the live `Query` `FieldSpec` for each introspected field
-  * if the field has `FieldSpec.Module != nil` and `FieldSpec.Module.ResultRef != nil`, treat it as a user-module field and pass `FieldSpec.Module.Name` into the internal `function(...)` constructor as `sourceModuleName`
-  * if the field has no module result ref, leave `SourceModuleName` empty so core API fields stay core
-  * this keeps the live `Query` typedef both current **and** filterable
-* `stripCoreQueryFunctions` must:
-  * preserve all non-Query typedefs unchanged
-  * preserve all Query functions whose `SourceModuleName != ""`
-  * preserve the `with` field even if it is not module-sourced, since that is the entrypoint constructor surface
-  * rebuild the filtered `Query` object and typedef through the existing canonical schema mutators:
-    * start from `__objectTypeDef`
-    * re-apply kept fields with `__withField`
-    * re-apply kept functions with `__withFunction`
-    * turn the rebuilt object back into a typedef with `core.SelectTypeDefWithServer(... "__withObjectTypeDef" ...)`
-  * do **not** clone-and-mutate `.Self()` values
-  * do **not** use `dagql.NewObjectResultForCurrentCall(...)` here; `currentTypeDefs` is not the constructor identity of these canonical typedef objects
-  * keep core return types (`Container`, `Directory`, etc.) in the typedef list so chaining still works
-* This is the intended responsibility split:
-  * `CoreMod.TypeDefs(...)` stays cached and core-only
-  * `currentTypeDefs(...)` is the one API that overlays the live served `Query`
-  * `hideCore` filtering then operates on that live, provenance-preserving `Query`
-
-### core/sdk.go and core/sdk/*
-* Hard-cut all SDK interfaces and implementations from `*ModDeps` to `*SchemaBuilder`.
-* Keep the current runtime model unchanged:
-  * `ModuleRuntime`
-  * `ContainerRuntime`
-  * native Dang runtime
-* Update:
-  * `core/sdk.go`
-  * `core/sdk/dang_sdk.go`
-  * `core/sdk/go_sdk.go`
-  * `core/sdk/module.go`
-  * `core/sdk/module_runtime.go`
-  * `core/sdk/module_typedefs.go`
-  * `core/sdk/module_code_generator.go`
-  * `core/sdk/module_client_generator.go`
-* For the nested Go SDK typedef generation path specifically:
-  * scope the partially initialized module with `ScopeModuleForSDKOperation(...)` before launching `codegen generate-typedefs`
-  * encode that scoped module ID into `execMD.EncodedModuleID`
-  * do **not** rely on `cmd/codegen/common.go` `WithSkipWorkspaceModules()` for this path; nested execs attach through the session-env connection path, so that client option is a no-op there
-
-### core/modfunc.go
-* Mostly keep the current branch behavior.
-* Rename deps/runtime loading to `*SchemaBuilder`.
-* Keep the current workspace argument injection path:
-  * `loadWorkspaceArg(...)`
-  * current mounted `/.daggermod` output read
-* Keep the current constructor/default precedence behavior:
-  * `WorkspaceConfig`
-  * `DefaultsFromDotEnv`
-  * `LegacyDefaultPath`
-* Do not reintroduce any `Module.ResultID` or selector-based output-file loading.
-
-### core/modules/config.go
-* Follow upstream exactly here; this file is already aligned.
-* Keep the reduced-but-still-present toolchain config model:
-
-```go
-type ModuleConfig struct {
-	Blueprint  *ModuleConfigDependency   `json:"blueprint,omitempty"`
-	Toolchains []*ModuleConfigDependency `json:"toolchains,omitempty"`
-	...
+dirRef, err := parent.Self().getSnapshot()
+if err != nil {
+	return fmt.Errorf("failed to get directory ref: %w", err)
+}
+srcRef, err := src.Self().getSnapshot()
+if err != nil {
+	return fmt.Errorf("failed to get source directory ref: %w", err)
 }
 
-type ModuleConfigDependency struct {
-	Name             string
-	Source           string
-	Pin              string
-	Customizations   []*ModuleConfigArgument `json:"customizations,omitempty"`
-	IgnoreChecks     []string                `json:"ignoreChecks,omitempty"`
-	IgnoreGenerators []string                `json:"ignoreGenerators,omitempty"`
+destDir = path.Join(dir.Dir, destDir)
+
+newRef, err := query.SnapshotManager().New(
+	ctx,
+	dirRef,
+	bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	bkcache.WithDescription("Directory.withDirectoryDockerfileCompat"),
+)
+if err != nil {
+	return fmt.Errorf("snapshotmanager.New failed: %w", err)
+}
+defer newRef.Release(context.WithoutCancel(ctx))
+
+err = MountRef(ctx, newRef, func(copyDest string, destMnt *mount.Mount) error {
+	resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
+	if err != nil {
+		return err
+	}
+	if srcRef == nil {
+		return os.MkdirAll(resolvedCopyDest, 0o755)
+	}
+
+	// mount source, build fscopy opts, and preserve the branch-final
+	// Dockerfile compat flow around srcPath / trailing slash / createDestPath
+
+	if attemptUnpackDockerCompatibility {
+		destPathHintIsDirectory := strings.HasSuffix(resolvedCopyDest, "/")
+		didUnpack, err := attemptCopyArchiveUnpack(
+			ctx,
+			mountedSrcPath,
+			srcPathCopy,
+			resolvedCopyDest,
+			filter.Include,
+			filter.Exclude,
+			filter.Gitignore,
+			ownership,
+			permissions,
+			newRef.IdentityMapping(),
+			destPathHintIsDirectory,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to unpack source archive: %w", err)
+		}
+		if didUnpack {
+			return nil
+		}
+	}
+
+	pathsToCopy := []string{src.Self().Dir}
+	if srcPath != "" {
+		if src.Self().Dir != "" && src.Self().Dir != "/" {
+			srcPath = src.Self().Dir + "/" + srcPath
+		}
+		pathsToCopy, err = fscopy.ResolveWildcards(mountedSrcPath, srcPath, true)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, srcPath := range pathsToCopy {
+		copyDestPath := destDir
+		if strings.HasSuffix(destDir, "/") && !strings.HasSuffix(copyDestPath, "/") {
+			copyDestPath += "/"
+		}
+		if !createDestPath {
+			destDirPath := filepath.Dir(path.Join(copyDest, copyDestPath))
+			if _, err := os.Lstat(destDirPath); err != nil {
+				return TrimErrPathPrefix(err, path.Join(mountedSrcPath, src.Self().Dir))
+			}
+		}
+		if err := fscopy.Copy(ctx, mountedSrcPath, srcPath, copyDest, copyDestPath, opts...); err != nil {
+			return fmt.Errorf("failed to copy source directory: %w", err)
+		}
+	}
+	return nil
+})
+if err != nil {
+	return err
+}
+
+ref, err := newRef.Commit(ctx)
+if err != nil {
+	return fmt.Errorf("failed to commit copied directory: %w", err)
+}
+return dir.setSnapshot(ref)
+```
+
+This is the big semantic pivot:
+
+- no `requiredSourcePath`
+- no `copySourcePathContentsWhenDir`
+- no persisted `destPathHintIsDirectory`
+- trailing slash on `path` plus explicit `srcPath` / `dirCopyContents` / `createDestPath` drive the Dockerfile compatibility behavior instead
+
+The compat signature intentionally still carries:
+
+- `followSymlink`
+- `dirCopyContents`
+- `allowWildcard`
+- `allowEmptyWildcard`
+- `alwaysReplaceExistingDestPaths`
+
+because that is the Dockerfile-converter-facing compat surface the branch emits. We do **not** invent extra compat knobs beyond that set, and we do **not** keep the superseded knobs that the branch stopped emitting.
+
+6. Keep the generic `Directory.WithDirectory(...)` implementation simple and generic, matching the branch’s final model: just merge/copy a directory ID into a destination path with filter + owner.
+
+7. Do **not** remove the branch-final hidden file-copy knobs from `Directory.WithFile(...)` or `WithFileArgs` in this pass. The requested range removes the directory-copy reconstruction knobs and fallback hacks, but it does not hard-cut `doNotCreateDestPath` / `attemptUnpackDockerCompatibility` out of the lower-level file path.
+
+### util/llbtodagger/convert.go
+
+Preserve destination trailing slash in `cleanPath(...)` because the final branch uses path shape itself as part of Dockerfile copy intent.
+
+Target:
+
+```go
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	trailingSlash := strings.HasSuffix(p, "/") || strings.HasSuffix(p, "/.")
+	p = path.Clean(p)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	if trailingSlash && !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	return p
 }
 ```
 
-### cmd/dagger/*
-* Reconcile the CLI after the engine/core foundation is settled.
-* The upstream files to translate are:
-  * `cmd/dagger/module.go`
-  * `cmd/dagger/module_inspect.go`
-  * `cmd/dagger/call.go`
-  * `cmd/dagger/functions.go`
-  * `cmd/dagger/checks.go`
-  * `cmd/dagger/generators.go`
-  * `cmd/dagger/mcp.go`
-  * `cmd/dagger/session.go`
-  * `cmd/dagger/shell.go`
-  * `cmd/dagger/shell_commands.go`
-  * `cmd/dagger/shell_completion.go`
-  * `cmd/dagger/shell_exec.go`
-  * `cmd/dagger/shell_fs.go`
-  * `cmd/dagger/shell_help.go`
-* Keep upstream workspace/session behavior.
-* Keep the reduced upstream toolchain behavior where it still exists.
-* Delete only references to our branch-local toolchain registry / shadow-module / projection model.
+This stays in the plan exactly because the branch range explicitly introduced it, and for Dockerfile-specific path-shape semantics the branch range leads.
 
-### tests / validation
-* Keep the upstream new workspace/session/legacy coverage:
-  * `core/integration/workspace_test.go`
-  * `core/schema/workspace_test.go`
-  * `engine/server/session_test.go`
-  * `core/workspace/detect_test.go`
-  * `core/workspace/legacy_test.go`
-  * `core/module_legacy_test.go`
-  * `core/host_test.go`
-* Keep toolchain coverage that still matches upstream's reduced model.
-* Only rewrite/delete tests that specifically assert the branch-local toolchain registry / shadow-module behavior.
-* Generated SDK/docs/static artifacts are last.
+### util/llbtodagger/file.go
 
-### Validation
-* First-pass focused validation after the reconciliation:
+Adopt the branch’s final Dockerfile-only lowering model: `COPY` / `ADD` file actions should lower to `__withDirectoryDockerfileCompat(...)`, not to the current generic `withDirectory(...)` / `withFile(...)` hidden-arg combinations.
 
-```bash
-go test ./core/workspace -run 'TestDetect|TestParseLegacy'
+1. Replace the current split lowering logic in `applyCopy(...)` with the branch-style compat call.
+
+Target shape:
+
+```go
+args := []*call.Argument{
+	argString("srcPath", cleanPath(cp.Src)),
+	argString("path", cleanPath(cp.Dest)),
+	argID("source", sourceID),
+}
+
+if cp.FollowSymlink {
+	args = append(args, argBool("followSymlink", true))
+}
+if cp.DirCopyContents {
+	args = append(args, argBool("dirCopyContents", true))
+}
+if cp.AttemptUnpackDockerCompatibility {
+	args = append(args, argBool("attemptUnpackDockerCompatibility", true))
+}
+if cp.CreateDestPath {
+	args = append(args, argBool("createDestPath", true))
+}
+if cp.AllowWildcard {
+	args = append(args, argBool("allowWildcard", true))
+}
+if cp.AllowEmptyWildcard {
+	args = append(args, argBool("allowEmptyWildcard", true))
+}
+if len(cp.IncludePatterns) > 0 {
+	args = append(args, argStringList("include", cp.IncludePatterns))
+}
+if len(cp.ExcludePatterns) > 0 {
+	args = append(args, argStringList("exclude", cp.ExcludePatterns))
+}
+if owner != "" {
+	args = append(args, argString("owner", owner))
+}
+if cp.Mode >= 0 {
+	args = append(args, argInt("permissions", int64(cp.Mode)))
+}
+
+return appendCall(baseID, directoryType(), "__withDirectoryDockerfileCompat", args...), baseContainerID, nil
 ```
 
-```bash
-go test ./engine/server -run 'Test.*Workspace'
+2. Remove the now-obsolete generic-path helpers from this file:
+
+- `explicitFileCopyPath`
+- `requiredSourcePathForCopy`
+- `copySourcePathContentsWhenDir`
+- `copyDestPathHintIsDirectory`
+
+Those existed only to make the generic path behave like Dockerfile copy semantics. The final branch model is to stop doing that and route Dockerfile copy semantics through the dedicated internal API instead.
+
+3. Keep the final branch behavior that `AlwaysReplaceExistingDestPaths` is still rejected at conversion time.
+
+```go
+if cp.AlwaysReplaceExistingDestPaths {
+	return nil, nil, fmt.Errorf("alwaysReplaceExistingDestPaths is unsupported")
+}
 ```
 
-```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestWorkspace'
+4. When porting the branch code, normalize the emitted GraphQL arg name to `allowEmptyWildcard` in lower camel case. The branch snapshot currently shows `AllowEmptyWildcard` in one place, but the schema field is lower camel and the compat surface should use the schema-consistent spelling.
+
+### util/llbtodagger/convert_test.go
+
+Delete this file.
+
+The requested branch range deletes the old util-level converter tests rather than carrying them forward. They are anchored to the superseded generic hidden-arg lowering model, and retaining them while we switch to `__withDirectoryDockerfileCompat(...)` would be the wrong source of truth.
+
+### util/llbtodagger/dockerfile_convert_test.go
+
+Delete this file.
+
+Same reason as above: the branch we are following does not carry these util-level Dockerfile converter tests forward. Coverage responsibility lives in the integration-level llbtodagger and Dockerfile suites instead of preserving these stale direct-shape tests.
+
+### core/integration/dockerfile_test.go
+
+Import the Dockerfile parity coverage that was added in the branch range and is still missing here.
+
+1. Add the two missing-secret cases into `TestDockerBuild`, immediately after the existing `"with build secrets"` coverage.
+
+Required-missing-secret failure:
+
+```go
+t.Run("missing secret fails when required is set", func(ctx context.Context, t *testctx.T) {
+	dockerfile := `FROM ` + alpineImage + `
+RUN --mount=type=secret,id=my-secret,required=true echo this should not run
+`
+	dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+	_, err := dir.DockerBuild().Sync(ctx)
+	require.Error(t, err)
+	require.ErrorContains(t, err, `secret "my-secret" is required but no secret mappings were provided`)
+})
 ```
 
-```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestLegacy|TestModule'
+Optional-missing-secret success:
+
+```go
+t.Run("missing secret is ok when required is false", func(ctx context.Context, t *testctx.T) {
+	dockerfile := `FROM ` + alpineImage + `
+RUN --mount=type=secret,id=my-secret,required=false echo this is fine
+`
+	dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+	_, err := dir.DockerBuild().Sync(ctx)
+	require.NoError(t, err)
+})
 ```
 
-* And one toolchain-oriented smoke test after the toolchain translation is settled, using whatever current integration coverage still matches upstream's reduced toolchain behavior.
+2. Add the missing healthcheck coverage into `TestDockerBuild`, near the other metadata/parity assertions.
 
-* The point of these is:
-  * `TestWorkspace` validates the workspace/session foundation directly
-  * `TestModule` catches the compat/runtime fallout
-  * `TestLegacy` catches the legacy `dagger.json` adapter behavior after the workspace/toolchain compat translation
+```go
+t.Run("healthcheck", func(ctx context.Context, t *testctx.T) {
+	dockerfile := `FROM ` + alpineImage + `
+HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --retries=5 CMD ["sh","-c","test -d /"]
+`
+	dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+	healthcheck := dir.DockerBuild().DockerHealthcheck()
+
+	interval, err := healthcheck.Interval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "21s", interval)
+
+	timeout, err := healthcheck.Timeout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "4s", timeout)
+
+	startPeriod, err := healthcheck.StartPeriod(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "9s", startPeriod)
+
+	startInterval, err := healthcheck.StartInterval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "2s", startInterval)
+
+	retries, err := healthcheck.Retries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 5, retries)
+
+	args, err := healthcheck.Args(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"sh", "-c", "test -d /"}, args)
+})
+```
+
+3. Add the missing “HTTP `ADD` does not auto-unpack” integration as a standalone test alongside the other `ADD` / unpack coverage.
+
+```go
+func (DockerfileSuite) TestAddHTTPDoesNotUnpack(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	svc := c.Container().
+		From(alpineImage).
+		WithDirectory("/srv", c.Directory().WithNewFile("mydir/data", "hello")).
+		WithExec([]string{"sh", "-c", "cd /srv && tar czf remotedir.tar.gz mydir"}).
+		WithExposedPort(80).
+		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
+		AsService()
+
+	dir := c.Directory().WithNewFile("Dockerfile", `
+FROM ` + alpineImage + `
+ADD http://fileserver/remotedir.tar.gz this-should-not-unpack
+`)
+
+	ctr := dir.DockerBuild().
+		WithServiceBinding("fileserver", svc)
+
+	_, err := ctr.WithExec([]string{"test", "-f", "this-should-not-unpack"}).Sync(ctx)
+	require.NoError(t, err)
+
+	s, err := ctr.WithExec([]string{"sh", "-c", "mkdir the-dir && tar xzf this-should-not-unpack -C the-dir"}).File("the-dir/mydir/data").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello", s)
+}
+```
+
+4. Keep the existing skipped checksum-on-HTTP tests exactly as-is for now. This pass is about importing the branch-range parity cases we actually care about, not changing the HTTP-checksum support decision.
+
+### dagql/idtui/testdata/TestTelemetry/TestGolden/docker-build
+
+After the Dockerfile copy path is rerouted through `__withDirectoryDockerfileCompat(...)` and the restored `container.build(...)` wrapper is back, rerun the focused telemetry golden tests for docker-build and update this golden if the traced call shape changes.
+
+The key point is not to hand-edit it from memory. The file should be regenerated from the focused telemetry test run after the implementation is done.
+
+### dagql/idtui/testdata/TestTelemetry/TestGolden/docker-build-fail
+
+Same as the success golden above: rerun the focused telemetry test and update this file only if the internal call graph change produces a new expected trace.
