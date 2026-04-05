@@ -11,6 +11,10 @@
   ],
   "dependencies": [
     {
+      "name": "csharp-sdk-dev",
+      "source": "../csharp-sdk-dev"
+    },
+    {
       "name": "dotnet-sdk-dev",
       "source": "../dotnet-sdk-dev"
     },

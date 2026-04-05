@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="Dagger.SDK\Dagger.SDK.csproj" />
+  <Project Path="Dagger.SDK.Analyzers\Dagger.SDK.Analyzers.csproj" />
+  <Project Path="Dagger.SDK.CodeFixes\Dagger.SDK.CodeFixes.csproj" />
+  <Project Path="Dagger.SDK.CodeGen.Tests/Dagger.SDK.CodeGen.Tests.csproj" />
+  <Project Path="Dagger.SDK.CodeGen\Dagger.SDK.CodeGen.csproj" />
+  <Project Path="Dagger.SDK.Tests\Dagger.SDK.Tests.csproj" />
+  <Project Path="Dagger.SDK.Analyzers.Tests\Dagger.SDK.Analyzers.Tests.csproj" />
+  <Project Path="..\codegen\Codegen.csproj" />
+</Solution>

@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="ifaces/impl/Impl.csproj" />
+  <Project Path="ifaces/test/Test.csproj" />
+  <Project Path="ifaces/caller/Caller.csproj" />
+</Solution>

@@ -1,0 +1,7 @@
+{
+  "name": "factory-example",
+  "engineVersion": "v0.19.11",
+  "sdk": {
+    "source": "github.com/pjmagee/dagger/sdk/csharp@csharp/experimental"
+  }
+}

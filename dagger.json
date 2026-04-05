@@ -18,6 +18,10 @@
       "source": "toolchains/cli-dev"
     },
     {
+      "name": "csharp-sdk",
+      "source": "toolchains/csharp-sdk-dev"
+    },
+    {
       "name": "docs",
       "source": "toolchains/docs-dev"
     },

@@ -61,6 +61,7 @@ func all[T any]() []namedSDK[T] {
 		{"typescript", dag.TypescriptSDKDev()},
 		{"python", dag.PythonSDKDev()},
 		{"dotnet", dag.DotnetSDKDev()},
+		{"csharp", dag.CsharpSDKDev()},
 		{"java", dag.JavaSDKDev()},
 		{"rust", dag.RustSDKDev()},
 		{"elixir", dag.ElixirSDKDev()},
