@@ -3361,15 +3361,6 @@ func TestInterfaces(t *testing.T) {
 		}
 		assert.Assert(t, foundNode, "Point should auto-implement Node")
 
-		// Point should NOT implement Syncer (no sync field).
-		foundSyncer := false
-		for _, iface := range res.Type.Interfaces {
-			if iface.Name == "Syncer" {
-				foundSyncer = true
-			}
-		}
-		assert.Assert(t, !foundSyncer, "Point should NOT auto-implement Syncer")
-
 		// Node interface should have Point in possibleTypes
 		var ifaceRes struct {
 			Type struct {
@@ -3386,44 +3377,46 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, foundPoint, "Node interface should include Point in possibleTypes")
 	})
 
-	t.Run("auto Syncer interface", func(t *testing.T) {
+	t.Run("AddAutoInterface and AutoImplementInterfaces", func(t *testing.T) {
 		srv := dagql.NewServer(Query{}, newCache(t))
 		introspection.Install[Query](srv)
 
+		// Register a custom auto-interface with a "sync" field.
+		syncable := dagql.NewInterface("Syncable", "Can be synced.")
+		syncable.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "id",
+				Type: dagql.AnyID{},
+			},
+		})
+		syncable.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "sync",
+				Type: dagql.AnyID{},
+			},
+		})
+		srv.AddAutoInterface(syncable)
+
 		gql := client.New(dagql.NewDefaultHandler(srv))
 
-		// Syncer interface should exist in introspection with id and sync fields.
+		// The interface should exist and implement Node.
 		var ifaceRes struct {
 			Type struct {
-				Kind          string
-				Name          string
-				Description   string
-				Fields        []struct{ Name string }
-				Interfaces    []struct{ Name string }
+				Kind       string
+				Interfaces []struct{ Name string }
 			} `json:"__type"`
 		}
-		req(t, gql, `{ __type(name: "Syncer") { kind name description fields { name } interfaces { name } } }`, &ifaceRes)
+		req(t, gql, `{ __type(name: "Syncable") { kind interfaces { name } } }`, &ifaceRes)
 		assert.Equal(t, "INTERFACE", ifaceRes.Type.Kind)
-		assert.Equal(t, "Syncer", ifaceRes.Type.Name)
-
-		// Should have id and sync fields.
-		fieldNames := map[string]bool{}
-		for _, f := range ifaceRes.Type.Fields {
-			fieldNames[f.Name] = true
-		}
-		assert.Assert(t, fieldNames["id"], "Syncer should have id field")
-		assert.Assert(t, fieldNames["sync"], "Syncer should have sync field")
-
-		// Syncer should implement Node (it has id: ID!).
 		foundNode := false
 		for _, iface := range ifaceRes.Type.Interfaces {
 			if iface.Name == "Node" {
 				foundNode = true
 			}
 		}
-		assert.Assert(t, foundNode, "Syncer should implement Node")
+		assert.Assert(t, foundNode, "Syncable should implement Node")
 
-		// Point does NOT have sync, so it should NOT implement Syncer.
+		// Point (no sync) should NOT implement it.
 		points.Install[Query](srv)
 		var pointRes struct {
 			Type struct {
@@ -3432,11 +3425,11 @@ func TestInterfaces(t *testing.T) {
 		}
 		req(t, gql, `{ __type(name: "Point") { interfaces { name } } }`, &pointRes)
 		for _, iface := range pointRes.Type.Interfaces {
-			assert.Assert(t, iface.Name != "Syncer", "Point should NOT implement Syncer")
+			assert.Assert(t, iface.Name != "Syncable", "Point should NOT implement Syncable")
 		}
 
-		// Line HAS sync (added via Fields[T].Install below), so it SHOULD
-		// implement Syncer after AutoImplementInterfaces runs.
+		// Line with sync added via Fields[T].Install SHOULD implement it
+		// (AutoImplementInterfaces is called at the end of Install).
 		dagql.Fields[*points.Line]{
 			dagql.Func("sync", func(ctx context.Context, self *points.Line, _ struct{}) (dagql.ID[*points.Line], error) {
 				return dagql.ID[*points.Line]{}, nil
@@ -3453,24 +3446,22 @@ func TestInterfaces(t *testing.T) {
 		for _, iface := range lineRes.Type.Interfaces {
 			lineIfaces = append(lineIfaces, iface.Name)
 		}
-		assert.Assert(t, slices.Contains(lineIfaces, "Syncer"),
-			"Line with sync field should auto-implement Syncer, got: %v", lineIfaces)
-		assert.Assert(t, slices.Contains(lineIfaces, "Node"),
-			"Line should also implement Node, got: %v", lineIfaces)
+		assert.Assert(t, slices.Contains(lineIfaces, "Syncable"),
+			"Line with sync field should auto-implement Syncable, got: %v", lineIfaces)
 
-		// Syncer should now have Line in possibleTypes.
-		var syncerPossible struct {
+		// Syncable should have Line in possibleTypes.
+		var possibleRes struct {
 			Type struct {
 				PossibleTypes []struct{ Name string }
 			} `json:"__type"`
 		}
-		req(t, gql, `{ __type(name: "Syncer") { possibleTypes { name } } }`, &syncerPossible)
+		req(t, gql, `{ __type(name: "Syncable") { possibleTypes { name } } }`, &possibleRes)
 		var possibleNames []string
-		for _, pt := range syncerPossible.Type.PossibleTypes {
+		for _, pt := range possibleRes.Type.PossibleTypes {
 			possibleNames = append(possibleNames, pt.Name)
 		}
 		assert.Assert(t, slices.Contains(possibleNames, "Line"),
-			"Syncer possibleTypes should include Line, got: %v", possibleNames)
+			"Syncable possibleTypes should include Line, got: %v", possibleNames)
 	})
 
 	t.Run("inline fragments", func(t *testing.T) {

@@ -187,38 +187,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 	})
 	srv.interfaces[nodeIface.TypeName()] = nodeIface
 
-	syncerIface := NewInterface("Syncer", FormatDescription(
-		`An object that can be force-evaluated.`,
-		`Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.`,
-	))
-	syncerIface.AddField(InterfaceFieldSpec{
-		FieldSpec: FieldSpec{
-			Name: "id",
-			Type: AnyID{},
-		},
-	})
-	syncerIface.AddField(InterfaceFieldSpec{
-		FieldSpec: FieldSpec{
-			Name: "sync",
-			Type: AnyID{},
-		},
-	})
-	srv.interfaces[syncerIface.TypeName()] = syncerIface
-
-	srv.autoInterfaces = []*Interface{nodeIface, syncerIface}
-
-	// Resolve interface-implements-interface among core interfaces.
-	// Syncer has id: ID!, so it implements Node.
-	for _, iface := range srv.autoInterfaces {
-		for _, other := range srv.autoInterfaces {
-			if other.TypeName() == iface.TypeName() {
-				continue
-			}
-			if other.SatisfiedByInterface(iface, "") {
-				iface.ImplementInterface(other)
-			}
-		}
-	}
+	srv.autoInterfaces = []*Interface{nodeIface}
 
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
@@ -552,11 +521,16 @@ func (s *Server) AutoImplementInterfaces(class ObjectType) {
 func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive) *Interface {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
-	if existing, ok := s.interfaces[iface.TypeName()]; ok {
-		return existing
-	}
 	if len(directives) > 0 {
 		iface.directives = append(iface.directives, directives...)
+	}
+	return s.installInterfaceLocked(iface)
+}
+
+// installInterfaceLocked is the lock-held implementation of InstallInterface.
+func (s *Server) installInterfaceLocked(iface *Interface) *Interface {
+	if existing, ok := s.interfaces[iface.TypeName()]; ok {
+		return existing
 	}
 	s.interfaces[iface.TypeName()] = iface
 
@@ -572,6 +546,28 @@ func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive
 
 	s.invalidateSchemaCache()
 	return iface
+}
+
+// AddAutoInterface registers an interface for automatic implementation.
+// Any subsequently installed object or interface that structurally satisfies
+// it will automatically declare conformance. Already-installed objects are
+// NOT retroactively checked — call this before installing objects, or use
+// AutoImplementInterfaces to re-check specific types.
+func (s *Server) AddAutoInterface(iface *Interface) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	iface = s.installInterfaceLocked(iface)
+	s.autoInterfaces = append(s.autoInterfaces, iface)
+
+	// Resolve interface-implements-interface among all auto-interfaces.
+	for _, other := range s.autoInterfaces {
+		if other.TypeName() == iface.TypeName() {
+			continue
+		}
+		if other.SatisfiedByInterface(iface, "") {
+			iface.ImplementInterface(other)
+		}
+	}
 }
 
 // InterfaceType returns the Interface with the given name, if it exists.
