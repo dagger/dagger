@@ -136,19 +136,7 @@ func makeImplementsChecker(
 		typeIface, typeOK := dag.InterfaceType(typeName)
 		targetIface, targetOK := dag.InterfaceType(ifaceName)
 		if typeOK && targetOK {
-			// Check that all fields in targetIface exist in typeIface
-			// with compatible types (recursive checker).
-			for _, targetField := range targetIface.FieldSpecs(dag.View) {
-				typeField, ok := typeIface.FieldSpec(targetField.Name, dag.View)
-				if !ok {
-					return false
-				}
-				// Simple name match for now (exact types).
-				if targetField.Type.Type().Name() != typeField.Type.Type().Name() {
-					return false
-				}
-			}
-			return true
+			return targetIface.SatisfiedByInterface(typeIface, dag.View)
 		}
 		return false
 	}
@@ -162,17 +150,12 @@ func registerInterfaceImpls(
 ) error {
 	checker := makeImplementsChecker(dag, objects, ifaces)
 	for _, objType := range objects {
-		obj := objType.typeDef
-		class, found := dag.ObjectType(obj.Name)
+		class, found := dag.ObjectType(objType.typeDef.Name)
 		if !found {
-			return fmt.Errorf("failed to find object %q in schema", obj.Name)
+			return fmt.Errorf("failed to find object %q in schema", objType.typeDef.Name)
 		}
 		for _, ifaceType := range ifaces {
-			iface := ifaceType.typeDef
-			if !obj.IsSubtypeOf(iface) {
-				continue
-			}
-			dagqlIface, ok := dag.InterfaceType(iface.Name)
+			dagqlIface, ok := dag.InterfaceType(ifaceType.typeDef.Name)
 			if !ok {
 				continue
 			}
@@ -211,10 +194,6 @@ func registerInterfaceToInterfaceImpls(
 			}
 			// Avoid circular references: don't declare A implements B if B already implements A.
 			if _, alreadyReverse := dagqlIfaceB.Interfaces()[dagqlIfaceA.TypeName()]; alreadyReverse {
-				continue
-			}
-			// Check core semantic conformance first (includes contravariance).
-			if !ifaceTypeA.typeDef.IsSubtypeOf(ifaceTypeB.typeDef) {
 				continue
 			}
 			if dagqlIfaceB.SatisfiedByInterface(dagqlIfaceA, dag.View, checker) {
