@@ -399,6 +399,36 @@ func (s *workspaceSchema) checks(
 	return &core.CheckGroup{Checks: allChecks}, nil
 }
 
+type workspaceGeneratorModule struct {
+	mod          dagql.ObjectResult[*core.Module]
+	name         string
+	group        *core.GeneratorGroup
+	sourceDigest string
+	isWrapper    bool
+}
+
+func selectVisibleGeneratorModules(entries []workspaceGeneratorModule) []workspaceGeneratorModule {
+	// If a wrapper module exposes generators from a blueprint/toolchain, hide the
+	// raw source module's generator namespace and keep the user-facing wrapper.
+	hasWrapperBySource := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if entry.isWrapper {
+			hasWrapperBySource[entry.sourceDigest] = true
+		} else if _, ok := hasWrapperBySource[entry.sourceDigest]; !ok {
+			hasWrapperBySource[entry.sourceDigest] = false
+		}
+	}
+
+	visible := make([]workspaceGeneratorModule, 0, len(entries))
+	for _, entry := range entries {
+		if hasWrapperBySource[entry.sourceDigest] && !entry.isWrapper {
+			continue
+		}
+		visible = append(visible, entry)
+	}
+	return visible
+}
+
 func (s *workspaceSchema) generators(
 	ctx context.Context,
 	parent *core.Workspace,
@@ -412,32 +442,50 @@ func (s *workspaceSchema) generators(
 		return nil, err
 	}
 
-	moduleGenerators := make([]struct {
-		mod   dagql.ObjectResult[*core.Module]
-		group *core.GeneratorGroup
-	}, 0, len(mods))
-	generatorModuleCount := 0
+	moduleGenerators := make([]workspaceGeneratorModule, 0, len(mods))
 	for _, mod := range mods {
 		generatorGroup, err := core.NewGeneratorGroup(ctx, mod, nil)
 		if err != nil {
 			return nil, fmt.Errorf("generators from module %q: %w", mod.Self().Name(), err)
 		}
-		if len(generatorGroup.Generators) > 0 {
-			generatorModuleCount++
+		if len(generatorGroup.Generators) == 0 {
+			continue
 		}
-		moduleGenerators = append(moduleGenerators, struct {
-			mod   dagql.ObjectResult[*core.Module]
-			group *core.GeneratorGroup
-		}{
-			mod:   mod,
-			group: generatorGroup,
+
+		source := mod.Self().GetSource()
+		if source == nil {
+			return nil, fmt.Errorf("generators from module %q: no module source available", mod.Self().Name())
+		}
+		sourceDigest, err := source.SourceImplementationDigest(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("generators from module %q: source implementation digest: %w", mod.Self().Name(), err)
+		}
+
+		isWrapper := false
+		contextSource := mod.Self().GetContextSource()
+		if contextSource != nil {
+			contextDigest, err := contextSource.SourceImplementationDigest(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("generators from module %q: context source implementation digest: %w", mod.Self().Name(), err)
+			}
+			isWrapper = sourceDigest != contextDigest
+		}
+
+		moduleGenerators = append(moduleGenerators, workspaceGeneratorModule{
+			mod:          mod,
+			name:         mod.Self().Name(),
+			group:        generatorGroup,
+			sourceDigest: sourceDigest.String(),
+			isWrapper:    isWrapper,
 		})
 	}
 
+	moduleGenerators = selectVisibleGeneratorModules(moduleGenerators)
+
 	var allGenerators []*core.Generator
-	allowSingleModuleCompat := generatorModuleCount == 1
+	allowSingleModuleCompat := len(moduleGenerators) == 1
 	for _, entry := range moduleGenerators {
-		reparentWorkspaceTreeRoot(entry.group.Node, entry.mod.Self().Name())
+		reparentWorkspaceTreeRoot(entry.group.Node, entry.name)
 		filtered, err := filterGeneratorsByInclude(
 			ctx,
 			entry.group.Generators,
