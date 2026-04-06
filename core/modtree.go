@@ -306,7 +306,24 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 		// Use explicit port mappings instead of native 1:1 tunneling.
 		portInputs := make([]dagql.InputObject[PortForward], len(portMappings))
 		for i, pf := range portMappings {
-			portInputs[i] = dagql.InputObject[PortForward]{Value: pf}
+			inputMap := map[string]any{
+				"backend": pf.Backend,
+			}
+			if pf.Frontend != nil {
+				inputMap["frontend"] = *pf.Frontend
+			}
+			if pf.Protocol != "" {
+				inputMap["protocol"] = string(pf.Protocol)
+			}
+			portInputAny, err := (dagql.InputObject[PortForward]{}).Decoder().DecodeInput(inputMap)
+			if err != nil {
+				return nil, fmt.Errorf("decode host tunnel port forward input: %w", err)
+			}
+			portInput, ok := portInputAny.(dagql.InputObject[PortForward])
+			if !ok {
+				return nil, fmt.Errorf("decode host tunnel port forward input: unexpected input %T", portInputAny)
+			}
+			portInputs[i] = portInput
 		}
 		tunnelArgs = append(tunnelArgs, dagql.NamedInput{
 			Name:  "ports",
