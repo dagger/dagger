@@ -2925,31 +2925,80 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 		return err
 	}
 
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dagql server: %w", err)
+	}
 	currentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
 	}
-	changed := false
 
-	patch, err := changes.Self().AsPatch(ctx)
+	var diffDir dagql.ObjectResult[*Directory]
+	afterID, err := changes.Self().After.ID()
 	if err != nil {
-		return fmt.Errorf("get changes patch: %w", err)
+		return fmt.Errorf("after ID: %w", err)
 	}
-	if patch != nil {
-		patchBytes, err := patch.Contents(ctx, nil, nil)
+	if err := srv.Select(ctx, changes.Self().Before, &diffDir,
+		dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{Name: "other", Value: dagql.NewID[*Directory](afterID)},
+			},
+		},
+	); err != nil {
+		return fmt.Errorf("compute structural diff: %w", err)
+	}
+	if err := cache.Evaluate(ctx, diffDir); err != nil {
+		return fmt.Errorf("evaluate structural diff: %w", err)
+	}
+
+	var diffSnapshot bkcache.ImmutableRef
+	if diffDir.Self() != nil {
+		diffSnapshot, err = diffDir.Self().getSnapshot()
 		if err != nil {
-			if !errors.Is(err, errEmptyResultRef) {
-				return fmt.Errorf("read changes patch: %w", err)
-			}
-			patchBytes = nil
+			return fmt.Errorf("diff snapshot: %w", err)
 		}
-		if len(patchBytes) > 0 {
-			currentSnapshot, err = dir.applyPatchToSnapshot(ctx, currentSnapshot, patchBytes)
-			if err != nil {
-				return fmt.Errorf("apply patch: %w", err)
-			}
-			changed = true
+	}
+	if !dir.IsRootDir() && diffSnapshot != nil {
+		diffID, err := diffDir.ID()
+		if err != nil {
+			return fmt.Errorf("diff ID: %w", err)
 		}
+		var rebasedDiff dagql.ObjectResult[*Directory]
+		if err := srv.Select(ctx, srv.Root(), &rebasedDiff,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(dir.Dir)},
+					{Name: "source", Value: dagql.NewID[*Directory](diffID)},
+				},
+			},
+		); err != nil {
+			return fmt.Errorf("rebase diff to target path: %w", err)
+		}
+		if err := cache.Evaluate(ctx, rebasedDiff); err != nil {
+			return fmt.Errorf("evaluate rebased diff: %w", err)
+		}
+		diffSnapshot, err = rebasedDiff.Self().getSnapshot()
+		if err != nil {
+			return fmt.Errorf("rebased diff snapshot: %w", err)
+		}
+	}
+
+	currentSnapshot, err = query.SnapshotManager().Merge(
+		ctx,
+		[]bkcache.ImmutableRef{currentSnapshot, diffSnapshot},
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("Directory.withChanges"),
+	)
+	if err != nil {
+		return fmt.Errorf("merge changes into target: %w", err)
 	}
 
 	paths, err := changes.Self().ComputePaths(ctx)
@@ -2961,21 +3010,48 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 		if err != nil {
 			return fmt.Errorf("remove paths: %w", err)
 		}
-		changed = true
+	}
+
+	var addedDirs []string
+	for _, p := range paths.Added {
+		if strings.HasSuffix(p, "/") {
+			addedDirs = append(addedDirs, strings.TrimSuffix(p, "/"))
+		}
+	}
+	if len(addedDirs) > 0 {
+		newRef, err := query.SnapshotManager().New(
+			ctx,
+			currentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withChanges add dirs %s", strings.Join(addedDirs, ","))),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
+			for _, p := range addedDirs {
+				resolvedDir, err := containerdfs.RootPath(root, path.Join(dir.Dir, p))
+				if err != nil {
+					return err
+				}
+				if err := os.MkdirAll(resolvedDir, 0o755); err != nil {
+					return TrimErrPathPrefix(err, root)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		currentSnapshot, err = newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	if currentSnapshot == nil {
 		return nil
-	}
-	if !changed {
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return err
-		}
-		currentSnapshot, err = query.SnapshotManager().GetBySnapshotID(ctx, currentSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
-		if err != nil {
-			return err
-		}
 	}
 	return dir.setSnapshot(currentSnapshot)
 }
