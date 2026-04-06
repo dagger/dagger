@@ -90,7 +90,6 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 							Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
 							Type:        Boolean(false),
 							Default:     Boolean(false),
-							Internal:    true,
 						},
 					),
 					// TODO: ?

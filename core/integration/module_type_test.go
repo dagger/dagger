@@ -696,7 +696,7 @@ export class Test {
 			require.NoError(t, err)
 			require.JSONEq(t, `{"set":{"get": "abc"}}`, out)
 
-			out, err = modGen.With(daggerQuery(`{set(data: "abc"){id}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{set(data: "abc"){id(recipe: true)}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			id := gjson.Get(out, "set.id").String()
 
@@ -824,7 +824,7 @@ export class Test {
 				With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
 				With(sdkSource(tc.sdk, tc.source))
 
-			out, err := modGen.With(daggerQuery(`{sayHello(name: "world"){id}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{sayHello(name: "world"){id(recipe: true)}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			id := gjson.Get(out, "sayHello.id").String()
 			var idp call.ID
