@@ -256,32 +256,51 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 // For primitive types (string, int, bool, float), it sets arg.DefaultValue
 // to the JSON representation. For object types (Secret, Directory, etc.),
 // it marks the arg as optional (since a default will be resolved at call time).
-func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
+func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *dagql.Server) error {
 	if mod.WorkspaceConfig == nil {
-		return
+		return nil
 	}
-	for _, objDef := range mod.ObjectDefs {
+	for i, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if !typeDef.AsObject.Valid {
 			continue
 		}
-		obj := typeDef.AsObject.Value.Self()
+		objTypeDef := typeDef.AsObject.Value
+		obj := objTypeDef.Self()
 		if !obj.Constructor.Valid {
 			continue
 		}
-		ctor := obj.Constructor.Value.Self()
-		for _, arg := range ctor.Args {
+		updatedConstructor := obj.Constructor.Value
+		for _, arg := range obj.Constructor.Value.Self().Args {
 			argSelf := arg.Self()
 			val, ok := lookupConfigCaseInsensitive(mod.WorkspaceConfig, argSelf.OriginalName, argSelf.Name)
 			if !ok {
 				continue
 			}
+			updatedArg := arg
 			if argSelf.TypeDef.Self().Kind == TypeDefKindObject {
-				// Object types (Secret, Directory, etc.): mark optional
-				// so --help shows it's not required
-				argSelf.TypeDef.Self().Optional = true
+				if !argSelf.TypeDef.Self().Optional {
+					var updatedTypeDef dagql.ObjectResult[*TypeDef]
+					if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{
+						Field: "withOptional",
+						Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+					}); err != nil {
+						return fmt.Errorf("workspace default optional arg %q type: %w", argSelf.Name, err)
+					}
+					if !sameAttachedResult(updatedTypeDef, argSelf.TypeDef) {
+						typeDefID, err := ResultIDInput(updatedTypeDef)
+						if err != nil {
+							return fmt.Errorf("workspace default optional arg %q type id: %w", argSelf.Name, err)
+						}
+						if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+							Field: "__withTypeDef",
+							Args:  []dagql.NamedInput{{Name: "typeDef", Value: typeDefID}},
+						}); err != nil {
+							return fmt.Errorf("workspace default optional arg %q: %w", argSelf.Name, err)
+						}
+					}
+				}
 			} else {
-				// Primitive types: set the JSON default value
 				userInput := configValueToString(val)
 				var jsonValue JSON
 				switch argSelf.TypeDef.Self().Kind {
@@ -310,7 +329,6 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
 					marshaled, _ := json.Marshal(b)
 					jsonValue = JSON(marshaled)
 				default:
-					// For other types, try to use the raw value as JSON
 					if json.Valid([]byte(userInput)) {
 						jsonValue = JSON(userInput)
 					} else {
@@ -321,73 +339,56 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
 						jsonValue = JSON(marshaled)
 					}
 				}
-				argSelf.DefaultValue = jsonValue
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultValue",
+					Args:  []dagql.NamedInput{{Name: "defaultValue", Value: jsonValue}},
+				}); err != nil {
+					return fmt.Errorf("workspace default arg %q value: %w", argSelf.Name, err)
+				}
+			}
+			if sameAttachedResult(updatedArg, arg) {
+				continue
+			}
+			argID, err := ResultIDInput(updatedArg)
+			if err != nil {
+				return fmt.Errorf("workspace default arg %q id: %w", argSelf.Name, err)
+			}
+			if err := dag.Select(ctx, updatedConstructor, &updatedConstructor, dagql.Selector{
+				Field: "__withArg",
+				Args:  []dagql.NamedInput{{Name: "arg", Value: argID}},
+			}); err != nil {
+				return fmt.Errorf("workspace default constructor arg %q: %w", argSelf.Name, err)
 			}
 		}
-	}
-}
-
-func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(customizations []*modules.ModuleConfigArgument) {
-	if len(customizations) == 0 {
-		return
-	}
-	for _, cust := range customizations {
-		if cust == nil {
+		if sameAttachedResult(updatedConstructor, obj.Constructor.Value) {
 			continue
 		}
-		fn, found := mod.lookupCustomizationFunction(cust.Function)
-		if !found {
+		constructorID, err := ResultIDInput(updatedConstructor)
+		if err != nil {
+			return fmt.Errorf("workspace default constructor id: %w", err)
+		}
+		updatedObjectTypeDef := objTypeDef
+		if err := dag.Select(ctx, updatedObjectTypeDef, &updatedObjectTypeDef, dagql.Selector{
+			Field: "__withConstructor",
+			Args:  []dagql.NamedInput{{Name: "function", Value: constructorID}},
+		}); err != nil {
+			return fmt.Errorf("workspace default constructor: %w", err)
+		}
+		if sameAttachedResult(updatedObjectTypeDef, objTypeDef) {
 			continue
 		}
-		arg, found := lookupFunctionArg(fn, cust.Argument)
-		if !found {
-			continue
+		objectTypeDefID, err := ResultIDInput(updatedObjectTypeDef)
+		if err != nil {
+			return fmt.Errorf("workspace default object typedef id: %w", err)
 		}
-		applyLegacyArgCustomization(arg, cust)
-	}
-}
-
-func (mod *Module) lookupCustomizationFunction(path []string) (*Function, bool) {
-	obj, ok := mod.MainObject()
-	if !ok {
-		return nil, false
-	}
-	if len(path) == 0 {
-		if !obj.Constructor.Valid {
-			return nil, false
+		if err := dag.Select(ctx, objDef, &mod.ObjectDefs[i], dagql.Selector{
+			Field: "__withObjectTypeDef",
+			Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objectTypeDefID}},
+		}); err != nil {
+			return fmt.Errorf("workspace default object typedef: %w", err)
 		}
-		return obj.Constructor.Value.Self(), true
 	}
-	for i, segment := range path {
-		fn, ok := functionByOriginalName(obj, segment)
-		if !ok {
-			return nil, false
-		}
-		if i == len(path)-1 {
-			return fn, true
-		}
-		nextObj, ok := mod.lookupCustomizationObject(fn.ReturnType.Self())
-		if !ok {
-			return nil, false
-		}
-		obj = nextObj
-	}
-	return nil, false
-}
-
-func (mod *Module) lookupCustomizationObject(typeDef *TypeDef) (*ObjectTypeDef, bool) {
-	if typeDef == nil || !typeDef.AsObject.Valid {
-		return nil, false
-	}
-
-	obj := typeDef.AsObject.Value
-	if canonical, ok := mod.ObjectByOriginalName(obj.Self().OriginalName); ok {
-		return canonical, true
-	}
-	if canonical, ok := mod.ObjectByName(obj.Self().Name); ok {
-		return canonical, true
-	}
-	return obj.Self(), true
+	return nil
 }
 
 func functionByOriginalName(obj *ObjectTypeDef, name string) (*Function, bool) {
@@ -400,6 +401,16 @@ func functionByOriginalName(obj *ObjectTypeDef, name string) (*Function, bool) {
 	return nil, false
 }
 
+func functionResultByOriginalName(obj *ObjectTypeDef, name string) (dagql.ObjectResult[*Function], bool) {
+	for _, fn := range obj.Functions {
+		fnSelf := fn.Self()
+		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, gqlFieldName(name)) {
+			return fn, true
+		}
+	}
+	return dagql.ObjectResult[*Function]{}, false
+}
+
 func lookupFunctionArg(fn *Function, name string) (*FunctionArg, bool) {
 	for _, arg := range fn.Args {
 		argSelf := arg.Self()
@@ -410,23 +421,245 @@ func lookupFunctionArg(fn *Function, name string) (*FunctionArg, bool) {
 	return nil, false
 }
 
-func applyLegacyArgCustomization(arg *FunctionArg, cust *modules.ModuleConfigArgument) {
-	if jsonValue, ok := legacyArgDefaultValue(arg.TypeDef.Self(), cust.Default); ok {
-		arg.DefaultValue = jsonValue
+func functionArgResultByName(fn *Function, name string) (dagql.ObjectResult[*FunctionArg], bool) {
+	for _, arg := range fn.Args {
+		argSelf := arg.Self()
+		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, gqlFieldName(name)) {
+			return arg, true
+		}
 	}
-	if cust.DefaultPath != "" {
-		arg.DefaultPath = cust.DefaultPath
-		arg.DefaultAddress = ""
-		arg.TypeDef.Self().Optional = true
+	return dagql.ObjectResult[*FunctionArg]{}, false
+}
+
+func (mod *Module) objectTypeDefResultByOriginalName(name string) (dagql.ObjectResult[*TypeDef], bool) {
+	for _, objDef := range mod.ObjectDefs {
+		typeDef := objDef.Self()
+		if typeDef.AsObject.Valid {
+			obj := typeDef.AsObject.Value.Self()
+			if gqlObjectName(obj.OriginalName) == gqlObjectName(name) {
+				return objDef, true
+			}
+		}
 	}
-	if cust.DefaultAddress != "" {
-		arg.DefaultAddress = cust.DefaultAddress
-		arg.DefaultPath = ""
-		arg.TypeDef.Self().Optional = true
+	return dagql.ObjectResult[*TypeDef]{}, false
+}
+
+func (mod *Module) objectTypeDefResultByName(name string) (dagql.ObjectResult[*TypeDef], bool) {
+	for _, objDef := range mod.ObjectDefs {
+		typeDef := objDef.Self()
+		if typeDef.AsObject.Valid {
+			obj := typeDef.AsObject.Value.Self()
+			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+				return objDef, true
+			}
+		}
 	}
-	if len(cust.Ignore) > 0 {
-		arg.Ignore = append([]string(nil), cust.Ignore...)
+	return dagql.ObjectResult[*TypeDef]{}, false
+}
+
+func (mod *Module) mainObjectTypeDefResult() (dagql.ObjectResult[*TypeDef], bool) {
+	name := mod.OriginalName
+	if name == "" {
+		name = mod.NameField
 	}
+	return mod.objectTypeDefResultByOriginalName(name)
+}
+
+func (mod *Module) customizationTarget(path []string) (dagql.ObjectResult[*TypeDef], dagql.ObjectResult[*Function], bool) {
+	objDef, ok := mod.mainObjectTypeDefResult()
+	if !ok {
+		return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+	}
+	obj := objDef.Self().AsObject.Value.Self()
+	if len(path) == 0 {
+		if !obj.Constructor.Valid {
+			return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+		}
+		return objDef, obj.Constructor.Value, true
+	}
+	for i, segment := range path {
+		fn, ok := functionResultByOriginalName(obj, segment)
+		if !ok {
+			return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+		}
+		if i == len(path)-1 {
+			return objDef, fn, false
+		}
+		returnType := fn.Self().ReturnType.Self()
+		if returnType == nil || !returnType.AsObject.Valid {
+			return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+		}
+		nextObjDef, ok := mod.objectTypeDefResultByOriginalName(returnType.AsObject.Value.Self().OriginalName)
+		if !ok {
+			nextObjDef, ok = mod.objectTypeDefResultByName(returnType.AsObject.Value.Self().Name)
+			if !ok {
+				return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+			}
+		}
+		objDef = nextObjDef
+		obj = objDef.Self().AsObject.Value.Self()
+	}
+	return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+}
+
+func (mod *Module) patchFunctionArg(
+	ctx context.Context,
+	dag *dagql.Server,
+	fn dagql.ObjectResult[*Function],
+	argName string,
+	patch func(dagql.ObjectResult[*FunctionArg]) (dagql.ObjectResult[*FunctionArg], error),
+) (dagql.ObjectResult[*Function], bool, error) {
+	arg, ok := functionArgResultByName(fn.Self(), argName)
+	if !ok {
+		return fn, false, nil
+	}
+	updatedArg, err := patch(arg)
+	if err != nil {
+		return fn, false, err
+	}
+	if sameAttachedResult(updatedArg, arg) {
+		return fn, false, nil
+	}
+	argID, err := ResultIDInput(updatedArg)
+	if err != nil {
+		return fn, false, fmt.Errorf("patched arg %q id: %w", argName, err)
+	}
+	updatedFn := fn
+	if err := dag.Select(ctx, updatedFn, &updatedFn, dagql.Selector{
+		Field: "__withArg",
+		Args:  []dagql.NamedInput{{Name: "arg", Value: argID}},
+	}); err != nil {
+		return fn, false, fmt.Errorf("patch function arg %q: %w", argName, err)
+	}
+	return updatedFn, !sameAttachedResult(updatedFn, fn), nil
+}
+
+func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag *dagql.Server, customizations []*modules.ModuleConfigArgument) error {
+	if len(customizations) == 0 {
+		return nil
+	}
+	for _, cust := range customizations {
+		if cust == nil {
+			continue
+		}
+		objDef, fn, constructor := mod.customizationTarget(cust.Function)
+		if !objDef.Self().AsObject.Valid {
+			continue
+		}
+		updatedFn, changed, err := mod.patchFunctionArg(ctx, dag, fn, cust.Argument, func(arg dagql.ObjectResult[*FunctionArg]) (dagql.ObjectResult[*FunctionArg], error) {
+			updatedArg := arg
+			argSelf := arg.Self()
+			setOptional := cust.DefaultPath != "" || cust.DefaultAddress != ""
+			if setOptional && !argSelf.TypeDef.Self().Optional {
+				var updatedTypeDef dagql.ObjectResult[*TypeDef]
+				if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{
+					Field: "withOptional",
+					Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q optional type: %w", argSelf.Name, err)
+				}
+				if !sameAttachedResult(updatedTypeDef, argSelf.TypeDef) {
+					typeDefID, err := ResultIDInput(updatedTypeDef)
+					if err != nil {
+						return updatedArg, fmt.Errorf("legacy customization arg %q optional type id: %w", argSelf.Name, err)
+					}
+					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+						Field: "__withTypeDef",
+						Args:  []dagql.NamedInput{{Name: "typeDef", Value: typeDefID}},
+					}); err != nil {
+						return updatedArg, fmt.Errorf("legacy customization arg %q optional type apply: %w", argSelf.Name, err)
+					}
+				}
+			}
+			if jsonValue, ok := legacyArgDefaultValue(argSelf.TypeDef.Self(), cust.Default); ok {
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultValue",
+					Args:  []dagql.NamedInput{{Name: "defaultValue", Value: jsonValue}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q default value: %w", argSelf.Name, err)
+				}
+			}
+			if cust.DefaultPath != "" {
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultPath",
+					Args:  []dagql.NamedInput{{Name: "defaultPath", Value: dagql.String(cust.DefaultPath)}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q default path: %w", argSelf.Name, err)
+				}
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultAddress",
+					Args:  []dagql.NamedInput{{Name: "defaultAddress", Value: dagql.String("")}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q clear default address: %w", argSelf.Name, err)
+				}
+			}
+			if cust.DefaultAddress != "" {
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultAddress",
+					Args:  []dagql.NamedInput{{Name: "defaultAddress", Value: dagql.String(cust.DefaultAddress)}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q default address: %w", argSelf.Name, err)
+				}
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultPath",
+					Args:  []dagql.NamedInput{{Name: "defaultPath", Value: dagql.String("")}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q clear default path: %w", argSelf.Name, err)
+				}
+			}
+			if len(cust.Ignore) > 0 {
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withIgnore",
+					Args:  []dagql.NamedInput{{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(cust.Ignore...))}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q ignore: %w", argSelf.Name, err)
+				}
+			}
+			return updatedArg, nil
+		})
+		if err != nil {
+			return err
+		}
+		if !changed {
+			continue
+		}
+		updatedObjectTypeDef := objDef.Self().AsObject.Value
+		fnID, err := ResultIDInput(updatedFn)
+		if err != nil {
+			return fmt.Errorf("legacy customization function id: %w", err)
+		}
+		if constructor {
+			if err := dag.Select(ctx, updatedObjectTypeDef, &updatedObjectTypeDef, dagql.Selector{
+				Field: "__withConstructor",
+				Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+			}); err != nil {
+				return fmt.Errorf("legacy customization constructor %v: %w", cust.Function, err)
+			}
+		} else {
+			if err := dag.Select(ctx, updatedObjectTypeDef, &updatedObjectTypeDef, dagql.Selector{
+				Field: "__withFunction",
+				Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+			}); err != nil {
+				return fmt.Errorf("legacy customization function %v: %w", cust.Function, err)
+			}
+		}
+		objectTypeDefID, err := ResultIDInput(updatedObjectTypeDef)
+		if err != nil {
+			return fmt.Errorf("legacy customization object typedef id: %w", err)
+		}
+		for i, existing := range mod.ObjectDefs {
+			if sameAttachedResult(existing, objDef) {
+				if err := dag.Select(ctx, existing, &mod.ObjectDefs[i], dagql.Selector{
+					Field: "__withObjectTypeDef",
+					Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objectTypeDefID}},
+				}); err != nil {
+					return fmt.Errorf("legacy customization object typedef: %w", err)
+				}
+				break
+			}
+		}
+	}
+	return nil
 }
 
 func legacyArgDefaultValue(typeDef *TypeDef, value string) (JSON, bool) {

@@ -3113,14 +3113,18 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// Apply legacy arg customizations and workspace defaults after type defs
 	// are populated (SDK codegen has run) but before the result is cached.
 	if args.LegacyWorkspaceConfigJSON != "" {
-		mod.ApplyWorkspaceDefaultsToTypeDefs()
+		if err := mod.ApplyWorkspaceDefaultsToTypeDefs(ctx, dag); err != nil {
+			return inst, err
+		}
 	}
 	if args.LegacyArgCustomizationsJSON != "" {
 		var customizations []*modules.ModuleConfigArgument
 		if err := json.Unmarshal([]byte(args.LegacyArgCustomizationsJSON), &customizations); err != nil {
 			return inst, fmt.Errorf("decoding legacy arg customizations: %w", err)
 		}
-		mod.ApplyLegacyCustomizationsToTypeDefs(customizations)
+		if err := mod.ApplyLegacyCustomizationsToTypeDefs(ctx, dag, customizations); err != nil {
+			return inst, err
+		}
 	}
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, mod)
