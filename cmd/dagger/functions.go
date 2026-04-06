@@ -90,10 +90,6 @@ type FuncCommand struct {
 	// DisableModuleLoad skips adding a flag for loading a user Dagger Module.
 	DisableModuleLoad bool
 
-	// ParseTargetArgs optionally rewrites command args into function-path args
-	// and may return an explicit workspace binding.
-	ParseTargetArgs func(args []string, argsLenAtDash int) (*string, []string, error)
-
 	// cmd is the parent cobra command.
 	cmd *cobra.Command
 
@@ -189,18 +185,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					execArgs = stripHelpArgs(execArgs)
 				}
 
-				var workspaceRef *string
-				if fc.ParseTargetArgs != nil {
-					var err error
-					workspaceRef, execArgs, err = fc.ParseTargetArgs(execArgs, c.Flags().ArgsLenAtDash())
-					if err != nil {
-						return err
-					}
-				}
-
 				params := initModuleParams(execArgs)
 				params.SkipWorkspaceModules = shouldSkipWorkspaceModules(fc.DisableModuleLoad)
-				params.Workspace = workspaceRef
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient

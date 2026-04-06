@@ -18,6 +18,7 @@ var configJSONOutput bool
 func init() {
 	configCmd.PersistentFlags().BoolVar(&configJSONOutput, "json", false, "output in JSON format")
 	configCmd.AddGroup(moduleGroup)
+	setWorkspaceFlagPolicy(configCmd, workspaceFlagPolicyDisallow)
 }
 
 var configCmd = &cobra.Command{

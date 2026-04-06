@@ -49,6 +49,7 @@ type workspaceLockRefreshModulesResponse struct {
 
 func init() {
 	lockCmd.AddCommand(lockUpdateCmd)
+	setWorkspaceFlagPolicy(lockCmd, workspaceFlagPolicyLocalOnly)
 }
 
 var lockCmd = &cobra.Command{

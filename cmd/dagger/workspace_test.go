@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,6 +99,42 @@ func TestGenHelpDoesNotPanicWithModuleSubcommands(t *testing.T) {
 
 	_, err := rootCmd.ExecuteC()
 	require.NoError(t, err)
+}
+
+func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	installGlobalFlags(flags)
+
+	workdirFlag := flags.Lookup("workdir")
+	require.NotNil(t, workdirFlag)
+	require.Empty(t, workdirFlag.Shorthand)
+	require.True(t, workdirFlag.Hidden)
+
+	workspaceFlag := flags.Lookup("workspace")
+	require.NotNil(t, workspaceFlag)
+	require.Equal(t, "W", workspaceFlag.Shorthand)
+	require.False(t, workspaceFlag.Hidden)
+
+	webFlag := flags.Lookup("web")
+	require.NotNil(t, webFlag)
+	require.Equal(t, "w", webFlag.Shorthand)
+}
+
+func TestWorkspaceFlagPolicy(t *testing.T) {
+	oldWorkspaceRef := workspaceRef
+	t.Cleanup(func() {
+		workspaceRef = oldWorkspaceRef
+	})
+
+	workspaceRef = "github.com/acme/ws"
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil), "must be a local path")
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(migrateCmd, nil), "not supported")
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source", "x"}), "must be a local path")
+	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source"}))
+
+	workspaceRef = "./local-workspace"
+	require.NoError(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil))
+	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))
 }
 
 func TestWriteWorkspaceInfo(t *testing.T) {

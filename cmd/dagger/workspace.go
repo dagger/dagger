@@ -139,6 +139,9 @@ func init() {
 	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceInfoCmd)
 	workspaceCmd.AddCommand(workspaceListCmd)
+
+	setWorkspaceFlagPolicy(workspaceInitCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(initCmd, workspaceFlagPolicyLocalOnly)
 }
 
 func runWorkspaceInit(cmd *cobra.Command, _ []string) error {

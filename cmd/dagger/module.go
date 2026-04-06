@@ -253,6 +253,15 @@ func init() {
 	toolchainCmd.AddCommand(toolchainUpdateCmd)
 	toolchainCmd.AddCommand(toolchainUninstallCmd)
 	toolchainCmd.AddCommand(toolchainListCmd)
+
+	setWorkspaceFlagPolicy(moduleCmd, workspaceFlagPolicyDisallow)
+	setWorkspaceFlagPolicy(moduleInitCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(moduleUpdateCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(moduleDepInstallCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(moduleUnInstallCmd, workspaceFlagPolicyDisallow)
+	setWorkspaceFlagPolicy(moduleDevelopCmd, workspaceFlagPolicyDisallow)
+	setWorkspaceFlagPolicy(modulePublishCmd, workspaceFlagPolicyDisallow)
+	setWorkspaceFlagPolicy(toolchainCmd, workspaceFlagPolicyDisallow)
 }
 
 var moduleInitCmd = &cobra.Command{

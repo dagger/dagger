@@ -36,16 +36,15 @@ var callCoreCmd = &FuncCommand{
 }
 
 var callModCmd = &FuncCommand{
-	Name:            "call [options] [workspace --] [function]...",
-	Short:           "Call one or more functions, interconnected into a pipeline",
-	ParseTargetArgs: parseCallTargetArgs,
+	Name:  "call [options] [function]...",
+	Short: "Call one or more functions, interconnected into a pipeline",
 	Annotations: map[string]string{
 		printTraceLinkKey: "true",
 	},
 }
 
 var funcListCmd = &cobra.Command{
-	Use:   "functions [options] [workspace --] [function]...",
+	Use:   "functions [options] [function]...",
 	Short: `List available functions`,
 	Long: strings.ReplaceAll(`List available functions in a module.
 
@@ -55,21 +54,15 @@ available functions.
 Examples:
   dagger functions                           # List top-level functions in current workspace
   dagger functions container                 # List functions on container
-  dagger functions github.com/acme/ws --     # List top-level functions in explicit workspace
-  dagger functions github.com/acme/ws -- container from
+  dagger -W github.com/acme/ws functions     # List top-level functions in explicit workspace
+  dagger -W github.com/acme/ws functions container from
 `,
 		"´",
 		"`",
 	),
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		workspaceRef, functionPath, err := parseFunctionsTargetArgs(args, cmd.Flags().ArgsLenAtDash())
-		if err != nil {
-			return err
-		}
-
-		params := initModuleParams(functionPath)
-		params.Workspace = workspaceRef
+		params := initModuleParams(args)
 		return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 			// -m modules are loaded at engine connect time as extra modules.
 			mod, err := initializeWorkspace(ctx, engineClient.Dagger(), loadTypeDefsOpts{HideCore: true})
@@ -78,7 +71,7 @@ Examples:
 			}
 			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
-			for i, field := range functionPath {
+			for i, field := range args {
 				// Lookup the next function in the specified pipeline
 				nextFunc, err := GetSupportedFunction(mod, o, field)
 				if err != nil && i == 0 {
@@ -112,12 +105,12 @@ Examples:
 			// workspace mode (multiple modules as sub-commands). When a
 			// main module is set (single module or -m), or when navigating
 			// into a module type, show all functions.
-			filterCore := len(functionPath) == 0 &&
+			filterCore := len(args) == 0 &&
 				mod.MainObject.AsObject != nil &&
 				mod.MainObject.AsObject.Name == "Query"
 
 			var siblingFns []*modFunction
-			if len(functionPath) == 0 &&
+			if len(args) == 0 &&
 				mod.MainObject.AsObject != nil &&
 				mod.MainObject.AsObject.Name != "Query" {
 				siblingFns = mod.siblingModuleEntrypoints()

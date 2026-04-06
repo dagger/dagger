@@ -70,6 +70,10 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
+	if params.Workspace == nil && workspaceRef != "" {
+		ref := workspaceRef
+		params.Workspace = &ref
+	}
 	if !moduleNoURL {
 		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
 			params.Module = modRef

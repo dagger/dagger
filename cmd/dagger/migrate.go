@@ -57,6 +57,7 @@ var migrateCmd = &cobra.Command{
 
 func init() {
 	migrateCmd.Flags().BoolVarP(&migrateList, "list", "l", false, "List migratable modules instead of performing migration")
+	setWorkspaceFlagPolicy(migrateCmd, workspaceFlagPolicyDisallow)
 }
 
 func detectMigrationTarget(cwd string) (*workspacecfg.ErrMigrationRequired, string, error) {

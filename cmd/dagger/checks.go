@@ -32,7 +32,7 @@ func init() {
 var checksCmd = &cobra.Command{
 	Hidden:  true,
 	Aliases: []string{"checks"},
-	Use:     "check [options] [workspace --] [pattern...]",
+	Use:     "check [options] [pattern...]",
 	Short:   "Check the state of your project by running tests, linters, etc.",
 	Long: `Check the state of your project by running tests, linters, etc.
 
@@ -40,19 +40,12 @@ Examples:
   dagger check                    # Run all checks
   dagger check -l                 # List all available checks
   dagger check go:lint            # Run the go:lint check and any subchecks
-  dagger check github.com/acme/ws -- go:lint  # Run check(s) against explicit workspace
-  dagger check -- go:lint         # Run check(s) in current workspace (explicit separator)
+  dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		workspaceRef, patterns, err := parseChecksTargetArgs(args, cmd.Flags().ArgsLenAtDash())
-		if err != nil {
-			return err
-		}
-
 		params := client.Params{
 			EnableCloudScaleOut: enableScaleOut,
-			Workspace:           workspaceRef,
 		}
 		return withEngine(
 			cmd.Context(),
@@ -61,8 +54,8 @@ Examples:
 				dag := engineClient.Dagger()
 				ws := dag.CurrentWorkspace()
 				var checks *dagger.CheckGroup
-				if len(patterns) > 0 {
-					checks = ws.Checks(dagger.WorkspaceChecksOpts{Include: patterns})
+				if len(args) > 0 {
+					checks = ws.Checks(dagger.WorkspaceChecksOpts{Include: args})
 				} else {
 					checks = ws.Checks()
 				}
