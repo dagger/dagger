@@ -46,18 +46,19 @@ type MigrationIO interface {
 
 // MigrationResult holds the output of a successful migration.
 type MigrationResult struct {
-	ProjectRoot       string
-	ConfigPath        string
-	ModuleName        string
-	ModuleNewPath     string
-	OldSourcePath     string
-	LookupSources     []string
-	DepRewriteCount   int
-	IncRewriteCount   int
-	ToolchainCount    int
-	BlueprintMigrated bool
-	RemovedFiles      []string
-	Warnings          []string
+	ProjectRoot         string
+	ConfigPath          string
+	MigrationReportPath string
+	ModuleName          string
+	ModuleNewPath       string
+	OldSourcePath       string
+	LookupSources       []string
+	DepRewriteCount     int
+	IncRewriteCount     int
+	ToolchainCount      int
+	BlueprintMigrated   bool
+	RemovedFiles        []string
+	Warnings            []string
 }
 
 // Summary returns a human-readable summary of the migration.
@@ -82,8 +83,14 @@ func (r *MigrationResult) Summary() string {
 	for _, f := range r.RemovedFiles {
 		fmt.Fprintf(&b, "  Removed: %s\n", f)
 	}
-	for _, w := range r.Warnings {
-		fmt.Fprintf(&b, "  Warning: %s\n", w)
+	if len(r.Warnings) > 0 {
+		if r.MigrationReportPath != "" {
+			fmt.Fprintf(&b, "  Warning: %d migration gap(s) need manual review; see %s\n", len(r.Warnings), r.MigrationReportPath)
+		} else {
+			for _, w := range r.Warnings {
+				fmt.Fprintf(&b, "  Warning: %s\n", w)
+			}
+		}
 	}
 	return b.String()
 }
@@ -162,8 +169,10 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 		result.Warnings = append(result.Warnings, w.message)
 	}
 
-	wsCfg := &Config{
-		Modules: make(map[string]ModuleEntry),
+	legacyWorkspace := legacyWorkspaceFromConfig(cfg)
+	wsCfg := &Config{Modules: make(map[string]ModuleEntry)}
+	if legacyWorkspace != nil {
+		wsCfg = legacyWorkspace.WorkspaceConfig()
 	}
 	if needsProjectModuleMigration {
 		wsCfg.Modules[cfg.Name] = ModuleEntry{
@@ -172,57 +181,37 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 		}
 	}
 
-	for _, tc := range cfg.Toolchains {
-		source := tc.Source
-		if isLocalRef(tc.Source, tc.Pin) {
-			source = filepath.Join("..", tc.Source)
-		}
-		wsCfg.Modules[tc.Name] = ModuleEntry{
-			Source:            source,
-			Config:            extractConfigDefaults(tc.Customizations),
-			LegacyDefaultPath: true,
-		}
-		result.ToolchainCount++
-		addMigrationLookupSource(result, source)
-
-		if tc.Pin != "" {
-			if err := setMigrationModuleResolvePin(migrateLock, source, tc.Pin); err != nil {
-				return nil, fmt.Errorf("setting lock for toolchain %q: %w", tc.Name, err)
+	if legacyWorkspace != nil {
+		for _, mod := range legacyWorkspace.Modules {
+			if mod.Entry.Blueprint {
+				result.BlueprintMigrated = true
+			} else {
+				result.ToolchainCount++
 			}
-			hasLockEntries = true
-		}
-	}
+			addMigrationLookupSource(result, mod.Entry.Source)
 
-	if cfg.Blueprint != nil {
-		source := cfg.Blueprint.Source
-		if isLocalRef(cfg.Blueprint.Source, cfg.Blueprint.Pin) {
-			source = filepath.Join("..", cfg.Blueprint.Source)
-		}
-		name := cfg.Blueprint.Name
-		if name == "" {
-			name = "blueprint"
-		}
-		wsCfg.Modules[name] = ModuleEntry{
-			Source:            source,
-			Blueprint:         true,
-			LegacyDefaultPath: true,
-		}
-		result.BlueprintMigrated = true
-		addMigrationLookupSource(result, source)
-
-		if cfg.Blueprint.Pin != "" {
-			if err := setMigrationModuleResolvePin(migrateLock, source, cfg.Blueprint.Pin); err != nil {
-				return nil, fmt.Errorf("setting lock for blueprint %q: %w", name, err)
+			if mod.Pin != "" {
+				if err := setMigrationModuleResolvePin(migrateLock, mod.Entry.Source, mod.Pin); err != nil {
+					return nil, fmt.Errorf("setting lock for module %q: %w", mod.ConfigName, err)
+				}
+				hasLockEntries = true
 			}
-			hasLockEntries = true
 		}
 	}
 	finalizeMigrationLookupSources(result)
 
-	configContent := generateMigrationConfigTOML(wsCfg, warnings)
 	configPath := filepath.Join(migErr.ProjectRoot, LockDirName, ConfigFileName)
-	if err := writeHostFile(ctx, bk, configPath, []byte(configContent)); err != nil {
+	if err := writeHostFile(ctx, bk, configPath, SerializeConfig(wsCfg)); err != nil {
 		return nil, fmt.Errorf("writing workspace config: %w", err)
+	}
+
+	if len(warnings) > 0 {
+		result.MigrationReportPath = filepath.Join(LockDirName, "migration-report.md")
+		reportPath := filepath.Join(migErr.ProjectRoot, result.MigrationReportPath)
+		reportContent := generateMigrationReportMarkdown(migErr.ConfigPath, warnings)
+		if err := writeHostFile(ctx, bk, reportPath, []byte(reportContent)); err != nil {
+			return nil, fmt.Errorf("writing migration report: %w", err)
+		}
 	}
 
 	if hasLockEntries {
@@ -310,76 +299,39 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([
 	return out, depRewriteCount, incRewriteCount, nil
 }
 
-// generateMigrationConfigTOML builds the .dagger/config.toml content using
-// hand-written TOML so warning comments stay attached to the migrated entries.
-func generateMigrationConfigTOML(cfg *Config, warnings []migrationWarning) string {
-	var b strings.Builder
-
-	warningsByModule := make(map[string][]migrationWarning)
-	for _, w := range warnings {
-		warningsByModule[w.module] = append(warningsByModule[w.module], w)
-	}
-
-	b.WriteString("[modules]\n")
-
-	moduleNames := make([]string, 0, len(cfg.Modules))
-	for name := range cfg.Modules {
-		moduleNames = append(moduleNames, name)
-	}
-	sort.Strings(moduleNames)
-
-	for _, name := range moduleNames {
-		entry := cfg.Modules[name]
-		b.WriteString("\n")
-		for _, w := range warningsByModule[name] {
-			b.WriteString(w.tomlComment())
-		}
-
-		fmt.Fprintf(&b, "[modules.%s]\n", name)
-		fmt.Fprintf(&b, "source = %q\n", entry.Source)
-		if entry.Blueprint {
-			b.WriteString("blueprint = true\n")
-		}
-		if entry.LegacyDefaultPath {
-			b.WriteString("legacy-default-path = true\n")
-		}
-
-		if len(entry.Config) == 0 {
-			continue
-		}
-
-		configKeys := make([]string, 0, len(entry.Config))
-		for key := range entry.Config {
-			configKeys = append(configKeys, key)
-		}
-		sort.Strings(configKeys)
-
-		fmt.Fprintf(&b, "\n[modules.%s.config]\n", name)
-		for _, key := range configKeys {
-			fmt.Fprintf(&b, "%s = %s\n", key, formatConfigValue(entry.Config[key]))
-		}
-	}
-
-	return b.String()
-}
-
 type migrationWarning struct {
 	module   string
 	message  string
 	original *modules.ModuleConfigArgument
 }
 
-func (w migrationWarning) tomlComment() string {
-	var b strings.Builder
-	b.WriteString("# WARNING: ")
-	b.WriteString(w.message)
-	b.WriteString("\n")
-	if w.original != nil {
-		origJSON, _ := json.Marshal(w.original)
-		b.WriteString("# Original: ")
-		b.Write(origJSON)
-		b.WriteString("\n")
+func (w migrationWarning) originalJSON() string {
+	if w.original == nil {
+		return ""
 	}
+	origJSON, err := json.MarshalIndent(w.original, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(origJSON)
+}
+
+func generateMigrationReportMarkdown(configPath string, warnings []migrationWarning) string {
+	var b strings.Builder
+
+	b.WriteString("# Migration Report\n\n")
+	fmt.Fprintf(&b, "Migration completed, but %d legacy configuration item(s) could not be migrated automatically.\n\n", len(warnings))
+	b.WriteString("Review the items below and re-apply them manually if they still matter.\n\n")
+	fmt.Fprintf(&b, "Legacy config: `%s`\n", filepath.Base(configPath))
+
+	for i, warning := range warnings {
+		fmt.Fprintf(&b, "\n## %d. Module `%s`\n\n", i+1, warning.module)
+		fmt.Fprintf(&b, "Problem: %s\n", warning.message)
+		if origJSON := warning.originalJSON(); origJSON != "" {
+			fmt.Fprintf(&b, "\nOriginal legacy customization:\n\n```json\n%s\n```\n", origJSON)
+		}
+	}
+
 	return b.String()
 }
 
@@ -398,7 +350,7 @@ func analyzeCustomizations(toolchains []*modules.ModuleConfigDependency) []migra
 				warnings = append(warnings, migrationWarning{
 					module: tc.Name,
 					message: fmt.Sprintf(
-						"customization for function %q could not be migrated (non-constructor)",
+						"function customization for %q could not be migrated automatically because workspace config only carries constructor config values",
 						funcName,
 					),
 					original: cust,
@@ -417,7 +369,7 @@ func analyzeCustomizations(toolchains []*modules.ModuleConfigDependency) []migra
 				if cust.DefaultAddress != "" {
 					parts = append(parts, "'defaultAddress'")
 				}
-				msg += " " + strings.Join(parts, " and ") + " customization that cannot be expressed as a config value"
+				msg += " " + strings.Join(parts, " and ") + " customization that cannot be expressed as a workspace config value"
 				warnings = append(warnings, migrationWarning{
 					module:   tc.Name,
 					message:  msg,

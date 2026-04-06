@@ -64,4 +64,50 @@ func TestParseLegacyPins(t *testing.T) {
 	require.Equal(t, "blueprint", blueprint.Name)
 	require.Equal(t, "github.com/acme/blueprint@main", blueprint.Source)
 	require.Equal(t, "blue123", blueprint.Pin)
+
+	legacyWorkspace, err := ParseLegacyWorkspace([]byte(`{
+		"name": "app",
+		"blueprint": {
+			"name": "blueprint",
+			"source": "./blueprint"
+		},
+		"toolchains": [{
+			"name": "go",
+			"source": "./toolchains/go",
+			"customizations": [{
+				"argument": "version",
+				"default": "1.24.1"
+			}]
+		}]
+	}`))
+	require.NoError(t, err)
+	require.NotNil(t, legacyWorkspace)
+	require.Len(t, legacyWorkspace.Modules, 2)
+	require.Equal(t, "../toolchains/go", legacyWorkspace.Modules[0].Entry.Source)
+	require.Equal(t, map[string]any{"version": "1.24.1"}, legacyWorkspace.Modules[0].Entry.Config)
+	require.Equal(t, "../blueprint", legacyWorkspace.Modules[1].Entry.Source)
+	require.True(t, legacyWorkspace.Modules[1].Entry.Blueprint)
+
+	cfg := legacyWorkspace.WorkspaceConfig()
+	require.Equal(t, ModuleEntry{
+		Source:            "../toolchains/go",
+		Config:            map[string]any{"version": "1.24.1"},
+		LegacyDefaultPath: true,
+	}, cfg.Modules["go"])
+	require.Equal(t, ModuleEntry{
+		Source:            "../blueprint",
+		Blueprint:         true,
+		LegacyDefaultPath: true,
+	}, cfg.Modules["blueprint"])
+
+	unnamedBlueprint, err := ParseLegacyWorkspace([]byte(`{
+		"name": "app",
+		"blueprint": {
+			"source": "./blueprint"
+		}
+	}`))
+	require.NoError(t, err)
+	require.NotNil(t, unnamedBlueprint)
+	require.Empty(t, unnamedBlueprint.Modules[0].Name)
+	require.Equal(t, "blueprint", unnamedBlueprint.Modules[0].ConfigName)
 }

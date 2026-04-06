@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -341,6 +343,78 @@ type Myapp {
 		require.NoError(t, err)
 		require.Contains(t, out, "Migrated to workspace format")
 	})
+
+	t.Run("writes a migration report for gaps and keeps config clean", func(ctx context.Context, t *testctx.T) {
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {
+      "name": "toolchain",
+      "source": "./toolchain",
+      "customizations": [
+        {
+          "argument": "src",
+          "defaultPath": "./custom-config.txt",
+          "ignore": ["node_modules"]
+        },
+        {
+          "function": ["build"],
+          "argument": "tag",
+          "default": "dev"
+        }
+      ]
+    }
+  ]
+}`)
+
+		out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
+		require.NotContains(t, out, "defaultPath")
+
+		configOut, err := ctr.File("/work/.dagger/config.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, configOut, "# WARNING:")
+		require.NotContains(t, configOut, "# Original:")
+
+		reportOut, err := ctr.File("/work/.dagger/migration-report.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, reportOut, "# Migration Report")
+		require.Contains(t, reportOut, "Module `toolchain`")
+		require.Contains(t, reportOut, `"defaultPath": "./custom-config.txt"`)
+	})
+}
+
+func (WorkspaceSuite) TestLegacyCompatModeWarning(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	blueprintDir := filepath.Join(workdir, "blueprint")
+	require.NoError(t, os.MkdirAll(blueprintDir, 0o755))
+
+	_, err := hostDaggerExec(ctx, t, blueprintDir, "module", "init", "--sdk=go", "--name=hello")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(blueprintDir, "main.go"), []byte(`package main
+
+import "context"
+
+type Hello struct{}
+
+func (m *Hello) Greet(ctx context.Context) string {
+	return "hello from blueprint"
+}
+`), 0o644))
+
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.json"), []byte(`{
+  "name": "app",
+  "blueprint": {
+    "name": "hello",
+    "source": "./blueprint"
+  }
+}`), 0o644))
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), "Inferring workspace behavior from legacy module config.")
+	require.Contains(t, string(out), "hello from blueprint")
 }
 
 // TestWorkspaceArg verifies that a module function accepting a Workspace

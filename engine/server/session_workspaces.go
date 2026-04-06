@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	telemetry "github.com/dagger/otel-go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -527,21 +528,20 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// --- Compat mode: extract toolchains/blueprints from legacy dagger.json ---
+	// --- Compat mode: project workspace-owned semantics from legacy dagger.json ---
 	// Once an initialized workspace config exists, it owns workspace-level module
 	// loading. Legacy dagger.json enrichment remains only for uninitialized
 	// workspaces.
-	var legacyToolchains []workspace.LegacyToolchain
-	var legacyBlueprint *workspace.LegacyBlueprint
+	var legacyWorkspace *workspace.LegacyWorkspace
 	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
 	legacyCallerDir := legacyCallerModuleDir(isLocal, moduleDir)
 	if wsConfig == nil && hasModuleConfig {
 		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
 		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
-			legacyToolchains, _ = workspace.ParseLegacyToolchains(data)
-			legacyBlueprint, _ = workspace.ParseLegacyBlueprint(data)
+			legacyWorkspace, _ = workspace.ParseLegacyWorkspace(data)
 		}
-		if len(legacyToolchains) > 0 || legacyBlueprint != nil {
+		if legacyWorkspace != nil {
+			console(ctx, "Inferring workspace behavior from legacy module config.")
 			slog.Warn("Inferring workspace behavior from legacy module config.",
 				"config", cfgPath)
 		}
@@ -573,35 +573,27 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return err
 	}
 
-	// (1a) Legacy toolchains (from compat mode, extracted above)
-	for _, tc := range legacyToolchains {
-		pending = append(pending, pendingLegacyModule(
-			ws,
-			resolveLocalRef,
-			tc.Name,
-			tc.Source,
-			tc.Pin,
-			false,
-			tc.ConfigDefaults,
-			tc.Customizations,
-		))
+	// (1) Legacy workspace-owned modules (from compat mode, projected above)
+	if legacyWorkspace != nil {
+		for _, legacyMod := range legacyWorkspace.Modules {
+			mod := pendingLegacyModule(
+				ws,
+				resolveLocalRef,
+				legacyMod.Name,
+				legacyMod.Source,
+				legacyMod.Pin,
+				legacyMod.Entry.Blueprint,
+				legacyMod.Entry.Config,
+				legacyMod.ArgCustomizations,
+			)
+			if legacyMod.Entry.Blueprint {
+				mod.LegacyCallerModuleDir = legacyCallerDir
+			}
+			pending = append(pending, mod)
+		}
 	}
 
-	// (1b) Legacy blueprint (from compat mode, extracted above)
-	if legacyBlueprint != nil {
-		blueprint := pendingLegacyModule(
-			ws,
-			resolveLocalRef,
-			legacyBlueprint.Name,
-			legacyBlueprint.Source,
-			legacyBlueprint.Pin,
-			true,
-			nil,
-			nil,
-		)
-		blueprint.LegacyCallerModuleDir = legacyCallerDir
-		pending = append(pending, blueprint)
-	}
+	legacyBlueprint := legacyWorkspace.Blueprint()
 
 	// (2) Implicit module (dagger.json near CWD)
 	{
@@ -640,6 +632,13 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	client.pendingModules = pending
 
 	return nil
+}
+
+func console(ctx context.Context, msg string, args ...any) {
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
+	}
+	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
 }
 
 // buildCoreWorkspace converts the internal workspace detection result into

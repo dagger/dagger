@@ -3,9 +3,27 @@ package workspace
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/dagger/dagger/core/modules"
 )
+
+// LegacyWorkspace is the shared projection of legacy workspace-owned module
+// semantics used by both compat mode and on-disk migration.
+type LegacyWorkspace struct {
+	Modules []LegacyWorkspaceModule
+}
+
+// LegacyWorkspaceModule is one workspace-owned module projected out of a
+// legacy dagger.json.
+type LegacyWorkspaceModule struct {
+	Name              string
+	ConfigName        string
+	Source            string
+	Pin               string
+	Entry             ModuleEntry
+	ArgCustomizations []*modules.ModuleConfigArgument
+}
 
 // LegacyToolchain represents a toolchain extracted from a legacy dagger.json,
 // with constructor arg defaults already resolved from customizations.
@@ -24,47 +42,143 @@ type LegacyBlueprint struct {
 	Pin    string
 }
 
-// ParseLegacyBlueprint parses a legacy dagger.json and extracts its blueprint.
-// Returns nil if no blueprint is present.
-func ParseLegacyBlueprint(data []byte) (*LegacyBlueprint, error) {
+// ParseLegacyWorkspace parses a legacy dagger.json and projects its
+// workspace-owned module semantics into a shared in-memory form.
+func ParseLegacyWorkspace(data []byte) (*LegacyWorkspace, error) {
 	cfg, err := parseLegacyConfig(data)
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Blueprint == nil {
+	return legacyWorkspaceFromConfig(cfg), nil
+}
+
+// ParseLegacyBlueprint parses a legacy dagger.json and extracts its blueprint.
+// Returns nil if no blueprint is present.
+func ParseLegacyBlueprint(data []byte) (*LegacyBlueprint, error) {
+	legacyWorkspace, err := ParseLegacyWorkspace(data)
+	if err != nil {
+		return nil, err
+	}
+	blueprint := legacyWorkspace.Blueprint()
+	if blueprint == nil {
 		return nil, nil
 	}
 	return &LegacyBlueprint{
-		Name:   cfg.Blueprint.Name,
-		Source: cfg.Blueprint.Source,
-		Pin:    cfg.Blueprint.Pin,
+		Name:   blueprint.Name,
+		Source: blueprint.Source,
+		Pin:    blueprint.Pin,
 	}, nil
 }
 
 // ParseLegacyToolchains parses a legacy dagger.json and extracts its toolchains
 // with their constructor arg defaults. Returns nil if no toolchains are present.
 func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error) {
-	cfg, err := parseLegacyConfig(data)
+	legacyWorkspace, err := ParseLegacyWorkspace(data)
 	if err != nil {
 		return nil, err
 	}
-	if len(cfg.Toolchains) == 0 {
+	if legacyWorkspace == nil {
 		return nil, nil
 	}
-	result := make([]LegacyToolchain, len(cfg.Toolchains))
-	for i, tc := range cfg.Toolchains {
+	result := make([]LegacyToolchain, 0, len(legacyWorkspace.Modules))
+	for _, mod := range legacyWorkspace.Modules {
+		if mod.Entry.Blueprint {
+			continue
+		}
+		result = append(result, LegacyToolchain{
+			Name:           mod.Name,
+			Source:         mod.Source,
+			Pin:            mod.Pin,
+			ConfigDefaults: cloneConfigDefaults(mod.Entry.Config),
+			Customizations: cloneCustomizations(mod.ArgCustomizations),
+		})
+	}
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
+}
+
+func legacyWorkspaceFromConfig(cfg *modules.ModuleConfig) *LegacyWorkspace {
+	legacyWorkspace := &LegacyWorkspace{}
+
+	for _, tc := range cfg.Toolchains {
 		if tc == nil {
 			continue
 		}
-		result[i] = LegacyToolchain{
-			Name:           tc.Name,
-			Source:         tc.Source,
-			Pin:            tc.Pin,
-			ConfigDefaults: extractConfigDefaults(tc.Customizations),
-			Customizations: cloneCustomizations(tc.Customizations),
+		legacyWorkspace.Modules = append(legacyWorkspace.Modules, LegacyWorkspaceModule{
+			Name:       tc.Name,
+			ConfigName: tc.Name,
+			Source:     tc.Source,
+			Pin:        tc.Pin,
+			Entry: ModuleEntry{
+				Source:            legacyWorkspaceModuleSource(tc.Source, tc.Pin),
+				Config:            extractConfigDefaults(tc.Customizations),
+				LegacyDefaultPath: true,
+			},
+			ArgCustomizations: cloneCustomizations(tc.Customizations),
+		})
+	}
+
+	if cfg.Blueprint != nil {
+		name := cfg.Blueprint.Name
+		if name == "" {
+			name = "blueprint"
+		}
+		legacyWorkspace.Modules = append(legacyWorkspace.Modules, LegacyWorkspaceModule{
+			Name:       cfg.Blueprint.Name,
+			ConfigName: name,
+			Source:     cfg.Blueprint.Source,
+			Pin:        cfg.Blueprint.Pin,
+			Entry: ModuleEntry{
+				Source:            legacyWorkspaceModuleSource(cfg.Blueprint.Source, cfg.Blueprint.Pin),
+				Blueprint:         true,
+				LegacyDefaultPath: true,
+			},
+		})
+	}
+
+	if len(legacyWorkspace.Modules) == 0 {
+		return nil
+	}
+	return legacyWorkspace
+}
+
+func legacyWorkspaceModuleSource(source, pin string) string {
+	if isLocalRef(source, pin) {
+		return filepath.Join("..", source)
+	}
+	return source
+}
+
+func (legacyWorkspace *LegacyWorkspace) WorkspaceConfig() *Config {
+	if legacyWorkspace == nil {
+		return &Config{Modules: map[string]ModuleEntry{}}
+	}
+	cfg := &Config{
+		Modules: make(map[string]ModuleEntry, len(legacyWorkspace.Modules)),
+	}
+	for _, mod := range legacyWorkspace.Modules {
+		cfg.Modules[mod.ConfigName] = ModuleEntry{
+			Source:            mod.Entry.Source,
+			Config:            cloneConfigDefaults(mod.Entry.Config),
+			Blueprint:         mod.Entry.Blueprint,
+			LegacyDefaultPath: mod.Entry.LegacyDefaultPath,
 		}
 	}
-	return result, nil
+	return cfg
+}
+
+func (legacyWorkspace *LegacyWorkspace) Blueprint() *LegacyWorkspaceModule {
+	if legacyWorkspace == nil {
+		return nil
+	}
+	for i := range legacyWorkspace.Modules {
+		if legacyWorkspace.Modules[i].Entry.Blueprint {
+			return &legacyWorkspace.Modules[i]
+		}
+	}
+	return nil
 }
 
 // parseLegacyConfig parses a legacy dagger.json into the internal representation.
@@ -89,6 +203,17 @@ func extractConfigDefaults(customizations []*modules.ModuleConfigArgument) map[s
 		return nil
 	}
 	return config
+}
+
+func cloneConfigDefaults(config map[string]any) map[string]any {
+	if len(config) == 0 {
+		return nil
+	}
+	clone := make(map[string]any, len(config))
+	for key, value := range config {
+		clone[key] = value
+	}
+	return clone
 }
 
 func cloneCustomizations(customizations []*modules.ModuleConfigArgument) []*modules.ModuleConfigArgument {

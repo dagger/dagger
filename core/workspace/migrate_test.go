@@ -96,6 +96,58 @@ func TestMigrateReturnsLookupSources(t *testing.T) {
 	}, result.LookupSources)
 }
 
+func TestMigrateWritesMigrationReportForGaps(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ModuleConfigFileName)
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`{
+  "name": "myapp",
+  "toolchains": [
+    {
+      "name": "toolchain",
+      "source": "./toolchain",
+      "customizations": [
+        {
+          "argument": "src",
+          "defaultPath": "./custom-config.txt",
+          "ignore": ["node_modules"]
+        },
+        {
+          "function": ["build"],
+          "argument": "tag",
+          "default": "dev"
+        }
+      ]
+    }
+  ]
+}`), 0o644))
+
+	result, err := Migrate(context.Background(), LocalMigrationIO{}, &ErrMigrationRequired{
+		ConfigPath:  cfgPath,
+		ProjectRoot: root,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Warnings, 2)
+	require.Equal(t, filepath.Join(LockDirName, "migration-report.md"), result.MigrationReportPath)
+
+	summary := result.Summary()
+	require.Contains(t, summary, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
+	require.NotContains(t, summary, "defaultPath")
+
+	configData, err := os.ReadFile(filepath.Join(root, LockDirName, ConfigFileName))
+	require.NoError(t, err)
+	require.NotContains(t, string(configData), "# WARNING:")
+	require.NotContains(t, string(configData), "# Original:")
+
+	reportData, err := os.ReadFile(filepath.Join(root, result.MigrationReportPath))
+	require.NoError(t, err)
+	require.Contains(t, string(reportData), "# Migration Report")
+	require.Contains(t, string(reportData), "Module `toolchain`")
+	require.Contains(t, string(reportData), `"defaultPath": "./custom-config.txt"`)
+	require.Contains(t, string(reportData), `"function": [`)
+}
+
 func TestMigrateFailsOnConflictingLegacyPins(t *testing.T) {
 	t.Parallel()
 
