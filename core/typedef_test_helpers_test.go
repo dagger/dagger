@@ -137,9 +137,13 @@ func installTypeDefTestClasses(srv *dagql.Server) {
 	}.Install(srv)
 }
 
-func newTypeDefTestDag() *dagql.Server {
+func newTypeDefTestDag(t *testing.T) *dagql.Server {
+	t.Helper()
 	root := &Query{}
-	dag := dagql.NewServer(root)
+	dag, err := dagql.NewServer(t.Context(), root)
+	if err != nil {
+		t.Fatalf("new typedef test dag: %v", err)
+	}
 	installTypeDefTestClasses(dag)
 	return dag
 }

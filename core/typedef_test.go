@@ -11,7 +11,7 @@ import (
 func sampleTypeDefs(t *testing.T) map[TypeDefKind]*TypeDef {
 	t.Helper()
 
-	dag := newTypeDefTestDag()
+	dag := newTypeDefTestDag(t)
 	stringType := &TypeDef{Kind: TypeDefKindString}
 	stringTypeRes := newTypeDefDetachedResult(t, dag, "sampleStringTypeDef", stringType)
 	scalarRes := newTypeDefDetachedResult(t, dag, "sampleScalarTypeDef", &ScalarTypeDef{Name: "FooScalar"})

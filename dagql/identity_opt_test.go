@@ -22,7 +22,7 @@ func (identityOptTestQuery) Type() *ast.Type {
 
 func newIdentityOptTestServer(t *testing.T) *Server {
 	t.Helper()
-	return NewServer(identityOptTestQuery{})
+	return newDagqlServerForTest(t, identityOptTestQuery{})
 }
 
 func TestFieldSpecResolveImplicitInputCallArgsResolvesDeterministicImplicitInputs(t *testing.T) {

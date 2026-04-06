@@ -12,7 +12,10 @@ import (
 )
 
 func newPersistCodecImportTestServer(cache *Cache) *Server {
-	srv := NewServer(&persistCodecRoot{})
+	srv, err := NewServer(context.Background(), &persistCodecRoot{})
+	if err != nil {
+		panic(err)
+	}
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 	Fields[*persistCodecRoot]{
 		NodeFunc("obj", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistCodecObj], error) {

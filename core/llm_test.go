@@ -43,7 +43,7 @@ func TestLlmConfig(t *testing.T) {
 
 	baseCache, err := dagql.NewCache(context.Background(), "", nil)
 	assert.NoError(t, err)
-	srv := dagql.NewServer(q)
+	srv := newCoreDagqlServerForTest(t, q)
 
 	vars := map[string]string{
 		"file://.env":                    "",
@@ -135,7 +135,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 
 			baseCache, err := dagql.NewCache(context.Background(), "", nil)
 			assert.NoError(t, err)
-			srv := dagql.NewServer(q)
+			srv := newCoreDagqlServerForTest(t, q)
 			dagql.Fields[LLMTestQuery]{
 				dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 					URI string
@@ -166,7 +166,7 @@ func TestLlmConfigEnvFile(t *testing.T) {
 
 	baseCache, err := dagql.NewCache(context.Background(), "", nil)
 	assert.NoError(t, err)
-	srv := dagql.NewServer(q)
+	srv := newCoreDagqlServerForTest(t, q)
 	dagql.Fields[LLMTestQuery]{
 		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 			URI string

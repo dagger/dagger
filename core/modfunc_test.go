@@ -58,7 +58,7 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 			modRes, err := dagql.NewObjectResultForCall(
 				tc.mod,
 				func() *dagql.Server {
-					dag := dagql.NewServer(&Query{})
+					dag := newCoreDagqlServerForTest(t, &Query{})
 					dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
 					return dag
 				}(),
@@ -96,7 +96,7 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 func TestModuleFunctionCacheImplicitInputsNilSafe(t *testing.T) {
 	require.Nil(t, (*ModuleFunction)(nil).cacheImplicitInputs())
 	require.Nil(t, (&ModuleFunction{}).cacheImplicitInputs())
-	dag := dagql.NewServer(&Query{})
+	dag := newCoreDagqlServerForTest(t, &Query{})
 	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
 	modRes, err := dagql.NewObjectResultForCall(
 		&Module{},

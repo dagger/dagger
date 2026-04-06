@@ -9,7 +9,7 @@ import (
 )
 
 func TestApplyLegacyCustomizationsToTypeDefs(t *testing.T) {
-	dag := newTypeDefTestDag()
+	dag := newTypeDefTestDag(t)
 
 	dirObj := NewObjectTypeDef("Directory", "", nil)
 	dirObjRes := newTypeDefDetachedResult(t, dag, "legacyDirectoryObjectTypeDef", dirObj)

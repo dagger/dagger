@@ -197,7 +197,7 @@ func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root)
+	dag := newCoreDagqlServerForTest(t, root)
 	testSrv.dag = dag
 
 	ctx = ContextWithQuery(ctx, root)
@@ -240,7 +240,7 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root)
+	dag := newCoreDagqlServerForTest(t, root)
 	testSrv.dag = dag
 	installTypeDefTestClasses(dag)
 	ctx = dagql.ContextWithCache(ctx, sc)
@@ -319,7 +319,7 @@ func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root)
+	dag := newCoreDagqlServerForTest(t, root)
 	testSrv.dag = dag
 	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
@@ -398,7 +398,7 @@ func TestModuleObjectConvertToSDKInputRewritesStoredResults(t *testing.T) {
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root)
+	dag := newCoreDagqlServerForTest(t, root)
 	testSrv.dag = dag
 	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
@@ -481,7 +481,7 @@ func TestModuleObjectPersistedResultRefsRoundTrip(t *testing.T) {
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root)
+	dag := newCoreDagqlServerForTest(t, root)
 	testSrv.dag = dag
 	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
@@ -561,7 +561,7 @@ func TestModuleObjectEncodeRejectsRawCallIDInSemanticField(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	dag := newTypeDefTestDag()
+	dag := newTypeDefTestDag(t)
 	childObjDef := NewObjectTypeDef("Child", "", nil)
 	childObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectRawChildObj", childObjDef)
 	parentObjDef := NewObjectTypeDef("Parent", "", nil)
@@ -617,7 +617,7 @@ func TestModuleObjectRawHandleFieldBecomesStaleAfterProducerSessionClose(t *test
 		root:       producerRoot,
 	}
 	producerRoot.Server = producerSrv
-	producerDag := dagql.NewServer(producerRoot)
+	producerDag := newCoreDagqlServerForTest(t, producerRoot)
 	producerSrv.dag = producerDag
 	installModuleObjectHandleTestObjClass(producerDag)
 	producerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, producerRoot), &engine.ClientMetadata{
@@ -670,7 +670,7 @@ func TestModuleObjectRawHandleFieldBecomesStaleAfterProducerSessionClose(t *test
 		root:       consumerRoot,
 	}
 	consumerRoot.Server = consumerSrv
-	consumerDag := dagql.NewServer(consumerRoot)
+	consumerDag := newCoreDagqlServerForTest(t, consumerRoot)
 	consumerSrv.dag = consumerDag
 	installModuleObjectHandleTestObjClass(consumerDag)
 	consumerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, consumerRoot), &engine.ClientMetadata{
@@ -724,7 +724,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 		root:       producerRoot,
 	}
 	producerRoot.Server = producerSrv
-	producerDag := dagql.NewServer(producerRoot)
+	producerDag := newCoreDagqlServerForTest(t, producerRoot)
 	producerSrv.dag = producerDag
 	installTypeDefTestClasses(producerDag)
 	producerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, producerRoot), &engine.ClientMetadata{
@@ -787,7 +787,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 		root:       consumerRoot,
 	}
 	consumerRoot.Server = consumerSrv
-	consumerDag := dagql.NewServer(consumerRoot)
+	consumerDag := newCoreDagqlServerForTest(t, consumerRoot)
 	consumerSrv.dag = consumerDag
 	installTypeDefTestClasses(consumerDag)
 	consumerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, consumerRoot), &engine.ClientMetadata{

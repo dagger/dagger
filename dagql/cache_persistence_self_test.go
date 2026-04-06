@@ -56,7 +56,7 @@ func setupPersistCodecTest(t *testing.T) context.Context {
 	baseCacheIface, err := NewCache(t.Context(), "", nil)
 	assert.NilError(t, err)
 	baseCache := baseCacheIface
-	srv := NewServer(&persistCodecRoot{})
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 	rootObjType, ok := srv.ObjectType("Query")
 	assert.Assert(t, ok)
@@ -132,7 +132,7 @@ func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "", nil)
 	assert.NilError(t, err)
-	srv := NewServer(&persistCodecRoot{})
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 
 	req := &CallRequest{

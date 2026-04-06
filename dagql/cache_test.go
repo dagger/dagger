@@ -439,7 +439,7 @@ func (obj *cacheTestObject) AttachDependencyResults(
 
 func cacheTestServer(t *testing.T, base *Cache) *Server {
 	t.Helper()
-	srv := NewServer(cacheTestQuery{})
+	srv := newDagqlServerForTest(t, cacheTestQuery{})
 	Fields[*cacheTestObject]{
 		Func("value", func(_ context.Context, self *cacheTestObject, _ struct{}) (Int, error) {
 			return NewInt(self.Value), nil

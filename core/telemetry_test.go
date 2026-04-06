@@ -9,6 +9,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
@@ -63,7 +64,10 @@ func (ms *mockServer) CurrentModule(ctx context.Context) (dagql.ObjectResult[*Mo
 		panic(err)
 	}
 	ctx = dagql.ContextWithCache(ctx, cacheIface)
-	dag := dagql.NewServer(&Query{})
+	dag, err := dagql.NewServer(context.Background(), &Query{})
+	if err != nil {
+		panic(err)
+	}
 	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleSource]{Typed: &ModuleSource{}}))
 	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
 

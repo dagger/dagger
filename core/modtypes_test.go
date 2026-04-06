@@ -16,7 +16,7 @@ func TestCollectedContentCollectUnknownAnyResult(t *testing.T) {
 	assert.NilError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cacheIface)
 	sc := cacheIface
-	dag := dagql.NewServer(&Query{})
+	dag := newCoreDagqlServerForTest(t, &Query{})
 
 	resCall := &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
