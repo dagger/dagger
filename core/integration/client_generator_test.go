@@ -1752,13 +1752,13 @@ main()`, defaultGenDir))
 				With(tc.setup).
 				With(daggerClientInstall(tc.generator))
 
-			// Mount SDK for go generator tests so SDK replace directives work
 			if tc.generator == "go" {
-				moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+				moduleSrc = moduleSrc.With(useLocalSDK(c, defaultGenDir))
+			} else {
+				moduleSrc = moduleSrc.With(tc.postSetup)
 			}
 
 			moduleSrc = moduleSrc.
-				With(tc.postSetup).
 				WithDirectory("files", c.Directory().WithNewFile("file1.txt", "hello world"))
 
 			out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
@@ -1933,7 +1933,7 @@ func main() {
 	fmt.Println("result:", res)
 }
 `).
-			WithExec([]string{"go", "mod", "tidy"})
+			With(useLocalSDK(c, defaultGenDir))
 
 		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1970,7 +1970,7 @@ func main() {
 	fmt.Println("result:", res)
 }
 `).
-			WithExec([]string{"go", "mod", "tidy"})
+			With(useLocalSDK(c, defaultGenDir))
 
 		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 		require.NoError(t, err)
