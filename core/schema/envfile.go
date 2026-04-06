@@ -109,8 +109,23 @@ type withVariableArgs struct {
 	Value dagql.String
 }
 
-func (s envfileSchema) withVariable(ctx context.Context, parent dagql.ObjectResult[*core.EnvFile], args withVariableArgs) (*core.EnvFile, error) {
-	return parent.Self().WithVariable(args.Name.String(), args.Value.String()), nil
+func (s envfileSchema) withVariable(ctx context.Context, parent dagql.ObjectResult[*core.EnvFile], args withVariableArgs) (dagql.ObjectResult[*core.EnvFile], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.EnvFile]{}, err
+	}
+
+	ef := parent.Self().WithVariable(args.Name.String(), args.Value.String())
+	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, ef)
+	if err != nil {
+		return dagql.ObjectResult[*core.EnvFile]{}, err
+	}
+
+	dgst, err := ef.Digest(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.EnvFile]{}, err
+	}
+	return inst.WithContentDigest(ctx, dgst)
 }
 
 func (s envfileSchema) withoutVariable(ctx context.Context, parent *core.EnvFile, args struct {
@@ -154,18 +169,36 @@ type asEnvFileArgs struct {
 	Expand dagql.Optional[dagql.Boolean]
 }
 
-func (s envfileSchema) asEnvFile(ctx context.Context, parent dagql.ObjectResult[*core.File], args asEnvFileArgs) (*core.EnvFile, error) {
+func (s envfileSchema) asEnvFile(ctx context.Context, parent dagql.ObjectResult[*core.File], args asEnvFileArgs) (dagql.ObjectResult[*core.EnvFile], error) {
 	expand := args.Expand.Valid && args.Expand.Value.Bool()
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.EnvFile]{}, err
 	}
 	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.EnvFile]{}, err
 	}
 	contents, err := parent.Self().Contents(ctx, nil, nil)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.EnvFile]{}, err
 	}
-	return (&core.EnvFile{Expand: expand}).WithContents(string(contents))
+	ef, err := (&core.EnvFile{Expand: expand}).WithContents(string(contents))
+	if err != nil {
+		return dagql.ObjectResult[*core.EnvFile]{}, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.EnvFile]{}, err
+	}
+	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, ef)
+	if err != nil {
+		return dagql.ObjectResult[*core.EnvFile]{}, err
+	}
+
+	dgst, err := ef.Digest(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.EnvFile]{}, err
+	}
+	return inst.WithContentDigest(ctx, dgst)
 }
