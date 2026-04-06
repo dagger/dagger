@@ -1,7 +1,5 @@
 # Workspace Migration + Compat Contract
 
-*Builds on [Workspace Foundation + Compatibility](/Users/shykes/git/github.com/dagger/dagger_workspace/hack/designs/workspace-foundation-compat.md)*
-
 ## Status
 
 Locked.
