@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 
@@ -157,7 +158,21 @@ func (iface *Interface) Definition(view call.View) *ast.Definition {
 	}
 
 	for _, spec := range iface.FieldSpecs(view) {
-		def.Fields = append(def.Fields, spec.FieldDefinition(view))
+		fieldDef := spec.FieldDefinition(view)
+		// For non-"id" fields that return the ID scalar without an
+		// @expectedType directive, add @expectedType pointing to this
+		// interface. This tells SDKs that the field returns "an ID of
+		// something that implements this interface", enabling covariant
+		// return types (e.g. Container.sync() returns Container, which
+		// is a subtype of Syncer).
+		if spec.Name != "id" && fieldDef.Type.Name() == "ID" {
+			hasExpectedType := slices.ContainsFunc(fieldDef.Directives,
+				func(d *ast.Directive) bool { return d.Name == "expectedType" })
+			if !hasExpectedType {
+				fieldDef.Directives = append(fieldDef.Directives, ExpectedTypeDirective(iface.name))
+			}
+		}
+		def.Fields = append(def.Fields, fieldDef)
 	}
 
 	// Declare which other interfaces this interface implements.
