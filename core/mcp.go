@@ -2315,14 +2315,14 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 }
 
 func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
-	id, err := obj.ID()
+	call, err := obj.ResultCall()
 	if err != nil {
 		return ""
 	}
-	if id == nil {
+	hash, err := call.RecipeDigest(context.Background())
+	if err != nil {
 		return ""
 	}
-	hash := id.Digest()
 	return m.IngestBy(obj, desc, hash)
 }
 
