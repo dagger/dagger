@@ -47,12 +47,17 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
 		confContents, err := baseWithNewConfig.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
+		// Decode just the legacy field so we can verify the migration removed it from the JSON without referencing the deprecated struct field, which would trigger staticcheck SA1019.
+		var legacy struct {
+			Exclude *[]string `json:"exclude"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(confContents), &legacy))
 		var modCfg modules.ModuleConfigWithUserFields
 		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
 		require.Equal(t, "test", modCfg.Name)
 		require.Equal(t, &modules.SDK{Source: "go"}, modCfg.SDK)
 		require.Equal(t, []string{"foo", "!blah", "bar"}, modCfg.Include)
-		require.Empty(t, modCfg.Exclude)
+		require.Nil(t, legacy.Exclude)
 		require.Len(t, modCfg.Dependencies, 1)
 		require.Equal(t, "foo", modCfg.Dependencies[0].Source)
 		require.Equal(t, "dep", modCfg.Dependencies[0].Name)
