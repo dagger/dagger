@@ -1242,7 +1242,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		ctx,
 		runningSvc,
 		ctr.Self().Config.WorkingDir,
-		m.env.Self().Workspace.Self(),
+		m.env.Self().Workspace,
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context
 			results = m.callBatchRegular(ctx, tools, toolCalls)

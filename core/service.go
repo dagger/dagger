@@ -1027,7 +1027,7 @@ func (svc *Service) runAndSnapshotChanges(
 	ctx context.Context,
 	running *RunningService,
 	target string,
-	source *Directory,
+	source dagql.ObjectResult[*Directory],
 	f func() error,
 ) (res dagql.ObjectResult[*Directory], hasChanges bool, rerr error) {
 	if running == nil {
@@ -1036,12 +1036,20 @@ func (svc *Service) runAndSnapshotChanges(
 	running.workspaceMu.Lock()
 	defer running.workspaceMu.Unlock()
 
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return res, false, err
+	}
+	if err := cache.Evaluate(ctx, source); err != nil {
+		return res, false, fmt.Errorf("failed to evaluate source directory: %w", err)
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return res, false, err
 	}
 
-	ref, err := getRefOrEvaluate(ctx, source)
+	ref, err := source.Self().getSnapshot()
 	if err != nil {
 		return res, false, fmt.Errorf("failed to get ref for source directory: %w", err)
 	}
@@ -1064,7 +1072,7 @@ func (svc *Service) runAndSnapshotChanges(
 	}()
 
 	err = MountRef(ctx, mutableRef, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
+		resolvedDir, err := containerdfs.RootPath(root, source.Self().Dir)
 		if err != nil {
 			return err
 		}
@@ -1115,7 +1123,7 @@ func (svc *Service) runAndSnapshotChanges(
 
 	// Mount the mutable ref of their changes over the target path.
 	err = MountRef(ctx, abandonedRef, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
+		resolvedDir, err := containerdfs.RootPath(root, source.Self().Dir)
 		if err != nil {
 			return err
 		}
@@ -1134,7 +1142,7 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("get dagql server: %w", err)
 	}
 
-	snapshot, err := NewDirectoryWithSnapshot(source.Dir, source.Platform, source.Services, immutableRef)
+	snapshot, err := NewDirectoryWithSnapshot(source.Self().Dir, source.Self().Platform, source.Self().Services, immutableRef)
 	if err != nil {
 		_ = immutableRef.Release(ctx)
 		return res, false, err

@@ -122,12 +122,12 @@ func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, aft
 		return fmt.Errorf("evaluate changeset directories: %w", err)
 	}
 
-	beforeRef, err := getRefOrEvaluate(ctx, ch.Before.Self())
+	beforeRef, err := ch.Before.Self().getSnapshot()
 	if err != nil {
 		return fmt.Errorf("evaluate before: %w", err)
 	}
 
-	afterRef, err := getRefOrEvaluate(ctx, ch.After.Self())
+	afterRef, err := ch.After.Self().getSnapshot()
 	if err != nil {
 		return fmt.Errorf("evaluate after: %w", err)
 	}
@@ -338,12 +338,12 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, fmt.Errorf("evaluate changeset directories: %w", err)
 	}
 
-	beforeRef, err := getRefOrEvaluate(ctx, ch.Before.Self())
+	beforeRef, err := ch.Before.Self().getSnapshot()
 	if err != nil {
 		return nil, err
 	}
 
-	afterRef, err := getRefOrEvaluate(ctx, ch.After.Self())
+	afterRef, err := ch.After.Self().getSnapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -655,7 +655,7 @@ func (ch *Changeset) WithChangeset(
 	}
 
 	afterDir, err := gitMergeWithPatches(ctx,
-		before.Self(),
+		before,
 		ourPatch, theirPatch,
 		ourPaths.AllRemoved, theirPaths.AllRemoved,
 		conflicts,
@@ -717,7 +717,7 @@ func (ch *Changeset) WithChangesets(
 		otherPatches[i] = patch
 	}
 
-	afterDir, err := gitOctopusMergeWithPatches(ctx, before.Self(), ourPatch, otherPatches)
+	afterDir, err := gitOctopusMergeWithPatches(ctx, before, ourPatch, otherPatches)
 	if err != nil {
 		return nil, err
 	}
@@ -851,8 +851,16 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 
 // withGitMergeWorkspace sets up a workspace for git merge operations, runs the provided
 // function, then commits and returns the resulting directory.
-func withGitMergeWorkspace(ctx context.Context, base *Directory, description string, fn func(workDir string) error) (*Directory, error) {
-	baseRef, err := getRefOrEvaluate(ctx, base)
+func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directory], description string, fn func(workDir string) error) (*Directory, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, base); err != nil {
+		return nil, fmt.Errorf("evaluate base: %w", err)
+	}
+
+	baseRef, err := base.Self().getSnapshot()
 	if err != nil {
 		return nil, fmt.Errorf("evaluate base: %w", err)
 	}
@@ -870,7 +878,7 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 	}
 
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
-		workDir, err := containerdfs.RootPath(root, base.Dir)
+		workDir, err := containerdfs.RootPath(root, base.Self().Dir)
 		if err != nil {
 			return err
 		}
@@ -884,7 +892,7 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 	if err != nil {
 		return nil, err
 	}
-	dir, err := NewDirectoryWithSnapshot(base.Dir, query.Platform(), base.Services, snap)
+	dir, err := NewDirectoryWithSnapshot(base.Self().Dir, query.Platform(), base.Self().Services, snap)
 	if err != nil {
 		_ = snap.Release(context.WithoutCancel(ctx))
 		return nil, err
@@ -894,7 +902,7 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 
 func gitMergeWithPatches(
 	ctx context.Context,
-	base *Directory,
+	base dagql.ObjectResult[*Directory],
 	ourPatch, theirPatch *File,
 	ourRemoved, theirRemoved []string,
 	conflicts Conflicts,
@@ -949,7 +957,7 @@ func gitMergeWithPatches(
 
 func gitOctopusMergeWithPatches(
 	ctx context.Context,
-	base *Directory,
+	base dagql.ObjectResult[*Directory],
 	ourPatch *File,
 	otherPatches []*File,
 ) (*Directory, error) {
@@ -1008,7 +1016,7 @@ func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 		return nil
 	}
 
-	patchRef, err := getRefOrEvaluate(ctx, patch)
+	patchRef, err := patch.getSnapshot()
 	if err != nil {
 		return fmt.Errorf("evaluate patch ref: %w", err)
 	}
