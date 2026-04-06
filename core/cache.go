@@ -88,11 +88,17 @@ func (cache *CacheVolume) getSnapshotSelector() string {
 	return cache.selector
 }
 
-func (cache *CacheVolume) CacheUsageSize(ctx context.Context) (int64, bool, error) {
+func (cache *CacheVolume) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
 	cache.mu.Lock()
 	snapshot := cache.snapshot
 	snapshotID := cache.snapshotID
 	cache.mu.Unlock()
+	if snapshot != nil && snapshot.SnapshotID() != identity {
+		return 0, false, nil
+	}
+	if snapshot == nil && (snapshotID == "" || snapshotID != identity) {
+		return 0, false, nil
+	}
 	if snapshot != nil {
 		size, err := snapshot.Size(ctx)
 		if err != nil {
@@ -121,16 +127,16 @@ func (cache *CacheVolume) CacheUsageSize(ctx context.Context) (int64, bool, erro
 	return size, true, nil
 }
 
-func (cache *CacheVolume) CacheUsageIdentity() (string, bool) {
+func (cache *CacheVolume) CacheUsageIdentities() []string {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 	if cache.snapshot != nil {
-		return cache.snapshot.SnapshotID(), true
+		return []string{cache.snapshot.SnapshotID()}
 	}
 	if cache.snapshotID == "" {
-		return "", false
+		return nil
 	}
-	return cache.snapshotID, true
+	return []string{cache.snapshotID}
 }
 
 func (cache *CacheVolume) PersistedResultID() uint64 {

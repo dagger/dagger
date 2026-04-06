@@ -127,22 +127,22 @@ func (state *HTTPState) CacheUsageMayChange() bool {
 	return true
 }
 
-func (state *HTTPState) CacheUsageIdentity() (string, bool) {
+func (state *HTTPState) CacheUsageIdentities() []string {
 	if state == nil {
-		return "", false
+		return nil
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if state.snapshot != nil {
-		return state.snapshot.SnapshotID(), true
+		return []string{state.snapshot.SnapshotID()}
 	}
 	if state.snapshotID == "" {
-		return "", false
+		return nil
 	}
-	return state.snapshotID, true
+	return []string{state.snapshotID}
 }
 
-func (state *HTTPState) CacheUsageSize(ctx context.Context) (int64, bool, error) {
+func (state *HTTPState) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
 	if state == nil {
 		return 0, false, nil
 	}
@@ -150,6 +150,12 @@ func (state *HTTPState) CacheUsageSize(ctx context.Context) (int64, bool, error)
 	snapshot := state.snapshot
 	snapshotID := state.snapshotID
 	state.mu.Unlock()
+	if snapshot != nil && snapshot.SnapshotID() != identity {
+		return 0, false, nil
+	}
+	if snapshot == nil && (snapshotID == "" || snapshotID != identity) {
+		return 0, false, nil
+	}
 	if snapshot != nil {
 		size, err := snapshot.Size(ctx)
 		if err != nil {

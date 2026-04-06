@@ -94,15 +94,15 @@ func (mirror *RemoteGitMirror) CacheUsageMayChange() bool {
 	return true
 }
 
-func (mirror *RemoteGitMirror) CacheUsageIdentity() (string, bool) {
+func (mirror *RemoteGitMirror) CacheUsageIdentities() []string {
 	if mirror == nil || mirror.snapshotID == "" {
-		return "", false
+		return nil
 	}
-	return mirror.snapshotID, true
+	return []string{mirror.snapshotID}
 }
 
-func (mirror *RemoteGitMirror) CacheUsageSize(ctx context.Context) (int64, bool, error) {
-	if mirror == nil || mirror.snapshotID == "" {
+func (mirror *RemoteGitMirror) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+	if mirror == nil || mirror.snapshotID == "" || mirror.snapshotID != identity {
 		return 0, false, nil
 	}
 	mirror.mu.Lock()

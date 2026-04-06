@@ -53,28 +53,33 @@ func (v cacheTestOpaqueValue) OnRelease(ctx context.Context) error {
 
 type cacheTestSizedInt struct {
 	Int
-	sizeBytes     int64
-	sizeSource    *atomic.Int64
-	usageIdentity string
-	sizeCalls     *atomic.Int32
-	sizeMayChange bool
+	sizeByIdentity       map[string]int64
+	sizeSourceByIdentity map[string]*atomic.Int64
+	usageIdentities      []string
+	sizeCalls            *atomic.Int32
+	sizeMayChange        bool
 }
 
-func (v cacheTestSizedInt) CacheUsageSize(context.Context) (int64, bool, error) {
+func (v cacheTestSizedInt) CacheUsageSize(_ context.Context, identity string) (int64, bool, error) {
 	if v.sizeCalls != nil {
 		v.sizeCalls.Add(1)
 	}
-	if v.sizeSource != nil {
-		return v.sizeSource.Load(), true, nil
+	if v.sizeSourceByIdentity != nil {
+		sizeSource, ok := v.sizeSourceByIdentity[identity]
+		if !ok || sizeSource == nil {
+			return 0, false, nil
+		}
+		return sizeSource.Load(), true, nil
 	}
-	return v.sizeBytes, true, nil
+	sizeBytes, ok := v.sizeByIdentity[identity]
+	if !ok {
+		return 0, false, nil
+	}
+	return sizeBytes, true, nil
 }
 
-func (v cacheTestSizedInt) CacheUsageIdentity() (string, bool) {
-	if v.usageIdentity == "" {
-		return "", false
-	}
-	return v.usageIdentity, true
+func (v cacheTestSizedInt) CacheUsageIdentities() []string {
+	return append([]string(nil), v.usageIdentities...)
 }
 
 func (v cacheTestSizedInt) CacheUsageMayChange() bool {
@@ -4880,6 +4885,61 @@ func TestCacheUsageEntriesAllDedupesByUsageIdentity(t *testing.T) {
 	assert.Equal(t, 1, nonZeroEntries)
 }
 
+func TestCacheUsageEntriesAllSumsOwnedUsageIdentities(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(ctx, "", nil)
+	assert.NilError(t, err)
+	c := cacheIface
+
+	sizeCalls := &atomic.Int32{}
+
+	keyA := cacheTestIntCall("usage-multi-a")
+	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    keyA,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(cacheTestSizedInt{
+			Int:             NewInt(1),
+			sizeByIdentity:  map[string]int64{"snapshot://a": 10, "snapshot://b": 20},
+			usageIdentities: []string{"snapshot://a", "snapshot://b"},
+			sizeCalls:       sizeCalls,
+		}, keyA)
+	})
+	assert.NilError(t, err)
+
+	keyB := cacheTestIntCall("usage-multi-b")
+	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    keyB,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(cacheTestSizedInt{
+			Int:             NewInt(2),
+			sizeByIdentity:  map[string]int64{"snapshot://b": 20, "snapshot://c": 40},
+			usageIdentities: []string{"snapshot://b", "snapshot://c"},
+			sizeCalls:       sizeCalls,
+		}, keyB)
+	})
+	assert.NilError(t, err)
+
+	cacheTestReleaseSession(t, c, ctx)
+
+	entries := c.UsageEntriesAll(ctx)
+	assert.Equal(t, 2, len(entries))
+	assert.Equal(t, int32(3), sizeCalls.Load())
+
+	sizes := make([]int64, 0, len(entries))
+	var totalBytes int64
+	for _, ent := range entries {
+		totalBytes += ent.SizeBytes
+		sizes = append(sizes, ent.SizeBytes)
+	}
+	slices.Sort(sizes)
+	assert.DeepEqual(t, sizes, []int64{30, 40})
+	assert.Equal(t, int64(70), totalBytes)
+}
+
 func TestCacheUsageEntriesAllMutableUsageRemeasuresAfterSizeChange(t *testing.T) {
 	t.Parallel()
 
@@ -5324,10 +5384,9 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 	c := cacheIface
 
 	root := &sharedResult{
-		id:                1,
-		self:              cacheTestSizedInt{Int: Int(1), sizeBytes: 10, usageIdentity: "snapshot://prune-structural-root"},
-		hasValue:          true,
-		sizeEstimateBytes: sharedResultSizeUnknown,
+		id:       1,
+		self:     cacheTestSizedInt{Int: Int(1), sizeByIdentity: map[string]int64{"snapshot://prune-structural-root": 10}, usageIdentities: []string{"snapshot://prune-structural-root"}},
+		hasValue: true,
 		resultCall: &ResultCall{
 			Kind:        ResultCallKindSynthetic,
 			SyntheticOp: "root",
@@ -5336,10 +5395,9 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 		incomingOwnershipCount: 1,
 	}
 	provenanceOnly := &sharedResult{
-		id:                2,
-		self:              cacheTestSizedInt{Int: Int(2), sizeBytes: 20, usageIdentity: "snapshot://prune-structural-provenance-only"},
-		hasValue:          true,
-		sizeEstimateBytes: sharedResultSizeUnknown,
+		id:       2,
+		self:     cacheTestSizedInt{Int: Int(2), sizeByIdentity: map[string]int64{"snapshot://prune-structural-provenance-only": 20}, usageIdentities: []string{"snapshot://prune-structural-provenance-only"}},
+		hasValue: true,
 		resultCall: &ResultCall{
 			Kind:        ResultCallKindSynthetic,
 			SyntheticOp: "provenanceOnly",

@@ -11,8 +11,6 @@ CREATE TABLE IF NOT EXISTS results (
     expires_at_unix INTEGER NOT NULL DEFAULT 0,
     created_at_unix_nano INTEGER NOT NULL,
     last_used_at_unix_nano INTEGER NOT NULL,
-    size_estimate_bytes INTEGER NOT NULL,
-    usage_identity TEXT NOT NULL DEFAULT '',
     record_type TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT ''
 ) STRICT;

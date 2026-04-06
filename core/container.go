@@ -1164,6 +1164,137 @@ func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapsho
 	return links
 }
 
+func (container *Container) CacheUsageIdentities() []string {
+	if container == nil {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	identities := make([]string, 0, 1+len(container.Mounts)*2)
+	add := func(identity string) {
+		if identity == "" {
+			return
+		}
+		if _, ok := seen[identity]; ok {
+			return
+		}
+		seen[identity] = struct{}{}
+		identities = append(identities, identity)
+	}
+
+	if container.MetaSnapshot != nil {
+		add(container.MetaSnapshot.SnapshotID())
+	}
+	if container.FS != nil && container.FS.Value != nil {
+		container.FS.Value.snapshotMu.RLock()
+		if container.FS.Value.Snapshot != nil {
+			add(container.FS.Value.Snapshot.SnapshotID())
+		}
+		container.FS.Value.snapshotMu.RUnlock()
+	}
+	for _, mnt := range container.Mounts {
+		if mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil {
+			mnt.DirectorySource.Value.snapshotMu.RLock()
+			if mnt.DirectorySource.Value.Snapshot != nil {
+				add(mnt.DirectorySource.Value.Snapshot.SnapshotID())
+			}
+			mnt.DirectorySource.Value.snapshotMu.RUnlock()
+		}
+		if mnt.FileSource != nil && mnt.FileSource.Value != nil {
+			mnt.FileSource.Value.snapshotMu.RLock()
+			if mnt.FileSource.Value.Snapshot != nil {
+				add(mnt.FileSource.Value.Snapshot.SnapshotID())
+			}
+			mnt.FileSource.Value.snapshotMu.RUnlock()
+		}
+	}
+
+	slices.Sort(identities)
+	return identities
+}
+
+func (container *Container) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+	if container == nil || identity == "" {
+		return 0, false, nil
+	}
+
+	if container.MetaSnapshot != nil && container.MetaSnapshot.SnapshotID() == identity {
+		size, err := container.MetaSnapshot.Size(ctx)
+		if err != nil {
+			return 0, false, err
+		}
+		return size, true, nil
+	}
+
+	if container.FS != nil && container.FS.Value != nil {
+		container.FS.Value.snapshotMu.RLock()
+		snapshot := container.FS.Value.Snapshot
+		container.FS.Value.snapshotMu.RUnlock()
+		if snapshot != nil && snapshot.SnapshotID() == identity {
+			size, err := snapshot.Size(ctx)
+			if err != nil {
+				return 0, false, err
+			}
+			return size, true, nil
+		}
+	}
+
+	for _, mnt := range container.Mounts {
+		if mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil {
+			mnt.DirectorySource.Value.snapshotMu.RLock()
+			snapshot := mnt.DirectorySource.Value.Snapshot
+			mnt.DirectorySource.Value.snapshotMu.RUnlock()
+			if snapshot != nil && snapshot.SnapshotID() == identity {
+				size, err := snapshot.Size(ctx)
+				if err != nil {
+					return 0, false, err
+				}
+				return size, true, nil
+			}
+		}
+		if mnt.FileSource != nil && mnt.FileSource.Value != nil {
+			mnt.FileSource.Value.snapshotMu.RLock()
+			snapshot := mnt.FileSource.Value.Snapshot
+			mnt.FileSource.Value.snapshotMu.RUnlock()
+			if snapshot != nil && snapshot.SnapshotID() == identity {
+				size, err := snapshot.Size(ctx)
+				if err != nil {
+					return 0, false, err
+				}
+				return size, true, nil
+			}
+		}
+	}
+
+	owned := false
+	for _, ownedIdentity := range container.CacheUsageIdentities() {
+		if ownedIdentity == identity {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		return 0, false, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, identity, bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return 0, false, err
+	}
+	defer func() {
+		_ = ref.Release(context.WithoutCancel(ctx))
+	}()
+	size, err := ref.Size(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	return size, true, nil
+}
+
 func encodePersistedContainerDirectoryValue(
 	ctx context.Context,
 	cache dagql.PersistedObjectCache,

@@ -28,7 +28,7 @@ type pruneSnapshotResult struct {
 	resultID                 sharedResultID
 	incomingCount            int64
 	deps                     []sharedResultID
-	usageIdentity            string
+	usageIdentities          []string
 	entry                    CacheUsageEntry
 	hasPersistedEdge         bool
 	persistedEdgeUnpruneable bool
@@ -151,33 +151,29 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 		if res == nil {
 			continue
 		}
-		usageIdentity := res.usageIdentity
-		if usageIdentity == "" {
-			usageIdentity = fmt.Sprintf("dagql.result.%d", resID)
+		for _, usageIdentity := range cacheUsageIdentities(res) {
+			identityState := snapshot.usageIdentities[usageIdentity]
+			if identityState.ownerID == 0 || resID < identityState.ownerID {
+				identityState.ownerID = resID
+			}
+			if sizeBytes, ok := res.cacheUsageSizeByIdentity[usageIdentity]; ok && sizeBytes > identityState.sizeBytes {
+				identityState.sizeBytes = sizeBytes
+			}
+			identityState.aliveMembers++
+			snapshot.usageIdentities[usageIdentity] = identityState
 		}
-		identityState := snapshot.usageIdentities[usageIdentity]
-		if identityState.ownerID == 0 || resID < identityState.ownerID {
-			identityState.ownerID = resID
-		}
-		if res.sizeEstimateBytes > identityState.sizeBytes {
-			identityState.sizeBytes = res.sizeEstimateBytes
-		}
-		identityState.aliveMembers++
-		snapshot.usageIdentities[usageIdentity] = identityState
 	}
 
 	for resID, res := range c.resultsByID {
 		if res == nil {
 			continue
 		}
-		usageIdentity := res.usageIdentity
-		if usageIdentity == "" {
-			usageIdentity = fmt.Sprintf("dagql.result.%d", resID)
-		}
-		identityState := snapshot.usageIdentities[usageIdentity]
+		usageIdentities := cacheUsageIdentities(res)
 		sizeBytes := int64(0)
-		if identityState.ownerID == resID && identityState.sizeBytes > 0 {
-			sizeBytes = identityState.sizeBytes
+		for _, measured := range res.cacheUsageSizeByIdentity {
+			if measured > 0 {
+				sizeBytes += measured
+			}
 		}
 
 		state := res.loadPayloadState()
@@ -207,10 +203,10 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 
 		edge, hasPersistedEdge := c.persistedEdgesByResult[resID]
 		snapshot.results[resID] = pruneSnapshotResult{
-			resultID:      resID,
-			incomingCount: res.incomingOwnershipCount,
-			deps:          deps,
-			usageIdentity: usageIdentity,
+			resultID:        resID,
+			incomingCount:   res.incomingOwnershipCount,
+			deps:            deps,
+			usageIdentities: usageIdentities,
 			entry: CacheUsageEntry{
 				ID:                        fmt.Sprintf("dagql.result.%d", resID),
 				Description:               description,
@@ -397,11 +393,11 @@ func (s *pruneSimulationState) applyCandidate(snapshot pruneSnapshot, resultID s
 		if !ok {
 			continue
 		}
-		if cur.usageIdentity != "" {
-			alive := s.aliveCountByUsageIdentity[cur.usageIdentity] - 1
-			s.aliveCountByUsageIdentity[cur.usageIdentity] = alive
+		for _, identity := range cur.usageIdentities {
+			alive := s.aliveCountByUsageIdentity[identity] - 1
+			s.aliveCountByUsageIdentity[identity] = alive
 			if alive == 0 {
-				reclaimed += s.sizeBytesByUsageIdentity[cur.usageIdentity]
+				reclaimed += s.sizeBytesByUsageIdentity[identity]
 			}
 		}
 

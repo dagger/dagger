@@ -170,8 +170,6 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				expiresAtUnix:         row.ExpiresAtUnix,
 				createdAtUnixNano:     row.CreatedAtUnixNano,
 				lastUsedAtUnixNano:    row.LastUsedAtUnixNano,
-				sizeEstimateBytes:     row.SizeEstimateBytes,
-				usageIdentity:         row.UsageIdentity,
 				description:           row.Description,
 				recordType:            row.RecordType,
 				persistedEnvelope:     &env,
@@ -188,12 +186,6 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			} else {
 				eagerDecodeResultIDs = append(eagerDecodeResultIDs, resultID)
 			}
-			if res.usageIdentity == "" {
-				if usageIdentity, ok := cacheUsageIdentity(res); ok {
-					res.usageIdentity = usageIdentity
-				}
-			}
-
 			c.resultsByID[resultID] = res
 			c.traceImportResultLoaded(ctx, importRunID, resultID, row.CallFrameJSON)
 		}

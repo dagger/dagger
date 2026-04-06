@@ -10,8 +10,6 @@ type MirrorResult struct {
 	ExpiresAtUnix      int64
 	CreatedAtUnixNano  int64
 	LastUsedAtUnixNano int64
-	SizeEstimateBytes  int64
-	UsageIdentity      string
 	RecordType         string
 	Description        string
 }
@@ -120,15 +118,15 @@ const insertMirrorResult = `
 INSERT INTO results (
 	id, call_frame_json, self_payload, output_effect_ids_json,
 	expires_at_unix, created_at_unix_nano,
-	last_used_at_unix_nano, size_estimate_bytes, usage_identity, record_type, description
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	last_used_at_unix_nano, record_type, description
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 func (q *Queries) InsertMirrorResult(ctx context.Context, arg MirrorResult) error {
 	_, err := q.exec(ctx, nil, insertMirrorResult,
 		arg.ID, arg.CallFrameJSON, arg.SelfPayload, arg.OutputEffectIDs,
-		arg.ExpiresAtUnix, arg.CreatedAtUnixNano, arg.LastUsedAtUnixNano, arg.SizeEstimateBytes,
-		arg.UsageIdentity, arg.RecordType, arg.Description,
+		arg.ExpiresAtUnix, arg.CreatedAtUnixNano, arg.LastUsedAtUnixNano,
+		arg.RecordType, arg.Description,
 	)
 	return err
 }
@@ -234,7 +232,7 @@ const listMirrorResults = `
 SELECT
 	id, call_frame_json, self_payload, output_effect_ids_json,
 	expires_at_unix, created_at_unix_nano,
-	last_used_at_unix_nano, size_estimate_bytes, usage_identity, record_type, description
+	last_used_at_unix_nano, record_type, description
 FROM results
 `
 
@@ -256,8 +254,6 @@ func (q *Queries) ListMirrorResults(ctx context.Context) ([]MirrorResult, error)
 			&row.ExpiresAtUnix,
 			&row.CreatedAtUnixNano,
 			&row.LastUsedAtUnixNano,
-			&row.SizeEstimateBytes,
-			&row.UsageIdentity,
 			&row.RecordType,
 			&row.Description,
 		); err != nil {

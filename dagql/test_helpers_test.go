@@ -74,10 +74,10 @@ func cacheTestSizedIntResult(
 	sizeCalls *atomic.Int32,
 ) AnyResult {
 	res, err := NewResultForCall(cacheTestSizedInt{
-		Int:           NewInt(value),
-		sizeBytes:     sizeBytes,
-		usageIdentity: usageIdentity,
-		sizeCalls:     sizeCalls,
+		Int:             NewInt(value),
+		sizeByIdentity:  map[string]int64{usageIdentity: sizeBytes},
+		usageIdentities: []string{usageIdentity},
+		sizeCalls:       sizeCalls,
 	}, frame)
 	if err != nil {
 		panic(err)
@@ -93,11 +93,11 @@ func cacheTestMutableSizedIntResult(
 	sizeCalls *atomic.Int32,
 ) AnyResult {
 	res, err := NewResultForCall(cacheTestSizedInt{
-		Int:           NewInt(value),
-		sizeSource:    sizeSource,
-		usageIdentity: usageIdentity,
-		sizeCalls:     sizeCalls,
-		sizeMayChange: true,
+		Int:                  NewInt(value),
+		sizeSourceByIdentity: map[string]*atomic.Int64{usageIdentity: sizeSource},
+		usageIdentities:      []string{usageIdentity},
+		sizeCalls:            sizeCalls,
+		sizeMayChange:        true,
 	}, frame)
 	if err != nil {
 		panic(err)

@@ -24,7 +24,8 @@ func (srv *Server) EngineLocalCachePolicy() *dagqlCachePrunePolicy {
 
 // Return all the cache entries in the local cache. No support for filtering yet.
 func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCacheEntrySet, error) {
-	return engineCacheEntrySetFromUsage(srv.engineCache.UsageEntriesAll(ctx)), nil
+	entries := srv.engineCache.UsageEntriesAll(ctx)
+	return engineCacheEntrySetFromUsage(entries), nil
 }
 
 // Prune the local cache of releaseable entries. If UseDefaultPolicy is true,

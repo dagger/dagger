@@ -163,7 +163,8 @@ func (dir *Directory) AttachDependencyResults(
 	if err != nil {
 		return nil, err
 	}
-	return append(deps, lazyDeps...), nil
+	deps = append(deps, lazyDeps...)
+	return deps, nil
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
@@ -223,7 +224,7 @@ func (dir *Directory) setSnapshotSource(src dagql.ObjectResult[*Directory]) erro
 	return nil
 }
 
-func (dir *Directory) CacheUsageSize(ctx context.Context) (int64, bool, error) {
+func (dir *Directory) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
 	if dir == nil {
 		return 0, false, nil
 	}
@@ -231,6 +232,9 @@ func (dir *Directory) CacheUsageSize(ctx context.Context) (int64, bool, error) {
 	snapshot := dir.Snapshot
 	dir.snapshotMu.RUnlock()
 	if snapshot == nil {
+		return 0, false, nil
+	}
+	if snapshot.SnapshotID() != identity {
 		return 0, false, nil
 	}
 	size, err := snapshot.Size(ctx)
@@ -240,17 +244,17 @@ func (dir *Directory) CacheUsageSize(ctx context.Context) (int64, bool, error) {
 	return size, true, nil
 }
 
-func (dir *Directory) CacheUsageIdentity() (string, bool) {
+func (dir *Directory) CacheUsageIdentities() []string {
 	if dir == nil {
-		return "", false
+		return nil
 	}
 	dir.snapshotMu.RLock()
 	snapshot := dir.Snapshot
 	dir.snapshotMu.RUnlock()
 	if snapshot == nil {
-		return "", false
+		return nil
 	}
-	return snapshot.SnapshotID(), true
+	return []string{snapshot.SnapshotID()}
 }
 
 func (dir *Directory) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {

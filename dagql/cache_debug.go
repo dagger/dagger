@@ -71,22 +71,21 @@ type EGraphDebugResult struct {
 
 type CacheDebugResult struct {
 	EGraphDebugResult
-	ResultCall                            *ResultCall `json:"result_call,omitempty"`
-	ResultCallRecipeDigest                string      `json:"result_call_recipe_digest,omitempty"`
-	ResultCallRecipeDigestError           string      `json:"result_call_recipe_digest_error,omitempty"`
-	ResultCallContentPreferredDigest      string      `json:"result_call_content_preferred_digest,omitempty"`
-	ResultCallContentPreferredDigestError string      `json:"result_call_content_preferred_digest_error,omitempty"`
-	ResultCallInputDigests                []string    `json:"result_call_input_digests,omitempty"`
-	ResultCallInputDigestsError           string      `json:"result_call_input_digests_error,omitempty"`
-	AssociatedTermIDs                     []uint64    `json:"associated_term_ids,omitempty"`
-	IndexedDigests                        []string    `json:"indexed_digests,omitempty"`
-	ExpiresAtUnix                         int64       `json:"expires_at_unix,omitempty"`
-	CreatedAtUnixNano                     int64       `json:"created_at_unix_nano,omitempty"`
-	LastUsedAtUnixNano                    int64       `json:"last_used_at_unix_nano,omitempty"`
-	SizeEstimateBytes                     int64       `json:"size_estimate_bytes"`
-	UsageIdentity                         string      `json:"usage_identity,omitempty"`
-	PersistedEnvelopeKind                 string      `json:"persisted_envelope_kind,omitempty"`
-	PersistedEnvelopeTypeName             string      `json:"persisted_envelope_type_name,omitempty"`
+	ResultCall                            *ResultCall      `json:"result_call,omitempty"`
+	ResultCallRecipeDigest                string           `json:"result_call_recipe_digest,omitempty"`
+	ResultCallRecipeDigestError           string           `json:"result_call_recipe_digest_error,omitempty"`
+	ResultCallContentPreferredDigest      string           `json:"result_call_content_preferred_digest,omitempty"`
+	ResultCallContentPreferredDigestError string           `json:"result_call_content_preferred_digest_error,omitempty"`
+	ResultCallInputDigests                []string         `json:"result_call_input_digests,omitempty"`
+	ResultCallInputDigestsError           string           `json:"result_call_input_digests_error,omitempty"`
+	AssociatedTermIDs                     []uint64         `json:"associated_term_ids,omitempty"`
+	IndexedDigests                        []string         `json:"indexed_digests,omitempty"`
+	ExpiresAtUnix                         int64            `json:"expires_at_unix,omitempty"`
+	CreatedAtUnixNano                     int64            `json:"created_at_unix_nano,omitempty"`
+	LastUsedAtUnixNano                    int64            `json:"last_used_at_unix_nano,omitempty"`
+	CacheUsageSizeByIdentity              map[string]int64 `json:"cache_usage_size_by_identity,omitempty"`
+	PersistedEnvelopeKind                 string           `json:"persisted_envelope_kind,omitempty"`
+	PersistedEnvelopeTypeName             string           `json:"persisted_envelope_type_name,omitempty"`
 }
 
 type CacheDebugResultDigestIndex struct {
@@ -302,7 +301,7 @@ func (c *Cache) tracePruneCandidateSkipped(ctx context.Context, policyIndex int,
 			"shared_result_id", res.resultID,
 			"record_type", res.entry.RecordType,
 			"description", res.entry.Description,
-			"usage_identity", res.usageIdentity,
+			"usage_identities", res.usageIdentities,
 			"incoming_ownership_count", res.incomingCount,
 			"has_persisted_edge", res.hasPersistedEdge,
 			"persisted_edge_unpruneable", res.persistedEdgeUnpruneable,
@@ -324,7 +323,7 @@ func (c *Cache) tracePruneCandidateSelected(ctx context.Context, policyIndex int
 			"shared_result_id", candidate.resultID,
 			"record_type", res.entry.RecordType,
 			"description", res.entry.Description,
-			"usage_identity", res.usageIdentity,
+			"usage_identities", res.usageIdentities,
 			"incoming_ownership_count", res.incomingCount,
 			"has_persisted_edge", res.hasPersistedEdge,
 			"persisted_edge_unpruneable", res.persistedEdgeUnpruneable,
@@ -347,7 +346,7 @@ func (c *Cache) tracePrunePersistedEdgeRemoved(ctx context.Context, policyIndex 
 			"shared_result_id", candidate.resultID,
 			"record_type", res.entry.RecordType,
 			"description", res.entry.Description,
-			"usage_identity", res.usageIdentity,
+			"usage_identities", res.usageIdentities,
 			"incoming_ownership_count", res.incomingCount,
 			"has_persisted_edge", res.hasPersistedEdge,
 			"persisted_edge_unpruneable", res.persistedEdgeUnpruneable,
@@ -1307,10 +1306,18 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				ExpiresAtUnix:                         res.expiresAtUnix,
 				CreatedAtUnixNano:                     state.createdAtUnixNano,
 				LastUsedAtUnixNano:                    state.lastUsedAtUnixNano,
-				SizeEstimateBytes:                     res.sizeEstimateBytes,
-				UsageIdentity:                         res.usageIdentity,
-				PersistedEnvelopeKind:                 persistedEnvelopeKind,
-				PersistedEnvelopeTypeName:             persistedEnvelopeTypeName,
+				CacheUsageSizeByIdentity: func() map[string]int64 {
+					if len(res.cacheUsageSizeByIdentity) == 0 {
+						return nil
+					}
+					cp := make(map[string]int64, len(res.cacheUsageSizeByIdentity))
+					for identity, sizeBytes := range res.cacheUsageSizeByIdentity {
+						cp[identity] = sizeBytes
+					}
+					return cp
+				}(),
+				PersistedEnvelopeKind:     persistedEnvelopeKind,
+				PersistedEnvelopeTypeName: persistedEnvelopeTypeName,
 			}); err != nil {
 				return err
 			}

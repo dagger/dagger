@@ -81,15 +81,15 @@ func (m *ClientFilesyncMirror) CacheUsageMayChange() bool {
 	return true
 }
 
-func (m *ClientFilesyncMirror) CacheUsageIdentity() (string, bool) {
+func (m *ClientFilesyncMirror) CacheUsageIdentities() []string {
 	if m == nil || m.snapshotID == "" {
-		return "", false
+		return nil
 	}
-	return m.snapshotID, true
+	return []string{m.snapshotID}
 }
 
-func (m *ClientFilesyncMirror) CacheUsageSize(ctx context.Context) (int64, bool, error) {
-	if m == nil || m.snapshotID == "" {
+func (m *ClientFilesyncMirror) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+	if m == nil || m.snapshotID == "" || m.snapshotID != identity {
 		return 0, false, nil
 	}
 	m.mu.Lock()

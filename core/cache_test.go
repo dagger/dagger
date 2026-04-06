@@ -255,9 +255,7 @@ func TestCacheVolumeClosedStateUsageIdentityUsesSnapshotID(t *testing.T) {
 	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
 	cache.snapshotID = "snapshot-123"
 
-	identity, ok := cache.CacheUsageIdentity()
-	require.True(t, ok)
-	require.Equal(t, "snapshot-123", identity)
+	require.Equal(t, []string{"snapshot-123"}, cache.CacheUsageIdentities())
 }
 
 func TestCacheVolumeClosedStateUsageSizeReopensBySnapshotID(t *testing.T) {
@@ -284,7 +282,7 @@ func TestCacheVolumeClosedStateUsageSizeReopensBySnapshotID(t *testing.T) {
 	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
 	cache.snapshotID = "snapshot-123"
 
-	size, ok, err := cache.CacheUsageSize(ctx)
+	size, ok, err := cache.CacheUsageSize(ctx, "snapshot-123")
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, int64(42), size)

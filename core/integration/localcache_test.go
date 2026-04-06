@@ -251,7 +251,7 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			tryCount := 10
 			for i := range tryCount {
 				cacheEnts = c2.Engine().LocalCache().EntrySet()
-				newUsedBytes, err := cacheEnts.DiskSpaceBytes(ctx)
+				newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 				require.NoError(t, err)
 				if newUsedBytes > previousUsedBytes {
 					break
