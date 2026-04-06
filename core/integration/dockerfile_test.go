@@ -208,18 +208,192 @@ ADD --checksum=%s %s /downloads/README
 	t.Run("add-git-query-string-variants", func(ctx context.Context, t *testctx.T) {
 		const branchURL = "https://github.com/octocat/Hello-World.git?branch=master"
 		const refURL = "https://github.com/octocat/Hello-World.git?ref=master"
+		const fragmentURL = "https://github.com/octocat/Hello-World.git#master"
 
 		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 ADD %s /repo-branch
 ADD %s /repo-ref
+ADD %s /repo-fragment
 RUN test -f /repo-branch/README
 RUN test -f /repo-ref/README
-CMD ["sh", "-c", "cat /repo-branch/README && echo --- && cat /repo-ref/README"]
-`, alpineImage, branchURL, refURL))
+RUN test -f /repo-fragment/README
+CMD ["sh", "-c", "cat /repo-branch/README && echo --- && cat /repo-ref/README && echo --- && cat /repo-fragment/README"]
+`, alpineImage, branchURL, refURL, fragmentURL))
 
 		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "Hello World!")
+	})
+
+	t.Run("add-http-plain-file", func(ctx context.Context, t *testctx.T) {
+		srv := c.Container().
+			From(busyboxImage).
+			WithWorkdir("/srv").
+			WithNewFile("README", "hello-from-http\n").
+			WithDefaultArgs([]string{"httpd", "-v", "-f"}).
+			WithExposedPort(80).
+			AsService().
+			WithHostname("fileserver")
+
+		_, err := srv.Start(ctx)
+		require.NoError(t, err)
+
+		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+ADD http://fileserver/README /downloads/README
+CMD ["cat", "/downloads/README"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello-from-http", strings.TrimSpace(out))
+	})
+
+	t.Run("add-local-archive-unpacks", func(ctx context.Context, t *testctx.T) {
+		dir := c.Container().
+			From(busyboxImage).
+			WithWorkdir("/ctx").
+			WithExec([]string{"sh", "-c", "mkdir -p inner && echo hello-from-archive > inner/hello.txt && tar cf archive.tar inner"}).
+			Directory("/ctx").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+ADD archive.tar /out/
+CMD ["cat", "/out/inner/hello.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello-from-archive", strings.TrimSpace(out))
+	})
+
+	t.Run("add-non-archive-falls-back-to-plain-copy", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("archive.tar", "not-an-archive\n").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+ADD archive.tar /out/plain.txt
+CMD ["cat", "/out/plain.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "not-an-archive", strings.TrimSpace(out))
+	})
+
+	t.Run("workdir-created-with-named-user-ownership", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+RUN addgroup -g 4321 appgrp && adduser -D -u 1234 -G appgrp app
+USER app:appgrp
+WORKDIR /work
+CMD ["sh", "-lc", "stat -c '%%u:%%g' /work"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "1234:4321", strings.TrimSpace(out))
+	})
+
+	t.Run("copy-chmod-recursive", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("root.txt", "root").
+			WithNewFile("nested/file.txt", "nested").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+COPY --chmod=751 . /app/
+`, alpineImage))
+
+		stdout, err := dir.DockerBuild().
+			WithExec([]string{"sh", "-lc", "stat -c '%a %n' /app /app/root.txt /app/nested /app/nested/file.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stdout, "751 /app")
+		require.Contains(t, stdout, "751 /app/root.txt")
+		require.Contains(t, stdout, "751 /app/nested")
+		require.Contains(t, stdout, "751 /app/nested/file.txt")
+	})
+
+	t.Run("copy-chmod-explicit-file-destination", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("input.txt", "explicit-file-dest").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+COPY --chmod=751 input.txt /app/out.txt
+`, alpineImage))
+
+		ctr := dir.DockerBuild()
+		contents, err := ctr.File("/app/out.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "explicit-file-dest", strings.TrimSpace(contents))
+
+		permOut, err := ctr.WithExec([]string{"stat", "-c", "%a", "/app/out.txt"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "751", strings.TrimSpace(permOut))
+	})
+
+	t.Run("copy-group-only-chown", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("input.txt", "group-only-chown").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+COPY --chown=:123 input.txt /app/out.txt
+`, alpineImage))
+
+		ctr := dir.DockerBuild()
+		contents, err := ctr.File("/app/out.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "group-only-chown", strings.TrimSpace(contents))
+
+		ownerOut, err := ctr.WithExec([]string{"stat", "-c", "%u:%g", "/app/out.txt"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "0:123", strings.TrimSpace(ownerOut))
+	})
+
+	t.Run("copy-named-chown", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("input.txt", "named-chown").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+RUN addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser
+COPY --chown=auser:agroup input.txt /app/out.txt
+`, alpineImage))
+
+		ctr := dir.DockerBuild()
+		contents, err := ctr.File("/app/out.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "named-chown", strings.TrimSpace(contents))
+
+		ownerOut, err := ctr.WithExec([]string{"stat", "-c", "%u:%g %U:%G", "/app/out.txt"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "1234:4321 auser:agroup", strings.TrimSpace(ownerOut))
+	})
+
+	t.Run("copy-stage-root-to-subdir", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s AS outfull
+RUN mkdir -p /lib/systemd/system && echo ok >/lib/systemd/system/containerd.service
+
+FROM %s
+COPY --from=outfull / /usr/local/
+`, alpineImage, alpineImage))
+
+		_, err := dir.DockerBuild().
+			WithExec([]string{"sh", "-lc", "test -f /usr/local/lib/systemd/system/containerd.service"}).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("copy-multi-stage-service-layout", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s AS build-containerd
+RUN mkdir -p /out/amd64 && echo bin >/out/amd64/containerd && echo svc >/out/containerd.service
+
+FROM %s AS build-full
+COPY --from=build-containerd /out/amd64/* /out/bin/
+COPY --from=build-containerd /out/containerd.service /out/lib/systemd/system/containerd.service
+
+FROM %s AS out-full
+COPY --from=build-full /out /
+
+FROM %s
+COPY --from=out-full / /usr/local/
+`, alpineImage, alpineImage, alpineImage, alpineImage))
+
+		listing, err := dir.DockerBuild().
+			WithExec([]string{"sh", "-lc", "find /usr/local -maxdepth 6 -type f | sort"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, listing, "/usr/local/lib/systemd/system/containerd.service")
 	})
 
 	t.Run("copy-wildcards", func(ctx context.Context, t *testctx.T) {
@@ -369,6 +543,62 @@ CMD ["cat", "/tmp/out"]
 		require.Equal(t, "tmpfs-ok", strings.TrimSpace(out))
 	})
 
+	t.Run("run-mount-bind-readonly", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("mounted.txt", "readonly-bind-data").
+			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
+FROM %s
+RUN --mount=type=bind,source=.,target=/mnt,readonly sh -lc 'if touch /mnt/should-fail 2>/dev/null; then echo writable > /mount-mode.txt; else echo readonly > /mount-mode.txt; fi; cat /mnt/mounted.txt > /copied.txt'
+CMD ["cat", "/copied.txt"]
+`, alpineImage))
+
+		ctr := dir.DockerBuild()
+		mode, err := ctr.File("/mount-mode.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "readonly", strings.TrimSpace(mode))
+
+		copied, err := ctr.File("/copied.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "readonly-bind-data", strings.TrimSpace(copied))
+	})
+
+	t.Run("run-mount-bind-non-sticky", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("ctx.txt", "non-sticky-bind").
+			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
+FROM %s
+RUN --mount=type=bind,source=.,target=/mnt,readonly sh -lc 'cat /mnt/ctx.txt > /copied.txt'
+RUN test ! -e /mnt/ctx.txt
+CMD ["cat", "/copied.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "non-sticky-bind", strings.TrimSpace(out))
+	})
+
+	t.Run("run-network-none", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+RUN --network=none sh -c 'echo network-none > /status'
+CMD ["cat", "/status"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "network-none", strings.TrimSpace(out))
+	})
+
+	t.Run("run-network-host", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+RUN --network=host sh -c 'echo network-host > /status'
+CMD ["cat", "/status"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "network-host", strings.TrimSpace(out))
+	})
+
 	t.Run("with build args", func(ctx context.Context, t *testctx.T) {
 		dir := baseDir.
 			WithNewFile("Dockerfile",
@@ -436,6 +666,32 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		})
 
 		t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
+			dir := baseDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
+			opts := dagger.DirectoryDockerBuildOpts{Secrets: []*dagger.Secret{sec}}
+
+			stdout, err := dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
+
+		dockerfile = `FROM ` + alpineImage + `
+WORKDIR /src
+RUN --mount=type=secret,id=my-secret,required=true,env=MY_SECRET sh -c 'test "$MY_SECRET" = "barbar" && printf "%s" "$MY_SECRET" > /env'
+CMD sh -c 'cat /env && echo && cat /env | tr "[a-z]" "[A-Z]"'
+`
+
+		t.Run("env builtin frontend", func(ctx context.Context, t *testctx.T) {
+			dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+			opts := dagger.DirectoryDockerBuildOpts{Secrets: []*dagger.Secret{sec}}
+
+			stdout, err := dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
+
+		t.Run("env remote frontend", func(ctx context.Context, t *testctx.T) {
 			dir := baseDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
 			opts := dagger.DirectoryDockerBuildOpts{Secrets: []*dagger.Secret{sec}}
 
