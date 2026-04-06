@@ -173,12 +173,16 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
 		return filepath.Join(ws.Root, ws.Path, relPath)
 	}
+	resolveConfigLocalRef := func(configDir, relPath string) string {
+		return filepath.Join(configDir, relPath)
+	}
 
 	return srv.detectAndLoadWorkspace(ctx, client,
 		core.NewCallerStatFS(client.bkClient),
 		client.bkClient.ReadCallerHostFile,
 		cwd,
 		resolveLocalRef,
+		resolveConfigLocalRef,
 		nil,
 		true, // isLocal
 	)
@@ -290,6 +294,10 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		subPath := filepath.Join(ws.Root, ws.Path, relPath)
 		return core.GitRefString(parsedRef.cloneRef, subPath, parsedRef.version)
 	}
+	resolveConfigLocalRef := func(configDir, relPath string) string {
+		subPath := filepath.Join(configDir, relPath)
+		return core.GitRefString(parsedRef.cloneRef, subPath, parsedRef.version)
+	}
 
 	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
 		&core.DirectoryStatFS{Dir: tree},
@@ -298,6 +306,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		},
 		parsedRef.workspaceSubdir,
 		resolveLocalRef,
+		resolveConfigLocalRef,
 		func(ws *workspace.Workspace) string {
 			return remoteWorkspaceAddress(parsedRef.cloneRef, ws.Path, parsedRef.version)
 		},
@@ -315,10 +324,11 @@ func (srv *Server) detectAndLoadWorkspace(
 	readFile func(context.Context, string) ([]byte, error),
 	cwd string,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	resolveConfigLocalRef func(configDir, relPath string) string,
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 ) error {
-	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{})
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, resolveConfigLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{})
 }
 
 // pendingModule represents a module to be loaded from compat parsing,
@@ -391,8 +401,8 @@ func cwdModuleName(ctx context.Context, readFile func(context.Context, string) (
 }
 
 func pendingLegacyModule(
-	ws *workspace.Workspace,
-	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	configDir string,
+	resolveConfigLocalRef func(configDir, relPath string) string,
 	name, source, pin string,
 	entrypoint bool,
 	configDefaults map[string]any,
@@ -401,7 +411,7 @@ func pendingLegacyModule(
 	kind := core.FastModuleSourceKindCheck(source, pin)
 	ref := source
 	if kind == core.ModuleSourceKindLocal {
-		ref = resolveLocalRef(ws, source)
+		ref = resolveConfigLocalRef(configDir, source)
 	}
 
 	mod := pendingModule{
@@ -441,6 +451,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	readFile func(context.Context, string) ([]byte, error),
 	cwd string,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	resolveConfigLocalRef func(configDir, relPath string) string,
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
@@ -499,8 +510,8 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// (1a) Legacy toolchains (from compat mode, extracted above)
 	for _, tc := range legacyToolchains {
 		pending = append(pending, pendingLegacyModule(
-			ws,
-			resolveLocalRef,
+			moduleDir,
+			resolveConfigLocalRef,
 			tc.Name,
 			tc.Source,
 			tc.Pin,
@@ -513,8 +524,8 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// (1b) Legacy blueprint (from compat mode, extracted above)
 	if legacyBlueprint != nil {
 		blueprint := pendingLegacyModule(
-			ws,
-			resolveLocalRef,
+			moduleDir,
+			resolveConfigLocalRef,
 			legacyBlueprint.Name,
 			legacyBlueprint.Source,
 			legacyBlueprint.Pin,

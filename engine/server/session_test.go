@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
@@ -15,17 +14,16 @@ import (
 func TestPendingLegacyModule(t *testing.T) {
 	t.Parallel()
 
-	ws := &workspace.Workspace{Root: "/repo", Path: "."}
-	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
-		return "/resolved/" + relPath
+	resolveConfigLocalRef := func(configDir, relPath string) string {
+		return configDir + "/" + relPath
 	}
 
 	t.Run("preserves remote pin", func(t *testing.T) {
 		t.Parallel()
 
 		mod := pendingLegacyModule(
-			ws,
-			resolveLocalRef,
+			"/repo",
+			resolveConfigLocalRef,
 			"go",
 			"github.com/acme/go-toolchain@main",
 			"abc123",
@@ -51,8 +49,8 @@ func TestPendingLegacyModule(t *testing.T) {
 		t.Parallel()
 
 		mod := pendingLegacyModule(
-			ws,
-			resolveLocalRef,
+			"/repo",
+			resolveConfigLocalRef,
 			"blueprint",
 			"../blueprint",
 			"",
@@ -61,12 +59,47 @@ func TestPendingLegacyModule(t *testing.T) {
 			nil,
 		)
 
-		require.Equal(t, "/resolved/../blueprint", mod.Ref)
+		require.Equal(t, "/repo/../blueprint", mod.Ref)
 		require.Empty(t, mod.RefPin)
 		require.Equal(t, "blueprint", mod.Name)
 		require.True(t, mod.Entrypoint)
 		require.True(t, mod.LegacyDefaultPath)
 		require.Nil(t, mod.ConfigDefaults)
+	})
+
+	t.Run("resolves local refs relative to config dir", func(t *testing.T) {
+		t.Parallel()
+
+		mod := pendingLegacyModule(
+			"/app",
+			resolveConfigLocalRef,
+			"changelog",
+			"toolchains/changelog",
+			"",
+			false,
+			nil,
+			nil,
+		)
+
+		require.Equal(t, "/app/toolchains/changelog", mod.Ref)
+	})
+
+	t.Run("does not resolve local refs from workspace subdir", func(t *testing.T) {
+		t.Parallel()
+
+		mod := pendingLegacyModule(
+			"/app",
+			resolveConfigLocalRef,
+			"cli",
+			"toolchains/cli-dev",
+			"",
+			false,
+			nil,
+			nil,
+		)
+
+		require.Equal(t, "/app/toolchains/cli-dev", mod.Ref)
+		require.NotEqual(t, "/app/core/integration/toolchains/cli-dev", mod.Ref)
 	})
 }
 
