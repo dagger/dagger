@@ -4,36 +4,44 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
 func TestApplyLegacyCustomizationsToTypeDefs(t *testing.T) {
-	dirType := (&TypeDef{}).WithObject("Directory", "", nil, nil)
-	stringType := &TypeDef{Kind: TypeDefKindString}
+	dag := newTypeDefTestDag(t)
 
-	mainObj := (&TypeDef{}).WithObject("toolchain", "", nil, nil)
+	dirObj := NewObjectTypeDef("Directory", "", nil)
+	dirObjRes := newTypeDefDetachedResult(t, dag, "legacyDirectoryObjectTypeDef", dirObj)
+	dirType := newTypeDefDetachedResult(t, dag, "legacyDirectoryTypeDef", (&TypeDef{}).WithObjectTypeDef(dirObjRes))
+	stringType := newTypeDefDetachedResult(t, dag, "legacyStringTypeDef", (&TypeDef{}).WithKind(TypeDefKindString))
 
-	ctor := NewFunction("new", mainObj).
-		WithArg("config", dirType, "", nil, "", "", nil, nil, nil)
-	var err error
-	mainObj, err = mainObj.WithObjectConstructor(ctor)
-	require.NoError(t, err)
+	mainObj := NewObjectTypeDef("toolchain", "", nil)
+	mainObjRes := newTypeDefDetachedResult(t, dag, "legacyMainObjectTypeDef", mainObj)
+	mainType := newTypeDefDetachedResult(t, dag, "legacyMainTypeDef", (&TypeDef{}).WithObjectTypeDef(mainObjRes))
 
-	configuredObj := (&TypeDef{}).WithObject("configured", "", nil, nil)
+	configArg := newTypeDefDetachedResult(t, dag, "legacyConfigArg", NewFunctionArg("config", dirType, "", nil, "", "", nil, nil))
+	ctor := NewFunction("new", mainType).WithArg(configArg)
+	mainObj.Constructor = dagql.NonNull(newTypeDefDetachedResult(t, dag, "legacyConstructor", ctor))
 
-	check := NewFunction("check", stringType).
-		WithArg("version", stringType, "", nil, "", "", nil, nil, nil)
-	configuredObj, err = configuredObj.WithFunction(check)
-	require.NoError(t, err)
+	configuredObj := NewObjectTypeDef("configured", "", nil)
+	configuredObjRes := newTypeDefDetachedResult(t, dag, "legacyConfiguredObjectTypeDef", configuredObj)
+	configuredType := newTypeDefDetachedResult(t, dag, "legacyConfiguredTypeDef", (&TypeDef{}).WithObjectTypeDef(configuredObjRes))
 
-	configure := NewFunction("configure", configuredObj)
-	mainObj, err = mainObj.WithFunction(configure)
-	require.NoError(t, err)
+	versionArg := newTypeDefDetachedResult(t, dag, "legacyVersionArg", NewFunctionArg("version", stringType, "", nil, "", "", nil, nil))
+	check := NewFunction("check", stringType).WithArg(versionArg)
+	configuredObj.Functions = append(configuredObj.Functions, newTypeDefDetachedResult(t, dag, "legacyCheckFunction", check))
+
+	configure := NewFunction("configure", configuredType)
+	mainObj.Functions = append(mainObj.Functions, newTypeDefDetachedResult(t, dag, "legacyConfigureFunction", configure))
 
 	mod := &Module{
 		NameField:    "toolchain",
 		OriginalName: "toolchain",
-		ObjectDefs:   []*TypeDef{mainObj, configuredObj},
+		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
+			mainType,
+			configuredType,
+		},
 	}
 
 	mod.ApplyLegacyCustomizationsToTypeDefs([]*modules.ModuleConfigArgument{
@@ -53,18 +61,18 @@ func TestApplyLegacyCustomizationsToTypeDefs(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, mainObject.Constructor.Valid)
 
-	configArg, ok := lookupFunctionArg(mainObject.Constructor.Value, "config")
+	configArgSelf, ok := lookupFunctionArg(mainObject.Constructor.Value.Self(), "config")
 	require.True(t, ok)
-	require.Equal(t, "./custom-config.txt", configArg.DefaultPath)
-	require.Equal(t, []string{"node_modules"}, configArg.Ignore)
-	require.True(t, configArg.TypeDef.Optional)
+	require.Equal(t, "./custom-config.txt", configArgSelf.DefaultPath)
+	require.Equal(t, []string{"node_modules"}, configArgSelf.Ignore)
+	require.True(t, configArgSelf.TypeDef.Self().Optional)
 
 	configured, ok := mod.ObjectByOriginalName("configured")
 	require.True(t, ok)
 	checkFn, ok := functionByOriginalName(configured, "check")
 	require.True(t, ok)
 
-	versionArg, ok := lookupFunctionArg(checkFn, "version")
+	versionArgSelf, ok := lookupFunctionArg(checkFn, "version")
 	require.True(t, ok)
-	require.Equal(t, `"1.24.1"`, versionArg.DefaultValue.String())
+	require.Equal(t, `"1.24.1"`, versionArgSelf.DefaultValue.String())
 }

@@ -251,7 +251,7 @@ func (m *MCP) LastResult() dagql.Typed {
 }
 
 func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
-	return m.env.Self().deps.Server(ctx)
+	return m.env.Self().deps.Schema(ctx)
 }
 
 func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
@@ -378,6 +378,10 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	if err != nil {
 		return fmt.Errorf("get dagql server: %w", err)
 	}
+	workspaceID, err := workspace.ID()
+	if err != nil {
+		return fmt.Errorf("get workspace ID: %w", err)
+	}
 
 	var newEnv dagql.ObjectResult[*Env]
 	if err := srv.Select(ctx, m.env, &newEnv, dagql.Selector{
@@ -386,7 +390,7 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 		Args: []dagql.NamedInput{
 			{
 				Name:  "workspace",
-				Value: dagql.NewID[*Directory](workspace.ID()),
+				Value: dagql.NewID[*Directory](workspaceID),
 			},
 		},
 	}); err != nil {
@@ -463,18 +467,20 @@ func toAny(v any) (res map[string]any, rerr error) {
 func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 	schema := srv.Schema()
 	for _, mod := range m.env.Self().installedModules {
-		modTypeName := strcase.ToCamel(mod.Name())
+		modSelf := mod.Self()
+		modTypeName := strcase.ToCamel(modSelf.Name())
 		modTypeDef := schema.Types[modTypeName]
-		for _, obj := range mod.ObjectDefs {
-			def := obj.AsObject.Value
+		for _, obj := range modSelf.ObjectDefs {
+			def := obj.Self().AsObject.Value.Self()
 			if strcase.ToCamel(def.Name) != modTypeName {
 				// we're only concerned with the entrypoint object
 				continue
 			}
 			var hasRequiredArgs bool
 			if def.Constructor.Valid {
-				for _, arg := range def.Constructor.Value.Args {
-					if !arg.TypeDef.Optional && arg.DefaultPath == "" && arg.DefaultValue == nil {
+				for _, arg := range def.Constructor.Value.Self().Args {
+					argSelf := arg.Self()
+					if !argSelf.TypeDef.Self().Optional && argSelf.DefaultPath == "" && argSelf.DefaultValue == nil {
 						hasRequiredArgs = true
 						break
 					}
@@ -482,7 +488,7 @@ func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 			}
 			if hasRequiredArgs {
 				// FIXME: better error
-				return fmt.Errorf("TODO: module %s constructor cannot have required arguments", mod.Name())
+				return fmt.Errorf("TODO: module %s constructor cannot have required arguments", modSelf.Name())
 			}
 			if err := m.typeTools(allTools, srv, schema, modTypeDef, def); err != nil {
 				return err
@@ -736,7 +742,11 @@ func (m *MCP) call(ctx context.Context,
 		if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
 			// Handle ID results by turning them back into Objects, since these are
 			// typically implementation details hinting to SDKs to unlazy the call.
-			syncedObj, err := srv.Load(ctx, id.ID())
+			syncedID, err := id.ID()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get synced object ID: %w", err)
+			}
+			syncedObj, err := srv.Load(ctx, syncedID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load synced object: %w", err)
 			}
@@ -766,6 +776,10 @@ func (m *MCP) call(ctx context.Context,
 	// NOTE: returning a Changeset behaves similarly to returning an Env; it is
 	// directly applied to the Env.
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
+		changesID, err := changes.ID()
+		if err != nil {
+			return "", fmt.Errorf("get changeset ID: %w", err)
+		}
 		var newWS dagql.ObjectResult[*Directory]
 		if err := srv.Select(ctx, m.env.Self().Workspace, &newWS, dagql.Selector{
 			View:  srv.View,
@@ -773,7 +787,7 @@ func (m *MCP) call(ctx context.Context,
 			Args: []dagql.NamedInput{
 				{
 					Name:  "changes",
-					Value: dagql.NewID[*Changeset](changes.ID()),
+					Value: dagql.NewID[*Changeset](changesID),
 				},
 			},
 		}); err != nil {
@@ -960,7 +974,11 @@ func (m *MCP) toolCallToSelections(
 				if !ok {
 					return nil, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
 				}
-				val = obj.ID()
+				objID, err := obj.ID()
+				if err != nil {
+					return nil, fmt.Errorf("arg %q: get object ID: %w", arg.Name, err)
+				}
+				val = objID
 			}
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
@@ -1088,7 +1106,11 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	result, err := tool.Call(EnvIDToContext(ctx, m.env.ID()), toolCall.Function.Arguments)
+	envID, err := m.env.ID()
+	if err != nil {
+		return toolErrorMessage(fmt.Errorf("failed to get env ID: %w", err)), true
+	}
+	result, err := tool.Call(EnvIDToContext(ctx, envID), toolCall.Function.Arguments)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}
@@ -1186,25 +1208,41 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
-	sess, ok := m.mcpSessions[serverName]
-	if !ok {
+	if _, ok := m.mcpSessions[serverName]; !ok {
 		// Fall back to individual calls if session not found
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
 	ctr := mcpSrv.Service.Self().Container
-	if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
+	if ctr.Self() == nil || ctr.Self().Config.WorkingDir == "" || ctr.Self().Config.WorkingDir == "/" {
 		// No workspace syncing needed - execute normally
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
 	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	serviceDigest, err := mcpSrv.Service.ContentPreferredDigest(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	running, err := query.Services(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	runningSvc, err := running.Get(ctx, serviceDigest, false)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
 	var results []*ModelMessage
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
-		sess.ID(),
-		ctr.Config.WorkingDir,
-		m.env.Self().Workspace.Self(),
+		runningSvc,
+		ctr.Self().Config.WorkingDir,
+		m.env.Self().Workspace,
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context
 			results = m.callBatchRegular(ctx, tools, toolCalls)
@@ -2248,7 +2286,8 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 		if !trivial {
 			continue
 		}
-		val, err := target.Select(ctx, srv, dagql.Selector{
+		var val dagql.AnyResult
+		err := srv.Select(ctx, target, &val, dagql.Selector{
 			View:  srv.View,
 			Field: field.Name,
 		})
@@ -2276,7 +2315,10 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 }
 
 func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
-	id := obj.ID()
+	id, err := obj.ID()
+	if err != nil {
+		return ""
+	}
 	if id == nil {
 		return ""
 	}
@@ -2285,7 +2327,10 @@ func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
 }
 
 func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Digest) string {
-	id := obj.ID()
+	id, err := obj.ID()
+	if err != nil {
+		return ""
+	}
 	if id == nil {
 		return ""
 	}

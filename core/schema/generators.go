@@ -19,10 +19,12 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 		dagql.Func("run", s.run).
 			Doc("Execute all selected generators"),
 
-		dagql.NodeFunc("isEmpty", DagOpWrapper(srv, s.groupIsEmpty)).
+		dagql.NodeFunc("isEmpty", s.groupIsEmpty).
+			IsPersistable().
 			Doc("Whether the generated changeset is empty or not"),
 
-		dagql.NodeFunc("changes", DagOpChangesetWrapper(srv, s.groupChanges)).
+		dagql.NodeFunc("changes", s.groupChanges).
+			IsPersistable().
 			Doc(`The combined changes from the generators execution`,
 				`If any conflict occurs, for instance if the same file is modified by multiple generators,
 				or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.`,
@@ -62,7 +64,6 @@ func (s generatorsSchema) run(ctx context.Context, parent *core.GeneratorGroup, 
 }
 
 type generatorsGroupIsEmptyArgs struct {
-	DagOpInternalArgs
 }
 
 func (s generatorsSchema) groupIsEmpty(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args generatorsGroupIsEmptyArgs) (dagql.Boolean, error) {
@@ -72,7 +73,6 @@ func (s generatorsSchema) groupIsEmpty(ctx context.Context, parent dagql.ObjectR
 
 type generatorsGroupChangesArgs struct {
 	OnConflict ChangesetsMergeConflict `default:"FAIL_EARLY"`
-	DagOpInternalArgs
 }
 
 func (s generatorsSchema) groupChanges(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args generatorsGroupChangesArgs) (*core.Changeset, error) {

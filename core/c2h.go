@@ -13,10 +13,9 @@ import (
 )
 
 type c2hTunnel struct {
-	bk        *buildkit.Client
-	ns        buildkit.Namespaced
-	socks     []*Socket
-	sockStore *SocketStore
+	bk    *buildkit.Client
+	ns    buildkit.Namespaced
+	socks []*Socket
 }
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
@@ -30,9 +29,9 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 		listenerPool.Go(func(ctx context.Context) error {
 			defer cancel(errors.New("tunnel listener done")) // if one exits, all should exit
 
-			port, ok := d.sockStore.GetSocketPortForward(sock.IDDigest)
-			if !ok {
-				return fmt.Errorf("socket not found: %s", sock.IDDigest)
+			port, err := sock.PortForward(ctx)
+			if err != nil {
+				return fmt.Errorf("c2h tunnel listener: socket port forward: %w", err)
 			}
 			frontend := port.FrontendOrBackendPort()
 
@@ -71,12 +70,12 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 
 				connSlog.Debug("handling connection")
 
-				urlEncoded, ok := d.sockStore.GetSocketURLEncoded(sock.IDDigest)
-				if !ok {
-					connSlog.Error("socket not found", "id", sock.IDDigest)
-					return fmt.Errorf("socket not found: %s", sock.IDDigest)
+				urlEncoded, err := sock.URL(ctx)
+				if err != nil {
+					connSlog.Error("failed to resolve socket URL", "error", err)
+					return fmt.Errorf("failed to resolve upstream socket URL: %w", err)
 				}
-				upstreamClient, err := d.sockStore.ConnectSocket(ctx, sock.IDDigest)
+				upstreamClient, err := sock.ForwardAgentClient(ctx)
 				if err != nil {
 					connSlog.Error("failed to create upstream client", "id", urlEncoded, "error", err)
 					return fmt.Errorf("failed to create upstream client %s: %w", urlEncoded, err)

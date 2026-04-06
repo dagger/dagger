@@ -26,21 +26,29 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Address]{
 		dagql.Func("value", s.value).
 			Doc(`The address value`),
-		dagql.NodeFuncWithCacheKey("container", s.container, dagql.CachePerCall).
+		dagql.NodeFunc("container", s.container).
+			WithInput(dagql.PerCallInput).
 			Doc(`Load a container from the address.`),
-		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CacheAsRequested).
+		dagql.NodeFunc("directory", s.directory).
+			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Load a directory from the address.`),
-		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
+		dagql.NodeFunc("file", s.file).
+			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Load a file from the address.`),
-		dagql.NodeFuncWithCacheKey("gitRef", s.gitRef, dagql.CachePerClient).
+		dagql.NodeFunc("gitRef", s.gitRef).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a git ref (branch, tag or commit) from the address.`),
-		dagql.NodeFuncWithCacheKey("gitRepository", s.gitRepository, dagql.CachePerClient).
+		dagql.NodeFunc("gitRepository", s.gitRepository).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a git repository from the address.`),
-		dagql.NodeFuncWithCacheKey("secret", s.secret, dagql.CachePerCall).
+		dagql.NodeFunc("secret", s.secret).
+			WithInput(dagql.PerCallInput).
 			Doc(`Load a secret from the address.`),
-		dagql.NodeFuncWithCacheKey("service", s.service, dagql.CachePerClient).
+		dagql.NodeFunc("service", s.service).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a service from the address.`),
-		dagql.NodeFuncWithCacheKey("socket", s.socket, dagql.CachePerCall).
+		dagql.NodeFunc("socket", s.socket).
+			WithInput(dagql.PerCallInput).
 			Doc(`Load a local socket from the address.`),
 	}.Install(srv)
 }
@@ -440,8 +448,6 @@ func (s *addressSchema) secret(
 	if err != nil {
 		return inst, err
 	}
-	// FIXME: do we still need to add this result in the secret store,
-	// because it doesn't have the same ID?
 	return inst, nil
 }
 
@@ -496,13 +502,19 @@ func (s *addressSchema) service(
 	default:
 		return inst, fmt.Errorf("unsupported service address: %q. Must be a valid tcp:// or udp:// URL", u.Scheme)
 	}
-	ports = append(ports, dagql.InputObject[core.PortForward]{
-		Value: core.PortForward{
-			Backend:  nPort,
-			Frontend: &nPort,
-			Protocol: protocol,
-		},
+	portInputAny, err := (dagql.InputObject[core.PortForward]{}).Decoder().DecodeInput(map[string]any{
+		"frontend": nPort,
+		"backend":  nPort,
+		"protocol": string(protocol),
 	})
+	if err != nil {
+		return inst, fmt.Errorf("decode service address port forward input: %w", err)
+	}
+	portInput, ok := portInputAny.(dagql.InputObject[core.PortForward])
+	if !ok {
+		return inst, fmt.Errorf("decode service address port forward input: unexpected input %T", portInputAny)
+	}
+	ports = append(ports, portInput)
 	q := []dagql.Selector{
 		{
 			Field: "host",

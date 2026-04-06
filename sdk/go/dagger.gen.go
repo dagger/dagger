@@ -2505,6 +2505,8 @@ type ContainerWithDirectoryOpts struct {
 	Owner string
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
+
+	Permissions int
 }
 
 // Return a new container snapshot, with a directory added to its filesystem
@@ -2531,6 +2533,10 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)
@@ -2931,6 +2937,8 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Mount the directory read-only.
+	ReadOnly bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -2943,6 +2951,10 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -4304,6 +4316,8 @@ type DirectoryWithDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+
+	Permissions int
 }
 
 // Return a snapshot with a directory added
@@ -4326,6 +4340,10 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)
@@ -4592,7 +4610,7 @@ func (r *Engine) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The local (on-disk) cache for the Dagger engine
+// The local engine cache state tracked by dagql
 func (r *Engine) LocalCache() *EngineCache {
 	q := r.query.Select("localCache")
 
@@ -5178,6 +5196,8 @@ func (r *EnumTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The members of the enum.
+//
 // Deprecated: use members instead
 func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 	q := r.query.Select("values")
@@ -11425,7 +11445,7 @@ func (r *ObjectTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ObjectTypeD
 	}
 }
 
-// The function used to construct new instances of this object, if any
+// The function used to construct new instances of this object, if any.
 func (r *ObjectTypeDef) Constructor() *Function {
 	q := r.query.Select("constructor")
 
@@ -11743,9 +11763,39 @@ func (r *Query) Address(value string) *Address {
 	}
 }
 
+// CacheVolumeOpts contains options for Client.CacheVolume
+type CacheVolumeOpts struct {
+	// Identifier of the directory to use as the cache volume's root.
+	Source *Directory
+	// Sharing mode of the cache volume.
+	//
+	// Default: SHARED
+	Sharing CacheSharingMode
+	// A user:group to set for the cache volume root.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
+}
+
 // Constructs a cache volume for a given cache key.
-func (r *Query) CacheVolume(key string) *CacheVolume {
+func (r *Query) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
 	q := r.query.Select("cacheVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `sharing` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Sharing) {
+			q = q.Arg("sharing", opts[i].Sharing)
+		}
+		// `owner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+		}
+	}
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
@@ -11831,6 +11881,8 @@ func (r *Query) CurrentModule() *CurrentModule {
 
 // CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
 type CurrentTypeDefsOpts struct {
+	// Return the full referenced typedef closure instead of only top-level served typedefs.
+	ReturnAllTypes bool
 	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
 	//
 	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
@@ -11841,6 +11893,10 @@ type CurrentTypeDefsOpts struct {
 func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `returnAllTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReturnAllTypes) {
+			q = q.Arg("returnAllTypes", opts[i].ReturnAllTypes)
+		}
 		// `hideCore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].HideCore) {
 			q = q.Arg("hideCore", opts[i].HideCore)
@@ -12100,6 +12156,8 @@ type HTTPOpts struct {
 	Name string
 	// Permissions to set on the file.
 	Permissions int
+	// Expected digest of the downloaded content (e.g., "sha256:...").
+	Checksum string
 	// Secret used to populate the Authorization HTTP header
 	AuthHeader *Secret
 	// A service which must be started before the URL is fetched.
@@ -12117,6 +12175,10 @@ func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
+		}
+		// `checksum` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Checksum) {
+			q = q.Arg("checksum", opts[i].Checksum)
 		}
 		// `authHeader` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AuthHeader) {

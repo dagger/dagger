@@ -27,6 +27,12 @@ func NewLoader() *Loader {
 	return &Loader{}
 }
 
+func init() {
+	core.SetModuleSourceSDKLoader(func(ctx context.Context, query *core.Query, sdkCfg *core.SDKConfig, src *core.ModuleSource) (core.SDK, error) {
+		return NewLoader().SDKForModule(ctx, query, sdkCfg, src)
+	})
+}
+
 // SDKForModule loads an SDK module based on the given SDK configuration.
 //
 // If it's a builtin SDK, it will load it from the engine container.

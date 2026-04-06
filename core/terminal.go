@@ -2,23 +2,202 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
+	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 const (
 	defaultTerminalImage = distconsts.AlpineImage
 )
+
+func cloneContainerForTerminal(ctx context.Context, query *Query, ctr *Container) (*Container, error) {
+	if ctr == nil {
+		return nil, nil
+	}
+	cp := *ctr
+	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
+	cp.Config.Env = slices.Clone(cp.Config.Env)
+	cp.Config.Entrypoint = slices.Clone(cp.Config.Entrypoint)
+	cp.Config.Cmd = slices.Clone(cp.Config.Cmd)
+	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
+	cp.Config.Labels = maps.Clone(cp.Config.Labels)
+	cp.Lazy = nil
+	if cp.MetaSnapshot != nil {
+		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, cp.MetaSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return nil, err
+		}
+		cp.MetaSnapshot = reopened
+	}
+	var err error
+	cp.FS, err = cloneTerminalDirectorySource(ctx, query, ctr.FS)
+	if err != nil {
+		return nil, err
+	}
+	cp.Mounts, err = cloneTerminalMounts(ctx, query, ctr.Mounts)
+	if err != nil {
+		return nil, err
+	}
+	cp.Secrets = slices.Clone(cp.Secrets)
+	cp.Sockets = slices.Clone(cp.Sockets)
+	cp.Ports = slices.Clone(cp.Ports)
+	cp.Services = slices.Clone(cp.Services)
+	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
+	return &cp, nil
+}
+
+func cloneTerminalMounts(ctx context.Context, query *Query, mounts ContainerMounts) (ContainerMounts, error) {
+	if mounts == nil {
+		return nil, nil
+	}
+	cp := make(ContainerMounts, len(mounts))
+	for i, mnt := range mounts {
+		cp[i] = mnt
+		var err error
+		cp[i].DirectorySource, err = cloneTerminalDirectorySource(ctx, query, mnt.DirectorySource)
+		if err != nil {
+			return nil, err
+		}
+		cp[i].FileSource, err = cloneTerminalFileSource(ctx, query, mnt.FileSource)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return cp, nil
+}
+
+func cloneTerminalDirectorySource(ctx context.Context, query *Query, src *ContainerDirectorySource) (*ContainerDirectorySource, error) {
+	if src == nil {
+		return nil, nil
+	}
+	if src.isResultBacked() {
+		return newContainerDirectoryResultSource(*src.Result), nil
+	}
+	if src.Value == nil {
+		return nil, nil
+	}
+	dir, err := cloneTerminalDirectory(ctx, query, src.Value)
+	if err != nil {
+		return nil, err
+	}
+	return newContainerDirectoryValueSource(dir), nil
+}
+
+func cloneTerminalFileSource(ctx context.Context, query *Query, src *ContainerFileSource) (*ContainerFileSource, error) {
+	if src == nil {
+		return nil, nil
+	}
+	if src.isResultBacked() {
+		return newContainerFileResultSource(*src.Result), nil
+	}
+	if src.Value == nil {
+		return nil, nil
+	}
+	file, err := cloneTerminalFile(ctx, query, src.Value)
+	if err != nil {
+		return nil, err
+	}
+	return newContainerFileValueSource(file), nil
+}
+
+func cloneTerminalDirectory(ctx context.Context, query *Query, dir *Directory) (*Directory, error) {
+	if dir == nil {
+		return nil, nil
+	}
+	cp := &Directory{
+		Dir:      dir.Dir,
+		Platform: dir.Platform,
+		Services: slices.Clone(dir.Services),
+	}
+	dir.snapshotMu.RLock()
+	ready := dir.snapshotReady
+	source := dir.snapshotSource
+	snapshot := dir.Snapshot
+	dir.snapshotMu.RUnlock()
+	if snapshot != nil {
+		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return nil, err
+		}
+		cp.Snapshot = reopened
+		cp.snapshotReady = true
+		return cp, nil
+	}
+	if ready {
+		cp.snapshotReady = true
+		cp.snapshotSource = source
+	}
+	return cp, nil
+}
+
+func cloneTerminalFile(ctx context.Context, query *Query, file *File) (*File, error) {
+	if file == nil {
+		return nil, nil
+	}
+	cp := &File{
+		File:     file.File,
+		Platform: file.Platform,
+		Services: slices.Clone(file.Services),
+	}
+	file.snapshotMu.RLock()
+	ready := file.snapshotReady
+	source := file.snapshotSource
+	snapshot := file.Snapshot
+	file.snapshotMu.RUnlock()
+	if snapshot != nil {
+		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return nil, err
+		}
+		cp.Snapshot = reopened
+		cp.snapshotReady = true
+		return cp, nil
+	}
+	if ready {
+		cp.snapshotReady = true
+		cp.snapshotSource = source
+	}
+	return cp, nil
+}
+
+func newSyntheticTerminalContainerResult(
+	srv *dagql.Server,
+	ctr *Container,
+	syntheticOp string,
+) (dagql.ObjectResult[*Container], error) {
+	return dagql.NewObjectResultForCall(ctr, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		Type:        dagql.NewResultCallType(ctr.Type()),
+		SyntheticOp: syntheticOp,
+		ImplicitInputs: []*dagql.ResultCallArg{
+			{
+				Name: "terminalNonce",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: rand.Text(),
+				},
+			},
+		},
+	})
+}
 
 type ExecTerminalArgs struct {
 	Cmd []string `default:"[]"`
@@ -36,60 +215,120 @@ type TerminalArgs struct {
 
 func (container *Container) Terminal(
 	ctx context.Context,
-	svcID *call.ID,
+	selectedID *call.ID,
+	selectedDigest digest.Digest,
+	containerRes dagql.ObjectResult[*Container],
 	args *TerminalArgs,
 ) error {
-	return container.terminal(ctx, svcID, args, nil)
+	return container.terminal(ctx, selectedID, selectedDigest, containerRes, args, nil, nil, nil)
 }
 
-func (container *Container) TerminalError(
+func (container *Container) TerminalExecError(
 	ctx context.Context,
-	svcID *call.ID,
-	richErr *buildkit.RichError,
+	selectedID *call.ID,
+	selectedDigest digest.Digest,
+	containerRes dagql.ObjectResult[*Container],
+	execMD *buildkit.ExecutionMetadata,
+	execMeta *executor.Meta,
+	execErr error,
 ) error {
-	return container.terminal(ctx, svcID, nil, richErr)
+	return container.terminal(ctx, selectedID, selectedDigest, containerRes, nil, execMD, execMeta, execErr)
 }
 
 func (container *Container) terminal(
 	ctx context.Context,
-	svcID *call.ID,
+	selectedID *call.ID,
+	selectedDigest digest.Digest,
+	containerRes dagql.ObjectResult[*Container],
 	args *TerminalArgs,
-	richErr *buildkit.RichError,
+	execMD *buildkit.ExecutionMetadata,
+	execMeta *executor.Meta,
+	execErr error,
 ) error {
-	container = container.Clone()
-
+	if containerRes.Self() == nil {
+		return fmt.Errorf("terminal container result is nil")
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dagql server: %w", err)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return fmt.Errorf("terminal attach container: empty session ID")
+	}
+	attachedAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, containerRes)
+	if err != nil {
+		return fmt.Errorf("failed to attach terminal container: %w", err)
+	}
+	attached, ok := attachedAny.(dagql.ObjectResult[*Container])
+	if !ok {
+		return fmt.Errorf("failed to attach terminal container: expected %T, got %T", containerRes, attachedAny)
+	}
+	containerRes = attached
 	// HACK: ensure that container is entirely built before interrupting nice
 	// progress output with the terminal
-	_, err := container.Evaluate(ctx)
-	if err != nil {
+	if err := cache.Evaluate(ctx, containerRes); err != nil {
 		return fmt.Errorf("failed to evaluate container: %w", err)
 	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	container, err = cloneContainerForTerminal(ctx, query, containerRes.Self())
+	if err != nil {
+		return fmt.Errorf("failed to clone terminal container: %w", err)
+	}
 
-	term, output, err := prepTerminal(ctx, svcID, richErr)
+	term, output, err := prepTerminal(ctx, selectedID, execErr)
 	if err != nil {
 		return err
 	}
 	defer term.Close(bkgwpb.UnknownExitStatus) // always close term; it's wrapped in a once so it won't be called multiple times
 	container.Config.Env = prepTerminalEnv(output, container.Config.Env)
 
+	containerRes, err = newSyntheticTerminalContainerResult(srv, container, "terminal_container")
+	if err != nil {
+		return fmt.Errorf("failed to attach terminal container: %w", err)
+	}
+
 	var svc *Service
-	if richErr == nil {
-		svc, err = container.AsService(ctx, ContainerAsServiceArgs{
+	if execMD == nil && execMeta == nil {
+		svc, err = container.AsService(ctx, containerRes, ContainerAsServiceArgs{
 			Args:                          args.Cmd,
 			ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
 			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
 		})
 	} else {
-		svc, err = container.AsRecoveredService(ctx, richErr)
+		svc = &Service{
+			Creator:   trace.SpanContextFromContext(ctx),
+			Container: containerRes,
+			ExecMD:    execMD,
+			ExecMeta:  execMeta,
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}
 
+	if selectedDigest == "" {
+		return fmt.Errorf("terminal selection digest is empty")
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return err
+	}
 	eg, egctx := errgroup.WithContext(ctx)
-	runningSvc, err := svc.Start(
+	runningSvc, release, err := svcs.StartInteractive(
 		ctx,
-		svcID,
+		selectedDigest,
+		svc,
 		&ServiceIO{
 			Stdin:       term.Stdin,
 			Stdout:      term.Stdout,
@@ -101,6 +340,7 @@ func (container *Container) terminal(
 	if err != nil {
 		return fmt.Errorf("failed to start service: %w", err)
 	}
+	defer release()
 
 	eg.Go(func() error {
 		err := <-term.ErrCh
@@ -134,28 +374,69 @@ func (container *Container) terminal(
 
 func (dir *Directory) Terminal(
 	ctx context.Context,
-	svcID *call.ID,
-	ctr *Container,
+	selectedID *call.ID,
+	selectedDigest digest.Digest,
+	ctr dagql.ObjectResult[*Container],
 	args *TerminalArgs,
 	parent dagql.ObjectResult[*Directory],
 ) error {
 	var err error
 
-	if ctr == nil {
-		ctr = NewContainer(dir.Platform)
-		ctr, err = ctr.FromRefString(ctx, defaultTerminalImage)
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	if ctr.Self() == nil {
+		defaultCtr := NewContainer(dir.Platform)
+		ctr, err = defaultCtr.FromRefString(ctx, defaultTerminalImage)
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
 	}
 
-	ctr = ctr.Clone()
-	ctr.Config.WorkingDir = "/src"
-	ctr, err = ctr.WithMountedDirectory(ctx, "/src", parent, "", true)
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cache for terminal container: %w", err)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return fmt.Errorf("directory terminal attach container: empty session ID")
+	}
+	attachedAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, ctr)
+	if err != nil {
+		return fmt.Errorf("failed to attach terminal base container: %w", err)
+	}
+	attachedCtr, ok := attachedAny.(dagql.ObjectResult[*Container])
+	if !ok {
+		return fmt.Errorf("failed to attach terminal base container: expected %T, got %T", ctr, attachedAny)
+	}
+	ctr = attachedCtr
+	if err := cache.Evaluate(ctx, ctr); err != nil {
+		return fmt.Errorf("failed to evaluate terminal base container: %w", err)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	termCtr, err := cloneContainerForTerminal(ctx, query, ctr.Self())
+	if err != nil {
+		return fmt.Errorf("failed to clone terminal base container: %w", err)
+	}
+	termCtr.Config.WorkingDir = "/src"
+	termCtr, err = termCtr.WithMountedDirectory(ctx, ctr, "/src", parent, "", true)
 	if err != nil {
 		return fmt.Errorf("failed to create terminal container: %w", err)
 	}
-	return ctr.Terminal(ctx, svcID, args)
+	termCtrRes, err := newSyntheticTerminalContainerResult(srv, termCtr, "directory_terminal_container")
+	if err != nil {
+		return fmt.Errorf("failed to attach terminal container: %w", err)
+	}
+	return termCtr.Terminal(ctx, selectedID, selectedDigest, termCtrRes, args)
 }
 
 func (*Service) Terminal(
@@ -163,7 +444,11 @@ func (*Service) Terminal(
 	svc dagql.ObjectResult[*Service],
 	args *ExecTerminalArgs,
 ) error {
-	term, output, err := prepTerminal(ctx, svc.ID(), nil)
+	svcID, err := svc.ID()
+	if err != nil {
+		return fmt.Errorf("service terminal ID: %w", err)
+	}
+	term, output, err := prepTerminal(ctx, svcID, nil)
 	if err != nil {
 		return err
 	}
@@ -187,7 +472,7 @@ func (*Service) Terminal(
 
 	running := runnings[0]
 	if running.Exec == nil {
-		return fmt.Errorf("service %s does not support terminal", svc.ID().Digest())
+		return fmt.Errorf("service %s does not support terminal", svcID.Path())
 	}
 	return running.Exec(ctx, args.Cmd, env, &ServiceIO{
 		Stdin:       term.Stdin,
@@ -198,7 +483,7 @@ func (*Service) Terminal(
 	})
 }
 
-func prepTerminal(ctx context.Context, svcID *call.ID, richErr *buildkit.RichError) (*buildkit.TerminalClient, *termenv.Output, error) {
+func prepTerminal(ctx context.Context, svcID *call.ID, execErr error) (*buildkit.TerminalClient, *termenv.Output, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get current query: %w", err)
@@ -214,7 +499,7 @@ func prepTerminal(ctx context.Context, svcID *call.ID, richErr *buildkit.RichErr
 	}
 
 	output := idtui.NewOutput(term.Stderr)
-	if richErr == nil {
+	if execErr == nil {
 		fmt.Fprint(
 			term.Stderr,
 			output.String(idtui.DotFilled).Foreground(termenv.ANSIYellow).String()+" Attaching terminal: ",
@@ -227,13 +512,34 @@ func prepTerminal(ctx context.Context, svcID *call.ID, richErr *buildkit.RichErr
 	}
 	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
 	fmt.Fprint(term.Stderr, dump.Newline)
-	if err := dump.DumpID(output, svcID); err != nil {
+	dumpID := svcID
+	if svcID != nil && svcID.IsHandle() {
+		dag, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get dagql server: %w", err)
+		}
+		res, err := dag.LoadType(ctx, svcID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to load service from handle ID: %w", err)
+		}
+		recipeIDable, ok := res.(interface {
+			RecipeID(context.Context) (*call.ID, error)
+		})
+		if !ok {
+			return nil, nil, fmt.Errorf("loaded service %T does not expose a recipe ID", res)
+		}
+		dumpID, err = recipeIDable.RecipeID(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to derive service recipe ID: %w", err)
+		}
+	}
+	if err := dump.DumpID(output, dumpID); err != nil {
 		return nil, nil, fmt.Errorf("failed to serialize service ID: %w", err)
 	}
 	fmt.Fprint(term.Stderr, dump.Newline)
-	if richErr != nil {
+	if execErr != nil {
 		fmt.Fprintf(term.Stderr,
-			output.String("! %s").Foreground(termenv.ANSIYellow).String(), richErr.Error())
+			output.String("! %s").Foreground(termenv.ANSIYellow).String(), execErr.Error())
 		fmt.Fprint(term.Stderr, dump.Newline)
 	}
 

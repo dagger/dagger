@@ -8,9 +8,9 @@ import (
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-
-	"github.com/dagger/dagger/engine/sources/blob"
 )
+
+const blobScheme = "blob"
 
 func DefToDAG(def *pb.Definition) (*OpDAG, error) {
 	if len(def.Def) == 0 {
@@ -116,6 +116,15 @@ type OpDAG struct {
 	asHTTPOp  *HTTPOp
 	asOCIOp   *OCIOp
 	asBlobOp  *BlobOp
+}
+
+// OutputIndex returns the specific output of this op represented by this OpDAG
+// instance.
+func (dag *OpDAG) OutputIndex() pb.OutputIndex {
+	if dag == nil {
+		return 0
+	}
+	return dag.outputIndex
 }
 
 func (dag *OpDAG) String() string {
@@ -478,7 +487,7 @@ func (dag *OpDAG) AsBlob() (*BlobOp, bool) {
 	if pbSource == nil {
 		return nil, false
 	}
-	if !strings.HasPrefix(pbSource.Identifier, blob.BlobScheme+"://") {
+	if !strings.HasPrefix(pbSource.Identifier, blobScheme+"://") {
 		return nil, false
 	}
 	op := &BlobOp{
@@ -490,9 +499,21 @@ func (dag *OpDAG) AsBlob() (*BlobOp, bool) {
 }
 
 func (op *BlobOp) Digest() (digest.Digest, error) {
-	id, err := blob.IdentifierFromPB(op.SourceOp)
+	dgst, err := blobDigestFromSourceOp(op.SourceOp)
 	if err != nil {
 		return "", err
 	}
-	return id.Digest, nil
+	return dgst, nil
+}
+
+func blobDigestFromSourceOp(op *pb.SourceOp) (digest.Digest, error) {
+	scheme, ref, ok := strings.Cut(op.Identifier, "://")
+	if !ok || scheme != blobScheme {
+		return "", fmt.Errorf("invalid blob source identifier %q", op.Identifier)
+	}
+	dgst, err := digest.Parse(ref)
+	if err != nil {
+		return "", fmt.Errorf("invalid blob digest %q: %w", ref, err)
+	}
+	return dgst, nil
 }

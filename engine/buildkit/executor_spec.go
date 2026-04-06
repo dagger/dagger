@@ -26,6 +26,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/engine/buildkit/resources"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -33,9 +34,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bknetwork "github.com/dagger/dagger/internal/buildkit/util/network"
-	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	"github.com/dagger/dagger/util/cleanups"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -327,10 +326,6 @@ func (m hostBindMountRef) Mount() ([]mount.Mount, func() error, error) {
 		Source:  m.srcPath,
 		Options: []string{"ro", "rbind"},
 	}}, func() error { return nil }, nil
-}
-
-func (m hostBindMountRef) IdentityMapping() *idtools.IdentityMapping {
-	return nil
 }
 
 func (w *Worker) injectInit(_ context.Context, state *execState) error {
@@ -971,11 +966,6 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return nil
 	}
 
-	clientIDPath := filepath.Join(state.metaMountDirPath, MetaMountClientIDPath)
-	if err := os.WriteFile(clientIDPath, []byte(w.execMD.ClientID), 0o600); err != nil {
-		return fmt.Errorf("failed to write client id %s to %s: %w", w.execMD.ClientID, clientIDPath, err)
-	}
-
 	if w.execMD.SecretToken == "" {
 		w.execMD.SecretToken = randid.NewID()
 	}
@@ -1163,8 +1153,8 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 		WithField("id", state.id).
 		WithField("args", state.spec.Process.Args)
 	if w.execMD != nil {
-		if w.execMD.CallID != nil {
-			lg = lg.WithField("call_id", w.execMD.CallID.Digest())
+		if w.execMD.CallDigest != "" {
+			lg = lg.WithField("call_id", w.execMD.CallDigest)
 		}
 		if w.execMD.CallerClientID != "" {
 			lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
@@ -1185,11 +1175,11 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	})
 
 	cgroupPath := state.spec.Linux.CgroupsPath
-	if cgroupPath != "" && w.execMD != nil && w.execMD.CallID != nil {
+	if cgroupPath != "" && w.execMD != nil && w.execMD.CallDigest != "" {
 		meter := telemetry.Meter(ctx, InstrumentationLibrary)
 
 		commonAttrs := []attribute.KeyValue{
-			attribute.String(telemetry.DagDigestAttr, string(w.execMD.CallID.Digest())),
+			attribute.String(telemetry.DagDigestAttr, string(w.execMD.CallDigest)),
 		}
 		spanContext := trace.SpanContextFromContext(ctx)
 		if spanContext.HasSpanID() {

@@ -2673,15 +2673,14 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 	enc.SetIndent("", "  ")
 	enc.Encode(span.Snapshot())
 	vt.WriteMarkdown([]byte("```json\n" + strings.TrimSpace(buf.String()) + "\n```"))
-	if len(span.EffectIDs) > 0 {
-		vt.WriteMarkdown([]byte("\n\n## Installed effects\n\n"))
-		for _, id := range span.EffectIDs {
-			vt.WriteMarkdown([]byte("- " + id + "\n"))
-			if spans := fe.db.EffectSpans[id]; spans != nil {
-				for _, effect := range spans.Order {
-					vt.WriteMarkdown([]byte("  - " + effect.Name + "\n"))
-				}
-			}
+	var continuations []*dagui.Span
+	for continuation := range span.EffectSpans {
+		continuations = append(continuations, continuation)
+	}
+	if len(continuations) > 0 {
+		vt.WriteMarkdown([]byte("\n\n## Causal continuations\n\n"))
+		for _, effect := range continuations {
+			vt.WriteMarkdown([]byte("- " + effect.Name + "\n"))
 		}
 	}
 	if len(span.RevealedSpans.Order) > 0 {

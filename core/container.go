@@ -2,12 +2,14 @@ package core
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"maps"
+	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -17,28 +19,23 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/mount"
-	"github.com/containerd/containerd/v2/core/transfer/archive"
+	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/core/containersource"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	serverresolver "github.com/dagger/dagger/engine/server/resolver"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
-	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
+	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
+	dockerfileparser "github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/parser"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/containerutil"
+	"github.com/dagger/dagger/util/llbtodagger"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
-	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -62,7 +59,7 @@ type DefaultTerminalCmdOpts struct {
 // Container is a content-addressed container.
 type Container struct {
 	// The container's root filesystem.
-	FS *dagql.ObjectResult[*Directory]
+	FS *ContainerDirectorySource
 
 	// Image configuration (env, workdir, etc)
 	Config dockerspec.DockerOCIImageConfig
@@ -73,8 +70,10 @@ type Container struct {
 	// Mount points configured for the container.
 	Mounts ContainerMounts
 
-	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
-	Meta *Directory
+	// MetaSnapshot is the internal exec metadata snapshot containing stdout,
+	// stderr, combined output, and exit code files. It will be nil if nothing
+	// has run yet.
+	MetaSnapshot bkcache.ImmutableRef
 
 	// The platform of the container's rootfs.
 	Platform Platform
@@ -106,6 +105,103 @@ type Container struct {
 
 	// DefaultArgs have been explicitly set by the user
 	DefaultArgs bool
+
+	Lazy Lazy[*Container]
+
+	persistedResultID uint64
+}
+
+type DirectoryFromContainerLazy struct {
+	Container *Container
+}
+
+type FileFromContainerLazy struct {
+	Container *Container
+}
+
+type ContainerWithDirectoryLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Path   string
+	Source dagql.ObjectResult[*Directory]
+	Filter CopyFilter
+	Owner  string
+}
+
+type ContainerWithFileLazy struct {
+	LazyState
+	Parent      dagql.ObjectResult[*Container]
+	Path        string
+	Source      dagql.ObjectResult[*File]
+	Permissions *int
+	Owner       string
+}
+
+type ContainerWithoutPathLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Path   string
+}
+
+type ContainerWithSymlinkLazy struct {
+	LazyState
+	Parent   dagql.ObjectResult[*Container]
+	Target   string
+	LinkPath string
+}
+
+type ContainerDirectorySource struct {
+	Result *dagql.ObjectResult[*Directory]
+	Value  *Directory
+}
+
+type ContainerFileSource struct {
+	Result *dagql.ObjectResult[*File]
+	Value  *File
+}
+
+func newContainerDirectoryResultSource(dir dagql.ObjectResult[*Directory]) *ContainerDirectorySource {
+	return &ContainerDirectorySource{Result: &dir}
+}
+
+func newContainerDirectoryValueSource(dir *Directory) *ContainerDirectorySource {
+	return &ContainerDirectorySource{Value: dir}
+}
+
+func newContainerFileResultSource(file dagql.ObjectResult[*File]) *ContainerFileSource {
+	return &ContainerFileSource{Result: &file}
+}
+
+func newContainerFileValueSource(file *File) *ContainerFileSource {
+	return &ContainerFileSource{Value: file}
+}
+
+func (src *ContainerDirectorySource) self() *Directory {
+	if src == nil {
+		return nil
+	}
+	if src.Result != nil {
+		return src.Result.Self()
+	}
+	return src.Value
+}
+
+func (src *ContainerFileSource) self() *File {
+	if src == nil {
+		return nil
+	}
+	if src.Result != nil {
+		return src.Result.Self()
+	}
+	return src.Value
+}
+
+func (src *ContainerDirectorySource) isResultBacked() bool {
+	return src != nil && src.Result != nil && src.Result.Self() != nil
+}
+
+func (src *ContainerFileSource) isResultBacked() bool {
+	return src != nil && src.Result != nil && src.Result.Self() != nil
 }
 
 func (*Container) Type() *ast.Type {
@@ -119,99 +215,718 @@ func (*Container) TypeDescription() string {
 	return "An OCI-compatible container, also known as a Docker container."
 }
 
-func NewContainer(platform Platform) *Container {
-	return &Container{Platform: platform}
+func (container *Container) PersistedResultID() uint64 {
+	if container == nil {
+		return 0
+	}
+	return container.persistedResultID
 }
 
-// Clone returns a deep copy of the container suitable for modifying in a
-// WithXXX method.
-func (container *Container) Clone() *Container {
-	if container == nil {
+func (container *Container) SetPersistedResultID(resultID uint64) {
+	if container != nil {
+		container.persistedResultID = resultID
+	}
+}
+
+func NewContainer(platform Platform) *Container {
+	return &Container{
+		Platform: platform,
+	}
+}
+
+func cloneBareDirectoryForContainerChild(src *Directory, source dagql.ObjectResult[*Directory], sourceParentResultID uint64) *Directory {
+	if src == nil {
 		return nil
 	}
-	cp := *container
+	cp := *src
+	cp.Services = slices.Clone(cp.Services)
+	cp.snapshotMu = sync.RWMutex{}
+	cp.snapshotReady = true
+	cp.snapshotSource = source
+	cp.Snapshot = nil
+	cp.Lazy = &DirectoryFromSourceLazy{
+		LazyState: NewLazyState(),
+		Source:    source,
+	}
+	cp.containerSourceParentResultID = sourceParentResultID
+	return &cp
+}
+
+func cloneBareFileForContainerChild(src *File, source FileSnapshotSource, sourceParentResultID uint64) *File {
+	if src == nil {
+		return nil
+	}
+	cp := *src
+	cp.Services = slices.Clone(cp.Services)
+	cp.snapshotMu = sync.RWMutex{}
+	cp.snapshotReady = true
+	cp.snapshotSource = source
+	cp.Snapshot = nil
+	cp.Lazy = &FileFromSourceLazy{
+		LazyState: NewLazyState(),
+		Source:    source,
+	}
+	cp.containerSourceParentResultID = sourceParentResultID
+	return &cp
+}
+
+func cloneDetachedDirectoryForContainerResult(ctx context.Context, src *Directory) (*Directory, error) {
+	if src == nil {
+		return nil, nil
+	}
+
+	src.snapshotMu.RLock()
+	ready := src.snapshotReady
+	snapshot := src.Snapshot
+	source := src.snapshotSource
+	lazy := src.Lazy
+	src.snapshotMu.RUnlock()
+
+	cp := *src
+	cp.Services = slices.Clone(src.Services)
+	cp.snapshotMu = sync.RWMutex{}
+	cp.snapshotReady = ready
+	cp.snapshotSource = source
+	cp.Snapshot = nil
+
+	switch lazy := lazy.(type) {
+	case nil:
+		cp.Lazy = nil
+	case *DirectoryFromContainerLazy:
+		cp.Lazy = &DirectoryFromContainerLazy{Container: lazy.Container}
+	case *DirectoryFromSourceLazy:
+		cp.Lazy = &DirectoryFromSourceLazy{
+			LazyState: NewLazyState(),
+			Source:    lazy.Source,
+		}
+	default:
+		return nil, fmt.Errorf("clone detached directory for container result: unsupported lazy %T", lazy)
+	}
+
+	if snapshot == nil {
+		return &cp, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, err
+	}
+	cp.Snapshot = reopened
+	return &cp, nil
+}
+
+func cloneDetachedFileForContainerResult(ctx context.Context, src *File) (*File, error) {
+	if src == nil {
+		return nil, nil
+	}
+
+	src.snapshotMu.RLock()
+	ready := src.snapshotReady
+	snapshot := src.Snapshot
+	source := src.snapshotSource
+	lazy := src.Lazy
+	src.snapshotMu.RUnlock()
+
+	cp := *src
+	cp.Services = slices.Clone(src.Services)
+	cp.snapshotMu = sync.RWMutex{}
+	cp.snapshotReady = ready
+	cp.snapshotSource = source
+	cp.Snapshot = nil
+
+	switch lazy := lazy.(type) {
+	case nil:
+		cp.Lazy = nil
+	case *FileFromContainerLazy:
+		cp.Lazy = &FileFromContainerLazy{Container: lazy.Container}
+	case *FileFromSourceLazy:
+		cp.Lazy = &FileFromSourceLazy{
+			LazyState: NewLazyState(),
+			Source:    lazy.Source,
+		}
+	default:
+		return nil, fmt.Errorf("clone detached file for container result: unsupported lazy %T", lazy)
+	}
+
+	if snapshot == nil {
+		return &cp, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, err
+	}
+	cp.Snapshot = reopened
+	return &cp, nil
+}
+
+func NewContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container]) (*Container, error) {
+	return newContainerChild(ctx, parent, true)
+}
+
+func NewContainerChildWithoutFS(ctx context.Context, parent dagql.ObjectResult[*Container]) (*Container, error) {
+	return newContainerChild(ctx, parent, false)
+}
+
+func newContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container], cloneFS bool) (*Container, error) {
+	if parent.Self() == nil {
+		return &Container{}, nil
+	}
+
+	cp := *parent.Self()
 	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
 	cp.Config.Env = slices.Clone(cp.Config.Env)
 	cp.Config.Entrypoint = slices.Clone(cp.Config.Entrypoint)
 	cp.Config.Cmd = slices.Clone(cp.Config.Cmd)
 	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
 	cp.Config.Labels = maps.Clone(cp.Config.Labels)
-	cp.Mounts = slices.Clone(cp.Mounts)
 	cp.Secrets = slices.Clone(cp.Secrets)
 	cp.Sockets = slices.Clone(cp.Sockets)
 	cp.Ports = slices.Clone(cp.Ports)
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
-	return &cp
-}
-
-func (container *Container) WithoutInputs() *Container {
-	container = container.Clone()
-
-	container.FS = nil
-	container.Meta = nil
-
-	for i, mount := range container.Mounts {
-		mount.DirectorySource = nil
-		mount.FileSource = nil
-		mount.CacheSource = nil
-		mount.TmpfsSource = nil
-		container.Mounts[i] = mount
+	cp.Lazy = nil
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dagql server: %w", err)
 	}
-
-	return container
+	if cloneFS && cp.FS != nil {
+		if cp.FS.isResultBacked() {
+			cp.FS = &ContainerDirectorySource{Result: cp.FS.Result}
+		} else {
+			var source dagql.ObjectResult[*Directory]
+			if err := srv.Select(ctx, parent, &source, dagql.Selector{Field: "rootfs"}); err != nil {
+				return nil, err
+			}
+			sourceParentResultID, err := persistedContainerParentResultIDFromDirectorySource(source, persistedContainerDirectorySourceOriginRootFS, "")
+			if err != nil {
+				return nil, err
+			}
+			cp.FS = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(cp.FS.Value, source, sourceParentResultID))
+		}
+	} else {
+		cp.FS = nil
+	}
+	cp.Mounts = make(ContainerMounts, len(parent.Self().Mounts))
+	for i, mnt := range parent.Self().Mounts {
+		cp.Mounts[i] = mnt
+		if mnt.DirectorySource != nil {
+			if mnt.DirectorySource.isResultBacked() {
+				cp.Mounts[i].DirectorySource = &ContainerDirectorySource{Result: mnt.DirectorySource.Result}
+			} else {
+				var source dagql.ObjectResult[*Directory]
+				if err := srv.Select(ctx, parent, &source, dagql.Selector{
+					Field: "directory",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(mnt.Target)},
+					},
+				}); err != nil {
+					return nil, err
+				}
+				sourceParentResultID, err := persistedContainerParentResultIDFromDirectorySource(source, persistedContainerDirectorySourceOriginDirectoryMount, mnt.Target)
+				if err != nil {
+					return nil, err
+				}
+				cp.Mounts[i].DirectorySource = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(mnt.DirectorySource.Value, source, sourceParentResultID))
+			}
+		}
+		if mnt.FileSource != nil {
+			if mnt.FileSource.isResultBacked() {
+				cp.Mounts[i].FileSource = &ContainerFileSource{Result: mnt.FileSource.Result}
+			} else {
+				var source dagql.ObjectResult[*File]
+				if err := srv.Select(ctx, parent, &source, dagql.Selector{
+					Field: "file",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(mnt.Target)},
+					},
+				}); err != nil {
+					return nil, err
+				}
+				sourceParentResultID, err := persistedContainerParentResultIDFromFileSource(FileSnapshotSource{File: source}, persistedContainerFileSourceOriginFileMount, mnt.Target)
+				if err != nil {
+					return nil, err
+				}
+				cp.Mounts[i].FileSource = newContainerFileValueSource(cloneBareFileForContainerChild(mnt.FileSource.Value, FileSnapshotSource{File: source}, sourceParentResultID))
+			}
+		}
+	}
+	if cloneFS && cp.MetaSnapshot != nil {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, cp.MetaSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return nil, err
+		}
+		cp.MetaSnapshot = reopened
+	} else {
+		cp.MetaSnapshot = nil
+	}
+	return &cp, nil
 }
 
 var _ dagql.OnReleaser = (*Container)(nil)
+var _ dagql.HasDependencyResults = (*Container)(nil)
+var _ dagql.HasLazyEvaluation = (*Container)(nil)
+
+func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
+	if container == nil {
+		return nil
+	}
+	topLevelLazy := container.Lazy
+	hasPendingChildren := false
+	switch {
+	case container.FS != nil && container.FS.Value != nil && container.FS.Value.LazyEvalFunc() != nil:
+		hasPendingChildren = true
+	case container.FS != nil && container.FS.Result != nil && container.FS.Result.Self() != nil && container.FS.Result.Self().LazyEvalFunc() != nil:
+		hasPendingChildren = true
+	}
+	if !hasPendingChildren {
+		for _, mnt := range container.Mounts {
+			switch {
+			case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil && mnt.DirectorySource.Value.LazyEvalFunc() != nil:
+				hasPendingChildren = true
+			case mnt.DirectorySource != nil && mnt.DirectorySource.Result != nil && mnt.DirectorySource.Result.Self() != nil && mnt.DirectorySource.Result.Self().LazyEvalFunc() != nil:
+				hasPendingChildren = true
+			case mnt.FileSource != nil && mnt.FileSource.Value != nil && mnt.FileSource.Value.LazyEvalFunc() != nil:
+				hasPendingChildren = true
+			case mnt.FileSource != nil && mnt.FileSource.Result != nil && mnt.FileSource.Result.Self() != nil && mnt.FileSource.Result.Self().LazyEvalFunc() != nil:
+				hasPendingChildren = true
+			}
+			if hasPendingChildren {
+				break
+			}
+		}
+	}
+	if topLevelLazy == nil && !hasPendingChildren {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		if topLevelLazy != nil {
+			if err := topLevelLazy.Evaluate(ctx, container); err != nil {
+				return err
+			}
+		}
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		switch {
+		case container.FS != nil && container.FS.Value != nil && container.FS.Value.LazyEvalFunc() != nil:
+			if err := container.FS.Value.Lazy.Evaluate(ctx, container.FS.Value); err != nil {
+				return err
+			}
+		case container.FS != nil && container.FS.Result != nil && container.FS.Result.Self() != nil && container.FS.Result.Self().LazyEvalFunc() != nil:
+			if err := cache.Evaluate(ctx, *container.FS.Result); err != nil {
+				return err
+			}
+		}
+		for i := range container.Mounts {
+			mnt := &container.Mounts[i]
+			switch {
+			case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil && mnt.DirectorySource.Value.LazyEvalFunc() != nil:
+				if err := mnt.DirectorySource.Value.Lazy.Evaluate(ctx, mnt.DirectorySource.Value); err != nil {
+					return err
+				}
+			case mnt.DirectorySource != nil && mnt.DirectorySource.Result != nil && mnt.DirectorySource.Result.Self() != nil && mnt.DirectorySource.Result.Self().LazyEvalFunc() != nil:
+				if err := cache.Evaluate(ctx, *mnt.DirectorySource.Result); err != nil {
+					return err
+				}
+			}
+			switch {
+			case mnt.FileSource != nil && mnt.FileSource.Value != nil && mnt.FileSource.Value.LazyEvalFunc() != nil:
+				if err := mnt.FileSource.Value.Lazy.Evaluate(ctx, mnt.FileSource.Value); err != nil {
+					return err
+				}
+			case mnt.FileSource != nil && mnt.FileSource.Result != nil && mnt.FileSource.Result.Self() != nil && mnt.FileSource.Result.Self().LazyEvalFunc() != nil:
+				if err := cache.Evaluate(ctx, *mnt.FileSource.Result); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+}
+
+func (container *Container) Evaluate(ctx context.Context) error {
+	if container == nil {
+		return nil
+	}
+	if lazy := container.LazyEvalFunc(); lazy != nil {
+		return lazy(ctx)
+	}
+	return nil
+}
+
+func (container *Container) Sync(ctx context.Context) error {
+	return container.Evaluate(ctx)
+}
+
+func (container *Container) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if container == nil {
+		return nil, nil
+	}
+
+	lazy := container.Lazy
+	owned := make([]dagql.AnyResult, 0, 1+len(container.Mounts))
+	if container.FS != nil {
+		switch {
+		case container.FS.isResultBacked():
+			attached, err := attach(*container.FS.Result)
+			if err != nil {
+				return nil, fmt.Errorf("attach container rootfs: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach container rootfs: unexpected result %T", attached)
+			}
+			container.FS = newContainerDirectoryResultSource(typed)
+			owned = append(owned, typed)
+		case container.FS.Value != nil:
+			deps, err := container.FS.Value.AttachDependencyResults(ctx, nil, attach)
+			if err != nil {
+				return nil, fmt.Errorf("attach bare container rootfs: %w", err)
+			}
+			owned = append(owned, deps...)
+		}
+	}
+
+	for i := range container.Mounts {
+		mnt := &container.Mounts[i]
+		switch {
+		case mnt.DirectorySource != nil && mnt.DirectorySource.isResultBacked():
+			attached, err := attach(*mnt.DirectorySource.Result)
+			if err != nil {
+				return nil, fmt.Errorf("attach container directory mount %q: %w", mnt.Target, err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach container directory mount %q: unexpected result %T", mnt.Target, attached)
+			}
+			mnt.DirectorySource = newContainerDirectoryResultSource(typed)
+			owned = append(owned, typed)
+		case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil:
+			deps, err := mnt.DirectorySource.Value.AttachDependencyResults(ctx, nil, attach)
+			if err != nil {
+				return nil, fmt.Errorf("attach bare container directory mount %q: %w", mnt.Target, err)
+			}
+			owned = append(owned, deps...)
+		case mnt.FileSource != nil && mnt.FileSource.isResultBacked():
+			attached, err := attach(*mnt.FileSource.Result)
+			if err != nil {
+				return nil, fmt.Errorf("attach container file mount %q: %w", mnt.Target, err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*File])
+			if !ok {
+				return nil, fmt.Errorf("attach container file mount %q: unexpected result %T", mnt.Target, attached)
+			}
+			mnt.FileSource = newContainerFileResultSource(typed)
+			owned = append(owned, typed)
+		case mnt.FileSource != nil && mnt.FileSource.Value != nil:
+			deps, err := mnt.FileSource.Value.AttachDependencyResults(ctx, nil, attach)
+			if err != nil {
+				return nil, fmt.Errorf("attach bare container file mount %q: %w", mnt.Target, err)
+			}
+			owned = append(owned, deps...)
+		case mnt.CacheSource != nil && mnt.CacheSource.Volume.Self() != nil:
+			attached, err := attach(mnt.CacheSource.Volume)
+			if err != nil {
+				return nil, fmt.Errorf("attach container cache mount %q: %w", mnt.Target, err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*CacheVolume])
+			if !ok {
+				return nil, fmt.Errorf("attach container cache mount %q: unexpected result %T", mnt.Target, attached)
+			}
+			mnt.CacheSource.Volume = typed
+			owned = append(owned, typed)
+		}
+	}
+
+	if lazy != nil {
+		deps, err := lazy.AttachDependencies(ctx, attach)
+		if err != nil {
+			return nil, err
+		}
+		owned = append(owned, deps...)
+	}
+
+	return owned, nil
+}
+
+func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if container == nil {
+		return nil, fmt.Errorf("encode persisted container: nil container")
+	}
+	// FIXME: remove this restriction immediately after the first cut by adding
+	// explicit structural persistence for services, secrets, and sockets.
+	if len(container.Services) > 0 {
+		return nil, fmt.Errorf("encode persisted container: services are not yet supported")
+	}
+	if len(container.Secrets) > 0 {
+		return nil, fmt.Errorf("encode persisted container: secrets are not yet supported")
+	}
+	if len(container.Sockets) > 0 {
+		return nil, fmt.Errorf("encode persisted container: sockets are not yet supported")
+	}
+
+	payload := persistedContainerPayload{
+		Form:               persistedContainerFormReady,
+		Config:             container.Config,
+		EnabledGPUs:        slices.Clone(container.EnabledGPUs),
+		Mounts:             make([]persistedContainerMountPayload, 0, len(container.Mounts)),
+		Platform:           container.Platform,
+		Annotations:        slices.Clone(container.Annotations),
+		ImageRef:           container.ImageRef,
+		Ports:              slices.Clone(container.Ports),
+		DefaultTerminalCmd: container.DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
+		DefaultArgs:        container.DefaultArgs,
+	}
+	if container.Lazy != nil {
+		lazyJSON, err := container.Lazy.EncodePersisted(ctx, cache)
+		if err != nil {
+			return nil, err
+		}
+		payload.Form = persistedContainerFormLazy
+		payload.LazyJSON = lazyJSON
+	}
+	if container.FS != nil {
+		switch {
+		case container.FS.isResultBacked():
+			encoded, err := encodePersistedObjectRef(cache, container.FS.Result, "container rootfs")
+			if err != nil {
+				return nil, err
+			}
+			payload.FSResultID = encoded
+		case container.FS.Value != nil:
+			encoded, err := encodePersistedContainerDirectoryValue(
+				ctx,
+				cache,
+				container.FS.Value,
+				persistedContainerDirectorySourceOriginRootFS,
+				"",
+			)
+			if err != nil {
+				return nil, err
+			}
+			payload.FSValue = encoded
+		}
+	}
+
+	for _, mnt := range container.Mounts {
+		encoded := persistedContainerMountPayload{
+			Target:   mnt.Target,
+			Readonly: mnt.Readonly,
+		}
+		switch {
+		case mnt.DirectorySource != nil && mnt.DirectorySource.isResultBacked():
+			id, err := encodePersistedObjectRef(cache, mnt.DirectorySource.Result, fmt.Sprintf("directory mount %q", mnt.Target))
+			if err != nil {
+				return nil, err
+			}
+			encoded.DirectorySourceResultID = id
+		case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil:
+			val, err := encodePersistedContainerDirectoryValue(
+				ctx,
+				cache,
+				mnt.DirectorySource.Value,
+				persistedContainerDirectorySourceOriginDirectoryMount,
+				mnt.Target,
+			)
+			if err != nil {
+				return nil, err
+			}
+			encoded.DirectorySourceValue = val
+		case mnt.FileSource != nil && mnt.FileSource.isResultBacked():
+			id, err := encodePersistedObjectRef(cache, mnt.FileSource.Result, fmt.Sprintf("file mount %q", mnt.Target))
+			if err != nil {
+				return nil, err
+			}
+			encoded.FileSourceResultID = id
+		case mnt.FileSource != nil && mnt.FileSource.Value != nil:
+			val, err := encodePersistedContainerFileValue(
+				ctx,
+				cache,
+				mnt.FileSource.Value,
+				persistedContainerFileSourceOriginFileMount,
+				mnt.Target,
+			)
+			if err != nil {
+				return nil, err
+			}
+			encoded.FileSourceValue = val
+		case mnt.CacheSource != nil:
+			id, err := encodePersistedObjectRef(cache, mnt.CacheSource.Volume, fmt.Sprintf("cache mount %q", mnt.Target))
+			if err != nil {
+				return nil, err
+			}
+			encoded.CacheSourceResultID = id
+		case mnt.TmpfsSource != nil:
+			encoded.TmpfsSize = mnt.TmpfsSource.Size
+		default:
+			return nil, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
+		}
+		payload.Mounts = append(payload.Mounts, encoded)
+	}
+
+	enc, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted container payload: %w", err)
+	}
+	return enc, nil
+}
+
+func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedContainerPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted container payload: %w", err)
+	}
+	if persisted.Form == "" {
+		persisted.Form = persistedContainerFormReady
+	}
+
+	var rootfs *ContainerDirectorySource
+	var decodedRootFS decodedContainerDirectoryValue
+	if persisted.FSResultID != 0 {
+		rootfsRes, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.FSResultID, "container rootfs")
+		if err != nil {
+			return nil, err
+		}
+		rootfs = newContainerDirectoryResultSource(rootfsRes)
+	} else if len(persisted.FSValue) > 0 {
+		rootfsDir, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, "fs", persisted.FSValue)
+		if err != nil {
+			return nil, err
+		}
+		decodedRootFS = rootfsDir
+		rootfs = newContainerDirectoryValueSource(rootfsDir.Dir)
+	}
+
+	mounts := make(ContainerMounts, 0, len(persisted.Mounts))
+	decodedMounts := make([]decodedContainerMount, 0, len(persisted.Mounts))
+	for _, persistedMount := range persisted.Mounts {
+		mnt := ContainerMount{
+			Target:   persistedMount.Target,
+			Readonly: persistedMount.Readonly,
+		}
+		decodedMount := decodedContainerMount{}
+		switch {
+		case persistedMount.DirectorySourceResultID != 0:
+			dirRes, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persistedMount.DirectorySourceResultID, "container mount directory")
+			if err != nil {
+				return nil, err
+			}
+			mnt.DirectorySource = newContainerDirectoryResultSource(dirRes)
+		case len(persistedMount.DirectorySourceValue) > 0:
+			dirVal, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, fmt.Sprintf("mount_dir:%d", len(mounts)), persistedMount.DirectorySourceValue)
+			if err != nil {
+				return nil, err
+			}
+			decodedMount.Kind = dirVal.Kind
+			mnt.DirectorySource = newContainerDirectoryValueSource(dirVal.Dir)
+		case persistedMount.FileSourceResultID != 0:
+			fileRes, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persistedMount.FileSourceResultID, "container mount file")
+			if err != nil {
+				return nil, err
+			}
+			mnt.FileSource = newContainerFileResultSource(fileRes)
+		case len(persistedMount.FileSourceValue) > 0:
+			fileVal, err := decodePersistedContainerFileValue(ctx, dag, resultID, fmt.Sprintf("mount_file:%d", len(mounts)), persistedMount.FileSourceValue)
+			if err != nil {
+				return nil, err
+			}
+			decodedMount.Kind = fileVal.Kind
+			mnt.FileSource = newContainerFileValueSource(fileVal.File)
+		case persistedMount.CacheSourceResultID != 0:
+			cacheRes, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persistedMount.CacheSourceResultID, "container mount cache")
+			if err != nil {
+				return nil, err
+			}
+			mnt.CacheSource = &CacheMountSource{Volume: cacheRes}
+		case persistedMount.TmpfsSize != 0:
+			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
+		}
+		mounts = append(mounts, mnt)
+		decodedMounts = append(decodedMounts, decodedMount)
+	}
+
+	var metaSnapshot bkcache.ImmutableRef
+	links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "container")
+	if err != nil {
+		return nil, err
+	}
+	for _, link := range links {
+		if link.Role != "meta" {
+			continue
+		}
+		metaSnapshot, _, err = loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "container", "meta")
+		if err != nil {
+			return nil, err
+		}
+		break
+	}
+
+	container := &Container{
+		FS:                 rootfs,
+		Config:             persisted.Config,
+		EnabledGPUs:        slices.Clone(persisted.EnabledGPUs),
+		Mounts:             mounts,
+		MetaSnapshot:       metaSnapshot,
+		Platform:           persisted.Platform,
+		Annotations:        slices.Clone(persisted.Annotations),
+		ImageRef:           persisted.ImageRef,
+		Ports:              slices.Clone(persisted.Ports),
+		DefaultTerminalCmd: persisted.DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
+		DefaultArgs:        persisted.DefaultArgs,
+	}
+	if persisted.Form != persistedContainerFormLazy {
+		return container, nil
+	}
+	if call == nil {
+		return nil, fmt.Errorf("decode persisted container payload: missing call for lazy form")
+	}
+	if err := decodePersistedContainerLazy(ctx, dag, call, container, persisted.LazyJSON, decodedRootFS, decodedMounts); err != nil {
+		return nil, err
+	}
+	return container, nil
+}
 
 func (container *Container) OnRelease(ctx context.Context) error {
 	if container == nil {
 		return nil
 	}
-	// TODO: this might be problematic if directories overlap, could release same result multiple times
-	if rootfs := container.FS; rootfs != nil {
-		rootfsRes := rootfs.Self().Result
-		if rootfsRes != nil {
-			err := rootfsRes.Release(ctx)
-			if err != nil {
-				return err
-			}
+	var rerr error
+	if container.MetaSnapshot != nil {
+		rerr = stderrors.Join(rerr, container.MetaSnapshot.Release(ctx))
+	}
+	if container.FS != nil && container.FS.Value != nil {
+		rerr = stderrors.Join(rerr, container.FS.Value.OnRelease(ctx))
+	}
+	for i := range container.Mounts {
+		mnt := &container.Mounts[i]
+		if mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil {
+			rerr = stderrors.Join(rerr, mnt.DirectorySource.Value.OnRelease(ctx))
+		}
+		if mnt.FileSource != nil && mnt.FileSource.Value != nil {
+			rerr = stderrors.Join(rerr, mnt.FileSource.Value.OnRelease(ctx))
 		}
 	}
-	if meta := container.Meta; meta != nil {
-		metaRes := meta.Result
-		if metaRes != nil {
-			err := metaRes.Release(ctx)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	for _, mount := range container.Mounts {
-		if src := mount.DirectorySource; src != nil {
-			if src := mount.DirectorySource.Self(); src != nil {
-				res := src.Result
-				if res != nil {
-					err := res.Release(ctx)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		}
-		if src := mount.FileSource; src != nil {
-			if src := mount.FileSource.Self(); src != nil {
-				res := src.Result
-				if res != nil {
-					err := res.Release(ctx)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		}
-	}
-	return nil
+	return rerr
 }
 
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
@@ -235,34 +950,9 @@ type ContainerSecret struct {
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
 // but potentially as a TCP or UDP address in the future.
 type ContainerSocket struct {
-	Source        *Socket
+	Source        dagql.ObjectResult[*Socket]
 	ContainerPath string
 	Owner         *Ownership
-}
-
-// FSState returns the container's root filesystem mount state. If there is
-// none (as with an empty container ID), it returns scratch.
-func (container *Container) FSState() (llb.State, error) {
-	if container.FS == nil {
-		return llb.Scratch(), nil
-	}
-
-	return container.FS.Self().StateWithSourcePath()
-}
-
-// MetaState returns the container's metadata mount state. If the container has
-// yet to run, it returns nil.
-func (container *Container) MetaState() (*llb.State, error) {
-	if container.Meta == nil {
-		return nil, nil
-	}
-
-	metaSt, err := defToState(container.Meta.LLB)
-	if err != nil {
-		return nil, err
-	}
-
-	return &metaSt, nil
 }
 
 // ContainerMount is a mount point configured in a container.
@@ -276,9 +966,9 @@ type ContainerMount struct {
 	// The following fields are mutually exclusive, only one of them should be set.
 
 	// The mounted directory
-	DirectorySource *dagql.ObjectResult[*Directory]
+	DirectorySource *ContainerDirectorySource
 	// The mounted file
-	FileSource *dagql.ObjectResult[*File]
+	FileSource *ContainerFileSource
 	// The mounted cache
 	CacheSource *CacheMountSource
 	// The mounted tmpfs
@@ -286,14 +976,8 @@ type ContainerMount struct {
 }
 
 type CacheMountSource struct {
-	// The base layers underneath the cache mount, if any
-	Base *dagql.ObjectResult[*Directory]
-
-	// The ID of the cache mount
-	ID string
-
-	// The sharing mode of the cache mount
-	SharingMode CacheSharingMode
+	// The cache volume backing this mount.
+	Volume dagql.ObjectResult[*CacheVolume]
 }
 
 type TmpfsMountSource struct {
@@ -301,118 +985,1138 @@ type TmpfsMountSource struct {
 	Size int
 }
 
-func handleMountValues[T any](
-	mnt ContainerMount,
-	onDir func(*dagql.ObjectResult[*Directory]) (T, error),
-	onFile func(*dagql.ObjectResult[*File]) (T, error),
-	onCache func(*CacheMountSource) (T, error),
-	onTmpfs func(*TmpfsMountSource) (T, error),
-) (T, error) {
-	switch {
-	case mnt.DirectorySource != nil:
-		return onDir(mnt.DirectorySource)
-	case mnt.FileSource != nil:
-		return onFile(mnt.FileSource)
-	case mnt.CacheSource != nil:
-		return onCache(mnt.CacheSource)
-	case mnt.TmpfsSource != nil:
-		return onTmpfs(mnt.TmpfsSource)
-	default:
-		var zero T
-		return zero, fmt.Errorf("no mount source configured for %s", mnt.Target)
-	}
-}
-
-func handleMountValue[T any](
-	mnt ContainerMount,
-	onDir func(*dagql.ObjectResult[*Directory]) T,
-	onFile func(*dagql.ObjectResult[*File]) T,
-	onCache func(*CacheMountSource) T,
-	onTmpfs func(*TmpfsMountSource) T,
-) T {
-	t, _ := handleMountValues(mnt,
-		func(dir *dagql.ObjectResult[*Directory]) (T, error) {
-			return onDir(dir), nil
-		},
-		func(file *dagql.ObjectResult[*File]) (T, error) {
-			return onFile(file), nil
-		},
-		func(cache *CacheMountSource) (T, error) {
-			return onCache(cache), nil
-		},
-		func(tmpfs *TmpfsMountSource) (T, error) {
-			return onTmpfs(tmpfs), nil
-		},
-	)
-	return t
-}
-
-func handleMount(
-	mnt ContainerMount,
-	onDir func(*dagql.ObjectResult[*Directory]),
-	onFile func(*dagql.ObjectResult[*File]),
-	onCache func(*CacheMountSource),
-	onTmpfs func(*TmpfsMountSource),
-) {
-	handleMountValues(mnt,
-		func(dir *dagql.ObjectResult[*Directory]) (any, error) {
-			onDir(dir)
-			return nil, nil
-		},
-		func(file *dagql.ObjectResult[*File]) (any, error) {
-			onFile(file)
-			return nil, nil
-		},
-		func(cache *CacheMountSource) (any, error) {
-			onCache(cache)
-			return nil, nil
-		},
-		func(tmpfs *TmpfsMountSource) (any, error) {
-			onTmpfs(tmpfs)
-			return nil, nil
-		},
-	)
-}
-
-// SourceState returns the state of the source of the mount.
-func (mnt ContainerMount) SourceState() (llb.State, error) {
-	switch {
-	case mnt.DirectorySource != nil:
-		return mnt.DirectorySource.Self().StateWithSourcePath()
-	case mnt.FileSource != nil:
-		return mnt.FileSource.Self().State()
-	default:
-		return llb.Scratch(), nil
-	}
-}
-
-// GetLLB returns the associated LLB with a mount
-func (mnt *ContainerMount) GetLLB() *pb.Definition {
-	var llb *pb.Definition
-	handleMount(*mnt,
-		func(dir *dagql.ObjectResult[*Directory]) {
-			if dir != nil && dir.Self() != nil {
-				llb = dir.Self().LLB
-			}
-		},
-		func(file *dagql.ObjectResult[*File]) {
-			if file != nil && file.Self() != nil {
-				llb = file.Self().LLB
-			}
-		},
-		func(cacheMount *CacheMountSource) {
-			if cacheMount != nil && cacheMount.Base != nil && cacheMount.Base.Self() != nil {
-				llb = cacheMount.Base.Self().LLB
-			}
-		},
-		func(tmpMount *TmpfsMountSource) {
-			// no LLB
-		},
-	)
-	return llb
-}
-
 type ContainerMounts []ContainerMount
+
+type persistedContainerMountPayload struct {
+	Target                  string          `json:"target"`
+	Readonly                bool            `json:"readonly,omitempty"`
+	DirectorySourceResultID uint64          `json:"directorySourceResultID,omitempty"`
+	DirectorySourceValue    json.RawMessage `json:"directorySourceValue,omitempty"`
+	FileSourceResultID      uint64          `json:"fileSourceResultID,omitempty"`
+	FileSourceValue         json.RawMessage `json:"fileSourceValue,omitempty"`
+	CacheSourceResultID     uint64          `json:"cacheSourceResultID,omitempty"`
+	TmpfsSize               int             `json:"tmpfsSize,omitempty"`
+}
+
+const (
+	persistedContainerValueFormPlain         = "plain"
+	persistedContainerValueFormSourceReady   = "sourceReady"
+	persistedContainerValueFormSourcePending = "sourcePending"
+	persistedContainerValueFormOutputPending = "outputPending"
+)
+
+const (
+	persistedContainerDirectorySourceOriginRootFS         = "rootfs"
+	persistedContainerDirectorySourceOriginDirectoryMount = "directoryMount"
+	persistedContainerFileSourceOriginFileMount           = "fileMount"
+)
+
+type persistedContainerDirectoryValue struct {
+	Form  string          `json:"form"`
+	Value json.RawMessage `json:"value"`
+}
+
+type persistedContainerFileValue struct {
+	Form  string          `json:"form"`
+	Value json.RawMessage `json:"value"`
+}
+
+type persistedContainerDirectoryOutputValue struct {
+	Dir      string          `json:"dir,omitempty"`
+	Platform Platform        `json:"platform"`
+	Services ServiceBindings `json:"services,omitempty"`
+}
+
+type persistedContainerFileOutputValue struct {
+	File     string          `json:"file,omitempty"`
+	Platform Platform        `json:"platform"`
+	Services ServiceBindings `json:"services,omitempty"`
+}
+
+type persistedContainerDirectorySourceValue struct {
+	Dir                     string          `json:"dir,omitempty"`
+	Platform                Platform        `json:"platform"`
+	Services                ServiceBindings `json:"services,omitempty"`
+	ParentContainerResultID uint64          `json:"parentContainerResultID"`
+	OriginKind              string          `json:"originKind"`
+	OriginPath              string          `json:"originPath,omitempty"`
+}
+
+type persistedContainerFileSourceValue struct {
+	File                    string          `json:"file,omitempty"`
+	Platform                Platform        `json:"platform"`
+	Services                ServiceBindings `json:"services,omitempty"`
+	ParentContainerResultID uint64          `json:"parentContainerResultID"`
+	OriginKind              string          `json:"originKind"`
+	OriginPath              string          `json:"originPath,omitempty"`
+}
+
+type decodedContainerDirectoryValue struct {
+	Dir  *Directory
+	Kind string
+}
+
+type decodedContainerFileValue struct {
+	File *File
+	Kind string
+}
+
+type decodedContainerMount struct {
+	Kind string
+}
+
+type persistedContainerPayload struct {
+	Form               string                              `json:"form"`
+	FSResultID         uint64                              `json:"fsResultID,omitempty"`
+	FSValue            json.RawMessage                     `json:"fsValue,omitempty"`
+	Config             dockerspec.DockerOCIImageConfig     `json:"config"`
+	EnabledGPUs        []string                            `json:"enabledGPUs,omitempty"`
+	Mounts             []persistedContainerMountPayload    `json:"mounts,omitempty"`
+	Platform           Platform                            `json:"platform"`
+	Annotations        []containerutil.ContainerAnnotation `json:"annotations,omitempty"`
+	ImageRef           string                              `json:"imageRef,omitempty"`
+	Ports              []Port                              `json:"ports,omitempty"`
+	DefaultTerminalCmd DefaultTerminalCmdOpts              `json:"defaultTerminalCmd"`
+	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
+	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
+	LazyJSON           json.RawMessage                     `json:"lazyJSON,omitempty"`
+}
+
+const (
+	persistedContainerFormReady = "ready"
+	persistedContainerFormLazy  = "lazy"
+)
+
+type persistedContainerFromLazy struct {
+	CanonicalRef string `json:"canonicalRef"`
+}
+
+type persistedContainerWithDirectoryLazy struct {
+	ParentResultID uint64     `json:"parentResultID"`
+	Path           string     `json:"path"`
+	SourceResultID uint64     `json:"sourceResultID"`
+	Filter         CopyFilter `json:"filter,omitempty"`
+	Owner          string     `json:"owner,omitempty"`
+}
+
+type persistedContainerWithFileLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Path           string `json:"path"`
+	SourceResultID uint64 `json:"sourceResultID"`
+	Permissions    *int   `json:"permissions,omitempty"`
+	Owner          string `json:"owner,omitempty"`
+}
+
+type persistedContainerWithoutPathLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Path           string `json:"path"`
+}
+
+type persistedContainerWithSymlinkLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Target         string `json:"target"`
+	LinkPath       string `json:"linkPath"`
+}
+
+func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	if container == nil {
+		return nil
+	}
+	var links []dagql.PersistedSnapshotRefLink
+	if container.MetaSnapshot != nil {
+		links = append(links, dagql.PersistedSnapshotRefLink{
+			RefKey: container.MetaSnapshot.SnapshotID(),
+			Role:   "meta",
+		})
+	}
+	if container.FS != nil && container.FS.Value != nil {
+		container.FS.Value.snapshotMu.RLock()
+		if container.FS.Value.Snapshot != nil {
+			links = append(links, dagql.PersistedSnapshotRefLink{
+				RefKey: container.FS.Value.Snapshot.SnapshotID(),
+				Role:   "fs",
+			})
+		}
+		container.FS.Value.snapshotMu.RUnlock()
+	}
+	for i, mnt := range container.Mounts {
+		if mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil {
+			mnt.DirectorySource.Value.snapshotMu.RLock()
+			if mnt.DirectorySource.Value.Snapshot != nil {
+				links = append(links, dagql.PersistedSnapshotRefLink{
+					RefKey: mnt.DirectorySource.Value.Snapshot.SnapshotID(),
+					Role:   fmt.Sprintf("mount_dir:%d", i),
+				})
+			}
+			mnt.DirectorySource.Value.snapshotMu.RUnlock()
+		}
+		if mnt.FileSource != nil && mnt.FileSource.Value != nil {
+			mnt.FileSource.Value.snapshotMu.RLock()
+			if mnt.FileSource.Value.Snapshot != nil {
+				links = append(links, dagql.PersistedSnapshotRefLink{
+					RefKey: mnt.FileSource.Value.Snapshot.SnapshotID(),
+					Role:   fmt.Sprintf("mount_file:%d", i),
+				})
+			}
+			mnt.FileSource.Value.snapshotMu.RUnlock()
+		}
+	}
+	return links
+}
+
+func encodePersistedContainerDirectoryValue(
+	ctx context.Context,
+	cache dagql.PersistedObjectCache,
+	dir *Directory,
+	originKind string,
+	originPath string,
+) (json.RawMessage, error) {
+	if dir == nil {
+		return nil, fmt.Errorf("encode persisted container directory value: nil directory")
+	}
+	form := persistedContainerValueFormPlain
+	switch dir.Lazy.(type) {
+	case *DirectoryFromContainerLazy:
+		value, err := json.Marshal(persistedContainerDirectoryOutputValue{
+			Dir:      dir.Dir,
+			Platform: dir.Platform,
+			Services: slices.Clone(dir.Services),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal persisted container directory output value: %w", err)
+		}
+		return json.Marshal(persistedContainerDirectoryValue{
+			Form:  persistedContainerValueFormOutputPending,
+			Value: value,
+		})
+	}
+	dir.snapshotMu.RLock()
+	source := dir.snapshotSource
+	dir.snapshotMu.RUnlock()
+	if source.Self() != nil {
+		switch dir.Lazy.(type) {
+		case *DirectoryFromSourceLazy:
+			form = persistedContainerValueFormSourcePending
+		default:
+			form = persistedContainerValueFormSourceReady
+		}
+		parentContainerResultID := dir.containerSourceParentResultID
+		var err error
+		if parentContainerResultID == 0 {
+			parentContainerResultID, err = persistedContainerParentResultIDFromDirectorySource(source, originKind, originPath)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("encode persisted container directory source provenance: %w", err)
+		}
+		value, err := json.Marshal(persistedContainerDirectorySourceValue{
+			Dir:                     dir.Dir,
+			Platform:                dir.Platform,
+			Services:                slices.Clone(dir.Services),
+			ParentContainerResultID: parentContainerResultID,
+			OriginKind:              originKind,
+			OriginPath:              originPath,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal persisted container directory source value: %w", err)
+		}
+		return json.Marshal(persistedContainerDirectoryValue{
+			Form:  form,
+			Value: value,
+		})
+	}
+	value, err := dir.EncodePersistedObject(ctx, cache)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerDirectoryValue{
+		Form:  form,
+		Value: value,
+	})
+}
+
+func encodePersistedContainerFileValue(
+	ctx context.Context,
+	cache dagql.PersistedObjectCache,
+	file *File,
+	originKind string,
+	originPath string,
+) (json.RawMessage, error) {
+	if file == nil {
+		return nil, fmt.Errorf("encode persisted container file value: nil file")
+	}
+	form := persistedContainerValueFormPlain
+	switch file.Lazy.(type) {
+	case *FileFromContainerLazy:
+		value, err := json.Marshal(persistedContainerFileOutputValue{
+			File:     file.File,
+			Platform: file.Platform,
+			Services: slices.Clone(file.Services),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal persisted container file output value: %w", err)
+		}
+		return json.Marshal(persistedContainerFileValue{
+			Form:  persistedContainerValueFormOutputPending,
+			Value: value,
+		})
+	}
+	file.snapshotMu.RLock()
+	source := file.snapshotSource
+	file.snapshotMu.RUnlock()
+	if source.File.Self() != nil || source.Directory.Self() != nil {
+		switch file.Lazy.(type) {
+		case *FileFromSourceLazy:
+			form = persistedContainerValueFormSourcePending
+		default:
+			form = persistedContainerValueFormSourceReady
+		}
+		parentContainerResultID := file.containerSourceParentResultID
+		var err error
+		if parentContainerResultID == 0 {
+			parentContainerResultID, err = persistedContainerParentResultIDFromFileSource(source, originKind, originPath)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("encode persisted container file source provenance: %w", err)
+		}
+		value, err := json.Marshal(persistedContainerFileSourceValue{
+			File:                    file.File,
+			Platform:                file.Platform,
+			Services:                slices.Clone(file.Services),
+			ParentContainerResultID: parentContainerResultID,
+			OriginKind:              originKind,
+			OriginPath:              originPath,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal persisted container file source value: %w", err)
+		}
+		return json.Marshal(persistedContainerFileValue{
+			Form:  form,
+			Value: value,
+		})
+	}
+	value, err := file.EncodePersistedObject(ctx, cache)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerFileValue{
+		Form:  form,
+		Value: value,
+	})
+}
+
+func persistedContainerSourcePathArg(frame *dagql.ResultCall) (string, error) {
+	if frame == nil {
+		return "", fmt.Errorf("missing source result call")
+	}
+	for _, arg := range frame.Args {
+		if arg == nil || arg.Name != "path" || arg.Value == nil {
+			continue
+		}
+		if arg.Value.Kind != dagql.ResultCallLiteralKindString {
+			return "", fmt.Errorf("path arg has kind %q, not string", arg.Value.Kind)
+		}
+		return arg.Value.StringValue, nil
+	}
+	return "", fmt.Errorf("missing path arg")
+}
+
+func persistedContainerDirectorySourceWithCall(source dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
+	cur := source
+	for {
+		if cur.Self() == nil {
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("directory source is nil")
+		}
+		if _, err := cur.ResultCall(); err == nil {
+			return cur, nil
+		}
+		cur.Self().snapshotMu.RLock()
+		next := cur.Self().snapshotSource
+		cur.Self().snapshotMu.RUnlock()
+		if next.Self() == nil {
+			_, err := cur.ResultCall()
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("directory source result call: %w", err)
+		}
+		cur = next
+	}
+}
+
+func persistedContainerFileSourceWithCall(source FileSnapshotSource) (dagql.ObjectResult[*File], error) {
+	cur := source
+	for {
+		if cur.File.Self() == nil {
+			return dagql.ObjectResult[*File]{}, fmt.Errorf("file source is not file-backed")
+		}
+		if _, err := cur.File.ResultCall(); err == nil {
+			return cur.File, nil
+		}
+		cur.File.Self().snapshotMu.RLock()
+		next := cur.File.Self().snapshotSource
+		cur.File.Self().snapshotMu.RUnlock()
+		if next.File.Self() == nil && next.Directory.Self() == nil {
+			_, err := cur.File.ResultCall()
+			return dagql.ObjectResult[*File]{}, fmt.Errorf("file source result call: %w", err)
+		}
+		cur = next
+	}
+}
+
+func persistedContainerSourceParentResultID(
+	frame *dagql.ResultCall,
+	expectedField string,
+	expectedPath string,
+) (uint64, error) {
+	if frame == nil {
+		return 0, fmt.Errorf("missing source result call")
+	}
+	if frame.Field != expectedField {
+		return 0, fmt.Errorf("expected source field %q, got %q", expectedField, frame.Field)
+	}
+	if frame.Receiver == nil || frame.Receiver.ResultID == 0 {
+		return 0, fmt.Errorf("source result missing container receiver result ID")
+	}
+	if expectedField == "rootfs" {
+		return frame.Receiver.ResultID, nil
+	}
+	gotPath, err := persistedContainerSourcePathArg(frame)
+	if err != nil {
+		return 0, err
+	}
+	if gotPath != expectedPath {
+		return 0, fmt.Errorf("source path %q does not match expected path %q", gotPath, expectedPath)
+	}
+	return frame.Receiver.ResultID, nil
+}
+
+func persistedContainerParentResultIDFromDirectorySource(
+	source dagql.ObjectResult[*Directory],
+	originKind string,
+	originPath string,
+) (uint64, error) {
+	sourceWithCall, err := persistedContainerDirectorySourceWithCall(source)
+	if err != nil {
+		return 0, err
+	}
+	frame, err := sourceWithCall.ResultCall()
+	if err != nil {
+		return 0, fmt.Errorf("directory source result call: %w", err)
+	}
+	switch originKind {
+	case persistedContainerDirectorySourceOriginRootFS:
+		return persistedContainerSourceParentResultID(frame, "rootfs", "")
+	case persistedContainerDirectorySourceOriginDirectoryMount:
+		return persistedContainerSourceParentResultID(frame, "directory", originPath)
+	default:
+		return 0, fmt.Errorf("unsupported directory origin kind %q", originKind)
+	}
+}
+
+func persistedContainerParentResultIDFromFileSource(
+	source FileSnapshotSource,
+	originKind string,
+	originPath string,
+) (uint64, error) {
+	switch originKind {
+	case persistedContainerFileSourceOriginFileMount:
+		sourceWithCall, err := persistedContainerFileSourceWithCall(source)
+		if err != nil {
+			return 0, err
+		}
+		frame, err := sourceWithCall.ResultCall()
+		if err != nil {
+			return 0, fmt.Errorf("file source result call: %w", err)
+		}
+		return persistedContainerSourceParentResultID(frame, "file", originPath)
+	default:
+		return 0, fmt.Errorf("unsupported file origin kind %q", originKind)
+	}
+}
+
+func loadPersistedContainerDirectorySourceByOrigin(
+	ctx context.Context,
+	dag *dagql.Server,
+	parentContainerResultID uint64,
+	originKind string,
+	originPath string,
+	label string,
+) (dagql.ObjectResult[*Directory], error) {
+	if parentContainerResultID == 0 {
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("%s: missing parent container result ID", label)
+	}
+	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, parentContainerResultID, label+" parent")
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	var source dagql.ObjectResult[*Directory]
+	switch originKind {
+	case persistedContainerDirectorySourceOriginRootFS:
+		if err := dag.Select(ctx, parent, &source, dagql.Selector{Field: "rootfs"}); err != nil {
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("%s rootfs select: %w", label, err)
+		}
+	case persistedContainerDirectorySourceOriginDirectoryMount:
+		if err := dag.Select(ctx, parent, &source, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(originPath)},
+			},
+		}); err != nil {
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("%s directory select %q: %w", label, originPath, err)
+		}
+	default:
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("%s: unsupported directory origin kind %q", label, originKind)
+	}
+	return source, nil
+}
+
+func loadPersistedContainerFileSourceByOrigin(
+	ctx context.Context,
+	dag *dagql.Server,
+	parentContainerResultID uint64,
+	originKind string,
+	originPath string,
+	label string,
+) (dagql.ObjectResult[*File], error) {
+	if parentContainerResultID == 0 {
+		return dagql.ObjectResult[*File]{}, fmt.Errorf("%s: missing parent container result ID", label)
+	}
+	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, parentContainerResultID, label+" parent")
+	if err != nil {
+		return dagql.ObjectResult[*File]{}, err
+	}
+	var source dagql.ObjectResult[*File]
+	switch originKind {
+	case persistedContainerFileSourceOriginFileMount:
+		if err := dag.Select(ctx, parent, &source, dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(originPath)},
+			},
+		}); err != nil {
+			return dagql.ObjectResult[*File]{}, fmt.Errorf("%s file select %q: %w", label, originPath, err)
+		}
+	default:
+		return dagql.ObjectResult[*File]{}, fmt.Errorf("%s: unsupported file origin kind %q", label, originKind)
+	}
+	return source, nil
+}
+
+func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerDirectoryValue, error) {
+	var wrapped persistedContainerDirectoryValue
+	if err := json.Unmarshal(payload, &wrapped); err != nil {
+		return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory value: %w", err)
+	}
+	if wrapped.Form == "" {
+		wrapped.Form = persistedContainerValueFormPlain
+		wrapped.Value = payload
+	}
+
+	if wrapped.Form == persistedContainerValueFormOutputPending {
+		var shell persistedContainerDirectoryOutputValue
+		if err := json.Unmarshal(wrapped.Value, &shell); err != nil {
+			return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory output value: %w", err)
+		}
+		return decodedContainerDirectoryValue{
+			Dir: &Directory{
+				Dir:      shell.Dir,
+				Platform: shell.Platform,
+				Services: slices.Clone(shell.Services),
+			},
+			Kind: wrapped.Form,
+		}, nil
+	}
+
+	if wrapped.Form == persistedContainerValueFormSourceReady || wrapped.Form == persistedContainerValueFormSourcePending {
+		var sourceVal persistedContainerDirectorySourceValue
+		if err := json.Unmarshal(wrapped.Value, &sourceVal); err != nil {
+			return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory source value: %w", err)
+		}
+		source, err := loadPersistedContainerDirectorySourceByOrigin(ctx, dag, sourceVal.ParentContainerResultID, sourceVal.OriginKind, sourceVal.OriginPath, "container directory source")
+		if err != nil {
+			return decodedContainerDirectoryValue{}, err
+		}
+		dir := &Directory{
+			Dir:                           sourceVal.Dir,
+			Platform:                      sourceVal.Platform,
+			Services:                      slices.Clone(sourceVal.Services),
+			containerSourceParentResultID: sourceVal.ParentContainerResultID,
+		}
+		if err := dir.setSnapshotSource(source); err != nil {
+			return decodedContainerDirectoryValue{}, err
+		}
+		if wrapped.Form == persistedContainerValueFormSourcePending {
+			dir.Lazy = &DirectoryFromSourceLazy{
+				LazyState: NewLazyState(),
+				Source:    source,
+			}
+		}
+		return decodedContainerDirectoryValue{Dir: dir, Kind: wrapped.Form}, nil
+	}
+
+	var persisted persistedDirectoryPayload
+	if err := json.Unmarshal(wrapped.Value, &persisted); err != nil {
+		return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory payload: %w", err)
+	}
+	dir := &Directory{
+		Dir:      persisted.Dir,
+		Platform: persisted.Platform,
+		Services: slices.Clone(persisted.Services),
+	}
+	switch persisted.Form {
+	case persistedDirectoryFormSnapshot:
+		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "container", role)
+		if err != nil {
+			return decodedContainerDirectoryValue{}, err
+		}
+		if err := dir.setSnapshot(snapshot); err != nil {
+			return decodedContainerDirectoryValue{}, err
+		}
+	default:
+		return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory payload: unsupported form %q", persisted.Form)
+	}
+	if wrapped.Form == persistedContainerValueFormSourcePending {
+		dir.Lazy = &DirectoryFromSourceLazy{
+			LazyState: NewLazyState(),
+			Source:    dir.snapshotSource,
+		}
+	}
+	return decodedContainerDirectoryValue{Dir: dir, Kind: wrapped.Form}, nil
+}
+
+func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerFileValue, error) {
+	var wrapped persistedContainerFileValue
+	if err := json.Unmarshal(payload, &wrapped); err != nil {
+		return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file value: %w", err)
+	}
+	if wrapped.Form == "" {
+		wrapped.Form = persistedContainerValueFormPlain
+		wrapped.Value = payload
+	}
+
+	if wrapped.Form == persistedContainerValueFormOutputPending {
+		var shell persistedContainerFileOutputValue
+		if err := json.Unmarshal(wrapped.Value, &shell); err != nil {
+			return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file output value: %w", err)
+		}
+		return decodedContainerFileValue{
+			File: &File{
+				File:     shell.File,
+				Platform: shell.Platform,
+				Services: slices.Clone(shell.Services),
+			},
+			Kind: wrapped.Form,
+		}, nil
+	}
+
+	if wrapped.Form == persistedContainerValueFormSourceReady || wrapped.Form == persistedContainerValueFormSourcePending {
+		var sourceVal persistedContainerFileSourceValue
+		if err := json.Unmarshal(wrapped.Value, &sourceVal); err != nil {
+			return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file source value: %w", err)
+		}
+		source, err := loadPersistedContainerFileSourceByOrigin(ctx, dag, sourceVal.ParentContainerResultID, sourceVal.OriginKind, sourceVal.OriginPath, "container file source")
+		if err != nil {
+			return decodedContainerFileValue{}, err
+		}
+		file := &File{
+			File:                          sourceVal.File,
+			Platform:                      sourceVal.Platform,
+			Services:                      slices.Clone(sourceVal.Services),
+			containerSourceParentResultID: sourceVal.ParentContainerResultID,
+		}
+		if err := file.setSnapshotSource(FileSnapshotSource{File: source}); err != nil {
+			return decodedContainerFileValue{}, err
+		}
+		if wrapped.Form == persistedContainerValueFormSourcePending {
+			file.Lazy = &FileFromSourceLazy{
+				LazyState: NewLazyState(),
+				Source:    FileSnapshotSource{File: source},
+			}
+		}
+		return decodedContainerFileValue{File: file, Kind: wrapped.Form}, nil
+	}
+
+	var persisted persistedFilePayload
+	if err := json.Unmarshal(wrapped.Value, &persisted); err != nil {
+		return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file payload: %w", err)
+	}
+	file := &File{
+		File:     persisted.File,
+		Platform: persisted.Platform,
+		Services: slices.Clone(persisted.Services),
+	}
+	switch persisted.Form {
+	case persistedFileFormSnapshot:
+		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "container", role)
+		if err != nil {
+			return decodedContainerFileValue{}, err
+		}
+		if err := file.setSnapshot(snapshot); err != nil {
+			return decodedContainerFileValue{}, err
+		}
+	default:
+		return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file payload: unsupported form %q", persisted.Form)
+	}
+	if wrapped.Form == persistedContainerValueFormSourcePending {
+		file.Lazy = &FileFromSourceLazy{
+			LazyState: NewLazyState(),
+			Source:    file.snapshotSource,
+		}
+	}
+	return decodedContainerFileValue{File: file, Kind: wrapped.Form}, nil
+}
+
+func attachContainerResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res dagql.ObjectResult[*Container], label string) (dagql.ObjectResult[*Container], error) {
+	attached, err := attach(res)
+	if err != nil {
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("%s: %w", label, err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*Container])
+	if !ok {
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
+	}
+	return typed, nil
+}
+
+func bareDirectoryForContainerPath(container *Container, targetPath string) (*Directory, error) {
+	mnt, _, err := locatePath(container, targetPath)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case mnt == nil:
+		if container.FS == nil || container.FS.Value == nil {
+			return nil, fmt.Errorf("missing bare rootfs output for %s", targetPath)
+		}
+		return container.FS.Value, nil
+	case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil:
+		return mnt.DirectorySource.Value, nil
+	default:
+		return nil, fmt.Errorf("path %s does not resolve to a bare directory output shell", targetPath)
+	}
+}
+
+func targetParentDirectoryForContainerPath(ctx context.Context, parent dagql.ObjectResult[*Container], current *Container, targetPath string) (dagql.ObjectResult[*Directory], error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+	if current == nil {
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("container lazy current state is nil")
+	}
+	mnt, _, err := locatePath(current, targetPath)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	switch {
+	case mnt == nil:
+		return containerRootFSSelection(ctx, srv, parent, current.FS)
+	case mnt.DirectorySource != nil:
+		return containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
+	default:
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("path %s does not resolve to a directory target parent", targetPath)
+	}
+}
+
+func markDirectoryFromContainerLazy(container *Container, targetPath string) error {
+	dir, err := bareDirectoryForContainerPath(container, targetPath)
+	if err != nil {
+		return err
+	}
+	dir.snapshotMu.Lock()
+	if dir.Snapshot != nil {
+		dir.snapshotMu.Unlock()
+		return fmt.Errorf("path %s resolves to an already-materialized directory output", targetPath)
+	}
+	dir.snapshotReady = false
+	dir.snapshotSource = dagql.ObjectResult[*Directory]{}
+	dir.Snapshot = nil
+	dir.snapshotMu.Unlock()
+	dir.Lazy = &DirectoryFromContainerLazy{Container: container}
+	return nil
+}
+
+func (lazy *DirectoryFromContainerLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	if lazy == nil || lazy.Container == nil || lazy.Container.Lazy == nil {
+		return nil
+	}
+	return lazy.Container.Lazy.Evaluate(ctx, lazy.Container)
+}
+
+func (*DirectoryFromContainerLazy) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (*DirectoryFromContainerLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+	return nil, fmt.Errorf("encode persisted directory from-container lazy: unsupported top-level form")
+}
+
+func (lazy *FileFromContainerLazy) Evaluate(ctx context.Context, file *File) error {
+	if lazy == nil || lazy.Container == nil || lazy.Container.Lazy == nil {
+		return nil
+	}
+	return lazy.Container.Lazy.Evaluate(ctx, lazy.Container)
+}
+
+func (*FileFromContainerLazy) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (*FileFromContainerLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+	return nil, fmt.Errorf("encode persisted file from-container lazy: unsupported top-level form")
+}
+
+func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withDirectory", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
+		targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.Path)
+		if err != nil {
+			return err
+		}
+		dir, err := bareDirectoryForContainerPath(container, lazy.Path)
+		if err != nil {
+			return err
+		}
+		if dir.Lazy != nil {
+			if wrapper, ok := dir.Lazy.(*DirectoryFromContainerLazy); !ok || wrapper.Container != container {
+				if err := dir.Lazy.Evaluate(ctx, dir); err != nil {
+					return err
+				}
+			}
+		}
+		_, subpath, err := locatePath(container, lazy.Path)
+		if err != nil {
+			return err
+		}
+		if err := dir.WithDirectory(ctx, targetParent, subpath, lazy.Source, lazy.Filter, lazy.Owner, nil); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithDirectoryLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withDirectory parent")
+	if err != nil {
+		return nil, err
+	}
+	source, err := attachDirectoryResult(attach, lazy.Source, "attach container withDirectory source")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Source = source
+	return []dagql.AnyResult{parent, source}, nil
+}
+
+func (lazy *ContainerWithDirectoryLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withDirectory parent")
+	if err != nil {
+		return nil, err
+	}
+	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withDirectory source")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithDirectoryLazy{
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+		SourceResultID: sourceID,
+		Filter:         lazy.Filter,
+		Owner:          lazy.Owner,
+	})
+}
+
+func (lazy *ContainerWithFileLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withFile", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
+		targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.Path)
+		if err != nil {
+			return err
+		}
+		dir, err := bareDirectoryForContainerPath(container, lazy.Path)
+		if err != nil {
+			return err
+		}
+		if dir.Lazy != nil {
+			if wrapper, ok := dir.Lazy.(*DirectoryFromContainerLazy); !ok || wrapper.Container != container {
+				if err := dir.Lazy.Evaluate(ctx, dir); err != nil {
+					return err
+				}
+			}
+		}
+		_, subpath, err := locatePath(container, lazy.Path)
+		if err != nil {
+			return err
+		}
+		if err := dir.WithFile(ctx, targetParent, subpath, lazy.Source, lazy.Permissions, lazy.Owner, false, false); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithFileLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withFile parent")
+	if err != nil {
+		return nil, err
+	}
+	source, err := attachFileResult(attach, lazy.Source, "attach container withFile source")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Source = source
+	return []dagql.AnyResult{parent, source}, nil
+}
+
+func (lazy *ContainerWithFileLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withFile parent")
+	if err != nil {
+		return nil, err
+	}
+	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withFile source")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithFileLazy{
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+		SourceResultID: sourceID,
+		Permissions:    lazy.Permissions,
+		Owner:          lazy.Owner,
+	})
+}
+
+func (lazy *ContainerWithoutPathLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutPath", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent); err != nil {
+			return err
+		}
+		targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.Path)
+		if err != nil {
+			return err
+		}
+		dir, err := bareDirectoryForContainerPath(container, lazy.Path)
+		if err != nil {
+			return err
+		}
+		if dir.Lazy != nil {
+			if wrapper, ok := dir.Lazy.(*DirectoryFromContainerLazy); !ok || wrapper.Container != container {
+				if err := dir.Lazy.Evaluate(ctx, dir); err != nil {
+					return err
+				}
+			}
+		}
+		_, subpath, err := locatePath(container, lazy.Path)
+		if err != nil {
+			return err
+		}
+		if err := dir.Without(ctx, targetParent, dagql.CurrentCall(ctx), subpath); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutPathLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutPath parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutPathLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutPath parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutPathLazy{
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+	})
+}
+
+func (lazy *ContainerWithSymlinkLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withSymlink", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent); err != nil {
+			return err
+		}
+		targetParent, err := targetParentDirectoryForContainerPath(ctx, lazy.Parent, container, lazy.LinkPath)
+		if err != nil {
+			return err
+		}
+		dir, err := bareDirectoryForContainerPath(container, lazy.LinkPath)
+		if err != nil {
+			return err
+		}
+		if dir.Lazy != nil {
+			if wrapper, ok := dir.Lazy.(*DirectoryFromContainerLazy); !ok || wrapper.Container != container {
+				if err := dir.Lazy.Evaluate(ctx, dir); err != nil {
+					return err
+				}
+			}
+		}
+		_, subpath, err := locatePath(container, lazy.LinkPath)
+		if err != nil {
+			return err
+		}
+		if err := dir.WithSymlink(ctx, targetParent, lazy.Target, subpath); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithSymlinkLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withSymlink parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithSymlinkLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withSymlink parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithSymlinkLazy{
+		ParentResultID: parentID,
+		Target:         lazy.Target,
+		LinkPath:       lazy.LinkPath,
+	})
+}
+
+func decodePersistedContainerLazy(
+	ctx context.Context,
+	dag *dagql.Server,
+	call *dagql.ResultCall,
+	container *Container,
+	payload json.RawMessage,
+	decodedRootFS decodedContainerDirectoryValue,
+	decodedMounts []decodedContainerMount,
+) error {
+	switch call.Field {
+	case "from":
+		var persisted persistedContainerFromLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container from lazy payload: %w", err)
+		}
+		container.Lazy = &ContainerFromImageRefLazy{
+			LazyState:    NewLazyState(),
+			CanonicalRef: persisted.CanonicalRef,
+			ResolveMode:  serverresolver.ResolveModeDefault,
+		}
+		if container.FS != nil && container.FS.Value != nil {
+			container.FS.Value.Lazy = &DirectoryFromContainerLazy{Container: container}
+		}
+		return nil
+	case "withDirectory":
+		var persisted persistedContainerWithDirectoryLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withDirectory lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withDirectory parent")
+		if err != nil {
+			return err
+		}
+		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withDirectory source")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithDirectoryLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Path:      persisted.Path,
+			Source:    source,
+			Filter:    persisted.Filter,
+			Owner:     persisted.Owner,
+		}
+		return markDirectoryFromContainerLazy(container, persisted.Path)
+	case "withFile":
+		var persisted persistedContainerWithFileLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withFile lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withFile parent")
+		if err != nil {
+			return err
+		}
+		source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.SourceResultID, "container withFile source")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithFileLazy{
+			LazyState:   NewLazyState(),
+			Parent:      parent,
+			Path:        persisted.Path,
+			Source:      source,
+			Permissions: persisted.Permissions,
+			Owner:       persisted.Owner,
+		}
+		return markDirectoryFromContainerLazy(container, persisted.Path)
+	case "withoutDirectory", "withoutFile", "withoutFiles":
+		var persisted persistedContainerWithoutPathLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutPath lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutPath parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutPathLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Path:      persisted.Path,
+		}
+		return markDirectoryFromContainerLazy(container, persisted.Path)
+	case "withSymlink":
+		var persisted persistedContainerWithSymlinkLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withSymlink lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withSymlink parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithSymlinkLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Target:    persisted.Target,
+			LinkPath:  persisted.LinkPath,
+		}
+		return markDirectoryFromContainerLazy(container, persisted.LinkPath)
+	case "withExec":
+		return decodePersistedContainerExecLazy(ctx, dag, container, payload, decodedRootFS, decodedMounts)
+	default:
+		return fmt.Errorf("decode persisted container lazy payload: unsupported field %q", call.Field)
+	}
+}
 
 func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	mntsCp := make(ContainerMounts, 0, len(mnts))
@@ -451,10 +2155,10 @@ func (mnts ContainerMounts) Replace(newMnt ContainerMount) (ContainerMounts, err
 	return mntsCp, nil
 }
 
-func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
+func (container *Container) FromRefString(ctx context.Context, addr string) (dagql.ObjectResult[*Container], error) {
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse image address %s: %w", addr, err)
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("failed to parse image address %s: %w", addr, err)
 	}
 
 	// add a default :latest if no tag or digest, otherwise this is a no-op
@@ -467,7 +2171,7 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Dagger server: %w", err)
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("failed to get Dagger server: %w", err)
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("from %s", addr),
@@ -489,358 +2193,301 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 		},
 	)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*Container]{}, err
 	}
 
-	return ctr.Self(), nil
+	return ctr, nil
 }
 
-// FromCanonicalRef implements the dagop portion of the "from" command: it fetches an image, and updates the root fs
-// to point to a snapshot of the referenced image
+// FromCanonicalRef resolves a digest-addressed image pull and updates only the
+// rootfs snapshot state.
 func (container *Container) FromCanonicalRef(
 	ctx context.Context,
 	refName reference.Canonical,
-	// cfgBytes is optional, will be retrieved if not provided
-	cfgBytes []byte,
-) (*Container, error) {
-	container = container.Clone()
-
+) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	platform := container.Platform
-
 	refStr := refName.String()
 
-	bk, err := query.Buildkit(ctx)
+	rslvr, err := query.RegistryResolver(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get registry resolver: %w", err)
 	}
-
-	hsm, err := containersource.NewSource(containersource.SourceOpt{
-		Snapshotter:   bk.Worker.Snapshotter,
-		ContentStore:  bk.Worker.ContentStore(),
-		ImageStore:    bk.Worker.ImageStore,
-		CacheAccessor: query.BuildkitCache(),
-		RegistryHosts: bk.Worker.RegistryHosts,
-		ResolverType:  containersource.ResolverTypeRegistry,
-		LeaseManager:  bk.Worker.LeaseManager(),
+	pulled, err := rslvr.Pull(ctx, refStr, serverresolver.PullOpts{
+		Platform:    platform.Spec(),
+		ResolveMode: serverresolver.ResolveModeDefault,
 	})
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("pull image %q: %w", refStr, err)
 	}
+	defer pulled.Release(context.WithoutCancel(ctx))
 
-	attrs := map[string]string{}
-	id, err := hsm.Identifier(refStr, attrs, &pb.Platform{
-		Architecture: platform.Architecture,
-		OS:           platform.OS,
-		Variant:      platform.Variant,
-		OSVersion:    platform.OSVersion,
-		OSFeatures:   platform.OSFeatures,
+	ref, err := query.SnapshotManager().ImportImage(ctx, &bkcache.ImportedImage{
+		Ref:          pulled.Ref,
+		ManifestDesc: pulled.ManifestDesc,
+		ConfigDesc:   pulled.ConfigDesc,
+		Layers:       pulled.Layers,
+		Nonlayers:    pulled.Nonlayers,
+	}, bkcache.ImportImageOpts{
+		ImageRef:   pulled.Ref,
+		RecordType: bkclient.UsageRecordTypeRegular,
 	})
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("import image %q: %w", refStr, err)
 	}
 
-	src, err := hsm.Resolve(ctx, id, query.BuildkitSession())
-	if err != nil {
-		return nil, err
+	if container.FS == nil || container.FS.self() == nil {
+		_ = ref.Release(context.WithoutCancel(ctx))
+		return fmt.Errorf("missing rootfs directory for fromCanonicalRef")
 	}
-
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group found")
-	}
-
-	ref, err := src.Snapshot(ctx, bkSessionGroup)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := ref.EnsureLocal(ctx, bkSessionGroup); err != nil {
-		return nil, fmt.Errorf("failed to ensure image is local: %w", err)
-	}
-
-	rootfsDir := &Directory{
-		Result: ref,
-	}
-	if container.FS != nil {
-		rootfsDir.Dir = container.FS.Self().Dir
-		if rootfsDir.Dir == "" {
-			return nil, fmt.Errorf("SetFSFromCanonicalRef got an empty dir")
-		} else if rootfsDir.Dir != "/" {
-			return nil, fmt.Errorf("SetFSFromCanonicalRef got %s as dir; however it will be lost", rootfsDir.Dir)
-		}
-		rootfsDir.Platform = container.FS.Self().Platform
-		rootfsDir.Services = container.FS.Self().Services
-	} else {
+	rootfsDir := container.FS.self()
+	if rootfsDir.Dir == "" {
 		rootfsDir.Dir = "/"
+	} else if rootfsDir.Dir != "/" {
+		_ = ref.Release(context.WithoutCancel(ctx))
+		return fmt.Errorf("SetFSFromCanonicalRef got %s as dir; however it will be lost", rootfsDir.Dir)
 	}
-	updatedRootFS, err := UpdatedRootFS(ctx, rootfsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update rootfs: %w", err)
-	}
-	container.FS = updatedRootFS
-	return container, nil
-}
-
-// FromCanonicalRefUpdateConfig is must be called outside of a dagop context, and is responsible for fetching the image config
-// and applying it to the container's metadata
-func (container *Container) FromCanonicalRefUpdateConfig(
-	ctx context.Context,
-	refName reference.Canonical,
-	// cfgBytes is optional, will be retrieved if not provided
-	cfgBytes []byte,
-) (*Container, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	if err := rootfsDir.setSnapshot(ref); err != nil {
+		return err
 	}
 
-	platform := container.Platform
-	refStr := refName.String()
-
-	// since this is an image ref w/ a digest, always check the local cache for the image
-	// first before making any network requests
-	resolveMode := llb.ResolveModePreferLocal
-	if cfgBytes == nil {
-		_, _, cfgBytes, err = bk.ResolveImageConfig(ctx, refStr, sourceresolver.Opt{
-			Platform: ptr(platform.Spec()),
-			ImageOpt: &sourceresolver.ResolveImageOpt{
-				ResolveMode: resolveMode.String(),
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refStr, platform.Format(), err)
-		}
-	}
-
-	var imgSpec dockerspec.DockerOCIImage
-	if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-		return nil, err
-	}
-
-	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-	container.ImageRef = refStr
-	container.Platform = Platform(platforms.Normalize(imgSpec.Platform))
-
-	return container, nil
+	return nil
 }
 
 const defaultDockerfileName = "Dockerfile"
 
+func isKnownDockerfileSyntaxFrontend(syntaxRef string) bool {
+	ref := strings.TrimSpace(strings.ToLower(syntaxRef))
+	if ref == "" {
+		return false
+	}
+
+	known := []string{
+		"docker/dockerfile",
+		"docker/dockerfile-upstream",
+		"docker.io/docker/dockerfile",
+		"docker.io/docker/dockerfile-upstream",
+		"index.docker.io/docker/dockerfile",
+		"index.docker.io/docker/dockerfile-upstream",
+		"moby/dockerfile",
+		"moby/dockerfile-upstream",
+		"docker.io/moby/dockerfile",
+		"docker.io/moby/dockerfile-upstream",
+		"index.docker.io/moby/dockerfile",
+		"index.docker.io/moby/dockerfile-upstream",
+	}
+	for _, prefix := range known {
+		if ref == prefix || strings.HasPrefix(ref, prefix+":") || strings.HasPrefix(ref, prefix+"@") {
+			return true
+		}
+	}
+	return false
+}
+
 func (container *Container) Build(
 	ctx context.Context,
 	dockerfileDir *Directory,
-	// contextDir is dockerfileDir with files excluded as per dockerignore file
-	contextDir *Directory,
+	// contextDirID is dockerfileDir with files excluded as per dockerignore file,
+	// expressed as a recipe-form ID so llbtodagger can append to it.
+	contextDirID *call.ID,
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
 	secrets []dagql.ObjectResult[*Secret],
-	secretStore *SecretStore,
 	noInit bool,
-	sshSocket *Socket,
+	sshSocket dagql.ObjectResult[*Socket],
 ) (*Container, error) {
-	container = container.Clone()
-
-	secretNameToLLBID := make(map[string]string)
-	for _, secret := range secrets {
-		secretDgst := SecretIDDigest(secret.ID())
-		secretName, ok := secretStore.GetSecretName(secretDgst)
-		if !ok {
-			return nil, fmt.Errorf("secret not found: %s", secretDgst)
-		}
-		container.Secrets = append(container.Secrets, ContainerSecret{
-			Secret:    secret,
-			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
-		})
-		secretNameToLLBID[secretName] = secretDgst.String()
+	dockerfilePath := dockerfile
+	if dockerfilePath == "" {
+		dockerfilePath = defaultDockerfileName
 	}
-
-	// set image ref to empty string
-	container.ImageRef = ""
+	dockerfileRef, err := dockerfileDir.getSnapshot()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Dockerfile directory snapshot: %w", err)
+	}
+	if dockerfileRef == nil {
+		return nil, fmt.Errorf("failed to load Dockerfile %q: directory is empty", dockerfilePath)
+	}
+	var dockerfileBytes []byte
+	err = MountRef(ctx, dockerfileRef, func(root string, _ *mount.Mount) error {
+		resolvedDockerfilePath, err := containerdfs.RootPath(root, path.Join(dockerfileDir.Dir, dockerfilePath))
+		if err != nil {
+			return err
+		}
+		dockerfileBytes, err = os.ReadFile(resolvedDockerfilePath)
+		if err != nil {
+			return TrimErrPathPrefix(err, root)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Dockerfile %q: %w", dockerfilePath, err)
+	}
+	if syntaxRef, _, _, ok := dockerfileparser.DetectSyntax(dockerfileBytes); ok && !isKnownDockerfileSyntaxFrontend(syntaxRef) {
+		return nil, fmt.Errorf("dockerBuild syntax frontend %q is unsupported in hard-cutover path", syntaxRef)
+	}
+	mainContext := llbtodagger.DockerfileMainContextSentinelState()
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	bk, err := query.Buildkit(ctx)
+	rslvr, err := query.RegistryResolver(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to get registry resolver: %w", err)
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	platform := container.Platform
-
-	opts := map[string]string{
-		"platform":      platform.Format(),
-		"contextsubdir": contextDir.Dir,
-	}
-
-	if dockerfile != "" {
-		opts["filename"] = filepath.Join(dockerfileDir.Dir, dockerfile)
-	} else {
-		opts["filename"] = filepath.Join(dockerfileDir.Dir, defaultDockerfileName)
-	}
-
-	if target != "" {
-		opts["target"] = target
-	}
-
+	buildArgMap := make(map[string]string, len(buildArgs))
 	for _, buildArg := range buildArgs {
-		opts["build-arg:"+buildArg.Name] = buildArg.Value
+		buildArgMap[buildArg.Name] = buildArg.Value
 	}
-
-	inputs := map[string]*pb.Definition{
-		dockerui.DefaultLocalNameContext:    contextDir.LLB,
-		dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
-	}
-
-	// FIXME: this is a terrible way to pass this around
-	solveCtx := buildkit.WithSecretTranslator(ctx, func(name string, optional bool) (string, error) {
-		llbID, ok := secretNameToLLBID[name]
-		if !ok {
-			if optional {
-				// set to a purposely invalid name, so we don't get something else
-				return "notfound:" + identity.NewID(), nil
-			}
-			return "", fmt.Errorf("secret not found: %s", name)
+	secretIDsByLLBID := make(map[string]*call.ID, len(secrets))
+	returnedSecretMounts := make([]ContainerSecret, 0, len(secrets))
+	for _, secret := range secrets {
+		secretRecipeID, err := secret.RecipeID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get dockerBuild secret recipe ID: %w", err)
 		}
-		return llbID, nil
-	})
-
-	if sshSocket != nil {
-		solveCtx = buildkit.WithSSHTranslator(solveCtx, func(id string, optional bool) (string, error) {
-			return sshSocket.LLBID(), nil
+		secretName, err := secret.Self().Name(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get dockerBuild secret name: %w", err)
+		}
+		if secretName == "" {
+			return nil, fmt.Errorf("secret has no name and cannot be referenced from Dockerfile secret id")
+		}
+		if existing, found := secretIDsByLLBID[secretName]; found {
+			if existing.Digest() != secretRecipeID.Digest() {
+				return nil, fmt.Errorf("multiple secrets provided for dockerBuild secret id %q", secretName)
+			}
+			continue
+		}
+		secretIDsByLLBID[secretName] = secretRecipeID
+		returnedSecretMounts = append(returnedSecretMounts, ContainerSecret{
+			Secret:    secret,
+			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
 		})
 	}
+	sshSocketIDsByLLBID := map[string]*call.ID{}
+	if sshSocket.Self() != nil {
+		sshSocketRecipeID, err := sshSocket.RecipeID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get dockerBuild ssh socket recipe ID: %w", err)
+		}
+		sshSocketIDsByLLBID[""] = sshSocketRecipeID
+	}
 
-	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
-		Frontend:       "dockerfile.v0",
-		FrontendOpt:    opts,
-		FrontendInputs: inputs,
+	convertOpt := dockerfile2llb.ConvertOpt{
+		Config: dockerui.Config{
+			BuildArgs: buildArgMap,
+			Target:    target,
+		},
+		MainContext:    &mainContext,
+		TargetPlatform: ptr(container.Platform.Spec()),
+		MetaResolver:   dockerfileImageMetaResolver{resolver: rslvr},
+	}
+
+	st, img, _, _, err := dockerfile2llb.Dockerfile2LLB(ctx, dockerfileBytes, convertOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert Dockerfile to LLB: %w", err)
+	}
+	def, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Dockerfile LLB: %w", err)
+	}
+	containerID, err := llbtodagger.DefinitionToIDWithOptions(def.ToPB(), img, llbtodagger.DefinitionToIDOptions{
+		MainContextDirectoryID: contextDirID,
+		SecretIDsByLLBID:       secretIDsByLLBID,
+		SSHSocketIDsByLLBID:    sshSocketIDsByLLBID,
+		NoInit:                 noInit,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
 	}
-
-	bkref, err := res.SingleRef()
+	loadedContainerRes, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load container from converted ID: %w", err)
+	}
+	loadedContainer := loadedContainerRes.Self()
+	if loadedContainer == nil {
+		return nil, fmt.Errorf("failed to load container from converted ID: nil container")
+	}
+	loadedContainerCopy := *loadedContainer
+	loadedContainerCopy.Secrets = slices.Clone(loadedContainerCopy.Secrets)
+	loadedContainer = &loadedContainerCopy
+	loadedContainer.Secrets = append(loadedContainer.Secrets, returnedSecretMounts...)
+
+	if err := loadedContainer.Sync(ctx); err != nil {
+		return nil, fmt.Errorf("failed to sync loaded container: %w", err)
 	}
 
-	var st llb.State
-	if bkref == nil {
-		st = llb.Scratch()
-	} else {
-		st, err = bkref.ToState()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-
-	dag, err := buildkit.DefToDAG(def.ToPB())
-	if err != nil {
-		return nil, err
-	}
-	if err := dag.Walk(func(dag *buildkit.OpDAG) error {
-		// forcibly inject our trace context into each op, since st.Marshal
-		// isn't strong enough to do so
-		desc := dag.Metadata.Description
-		if desc == nil {
-			desc = map[string]string{}
-		}
-		if desc["traceparent"] == "" {
-			telemetry.Propagator.Inject(ctx,
-				propagation.MapCarrier(desc))
-		}
-
-		execOp, isExecOp := dag.AsExec()
-		if noInit && isExecOp {
-			execMD, ok, err := buildkit.ExecutionMetadataFromDescription(desc)
-			if err != nil {
-				return fmt.Errorf("failed to get execution metadata: %w", err)
-			}
-			if !ok {
-				execMD = &buildkit.ExecutionMetadata{}
-			}
-			execMD.NoInit = true
-			if err := buildkit.AddExecutionMetadataToDescription(desc, execMD); err != nil {
-				return fmt.Errorf("failed to add execution metadata: %w", err)
-			}
-			execOp.Meta.Env = append(execOp.Meta.Env,
-				buildkit.DaggerNoInitEnv+"=true",
-			)
-		}
-		dag.Metadata.Description = desc
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("walk DAG: %w", err)
-	}
-	newDef, err := dag.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	if newDef != nil {
-		newDef.Source = nil
-	}
-
-	rootfsDir := NewDirectory(newDef, "/", container.Platform, container.Services)
-	container.FS, err = UpdatedRootFS(ctx, rootfsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
-	}
-
-	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
-	if found {
-		var imgSpec dockerspec.DockerOCIImage
-		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-			return nil, err
-		}
-
-		container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-	}
-
-	return container, nil
+	return loadedContainer, nil
 }
 
-func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
+func (container *Container) RootFS(ctx context.Context) (dagql.ObjectResult[*Directory], error) {
 	if container.FS != nil {
-		return container.FS.Self(), nil
+		switch {
+		case container.FS.isResultBacked():
+			return *container.FS.Result, nil
+		case container.FS.Value != nil:
+			srv, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return dagql.ObjectResult[*Directory]{}, fmt.Errorf("failed to get dagql server: %w", err)
+			}
+			dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, container.FS.Value)
+			if err != nil {
+				return dagql.ObjectResult[*Directory]{}, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
+		default:
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("container rootfs source is nil")
+		}
 	}
-	return NewScratchDirectoryDagOp(ctx, container.Platform)
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	var rootfs dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &rootfs, dagql.Selector{
+		Field: "directory",
+	}); err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+
+	return rootfs, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResult[*Directory]) (*Container, error) {
-	container = container.Clone()
-	container.FS = &dir
-
-	// set image ref to empty string
+	container.FS = newContainerDirectoryResultSource(dir)
 	container.ImageRef = ""
-
 	return container, nil
 }
 
+func (container *Container) setBareRootFS(dir *Directory) *Container {
+	container.FS = newContainerDirectoryValueSource(dir)
+	container.ImageRef = ""
+	return container
+}
+
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithDirectory(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	subdir string,
 	src dagql.ObjectResult[*Directory],
 	filter CopyFilter,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	mnt, mntSubpath, err := locatePath(container, subdir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", subdir, err)
@@ -858,13 +2505,26 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithDirectory(ctx, subdir, src, filter, owner)
+		return container.WithDirectory(ctx, parent, subdir, src, filter, owner)
+	}
+
+	resolvedOwner := owner
+	if owner != "" {
+		ownership, err := container.ownership(ctx, parent, owner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
+		}
+		resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
 	}
 
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.String(mntSubpath)},
-		{Name: "source", Value: dagql.NewID[*Directory](src.ID())},
 	}
+	srcID, err := src.ID()
+	if err != nil {
+		return nil, fmt.Errorf("resolve mounted directory ID: %w", err)
+	}
+	args = append(args, dagql.NamedInput{Name: "source", Value: dagql.NewID[*Directory](srcID)})
 	if len(filter.Exclude) > 0 {
 		args = append(args, dagql.NamedInput{Name: "exclude", Value: asArrayInput(filter.Exclude, dagql.NewString)})
 	}
@@ -874,43 +2534,54 @@ func (container *Container) WithDirectory(
 	if filter.Gitignore {
 		args = append(args, dagql.NamedInput{Name: "gitignore", Value: dagql.Boolean(true)})
 	}
-	if owner != "" {
-		// directories only handle int uid/gid, so make sure we resolve names if needed
-		ownership, err := container.ownership(ctx, owner)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
-		}
-		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
-		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
+	if resolvedOwner != "" {
+		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(resolvedOwner)})
 	}
 
 	//nolint:dupl
 	switch {
 	case mnt == nil: // rootfs
-		selectors := []dagql.Selector{
-			{
-				Field: "withDirectory",
-				Args:  args,
-			},
+		rootfsParent, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+		if err != nil {
+			return nil, err
 		}
-		queryParent := dagql.AnyObjectResult(container.FS)
-		if container.FS == nil {
-			// need to start from a scratch directory
-			selectors = append([]dagql.Selector{{
-				Field: "directory",
-			}}, selectors...)
-			queryParent = srv.Root()
+		if container.FS != nil && container.FS.Value != nil {
+			container.Lazy = &ContainerWithDirectoryLazy{
+				LazyState: NewLazyState(),
+				Parent:    parent,
+				Path:      subdir,
+				Source:    src,
+				Filter:    filter,
+				Owner:     resolvedOwner,
+			}
+			if err := markDirectoryFromContainerLazy(container, subdir); err != nil {
+				return nil, err
+			}
+			return container, nil
 		}
 		var newRootfs dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, queryParent, &newRootfs, selectors...)
-		if err != nil {
+		if err := srv.Select(ctx, rootfsParent, &newRootfs, dagql.Selector{Field: "withDirectory", Args: args}); err != nil {
 			return nil, err
 		}
 		return container.WithRootFS(ctx, newRootfs)
 
 	case mnt.DirectorySource != nil: // directory mount
+		if mnt.DirectorySource.Value != nil {
+			container.Lazy = &ContainerWithDirectoryLazy{
+				LazyState: NewLazyState(),
+				Parent:    parent,
+				Path:      subdir,
+				Source:    src,
+				Filter:    filter,
+				Owner:     resolvedOwner,
+			}
+			if err := markDirectoryFromContainerLazy(container, subdir); err != nil {
+				return nil, err
+			}
+			return container, nil
+		}
 		var newDir dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, mnt.DirectorySource, &newDir, dagql.Selector{
+		err = srv.Select(ctx, *mnt.DirectorySource.Result, &newDir, dagql.Selector{
 			Field: "withDirectory",
 			Args:  args,
 		})
@@ -928,16 +2599,16 @@ func (container *Container) WithDirectory(
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithFile(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	srv *dagql.Server,
 	destPath string,
 	src dagql.ObjectResult[*File],
 	permissions *int,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	mnt, mntSubpath, err := locatePath(container, destPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", destPath, err)
@@ -950,51 +2621,81 @@ func (container *Container) WithFile(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithFile(ctx, srv, destPath, src, permissions, owner)
+		return container.WithFile(ctx, parent, srv, destPath, src, permissions, owner)
+	}
+
+	resolvedOwner := owner
+	if owner != "" {
+		ownership, err := container.ownership(ctx, parent, owner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
+		}
+		resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
 	}
 
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.String(mntSubpath)},
-		{Name: "source", Value: dagql.NewID[*File](src.ID())},
 	}
+	srcID, err := src.ID()
+	if err != nil {
+		return nil, fmt.Errorf("resolve mounted file ID: %w", err)
+	}
+	args = append(args, dagql.NamedInput{Name: "source", Value: dagql.NewID[*File](srcID)})
 	if permissions != nil {
 		args = append(args, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
 	}
-	if owner != "" {
-		// files only handle int uid/gid, so make sure we resolve names if needed
-		ownership, err := container.ownership(ctx, owner)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
-		}
-		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
-		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
+	if resolvedOwner != "" {
+		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(resolvedOwner)})
 	}
 
 	//nolint:dupl
 	switch {
 	case mnt == nil: // rootfs
-		selectors := []dagql.Selector{{
-			Field: "withFile",
-			Args:  args,
-		}}
-		queryParent := dagql.AnyObjectResult(container.FS)
-		if container.FS == nil {
-			// need to start from a scratch directory
-			selectors = append([]dagql.Selector{{
-				Field: "directory",
-			}}, selectors...)
-			queryParent = srv.Root()
+		rootfsParent, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+		if err != nil {
+			return nil, err
+		}
+		if container.FS != nil && container.FS.Value != nil {
+			container.Lazy = &ContainerWithFileLazy{
+				LazyState:   NewLazyState(),
+				Parent:      parent,
+				Path:        destPath,
+				Source:      src,
+				Permissions: permissions,
+				Owner:       resolvedOwner,
+			}
+			if err := markDirectoryFromContainerLazy(container, destPath); err != nil {
+				return nil, err
+			}
+			return container, nil
 		}
 		var newRootfs dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, queryParent, &newRootfs, selectors...)
+		err = srv.Select(ctx, rootfsParent, &newRootfs, dagql.Selector{
+			Field: "withFile",
+			Args:  args,
+		})
 		if err != nil {
 			return nil, err
 		}
 		return container.WithRootFS(ctx, newRootfs)
 
 	case mnt.DirectorySource != nil: // directory mount
+		if mnt.DirectorySource.Value != nil {
+			container.Lazy = &ContainerWithFileLazy{
+				LazyState:   NewLazyState(),
+				Parent:      parent,
+				Path:        destPath,
+				Source:      src,
+				Permissions: permissions,
+				Owner:       resolvedOwner,
+			}
+			if err := markDirectoryFromContainerLazy(container, destPath); err != nil {
+				return nil, err
+			}
+			return container, nil
+		}
 		var newDir dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, mnt.DirectorySource, &newDir, dagql.Selector{
+		err = srv.Select(ctx, *mnt.DirectorySource.Result, &newDir, dagql.Selector{
 			Field: "withFile",
 			Args:  args,
 		})
@@ -1012,12 +2713,11 @@ func (container *Container) WithFile(
 	}
 }
 
-func (container *Container) WithoutPaths(ctx context.Context, srv *dagql.Server, destPaths ...string) (*Container, error) {
-	container = container.Clone()
-
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithoutPaths(ctx context.Context, parent dagql.ObjectResult[*Container], srv *dagql.Server, destPaths ...string) (*Container, error) {
 	for _, destPath := range destPaths {
 		var err error
-		container, err = container.withoutPath(ctx, srv, destPath)
+		container, err = container.withoutPath(ctx, parent, srv, destPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to remove path %q: %w", destPath, err)
 		}
@@ -1028,6 +2728,7 @@ func (container *Container) WithoutPaths(ctx context.Context, srv *dagql.Server,
 // assumes that container is already cloned by caller
 func (container *Container) withoutPath(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	srv *dagql.Server,
 	destPath string,
 ) (*Container, error) {
@@ -1043,7 +2744,7 @@ func (container *Container) withoutPath(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.withoutPath(ctx, srv, destPath)
+		return container.withoutPath(ctx, parent, srv, destPath)
 	}
 
 	args := []dagql.NamedInput{
@@ -1057,8 +2758,19 @@ func (container *Container) withoutPath(
 			// rootfs is an empty dir, nothing to do
 			return container, nil
 		}
+		if container.FS.Value != nil {
+			container.Lazy = &ContainerWithoutPathLazy{
+				LazyState: NewLazyState(),
+				Parent:    parent,
+				Path:      destPath,
+			}
+			if err := markDirectoryFromContainerLazy(container, destPath); err != nil {
+				return nil, err
+			}
+			return container, nil
+		}
 		var newRootfs dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, container.FS, &newRootfs, dagql.Selector{
+		err = srv.Select(ctx, *container.FS.Result, &newRootfs, dagql.Selector{
 			Field: "withoutDirectory",
 			Args:  args,
 		})
@@ -1068,8 +2780,19 @@ func (container *Container) withoutPath(
 		return container.WithRootFS(ctx, newRootfs)
 
 	case mnt.DirectorySource != nil: // directory mount
+		if mnt.DirectorySource.Value != nil {
+			container.Lazy = &ContainerWithoutPathLazy{
+				LazyState: NewLazyState(),
+				Parent:    parent,
+				Path:      destPath,
+			}
+			if err := markDirectoryFromContainerLazy(container, destPath); err != nil {
+				return nil, err
+			}
+			return container, nil
+		}
 		var newDir dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, mnt.DirectorySource, &newDir, dagql.Selector{
+		err = srv.Select(ctx, *mnt.DirectorySource.Result, &newDir, dagql.Selector{
 			Field: "withoutDirectory",
 			Args:  args,
 		})
@@ -1087,20 +2810,20 @@ func (container *Container) withoutPath(
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithFiles(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	srv *dagql.Server,
 	destDir string,
 	src []dagql.ObjectResult[*File],
 	permissions *int,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	for _, file := range src {
 		destPath := filepath.Join(destDir, filepath.Base(file.Self().File))
 		var err error
-		container, err = container.WithFile(ctx, srv, destPath, file, permissions, owner)
+		container, err = container.WithFile(ctx, parent, srv, destPath, file, permissions, owner)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add file %s: %w", destPath, err)
 		}
@@ -1109,15 +2832,15 @@ func (container *Container) WithFiles(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithNewFile(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	dest string,
 	content []byte,
 	permissions fs.FileMode,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	_, fileName := filepath.Split(filepath.Clean(dest))
 
 	srv, err := CurrentDagqlServer(ctx)
@@ -1141,12 +2864,11 @@ func (container *Container) WithNewFile(
 		return nil, fmt.Errorf("failed to create new file %s: %w", dest, err)
 	}
 
-	return container.WithFile(ctx, srv, dest, newFile, nil, owner)
+	return container.WithFile(ctx, parent, srv, dest, newFile, nil, owner)
 }
 
-func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkPath string) (*Container, error) {
-	container = container.Clone()
-
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithSymlink(ctx context.Context, parent dagql.ObjectResult[*Container], srv *dagql.Server, target, linkPath string) (*Container, error) {
 	mnt, mntSubpath, err := locatePath(container, linkPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", linkPath, err)
@@ -1158,7 +2880,7 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithSymlink(ctx, srv, target, linkPath)
+		return container.WithSymlink(ctx, parent, srv, target, linkPath)
 	}
 
 	args := []dagql.NamedInput{
@@ -1169,28 +2891,47 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 	//nolint:dupl
 	switch {
 	case mnt == nil: // rootfs
-		selectors := []dagql.Selector{{
-			Field: "withSymlink",
-			Args:  args,
-		}}
-		queryParent := dagql.AnyObjectResult(container.FS)
-		if container.FS == nil {
-			// need to start from a scratch directory
-			selectors = append([]dagql.Selector{{
-				Field: "directory",
-			}}, selectors...)
-			queryParent = srv.Root()
+		rootfsParent, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+		if err != nil {
+			return nil, err
+		}
+		if container.FS != nil && container.FS.Value != nil {
+			container.Lazy = &ContainerWithSymlinkLazy{
+				LazyState: NewLazyState(),
+				Parent:    parent,
+				Target:    target,
+				LinkPath:  linkPath,
+			}
+			if err := markDirectoryFromContainerLazy(container, linkPath); err != nil {
+				return nil, err
+			}
+			return container, nil
 		}
 		var newRootfs dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, queryParent, &newRootfs, selectors...)
+		err = srv.Select(ctx, rootfsParent, &newRootfs, dagql.Selector{
+			Field: "withSymlink",
+			Args:  args,
+		})
 		if err != nil {
 			return nil, err
 		}
 		return container.WithRootFS(ctx, newRootfs)
 
 	case mnt.DirectorySource != nil: // directory mount
+		if mnt.DirectorySource.Value != nil {
+			container.Lazy = &ContainerWithSymlinkLazy{
+				LazyState: NewLazyState(),
+				Parent:    parent,
+				Target:    target,
+				LinkPath:  linkPath,
+			}
+			if err := markDirectoryFromContainerLazy(container, linkPath); err != nil {
+				return nil, err
+			}
+			return container, nil
+		}
 		var newDir dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, mnt.DirectorySource, &newDir, dagql.Selector{
+		err = srv.Select(ctx, *mnt.DirectorySource.Result, &newDir, dagql.Selector{
 			Field: "withSymlink",
 			Args:  args,
 		})
@@ -1208,27 +2949,27 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedDirectory(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	target string,
 	dir dagql.ObjectResult[*Directory],
 	owner string,
 	readonly bool,
 ) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	var err error
 	if owner != "" {
-		dir, err = container.chownDir(ctx, dir, owner)
+		dir, err = container.chownDir(ctx, parent, dir, owner)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	container.Mounts = container.Mounts.With(ContainerMount{
-		DirectorySource: &dir,
+		DirectorySource: newContainerDirectoryResultSource(dir),
 		Target:          target,
 		Readonly:        readonly,
 	})
@@ -1239,27 +2980,27 @@ func (container *Container) WithMountedDirectory(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedFile(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	target string,
 	file dagql.ObjectResult[*File],
 	owner string,
 	readonly bool,
 ) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	var err error
 	if owner != "" {
-		file, err = container.chownFile(ctx, file, owner)
+		file, err = container.chownFile(ctx, parent, file, owner)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	container.Mounts = container.Mounts.With(ContainerMount{
-		FileSource: &file,
+		FileSource: newContainerFileResultSource(file),
 		Target:     target,
 		Readonly:   readonly,
 	})
@@ -1270,69 +3011,40 @@ func (container *Container) WithMountedFile(
 	return container, nil
 }
 
-var SeenCacheKeys = new(sync.Map)
-
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedCache(
 	ctx context.Context,
 	target string,
-	cache *CacheVolume,
-	source dagql.ObjectResult[*Directory],
-	sharingMode CacheSharingMode,
-	owner string,
+	cache dagql.ObjectResult[*CacheVolume],
 ) (*Container, error) {
-	container = container.Clone()
-
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	target = absPath(container.Config.WorkingDir, target)
 
-	if sharingMode == "" {
-		sharingMode = CacheSharingModeShared
+	cacheSelf := cache.Self()
+	if cacheSelf == nil {
+		return nil, errors.New("cache volume is nil")
+	}
+	if cacheSelf.getSnapshot() == nil {
+		if err := cacheSelf.InitializeSnapshot(ctx); err != nil {
+			return nil, fmt.Errorf("initialize cache volume snapshot: %w", err)
+		}
 	}
 
 	mount := ContainerMount{
 		Target: target,
 		CacheSource: &CacheMountSource{
-			ID:          cache.Sum(),
-			SharingMode: sharingMode,
+			Volume: cache,
 		},
 	}
-
-	if owner != "" {
-		if source.Self() == nil {
-			// create a scratch directory for chownDir to operate on
-			err = srv.Select(ctx, srv.Root(), &source,
-				dagql.Selector{
-					Field: "directory",
-				},
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-		var err error
-		source, err = container.chownDir(ctx, source, owner)
-		if err != nil {
-			return nil, err
-		}
-	}
-	mount.CacheSource.Base = &source
 	container.Mounts = container.Mounts.With(mount)
 
 	// set image ref to empty string
 	container.ImageRef = ""
 
-	SeenCacheKeys.Store(cache.Keys[0], struct{}{})
-
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedTemp(ctx context.Context, target string, size int) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	container.Mounts = container.Mounts.With(ContainerMount{
@@ -1348,18 +3060,18 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string, 
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedSecret(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	target string,
 	source dagql.ObjectResult[*Secret],
 	owner string,
 	mode fs.FileMode,
 ) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
-	ownership, err := container.ownership(ctx, owner)
+	ownership, err := container.ownership(ctx, parent, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -1377,9 +3089,8 @@ func (container *Container) WithMountedSecret(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutMount(ctx context.Context, target string) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	var found bool
@@ -1394,6 +3105,20 @@ func (container *Container) WithoutMount(ctx context.Context, target string) (*C
 
 	if found {
 		container.Mounts = slices.Delete(container.Mounts, foundIdx, foundIdx+1)
+	}
+
+	var secretFound bool
+	var secretFoundIdx int
+	for i := len(container.Secrets) - 1; i >= 0; i-- {
+		if container.Secrets[i].MountPath == target {
+			secretFound = true
+			secretFoundIdx = i
+			break
+		}
+	}
+
+	if secretFound {
+		container.Secrets = slices.Delete(container.Secrets, secretFoundIdx, secretFoundIdx+1)
 	}
 
 	// set image ref to empty string
@@ -1411,12 +3136,16 @@ func (container *Container) MountTargets(ctx context.Context) ([]string, error) 
 	return mounts, nil
 }
 
-func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket, owner string) (*Container, error) {
-	container = container.Clone()
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithUnixSocket(ctx context.Context, target string, source dagql.ObjectResult[*Socket], owner string) (*Container, error) {
+	target = absPath(container.Config.WorkingDir, target)
+	return container.WithUnixSocketFromParent(ctx, dagql.ObjectResult[*Container]{}, target, source, owner)
+}
 
+func (container *Container) WithUnixSocketFromParent(ctx context.Context, parent dagql.ObjectResult[*Container], target string, source dagql.ObjectResult[*Socket], owner string) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
-	ownership, err := container.ownership(ctx, owner)
+	ownership, err := container.ownership(ctx, parent, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -1446,9 +3175,8 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutUnixSocket(ctx context.Context, target string) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	for i, sock := range container.Sockets {
@@ -1464,13 +3192,12 @@ func (container *Container) WithoutUnixSocket(ctx context.Context, target string
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithSecretVariable(
 	ctx context.Context,
 	name string,
 	secret dagql.ObjectResult[*Secret],
 ) (*Container, error) {
-	container = container.Clone()
-
 	container.Secrets = append(container.Secrets, ContainerSecret{
 		Secret:  secret,
 		EnvName: name,
@@ -1482,9 +3209,8 @@ func (container *Container) WithSecretVariable(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutSecretVariable(ctx context.Context, name string) (*Container, error) {
-	container = container.Clone()
-
 	for i, secret := range container.Secrets {
 		if secret.EnvName == name {
 			container.Secrets = slices.Delete(container.Secrets, i, i+1)
@@ -1498,30 +3224,81 @@ func (container *Container) WithoutSecretVariable(ctx context.Context, name stri
 	return container, nil
 }
 
-func (container *Container) Directory(ctx context.Context, dirPath string) (*Directory, error) {
+func (container *Container) Directory(ctx context.Context, parent dagql.ObjectResult[*Container], dirPath string) (dagql.ObjectResult[*Directory], error) {
+	var dir dagql.ObjectResult[*Directory]
+
 	mnt, subpath, err := locatePath(container, dirPath)
 	if err != nil {
-		return nil, err
+		return dir, err
 	}
 
-	var dir *Directory
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dir, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	directorySelector := dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(subpath)},
+		},
+	}
+
 	switch {
 	case mnt == nil: // rootfs
-		if container.FS == nil {
-			dir, err = NewScratchDirectoryDagOp(ctx, container.Platform)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create scratch directory: %w", err)
+		if container.FS != nil && container.FS.Value != nil {
+			if subpath == "" || subpath == "." {
+				dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, container.FS.Value)
+				if err != nil {
+					return dir, err
+				}
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
 			}
-			dir, err = dir.Directory(ctx, subpath)
-		} else {
-			dir, err = container.FS.Self().Directory(ctx, subpath)
+			rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+			if err != nil {
+				return dir, err
+			}
+			bareDir, err := container.FS.Value.Subdirectory(ctx, rootfs, subpath)
+			if err != nil {
+				return dir, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, bareDir)
 		}
+		rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+		if err != nil {
+			return dir, err
+		}
+		if subpath == "" || subpath == "." {
+			return rootfs, nil
+		}
+		err = srv.Select(ctx, rootfs, &dir, directorySelector)
 	case mnt.DirectorySource != nil: // mounted directory
-		dir, err = mnt.DirectorySource.Self().Directory(ctx, subpath)
+		if mnt.DirectorySource.Value != nil {
+			if subpath == "" || subpath == "." {
+				dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, mnt.DirectorySource.Value)
+				if err != nil {
+					return dir, err
+				}
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
+			}
+			parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
+			if err != nil {
+				return dir, err
+			}
+			bareDir, err := mnt.DirectorySource.Value.Subdirectory(ctx, parentDir, subpath)
+			if err != nil {
+				return dir, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, bareDir)
+		}
+		if subpath == "" || subpath == "." {
+			return *mnt.DirectorySource.Result, nil
+		}
+		err = srv.Select(ctx, *mnt.DirectorySource.Result, &dir, directorySelector)
 	case mnt.FileSource != nil: // mounted file
-		return nil, fmt.Errorf("path %s is a file, not a directory", dirPath)
+		return dir, fmt.Errorf("path %s is a file, not a directory", dirPath)
 	default:
-		return nil, fmt.Errorf("invalid path %s in container mounts", dirPath)
+		return dir, fmt.Errorf("invalid path %s in container mounts", dirPath)
 	}
 
 	switch {
@@ -1529,32 +3306,71 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 		return dir, nil
 	case errors.As(err, &notADirectoryError{}):
 		// fix the error message to use dirPath rather than subpath
-		return nil, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", dirPath)}
+		return dir, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", dirPath)}
 	default:
-		return nil, err
+		return dir, err
 	}
 }
 
-func (container *Container) File(ctx context.Context, filePath string) (*File, error) {
+func (container *Container) File(ctx context.Context, parent dagql.ObjectResult[*Container], filePath string) (dagql.ObjectResult[*File], error) {
+	var f dagql.ObjectResult[*File]
+
 	mnt, subpath, err := locatePath(container, filePath)
 	if err != nil {
-		return nil, err
+		return f, err
 	}
 
-	var f *File
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return f, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	fileSelector := dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(subpath)},
+		},
+	}
+
 	switch {
 	case mnt == nil: // rootfs
-		if container.FS == nil {
-			return nil, fmt.Errorf("container rootfs is not set")
+		rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+		if err != nil {
+			return f, err
 		}
-		f, err = container.FS.Self().File(ctx, subpath)
+		if container.FS != nil && container.FS.Value != nil {
+			bareFile, err := container.FS.Value.Subfile(ctx, rootfs, subpath)
+			if err != nil {
+				return f, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, bareFile)
+		}
+		err = srv.Select(ctx, rootfs, &f, fileSelector)
 	case mnt.DirectorySource != nil: // mounted directory
-		f, err = mnt.DirectorySource.Self().File(ctx, subpath)
+		if mnt.DirectorySource.Value != nil {
+			parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
+			if err != nil {
+				return f, err
+			}
+			bareFile, err := mnt.DirectorySource.Value.Subfile(ctx, parentDir, subpath)
+			if err != nil {
+				return f, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, bareFile)
+		}
+		err = srv.Select(ctx, *mnt.DirectorySource.Result, &f, fileSelector)
 		err = RestoreErrPath(err, filePath) // preserve the full filePath, rather than subpath
 	case mnt.FileSource != nil: // mounted file
-		return mnt.FileSource.Self(), nil
+		if mnt.FileSource.Value != nil {
+			fileVal, err := cloneDetachedFileForContainerResult(ctx, mnt.FileSource.Value)
+			if err != nil {
+				return f, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, fileVal)
+		}
+		return *mnt.FileSource.Result, nil
 	default:
-		return nil, fmt.Errorf("invalid path %s in container mounts", filePath)
+		return f, fmt.Errorf("invalid path %s in container mounts", filePath)
 	}
 
 	switch {
@@ -1562,9 +3378,9 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 		return f, nil
 	case errors.As(err, &notAFileError{}):
 		// fix the error message to use filePath rather than subpath
-		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", filePath)}
+		return f, notAFileError{fmt.Errorf("path %s is a directory, not a file", filePath)}
 	default:
-		return nil, err
+		return f, err
 	}
 }
 
@@ -1601,6 +3417,78 @@ func locatePath(
 	return nil, containerPath, nil
 }
 
+func containerRootFSSelection(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*Container], src *ContainerDirectorySource) (dagql.ObjectResult[*Directory], error) {
+	var dir dagql.ObjectResult[*Directory]
+	switch {
+	case src != nil && src.isResultBacked():
+		return *src.Result, nil
+	case src != nil && src.Value != nil:
+		src.Value.snapshotMu.RLock()
+		source := src.Value.snapshotSource
+		src.Value.snapshotMu.RUnlock()
+		if source.Self() != nil {
+			return source, nil
+		}
+		if err := srv.Select(ctx, parent, &dir, dagql.Selector{Field: "rootfs"}); err != nil {
+			return dir, err
+		}
+		return dir, nil
+	default:
+		if err := srv.Select(ctx, srv.Root(), &dir, dagql.Selector{Field: "directory"}); err != nil {
+			return dir, err
+		}
+		return dir, nil
+	}
+}
+
+func containerDirectoryMountSelection(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*Container], src *ContainerDirectorySource, target string) (dagql.ObjectResult[*Directory], error) {
+	var dir dagql.ObjectResult[*Directory]
+	switch {
+	case src != nil && src.isResultBacked():
+		return *src.Result, nil
+	case src != nil && src.Value != nil:
+		src.Value.snapshotMu.RLock()
+		source := src.Value.snapshotSource
+		src.Value.snapshotMu.RUnlock()
+		if source.Self() != nil {
+			return source, nil
+		}
+		err := srv.Select(ctx, parent, &dir, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(target)},
+			},
+		})
+		return dir, err
+	default:
+		return dir, fmt.Errorf("missing directory mount source for %s", target)
+	}
+}
+
+func containerFileMountSelection(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*Container], src *ContainerFileSource, target string) (dagql.ObjectResult[*File], error) {
+	var file dagql.ObjectResult[*File]
+	switch {
+	case src != nil && src.isResultBacked():
+		return *src.Result, nil
+	case src != nil && src.Value != nil:
+		src.Value.snapshotMu.RLock()
+		source := src.Value.snapshotSource
+		src.Value.snapshotMu.RUnlock()
+		if source.File.Self() != nil {
+			return source.File, nil
+		}
+		err := srv.Select(ctx, parent, &file, dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(target)},
+			},
+		})
+		return file, err
+	default:
+		return file, fmt.Errorf("missing file mount source for %s", target)
+	}
+}
+
 func (container *Container) replaceMount(
 	target string,
 	dir dagql.ObjectResult[*Directory],
@@ -1609,7 +3497,7 @@ func (container *Container) replaceMount(
 
 	var err error
 	container.Mounts, err = container.Mounts.Replace(ContainerMount{
-		DirectorySource: &dir,
+		DirectorySource: newContainerDirectoryResultSource(dir),
 		Target:          target,
 	})
 	if err != nil {
@@ -1624,10 +3512,11 @@ func (container *Container) replaceMount(
 
 func (container *Container) chownDir(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	src dagql.ObjectResult[*Directory],
 	owner string,
 ) (res dagql.ObjectResult[*Directory], err error) {
-	ownership, err := container.ownership(ctx, owner)
+	ownership, err := container.ownership(ctx, parent, owner)
 	if err != nil {
 		return res, err
 	}
@@ -1660,10 +3549,11 @@ func (container *Container) chownDir(
 
 func (container *Container) chownFile(
 	ctx context.Context,
+	parent dagql.ObjectResult[*Container],
 	src dagql.ObjectResult[*File],
 	owner string,
 ) (res dagql.ObjectResult[*File], err error) {
-	ownership, err := container.ownership(ctx, owner)
+	ownership, err := container.ownership(ctx, parent, owner)
 	if err != nil {
 		return res, err
 	}
@@ -1697,9 +3587,10 @@ func (container *Container) ImageConfig(ctx context.Context) (dockerspec.DockerO
 	return container.Config, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func(dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig) (*Container, error) {
-	container = container.Clone()
 	container.Config = updateFn(container.Config)
+	container.ImageRef = ""
 	return container, nil
 }
 
@@ -1707,47 +3598,13 @@ type ContainerGPUOpts struct {
 	Devices []string
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpts) (*Container, error) {
-	container = container.Clone()
 	container.EnabledGPUs = gpuOpts.Devices
 	return container, nil
 }
 
-func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	if container == nil {
-		return nil, nil
-	}
-	if container.FS == nil {
-		return nil, nil
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	st, err := container.FSState()
-	if err != nil {
-		return nil, err
-	}
-
-	def, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	return bk.Solve(ctx, bkgw.SolveRequest{
-		Evaluate:   true,
-		Definition: def.ToPB(),
-	})
-}
-
-func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
+func (container *Container) Exists(ctx context.Context, parent dagql.ObjectResult[*Container], srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
 	mnt, mntSubpath, err := locatePath(container, targetPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to locate path %s: %w", targetPath, err)
@@ -1766,7 +3623,14 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 	var exists bool
 	switch {
 	case mnt == nil: // rootfs
-		err = srv.Select(ctx, container.FS, &exists, dagql.Selector{
+		rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+		if err != nil {
+			return false, err
+		}
+		if container.FS != nil && container.FS.Value != nil {
+			return container.FS.Value.Exists(ctx, srv, mntSubpath, targetType, doNotFollowSymlinks)
+		}
+		err = srv.Select(ctx, rootfs, &exists, dagql.Selector{
 			Field: "exists",
 			Args:  args,
 		})
@@ -1775,7 +3639,10 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 		}
 
 	case mnt.DirectorySource != nil: // directory mount
-		err = srv.Select(ctx, mnt.DirectorySource, &exists, dagql.Selector{
+		if mnt.DirectorySource.Value != nil {
+			return mnt.DirectorySource.Value.Exists(ctx, srv, mntSubpath, targetType, doNotFollowSymlinks)
+		}
+		err = srv.Select(ctx, *mnt.DirectorySource.Result, &exists, dagql.Selector{
 			Field: "exists",
 			Args:  args,
 		})
@@ -1784,6 +3651,12 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 		}
 
 	case mnt.FileSource != nil: // file mount
+		if mnt.FileSource.Value != nil {
+			if targetType == "" {
+				return true, nil
+			}
+			return targetType == ExistsTypeRegular, nil
+		}
 		if targetType == "" {
 			return true, nil
 		}
@@ -1796,7 +3669,7 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 	return exists, nil
 }
 
-func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetPath string, doNotFollowSymlinks bool) (*Stat, error) {
+func (container *Container) Stat(ctx context.Context, parent dagql.ObjectResult[*Container], srv *dagql.Server, targetPath string, doNotFollowSymlinks bool) (*Stat, error) {
 	mnt, mntSubpath, err := locatePath(container, targetPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", targetPath, err)
@@ -1812,7 +3685,14 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 	var stat *Stat
 	switch {
 	case mnt == nil: // rootfs
-		err = srv.Select(ctx, container.FS, &stat, dagql.Selector{
+		rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+		if err != nil {
+			return nil, err
+		}
+		if container.FS != nil && container.FS.Value != nil {
+			return container.FS.Value.Stat(ctx, srv, mntSubpath, doNotFollowSymlinks)
+		}
+		err = srv.Select(ctx, rootfs, &stat, dagql.Selector{
 			Field: "stat",
 			Args:  args,
 		})
@@ -1821,7 +3701,10 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 		}
 
 	case mnt.DirectorySource != nil: // directory mount
-		err = srv.Select(ctx, mnt.DirectorySource, &stat, dagql.Selector{
+		if mnt.DirectorySource.Value != nil {
+			return mnt.DirectorySource.Value.Stat(ctx, srv, mntSubpath, doNotFollowSymlinks)
+		}
+		err = srv.Select(ctx, *mnt.DirectorySource.Result, &stat, dagql.Selector{
 			Field: "stat",
 			Args:  args,
 		})
@@ -1830,7 +3713,10 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 		}
 
 	case mnt.FileSource != nil: // file mount
-		err = srv.Select(ctx, mnt.FileSource, &stat, dagql.Selector{
+		if mnt.FileSource.Value != nil {
+			return mnt.FileSource.Value.Stat(ctx)
+		}
+		err = srv.Select(ctx, *mnt.FileSource.Result, &stat, dagql.Selector{
 			Field: "stat",
 		})
 		if err != nil {
@@ -1844,9 +3730,8 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 	return stat, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithAnnotation(ctx context.Context, key, value string) (*Container, error) {
-	container = container.Clone()
-
 	container.Annotations = append(container.Annotations, containerutil.ContainerAnnotation{
 		Key:   key,
 		Value: value,
@@ -1858,9 +3743,8 @@ func (container *Container) WithAnnotation(ctx context.Context, key, value strin
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutAnnotation(ctx context.Context, name string) (*Container, error) {
-	container = container.Clone()
-
 	for i, annotation := range container.Annotations {
 		if annotation.Key == name {
 			container.Annotations = slices.Delete(container.Annotations, i, i+1)
@@ -1906,89 +3790,11 @@ func (container *Container) Publish(
 		return "", err
 	}
 
-	imageDigest, found := resp[exptypes.ExporterImageDigestKey]
-	if found {
-		dig, err := digest.Parse(imageDigest)
-		if err != nil {
-			return "", fmt.Errorf("parse digest: %w", err)
-		}
-
-		withDig, err := reference.WithDigest(refName, dig)
-		if err != nil {
-			return "", fmt.Errorf("with digest: %w", err)
-		}
-
-		return withDig.String(), nil
-	}
-
-	return ref, nil
-}
-
-func (container *Container) AsTarball(
-	ctx context.Context,
-	platformVariants []*Container,
-	forcedCompression ImageLayerCompression,
-	mediaTypes ImageMediaTypes,
-	filePath string,
-) (f *File, rerr error) {
-	query, err := CurrentQuery(ctx)
+	withDig, err := reference.WithDigest(refName, resp.RootDesc.Digest)
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("with digest: %w", err)
 	}
-
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	engineHostPlatform := query.Platform()
-
-	if mediaTypes == "" {
-		mediaTypes = OCIMediaTypes
-	}
-
-	variants := filterEmptyContainers(append([]*Container{container}, platformVariants...))
-	inputByPlatform, err := getVariantRefs(ctx, variants)
-	if err != nil {
-		return nil, err
-	}
-
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group found")
-	}
-
-	bkref, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
-		bkcache.CachePolicyRetain,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("dagop.fs container.asTarball "+filePath),
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if rerr != nil && bkref != nil {
-			bkref.Release(context.WithoutCancel(ctx))
-		}
-	}()
-	err = MountRef(ctx, bkref, bkSessionGroup, func(out string, _ *mount.Mount) error {
-		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, filePath), inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
-		if err != nil {
-			return fmt.Errorf("container image to tarball file conversion failed: %w", err)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)
-	}
-
-	f = NewFile(nil, filePath, query.Platform(), nil)
-	snap, err := bkref.Commit(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bkref = nil
-	f.Result = snap
-	return f, nil
+	return withDig.String(), nil
 }
 
 type ExportOpts struct {
@@ -2017,7 +3823,7 @@ func filterEmptyContainers(containers []*Container) []*Container {
 		if c.FS == nil {
 			continue
 		}
-		rootFS := c.FS.Self()
+		rootFS := c.FS.self()
 		if rootFS == nil {
 			continue
 		}
@@ -2034,7 +3840,7 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]buil
 		if variant.FS == nil {
 			continue
 		}
-		rootFS := variant.FS.Self()
+		rootFS := variant.FS.self()
 		if rootFS == nil {
 			continue
 		}
@@ -2045,9 +3851,17 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]buil
 		}
 
 		eg.Go(func() error {
-			fsRef, err := getRefOrEvaluate(ctx, rootFS)
+			fsRef, err := rootFS.getSnapshot()
 			if err != nil {
-				return err
+				if rootFS.Lazy != nil {
+					if evalErr := rootFS.Lazy.Evaluate(ctx, rootFS); evalErr != nil {
+						return fmt.Errorf("evaluate variant rootfs for platform %s: %w", platformString, evalErr)
+					}
+					fsRef, err = rootFS.getSnapshot()
+				}
+				if err != nil {
+					return fmt.Errorf("get variant rootfs snapshot for platform %s: %w", platformString, err)
+				}
 			}
 
 			mu.Lock()
@@ -2073,6 +3887,26 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]buil
 }
 
 func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs.Descriptor, error) {
+	if opts.Tar {
+		tarball, err := container.AsTarball(
+			ctx,
+			opts.PlatformVariants,
+			opts.ForcedCompression,
+			opts.MediaTypes,
+			"container.tar",
+		)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			_ = tarball.OnRelease(context.WithoutCancel(ctx))
+		}()
+		if err := tarball.Export(ctx, opts.Dest, false); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -2092,142 +3926,11 @@ func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs
 	if err != nil {
 		return nil, err
 	}
-
-	encodedDesc, ok := resp[exptypes.ExporterImageDescriptorKey]
-	if !ok {
-		return nil, fmt.Errorf("exporter response missing %s", exptypes.ExporterImageDescriptorKey)
-	}
-	rawDesc, err := base64.StdEncoding.DecodeString(encodedDesc)
-	if err != nil {
-		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
-	}
-
-	var desc specs.Descriptor
-	err = json.Unmarshal(rawDesc, &desc)
-	if err != nil {
-		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
-	}
-	return &desc, nil
+	return &resp.RootDesc, nil
 }
 
-func (container *Container) Import(
-	ctx context.Context,
-	tarball io.Reader,
-	tag string,
-) (*Container, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	store := query.OCIStore()
-	lm := query.LeaseManager()
-
-	container = container.Clone()
-
-	var release func(context.Context) error
-	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
-		// override outer ctx with release ctx and set release
-		ctx, release, err = leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
-		if err != nil {
-			return nil, err
-		}
-
-		stream := archive.NewImageImportStream(tarball, "")
-
-		desc, err := stream.Import(ctx, store)
-		if err != nil {
-			return nil, fmt.Errorf("image archive import: %w", err)
-		}
-
-		return resolveIndex(ctx, store, desc, container.Platform.Spec(), tag)
-	}
-	defer func() {
-		if release != nil {
-			release(ctx)
-		}
-	}()
-
-	manifestDesc, err := loadManifest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("recover: %w", err)
-	}
-
-	return container.FromInternal(ctx, *manifestDesc)
-}
-
-// FromInternal creates a Container from an OCI image descriptor, loading the
-// image directly from the main worker OCI store.
-func (container *Container) FromInternal(
-	ctx context.Context,
-	desc specs.Descriptor,
-) (*Container, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	// NB: the repository portion of this ref doesn't actually matter, but it's
-	// pleasant to see something recognizable.
-	dummyRepo := "dagger/import"
-
-	st := llb.OCILayout(
-		fmt.Sprintf("%s@%s", dummyRepo, desc.Digest),
-		llb.OCIStore("", buildkit.OCIStoreName),
-		llb.Platform(container.Platform.Spec()),
-		buildkit.WithTracePropagation(ctx),
-	)
-
-	execDef, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
-	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
-	}
-
-	container = container.Clone()
-	rootfsDir := NewDirectory(execDef.ToPB(), "/", container.Platform, container.Services)
-	container.FS, err = UpdatedRootFS(ctx, rootfsDir)
-	if err != nil {
-		return nil, fmt.Errorf("updated rootfs: %w", err)
-	}
-
-	// eagerly evaluate the OCI reference so Buildkit sets up a long-term lease
-	_, err = bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: container.FS.Self().LLB,
-		Evaluate:   true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("solve: %w", err)
-	}
-
-	manifestBlob, err := content.ReadBlob(ctx, query.OCIStore(), desc)
-	if err != nil {
-		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
-	}
-	var man specs.Manifest
-	err = json.Unmarshal(manifestBlob, &man)
-	if err != nil {
-		return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
-	}
-	configBlob, err := content.ReadBlob(ctx, query.OCIStore(), man.Config)
-	if err != nil {
-		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
-	}
-	var imgSpec dockerspec.DockerOCIImage
-	err = json.Unmarshal(configBlob, &imgSpec)
-	if err != nil {
-		return nil, fmt.Errorf("load image config: %w", err)
-	}
-	container.Config = imgSpec.Config
-
-	return container, nil
-}
-
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithExposedPort(port Port) (*Container, error) {
-	container = container.Clone()
-
 	// replace existing port to avoid duplicates
 	gotOne := false
 
@@ -2253,9 +3956,8 @@ func (container *Container) WithExposedPort(port Port) (*Container, error) {
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutExposedPort(port int, protocol NetworkProtocol) (*Container, error) {
-	container = container.Clone()
-
 	filtered := []Port{}
 	filteredOCI := map[string]struct{}{}
 	for _, p := range container.Ports {
@@ -2272,10 +3974,13 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.ObjectResult[*Service], alias string) (*Container, error) {
-	container = container.Clone()
-
-	host, err := svc.Self().Hostname(ctx, svc.ID())
+	svcDig, err := svc.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	host, err := svc.Self().Hostname(ctx, svcDig)
 	if err != nil {
 		return nil, err
 	}
@@ -2326,7 +4031,10 @@ type ContainerAsServiceArgs struct {
 	NoInit bool `default:"false"`
 }
 
-func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
+func (container *Container) AsService(ctx context.Context, containerRes dagql.ObjectResult[*Container], args ContainerAsServiceArgs) (*Service, error) {
+	if containerRes.Self() == nil {
+		return nil, fmt.Errorf("container result is nil")
+	}
 	if len(args.Args) == 0 &&
 		len(container.Config.Cmd) == 0 &&
 		len(container.Config.Entrypoint) == 0 {
@@ -2338,7 +4046,7 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		useEntrypoint = true
 	}
 
-	cmdargs := container.Config.Cmd
+	var cmdargs = container.Config.Cmd
 	if len(args.Args) > 0 {
 		cmdargs = args.Args
 		if !args.UseEntrypoint {
@@ -2352,7 +4060,7 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 
 	return &Service{
 		Creator:                       trace.SpanContextFromContext(ctx),
-		Container:                     container,
+		Container:                     containerRes,
 		Args:                          cmdargs,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
@@ -2360,60 +4068,34 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 	}, nil
 }
 
-func (container *Container) AsRecoveredService(ctx context.Context, richErr *buildkit.RichError) (*Service, error) {
-	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Container: container,
-		ExecMeta:  richErr.Meta,
-		ExecMD:    richErr.ExecMD,
-	}, nil
-}
-
-func (container *Container) openFile(ctx context.Context, path string) (io.ReadCloser, error) {
+func (container *Container) openFile(ctx context.Context, parent dagql.ObjectResult[*Container], path string) (io.ReadCloser, error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
+	path = absPath(container.Config.WorkingDir, path)
 
-	mnt, mntSubpath, err := locatePath(container, path)
+	var fileSource dagql.ObjectResult[*File]
+	if err := srv.Select(ctx, parent, &fileSource, dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(path)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to locate path %s: %w", path, err)
+		return nil, err
 	}
-
-	var fileSource *dagql.ObjectResult[*File]
-	var directorySource *dagql.ObjectResult[*Directory]
-
-	switch {
-	case mnt == nil: // rootfs
-		directorySource = container.FS
-
-	case mnt.DirectorySource != nil: // directory mount
-		directorySource = mnt.DirectorySource
-
-	case mnt.FileSource != nil: // file mount
-		fileSource = mnt.FileSource
-
-	default:
-		return nil, fmt.Errorf("invalid mount source for %s", path)
+	if err := cache.Evaluate(ctx, fileSource); err != nil {
+		return nil, err
 	}
-
-	if fileSource == nil {
-		fileSource = &dagql.ObjectResult[*File]{}
-		err = srv.Select(ctx, directorySource, fileSource, dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(mntSubpath)},
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	return fileSource.Self().Open(ctx)
 }
 
-func (container *Container) ownership(ctx context.Context, owner string) (*Ownership, error) {
+func (container *Container) ownership(ctx context.Context, parent dagql.ObjectResult[*Container], owner string) (*Ownership, error) {
 	if owner == "" {
 		// do not change ownership
 		return nil, nil
@@ -2437,7 +4119,7 @@ func (container *Container) ownership(ctx context.Context, owner string) (*Owner
 	}
 
 	if uname != "" {
-		f, err := container.openFile(ctx, "/etc/passwd")
+		f, err := container.openFile(ctx, parent, "/etc/passwd")
 		if err != nil {
 			return nil, fmt.Errorf("open /etc/passwd: %w", err)
 		}
@@ -2449,7 +4131,7 @@ func (container *Container) ownership(ctx context.Context, owner string) (*Owner
 	}
 
 	if gname != "" {
-		f, err := container.openFile(ctx, "/etc/group")
+		f, err := container.openFile(ctx, parent, "/etc/group")
 		if err != nil {
 			return nil, fmt.Errorf("open /etc/passwd: %w", err)
 		}
@@ -2465,6 +4147,17 @@ func (container *Container) ownership(ctx context.Context, owner string) (*Owner
 	}
 
 	return &Ownership{uid, gid}, nil
+}
+
+func (container *Container) ResolveOwnership(ctx context.Context, parent dagql.ObjectResult[*Container], owner string) (string, error) {
+	ownership, err := container.ownership(ctx, parent, owner)
+	if err != nil {
+		return "", err
+	}
+	if ownership == nil {
+		return "", nil
+	}
+	return strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID), nil
 }
 
 func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
@@ -2705,124 +4398,10 @@ func (*TerminalLegacy) TypeDescription() string {
 	return "An interactive terminal that clients can connect to."
 }
 
-func (*TerminalLegacy) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (*TerminalLegacy) Evaluate(ctx context.Context) error {
+	return nil
 }
 
-// UpdatedRootFS returns an updated rootfs for a given directory after an exec/import/etc.
-// The returned ObjectResult uses the ID of the current operation.
-func UpdatedRootFS(
-	ctx context.Context,
-	dir *Directory,
-) (*dagql.ObjectResult[*Directory], error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curSrv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curID := dagql.CurrentID(ctx)
-	view := curID.View()
-	objType, ok := curSrv.ObjectType("Container")
-	if !ok {
-		return nil, fmt.Errorf("object type Container not found in server")
-	}
-	fieldSpec, ok := objType.FieldSpec("rootfs", view)
-	if !ok {
-		return nil, fmt.Errorf("field spec for rootfs not found in object type Container")
-	}
-	astType := fieldSpec.Type.Type()
-	rootfsID := curID.Append(
-		astType, "rootfs",
-		call.WithView(view),
-		call.WithModule(fieldSpec.Module))
-	updatedRootfs, err := dagql.NewObjectResultForID(dir, curSrv, rootfsID)
-	if err != nil {
-		return nil, err
-	}
-	return &updatedRootfs, nil
-}
-
-// updatedDirMount returns an updated mount for a given directory after an exec/import/etc.
-// The returned ObjectResult uses the ID of the current operation.
-//
-//nolint:dupl
-func updatedDirMount(
-	ctx context.Context,
-	dir *Directory,
-	mntTarget string,
-) (*dagql.ObjectResult[*Directory], error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curSrv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curID := dagql.CurrentID(ctx)
-	view := curID.View()
-	objType, ok := curSrv.ObjectType("Container")
-	if !ok {
-		return nil, fmt.Errorf("object type Container not found in server")
-	}
-	fieldSpec, ok := objType.FieldSpec("directory", view)
-	if !ok {
-		return nil, fmt.Errorf("field spec for directory not found in object type Container")
-	}
-	astType := fieldSpec.Type.Type()
-	dirIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	dirID := curID.Append(
-		astType, "directory",
-		call.WithView(view),
-		call.WithModule(fieldSpec.Module),
-		call.WithArgs(dirIDPathArg))
-	updatedDirMnt, err := dagql.NewObjectResultForID(dir, curSrv, dirID)
-	if err != nil {
-		return nil, err
-	}
-	return &updatedDirMnt, nil
-}
-
-// updatedFileMount returns an updated mount for a given file after an exec/import/etc.
-// The returned ObjectResult uses the ID of the current operation.
-//
-//nolint:dupl
-func updatedFileMount(
-	ctx context.Context,
-	file *File,
-	mntTarget string,
-) (*dagql.ObjectResult[*File], error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curSrv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curID := dagql.CurrentID(ctx)
-	view := curID.View()
-	objType, ok := curSrv.ObjectType("Container")
-	if !ok {
-		return nil, fmt.Errorf("object type Container not found in server")
-	}
-	fieldSpec, ok := objType.FieldSpec("file", view)
-	if !ok {
-		return nil, fmt.Errorf("field spec for file not found in object type Container")
-	}
-	astType := fieldSpec.Type.Type()
-	fileIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	fileID := curID.Append(
-		astType, "file",
-		call.WithView(view),
-		call.WithModule(fieldSpec.Module),
-		call.WithArgs(fileIDPathArg))
-	updatedFileMnt, err := dagql.NewObjectResultForID(file, curSrv, fileID)
-	if err != nil {
-		return nil, err
-	}
-	return &updatedFileMnt, nil
+func (terminal *TerminalLegacy) Sync(ctx context.Context) error {
+	return terminal.Evaluate(ctx)
 }

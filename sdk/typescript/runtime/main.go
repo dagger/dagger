@@ -82,7 +82,8 @@ func (t *TypescriptSdk) ModuleTypes(
 		GenerateBindings(introspectionJSON, Bundle, ModSourceDirPath)
 
 	return NewIntrospector(t.SDKSourceDir).
-		AsEntrypoint(outputFilePath,
+		AsEntrypoint(
+			outputFilePath,
 			cfg.name,
 			modSource.ContextDirectory().Directory(cfg.subPath).Directory("src"),
 			clientBindings,

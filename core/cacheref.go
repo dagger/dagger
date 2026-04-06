@@ -3,8 +3,7 @@ package core
 import (
 	"context"
 
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	"github.com/opencontainers/go-digest"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type cacheRefMetadata struct {
@@ -40,35 +39,4 @@ func (md cacheRefMetadata) setGitSnapshot(key string) error {
 }
 func (md cacheRefMetadata) setGitRemote(key string) error {
 	return md.SetString(keyGitRemote, key, indexGitRemote+key)
-}
-
-const keyHTTP = "http.url"
-const keyHTTPChecksum = "http.checksum"
-const keyHTTPETag = "http.etag"
-const keyHTTPModTime = "http.modtime"
-const indexHTTP = keyHTTP + "::"
-
-func searchHTTPByDigest(ctx context.Context, store bkcache.MetadataStore, urlDigest digest.Digest) ([]cacheRefMetadata, error) {
-	return searchRefMetadata(ctx, store, string(urlDigest), indexHTTP)
-}
-
-func (md cacheRefMetadata) getHTTPChecksum() digest.Digest {
-	return digest.Digest(md.GetString(keyHTTPChecksum))
-}
-func (md cacheRefMetadata) setHTTPChecksum(urlDgst digest.Digest, d digest.Digest) error {
-	return md.SetString(keyHTTPChecksum, d.String(), indexHTTP+urlDgst.String())
-}
-
-func (md cacheRefMetadata) getETag() string {
-	return md.GetString(keyHTTPETag)
-}
-func (md cacheRefMetadata) setETag(s string) error {
-	return md.SetString(keyHTTPETag, s, "")
-}
-
-func (md cacheRefMetadata) getHTTPModTime() string {
-	return md.GetString(keyHTTPModTime)
-}
-func (md cacheRefMetadata) setHTTPModTime(s string) error {
-	return md.SetString(keyHTTPModTime, s, "")
 }

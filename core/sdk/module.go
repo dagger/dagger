@@ -18,7 +18,7 @@ type module struct {
 	sdk dagql.AnyObjectResult
 
 	// A server that the SDK module has been installed to.
-	serverSchema *dagql.ServerSchema
+	server *dagql.Server
 
 	funcs map[string]*core.Function
 }
@@ -30,14 +30,13 @@ func newModuleSDK(
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
 ) (*module, error) {
-	dagqlCache, err := root.Cache(ctx)
+	dag, err := dagql.NewServer(ctx, root)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self().Name(), err)
+		return nil, fmt.Errorf("create sdk module server: %w", err)
 	}
-	dag := dagql.NewServer(root, dagqlCache)
 	dag.Around(core.AroundFunc)
 
-	if err := sdkModMeta.Self().Install(ctx, dag); err != nil {
+	if err := core.NewUserMod(sdkModMeta).Install(ctx, dag); err != nil {
 		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self().Name(), err)
 	}
 
@@ -54,8 +53,12 @@ func newModuleSDK(
 	var sdk dagql.AnyObjectResult
 	var constructorArgs []dagql.NamedInput
 	if optionalFullSDKSourceDir.Self() != nil {
+		sdkSourceDirID, err := optionalFullSDKSourceDir.ID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get full sdk source directory ID: %w", err)
+		}
 		constructorArgs = []dagql.NamedInput{
-			{Name: "sdkSourceDir", Value: dagql.Opt(dagql.NewID[*core.Directory](optionalFullSDKSourceDir.ID()))},
+			{Name: "sdkSourceDir", Value: dagql.Opt(dagql.NewID[*core.Directory](sdkSourceDirID))},
 		}
 	}
 
@@ -69,23 +72,15 @@ func newModuleSDK(
 	}
 
 	return (&module{
-		mod:          sdkModMeta,
-		serverSchema: dag.AsSchema(),
-		sdk:          sdk,
-		funcs:        listImplementedFunctions(sdkModMeta.Self()),
+		mod:    sdkModMeta,
+		server: dag,
+		sdk:    sdk,
+		funcs:  listImplementedFunctions(sdkModMeta.Self()),
 	}).withConfig(ctx, rawConfig)
 }
 
 func (sdk *module) dag(ctx context.Context) (*dagql.Server, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dagqlCache, err := query.Cache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return sdk.serverSchema.WithCache(dagqlCache), nil
+	return sdk.server, nil
 }
 
 // withConfig function checks if the moduleSDK exposes a function with name `WithConfig`.
@@ -108,12 +103,12 @@ func (sdk *module) withConfig(
 		return sdk, nil
 	}
 
-	fieldspec, err := withConfigFn.FieldSpec(ctx, sdk.mod.Self())
+	fieldspec, err := withConfigFn.FieldSpec(ctx, core.NewUserMod(sdk.mod))
 	if err != nil {
 		return nil, err
 	}
 
-	inputs := fieldspec.Args.Inputs(sdk.serverSchema.View())
+	inputs := fieldspec.Args.Inputs(sdk.server.View)
 
 	// check if there are any unknown config keys provided
 	var unusedKeys = []string{}
@@ -220,12 +215,12 @@ func listImplementedFunctions(sdkMod *core.Module) map[string]*core.Function {
 
 	for _, def := range sdkMod.ObjectDefs {
 		// Skip if the object isn't valid.
-		if !def.AsObject.Valid {
+		if !def.Self().AsObject.Valid {
 			continue
 		}
 
 		// Skip if it's not the main object.
-		obj := def.AsObject.Value
+		obj := def.Self().AsObject.Value.Self()
 		if gqlFieldName(obj.Name) != gqlFieldName(sdkMod.NameField) {
 			continue
 		}
@@ -233,9 +228,10 @@ func listImplementedFunctions(sdkMod *core.Module) map[string]*core.Function {
 		// Loop through the main object functions and look
 		// for a match with the interface functions.
 		for _, fn := range obj.Functions {
+			fnSelf := fn.Self()
 			for _, name := range sdkFunctions {
-				if gqlFieldName(fn.Name) == gqlFieldName(name) {
-					result[name] = fn
+				if gqlFieldName(fnSelf.Name) == gqlFieldName(name) {
+					result[name] = fnSelf
 				}
 			}
 		}

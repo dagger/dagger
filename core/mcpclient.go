@@ -29,12 +29,16 @@ func (t *ServiceMCPTransport) Connect(ctx context.Context) (mcp.Connection, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
+	serviceDigest, err := t.Service.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service digest: %w", err)
+	}
 
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
 	svc, err := svcs.StartWithIO(
 		ctx,
-		t.Service.ID(),
+		serviceDigest,
 		t.Service.Self(),
 		true, // per-client instances
 		&ServiceIO{

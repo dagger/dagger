@@ -51,6 +51,18 @@ func (sdk *clientGeneratorModule) GenerateClient(
 		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
+	modSource, err = scopeSourceForSDKOperation(ctx, modSource, "generateClient", dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module source for sdk module %s generate client: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	modSourceID, err := modSource.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get scoped module source ID for sdk module %s generate client: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json ID during module client generation: %w", err)
+	}
 	_, ok := sdk.funcs["generateClient"]
 	if !ok {
 		return inst, fmt.Errorf("generateClient is not implemented by this SDK")
@@ -59,11 +71,11 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	generateClientsArgs := []dagql.NamedInput{
 		{
 			Name:  "modSource",
-			Value: dagql.NewID[*core.ModuleSource](modSource.ID()),
+			Value: dagql.NewID[*core.ModuleSource](modSourceID),
 		},
 		{
 			Name:  "introspectionJson",
-			Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+			Value: dagql.NewID[*core.File](schemaJSONFileID),
 		},
 		{
 			Name:  "outputDir",

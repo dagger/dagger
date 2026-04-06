@@ -10,11 +10,9 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -32,18 +30,19 @@ func TestServicesStartHappy(t *testing.T) {
 	svc2 := newStartable("fake-2")
 
 	startOne := func(t *testing.T, stub *fakeStartable) {
-		_, err := services.Get(ctx, stub.ID(), false)
+		_, err := services.Get(ctx, stub.Digest(), false)
 		require.Error(t, err)
 
-		expected := stub.Succeed()
+		expectedHost := stub.Succeed()
 
-		running, err := services.Start(ctx, stub.ID(), stub, false)
+		running, err := services.Start(ctx, stub.Digest(), stub, false)
 		require.NoError(t, err)
-		require.Equal(t, expected, running)
+		require.Equal(t, expectedHost, running.Host)
 
-		running, err = services.Get(ctx, stub.ID(), false)
+		running2, err := services.Get(ctx, stub.Digest(), false)
 		require.NoError(t, err)
-		require.Equal(t, expected, running)
+		require.Equal(t, running, running2)
+		require.Equal(t, expectedHost, running2.Host)
 	}
 
 	t.Run("start one", func(t *testing.T) {
@@ -69,18 +68,19 @@ func TestServicesStartHappyDifferentServers(t *testing.T) {
 			SessionID: sessionID,
 		})
 
-		expected := stub.Succeed()
+		expectedHost := stub.Succeed()
 
-		_, err := services.Get(ctx, stub.ID(), false)
+		_, err := services.Get(ctx, stub.Digest(), false)
 		require.Error(t, err)
 
-		running, err := services.Start(ctx, stub.ID(), stub, false)
+		running, err := services.Start(ctx, stub.Digest(), stub, false)
 		require.NoError(t, err)
-		require.Equal(t, expected, running)
+		require.Equal(t, expectedHost, running.Host)
 
-		running, err = services.Get(ctx, stub.ID(), false)
+		running2, err := services.Get(ctx, stub.Digest(), false)
 		require.NoError(t, err)
-		require.Equal(t, expected, running)
+		require.Equal(t, running, running2)
+		require.Equal(t, expectedHost, running2.Host)
 	}
 
 	t.Run("start one", func(t *testing.T) {
@@ -106,10 +106,10 @@ func TestServicesStartSad(t *testing.T) {
 
 	expected := stub.Fail()
 
-	_, err := services.Start(ctx, stub.ID(), stub, false)
+	_, err := services.Start(ctx, stub.Digest(), stub, false)
 	require.Equal(t, expected, err)
 
-	_, err = services.Get(ctx, stub.ID(), false)
+	_, err = services.Get(ctx, stub.Digest(), false)
 	require.Error(t, err)
 }
 
@@ -127,7 +127,7 @@ func TestServicesStartConcurrentHappy(t *testing.T) {
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		return err
 	})
 
@@ -138,7 +138,7 @@ func TestServicesStartConcurrentHappy(t *testing.T) {
 
 	// start another attempt
 	eg.Go(func() error {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		return err
 	})
 
@@ -173,7 +173,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 
 	errs := make(chan error, 100)
 	go func() {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		errs <- err
 	}()
 
@@ -184,7 +184,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 
 	// start another attempt
 	go func() {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		errs <- err
 	}()
 
@@ -210,7 +210,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 	require.Equal(t, 2, stub.Starts())
 
 	// make sure Get doesn't wait for any attempts, as they've all failed
-	_, err := services.Get(ctx, stub.ID(), false)
+	_, err := services.Get(ctx, stub.Digest(), false)
 	require.Error(t, err)
 }
 
@@ -228,7 +228,7 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 
 	errs := make(chan error, 100)
 	go func() {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		errs <- err
 	}()
 
@@ -240,7 +240,7 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 	// start a few more attempts
 	for range 3 {
 		go func() {
-			_, err := services.Start(ctx, stub.ID(), stub, false)
+			_, err := services.Start(ctx, stub.Digest(), stub, false)
 			errs <- err
 		}()
 	}
@@ -284,8 +284,8 @@ type fakeStartable struct {
 }
 
 type startResult struct {
-	Started *core.RunningService
-	Failed  error
+	configure func(*core.RunningService)
+	failed    error
 }
 
 func newStartable(id string) *fakeStartable {
@@ -298,51 +298,49 @@ func newStartable(id string) *fakeStartable {
 	}
 }
 
-func (f *fakeStartable) ID() *call.ID {
-	id := call.New().Append(&ast.Type{
-		NamedType: "FakeService",
-		NonNull:   true,
-	}, f.name)
-	return id
+func (f *fakeStartable) Digest() digest.Digest {
+	return f.digest
 }
 
-func (f *fakeStartable) Start(context.Context, *call.ID, *core.ServiceIO) (*core.RunningService, error) {
+func (f *fakeStartable) Start(_ context.Context, running *core.RunningService, _ digest.Digest, _ *core.ServiceIO) error {
 	atomic.AddInt32(&f.starts, 1)
 	res := <-f.startResults
-	return res.Started, res.Failed
+	if res.failed != nil {
+		return res.failed
+	}
+	if res.configure == nil {
+		return nil
+	}
+	res.configure(running)
+	return nil
 }
 
 func (f *fakeStartable) Starts() int {
 	return int(atomic.LoadInt32(&f.starts))
 }
 
-func (f *fakeStartable) Succeed() *core.RunningService {
+func (f *fakeStartable) Succeed() string {
 	waitRes := make(chan struct{})
-
-	running := &core.RunningService{
-		Key: core.ServiceKey{
-			Digest:    f.digest,
-			SessionID: "doesnt-matter",
-		},
-		Host: f.name + "-host",
-		Wait: func(ctx context.Context) error {
-			<-waitRes
-			return f.exitErr
-		},
-	}
+	host := f.name + "-host"
 
 	f.waitResult = waitRes
 	f.startResults <- startResult{
-		Started: running,
+		configure: func(running *core.RunningService) {
+			running.Host = host
+			running.Wait = func(ctx context.Context) error {
+				<-waitRes
+				return f.exitErr
+			}
+		},
 	}
 
-	return running
+	return host
 }
 
 func (f *fakeStartable) Fail() error {
 	err := errors.New("oh no")
 	f.startResults <- startResult{
-		Failed: err,
+		failed: err,
 	}
 	return err
 }
@@ -372,19 +370,11 @@ func TestServicesDetachRace(t *testing.T) {
 	stub := newStartable("race-test")
 
 	// Client A starts the service
-	expected := stub.Succeed()
-	running, err := services.Start(ctx, stub.ID(), stub, false)
+	expectedHost := stub.Succeed()
+	running, err := services.Start(ctx, stub.Digest(), stub, false)
 	require.NoError(t, err)
-	require.Equal(t, expected, running)
+	require.Equal(t, expectedHost, running.Host)
 	require.Equal(t, 1, stub.Starts())
-
-	// Add a stop function that waits a bit to simulate actual service shutdown
-	stopCalled := make(chan struct{})
-	running.Stop = func(ctx context.Context, force bool) error {
-		close(stopCalled)
-		time.Sleep(50 * time.Millisecond) // simulate shutdown time
-		return nil
-	}
 
 	// Client A detaches - this will spawn a goroutine that waits DetachGracePeriod
 	// then calls Detach, which should immediately remove the service from the running map
@@ -400,23 +390,15 @@ func TestServicesDetachRace(t *testing.T) {
 
 	// Client B should see the service is not running and start a new one
 	stub.Succeed() // prepare for Client B's start
-	runningB, err := services.Start(ctxB, stub.ID(), stub, false)
+	runningB, err := services.Start(ctxB, stub.Digest(), stub, false)
 	require.NoError(t, err)
 	require.NotNil(t, runningB)
 
 	// We should have started twice - once for Client A, once for Client B
 	require.Equal(t, 2, stub.Starts())
 
-	// The stop should have been called for Client A's service
-	select {
-	case <-stopCalled:
-		// good, Client A's service was stopped
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("Client A's service was not stopped")
-	}
-
 	// Client B's service should still be running
-	retrieved, err := services.Get(ctxB, stub.ID(), false)
+	retrieved, err := services.Get(ctxB, stub.Digest(), false)
 	require.NoError(t, err)
 	require.Equal(t, runningB, retrieved)
 }

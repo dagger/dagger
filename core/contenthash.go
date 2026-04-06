@@ -5,17 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/contenthash"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -27,65 +23,105 @@ var checksumG singleflight.Group[string, digest.Digest]
 // directory instances with the same content to be deduplicated in dagql's cache.
 func MakeDirectoryContentHashed(
 	ctx context.Context,
-	bk *buildkit.Client,
 	dirInst dagql.ObjectResult[*Directory],
 ) (retInst dagql.ObjectResult[*Directory], err error) {
-	dgst, err := GetContentHashFromDirectory(ctx, bk, dirInst)
+	dgst, err := GetContentHashFromDirectory(ctx, dirInst)
 	if err != nil {
 		return retInst, err
 	}
+	dirPath := ""
+	if dirInst.Self() != nil {
+		dirPath = dirInst.Self().Dir
+	}
+	dagql.TraceEGraphDebug(ctx, "directory_content_hash_computed", "phase", "runtime", "path", dirPath, "content_digest", dgst)
 
-	return dirInst.WithContentDigest(dgst), nil
+	if _, err := dirInst.ID(); err == nil {
+		frame, frameErr := dirInst.ResultCall()
+		oldContentDigest := ""
+		if frameErr == nil && frame != nil {
+			oldContentDigest = frame.ContentDigest().String()
+		}
+		dagql.TraceEGraphDebug(ctx, "directory_content_hash_teach_attempt", "phase", "runtime", "path", dirPath, "old_content_digest", oldContentDigest, "new_content_digest", dgst)
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return retInst, err
+		}
+		if err := cache.TeachContentDigest(ctx, dirInst, dgst); err != nil {
+			return retInst, fmt.Errorf("teach directory content digest: %w", err)
+		}
+		dagql.TraceEGraphDebug(ctx, "directory_content_hash_taught", "phase", "runtime", "path", dirPath, "content_digest", dgst)
+		return dirInst, nil
+	}
+
+	dagql.TraceEGraphDebug(ctx, "directory_content_hash_detached_result", "phase", "runtime", "path", dirPath, "content_digest", dgst)
+	return dirInst.WithContentDigest(ctx, dgst)
 }
 
 func GetContentHashFromDirectory(
 	ctx context.Context,
-	bk *buildkit.Client,
 	dirInst dagql.ObjectResult[*Directory],
 ) (digest.Digest, error) {
 	if dirInst.Self() == nil {
 		return "", fmt.Errorf("directory instance is nil")
 	}
+	if _, err := dirInst.ID(); err == nil {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return "", err
+		}
+		if err := cache.Evaluate(ctx, dirInst); err != nil {
+			return "", err
+		}
+	}
 
-	st, err := dirInst.Self().State()
+	snapshot, err := dirInst.Self().getSnapshot()
 	if err != nil {
-		return "", fmt.Errorf("failed to get state: %w", err)
+		return "", fmt.Errorf("failed to get directory snapshot: %w", err)
 	}
-	def, err := st.Marshal(ctx, llb.Platform(dirInst.Self().Platform.Spec()))
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal state: %w", err)
+	if snapshot == nil {
+		return "", fmt.Errorf("failed to get directory snapshot: nil")
 	}
+
 	dirPath := dirInst.Self().Dir
 	if !strings.HasSuffix(dirPath, "/") {
 		// omit directory name from the hash
 		dirPath += "/"
 	}
-	dgst, err := GetContentHashFromDef(ctx, bk, def.ToPB(), dirPath)
+	dgst, err := getContentHashFromRef(ctx, snapshot, dirPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to get content hash: %w", err)
 	}
+	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", dirInst.Self().Dir, "snapshot_ref_id", snapshot.SnapshotID(), "content_digest", dgst)
 
 	return dgst, nil
 }
 
 func GetContentHashFromFile(
 	ctx context.Context,
-	bk *buildkit.Client,
 	fileInst dagql.ObjectResult[*File],
 ) (digest.Digest, error) {
 	if fileInst.Self() == nil {
 		return "", fmt.Errorf("file instance is nil")
 	}
+	if _, err := fileInst.ID(); err == nil {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return "", err
+		}
+		if err := cache.Evaluate(ctx, fileInst); err != nil {
+			return "", err
+		}
+	}
 
-	st, err := fileInst.Self().State()
+	snapshot, err := fileInst.Self().getSnapshot()
 	if err != nil {
-		return "", fmt.Errorf("failed to get state: %w", err)
+		return "", fmt.Errorf("failed to get file snapshot: %w", err)
 	}
-	def, err := st.Marshal(ctx, llb.Platform(fileInst.Self().Platform.Spec()))
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal state: %w", err)
+	if snapshot == nil {
+		return "", fmt.Errorf("failed to get file snapshot: nil")
 	}
-	dgst, err := GetContentHashFromDef(ctx, bk, def.ToPB(), fileInst.Self().File)
+
+	dgst, err := getContentHashFromRef(ctx, snapshot, fileInst.Self().File)
 	if err != nil {
 		return "", fmt.Errorf("failed to get content hash: %w", err)
 	}
@@ -93,51 +129,27 @@ func GetContentHashFromFile(
 	return dgst, nil
 }
 
-func GetContentHashFromDef(
-	ctx context.Context,
-	bk *buildkit.Client,
-	def *pb.Definition,
-	subdir string,
-) (digest.Digest, error) {
+func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir string) (digest.Digest, error) {
+	if ref == nil {
+		return "", fmt.Errorf("cannot get content hash from nil ref")
+	}
 	if subdir == "" {
 		subdir = "/"
 	}
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: def,
-		Evaluate:   true,
-	})
-	if err != nil {
-		return "", err
-	}
-	resultProxy, err := res.SingleRef()
-	if err != nil {
-		return "", fmt.Errorf("failed to get single ref: %w", err)
-	}
-	cachedRes, err := resultProxy.Result(ctx)
-	if err != nil {
-		return "", buildkit.WrapError(ctx, err, bk)
-	}
-	workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
-	if !ok {
-		return "", fmt.Errorf("invalid ref: %T", cachedRes.Sys())
-	}
-	ref := workerRef.ImmutableRef
-
-	key := ref.ID() + "/" + strings.TrimPrefix(subdir, "/")
+	key := ref.SnapshotID() + "/" + strings.TrimPrefix(subdir, "/")
 	dgst, _, err := checksumG.Do(ctx, key, func(ctx context.Context) (_ digest.Digest, rerr error) {
-		if err := ref.Finalize(ctx); err != nil {
-			return "", fmt.Errorf("failed to finalize ref: %w", err)
+		mdRef, ok := any(ref).(bkcache.RefMetadata)
+		if !ok {
+			return "", fmt.Errorf("content hash metadata: unexpected ref type %T", ref)
 		}
-
-		md := contenthash.CacheRefMetadata{RefMetadata: ref}
+		md := contenthash.CacheRefMetadata{RefMetadata: mdRef}
 
 		if subdir == "/" {
 			// content hashes for the root of dirs are saved in the metadata of the ref (both below
 			// and in the local source implementation); check if we have it already
 			dgst, ok := md.GetContentHashKey()
 			if ok {
-				bklog.G(ctx).Debugf("GetContentHashKey reusing ref %s with digest %s", ref.ID(), dgst)
+				bklog.G(ctx).Debugf("GetContentHashKey reusing snapshot %s with digest %s", ref.SnapshotID(), dgst)
 				return dgst, nil
 			}
 		}
@@ -150,7 +162,7 @@ func GetContentHashFromDef(
 
 		dgst, err := bkcontenthash.Checksum(ctx, ref, subdir, bkcontenthash.ChecksumOpts{
 			FollowLinks: true,
-		}, nil)
+		})
 		if err != nil {
 			return "", fmt.Errorf("failed to checksum ref at subdir %s: %w", subdir, err)
 		}
@@ -165,7 +177,7 @@ func GetContentHashFromDef(
 			}
 		}
 
-		bklog.G(ctx).Debugf("GetContentHashKey setting ref %s with digest %s", ref.ID(), dgst)
+		bklog.G(ctx).Debugf("GetContentHashKey setting snapshot %s with digest %s", ref.SnapshotID(), dgst)
 
 		return dgst, nil
 	})

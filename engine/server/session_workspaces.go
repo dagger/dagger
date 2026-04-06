@@ -173,12 +173,16 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
 		return filepath.Join(ws.Root, ws.Path, relPath)
 	}
+	resolveConfigLocalRef := func(configDir, relPath string) string {
+		return filepath.Join(configDir, relPath)
+	}
 
 	return srv.detectAndLoadWorkspace(ctx, client,
 		core.NewCallerStatFS(client.bkClient),
 		client.bkClient.ReadCallerHostFile,
 		cwd,
 		resolveLocalRef,
+		resolveConfigLocalRef,
 		nil,
 		true, // isLocal
 	)
@@ -290,6 +294,10 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		subPath := filepath.Join(ws.Root, ws.Path, relPath)
 		return core.GitRefString(parsedRef.cloneRef, subPath, parsedRef.version)
 	}
+	resolveConfigLocalRef := func(configDir, relPath string) string {
+		subPath := filepath.Join(configDir, relPath)
+		return core.GitRefString(parsedRef.cloneRef, subPath, parsedRef.version)
+	}
 
 	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
 		&core.DirectoryStatFS{Dir: tree},
@@ -298,6 +306,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		},
 		parsedRef.workspaceSubdir,
 		resolveLocalRef,
+		resolveConfigLocalRef,
 		func(ws *workspace.Workspace) string {
 			return remoteWorkspaceAddress(parsedRef.cloneRef, ws.Path, parsedRef.version)
 		},
@@ -315,10 +324,11 @@ func (srv *Server) detectAndLoadWorkspace(
 	readFile func(context.Context, string) ([]byte, error),
 	cwd string,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	resolveConfigLocalRef func(configDir, relPath string) string,
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 ) error {
-	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{})
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, resolveConfigLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{})
 }
 
 // pendingModule represents a module to be loaded from compat parsing,
@@ -363,13 +373,13 @@ type moduleLoadRequest struct {
 }
 
 type resolvedModuleLoad struct {
-	primary           *core.Module
+	primary           dagql.ObjectResult[*core.Module]
 	primaryEntrypoint bool
 	related           []resolvedServedModule
 }
 
 type resolvedServedModule struct {
-	mod        *core.Module
+	mod        dagql.ObjectResult[*core.Module]
 	entrypoint bool
 }
 
@@ -391,8 +401,8 @@ func cwdModuleName(ctx context.Context, readFile func(context.Context, string) (
 }
 
 func pendingLegacyModule(
-	ws *workspace.Workspace,
-	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	configDir string,
+	resolveConfigLocalRef func(configDir, relPath string) string,
 	name, source, pin string,
 	entrypoint bool,
 	configDefaults map[string]any,
@@ -401,7 +411,7 @@ func pendingLegacyModule(
 	kind := core.FastModuleSourceKindCheck(source, pin)
 	ref := source
 	if kind == core.ModuleSourceKindLocal {
-		ref = resolveLocalRef(ws, source)
+		ref = resolveConfigLocalRef(configDir, source)
 	}
 
 	mod := pendingModule{
@@ -441,6 +451,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	readFile func(context.Context, string) ([]byte, error),
 	cwd string,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	resolveConfigLocalRef func(configDir, relPath string) string,
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
@@ -499,8 +510,8 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// (1a) Legacy toolchains (from compat mode, extracted above)
 	for _, tc := range legacyToolchains {
 		pending = append(pending, pendingLegacyModule(
-			ws,
-			resolveLocalRef,
+			moduleDir,
+			resolveConfigLocalRef,
 			tc.Name,
 			tc.Source,
 			tc.Pin,
@@ -513,8 +524,8 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// (1b) Legacy blueprint (from compat mode, extracted above)
 	if legacyBlueprint != nil {
 		blueprint := pendingLegacyModule(
-			ws,
-			resolveLocalRef,
+			moduleDir,
+			resolveConfigLocalRef,
 			legacyBlueprint.Name,
 			legacyBlueprint.Source,
 			legacyBlueprint.Pin,
@@ -719,7 +730,7 @@ func (srv *Server) resolveModuleLoad(
 		return resolved, nil
 	}
 
-	src := primary.GetSource()
+	src := primary.Self().GetSource()
 	if src == nil {
 		return resolved, nil
 	}
@@ -759,15 +770,15 @@ func (srv *Server) resolveModuleSourceAsModule(
 	ctx context.Context,
 	dag *dagql.Server,
 	src dagql.ObjectResult[*core.ModuleSource],
-) (*core.Module, error) {
+) (dagql.ObjectResult[*core.Module], error) {
 	var resolved dagql.ObjectResult[*core.Module]
 	err := dag.Select(ctx, src, &resolved,
 		dagql.Selector{Field: "asModule"},
 	)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.Module]{}, err
 	}
-	return resolved.Self(), nil
+	return resolved, nil
 }
 
 // serveAllResolvedModuleLoads serves all resolved primary modules and their
@@ -783,11 +794,11 @@ func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []mod
 	for i := range loads {
 		load := resolved[i]
 		for _, related := range load.related {
-			if err := srv.serveModule(client, related.mod, core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
-				return fmt.Errorf("error serving related module %s: %w", related.mod.Name(), err)
+			if err := srv.serveModule(client, core.NewUserMod(related.mod), core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
+				return fmt.Errorf("error serving related module %s: %w", related.mod.Self().Name(), err)
 			}
 		}
-		if err := srv.serveModule(client, load.primary, core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
+		if err := srv.serveModule(client, core.NewUserMod(load.primary), core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
 			return moduleLoadErr(loads[i], err)
 		}
 		// For the entrypoint module (the one the user targets via dagger call),
@@ -795,7 +806,7 @@ func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []mod
 		// concrete types behind interfaces. This mirrors the includeDependencies
 		// behavior from `main`. Toolchain/non-entrypoint deps stay internal.
 		if load.primaryEntrypoint {
-			for _, dep := range load.primary.Deps.Mods() {
+			for _, dep := range load.primary.Self().Deps.Mods() {
 				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
 					return fmt.Errorf("error serving entrypoint dependency %s: %w", dep.Name(), err)
 				}
@@ -872,7 +883,7 @@ func (srv *Server) resolveModule(
 	ctx context.Context,
 	dag *dagql.Server,
 	mod pendingModule,
-) (*core.Module, error) {
+) (dagql.ObjectResult[*core.Module], error) {
 	srcArgs := []dagql.NamedInput{
 		{Name: "refString", Value: dagql.String(mod.Ref)},
 	}
@@ -888,12 +899,12 @@ func (srv *Server) resolveModule(
 		dagql.Selector{Field: "moduleSource", Args: srcArgs},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 
 	if mod.LegacyCallerModuleDir != "" && mod.Entrypoint {
 		if err := srv.mergeLegacyCallerEnvDefaults(ctx, dag, src.Self(), mod.LegacyCallerModuleDir); err != nil {
-			return nil, err
+			return dagql.ObjectResult[*core.Module]{}, err
 		}
 	}
 
@@ -913,7 +924,7 @@ func (srv *Server) resolveModule(
 	if len(mod.ConfigDefaults) > 0 {
 		wsJSON, err := json.Marshal(mod.ConfigDefaults)
 		if err != nil {
-			return nil, fmt.Errorf("encoding workspace config for %q: %w", mod.Ref, err)
+			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("encoding workspace config for %q: %w", mod.Ref, err)
 		}
 		asModuleArgs = append(asModuleArgs,
 			dagql.NamedInput{Name: "legacyWorkspaceConfigJson", Value: dagql.String(string(wsJSON))},
@@ -927,7 +938,7 @@ func (srv *Server) resolveModule(
 	if len(mod.ArgCustomizations) > 0 {
 		custJSON, err := json.Marshal(mod.ArgCustomizations)
 		if err != nil {
-			return nil, fmt.Errorf("encoding arg customizations for %q: %w", mod.Ref, err)
+			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("encoding arg customizations for %q: %w", mod.Ref, err)
 		}
 		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
 			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
@@ -939,10 +950,10 @@ func (srv *Server) resolveModule(
 		dagql.Selector{Field: "asModule", Args: asModuleArgs},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 
-	return resolved.Self(), nil
+	return resolved, nil
 }
 
 func (srv *Server) mergeLegacyCallerEnvDefaults(
@@ -991,6 +1002,5 @@ func (srv *Server) mergeLegacyCallerEnvDefaults(
 	}
 
 	src.UserDefaults = core.NewEnvFile(true).WithEnvFiles(src.UserDefaults, callerEnv)
-	src.Digest = src.CalcDigest(ctx).String()
 	return nil
 }

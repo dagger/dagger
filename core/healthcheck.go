@@ -203,7 +203,7 @@ func (chk *dockerHealthcheck) check(ctx context.Context) error {
 	if err != nil {
 		var gwErr *gwpb.ExitError
 		if errors.As(err, &gwErr) {
-			return &buildkit.ExecError{
+			return &ExecError{
 				Err:      telemetry.TrackOrigin(gwErr, chk.creator),
 				Cmd:      healthcheckMeta.Args,
 				ExitCode: int(gwErr.ExitCode),

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -25,64 +27,41 @@ import (
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
-	"github.com/dagger/dagger/engine/filesync"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	"github.com/dagger/dagger/internal/buildkit/cache/metadata"
-	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
-	"github.com/dagger/dagger/internal/buildkit/cache/remotecache/gha"
-	inlineremotecache "github.com/dagger/dagger/internal/buildkit/cache/remotecache/inline"
-	localremotecache "github.com/dagger/dagger/internal/buildkit/cache/remotecache/local"
-	registryremotecache "github.com/dagger/dagger/internal/buildkit/cache/remotecache/registry"
-	s3remotecache "github.com/dagger/dagger/internal/buildkit/cache/remotecache/s3"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/frontend"
-	dockerfile "github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/builder"
-	"github.com/dagger/dagger/internal/buildkit/frontend/gateway"
-	"github.com/dagger/dagger/internal/buildkit/frontend/gateway/forwarder"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	containerdsnapshot "github.com/dagger/dagger/internal/buildkit/snapshot/containerd"
-	"github.com/dagger/dagger/internal/buildkit/solver"
-	"github.com/dagger/dagger/internal/buildkit/solver/bboltcachestorage"
-	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/mounts"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/source"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
 	"github.com/dagger/dagger/internal/buildkit/util/network/netproviders"
-	"github.com/dagger/dagger/internal/buildkit/util/resolver"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/dagger/dagger/internal/buildkit/util/throttle"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
-	"github.com/dagger/dagger/internal/buildkit/version"
-	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
-	"github.com/dagger/dagger/internal/buildkit/worker/base"
 	wlabel "github.com/dagger/dagger/internal/buildkit/worker/label"
 	"github.com/moby/locker"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	daggercache "github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/sources/blob"
-	"github.com/dagger/dagger/engine/sources/local"
 )
 
 type Server struct {
@@ -93,8 +72,7 @@ type Server struct {
 	// state directory/db paths
 	//
 
-	rootDir           string
-	solverCacheDBPath string
+	rootDir string
 
 	workerRootDir         string
 	snapshotterRootDir    string
@@ -110,40 +88,25 @@ type Server struct {
 	// buildkit+containerd entities/DBs
 	//
 
-	baseWorker            *base.Worker
 	worker                *buildkit.Worker
-	workerCacheMetaDB     *metadata.Store
-	workerCache           bkcache.Manager
-	workerSourceManager   *source.Manager
-	workerDefaultGCPolicy *bkclient.PruneInfo
+	workerCache           bkcache.SnapshotManager
+	workerGCPolicies      []dagql.CachePrunePolicy
+	workerDefaultGCPolicy *dagql.CachePrunePolicy
 
 	bkSessionManager *bksession.Manager
 
-	solver               *solver.Solver
-	solverCacheDB        *bboltcachestorage.Store
-	SolverCache          daggercache.Manager
 	containerdMetaBoltDB *bolt.DB
 	containerdMetaDB     *ctdmetadata.DB
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
+	builtinContentStore  content.Store
 
 	snapshotter        ctdsnapshot.Snapshotter
 	snapshotterMDStore *storage.MetaStore // only set for overlay snapshotter right now
 	snapshotterName    string
 	leaseManager       *leaseutil.Manager
 
-	frontends map[string]frontend.Frontend
-
-	cacheExporters map[string]remotecache.ResolveCacheExporterFunc
-	cacheImporters map[string]remotecache.ResolveCacheImporterFunc
-
 	corruptDBReset bool
-
-	//
-	// worker file syncer
-	//
-
-	workerFileSyncer *filesync.FileSyncer
 
 	//
 	// worker/executor-specific config+state
@@ -157,7 +120,6 @@ type Server struct {
 	apparmorProfile  string
 	selinux          bool
 	entitlements     entitlements.Set
-	parallelismSem   *semaphore.Weighted
 	enabledPlatforms []ocispecs.Platform
 	defaultPlatform  ocispecs.Platform
 	registryHosts    docker.RegistryHosts
@@ -168,19 +130,24 @@ type Server struct {
 	//
 
 	telemetryPubSub *PubSub
-	buildkitLogSink io.Writer
+
+	coreSchemaBase   *schema.CoreSchemaBase
+	coreSchemaBaseMu sync.Mutex
 
 	//
 	// gc related
 	//
-	throttledGC                  func()
-	throttledReleaseUnreferenced func()
-	gcmu                         sync.Mutex
+	throttledGC func()
+	gcmu        sync.Mutex
+
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelCauseFunc
+	shuttingDown   atomic.Bool
 
 	//
 	// dagql cache
 	//
-	baseDagqlCache dagql.Cache
+	engineCache *dagql.Cache
 
 	//
 	// session+client state
@@ -211,8 +178,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		rootDir: bkcfg.Root,
 
-		frontends: map[string]frontend.Frontend{},
-
 		cgroupParent:    ociCfg.DefaultCgroupParent,
 		processMode:     oci.ProcessSandbox,
 		apparmorProfile: ociCfg.ApparmorProfile,
@@ -228,6 +193,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		locker: locker.New(),
 	}
+	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
 	// start the global namespace worker pool, which is used for running Go funcs
 	// in container namespaces dynamically
@@ -246,7 +212,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	srv.solverCacheDBPath = filepath.Join(srv.rootDir, "cache.db")
 
 	srv.workerRootDir = filepath.Join(srv.rootDir, "worker")
 	srv.snapshotterRootDir = filepath.Join(srv.workerRootDir, "snapshots")
@@ -311,14 +276,14 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to init metadata db: %w", err)
 	}
 
-	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "buildkit")
+	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
 
 	srv.bkSessionManager, err = bksession.NewManager()
 	if err != nil {
 		return nil, err
 	}
 
-	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "buildkit")
+	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "dagger")
 
 	//
 	// clean up old hosts/resolv.conf file. ignore errors
@@ -342,6 +307,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		// prioritize out config first if it's set
 		if cfg.Security.InsecureRootCapabilities == nil || *cfg.Security.InsecureRootCapabilities {
 			srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
+			srv.entitlements[entitlements.EntitlementNetworkHost] = struct{}{}
 		}
 	} else if bkcfg.Entitlements != nil {
 		// fallback to the dagger config
@@ -355,6 +321,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	} else {
 		// no config? apply dagger-specific defaults
 		srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
+		srv.entitlements[entitlements.EntitlementNetworkHost] = struct{}{}
 	}
 
 	srv.defaultPlatform = platforms.Normalize(platforms.DefaultSpec())
@@ -381,10 +348,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			RootCAs:   v.RootCAs,
 		}
 	}
-	srv.registryHosts = resolver.NewRegistryConfig(registries)
+	srv.registryHosts = newRegistryHosts(registries)
 
-	if slog.Default().Enabled(ctx, slog.LevelExtraDebug) {
-		srv.buildkitLogSink = os.Stderr
+	srv.builtinContentStore, err = openBuiltinOCIStore()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open builtin content store: %w", err)
 	}
 
 	//
@@ -415,11 +383,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create network providers: %w", err)
 	}
 
-	if ociCfg.MaxParallelism > 0 {
-		srv.parallelismSem = semaphore.NewWeighted(int64(ociCfg.MaxParallelism))
-		ociCfg.Labels["maxParallelism"] = strconv.Itoa(ociCfg.MaxParallelism)
-	}
-
 	baseLabels := map[string]string{
 		wlabel.Executor:       "oci",
 		wlabel.Snapshotter:    srv.snapshotterName,
@@ -436,68 +399,47 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		baseLabels[wlabel.Hostname] = hostname
 	}
 	maps.Copy(baseLabels, ociCfg.Labels)
-	workerID, err := base.ID(srv.workerRootDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get worker ID: %w", err)
-	}
 
-	srv.baseWorker, err = base.NewWorker(ctx, base.WorkerOpt{
-		ID:        workerID,
-		Labels:    baseLabels,
-		Platforms: srv.enabledPlatforms,
-		GCPolicy:  getGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir),
-		BuildkitVersion: bkclient.BuildkitVersion{
-			Package:  version.Package,
-			Version:  version.Version,
-			Revision: version.Revision,
-		},
+	workerSnapshotter := containerdsnapshot.NewSnapshotter(
+		srv.snapshotterName,
+		srv.containerdMetaDB.Snapshotter(srv.snapshotterName),
+		"dagger",
+	)
+
+	workerGCPolicies := getDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
+	workerOpt := buildkit.WorkerOpt{
+		ID:               rand.Text(),
+		Labels:           baseLabels,
+		Platforms:        srv.enabledPlatforms,
+		GCPolicy:         buildkitPruneInfosFromDagqlPolicies(workerGCPolicies),
 		NetworkProviders: srv.networkProviders,
-		Executor:         nil, // not needed yet, set in clientWorker
-		Snapshotter: containerdsnapshot.NewSnapshotter(
-			srv.snapshotterName,
-			srv.containerdMetaDB.Snapshotter(srv.snapshotterName),
-			"buildkit",
-			nil, // no idmapping
-		),
-		ContentStore:    srv.contentStore,
-		Applier:         winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
-		Differ:          winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
-		ImageStore:      nil, // explicitly, because that's what upstream does too
-		RegistryHosts:   srv.registryHosts,
-		IdentityMapping: nil, // no idmapping
-		LeaseManager:    srv.leaseManager,
-		GarbageCollect:  srv.containerdMetaDB.GarbageCollect,
-		ParallelismSem:  srv.parallelismSem,
-		MetadataStore:   srv.workerCacheMetaDB,
-		Root:            srv.rootDir,
-		MountPoolRoot:   srv.buildkitMountPoolDir,
-		ResourceMonitor: nil, // we don't use it
+		Snapshotter:      workerSnapshotter,
+		ContentStore:     srv.contentStore,
+		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		ImageStore:       nil, // explicitly, because that's what upstream does too
+		RegistryHosts:    srv.registryHosts,
+		IdentityMapping:  nil, // no idmapping
+		LeaseManager:     srv.leaseManager,
+		Root:             srv.rootDir,
+	}
+
+	srv.workerCache, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
+		Snapshotter:   workerSnapshotter,
+		ContentStore:  srv.contentStore,
+		LeaseManager:  srv.leaseManager,
+		Applier:       winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		MountPoolRoot: srv.buildkitMountPoolDir,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create base worker: %w", err)
+		return nil, fmt.Errorf("failed to create snapshot manager: %w", err)
 	}
-	srv.workerCache = srv.baseWorker.CacheMgr
-	srv.workerSourceManager = srv.baseWorker.SourceManager
-	srv.workerDefaultGCPolicy = getDefaultGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
 
-	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
+	srv.workerGCPolicies = cloneDagqlCachePrunePolicies(workerGCPolicies)
+	srv.workerDefaultGCPolicy = getDefaultDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
+
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
-
-	srv.workerFileSyncer = filesync.NewFileSyncer(filesync.FileSyncerOpt{
-		CacheAccessor: srv.workerCache,
-	})
-
-	bs, err := blob.NewSource(blob.Opt{
-		CacheAccessor: srv.workerCache,
-	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(bs)
-
-	// Protection mechanism for llb.Local operations to not panic
-	// if the operation is called.
-	srv.workerSourceManager.Register(local.NewSource())
 
 	hostMntNS, err := os.OpenFile("/proc/self/ns/mnt", os.O_RDONLY, 0)
 	if err != nil {
@@ -521,10 +463,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create clean mount namespace: %w", err)
 	}
 
-	srv.worker = buildkit.NewWorker(&buildkit.NewWorkerOpts{
+	srv.worker, err = buildkit.NewWorker(&buildkit.NewWorkerOpts{
+		WorkerOpt:        workerOpt,
 		WorkerRoot:       srv.workerRootDir,
 		ExecutorRoot:     srv.executorRootDir,
-		BaseWorker:       srv.baseWorker,
 		TelemetryPubSub:  srv.telemetryPubSub,
 		BKSessionManager: srv.bkSessionManager,
 		SessionHandler:   srv,
@@ -533,71 +475,24 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		Runc:                srv.runc,
 		DefaultCgroupParent: srv.cgroupParent,
 		ProcessMode:         srv.processMode,
-		IDMapping:           nil, // no idmapping
 		DNSConfig:           srv.dns,
 		ApparmorProfile:     srv.apparmorProfile,
 		SELinux:             srv.selinux,
 		Entitlements:        srv.entitlements,
-		NetworkProviders:    srv.networkProviders,
-		ParallelismSem:      srv.parallelismSem,
 		WorkerCache:         srv.workerCache,
 
 		HostMntNS:  hostMntNS,
 		CleanMntNS: srv.cleanMntNS,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create worker: %w", err)
+	}
 
 	//
 	// setup solver
 	//
 
-	baseWorkerController, err := buildkit.AsWorkerController(srv.worker)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create worker controller: %w", err)
-	}
-	srv.frontends["dockerfile.v0"] = forwarder.NewGatewayForwarder(baseWorkerController.Infos(), dockerfile.Build)
-	frontendGateway, err := gateway.NewGatewayFrontend(baseWorkerController.Infos(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gateway frontend: %w", err)
-	}
-	srv.frontends["gateway.v0"] = frontendGateway
-
-	srv.SolverCache, err = daggercache.NewManager(ctx, daggercache.ManagerConfig{
-		KeyStore:     srv.solverCacheDB,
-		ResultStore:  bkworker.NewCacheResultStorage(baseWorkerController),
-		Worker:       srv.baseWorker,
-		MountManager: mounts.NewMountManager("dagger-cache", srv.workerCache, srv.bkSessionManager),
-		EngineID:     opts.Name,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	srv.cacheExporters = map[string]remotecache.ResolveCacheExporterFunc{
-		"registry": registryremotecache.ResolveCacheExporterFunc(srv.bkSessionManager, srv.registryHosts),
-		"local":    localremotecache.ResolveCacheExporterFunc(srv.bkSessionManager),
-		"inline":   inlineremotecache.ResolveCacheExporterFunc(),
-		"gha":      gha.ResolveCacheExporterFunc(),
-		"s3":       s3remotecache.ResolveCacheExporterFunc(),
-	}
-	srv.cacheImporters = map[string]remotecache.ResolveCacheImporterFunc{
-		"registry": registryremotecache.ResolveCacheImporterFunc(srv.bkSessionManager, srv.contentStore, srv.registryHosts),
-		"local":    localremotecache.ResolveCacheImporterFunc(srv.bkSessionManager),
-		"gha":      gha.ResolveCacheImporterFunc(),
-		"s3":       s3remotecache.ResolveCacheImporterFunc(),
-	}
-
-	srv.solver = solver.NewSolver(solver.SolverOpt{
-		ResolveOpFunc: func(vtx solver.Vertex, builder solver.Builder) (solver.Op, error) {
-			// passing nil bridge since it's only needed for BuildOp, which is never used and
-			// never should be used (it's a legacy API)
-			return srv.worker.ResolveOp(vtx, nil, srv.bkSessionManager)
-		},
-		DefaultCache: srv.SolverCache,
-	})
-
 	srv.throttledGC = throttle.After(time.Minute, srv.gc)
-	// use longer interval for releaseUnreferencedCache deleting links quickly is less important
-	srv.throttledReleaseUnreferenced = throttle.After(5*time.Minute, func() { srv.SolverCache.ReleaseUnreferenced(context.Background()) })
 	defer func() {
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
@@ -606,7 +501,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup dagql caching
 	//
 	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
-	srv.baseDagqlCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
+	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache)
 	if err != nil {
 		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
 		// db and trying again.
@@ -614,12 +509,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
 			slog.Error("failed to remove existing dagql cache db", "error", err)
 		}
-		srv.baseDagqlCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
+		srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
 		}
 	}
-	go srv.baseDagqlCache.GCLoop(ctx)
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
@@ -693,27 +587,34 @@ func (srv *Server) initBoltDBs() (err error) {
 		}
 	}()
 
-	srv.workerCacheMetaDB, err = metadata.NewStore(srv.workerCacheMetaDBPath)
-	if err != nil {
-		return fmt.Errorf("failed to create metadata store: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, srv.workerCacheMetaDB.Close())
-		}
-	}()
-
-	srv.solverCacheDB, err = bboltcachestorage.NewStore(srv.solverCacheDBPath)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, srv.solverCacheDB.Close())
-		}
-	}()
-
 	return nil
+}
+
+var errServerShuttingDown = errors.New("engine is shutting down")
+
+func (srv *Server) BeginGracefulStop() {
+	if srv.shuttingDown.CompareAndSwap(false, true) && srv.shutdownCancel != nil {
+		srv.shutdownCancel(errServerShuttingDown)
+	}
+}
+
+func (srv *Server) isShuttingDown() bool {
+	return srv != nil && srv.shuttingDown.Load()
+}
+
+func (srv *Server) withShutdownCancel(ctx context.Context) context.Context {
+	if srv == nil || srv.shutdownCtx == nil {
+		return ctx
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	go func() {
+		select {
+		case <-srv.shutdownCtx.Done():
+			cancel(context.Cause(srv.shutdownCtx))
+		case <-ctx.Done():
+		}
+	}()
+	return ctx
 }
 
 func (srv *Server) EngineName() string {
@@ -735,14 +636,56 @@ func (srv *Server) Clients() []string {
 // GracefulStop attempts to close all boltdbs and do a final syncfs since all the DBs
 // run with NoSync=true (plus NoFreelistSync/NoGrowSync) for performance reasons.
 func (srv *Server) GracefulStop(ctx context.Context) error {
-	var eg errgroup.Group
-	eg.Go(func() error {
-		err := srv.solverCacheDB.Close()
-		if err != nil {
-			return fmt.Errorf("failed to close solver cache db: %w", err)
+	srv.BeginGracefulStop()
+
+	var err error
+
+	// note this *could* cause a panic in Session if it was still running, so
+	// the server should be shutdown first
+	srv.daggerSessionsMu.Lock()
+	daggerSessions := srv.daggerSessions
+	srv.daggerSessionsMu.Unlock()
+
+	if srv.engineCache != nil {
+		srv.gcmu.Lock()
+		defer srv.gcmu.Unlock()
+	}
+
+	for _, s := range daggerSessions {
+		s.stateMu.Lock()
+		err = errors.Join(err, srv.removeDaggerSession(ctx, s))
+		s.stateMu.Unlock()
+	}
+
+	if srv.engineCache != nil && len(srv.workerGCPolicies) > 0 {
+		dstat, statErr := disk.GetDiskStat(srv.rootDir)
+		if statErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to get disk stats for graceful shutdown prune: %w", statErr))
+		} else {
+			prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
+			for i := range prunePolicies {
+				prunePolicies[i].CurrentFreeSpace = dstat.Free
+			}
+			_, pruneErr := srv.engineCache.Prune(ctx, prunePolicies)
+			if pruneErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to prune dagql cache during graceful shutdown: %w", pruneErr))
+			}
 		}
-		return nil
-	})
+	}
+
+	if srv.engineCache != nil {
+		if closeErr := srv.engineCache.Close(ctx); closeErr != nil {
+			slog.Error("failed to close base dagql cache", "error", closeErr)
+			err = errors.Join(err, closeErr)
+		}
+	}
+
+	err = errors.Join(err, srv.worker.Close())
+
+	// Shutdown the global namespace worker pool
+	buildkit.ShutdownGlobalNamespaceWorkerPool()
+
+	var eg errgroup.Group
 	eg.Go(func() error {
 		err := srv.snapshotterMDStore.Close()
 		if err != nil {
@@ -757,13 +700,6 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		}
 		return nil
 	})
-	eg.Go(func() error {
-		err := srv.workerCacheMetaDB.Close()
-		if err != nil {
-			return fmt.Errorf("failed to close worker cache metadata db: %w", err)
-		}
-		return nil
-	})
 
 	doneClosingCh := make(chan error)
 	go func() {
@@ -774,9 +710,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 			doneClosingCh <- err
 		}()
 
-		// all the DBs closed, do a final sync
-		// need an fd for an arbitrary file on the filesystem
-		f, err := os.Open(srv.solverCacheDBPath)
+		// all the DBs closed, do a final sync of the engine state filesystem.
+		// Use a guaranteed child of the state root rather than the mountpoint
+		// itself so path resolution is unambiguously inside the mounted tree.
+		f, err := os.Open(srv.workerRootDir)
 		if err != nil {
 			err = fmt.Errorf("failed to open root dir for final sync: %w", err)
 			return
@@ -798,40 +735,8 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 }
 
-func (srv *Server) Close() error {
-	err := srv.baseWorker.Close()
-
-	// Shutdown the global namespace worker pool
-	buildkit.ShutdownGlobalNamespaceWorkerPool()
-
-	// note this *could* cause a panic in Session if it was still running, so
-	// the server should be shutdown first
-	srv.daggerSessionsMu.Lock()
-	daggerSessions := srv.daggerSessions
-	srv.daggerSessionsMu.Unlock()
-
-	for _, s := range daggerSessions {
-		s.stateMu.Lock()
-		err = errors.Join(err, srv.removeDaggerSession(context.Background(), s))
-		s.stateMu.Unlock()
-	}
-	return err
-}
-
-func (srv *Server) BuildkitCache() bkcache.Manager {
+func (srv *Server) SnapshotManager() bkcache.SnapshotManager {
 	return srv.workerCache
-}
-
-func (srv *Server) BuildkitSession() *bksession.Manager {
-	return srv.bkSessionManager
-}
-
-func (srv *Server) FileSyncer() *filesync.FileSyncer {
-	return srv.workerFileSyncer
-}
-
-func (srv *Server) SourceManager() *source.Manager {
-	return srv.workerSourceManager
 }
 
 func (srv *Server) CacheAccessor() bkcache.Accessor {
@@ -866,7 +771,7 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
 	l = l.WithField("dagger-session-count", len(srv.daggerSessions))
-	l = l.WithField("dagql-cache-size", srv.baseDagqlCache.Size())
+	l = l.WithField("dagql-cache-size", srv.engineCache.Size())
 	return l
 }
 
@@ -875,17 +780,31 @@ func (srv *Server) Register(server *grpc.Server) {
 }
 
 func (srv *Server) DagqlCacheEntries() int {
-	if srv.baseDagqlCache == nil {
+	if srv.engineCache == nil {
 		return 0
 	}
-	return srv.baseDagqlCache.Size()
+	return srv.engineCache.Size()
 }
 
 func (srv *Server) DagqlCacheEntryStats() dagql.CacheEntryStats {
-	if srv.baseDagqlCache == nil {
+	if srv.engineCache == nil {
 		return dagql.CacheEntryStats{}
 	}
-	return srv.baseDagqlCache.EntryStats()
+	return srv.engineCache.EntryStats()
+}
+
+func (srv *Server) DagqlDebugSnapshot() *dagql.EGraphDebugSnapshot {
+	if srv.engineCache == nil {
+		return nil
+	}
+	return srv.engineCache.DebugEGraphSnapshot()
+}
+
+func (srv *Server) WriteDagqlCacheDebugSnapshot(w io.Writer) error {
+	if srv.engineCache == nil {
+		return fmt.Errorf("dagql cache not available")
+	}
+	return srv.engineCache.WriteDebugCacheSnapshot(w)
 }
 
 // ConnectedClients returns the number of currently connected clients

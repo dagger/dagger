@@ -15,7 +15,6 @@ import (
 )
 
 type querySchema struct {
-	srv *dagql.Server
 }
 
 var _ SchemaResolvers = &querySchema{}
@@ -27,16 +26,33 @@ func (s *querySchema) Install(srv *dagql.Server) {
 		// JSON and written to a core.File. This is currently used internally for calling
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
-		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile,
-			dagql.CachePerSchema[*core.Query, schemaJSONArgs](srv)).
+		dagql.NodeFunc("__schemaJSONFile", s.schemaJSONFile).
+			IsPersistable().
+			WithInput(dagql.CurrentSchemaInput).
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
+			),
+		dagql.NodeFunc("_remoteGitMirror", s.remoteGitMirror).
+			IsPersistable().
+			Doc(`(Internal-only) Returns the persistent bare git mirror for a remote URL.`).
+			Args(
+				dagql.Arg("remoteURL").Doc("Normalized remote repository URL."),
+			),
+		dagql.NodeFunc("_clientFilesyncMirror", s.clientFilesyncMirror).
+			IsPersistable().
+			Doc(`(Internal-only) Returns the persistent filesync mirror for a stable client and drive.`).
+			Args(
+				dagql.Arg("stableClientID").Doc("Stable client identifier."),
+				dagql.Arg("drive").Doc("Drive prefix for Windows clients; empty otherwise."),
 			),
 	}.Install(srv)
 
 	srv.InstallScalar(core.JSON{})
 	srv.InstallScalar(core.Void{})
+
+	dagql.Fields[*core.RemoteGitMirror]{}.Install(srv)
+	dagql.Fields[*core.ClientFilesyncMirror]{}.Install(srv)
 
 	core.NetworkProtocols.Install(srv)
 	core.ImageLayerCompressions.Install(srv)
@@ -81,12 +97,43 @@ type pipelineArgs struct {
 	Labels      dagql.Optional[dagql.ArrayInput[dagql.InputObject[PipelineLabel]]]
 }
 
+type remoteGitMirrorArgs struct {
+	RemoteURL string `name:"remoteURL"`
+}
+
+type clientFilesyncMirrorArgs struct {
+	StableClientID string `name:"stableClientID"`
+	Drive          string `default:""`
+}
+
 func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pipelineArgs) (*core.Query, error) {
 	return parent.WithPipeline(args.Name, args.Description), nil
 }
 
 func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (string, error) {
 	return engine.Version, nil
+}
+
+func (s *querySchema) remoteGitMirror(ctx context.Context, parent dagql.ObjectResult[*core.Query], args remoteGitMirrorArgs) (dagql.Result[*core.RemoteGitMirror], error) {
+	mirror := core.NewRemoteGitMirror(args.RemoteURL)
+	if err := mirror.EnsureCreated(ctx, parent.Self()); err != nil {
+		return dagql.Result[*core.RemoteGitMirror]{}, err
+	}
+	return dagql.NewResultForCurrentCall(ctx, mirror)
+}
+
+func (s *querySchema) clientFilesyncMirror(ctx context.Context, parent dagql.ObjectResult[*core.Query], args clientFilesyncMirrorArgs) (dagql.Result[*core.ClientFilesyncMirror], error) {
+	if args.StableClientID == "" {
+		return dagql.Result[*core.ClientFilesyncMirror]{}, fmt.Errorf("stable client id is empty")
+	}
+	mirror := &core.ClientFilesyncMirror{
+		StableClientID: args.StableClientID,
+		Drive:          args.Drive,
+	}
+	if err := mirror.EnsureCreated(ctx, parent.Self()); err != nil {
+		return dagql.Result[*core.ClientFilesyncMirror]{}, err
+	}
+	return dagql.NewResultForCurrentCall(ctx, mirror)
 }
 
 func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]byte, error) {
@@ -132,8 +179,6 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 
 type schemaJSONArgs struct {
 	HiddenTypes []string `default:"[]"`
-	Schema      string   `internal:"true" default:"" name:"schema"`
-	RawDagOpInternalArgs
 }
 
 func (s *querySchema) schemaJSONFile(
@@ -144,41 +189,29 @@ func (s *querySchema) schemaJSONFile(
 	const schemaJSONFilename = "schema.json"
 	const perm fs.FileMode = 0644
 
-	if args.InDagOp() {
-		f, err := core.NewFileWithContents(ctx, schemaJSONFilename, []byte(args.Schema), perm, nil, parent.Self().Platform())
-		if err != nil {
-			return inst, err
-		}
-
-		return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
-	}
-
-	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, s.srv.View, s.srv)
-	if err != nil {
-		return inst, err
-	}
-	args.Schema = string(moduleSchemaJSON)
-
-	newID := dagql.CurrentID(ctx).
-		WithArgument(call.NewArgument(
-			"schema",
-			call.NewLiteralString(args.Schema),
-			false,
-		))
-	ctxDagOp := dagql.ContextWithID(ctx, newID)
-
-	f, effectID, err := DagOpFile(ctxDagOp, s.srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 
-	if _, err := f.Evaluate(ctx); err != nil {
+	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, dag.View, dag)
+	if err != nil {
 		return inst, err
 	}
 
-	curID := dagql.CurrentID(ctx)
-	if effectID != "" {
-		curID = curID.AppendEffectIDs(effectID)
+	var dirInst dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, dag.Root(), &dirInst, dagql.Selector{Field: "directory"}); err != nil {
+		return inst, err
 	}
-	return dagql.NewObjectResultForID(f, s.srv, curID)
+
+	file := &core.File{
+		File:     schemaJSONFilename,
+		Platform: parent.Self().Platform(),
+	}
+
+	if err := file.WithContents(ctx, dirInst, moduleSchemaJSON, perm, nil); err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentCall(ctx, dag, file)
 }

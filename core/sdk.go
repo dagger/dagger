@@ -2,15 +2,14 @@ package core
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
-	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 )
 
 /*
@@ -168,14 +167,19 @@ func (r *ContainerRuntime) Call(
 	execMD *buildkit.ExecutionMetadata,
 	fnCall *FunctionCall,
 ) ([]byte, string, error) {
-	srv := dagql.CurrentDagqlServer(ctx)
+	hideCtx := dagql.WithSkip(ctx)
+
+	srv, err := CurrentDagqlServer(hideCtx)
+	if err != nil {
+		return nil, "", fmt.Errorf("current dagql server: %w", err)
+	}
 
 	// Desugar to the canonical server for core API plumbing so that
 	// entrypoint proxies cannot shadow core fields like "directory".
 	coreSrv := srv.Canonical()
 
 	var metaDir dagql.ObjectResult[*Directory]
-	err := coreSrv.Select(ctx, coreSrv.Root(), &metaDir,
+	err = coreSrv.Select(hideCtx, coreSrv.Root(), &metaDir,
 		dagql.Selector{
 			Field: "directory",
 		},
@@ -184,121 +188,99 @@ func (r *ContainerRuntime) Call(
 		return nil, "", fmt.Errorf("create mod metadata directory: %w", err)
 	}
 
+	metaDirID, err := metaDir.ID()
+	if err != nil {
+		return nil, "", fmt.Errorf("get mod metadata directory ID: %w", err)
+	}
+
 	var ctr dagql.ObjectResult[*Container]
-	err = srv.Select(ctx, r.Container, &ctr,
+	err = srv.Select(hideCtx, r.Container, &ctr,
 		dagql.Selector{
 			Field: "withMountedDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(modMetaDirPath)},
-				{Name: "source", Value: dagql.NewID[*Directory](metaDir.ID())},
+				{Name: "source", Value: dagql.NewID[*Directory](metaDirID)},
 			},
 		},
 	)
 	if err != nil {
-		return nil, "", fmt.Errorf("exec function: %w", err)
+		return nil, "", fmt.Errorf("mount function metadir: %w", err)
 	}
 
-	execCtx := ctx
-	execCtx = dagql.WithSkip(execCtx) // this span shouldn't be shown (it's entirely useless)
-	err = srv.Select(execCtx, ctr, &ctr,
-		dagql.Selector{
-			Field: "withExec",
-			Args: []dagql.NamedInput{
-				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
-				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
-				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
-				{Name: "execMD", Value: dagql.NewSerializedString(execMD)},
-			},
-		},
-	)
+	execCtr, err := NewContainerChild(hideCtx, ctr)
+	if err != nil {
+		return nil, "", fmt.Errorf("clone exec container: %w", err)
+	}
+
+	err = execCtr.WithExec(hideCtx, ctr, ContainerExecOpts{
+		Args:                          []string{},
+		UseEntrypoint:                 true,
+		ExperimentalPrivilegedNesting: true,
+	}, execMD, true)
 	if err != nil {
 		return nil, "", fmt.Errorf("exec function: %w", err)
 	}
 
-	query, err := CurrentQuery(ctx)
+	err = execCtr.Sync(ctx)
 	if err != nil {
-		return nil, "", err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("get buildkit client: %w", err)
-	}
-
-	_, err = ctr.Self().Evaluate(ctx)
-	if err != nil {
-		return nil, "", r.handleCallError(ctx, fnCall, bk, err)
-	}
-
-	ctrOutputDir, err := ctr.Self().Directory(ctx, modMetaDirPath)
-	if err != nil {
-		return nil, "", fmt.Errorf("get function output directory: %w", err)
-	}
-
-	modMetaFile, err := ctrOutputDir.File(ctx, modMetaOutputPath)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get mod meta file: %w", err)
+		var modExecErr *ModuleExecError
+		if errors.As(err, &modExecErr) {
+			srv, srvErr := CurrentDagqlServer(ctx)
+			if srvErr != nil {
+				return nil, "", fmt.Errorf("load error instance: %w", srvErr)
+			}
+			errInst, loadErr := modExecErr.ErrorID.Load(ctx, srv)
+			if loadErr != nil {
+				return nil, "", fmt.Errorf("load error instance: %w", loadErr)
+			}
+			return nil, "", errInst.Self()
+		}
+		if fnCall.Name == "" {
+			return nil, "", fmt.Errorf("call constructor: %w", err)
+		}
+		return nil, "", fmt.Errorf("call function %q: %w", fnCall.Name, err)
 	}
 
-	// Read the output of the function
-	outputBytes, err := modMetaFile.Contents(ctx, nil, nil)
+	var outputDir *Directory
+	for _, ctrMount := range execCtr.Mounts {
+		if ctrMount.Target != modMetaDirPath {
+			continue
+		}
+		if ctrMount.DirectorySource == nil || ctrMount.DirectorySource.self() == nil {
+			return nil, "", fmt.Errorf("function output directory mount %s is missing directory source", modMetaDirPath)
+		}
+		outputDir = ctrMount.DirectorySource.self()
+		break
+	}
+	if outputDir == nil {
+		return nil, "", fmt.Errorf("function output directory mount %s not found", modMetaDirPath)
+	}
+
+	snapshot, err := outputDir.getSnapshot()
+	if err != nil {
+		return nil, "", fmt.Errorf("get function output snapshot: %w", err)
+	}
+	if snapshot == nil {
+		return nil, "", fmt.Errorf("function output snapshot is nil")
+	}
+
+	root, _, release, err := MountRefCloser(ctx, snapshot, mountRefAsReadOnly)
+	if err != nil {
+		return nil, "", fmt.Errorf("mount function output snapshot: %w", err)
+	}
+	defer release()
+
+	outputPath, err := containerdfs.RootPath(root, path.Join(outputDir.Dir, modMetaOutputPath))
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve function output file path: %w", err)
+	}
+
+	outputBytes, err := os.ReadFile(outputPath)
 	if err != nil {
 		return nil, "", fmt.Errorf("read function output file: %w", err)
 	}
 
-	// Get the client ID actually used during the function call - this might not
-	// be the same as execMD.ClientID if the function call was cached at the
-	// buildkit level
-	clientID, err := ctr.Self().usedClientID(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("get client ID from container: %w", err)
-	}
-
-	return outputBytes, clientID, nil
-}
-
-func (r *ContainerRuntime) handleCallError(ctx context.Context, call *FunctionCall, bk *buildkit.Client, baseErr error) error {
-	id, ok, extractErr := extractError(ctx, bk, baseErr)
-	if extractErr != nil {
-		// if the module hasn't provided us with a nice error, just return the
-		// original error
-		return baseErr
-	}
-	if ok {
-		srv := dagql.CurrentDagqlServer(ctx)
-		errInst, err := id.Load(ctx, srv)
-		if err != nil {
-			return fmt.Errorf("load error instance: %w", err)
-		}
-		dagErr := errInst.Self().Clone()
-		originCtx := trace.SpanContextFromContext(
-			telemetry.Propagator.Extract(
-				context.Background(),
-				telemetry.AnyMapCarrier(dagErr.Extensions()),
-			),
-		)
-		if !originCtx.IsValid() {
-			// If the Error doesn't already have an origin, inject the current trace
-			// context as its origin.
-			tm := propagation.MapCarrier{}
-			telemetry.Propagator.Inject(ctx, tm)
-			for _, key := range tm.Keys() {
-				val := tm.Get(key)
-				valJSON, err := json.Marshal(val)
-				if err != nil {
-					return fmt.Errorf("marshal value: %w", err)
-				}
-				dagErr.Values = append(dagErr.Values, &ErrorValue{
-					Name:  key,
-					Value: JSON(valJSON),
-				})
-			}
-		}
-		return dagErr
-	}
-	if call.Name == "" {
-		return fmt.Errorf("call constructor: %w", baseErr)
-	}
-	return fmt.Errorf("call function %q: %w", call.Name, baseErr)
+	return outputBytes, execMD.ClientID, nil
 }
 
 /*
@@ -360,15 +342,15 @@ type ModuleTypes interface {
 		exposed by the module code.
 
 		This function prototype is different from the one exposed by the SDK.
-		SDK must implement the `ModuleTypes` function with the following signature:
+			SDK must implement the `ModuleTypes` function with the following signature:
 
-		```gql
-		  moduleTypes(
-		    modSource: ModuleSource!
-		    introspectionJSON: File!
-			outputFilePath: String!
-		  ): Container!
-		```
+			```gql
+			  moduleTypes(
+			    modSource: ModuleSource!
+			    introspectionJSON: File!
+				outputFilePath: String!
+			  ): Container!
+			```
 	*/
 	ModuleTypes(
 		context.Context,
@@ -379,8 +361,8 @@ type ModuleTypes interface {
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
 
-		// Call ID to perform the call against the right module
-		*call.ID,
+		// Partially initialized module used for any CurrentModule calls the SDK makes
+		*Module,
 	) (dagql.ObjectResult[*Module], error)
 }
 

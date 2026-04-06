@@ -17,24 +17,14 @@ import (
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
 	leasesproxy "github.com/containerd/containerd/v2/core/leases/proxy"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkcacheconfig "github.com/dagger/dagger/internal/buildkit/cache/config"
-	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
-	bkfrontend "github.com/dagger/dagger/internal/buildkit/frontend"
+	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
-	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
-	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
-	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -64,27 +54,18 @@ const (
 
 // Opts for a Client that are shared across all instances for a given DaggerServer
 type Opts struct {
-	Worker               *Worker
-	SessionManager       *bksession.Manager
-	BkSession            *bksession.Session
-	LLBBridge            bkfrontend.FrontendLLBBridge
-	Dialer               *net.Dialer
-	GetClientCaller      func(string) (bksession.Caller, error)
-	GetMainClientCaller  func() (bksession.Caller, error)
-	Entitlements         entitlements.Set
-	UpstreamCacheImports []bkgw.CacheOptionsEntry
-	Frontends            map[string]bkfrontend.Frontend
-
-	Refs   map[Reference]struct{}
-	RefsMu *sync.Mutex
+	Worker              *Worker
+	SessionManager      *bksession.Manager
+	Dialer              *net.Dialer
+	GetClientCaller     func(string) (bksession.Caller, error)
+	GetMainClientCaller func() (bksession.Caller, error)
+	GetRegistryResolver func(context.Context) (*serverresolver.Resolver, error)
 
 	Interactive        bool
 	InteractiveCommand []string
 
 	ParentClient *Client
 }
-
-type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
 
 // Client is dagger's internal interface to buildkit APIs
 type Client struct {
@@ -118,8 +99,12 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) ID() string {
-	return c.BkSession.ID()
+func (c *Client) RegisterInteractiveExec(execID string) bool {
+	if execID == "" {
+		return true
+	}
+	_, exists := c.execMap.LoadOrStore(execID, struct{}{})
+	return !exists
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelCauseFunc, error) {
@@ -148,109 +133,12 @@ func (c *Client) getRootClient() *Client {
 	return c.ParentClient.getRootClient()
 }
 
-func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, rerr error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel(errors.New("solve done"))
-	ctx = withOutgoingContext(ctx)
-
-	recordOp := func(def *bksolverpb.Definition) error {
-		dag, err := DefToDAG(def)
-		if err != nil {
-			return err
-		}
-		spanCtx := trace.SpanContextFromContext(ctx)
-		rootClient := c.getRootClient()
-		rootClient.opsmu.Lock()
-		_ = dag.Walk(func(od *OpDAG) error {
-			rootClient.ops[*od.OpDigest] = opCtx{
-				od:  od,
-				ctx: spanCtx,
-			}
-			return nil
-		})
-		rootClient.opsmu.Unlock()
-		return nil
-	}
-	if req.Definition != nil {
-		if err := recordOp(req.Definition); err != nil {
-			return nil, fmt.Errorf("record def ops: %w", err)
-		}
-	}
-	for name, def := range req.FrontendInputs {
-		if err := recordOp(def); err != nil {
-			return nil, fmt.Errorf("record frontend input %s ops: %w", name, err)
-		}
-	}
-
-	// include upstream cache imports, if any
-	req.CacheImports = c.UpstreamCacheImports
-
-	// handle secret and SSH translation
-	gw := newFilterGateway(c, req)
-	if v := SecretTranslatorFromContext(ctx); v != nil {
-		gw.secretTranslator = v
-	}
-	if v := SSHTranslatorFromContext(ctx); v != nil {
-		gw.sshTranslator = v
-	}
-	llbRes, err := gw.Solve(ctx, req, c.ID())
-	if err != nil {
-		return nil, WrapError(ctx, err, c)
-	}
-
-	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {
-		return newRef(rp, c), nil
-	})
-	if err != nil {
-		llbRes.EachRef(func(rp bksolver.ResultProxy) error {
-			return rp.Release(context.Background())
-		})
-		return nil, err
-	}
-
-	c.RefsMu.Lock()
-	defer c.RefsMu.Unlock()
-	if res.Ref != nil {
-		c.Refs[res.Ref] = struct{}{}
-	}
-	for _, rf := range res.Refs {
-		c.Refs[rf] = struct{}{}
-	}
-	return res, nil
-}
-
 func (c *Client) LookupOp(vertex digest.Digest) (*OpDAG, trace.SpanContext, bool) {
 	c = c.getRootClient()
 	c.opsmu.Lock()
 	opCtx, ok := c.ops[vertex]
 	c.opsmu.Unlock()
 	return opCtx.od, opCtx.ctx, ok
-}
-
-func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourceresolver.Opt) (string, digest.Digest, []byte, error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return "", "", nil, err
-	}
-	defer cancel(errors.New("resolve image config done"))
-	ctx = withOutgoingContext(ctx)
-
-	imr := sourceresolver.NewImageMetaResolver(c.LLBBridge)
-	return imr.ResolveImageConfig(ctx, ref, opt)
-}
-
-func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.SourceOp, opt sourceresolver.Opt) (*sourceresolver.MetaResponse, error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel(errors.New("resolve source metadata done"))
-	ctx = withOutgoingContext(ctx)
-
-	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
 }
 
 func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {
@@ -279,117 +167,6 @@ func RunInNetNS[T any](
 	}
 
 	return runInNetNS(ctx, runState, fn)
-}
-
-// CombinedResult returns a buildkit result with all the refs solved by this client so far.
-// This is useful for constructing a result for upstream remote caching.
-func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
-	c.RefsMu.Lock()
-	mergeInputs := make([]llb.State, 0, len(c.Refs))
-	for r := range c.Refs {
-		state, err := r.ToState()
-		if err != nil {
-			c.RefsMu.Unlock()
-			return nil, err
-		}
-		mergeInputs = append(mergeInputs, state)
-	}
-	c.RefsMu.Unlock()
-	llbdef, err := llb.Merge(mergeInputs, llb.WithCustomName("combined session result")).Marshal(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return c.Solve(ctx, bkgw.SolveRequest{
-		Definition: llbdef.ToPB(),
-	})
-}
-
-func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []ResolveCacheExporterFunc) error {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return err
-	}
-	defer cancel(errors.New("upstream cache export done"))
-
-	if len(cacheExportFuncs) == 0 {
-		return nil
-	}
-	bklog.G(ctx).Debugf("exporting %d caches", len(cacheExportFuncs))
-
-	combinedResult, err := c.CombinedResult(ctx)
-	if err != nil {
-		return err
-	}
-	cacheRes, err := ConvertToWorkerCacheResult(ctx, combinedResult)
-	if err != nil {
-		return fmt.Errorf("failed to convert result: %w", err)
-	}
-	bklog.G(ctx).Debugf("converting to solverRes")
-	solverRes, err := solverresult.ConvertResult(combinedResult, func(rf *ref) (bksolver.CachedResult, error) {
-		return rf.resultProxy.Result(ctx)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to convert result: %w", err)
-	}
-
-	sessionGroup := bksession.NewGroup(c.ID())
-	eg, ctx := errgroup.WithContext(ctx)
-	// TODO: send progrock statuses for cache export progress
-	for _, exporterFunc := range cacheExportFuncs {
-		eg.Go(func() error {
-			bklog.G(ctx).Debugf("getting exporter")
-			exporter, err := exporterFunc(ctx, sessionGroup)
-			if err != nil {
-				return err
-			}
-			bklog.G(ctx).Debugf("exporting cache with %T", exporter)
-			compressionCfg := exporter.Config().Compression
-			err = solverresult.EachRef(solverRes, cacheRes, func(res bksolver.CachedResult, ref bkcache.ImmutableRef) error {
-				bklog.G(ctx).Debugf("exporting cache for %s", ref.ID())
-				ctx := withDescHandlerCacheOpts(ctx, ref)
-				bklog.G(ctx).Debugf("calling exporter")
-				_, err = res.CacheKeys()[0].Exporter.ExportTo(ctx, exporter, bksolver.CacheExportOpt{
-					ResolveRemotes: func(ctx context.Context, res bksolver.Result) ([]*bksolver.Remote, error) {
-						ref, ok := res.Sys().(*bkworker.WorkerRef)
-						if !ok {
-							return nil, fmt.Errorf("invalid result: %T", res.Sys())
-						}
-						bklog.G(ctx).Debugf("getting remotes for %s", ref.ID())
-						defer bklog.G(ctx).Debugf("got remotes for %s", ref.ID())
-						return ref.GetRemotes(ctx, true, bkcacheconfig.RefConfig{Compression: compressionCfg}, false, sessionGroup)
-					},
-					Mode:           bksolver.CacheExportModeMax,
-					Session:        sessionGroup,
-					CompressionOpt: &compressionCfg,
-				})
-				return err
-			})
-			if err != nil {
-				return err
-			}
-			bklog.G(ctx).Debugf("finalizing exporter")
-			defer bklog.G(ctx).Debugf("finalized exporter")
-			_, err = exporter.Finalize(ctx)
-			return err
-		})
-	}
-	bklog.G(ctx).Debugf("waiting for cache export")
-	defer bklog.G(ctx).Debugf("waited for cache export")
-	return eg.Wait()
-}
-
-func withDescHandlerCacheOpts(ctx context.Context, ref bkcache.ImmutableRef) context.Context {
-	return bksolver.WithCacheOptGetter(ctx, func(_ bool, keys ...any) map[any]any {
-		vals := make(map[any]any)
-		for _, k := range keys {
-			if key, ok := k.(bkcache.DescHandlerKey); ok {
-				if handler := ref.DescHandler(digest.Digest(key)); handler != nil {
-					vals[k] = handler
-				}
-			}
-		}
-		return vals
-	})
 }
 
 func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.Caller, rerr error) {
@@ -966,182 +743,7 @@ func withOutgoingContext(ctx context.Context) context.Context {
 	if ok {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
-	ctx = buildkitTelemetryProvider(ctx)
 	return ctx
-}
-
-// filteringGateway is a helper gateway that filters+converts various
-// operations for the frontend
-type filteringGateway struct {
-	bkfrontend.FrontendLLBBridge
-
-	// secretTranslator is a function to convert secret ids. Frontends may
-	// attempt to access secrets by raw IDs, but they may be keyed differently
-	// in the secret store.
-	secretTranslator SecretTranslator
-
-	// sshTranslator is a function to convert SSH mount ids. Frontends may
-	// reference SSH agents by name (e.g. "default"), but they need to be
-	// mapped to the actual socket IDs in the socket store.
-	sshTranslator SSHTranslator
-
-	// client is the top-most client that is owning the filtering process
-	client *Client
-
-	// skipInputs specifies op digests that were part of the request inputs and
-	// so shouldn't be processed.
-	skipInputs map[digest.Digest]struct{}
-}
-
-func newFilterGateway(client *Client, req bkgw.SolveRequest) *filteringGateway {
-	inputs := map[digest.Digest]struct{}{}
-	for _, inp := range req.FrontendInputs {
-		for _, def := range inp.Def {
-			inputs[digest.FromBytes(def)] = struct{}{}
-		}
-	}
-
-	return &filteringGateway{
-		client:            client,
-		FrontendLLBBridge: client.LLBBridge,
-
-		skipInputs: inputs,
-	}
-}
-
-func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveRequest, sid string) (*bkfrontend.Result, error) {
-	switch {
-	case req.Definition != nil && req.Definition.Def != nil:
-		if gw.secretTranslator != nil || gw.sshTranslator != nil {
-			dag, err := DefToDAG(req.Definition)
-			if err != nil {
-				return nil, err
-			}
-
-			if err := dag.Walk(func(dag *OpDAG) error {
-				if _, ok := gw.skipInputs[*dag.OpDigest]; ok {
-					return SkipInputs
-				}
-
-				execOp, ok := dag.AsExec()
-				if !ok {
-					return nil
-				}
-
-				if gw.secretTranslator != nil {
-					for _, secret := range execOp.ExecOp.GetSecretenv() {
-						secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
-						if err != nil {
-							return err
-						}
-					}
-				}
-				for _, mount := range execOp.ExecOp.GetMounts() {
-					switch {
-					case mount.MountType == bksolverpb.MountType_SECRET && gw.secretTranslator != nil:
-						secret := mount.SecretOpt
-						secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
-						if err != nil {
-							return err
-						}
-					case mount.MountType == bksolverpb.MountType_SSH && gw.sshTranslator != nil:
-						ssh := mount.SSHOpt
-						ssh.ID, err = gw.sshTranslator(ssh.ID, ssh.Optional)
-						if err != nil {
-							return err
-						}
-					}
-				}
-				return nil
-			}); err != nil {
-				return nil, err
-			}
-
-			newDef, err := dag.Marshal()
-			if err != nil {
-				return nil, err
-			}
-			req.Definition = newDef
-		}
-
-		res, err := gw.FrontendLLBBridge.Solve(ctx, req, sid)
-		if err != nil {
-			bklog.G(ctx).Errorf("solve error: %v", err)
-			err = includeBuildkitContextCancelledLine(err)
-			return nil, err
-		}
-		return res, nil
-
-	case req.Frontend != "":
-		// HACK: don't force evaluation like this, we can write custom frontend
-		// wrappers (for dockerfile.v0 and gateway.v0) that read from ctx to
-		// replace the llbBridge it knows about.
-		// This current implementation may be limited when it comes to
-		// implement provenance/etc.
-
-		f, ok := gw.client.Frontends[req.Frontend]
-		if !ok {
-			return nil, fmt.Errorf("invalid frontend: %s", req.Frontend)
-		}
-
-		llbRes, err := f.Solve(
-			ctx,
-			gw,
-			gw.client.Worker, // also implements Executor
-			req.FrontendOpt,
-			req.FrontendInputs,
-			sid,
-			gw.client.SessionManager,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if req.Evaluate {
-			err = llbRes.EachRef(func(ref bksolver.ResultProxy) error {
-				_, err := ref.Result(ctx)
-				return err
-			})
-			if err != nil {
-				return nil, err
-			}
-		}
-		return llbRes, nil
-
-	default:
-		return &bkfrontend.Result{}, nil
-	}
-}
-
-type secretTranslatorKey struct{}
-
-type SecretTranslator func(name string, optional bool) (string, error)
-
-func WithSecretTranslator(ctx context.Context, s SecretTranslator) context.Context {
-	return context.WithValue(ctx, secretTranslatorKey{}, s)
-}
-
-func SecretTranslatorFromContext(ctx context.Context) SecretTranslator {
-	v := ctx.Value(secretTranslatorKey{})
-	if v == nil {
-		return nil
-	}
-	return v.(SecretTranslator)
-}
-
-type sshTranslatorKey struct{}
-
-type SSHTranslator func(id string, optional bool) (string, error)
-
-func WithSSHTranslator(ctx context.Context, t SSHTranslator) context.Context {
-	return context.WithValue(ctx, sshTranslatorKey{}, t)
-}
-
-func SSHTranslatorFromContext(ctx context.Context) SSHTranslator {
-	v := ctx.Value(sshTranslatorKey{})
-	if v == nil {
-		return nil
-	}
-	return v.(SSHTranslator)
 }
 
 func ToEntitlementStrings(ents entitlements.Set) []string {
