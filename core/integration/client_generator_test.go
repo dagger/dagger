@@ -1869,11 +1869,7 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 		}
 		`)).
 		With(daggerClientInstall("go")).
-		With(func(ctr *dagger.Container) *dagger.Container {
-			return ctr.
-				WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
-				WithExec([]string{"go", "mod", "tidy"})
-		}).
+		With(useLocalSDK(c, defaultGenDir)).
 		WithExec([]string{"apk", "add", "jq"}).
 		// Switch the dependency to @main and clear the pin so the engine
 		// resolves HEAD (a different commit than v1.2.3). The generated
@@ -2069,20 +2065,31 @@ func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *test
 	})
 }
 
-// addSDKReplaceToClient adds SDK replace directive and runs go mod tidy for testing.
-// This is test-specific - production code doesn't need this.
+// useLocalSDK mounts the local Go SDK into the client directory and adds
+// replace directives so that both the client and parent module resolve
+// dagger.io/dagger from the local source instead of the module proxy.
 //
 // Go ignores replace directives in non-main modules, so we add the replace
 // in both the client's go.mod (for direct builds) and the parent go.mod
 // (for when the parent is the main module importing the client).
+func useLocalSDK(c *dagger.Client, clientDir string) func(*dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithDirectory(filepath.Join(clientDir, "sdk"), c.Host().Directory("../../sdk/go")).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", clientDir)}).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", clientDir)}).
+			WithExec([]string{"go", "mod", "edit", fmt.Sprintf("-replace=dagger.io/dagger=./%s/sdk", clientDir)}).
+			WithExec([]string{"go", "mod", "tidy"})
+	}
+}
+
+// addSDKReplaceToClient is a legacy wrapper around useLocalSDK for call sites
+// that mount the SDK directory separately. Prefer useLocalSDK for new code.
 func addSDKReplaceToClient(clientDir string) func(*dagger.Container) *dagger.Container {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", clientDir)}).
 			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", clientDir)}).
-			// Also add the replace to the parent module — Go ignores replace
-			// directives in dependency modules, so the parent must map the
-			// SDK path itself.
 			WithExec([]string{"go", "mod", "edit", fmt.Sprintf("-replace=dagger.io/dagger=./%s/sdk", clientDir)}).
 			WithExec([]string{"go", "mod", "tidy"})
 	}
