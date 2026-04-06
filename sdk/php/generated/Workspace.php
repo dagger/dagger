@@ -14,6 +14,27 @@ namespace Dagger;
 class Workspace extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Canonical Dagger address of the workspace directory.
+     */
+    public function address(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('address');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'address');
+    }
+
+    /**
+     * Return all checks from modules loaded in the workspace.
+     */
+    public function checks(?array $include = null): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The client ID that owns this workspace's host filesystem.
      */
     public function clientId(): string
@@ -23,9 +44,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Path to config.toml relative to the workspace boundary (empty if not initialized).
+     */
+    public function configPath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configPath');
+    }
+
+    /**
      * Returns a Directory from the workspace.
      *
-     * Path is relative to workspace root. Use "." for the root directory.
+     * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
      */
     public function directory(
         string $path,
@@ -50,7 +80,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a File from the workspace.
      *
-     * Path is relative to workspace root.
+     * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
      */
     public function file(string $path): File
     {
@@ -62,9 +92,11 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Search for a file or directory by walking up from the start path within the workspace.
      *
-     * Returns the path relative to the workspace root if found, or null if not found.
+     * Returns the absolute workspace path if found, or null if not found.
      *
-     * The search stops at the workspace root and will not traverse above it.
+     * Relative start paths resolve from the workspace directory.
+     *
+     * The search stops at the workspace boundary and will not traverse above it.
      */
     public function findUp(string $name, ?string $from = '.'): string
     {
@@ -77,6 +109,27 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return all generators from modules loaded in the workspace.
+     */
+    public function generators(?array $include = null): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Whether a config.toml file exists in the workspace.
+     */
+    public function hasConfig(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hasConfig');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'hasConfig');
+    }
+
+    /**
      * A unique identifier for this Workspace.
      */
     public function id(): WorkspaceId
@@ -86,11 +139,32 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Absolute path to the workspace root directory.
+     * Whether .dagger/config.toml exists.
      */
-    public function root(): string
+    public function initialized(): bool
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('root');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'root');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('initialized');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'initialized');
+    }
+
+    /**
+     * Workspace directory path relative to the workspace boundary.
+     */
+    public function path(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
+     * Return all services from modules loaded in the workspace.
+     */
+    public function services(?array $include = null): UpGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

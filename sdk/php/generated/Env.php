@@ -80,6 +80,18 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return all services defined by the installed modules
+     */
+    public function services(?array $include = null): UpGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type Address in the environment
      */
     public function withAddressInput(string $name, AddressId|Address $value, string $description): Env
@@ -561,6 +573,29 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Create or update a binding of type PhpSdk in the environment
+     */
+    public function withPhpSdkInput(string $name, PhpSdkId|PhpSdk $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPhpSdkInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired PhpSdk output to be assigned in the environment
+     */
+    public function withPhpSdkOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPhpSdkOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type SearchResult in the environment
      */
     public function withSearchResultInput(string $name, SearchResultId|SearchResult $value, string $description): Env
@@ -719,6 +754,52 @@ class Env extends Client\AbstractObject implements Client\IdAble
     public function withStringOutput(string $name, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withStringOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create or update a binding of type UpGroup in the environment
+     */
+    public function withUpGroupInput(string $name, UpGroupId|UpGroup $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpGroupInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired UpGroup output to be assigned in the environment
+     */
+    public function withUpGroupOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpGroupOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create or update a binding of type Up in the environment
+     */
+    public function withUpInput(string $name, UpId|Up $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired Up output to be assigned in the environment
+     */
+    public function withUpOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpOutput');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('description', $description);
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));

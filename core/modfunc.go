@@ -30,8 +30,10 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-const MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
-const MinFunctionCacheTTLSeconds = 1
+const (
+	MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
+	MinFunctionCacheTTLSeconds = 1
+)
 
 type ModuleFunction struct {
 	mod    *Module
@@ -231,7 +233,8 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 			uiFnName += "." + fn.metadata.Name
 		}
 		console(ctx, "user default: %s(%s=%q)", uiFnName, argName, argDefault.UserInput)
-		if argDefault.IsObject() {
+		if argDefault.IsObject() ||
+			(argDefault.IsList() && arg.metadata.TypeDef.AsList.Value.ElementTypeDef.Kind == TypeDefKindObject) {
 			// FIXME (cosmetic): expose the user default value to the client, without
 			// breaking other things
 			arg.metadata.TypeDef.Optional = true
@@ -293,6 +296,8 @@ func (udp *UserDefaultPrimitive) Value() (any, error) {
 	switch udp.Arg.TypeDef.Kind {
 	case TypeDefKindString:
 		return udp.UserInput, nil
+	case TypeDefKindList:
+		return strings.Split(udp.UserInput, ","), nil
 	case TypeDefKindInteger:
 		v, err := strconv.Atoi(udp.UserInput)
 		if err != nil {
@@ -350,8 +355,16 @@ func (ud *UserDefault) IsObject() bool {
 	return ud.Arg.TypeDef.Kind == TypeDefKindObject
 }
 
+func (ud *UserDefault) IsList() bool {
+	return ud.Arg.TypeDef.Kind == TypeDefKindList
+}
+
 func (ud *UserDefault) Value(ctx context.Context) (any, error) {
-	if !ud.IsObject() {
+	if !ud.IsObject() && !ud.IsList() {
+		return ud.UserDefaultPrimitive.Value()
+	}
+	// List of non-object elements (e.g. []string) is handled by the primitive path
+	if ud.IsList() && ud.Arg.TypeDef.AsList.Value.ElementTypeDef.Kind != TypeDefKindObject {
 		return ud.UserDefaultPrimitive.Value()
 	}
 	query, err := CurrentQuery(ctx)
@@ -365,56 +378,88 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
 	// Resolve object from user-supplied "address"
 	srv := dagql.CurrentDagqlServer(mainCtx)
+
+	resolveOne := func(userInput, typename string) (any, error) {
+		var result dagql.AnyObjectResult
+		if err := srv.Select(mainCtx, srv.Root(), &result,
+			dagql.Selector{
+				Field: "address",
+				Args: []dagql.NamedInput{{
+					Name:  "value",
+					Value: dagql.NewString(userInput),
+				}},
+			},
+			dagql.Selector{
+				Field: strings.ToLower(typename),
+			},
+		); err != nil {
+			return nil, ud.errorf(err, "resolve object (%q)", typename)
+		}
+
+		if secret, ok := dagql.UnwrapAs[dagql.ObjectResult[*Secret]](result); ok {
+			secretStore, err := query.Secrets(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get secret store: %w", err)
+			}
+			if err := secretStore.AddSecret(secret); err != nil {
+				return nil, fmt.Errorf("failed to add secret: %w", err)
+			}
+		}
+
+		id, err := result.Select(mainCtx, srv, dagql.Selector{
+			Field: "id",
+		})
+		if err != nil {
+			return nil, ud.errorf(err, "get object ID")
+		}
+		return id.Unwrap(), nil
+	}
+
+	if ud.IsList() {
+		// "Secret" -> "secret", "GitRef" -> "gitRef", etc (from the element type)
+		typename := ud.Arg.TypeDef.AsList.Value.ElementTypeDef.ToType().Name()
+		elements := strings.Split(ud.UserInput, ",")
+		ids := make([]any, 0, len(elements))
+		for _, elem := range elements {
+			id, err := resolveOne(strings.TrimSpace(elem), typename)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		return ids, nil
+	}
+
 	// "Secret" -> "secret", "GitRef" -> "gitRef", etc
 	typename := ud.Arg.TypeDef.ToType().Name()
-	typename = strings.ToLower(typename[0:1]) + typename[1:]
-	var result dagql.AnyObjectResult
-	if err := srv.Select(mainCtx, srv.Root(), &result,
-		dagql.Selector{
-			Field: "address",
-			Args: []dagql.NamedInput{{
-				Name:  "value",
-				Value: dagql.NewString(ud.UserInput),
-			}},
-		},
-		dagql.Selector{
-			Field: strings.ToLower(typename),
-		},
-	); err != nil {
-		return nil, ud.errorf(err, "resolve object (%q)", typename)
-	}
-
-	if secret, ok := dagql.UnwrapAs[dagql.ObjectResult[*Secret]](result); ok {
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		if err := secretStore.AddSecret(secret); err != nil {
-			return nil, fmt.Errorf("failed to add secret: %w", err)
-		}
-	}
-
-	id, err := result.Select(mainCtx, srv, dagql.Selector{
-		Field: "id",
-	})
-	if err != nil {
-		return nil, ud.errorf(err, "get object ID")
-	}
-
-	return id.Unwrap(), nil
+	return resolveOne(ud.UserInput, typename)
 }
 
-func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.IDType, error) {
-	if !ud.IsObject() {
-		return nil, ud.errorf(nil, "DagqlID(): primitive type has not ID")
+func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.Input, error) {
+	if !ud.IsObject() && !ud.IsList() {
+		return nil, ud.errorf(nil, "DagqlID(): primitive type has no ID")
 	}
 	value, err := ud.Value(ctx)
 	if err != nil {
 		return nil, ud.errorf(err, "DagqlInput(): decode value")
 	}
-	id, isID := value.(dagql.IDType)
-	if isID {
+	// Object case: single ID
+	if id, isID := value.(dagql.IDType); isID {
 		return id, nil
+	}
+	// List of objects case: build a DynamicArrayInput from the resolved IDs
+	if ids, isList := value.([]any); isList {
+		arr := dagql.DynamicArrayInput{
+			Elem: ud.Arg.TypeDef.AsList.Value.ElementTypeDef.ToInput(),
+		}
+		for _, rawID := range ids {
+			input, ok := rawID.(dagql.Input)
+			if !ok {
+				return nil, ud.errorf(nil, "DagqlID(): list element is not an input: %T", rawID)
+			}
+			arr.Values = append(arr.Values, input)
+		}
+		return arr, nil
 	}
 	return nil, ud.errorf(nil, "DagqlID(): not an id: %q", value)
 }
@@ -436,7 +481,33 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 	if !ok {
 		return nil, false, fmt.Errorf("lookup default: function %q has no argument %q", fn.metadata.Name, argName)
 	}
-	// Lookup user default for the requested arg
+
+	isConstructor := fn.metadata.Name == ""
+
+	// TODO(workspace-env-expansion): Implement ${VAR} expansion for workspace config string values.
+	//
+	// Spec:
+	// - $VAR and ${VAR} in string config values should resolve to system environment variables
+	// - NO cascading: $FOO always means the system env var FOO, never another config key
+	// - Resolution should go through the Workspace type (gateway for client context access)
+	// - The Workspace type should expose a method for resolving system env vars,
+	//   which can later be gated by interactive prompts, allow/deny policies, value injection
+	// - Consider docker-compose's variable substitution spec as reference for syntax
+	// - For now, string values pass through as-is (no expansion)
+
+	// PATH A: Workspace config (constructor only, no EnvFile)
+	if fn.mod.WorkspaceConfig != nil && isConstructor {
+		val, ok := lookupConfigCaseInsensitive(fn.mod.WorkspaceConfig, arg.OriginalName, arg.Name)
+		if ok {
+			return fn.newUserDefault(arg, configValueToString(val)), true, nil
+		}
+		// Not in workspace config — only fall through to .env if enabled
+		if !fn.mod.DefaultsFromDotEnv {
+			return nil, false, nil
+		}
+	}
+
+	// PATH B: existing .env pipeline (completely unchanged)
 	// We need access to the main client's context for resolving system env variables
 	// (otherwise we may resolve them in the module container's context)
 	// so we upgrade the context to the main client.
@@ -477,6 +548,7 @@ func (fn *ModuleFunction) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	return objDefaults.Namespace(ctx, fn.metadata.OriginalName)
 }
 
+//nolint:gocyclo
 func (fn *ModuleFunction) CacheConfigForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,
@@ -507,7 +579,8 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			// was explicitly set by the user, skip
 			continue
 		}
-		if argMetadata.TypeDef.Kind != TypeDefKindObject {
+		if argMetadata.TypeDef.Kind != TypeDefKindObject &&
+			(argMetadata.TypeDef.Kind != TypeDefKindList || argMetadata.TypeDef.AsList.Value.ElementTypeDef.Kind != TypeDefKindObject) {
 			// Only default objects need processing at this time.
 			// Primitive default values were already processes earlier
 			//  in the flow.
@@ -586,19 +659,24 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			})
 		}
 
-		// Process user-defined user defaults for objects
-		userDefaultVals := make([]*argInput, len(userDefaults))
+		// Process user-defined user defaults for objects (and lists of objects)
+		type userDefaultArgInput struct {
+			argName  string
+			origName string
+			val      dagql.Input // IDType for single objects, DynamicArrayInput for lists
+		}
+		userDefaultVals := make([]*userDefaultArgInput, len(userDefaults))
 		for i, userDefault := range userDefaults {
 			eg.Go(func() error {
-				id, err := userDefault.DagqlID(ctx)
+				input, err := userDefault.DagqlID(ctx)
 				if err != nil {
 					return err
 				}
 				arg := userDefault.Arg
-				userDefaultVals[i] = &argInput{
+				userDefaultVals[i] = &userDefaultArgInput{
 					argName:  arg.Name,
 					origName: arg.OriginalName,
-					val:      id,
+					val:      input,
 				}
 				return nil
 			})
@@ -643,12 +721,28 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					dagql.Opt(arg.val).ToLiteral(),
 					false,
 				))
-				id := arg.val.ID()
-				dgst := id.ContentDigest()
-				if dgst == "" {
-					dgst = id.Digest()
+				switch v := arg.val.(type) {
+				case dagql.IDType:
+					id := v.ID()
+					dgst := id.ContentDigest()
+					if dgst == "" {
+						dgst = id.Digest()
+					}
+					dgstInputs = append(dgstInputs, arg.origName, dgst.String())
+				case dagql.DynamicArrayInput:
+					elemDgsts := make([]string, 0, len(v.Values))
+					for _, elem := range v.Values {
+						if idElem, ok := elem.(dagql.IDType); ok {
+							id := idElem.ID()
+							dgst := id.ContentDigest()
+							if dgst == "" {
+								dgst = id.Digest()
+							}
+							elemDgsts = append(elemDgsts, dgst.String())
+						}
+					}
+					dgstInputs = append(dgstInputs, arg.origName, hashutil.HashStrings(elemDgsts...).String())
 				}
-				dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 			}
 		}
 	}
@@ -930,7 +1024,7 @@ func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
 func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	props[prefix+"module_name"] = mod.Name()
 
-	source := mod.ContextSource.Value.Self()
+	source := mod.Source.Value.Self()
 	switch source.Kind {
 	case ModuleSourceKindLocal:
 		props[prefix+"source_kind"] = "local"
@@ -1005,6 +1099,13 @@ func (fn *ModuleFunction) loadContextualArg(
 		return nil, fmt.Errorf("argument %q is not a contextual argument", arg.OriginalName)
 	}
 
+	// Legacy compat: resolve +defaultPath from workspace root for migrated
+	// blueprints/toolchains instead of the module's own source directory.
+	if fn.mod.LegacyDefaultPath {
+		console(ctx, "WARNING: module %q uses legacy-default-path; port to workspace API and remove this flag", fn.mod.Name())
+		return fn.loadLegacyDefaultPathArg(ctx, dag, arg)
+	}
+
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
 		contentCacheKey := fn.mod.ContentDigestCacheKey()
@@ -1023,7 +1124,7 @@ func (fn *ModuleFunction) loadContextualArg(
 					},
 					{
 						Name:  "module",
-						Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
+						Value: dagql.String(fn.mod.Source.Value.Self().AsString()),
 					},
 					{
 						Name:  "digest",
@@ -1050,7 +1151,7 @@ func (fn *ModuleFunction) loadContextualArg(
 					},
 					{
 						Name:  "module",
-						Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
+						Value: dagql.String(fn.mod.Source.Value.Self().AsString()),
 					},
 					{
 						Name:  "digest",
@@ -1065,107 +1166,167 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*File](f.ID()), nil
 
 	case "GitRepository", "GitRef":
-		// only local sources and git repos sourced from local dirs need special handling
-		// to prevent errant reloads, other module types are reproducible and can be called directly
-		isLocalMod := fn.mod.ContextSource.Value.Self().Kind == ModuleSourceKindLocal
-		cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
-		isLocalGit := cleanedPath == "." || cleanedPath == ".git"
-		if isLocalMod && isLocalGit {
-			contentCacheKey := fn.mod.ContentDigestCacheKey()
-			switch arg.TypeDef.AsObject.Value.Name {
-			case "GitRepository":
-				var f dagql.ObjectResult[*GitRepository]
-				err := dag.Select(ctx, dag.Root(), &f,
-					dagql.Selector{
-						Field: "_contextGitRepository",
-						Args: []dagql.NamedInput{
-							{
-								Name:  "module",
-								Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
-							},
-							{
-								Name:  "digest",
-								Value: dagql.String(contentCacheKey),
-							},
-						},
-					},
-				)
-				if err != nil {
-					return nil, fmt.Errorf("load contextual git repository %q: %w", arg.DefaultPath, err)
-				}
-				return dagql.NewID[*GitRepository](f.ID()), nil
-
-			case "GitRef":
-				var f dagql.ObjectResult[*GitRef]
-				err := dag.Select(ctx, dag.Root(), &f,
-					dagql.Selector{
-						Field: "_contextGitRef",
-						Args: []dagql.NamedInput{
-							{
-								Name:  "module",
-								Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
-							},
-							{
-								Name:  "digest",
-								Value: dagql.String(contentCacheKey),
-							},
-						},
-					},
-				)
-				if err != nil {
-					return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
-				}
-				return dagql.NewID[*GitRef](f.ID()), nil
-			}
-		}
-
-		var git dagql.ObjectResult[*GitRepository]
-		if isLocalGit {
-			// handle getting the git repo from the current module context
-			var err error
-			git, err = fn.mod.ContextSource.Value.Self().LoadContextGit(ctx, dag)
-			if err != nil {
-				return nil, err
-			}
-		} else if gitURL, err := gitutil.ParseURL(arg.DefaultPath); err == nil {
-			// handle an arbitrary git URL
-			args := []dagql.NamedInput{
-				{Name: "url", Value: dagql.String(gitURL.String())},
-			}
-			if gitURL.Fragment != nil {
-				args = append(args, dagql.NamedInput{Name: "ref", Value: dagql.String(gitURL.Fragment.Ref)})
-			}
-
-			err := dag.Select(ctx, dag.Root(), &git,
-				dagql.Selector{Field: "git", Args: args},
-			)
-			if err != nil {
-				return nil, fmt.Errorf("load contextual git repository: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("parse git URL %q: %w", arg.DefaultPath, err)
-		}
-
-		switch arg.TypeDef.AsObject.Value.Name {
-		case "GitRepository":
-			return dagql.NewID[*GitRepository](git.ID()), nil
-
-		case "GitRef":
-			var gitRef dagql.ObjectResult[*GitRef]
-			err := dag.Select(ctx, git, &gitRef,
-				dagql.Selector{
-					Field: "head",
-				},
-			)
-			if err != nil {
-				return nil, fmt.Errorf("load contextual git ref: %w", err)
-			}
-
-			return dagql.NewID[*GitRef](gitRef.ID()), nil
-		}
+		return fn.loadContextualGitArg(ctx, dag, arg)
 	}
 
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+}
+
+// loadContextualGitArg resolves a +defaultPath argument for GitRepository or
+// GitRef types. For local modules with a local git path (. or .git), it uses
+// a cache-keyed selector to prevent errant reloads. Otherwise it loads from
+// the module context or parses a remote git URL.
+func (fn *ModuleFunction) loadContextualGitArg(
+	ctx context.Context,
+	dag *dagql.Server,
+	arg *FunctionArg,
+) (dagql.IDType, error) {
+	isLocalMod := fn.mod.Source.Value.Self().Kind == ModuleSourceKindLocal
+	cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
+	isLocalGit := cleanedPath == "." || cleanedPath == ".git"
+
+	// Local sources with local git need special handling to prevent
+	// errant reloads; other module types are reproducible.
+	if isLocalMod && isLocalGit {
+		contentCacheKey := fn.mod.ContentDigestCacheKey()
+		switch arg.TypeDef.AsObject.Value.Name {
+		case "GitRepository":
+			var f dagql.ObjectResult[*GitRepository]
+			err := dag.Select(ctx, dag.Root(), &f,
+				dagql.Selector{
+					Field: "_contextGitRepository",
+					Args: []dagql.NamedInput{
+						{Name: "module", Value: dagql.String(fn.mod.Source.Value.Self().AsString())},
+						{Name: "digest", Value: dagql.String(contentCacheKey)},
+					},
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("load contextual git repository %q: %w", arg.DefaultPath, err)
+			}
+			return dagql.NewID[*GitRepository](f.ID()), nil
+
+		case "GitRef":
+			var f dagql.ObjectResult[*GitRef]
+			err := dag.Select(ctx, dag.Root(), &f,
+				dagql.Selector{
+					Field: "_contextGitRef",
+					Args: []dagql.NamedInput{
+						{Name: "module", Value: dagql.String(fn.mod.Source.Value.Self().AsString())},
+						{Name: "digest", Value: dagql.String(contentCacheKey)},
+					},
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
+			}
+			return dagql.NewID[*GitRef](f.ID()), nil
+		}
+	}
+
+	var git dagql.ObjectResult[*GitRepository]
+	if isLocalGit {
+		var err error
+		git, err = fn.mod.Source.Value.Self().LoadContextGit(ctx, dag)
+		if err != nil {
+			return nil, err
+		}
+	} else if gitURL, err := gitutil.ParseURL(arg.DefaultPath); err == nil {
+		args := []dagql.NamedInput{
+			{Name: "url", Value: dagql.String(gitURL.String())},
+		}
+		if gitURL.Fragment != nil {
+			args = append(args, dagql.NamedInput{Name: "ref", Value: dagql.String(gitURL.Fragment.Ref)})
+		}
+		err := dag.Select(ctx, dag.Root(), &git,
+			dagql.Selector{Field: "git", Args: args},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load contextual git repository: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("parse git URL %q: %w", arg.DefaultPath, err)
+	}
+
+	switch arg.TypeDef.AsObject.Value.Name {
+	case "GitRepository":
+		return dagql.NewID[*GitRepository](git.ID()), nil
+	case "GitRef":
+		var gitRef dagql.ObjectResult[*GitRef]
+		err := dag.Select(ctx, git, &gitRef,
+			dagql.Selector{Field: "head"},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load contextual git ref: %w", err)
+		}
+		return dagql.NewID[*GitRef](gitRef.ID()), nil
+	default:
+		return nil, fmt.Errorf("unknown git contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+	}
+}
+
+// loadLegacyDefaultPathArg resolves a +defaultPath argument from the workspace
+// root instead of the module's own source directory. Used for legacy
+// blueprints/toolchains that relied on ContextSource injection.
+func (fn *ModuleFunction) loadLegacyDefaultPathArg(
+	ctx context.Context,
+	dag *dagql.Server,
+	arg *FunctionArg,
+) (dagql.IDType, error) {
+	switch arg.TypeDef.AsObject.Value.Name {
+	case "Directory":
+		var dir dagql.ObjectResult[*Directory]
+		err := dag.Select(ctx, dag.Root(), &dir,
+			dagql.Selector{
+				Field: "currentWorkspace",
+				Args: []dagql.NamedInput{
+					{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+				},
+			},
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(arg.DefaultPath)},
+					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load legacy default directory %q: %w", arg.DefaultPath, err)
+		}
+		return dagql.NewID[*Directory](dir.ID()), nil
+
+	case "File":
+		var f dagql.ObjectResult[*File]
+		err := dag.Select(ctx, dag.Root(), &f,
+			dagql.Selector{
+				Field: "currentWorkspace",
+				Args: []dagql.NamedInput{
+					{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+				},
+			},
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(arg.DefaultPath)},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load legacy default file %q: %w", arg.DefaultPath, err)
+		}
+		return dagql.NewID[*File](f.ID()), nil
+
+	case "GitRepository", "GitRef":
+		// For git, the legacy path can use the same logic as the regular
+		// contextual path — git doesn't resolve relative to the module
+		// source directory.
+		return fn.loadContextualGitArg(ctx, dag, arg)
+
+	default:
+		return nil, fmt.Errorf("legacy-default-path does not support type %q; port to workspace API",
+			arg.TypeDef.AsObject.Value.Name)
+	}
 }
 
 // loadWorkspaceArg loads a workspace argument by resolving it through the
@@ -1268,5 +1429,50 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		}
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
+	}
+}
+
+// lookupConfigCaseInsensitive performs a case-insensitive lookup in a workspace
+// config map, trying each of the provided names in order.
+func lookupConfigCaseInsensitive(m map[string]any, names ...string) (any, bool) {
+	for _, name := range names {
+		for k, v := range m {
+			if strings.EqualFold(k, name) {
+				return v, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// configValueToString converts a typed config value to its string representation.
+// Strings pass through as-is, bools become "true"/"false", numbers their decimal
+// representation, and arrays are JSON-encoded.
+func configValueToString(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case bool:
+		return strconv.FormatBool(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case int:
+		return strconv.Itoa(val)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case []any:
+		encoded, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Sprint(val)
+		}
+		return string(encoded)
+	case []string:
+		encoded, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Sprint(val)
+		}
+		return string(encoded)
+	default:
+		return fmt.Sprint(v)
 	}
 }

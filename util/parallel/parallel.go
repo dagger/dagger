@@ -46,6 +46,8 @@ type parallelJobs struct {
 	RollupSpans bool
 	Tracing     bool // If set to false, tracing is completely disabled (no otel spans are created)
 
+	// If true, cancel remaining jobs when the first job returns an error.
+	FailFast bool
 }
 
 type Job struct {
@@ -96,6 +98,12 @@ func (p parallelJobs) WithRollupSpans(rollupSpans bool) parallelJobs {
 func (p parallelJobs) WithRollupLogs(rollupLogs bool) parallelJobs {
 	p = p.Clone()
 	p.RollupLogs = rollupLogs
+	return p
+}
+
+func (p parallelJobs) WithFailFast(failFast bool) parallelJobs {
+	p = p.Clone()
+	p.FailFast = failFast
 	return p
 }
 
@@ -172,12 +180,28 @@ func (p parallelJobs) WithLimit(limit int) parallelJobs {
 }
 
 func (p parallelJobs) Run(ctx context.Context) error {
+	if p.FailFast {
+		return p.runFailFast(ctx)
+	}
 	eg := pool.New().WithErrors()
 	if p.Limit != nil {
 		eg = eg.WithMaxGoroutines(*p.Limit)
 	}
 	for _, job := range p.Jobs {
 		eg.Go(job.Runner(ctx))
+	}
+	return eg.Wait()
+}
+
+func (p parallelJobs) runFailFast(ctx context.Context) error {
+	eg := pool.New().WithContext(ctx).WithCancelOnError().WithFirstError()
+	if p.Limit != nil {
+		eg = eg.WithMaxGoroutines(*p.Limit)
+	}
+	for _, job := range p.Jobs {
+		eg.Go(func(ctx context.Context) error {
+			return job.Runner(ctx)()
+		})
 	}
 	return eg.Wait()
 }

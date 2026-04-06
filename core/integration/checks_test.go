@@ -143,6 +143,20 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := checksTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.WithWorkdir("hello-with-checks")
+	// run all checks with --failfast; should fail because there are failing checks
+	out, err := modGen.
+		With(daggerExecFail("--progress=report", "check", "--failfast")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "ERROR")
+	require.Contains(t, out, "context canceled")
+}
+
 func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {

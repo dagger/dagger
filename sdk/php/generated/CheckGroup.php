@@ -40,9 +40,12 @@ class CheckGroup extends Client\AbstractObject implements Client\IdAble
     /**
      * Execute all selected checks
      */
-    public function run(): CheckGroup
+    public function run(?bool $failFast = null): CheckGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
+        if (null !== $failFast) {
+        $innerQueryBuilder->setArgument('failFast', $failFast);
+        }
         return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

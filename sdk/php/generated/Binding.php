@@ -182,6 +182,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type PhpSdk
+     */
+    public function asPhpSdk(): PhpSdk
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asPhpSdk');
+        return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type SearchResult
      */
     public function asSearchResult(): SearchResult
@@ -242,6 +251,24 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asString');
         return (string)$this->queryLeaf($leafQueryBuilder, 'asString');
+    }
+
+    /**
+     * Retrieve the binding value, as type Up
+     */
+    public function asUp(): Up
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asUp');
+        return new \Dagger\Up($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type UpGroup
+     */
+    public function asUpGroup(): UpGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asUpGroup');
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

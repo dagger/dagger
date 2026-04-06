@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
-	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -158,30 +158,31 @@ func daggerUpAndGetEndpoint(ctx context.Context, t *testctx.T, modDir string, da
 	return fmt.Sprintf("http://127.0.0.1:%s", trafficPort)
 }
 
+var tunnelPortRegex = regexp.MustCompile(`tunnel started port=(\d+)`)
+
 // Starts container and return the random port used for the tunnel
 func daggerUpAndGetEndpointFromLogs(ctx context.Context, t *testctx.T, modDir string, daggerArgs []string, trafficPort string) string {
-	console, err := newTUIConsole(t, time.Minute)
-	require.NoError(t, err)
-
-	tty := console.Tty()
-
-	err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 80})
-	require.NoError(t, err)
-
+	var logs safeBuffer
 	cmd := hostDaggerCommand(ctx, t, modDir, daggerArgs...)
-	cmd.Env = append(cmd.Env, "NO_COLOR=true")
+	cmd.Env = append(cmd.Env, "NO_COLOR=true", "DAGGER_PROGRESS=logs")
 	cmd.Stdin = nil
-	cmd.Stdout = tty
-	cmd.Stderr = tty
+	cmd.Stdout = &logs
+	cmd.Stderr = &logs
 
-	err = cmd.Start()
+	err := cmd.Start()
 	require.NoError(t, err)
 
-	_, matches, err := console.MatchLine(ctx, `tunnel started port=(\d+)`)
-	require.NoError(t, err)
-
-	port := matches[1]
-	t.Logf("random port: %s", port)
+	var port string
+	require.Eventually(t, func() bool {
+		tunnelPortRegex.MatchString(logs.String())
+		matches := tunnelPortRegex.FindStringSubmatch(logs.String())
+		if len(matches) == 0 {
+			return false
+		}
+		port = matches[1]
+		t.Logf("random port: %s", port)
+		return true
+	}, time.Minute, time.Second)
 
 	return fmt.Sprintf("http://127.0.0.1:%s", port)
 }

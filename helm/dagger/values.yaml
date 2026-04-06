@@ -135,6 +135,12 @@ engine:
   shareProcessNamespace: false
 
   readinessProbeSettings:
+    exec:
+      command:
+        - sh
+        - -exc
+        - |-
+          dagger core version
     initialDelaySeconds: 5
     timeoutSeconds: 14
     periodSeconds: 15
@@ -142,6 +148,12 @@ engine:
     failureThreshold: 10
 
   livenessProbeSettings:
+    exec:
+      command:
+        - sh
+        - -exc
+        - |-
+          dagger core version
     initialDelaySeconds: 5
     timeoutSeconds: 29
     periodSeconds: 30

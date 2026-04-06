@@ -47,7 +47,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
-			Doc(`The TypeDef representations of the objects currently being served in the session.`),
+			Doc(`The TypeDef representations of the objects currently being served in the session.`).
+			Args(
+				dagql.Arg("hideCore").Doc(
+					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
+					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,
+				),
+			),
 
 		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
@@ -92,6 +98,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all generators defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+			),
+
+		dagql.Func("services", s.moduleServices).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return all services defined by the module`).
+			Args(
+				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
 
 		dagql.Func("generator", s.moduleGenerator).
@@ -139,6 +152,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
+				dagql.Arg("entrypoint").Doc("Install the module as the entrypoint, promoting its main-object methods onto the Query root"),
 			),
 	}.Install(dag)
 
@@ -196,6 +210,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("withGenerator", s.functionWithGenerator).
 			Doc(`Returns the function with a flag indicating it's a generator.`),
+
+		dagql.Func("withUp", s.functionWithUp).
+			Doc(`Returns the function with a flag indicating it returns a service for dagger up.`),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
@@ -561,6 +578,10 @@ func (s *moduleSchema) functionWithGenerator(ctx context.Context, fn *core.Funct
 	return fn.WithGenerator(), nil
 }
 
+func (s *moduleSchema) functionWithUp(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	return fn.WithUp(), nil
+}
+
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
 	Name           string
 	TypeDef        core.TypeDefID
@@ -741,6 +762,7 @@ func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ st
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, args struct {
 	IncludeDependencies dagql.Optional[dagql.Boolean]
+	Entrypoint          dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 
@@ -750,19 +772,58 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 	}
 
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
-	return void, query.ServeModule(ctx, modMeta, includeDependencies)
+	entrypoint := args.Entrypoint.Valid && args.Entrypoint.Value.Bool()
+	return void, query.ServeModule(ctx, modMeta, includeDependencies, entrypoint)
 }
 
-func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {
-	deps, err := self.CurrentServedDeps(ctx)
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args struct {
+	HideCore dagql.Optional[dagql.Boolean]
+},
+) (dagql.Array[*core.TypeDef], error) {
+	served, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	dag, err := deps.Schema(ctx)
+	dag, err := served.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current schema: %w", err)
 	}
-	return deps.TypeDefs(ctx, dag)
+	typeDefs, err := served.TypeDefs(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+
+	if args.HideCore.GetOr(dagql.NewBoolean(false)).Bool() {
+		typeDefs = stripCoreQueryFunctions(typeDefs)
+	}
+
+	return typeDefs, nil
+}
+
+// stripCoreQueryFunctions removes core-originated functions from the Query
+// type definition, leaving only module-sourced functions (constructors,
+// entrypoint proxies, etc.). Core types (Container, Directory, etc.) are
+// kept so return types and method chaining still work. The "with" field
+// (entrypoint constructor mechanism) is preserved so clients can discover
+// constructor arguments.
+func stripCoreQueryFunctions(typeDefs []*core.TypeDef) []*core.TypeDef {
+	result := make([]*core.TypeDef, 0, len(typeDefs))
+	for _, td := range typeDefs {
+		if td.AsObject.Valid && td.AsObject.Value.Name == "Query" {
+			obj := td.AsObject.Value.Clone()
+			filtered := make([]*core.Function, 0, len(obj.Functions))
+			for _, fn := range obj.Functions {
+				if fn.SourceModuleName != "" {
+					filtered = append(filtered, fn)
+				}
+			}
+			obj.Functions = filtered
+			td = td.Clone()
+			td.AsObject = dagql.NonNull(obj)
+		}
+		result = append(result, td)
+	}
+	return result
 }
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {
@@ -865,6 +926,22 @@ func (s *moduleSchema) moduleGenerators(
 	return mod.Generators(ctx, include)
 }
 
+func (s *moduleSchema) moduleServices(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.UpGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+	return mod.Services(ctx, include)
+}
+
 func (s *moduleSchema) currentModuleGenerators(
 	ctx context.Context,
 	mod *core.CurrentModule,
@@ -908,8 +985,9 @@ func (s *moduleSchema) moduleDependencies(
 	mod *core.Module,
 	args struct{},
 ) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Deps.Mods))
-	for _, dep := range mod.Deps.Mods {
+	mods := mod.Deps.Mods()
+	depMods := make([]*core.Module, 0, len(mods))
+	for _, dep := range mods {
 		switch dep := dep.(type) {
 		case *core.Module:
 			depMods = append(depMods, dep)
@@ -1005,8 +1083,9 @@ func (s *moduleSchema) currentModuleDependencies(
 	mod *core.CurrentModule,
 	args struct{},
 ) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Module.Deps.Mods))
-	for _, dep := range mod.Module.Deps.Mods {
+	mods := mod.Module.Deps.Mods()
+	depMods := make([]*core.Module, 0, len(mods))
+	for _, dep := range mods {
 		switch dep := dep.(type) {
 		case *core.Module:
 			depMods = append(depMods, dep)

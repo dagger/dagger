@@ -16,7 +16,7 @@ type codeGeneratorModule struct {
 
 func (sdk *codeGeneratorModule) Codegen(
 	ctx context.Context,
-	deps *core.ModDeps,
+	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")

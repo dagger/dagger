@@ -1098,6 +1098,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\PhpSdk",
+			"p": "Dagger/PhpSdk.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\PhpSdkId",
+			"p": "Dagger/PhpSdkId.html",
+			"d": "<p>The <code>PhpSdkID</code> scalar type represents an identifier for an object of type PhpSdk.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\PipelineLabel",
 			"p": "Dagger/PipelineLabel.html",
 			"d": "<p>Key value object that represents a pipeline label.</p>",
@@ -1141,6 +1161,16 @@
 			"n": "Dagger\\PortId",
 			"p": "Dagger/PortId.html",
 			"d": "<p>The <code>PortID</code> scalar type represents an identifier for an object of type Port.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\QueryId",
+			"p": "Dagger/QueryId.html",
+			"d": "<p>The <code>QueryID</code> scalar type represents an identifier for an object of type Query.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1361,6 +1391,46 @@
 			"n": "Dagger\\TypeDefId",
 			"p": "Dagger/TypeDefId.html",
 			"d": "<p>The <code>TypeDefID</code> scalar type represents an identifier for an object of type TypeDef.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\Up",
+			"p": "Dagger/Up.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\UpGroup",
+			"p": "Dagger/UpGroup.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\UpGroupId",
+			"p": "Dagger/UpGroupId.html",
+			"d": "<p>The <code>UpGroupID</code> scalar type represents an identifier for an object of type UpGroup.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\UpId",
+			"p": "Dagger/UpId.html",
+			"d": "<p>The <code>UpID</code> scalar type represents an identifier for an object of type Up.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1601,6 +1671,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asPhpSdk",
+			"p": "Dagger/Binding.html#method_asPhpSdk",
+			"d": "<p>Retrieve the binding value, as type PhpSdk</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asSearchResult",
 			"p": "Dagger/Binding.html#method_asSearchResult",
 			"d": "<p>Retrieve the binding value, as type SearchResult</p>"
@@ -1640,6 +1716,18 @@
 			"n": "Dagger\\Binding::asString",
 			"p": "Dagger/Binding.html#method_asString",
 			"d": "<p>Returns the binding's string value</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asUp",
+			"p": "Dagger/Binding.html#method_asUp",
+			"d": "<p>Retrieve the binding value, as type Up</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asUpGroup",
+			"p": "Dagger/Binding.html#method_asUpGroup",
+			"d": "<p>Retrieve the binding value, as type UpGroup</p>"
 		},
 		{
 			"t": "M",
@@ -1877,6 +1965,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::codegen",
+			"p": "Dagger/Client.html#method_codegen",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::codegenBase",
+			"p": "Dagger/Client.html#method_codegenBase",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::container",
 			"p": "Dagger/Client.html#method_container",
 			"d": "<p>Creates a scratch container, with no image or metadata.</p>"
@@ -1982,6 +2082,12 @@
 			"n": "Dagger\\Client::http",
 			"p": "Dagger/Client.html#method_http",
 			"d": "<p>Returns a file containing an http remote url content.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::id",
+			"p": "Dagger/Client.html#method_id",
+			"d": "<p>A unique identifier for this Query.</p>"
 		},
 		{
 			"t": "M",
@@ -2267,9 +2373,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadPhpSdkFromID",
+			"p": "Dagger/Client.html#method_loadPhpSdkFromID",
+			"d": "<p>Load a PhpSdk from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadPortFromID",
 			"p": "Dagger/Client.html#method_loadPortFromID",
 			"d": "<p>Load a Port from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadQueryFromID",
+			"p": "Dagger/Client.html#method_loadQueryFromID",
+			"d": "<p>Load a Query from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2339,6 +2457,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadUpFromID",
+			"p": "Dagger/Client.html#method_loadUpFromID",
+			"d": "<p>Load a Up from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadUpGroupFromID",
+			"p": "Dagger/Client.html#method_loadUpGroupFromID",
+			"d": "<p>Load a UpGroup from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadWorkspaceFromID",
 			"p": "Dagger/Client.html#method_loadWorkspaceFromID",
 			"d": "<p>Load a Workspace from its ID.</p>"
@@ -2348,6 +2478,12 @@
 			"n": "Dagger\\Client::module",
 			"p": "Dagger/Client.html#method_module",
 			"d": "<p>Create a new module.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::moduleRuntime",
+			"p": "Dagger/Client.html#method_moduleRuntime",
+			"d": null
 		},
 		{
 			"t": "M",
@@ -2369,6 +2505,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::sourceDir",
+			"p": "Dagger/Client.html#method_sourceDir",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::sourceMap",
 			"p": "Dagger/Client.html#method_sourceMap",
 			"d": "<p>Creates source map metadata.</p>"
@@ -2384,6 +2526,12 @@
 			"n": "Dagger\\Client::version",
 			"p": "Dagger/Client.html#method_version",
 			"d": "<p>Get the current Dagger Engine version.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::with",
+			"p": "Dagger/Client.html#method_with",
+			"d": "<p>Configure the php-sdk constructor arguments.</p>"
 		},
 		{
 			"t": "M",
@@ -3509,6 +3657,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::services",
+			"p": "Dagger/Env.html#method_services",
+			"d": "<p>Return all services defined by the installed modules</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withAddressInput",
 			"p": "Dagger/Env.html#method_withAddressInput",
 			"d": "<p>Create or update a binding of type Address in the environment</p>"
@@ -3755,6 +3909,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withPhpSdkInput",
+			"p": "Dagger/Env.html#method_withPhpSdkInput",
+			"d": "<p>Create or update a binding of type PhpSdk in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withPhpSdkOutput",
+			"p": "Dagger/Env.html#method_withPhpSdkOutput",
+			"d": "<p>Declare a desired PhpSdk output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withSearchResultInput",
 			"p": "Dagger/Env.html#method_withSearchResultInput",
 			"d": "<p>Create or update a binding of type SearchResult in the environment</p>"
@@ -3836,6 +4002,30 @@
 			"n": "Dagger\\Env::withStringOutput",
 			"p": "Dagger/Env.html#method_withStringOutput",
 			"d": "<p>Declares a desired string output binding</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withUpGroupInput",
+			"p": "Dagger/Env.html#method_withUpGroupInput",
+			"d": "<p>Create or update a binding of type UpGroup in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withUpGroupOutput",
+			"p": "Dagger/Env.html#method_withUpGroupOutput",
+			"d": "<p>Declare a desired UpGroup output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withUpInput",
+			"p": "Dagger/Env.html#method_withUpInput",
+			"d": "<p>Create or update a binding of type Up in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withUpOutput",
+			"p": "Dagger/Env.html#method_withUpOutput",
+			"d": "<p>Declare a desired Up output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -4265,6 +4455,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::sourceModuleName",
+			"p": "Dagger/Function_.html#method_sourceModuleName",
+			"d": "<p>If this function is provided by a module, the name of the module. Unset otherwise.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withArg",
 			"p": "Dagger/Function_.html#method_withArg",
 			"d": "<p>Returns the function with the provided argument</p>"
@@ -4304,6 +4500,12 @@
 			"n": "Dagger\\Function_::withSourceMap",
 			"p": "Dagger/Function_.html#method_withSourceMap",
 			"d": "<p>Returns the function with the given source map.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Function_::withUp",
+			"p": "Dagger/Function_.html#method_withUp",
+			"d": "<p>Returns the function with a flag indicating it returns a service for dagger up.</p>"
 		},
 		{
 			"t": "M",
@@ -5069,6 +5271,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Module::services",
+			"p": "Dagger/Module.html#method_services",
+			"d": "<p>Return all services defined by the module</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Module::source",
 			"p": "Dagger/Module.html#method_source",
 			"d": "<p>The source for the module.</p>"
@@ -5486,6 +5694,36 @@
 			"n": "Dagger\\ObjectTypeDef::sourceModuleName",
 			"p": "Dagger/ObjectTypeDef.html#method_sourceModuleName",
 			"d": "<p>If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::codegen",
+			"p": "Dagger/PhpSdk.html#method_codegen",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::codegenBase",
+			"p": "Dagger/PhpSdk.html#method_codegenBase",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::id",
+			"p": "Dagger/PhpSdk.html#method_id",
+			"d": "<p>A unique identifier for this PhpSdk.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::moduleRuntime",
+			"p": "Dagger/PhpSdk.html#method_moduleRuntime",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::sourceDir",
+			"p": "Dagger/PhpSdk.html#method_sourceDir",
+			"d": null
 		},
 		{
 			"t": "M",
@@ -5927,9 +6165,81 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Up::description",
+			"p": "Dagger/Up.html#method_description",
+			"d": "<p>The description of the service</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::id",
+			"p": "Dagger/Up.html#method_id",
+			"d": "<p>A unique identifier for this Up.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::name",
+			"p": "Dagger/Up.html#method_name",
+			"d": "<p>Return the fully qualified name of the service</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::originalModule",
+			"p": "Dagger/Up.html#method_originalModule",
+			"d": "<p>The original module in which the service has been defined</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::path",
+			"p": "Dagger/Up.html#method_path",
+			"d": "<p>The path of the service within its module</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Up::run",
+			"p": "Dagger/Up.html#method_run",
+			"d": "<p>Execute the service function</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\UpGroup::id",
+			"p": "Dagger/UpGroup.html#method_id",
+			"d": "<p>A unique identifier for this UpGroup.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\UpGroup::list",
+			"p": "Dagger/UpGroup.html#method_list",
+			"d": "<p>Return a list of individual services and their details</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\UpGroup::run",
+			"p": "Dagger/UpGroup.html#method_run",
+			"d": "<p>Execute all selected service functions</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::address",
+			"p": "Dagger/Workspace.html#method_address",
+			"d": "<p>Canonical Dagger address of the workspace directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::checks",
+			"p": "Dagger/Workspace.html#method_checks",
+			"d": "<p>Return all checks from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::clientId",
 			"p": "Dagger/Workspace.html#method_clientId",
 			"d": "<p>The client ID that owns this workspace's host filesystem.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::configPath",
+			"p": "Dagger/Workspace.html#method_configPath",
+			"d": "<p>Path to config.toml relative to the workspace boundary (empty if not initialized).</p>"
 		},
 		{
 			"t": "M",
@@ -5951,15 +6261,39 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::generators",
+			"p": "Dagger/Workspace.html#method_generators",
+			"d": "<p>Return all generators from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::hasConfig",
+			"p": "Dagger/Workspace.html#method_hasConfig",
+			"d": "<p>Whether a config.toml file exists in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::id",
 			"p": "Dagger/Workspace.html#method_id",
 			"d": "<p>A unique identifier for this Workspace.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::root",
-			"p": "Dagger/Workspace.html#method_root",
-			"d": "<p>Absolute path to the workspace root directory.</p>"
+			"n": "Dagger\\Workspace::initialized",
+			"p": "Dagger/Workspace.html#method_initialized",
+			"d": "<p>Whether .dagger/config.toml exists.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::path",
+			"p": "Dagger/Workspace.html#method_path",
+			"d": "<p>Workspace directory path relative to the workspace boundary.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::services",
+			"p": "Dagger/Workspace.html#method_services",
+			"d": "<p>Return all services from modules loaded in the workspace.</p>"
 		},
 		{
 			"t": "M",

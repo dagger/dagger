@@ -233,7 +233,7 @@ func (dev *EngineDev) bench(
 	}
 
 	if opts.prewarm {
-		_, err = run(ctr.WithEnvVariable("TESTCTX_PREWARM", "true")).Sync(ctx)
+		_, err = run(ctr.WithEnvVariable("DAGGER_BENCH_PREWARM", "true")).Sync(ctx)
 		if err != nil {
 			return fmt.Errorf("failed during prewarm run: %w", err)
 		}

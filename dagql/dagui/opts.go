@@ -162,8 +162,6 @@ func ShouldSkipFunction(obj, field string) bool {
 			// not useful until the CLI accepts ID inputs
 			"cacheVolume",
 			"setSecret",
-			// for tests only
-			"secret",
 			// deprecated
 			"pipeline",
 		},

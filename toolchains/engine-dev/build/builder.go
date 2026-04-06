@@ -233,6 +233,12 @@ func (build *Builder) goWithSource(source *dagger.Directory, version bool, race 
 		Source: source,
 		Values: values,
 		Race:   race,
+		Tags: []string{
+			// The engine uses the dockerfile2llb code from buildkit, which makes use of tags
+			// for enabling features at compile time:
+			"dfexcludepatterns", // to support COPY/ADD --exclude=...
+			"dfparents",         // to support COPY/ADD --parents
+		},
 	})
 }
 

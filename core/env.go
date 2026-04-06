@@ -20,7 +20,7 @@ type Env struct {
 
 	// The full module dependency chain for the environment, including the core
 	// module and any dependencies from the environment's creator
-	deps *ModDeps
+	deps *SchemaBuilder
 
 	// The main module for this environment (the project being worked on)
 	MainModule *Module
@@ -66,7 +66,7 @@ func EnvIDFromContext(ctx context.Context) (res *call.ID, ok bool) {
 	return env, true
 }
 
-func NewEnv(workspace dagql.ObjectResult[*Directory], deps *ModDeps) *Env {
+func NewEnv(workspace dagql.ObjectResult[*Directory], deps *SchemaBuilder) *Env {
 	return &Env{
 		Workspace:     workspace,
 		deps:          deps,
@@ -200,6 +200,14 @@ func (env *Env) Checks(ctx context.Context, include []string) (*CheckGroup, erro
 		return nil, fmt.Errorf("no main module set on environment")
 	}
 	return env.MainModule.Checks(ctx, include)
+}
+
+// Services returns an UpGroup from the main module
+func (env *Env) Services(ctx context.Context, include []string) (*UpGroup, error) {
+	if env.MainModule == nil {
+		return nil, fmt.Errorf("no main module set on environment")
+	}
+	return env.MainModule.Services(ctx, include)
 }
 
 // Check returns a single check by name from the main module

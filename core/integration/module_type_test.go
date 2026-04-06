@@ -110,11 +110,11 @@ export class Test {
 			c := connect(ctx, t)
 
 			out, err := modInit(t, c, tc.sdk, tc.source).
-				With(daggerQuery(`{test{repeater(msg:"echo!", times: 3){render}}}`)).
+				With(daggerQuery(`{repeater(msg:"echo!", times: 3){render}}`)).
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
+			require.JSONEq(t, `{"repeater":{"render":"echo!echo!echo!"}}`, out)
 		})
 	}
 }
@@ -185,11 +185,11 @@ export class Test {
 			c := connect(ctx, t)
 
 			out, err := modInit(t, c, tc.sdk, tc.source).
-				With(daggerQuery(`{test{myFunction{message}}}`)).
+				With(daggerQuery(`{myFunction{message}}`)).
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"myFunction":{"message":"foo"}}}`, out)
+			require.JSONEq(t, `{"myFunction":{"message":"foo"}}`, out)
 		})
 	}
 }
@@ -278,11 +278,11 @@ export class Test {
 			c := connect(ctx, t)
 
 			out, err := modInit(t, c, tc.sdk, tc.source).
-				With(daggerQuery(`{test{myFunction{message, recipient, from, timestamp}}}`)).
+				With(daggerQuery(`{myFunction{message, recipient, from, timestamp}}`)).
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"myFunction":{"message":"foo", "recipient":"user", "from":"admin", "timestamp":"now"}}}`, out)
+			require.JSONEq(t, `{"myFunction":{"message":"foo", "recipient":"user", "from":"admin", "timestamp":"now"}}`, out)
 		})
 	}
 }
@@ -371,11 +371,11 @@ export class Test {
 			c := connect(ctx, t)
 
 			out, err := modInit(t, c, tc.sdk, tc.source).
-				With(daggerQuery(`{test{myFunction{msgContainer{msg}}}}`)).
+				With(daggerQuery(`{myFunction{msgContainer{msg}}}`)).
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"myFunction":{"msgContainer":{"msg": "hello world"}}}}`, out)
+			require.JSONEq(t, `{"myFunction":{"msgContainer":{"msg": "hello world"}}}`, out)
 		})
 	}
 }
@@ -476,13 +476,13 @@ export class Test {
 
 			modGen := modInit(t, c, tc.sdk, tc.source)
 
-			out, err := modGen.With(daggerQuery(`{test{mySlice{stdout}}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{mySlice{stdout}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"mySlice":[{"stdout":"hello world\n"}]}}`, out)
+			require.JSONEq(t, `{"mySlice":[{"stdout":"hello world\n"}]}`, out)
 
-			out, err = modGen.With(daggerQuery(`{test{myStruct{con{stdout}}}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{myStruct{con{stdout}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"myStruct":{"con":{"stdout":"hello world\n"}}}}`, out)
+			require.JSONEq(t, `{"myStruct":{"con":{"stdout":"hello world\n"}}}`, out)
 		})
 	}
 }
@@ -609,11 +609,11 @@ export class Test {
 			c := connect(ctx, t)
 
 			out, err := modInit(t, c, tc.sdk, tc.source).
-				With(daggerQuery(`{test{scan{targets{stdout},report{contents,authors}}}}`)).
+				With(daggerQuery(`{scan{targets{stdout},report{contents,authors}}}`)).
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"scan":{"targets":[{"stdout":"hello world\n"}],"report":{"contents":"hello world","authors":["foo","bar"]}}}}`, out)
+			require.JSONEq(t, `{"scan":{"targets":[{"stdout":"hello world\n"}],"report":{"contents":"hello world","authors":["foo","bar"]}}}`, out)
 		})
 	}
 }
@@ -692,13 +692,13 @@ export class Test {
 			modGen := modInit(t, c, tc.sdk, tc.source)
 
 			// sanity check
-			out, err := modGen.With(daggerQuery(`{test{set(data: "abc"){get}}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{set(data: "abc"){get}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"set":{"get": "abc"}}}`, out)
+			require.JSONEq(t, `{"set":{"get": "abc"}}`, out)
 
-			out, err = modGen.With(daggerQuery(`{test{set(data: "abc"){id}}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{set(data: "abc"){id}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			id := gjson.Get(out, "test.set.id").String()
+			id := gjson.Get(out, "set.id").String()
 
 			var idp call.ID
 			err = idp.Decode(id)
@@ -824,21 +824,21 @@ export class Test {
 				With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
 				With(sdkSource(tc.sdk, tc.source))
 
-			out, err := modGen.With(daggerQuery(`{test{sayHello(name: "world"){id}}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{sayHello(name: "world"){id}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			id := gjson.Get(out, "test.sayHello.id").String()
+			id := gjson.Get(out, "sayHello.id").String()
 			var idp call.ID
 			err = idp.Decode(id)
 			require.NoError(t, err)
 			require.Equal(t, `test.sayHello(name: "world"): TestMessage!`, idp.Display())
 
-			out, err = modGen.With(daggerQuery(`{test{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{upper(msg:"%s"){content}}`, id)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"upper":{"content": "HELLO WORLD"}}}`, out)
+			require.JSONEq(t, `{"upper":{"content": "HELLO WORLD"}}`, out)
 
-			out, err = modGen.With(daggerQuery(`{test{uppers(msg:["%s", "%s"]){content}}}`, id, id)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{uppers(msg:["%s", "%s"]){content}}`, id, id)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"uppers":[{"content": "HELLO WORLD"}, {"content": "HELLO WORLD"}]}}`, out)
+			require.JSONEq(t, `{"uppers":[{"content": "HELLO WORLD"}, {"content": "HELLO WORLD"}]}`, out)
 		})
 	}
 }
@@ -867,11 +867,11 @@ func (m *Test) UpperReq(
 	c := connect(ctx, t, dagger.WithLogOutput(&logs))
 	modGen := modInit(t, c, "go", src)
 
-	out, err := modGen.With(daggerQuery(`{test{upperOpt(a: null)}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{upperOpt(a: null)}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"upperOpt":""}}`, out)
+	require.JSONEq(t, `{"upperOpt":""}`, out)
 
-	_, err = modGen.With(daggerQuery(`{test{upperReq(a: null)}}`)).Stdout(ctx)
+	_, err = modGen.With(daggerQuery(`{upperReq(a: null)}`)).Stdout(ctx)
 	require.Error(t, err)
 	require.NoError(t, c.Close())
 	require.Contains(t, logs.String(), "cannot create String from <nil>")
@@ -973,30 +973,30 @@ export class Test {
 			c := connect(ctx, t)
 			modGen := modInit(t, c, tc.sdk, tc.source)
 
-			out, err := modGen.With(daggerQuery(`{test{fromPlatform(platform: "linux/amd64")}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{fromPlatform(platform: "linux/amd64")}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "linux/amd64", gjson.Get(out, "test.fromPlatform").String())
-			_, err = modGen.With(daggerQuery(`{test{fromPlatform(platform: "invalid")}}`)).Stdout(ctx)
+			require.Equal(t, "linux/amd64", gjson.Get(out, "fromPlatform").String())
+			_, err = modGen.With(daggerQuery(`{fromPlatform(platform: "invalid")}`)).Stdout(ctx)
 			requireErrOut(t, err, "unknown operating system or architecture")
 
-			out, err = modGen.With(daggerQuery(`{test{toPlatform(platform: "linux/amd64")}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{toPlatform(platform: "linux/amd64")}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "linux/amd64", gjson.Get(out, "test.toPlatform").String())
-			_, err = modGen.With(daggerQuery(`{test{toPlatform(platform: "invalid")}}`)).Sync(ctx)
+			require.Equal(t, "linux/amd64", gjson.Get(out, "toPlatform").String())
+			_, err = modGen.With(daggerQuery(`{toPlatform(platform: "invalid")}`)).Sync(ctx)
 			requireErrOut(t, err, "unknown operating system or architecture")
 
-			out, err = modGen.With(daggerQuery(`{test{fromPlatforms(platform: ["linux/amd64"])}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{fromPlatforms(platform: ["linux/amd64"])}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, 1, len(gjson.Get(out, "test.fromPlatforms").Array()))
-			require.Equal(t, "linux/amd64", gjson.Get(out, "test.fromPlatforms.0").String())
-			_, err = modGen.With(daggerQuery(`{test{fromPlatforms(platform: ["invalid"])}}`)).Stdout(ctx)
+			require.Equal(t, 1, len(gjson.Get(out, "fromPlatforms").Array()))
+			require.Equal(t, "linux/amd64", gjson.Get(out, "fromPlatforms.0").String())
+			_, err = modGen.With(daggerQuery(`{fromPlatforms(platform: ["invalid"])}`)).Stdout(ctx)
 			requireErrOut(t, err, "unknown operating system or architecture")
 
-			out, err = modGen.With(daggerQuery(`{test{toPlatforms(platform: ["linux/amd64"])}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{toPlatforms(platform: ["linux/amd64"])}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, 1, len(gjson.Get(out, "test.toPlatforms.0").Array()))
-			require.Equal(t, "linux/amd64", gjson.Get(out, "test.toPlatforms.0").String())
-			_, err = modGen.With(daggerQuery(`{test{toPlatforms(platform: ["invalid"])}}`)).Sync(ctx)
+			require.Equal(t, 1, len(gjson.Get(out, "toPlatforms.0").Array()))
+			require.Equal(t, "linux/amd64", gjson.Get(out, "toPlatforms.0").String())
+			_, err = modGen.With(daggerQuery(`{toPlatforms(platform: ["invalid"])}`)).Sync(ctx)
 			requireErrOut(t, err, "unknown operating system or architecture")
 		})
 	}
@@ -1089,23 +1089,23 @@ export class Test {
 				c := connect(ctx, t)
 				modGen := modInit(t, c, tc.sdk, tc.source)
 
-				out, err := modGen.With(daggerQuery(`{test{fromProto(proto: "TCP")}}`)).Stdout(ctx)
+				out, err := modGen.With(daggerQuery(`{fromProto(proto: "TCP")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
+				require.Equal(t, "TCP", gjson.Get(out, "fromProto").String())
 
-				_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
+				_, err = modGen.With(daggerQuery(`{fromProto(proto: "INVALID")}`)).Stdout(ctx)
 				requireErrOut(t, err, "invalid enum")
 
-				out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{toProto(proto: "TCP")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
+				require.Equal(t, "TCP", gjson.Get(out, "toProto").String())
 
-				_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
+				_, err = modGen.With(daggerQuery(`{toProto(proto: "INVALID")}`)).Sync(ctx)
 				requireErrOut(t, err, "invalid enum")
 
-				out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{fromProtoDefault}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "UDP", gjson.Get(out, "test.fromProtoDefault").String())
+				require.Equal(t, "UDP", gjson.Get(out, "fromProtoDefault").String())
 			})
 		}
 	})
@@ -1174,21 +1174,21 @@ class Test:
 				c := connect(ctx, t)
 				modGen := modInit(t, c, tc.sdk, tc.source)
 
-				out, err := modGen.With(daggerQuery(`{test{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
+				out, err := modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "test.fromImageLayerCompression").String())
+				require.Equal(t, "EStarGZ", gjson.Get(out, "fromImageLayerCompression").String())
 
-				_, err = modGen.With(daggerQuery(`{test{fromImageLayerCompression(imageLayerCompression: "EStarGZ")}}`)).Stdout(ctx)
+				_, err = modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "EStarGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "test.fromImageLayerCompression").String())
+				require.Equal(t, "EStarGZ", gjson.Get(out, "fromImageLayerCompression").String())
 
-				out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "EStarGZ")}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{toImageLayerCompression(imageLayerCompression: "EStarGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
+				require.Equal(t, "EStarGZ", gjson.Get(out, "toImageLayerCompression").String())
 
-				out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{toImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
+				require.Equal(t, "EStarGZ", gjson.Get(out, "toImageLayerCompression").String())
 			})
 		}
 	})
@@ -1353,56 +1353,56 @@ export class Test {
 				modGen := modInit(t, c, tc.sdk, tc.source)
 
 				// status property
-				out, err := modGen.With(daggerQuery(`{test{status}}`)).Stdout(ctx)
+				out, err := modGen.With(daggerQuery(`{status}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "INACTIVE", gjson.Get(out, "test.status").String())
+				require.Equal(t, "INACTIVE", gjson.Get(out, "status").String())
 
 				// fromStatus
-				out, err = modGen.With(daggerQuery(`{test{fromStatus(status: ACTIVE)}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{fromStatus(status: ACTIVE)}`)).Stdout(ctx)
 				require.NoError(t, err)
 				if tc.supportsMembers {
-					require.Equal(t, "ACTIVE value", gjson.Get(out, "test.fromStatus").String())
+					require.Equal(t, "ACTIVE value", gjson.Get(out, "fromStatus").String())
 				} else {
-					require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
+					require.Equal(t, "ACTIVE", gjson.Get(out, "fromStatus").String())
 				}
 
-				out, err = modGen.With(daggerQuery(`{test{fromStatus(status: INACTIVE)}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{fromStatus(status: INACTIVE)}`)).Stdout(ctx)
 				require.NoError(t, err)
 				if tc.supportsMembers {
-					require.Equal(t, "INACTIVE value", gjson.Get(out, "test.fromStatus").String())
+					require.Equal(t, "INACTIVE value", gjson.Get(out, "fromStatus").String())
 				} else {
-					require.Equal(t, "INACTIVE", gjson.Get(out, "test.fromStatus").String())
+					require.Equal(t, "INACTIVE", gjson.Get(out, "fromStatus").String())
 				}
 
-				_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
+				_, err = modGen.With(daggerQuery(`{fromStatus(status: "INVALID")}`)).Stdout(ctx)
 				requireErrOut(t, err, "invalid enum")
 
 				// fromStatusOpt
-				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{fromStatusOpt}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "", gjson.Get(out, "test.fromStatusOpt").String())
+				require.Equal(t, "", gjson.Get(out, "fromStatusOpt").String())
 
-				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: ACTIVE)}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{fromStatusOpt(status: ACTIVE)}`)).Stdout(ctx)
 				require.NoError(t, err)
 				if tc.supportsMembers {
-					require.Equal(t, "ACTIVE value", gjson.Get(out, "test.fromStatusOpt").String())
+					require.Equal(t, "ACTIVE value", gjson.Get(out, "fromStatusOpt").String())
 				} else {
-					require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatusOpt").String())
+					require.Equal(t, "ACTIVE", gjson.Get(out, "fromStatusOpt").String())
 				}
 
-				_, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: "INVALID")}}`)).Stdout(ctx)
+				_, err = modGen.With(daggerQuery(`{fromStatusOpt(status: "INVALID")}`)).Stdout(ctx)
 				requireErrOut(t, err, "invalid enum")
 
 				// toStatus
 				if tc.supportsMembers {
-					out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE value")}}`)).Stdout(ctx)
+					out, err = modGen.With(daggerQuery(`{toStatus(status: "INACTIVE value")}`)).Stdout(ctx)
 				} else {
-					out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE")}}`)).Stdout(ctx)
+					out, err = modGen.With(daggerQuery(`{toStatus(status: "INACTIVE")}`)).Stdout(ctx)
 				}
 				require.NoError(t, err)
-				require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
+				require.Equal(t, "INACTIVE", gjson.Get(out, "toStatus").String())
 
-				_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
+				_, err = modGen.With(daggerQuery(`{toStatus(status: "INVALID")}`)).Sync(ctx)
 				requireErrOut(t, err, "invalid enum")
 
 				// introspection
@@ -1569,14 +1569,14 @@ export class Test {
 					With(withModInitAt("./dep", "go", depSrc)).
 					With(daggerExec("install", "./dep"))
 
-				out, err := modGen.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
+				out, err := modGen.With(daggerQuery(`{active inactive}`)).Stdout(ctx)
 				require.NoError(t, err)
 				if tc.supportsMembers {
-					require.Equal(t, "ACTIVE value", gjson.Get(out, "test.active").String())
-					require.Equal(t, "INACTIVE value", gjson.Get(out, "test.inactive").String())
+					require.Equal(t, "ACTIVE value", gjson.Get(out, "active").String())
+					require.Equal(t, "INACTIVE value", gjson.Get(out, "inactive").String())
 				} else {
-					require.Equal(t, "ACTIVE", gjson.Get(out, "test.active").String())
-					require.Equal(t, "INACTIVE", gjson.Get(out, "test.inactive").String())
+					require.Equal(t, "ACTIVE", gjson.Get(out, "active").String())
+					require.Equal(t, "INACTIVE", gjson.Get(out, "inactive").String())
 				}
 			})
 		}
@@ -1638,9 +1638,9 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 				With(withModInitAt("./dep", "go", depSrc)).
 				With(daggerExec("install", "./dep"))
 
-			out, err := modGen.With(daggerQuery(`{test{testBool}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{testBool}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"testBool":"false"}}`, out)
+			require.JSONEq(t, `{"testBool":"false"}`, out)
 		})
 
 		t.Run("null", func(ctx context.Context, t *testctx.T) {
@@ -1651,9 +1651,9 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 				With(withModInitAt("./dep", "go", depSrc)).
 				With(daggerExec("install", "./dep"))
 
-			out, err := modGen.With(daggerQuery(`{test{testNull}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{testNull}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"testNull":"null"}}`, out)
+			require.JSONEq(t, `{"testNull":"null"}`, out)
 		})
 	})
 }

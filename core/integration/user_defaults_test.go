@@ -598,7 +598,7 @@ func testModule(t *testctx.T, lang, name string) string {
 
 func tempDirWithEnvFile(t *testctx.T, environ ...string) string {
 	tmp := t.TempDir()
-	os.WriteFile(tmp+"/.env", []byte(strings.Join(environ, "\n")), 0600)
+	os.WriteFile(tmp+"/.env", []byte(strings.Join(environ, "\n")), 0o600)
 	return tmp
 }
 
@@ -613,6 +613,7 @@ func (UserDefaultsSuite) TestSimple(ctx context.Context, t *testctx.T) {
 		command        []string
 		expect         dagger.ReturnType
 		stdout         string
+		prepare        func(ctr *dagger.Container) *dagger.Container
 	}{
 		{
 			"inner envfile",
@@ -625,6 +626,48 @@ MESSAGE_NAME=monde
 			[]string{"dagger", "call", "message"},
 			dagger.ReturnTypeSuccess,
 			"salut, monde!",
+			nil,
+		},
+		{
+			"inner envfile list",
+			"./defaults/.env",
+			`
+LIST=1,2,3
+`,
+			"./defaults",
+			[]string{"dagger", "call", "list-string"},
+			dagger.ReturnTypeSuccess,
+			"1\n2\n3\n",
+			nil,
+		},
+		{
+			"inner envfile secret list",
+			"./defaults/.env",
+			`
+SECRETS=env://FOO,env://BAR,env://BAZ
+`,
+			"./defaults",
+			[]string{"dagger", "call", "list-secrets"},
+			dagger.ReturnTypeSuccess,
+			"1\n2\n3\n",
+			func(c *dagger.Container) *dagger.Container {
+				c = c.WithEnvVariable("FOO", "1").
+					WithEnvVariable("BAR", "2").
+					WithEnvVariable("BAZ", "3")
+				return c
+			},
+		},
+		{
+			"inner string with commas",
+			"./defaults/.env",
+			`
+GREETING="one,two"
+`,
+			"./defaults",
+			[]string{"dagger", "call", "message"},
+			dagger.ReturnTypeSuccess,
+			"one,two, world!",
+			nil,
 		},
 		{
 			"outer envfile inner workdir",
@@ -637,6 +680,7 @@ DEFAULTS_MESSAGE_NAME=monde
 			[]string{"dagger", "call", "message"},
 			dagger.ReturnTypeSuccess,
 			"bonjour, monde!",
+			nil,
 		},
 		{
 			"outer envfile outer workdir",
@@ -649,10 +693,14 @@ DEFAULTS_MESSAGE_NAME=monde
 			[]string{"dagger", "-m", "./defaults", "call", "message"},
 			dagger.ReturnTypeSuccess,
 			"bonjour, monde!",
+			nil,
 		},
 	} {
 		tc := tc
 		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
+			if tc.prepare != nil {
+				ctr = tc.prepare(ctr)
+			}
 			stdout, err := ctr.
 				WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
 				With(func(c *dagger.Container) *dagger.Container {

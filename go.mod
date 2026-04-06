@@ -62,8 +62,8 @@ require (
 	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/creack/pty v1.1.24
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
-	github.com/dagger/testctx v0.1.1
-	github.com/dagger/testctx/oteltest v0.1.1
+	github.com/dagger/testctx v0.1.2
+	github.com/dagger/testctx/oteltest v0.1.2
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
@@ -155,12 +155,12 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.30
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang v0.0.0-20260316153434-9d320da57ad3
+	github.com/vito/dang v0.0.0-20260323053027-352d057a4d4c
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea
-	github.com/vito/tuist v0.0.6-0.20260317030317-5530ade64acd
-	github.com/vito/tuist/teav1 v0.0.0-20260317030317-5530ade64acd
+	github.com/vito/tuist v0.0.6
+	github.com/vito/tuist/teav1 v0.0.0-20260330150345-de388bf31342
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
