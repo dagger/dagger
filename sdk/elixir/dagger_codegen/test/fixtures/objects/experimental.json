@@ -33,7 +33,7 @@
         }
       ],
       "deprecationReason": null,
-      "description": "Initialize a new environment",
+      "description": "Initializes a new environment",
       "directives": [
         {
           "args": [
@@ -59,7 +59,13 @@
     }
   ],
   "inputFields": [],
-  "interfaces": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
   "kind": "OBJECT",
   "name": "Query",
   "possibleTypes": []

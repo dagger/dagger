@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A git ref (tag, branch, or commit).
  */
-class GitRef extends Client\AbstractObject implements Client\IdAble
+class GitRef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The resolved commit id at this ref.
@@ -25,7 +25,7 @@ class GitRef extends Client\AbstractObject implements Client\IdAble
     /**
      * Find the best common ancestor between this ref and another ref.
      */
-    public function commonAncestor(GitRefId|GitRef $other): GitRef
+    public function commonAncestor(GitRef $other): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commonAncestor');
         $innerQueryBuilder->setArgument('other', $other);
@@ -35,10 +35,10 @@ class GitRef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this GitRef.
      */
-    public function id(): GitRefId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\GitRefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

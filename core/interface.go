@@ -124,34 +124,14 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 		return content.CollectJSONable(nil)
 	}
 
-	if interfaceValue, ok := dagql.UnwrapAs[*InterfaceAnnotatedValue](value); ok {
-		mod, ok := interfaceValue.UnderlyingType.SourceMod().(*Module)
-		if !ok {
-			return fmt.Errorf("unexpected source mod type %T", interfaceValue.UnderlyingType.SourceMod())
-		}
-
-		obj, err := dagql.NewResultForID(&ModuleObject{
-			Module:  mod,
-			TypeDef: interfaceValue.UnderlyingType.TypeDef().AsObject.Value,
-			Fields:  interfaceValue.Fields,
-		}, value.ID())
-		if err != nil {
-			return fmt.Errorf("create module object from interface value: %w", err)
-		}
-
-		return interfaceValue.UnderlyingType.CollectContent(ctx, obj, content)
+	// Load the implementation via its ID to get the concrete type and
+	// delegate content collection to it.
+	loadedImpl, err := iface.loadImpl(ctx, value.ID())
+	if err != nil {
+		return fmt.Errorf("load interface implementation: %w", err)
 	}
 
-	if _, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
-		loadedImpl, err := iface.loadImpl(ctx, value.ID())
-		if err != nil {
-			return fmt.Errorf("load interface implementation: %w", err)
-		}
-
-		return loadedImpl.valType.CollectContent(ctx, loadedImpl.val, content)
-	}
-
-	return fmt.Errorf("expected *InterfaceAnnotatedValue, *ModuleObject, or nil, got %T (%s)", value, value.Type())
+	return loadedImpl.valType.CollectContent(ctx, loadedImpl.val, content)
 }
 
 func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -159,7 +139,7 @@ func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value dagql.T
 		return nil, nil
 	}
 	switch value := value.(type) {
-	case DynamicID:
+	case dagql.AnyID:
 		return value.ID().Encode()
 	default:
 		return nil, fmt.Errorf("unexpected interface value type for conversion to sdk input %T", value)
@@ -185,26 +165,30 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 		return fmt.Errorf("installing interface %q too early", iface.typeDef.Name)
 	}
 
-	classOpts := dagql.ClassOpts[*InterfaceAnnotatedValue]{
-		Typed: &InterfaceAnnotatedValue{
-			TypeDef:   iface.typeDef,
-			IfaceType: iface,
-		},
-	}
-
-	installDirectives := []*ast.Directive{}
-	if iface.typeDef.SourceMap.Valid {
-		classOpts.SourceMap = iface.typeDef.SourceMap.Value.TypeDirective()
-		installDirectives = append(installDirectives, iface.typeDef.SourceMap.Value.TypeDirective())
-	}
-
-	class := dagql.NewClass(dag, classOpts)
-	dag.InstallObject(class, installDirectives...)
-
 	ifaceTypeDef := iface.typeDef
 	ifaceName := gqlObjectName(ifaceTypeDef.Name)
 
-	fields := make([]dagql.Field[*InterfaceAnnotatedValue], 0, len(iface.typeDef.Functions))
+	// Create a dagql.Interface instead of a Class — this is the first-class
+	// interface representation that produces ast.Interface definitions.
+	dagqlIface := dagql.NewInterface(ifaceName, formatGqlDescription(ifaceTypeDef.Description))
+
+	// Add an "id" field so SDKs can generate proper ID handling methods
+	// (e.g. XXX_GraphQLType, MarshalJSON) for interface types.
+	dagqlIface.AddField(dagql.InterfaceFieldSpec{
+		FieldSpec: dagql.FieldSpec{
+			Name:        "id",
+			Description: fmt.Sprintf("A unique identifier for this %s.", ifaceName),
+			Type:        dagql.AnyID{},
+		},
+	})
+
+	installDirectives := []*ast.Directive{}
+	if iface.typeDef.SourceMap.Valid {
+		installDirectives = append(installDirectives, iface.typeDef.SourceMap.Value.TypeDirective())
+	}
+
+	// Add field specs from the interface's function definitions.
+	// We keep the validation that return/arg types aren't from external deps.
 	for _, fnTypeDef := range iface.typeDef.Functions {
 		fnName := gqlFieldName(fnTypeDef.Name)
 
@@ -228,15 +212,17 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			}
 		}
 
-		fieldDef := &dagql.FieldSpec{
-			Name:             fnName,
-			Description:      formatGqlDescription(fnTypeDef.Description),
-			Type:             fnTypeDef.ReturnType.ToTyped(),
-			Module:           iface.mod.IDModule(),
-			DeprecatedReason: fnTypeDef.Deprecated,
+		fieldSpec := dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name:             fnName,
+				Description:      formatGqlDescription(fnTypeDef.Description),
+				Type:             fnTypeDef.ReturnType.ToTyped(),
+				Module:           iface.mod.IDModule(),
+				DeprecatedReason: fnTypeDef.Deprecated,
+			},
 		}
 		if fnTypeDef.SourceMap.Valid {
-			fieldDef.Directives = append(fieldDef.Directives, fnTypeDef.SourceMap.Value.TypeDirective())
+			fieldSpec.Directives = append(fieldSpec.Directives, fnTypeDef.SourceMap.Value.TypeDirective())
 		}
 
 		for _, argMetadata := range fnTypeDef.Args {
@@ -267,229 +253,43 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				Type:             argMetadata.TypeDef.ToInput(),
 				DeprecatedReason: argMetadata.Deprecated,
 			}
+			// Add @expectedType directive for ID-typed arguments.
+			// Walk through list wrappers to find the underlying type.
+			expectedTypeDef := argMetadata.TypeDef
+			for expectedTypeDef.Kind == TypeDefKindList && expectedTypeDef.AsList.Valid {
+				expectedTypeDef = expectedTypeDef.AsList.Value.ElementTypeDef
+			}
+			if expectedTypeDef.Kind == TypeDefKindObject && expectedTypeDef.AsObject.Valid {
+				inputSpec.Directives = append(inputSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsObject.Value.Name))
+			} else if expectedTypeDef.Kind == TypeDefKindInterface && expectedTypeDef.AsInterface.Valid {
+				inputSpec.Directives = append(inputSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsInterface.Value.Name))
+			}
 			if argMetadata.SourceMap.Valid {
 				inputSpec.Directives = append(inputSpec.Directives, argMetadata.SourceMap.Value.TypeDirective())
 			}
-			fieldDef.Args.Add(inputSpec)
+			fieldSpec.Args.Add(inputSpec)
 		}
 
-		fieldDef.GetCacheConfig = func(
-			ctx context.Context,
-			parentObj dagql.AnyResult,
-			args map[string]dagql.Input,
-			view call.View,
-			req dagql.GetCacheConfigRequest,
-		) (*dagql.GetCacheConfigResponse, error) {
-			parent, ok := parentObj.(dagql.ObjectResult[*InterfaceAnnotatedValue])
-			if !ok {
-				return nil, fmt.Errorf("unexpected parent object type %T", parentObj)
-			}
-			runtimeVal := parent.Self()
-
-			// TODO: support core types too
-			userModObj, ok := runtimeVal.UnderlyingType.(*ModuleObjectType)
-			if !ok {
-				return nil, fmt.Errorf("unexpected underlying type %T for interface resolver %s.%s", runtimeVal.UnderlyingType, ifaceName, fieldDef.Name)
-			}
-
-			callable, err := userModObj.GetCallable(ctx, fieldDef.Name)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
-			}
-
-			return callable.CacheConfigForCall(ctx, parentObj, args, view, req)
-		}
-
-		fields = append(fields, dagql.Field[*InterfaceAnnotatedValue]{
-			Spec: fieldDef,
-			Func: func(ctx context.Context, self dagql.ObjectResult[*InterfaceAnnotatedValue], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-				runtimeVal := self.Self()
-
-				// TODO: support core types too
-				userModObj, ok := runtimeVal.UnderlyingType.(*ModuleObjectType)
-				if !ok {
-					return nil, fmt.Errorf("unexpected underlying type %T for interface resolver %s.%s", runtimeVal.UnderlyingType, ifaceName, fieldDef.Name)
-				}
-
-				callable, err := userModObj.GetCallable(ctx, fieldDef.Name)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
-				}
-
-				callInputs := make([]CallInput, 0, len(args))
-				for k, argVal := range args {
-					callInputs = append(callInputs, CallInput{
-						Name:  k,
-						Value: argVal,
-					})
-				}
-
-				res, err := callable.Call(ctx, &CallOpts{
-					Inputs:       callInputs,
-					ParentTyped:  self,
-					ParentFields: runtimeVal.Fields,
-					Server:       dag,
-				})
-				if err != nil {
-					return nil, fmt.Errorf("failed to call interface function %s.%s: %w", ifaceName, fieldDef.Name, err)
-				}
-
-				if err := res.PostCall(ctx); err != nil {
-					return nil, fmt.Errorf("failed to run post-call for %s.%s: %w", ifaceName, fieldDef.Name, err)
-				}
-
-				if fnTypeDef.ReturnType.Underlying().Kind != TypeDefKindInterface {
-					return res, nil
-				}
-
-				// if the return type of this function is an interface or list of interface, we may need to wrap the
-				// return value of the underlying object's function (due to support for covariant matching on return types)
-
-				underlyingReturnType, ok, err := iface.mod.ModTypeFor(ctx, fnTypeDef.ReturnType.Underlying(), true)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get return mod type: %w", err)
-				}
-				if !ok {
-					return nil, fmt.Errorf("failed to find return mod type")
-				}
-				ifaceReturnType, ok := underlyingReturnType.(*InterfaceType)
-				if !ok {
-					return nil, fmt.Errorf("expected return interface type, got %T", underlyingReturnType)
-				}
-				objReturnType, err := callable.ReturnType()
-				if err != nil {
-					return nil, fmt.Errorf("failed to get object return type for %s.%s: %w", ifaceName, fieldDef.Name, err)
-				}
-				return wrapIface(dagql.CurrentID(ctx), ifaceReturnType, objReturnType, res, dag)
-			},
-		})
+		dagqlIface.AddField(fieldSpec)
 	}
 
-	class.Install(fields...)
-	dag.InstallObject(class, installDirectives...)
-
-	idScalar := DynamicID{
-		typeName: iface.typeDef.Name,
-	}
-
-	// override loadFooFromID to allow any ID that implements this interface
-	dag.Root().ObjectType().Extend(
-		dagql.FieldSpec{
-			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
-			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-			Type:        class.Typed(),
-			Args: dagql.NewInputSpecs(
-				dagql.InputSpec{
-					Name: "id",
-					Type: idScalar,
-				},
-			),
-			Module:     iface.mod.IDModule(),
-			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
-		},
-		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-			return iface.ConvertFromSDKResult(ctx, args["id"])
-		},
-	)
+	// Install the interface into the dagql server schema.
+	dag.InstallInterface(dagqlIface, installDirectives...)
 
 	return nil
 }
 
-func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType, res dagql.AnyResult, srv *dagql.Server) (dagql.AnyResult, error) {
-	switch underlyingType := underlyingType.(type) {
-	case *InterfaceType, *ModuleObjectType:
-		switch wrappedRes := res.Unwrap().(type) {
-		case *ModuleObject:
-			return dagql.NewObjectResultForID(&InterfaceAnnotatedValue{
-				TypeDef:        ifaceType.typeDef,
-				IfaceType:      ifaceType,
-				Fields:         wrappedRes.Fields,
-				UnderlyingType: underlyingType,
-			}, srv, curID)
-
-		case *InterfaceAnnotatedValue:
-			return res, nil
-
-		default:
-			return nil, fmt.Errorf("unexpected return type %T for interface %s", wrappedRes, ifaceType.typeDef.Name)
-		}
-
-	case *ListType:
-		if res == nil {
-			return res, nil
-		}
-		enum, ok := res.Unwrap().(dagql.Enumerable)
-		if !ok {
-			return nil, fmt.Errorf("expected Enumerable return, got %T", res)
-		}
-		if enum.Len() == 0 {
-			return res, nil
-		}
-
-		ret := dagql.DynamicResultArrayOutput{}
-		for i := 1; i <= enum.Len(); i++ {
-			item, err := res.NthValue(i)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get item %d: %w", i, err)
-			}
-			if ret.Elem == nil { // set the return type
-				ret.Elem = item.Unwrap()
-			}
-			nthID := curID.SelectNth(i)
-			val, err := wrapIface(nthID, ifaceType, underlyingType.Underlying, item, srv)
-			if err != nil {
-				return nil, fmt.Errorf("failed to wrap item %d: %w", i, err)
-			}
-			ret.Values = append(ret.Values, val)
-		}
-		return dagql.NewResultForID(&ret, curID)
-
-	default:
-		return res, nil
-	}
+// interfaceTypedMarker is a Typed marker that returns an interface type name.
+// Used by typedef.go to express interface return types in module function specs.
+type interfaceTypedMarker struct {
+	name string
 }
 
-type InterfaceAnnotatedValue struct {
-	TypeDef        *InterfaceTypeDef
-	IfaceType      *InterfaceType
-	Fields         map[string]any
-	UnderlyingType ModType
-}
+var _ dagql.Typed = (*interfaceTypedMarker)(nil)
 
-var _ dagql.InterfaceValue = (*InterfaceAnnotatedValue)(nil)
-
-func (iface *InterfaceAnnotatedValue) UnderlyingObject() (dagql.Typed, error) {
-	userModObjType, ok := iface.UnderlyingType.(*ModuleObjectType)
-	if !ok {
-		return nil, fmt.Errorf("unhandled underlying type %T for interface value %s", iface.UnderlyingType, iface.TypeDef.Name)
-	}
-	return &ModuleObject{
-		Module:  userModObjType.mod,
-		TypeDef: userModObjType.typeDef,
-		Fields:  iface.Fields,
-	}, nil
-}
-
-var _ dagql.Typed = (*InterfaceAnnotatedValue)(nil)
-
-func (iface *InterfaceAnnotatedValue) Type() *ast.Type {
+func (m *interfaceTypedMarker) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: iface.TypeDef.Name,
+		NamedType: m.name,
 		NonNull:   true,
 	}
-}
-
-func (iface *InterfaceAnnotatedValue) TypeDescription() string {
-	return iface.TypeDef.Description
-}
-
-func (iface *InterfaceAnnotatedValue) TypeDefinition(view call.View) *ast.Definition {
-	def := &ast.Definition{
-		Kind: ast.Object,
-		Name: iface.Type().Name(),
-	}
-	if iface.TypeDef.SourceMap.Valid {
-		def.Directives = append(def.Directives, iface.TypeDef.SourceMap.Value.TypeDirective())
-	}
-	return def
 }

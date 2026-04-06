@@ -212,13 +212,11 @@ func (sdk *goSDK) Codegen(
 		VCSGeneratedPaths: []string{
 			"dagger.gen.go",
 			"internal/dagger/**",
-			"internal/querybuilder/**",
 			"internal/telemetry/**",
 		},
 		VCSIgnoredPaths: []string{
 			"dagger.gen.go",
 			"internal/dagger",
-			"internal/querybuilder",
 			"internal/telemetry",
 			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 		},
@@ -367,7 +365,7 @@ func (sdk *goSDK) ModuleTypes(
 
 	err = dag.Select(ctx, dag.Root(), &inst,
 		dagql.Selector{
-			Field: "loadModuleFromID",
+			Field: "node",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "id",

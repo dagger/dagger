@@ -214,7 +214,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 					Name        string
 					Description string
 					Source      struct {
-						ID       dagger.ModuleSourceID
+						ID       dagger.ID
 						AsString string
 						Digest   string
 					}
@@ -248,7 +248,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 			SourceRoot:   dep.Source.AsString,
 			SourceDigest: dep.Source.Digest,
 			// Note: this should preserve the correct pin if it exists
-			Source: dag.LoadModuleSourceFromID(dep.Source.ID),
+			Source: dagger.Ref[*dagger.ModuleSource](dag, dep.Source.ID),
 		})
 	}
 

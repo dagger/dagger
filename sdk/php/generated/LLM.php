@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class LLM extends Client\AbstractObject implements Client\IdAble
+class LLM extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * create a branch in the LLM's history
@@ -69,10 +69,10 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this LLM.
      */
-    public function id(): LLMId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -114,19 +114,21 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
      */
-    public function step(): LLMId
+    public function step(): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('step');
-        return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'step'));
+        $this->queryLeaf($leafQueryBuilder, 'step');
+        return $this;
     }
 
     /**
      * synchronize LLM state
      */
-    public function sync(): LLMId
+    public function sync(): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
@@ -161,7 +163,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * allow the LLM to interact with an environment via MCP
      */
-    public function withEnv(EnvId|Env $env): LLM
+    public function withEnv(Env $env): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnv');
         $innerQueryBuilder->setArgument('env', $env);
@@ -171,7 +173,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * Add an external MCP server to the LLM
      */
-    public function withMCPServer(string $name, ServiceId|Service $service): LLM
+    public function withMCPServer(string $name, Service $service): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMCPServer');
         $innerQueryBuilder->setArgument('name', $name);
@@ -202,7 +204,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * append the contents of a file to the llm context
      */
-    public function withPromptFile(FileId|File $file): LLM
+    public function withPromptFile(File $file): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPromptFile');
         $innerQueryBuilder->setArgument('file', $file);

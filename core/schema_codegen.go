@@ -52,11 +52,28 @@ func DagqlToCodegenType(dagqlType *introspection.Type) (*codegenintrospection.Ty
 	dagqlInterfaces := dagqlType.Interfaces()
 	t.Interfaces = make([]*codegenintrospection.Type, 0, len(dagqlInterfaces))
 	for _, dagqlIface := range dagqlInterfaces {
-		codeGenType, err := DagqlToCodegenType(dagqlIface)
-		if err != nil {
-			return nil, err
+		// Use a shallow type (kind + name only) to avoid recursion.
+		it := &codegenintrospection.Type{
+			Kind: codegenintrospection.TypeKind(dagqlIface.Kind()),
 		}
-		t.Interfaces = append(t.Interfaces, codeGenType)
+		if name := dagqlIface.Name(); name != nil {
+			it.Name = *name
+		}
+		t.Interfaces = append(t.Interfaces, it)
+	}
+
+	dagqlPossibleTypes := dagqlType.PossibleTypes()
+	t.PossibleTypes = make([]*codegenintrospection.Type, 0, len(dagqlPossibleTypes))
+	for _, dagqlPossible := range dagqlPossibleTypes {
+		// Use a shallow type (kind + name only) to avoid infinite recursion
+		// from circular references between types and their possible types.
+		pt := &codegenintrospection.Type{
+			Kind: codegenintrospection.TypeKind(dagqlPossible.Kind()),
+		}
+		if name := dagqlPossible.Name(); name != nil {
+			pt.Name = *name
+		}
+		t.PossibleTypes = append(t.PossibleTypes, pt)
 	}
 
 	dagqlDirectives := dagqlType.Directives()

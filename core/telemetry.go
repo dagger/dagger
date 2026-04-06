@@ -246,13 +246,13 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 	// current call's ID, so we can show the user myMod().unit().stdout()
 	// instead of container().from().[...].stdout().
 	if obj, ok := dagql.UnwrapAs[dagql.AnyResult](res); ok {
-		// Don't consider loadFooFromID to be a 'creator' as that would only
+		// Don't consider node(id:) to be a 'creator' as that would only
 		// obfuscate the real ID.
 		//
 		// NB: so long as the simplifying process rejects larger IDs, this
 		// shouldn't be necessary, but it seems like a good idea to just never even
 		// consider it.
-		isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
+		isLoader := id.Field() == "node"
 		if !isLoader {
 			objDigest := obj.ID().Digest()
 			span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
@@ -373,10 +373,10 @@ func isMeta(id *call.ID) bool {
 	}
 	switch id.Field() {
 	case
-		// Seeing loadFooFromID is only really interesting if it actually
+		// Seeing node(id:) is only really interesting if it actually
 		// resulted in evaluating the ID, so we don't need to give it its own
 		// span.
-		fmt.Sprintf("load%sFromID", id.Type().NamedType()),
+		"node",
 		// We also don't care about seeing the id field selection itself,
 		// since it's more noisy and confusing than helpful. We'll still show
 		// all the spans leading up to it, just not the ID selection.

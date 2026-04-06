@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -457,7 +457,7 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 		if err != nil {
 			return nil, fmt.Errorf("encode dir ID: %w", err)
 		}
-		query = query.Select("loadDirectoryFromID").Arg("id", dirIDEnc)
+		query = query.Select("node").Arg("id", dirIDEnc)
 		query = query.Select("asModuleSource").
 			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
 	}

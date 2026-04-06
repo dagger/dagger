@@ -904,6 +904,14 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}
 
+	// Ensure the return value is selectable (ObjectResult) when possible.
+	// ConvertFromSDKResult may return a plain Result[*ModuleObject] which
+	// the cache would normalize to Result[Typed], losing the ObjectType
+	// needed for toSelectable to work across module boundaries.
+	if returnValue != nil && opts.Server != nil {
+		returnValue = ensureSelectable(opts.Server, returnValue)
+	}
+
 	safeToPersistCache := true
 	if returnValue != nil {
 		// If the function returned anything that's isolated per-client, this caller client should
@@ -948,6 +956,48 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 }
 
 // hasWorkspaceArgs returns true if any of the function's arguments are of type Workspace.
+// ensureSelectable upgrades Result values to ObjectResult when possible,
+// so the cache preserves ObjectType info needed for cross-module toSelectable.
+// For lists (DynamicResultArrayOutput), it upgrades each element.
+func ensureSelectable(srv *dagql.Server, val dagql.AnyResult) dagql.AnyResult {
+	if _, ok := val.(dagql.AnyObjectResult); ok {
+		return val // already selectable
+	}
+	// Try to upgrade the top-level value
+	if selectable, err := srv.ToSelectable(val); err == nil {
+		return selectable
+	}
+	// For dynamic arrays, upgrade each element by creating a new array
+	if arr, ok := val.Unwrap().(dagql.DynamicResultArrayOutput); ok {
+		modified := false
+		newValues := make([]dagql.AnyResult, len(arr.Values))
+		copy(newValues, arr.Values)
+		for i, elem := range newValues {
+			if elem == nil {
+				continue
+			}
+			if _, ok := elem.(dagql.AnyObjectResult); ok {
+				continue // already selectable
+			}
+			if selectable, err := srv.ToSelectable(elem); err == nil {
+				newValues[i] = selectable
+				modified = true
+			}
+		}
+		if modified {
+			newArr := dagql.DynamicResultArrayOutput{
+				Elem:   arr.Elem,
+				Values: newValues,
+			}
+			result, err := dagql.NewResultForID(newArr, val.ID())
+			if err == nil {
+				return result
+			}
+		}
+	}
+	return val
+}
+
 func (fn *ModuleFunction) hasWorkspaceArgs() bool {
 	for _, arg := range fn.metadata.Args {
 		if arg.IsWorkspace() {
@@ -1397,7 +1447,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 	}
 
 	switch value := value.(type) {
-	case DynamicID:
+	case dagql.AnyID:
 		return applyIgnore(value)
 	case dagql.ID[*Directory]:
 		return applyIgnore(value)
@@ -1415,7 +1465,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 			return nil, nil
 		}
 		switch id := value.Value.(type) {
-		case DynamicID:
+		case dagql.AnyID:
 			return applyIgnore(id)
 		case dagql.ID[*Directory]:
 			return applyIgnore(id)

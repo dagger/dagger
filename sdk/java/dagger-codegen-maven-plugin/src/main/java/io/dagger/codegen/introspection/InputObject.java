@@ -1,11 +1,14 @@
 package io.dagger.codegen.introspection;
 
+import java.util.List;
+
 public class InputObject {
 
   private String name;
   private String description;
   private String defaultValue; // isDeprecated
   private TypeRef type;
+  private List<Directive> directives;
 
   public String getName() {
     return name;
@@ -37,6 +40,19 @@ public class InputObject {
 
   public void setType(TypeRef type) {
     this.type = type;
+  }
+
+  public List<Directive> getDirectives() {
+    return directives;
+  }
+
+  public void setDirectives(List<Directive> directives) {
+    this.directives = directives;
+  }
+
+  /** Returns the @expectedType name for this argument, if present. */
+  public String getExpectedType() {
+    return Directive.getExpectedType(directives);
   }
 
   @Override

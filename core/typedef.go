@@ -165,6 +165,17 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 			Default:          defaultVal,
 			DeprecatedReason: arg.Deprecated,
 		}
+		// Add @expectedType directive for ID-typed arguments (objects and interfaces).
+		// Walk through list wrappers to find the underlying object/interface type.
+		expectedTypeDef := argTypeDef
+		for expectedTypeDef.Kind == TypeDefKindList && expectedTypeDef.AsList.Valid {
+			expectedTypeDef = expectedTypeDef.AsList.Value.ElementTypeDef
+		}
+		if expectedTypeDef.Kind == TypeDefKindObject && expectedTypeDef.AsObject.Valid {
+			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsObject.Value.Name))
+		} else if expectedTypeDef.Kind == TypeDefKindInterface && expectedTypeDef.AsInterface.Valid {
+			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsInterface.Value.Name))
+		}
 		if arg.SourceMap.Valid {
 			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())
 		}
@@ -467,70 +478,6 @@ func (arg FunctionArg) Directives() []*ast.Directive {
 	return directives
 }
 
-type DynamicID struct {
-	typeName string
-	id       *call.ID
-}
-
-var _ dagql.IDable = DynamicID{}
-
-// ID returns the ID of the value.
-func (d DynamicID) ID() *call.ID {
-	return d.id
-}
-
-var _ dagql.ScalarType = DynamicID{}
-
-func (d DynamicID) TypeName() string {
-	return fmt.Sprintf("%sID", d.typeName)
-}
-
-var _ dagql.InputDecoder = DynamicID{}
-
-func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
-	switch x := val.(type) {
-	case string:
-		var idp call.ID
-		if err := idp.Decode(x); err != nil {
-			return nil, fmt.Errorf("decode %q ID: %w", d.typeName, err)
-		}
-		d.id = &idp
-		return d, nil
-	case *call.ID:
-		d.id = x
-		return d, nil
-	default:
-		return nil, fmt.Errorf("expected string for DynamicID, got %T", val)
-	}
-}
-
-var _ dagql.Input = DynamicID{}
-
-func (d DynamicID) ToLiteral() call.Literal {
-	return call.NewLiteralID(d.id)
-}
-
-func (d DynamicID) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: d.TypeName(),
-		NonNull:   true,
-	}
-}
-
-func (d DynamicID) Decoder() dagql.InputDecoder {
-	return DynamicID{
-		typeName: d.typeName,
-	}
-}
-
-func (d DynamicID) MarshalJSON() ([]byte, error) {
-	enc, err := d.id.Encode()
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(enc)
-}
-
 type TypeDef struct {
 	Kind        TypeDefKind                       `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)."`
 	Optional    bool                              `field:"true" doc:"Whether this type can be set to null. Defaults to false."`
@@ -596,7 +543,7 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 	case TypeDefKindObject:
 		typed = &ModuleObject{TypeDef: typeDef.AsObject.Value}
 	case TypeDefKindInterface:
-		typed = &InterfaceAnnotatedValue{TypeDef: typeDef.AsInterface.Value}
+		typed = &interfaceTypedMarker{name: typeDef.AsInterface.Value.Name}
 	case TypeDefKindVoid:
 		typed = Void{}
 	case TypeDefKindInput:
@@ -630,9 +577,9 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 			Elem: typeDef.AsList.Value.ElementTypeDef.ToInput(),
 		}
 	case TypeDefKindObject:
-		typed = DynamicID{typeName: typeDef.AsObject.Value.Name}
+		typed = dagql.AnyID{}
 	case TypeDefKindInterface:
-		typed = DynamicID{typeName: typeDef.AsInterface.Value.Name}
+		typed = dagql.AnyID{}
 	case TypeDefKindVoid:
 		typed = Void{}
 	default:

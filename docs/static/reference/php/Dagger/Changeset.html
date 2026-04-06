@@ -86,7 +86,7 @@
 
     
     <p>        class
-    <strong>Changeset</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>Changeset</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
@@ -193,7 +193,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
@@ -243,7 +243,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/ChangesetId.html"><abbr title="Dagger\ChangesetId">ChangesetId</abbr></a>
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_sync">sync</a>()
@@ -256,7 +256,7 @@
                     <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withChangeset">withChangeset</a>(<abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr> $changes, <abbr title="Dagger\Dagger\ChangesetMergeConflict">ChangesetMergeConflict</abbr>|null $onConflict = null)
+                    <a href="#method_withChangeset">withChangeset</a>(<a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a> $changes, <abbr title="Dagger\Dagger\ChangesetMergeConflict">ChangesetMergeConflict</abbr>|null $onConflict = null)
         
                                             <p><p>Add changes to an existing changeset</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -539,7 +539,7 @@
                     <div class="method-item">
                     <h3 id="method_id">
         <div class="location">at line 65</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
     </h3>
@@ -556,7 +556,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -699,7 +699,7 @@
                     <div class="method-item">
                     <h3 id="method_sync">
         <div class="location">at line 110</div>
-        <code>                    <a href="../Dagger/ChangesetId.html"><abbr title="Dagger\ChangesetId">ChangesetId</abbr></a>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>sync</strong>()
         </code>
     </h3>
@@ -716,7 +716,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/ChangesetId.html"><abbr title="Dagger\ChangesetId">ChangesetId</abbr></a></td>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -730,9 +730,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withChangeset">
-        <div class="location">at line 121</div>
+        <div class="location">at line 122</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-    <strong>withChangeset</strong>(<abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr> $changes, <abbr title="Dagger\Dagger\ChangesetMergeConflict">ChangesetMergeConflict</abbr>|null $onConflict = null)
+    <strong>withChangeset</strong>(<a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a> $changes, <abbr title="Dagger\Dagger\ChangesetMergeConflict">ChangesetMergeConflict</abbr>|null $onConflict = null)
         </code>
     </h3>
     <div class="details">    
@@ -747,7 +747,7 @@
 
                     <table class="table table-condensed">
                     <tr>
-                <td><abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr></td>
+                <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
                 <td>$changes</td>
                 <td></td>
             </tr>
@@ -777,7 +777,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withChangesets">
-        <div class="location">at line 140</div>
+        <div class="location">at line 139</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>withChangesets</strong>(array $changes, <abbr title="Dagger\Dagger\ChangesetsMergeConflict">ChangesetsMergeConflict</abbr>|null $onConflict = null)
         </code>

@@ -257,7 +257,7 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 				})
 			}
 
-			argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
+			argType, ok, err := resolveArgTypeDef(introspectionArg)
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to convert argument type: %w", err)
 			}
@@ -346,7 +346,7 @@ func introspectionInterfaceToTypeDef(introspectionType *introspection.Type) (*Ty
 				})
 			}
 
-			argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
+			argType, ok, err := resolveArgTypeDef(introspectionArg)
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to convert argument type: %w", err)
 			}
@@ -367,14 +367,50 @@ func introspectionInterfaceToTypeDef(introspectionType *introspection.Type) (*Ty
 	}, true, nil
 }
 
+// resolveArgTypeDef converts an introspection arg's TypeRef into a TypeDef,
+// also handling the unified ID scalar via @expectedType directives.
+func resolveArgTypeDef(arg introspection.InputValue) (*TypeDef, bool, error) {
+	argType, ok, err := introspectionRefToTypeDef(arg.TypeRef, false, true)
+	if err != nil || !ok {
+		return argType, ok, err
+	}
+
+	expectedName := arg.Directives.ExpectedType()
+	if expectedName != "" {
+		resolveIDScalar(argType, expectedName)
+	}
+
+	return argType, true, nil
+}
+
+// resolveIDScalar replaces bare "ID" scalar TypeDefs with ObjectKind,
+// recursing into list element types.
+func resolveIDScalar(argType *TypeDef, expectedName string) {
+	// Handle unified ID scalar: when an arg is typed as the bare "ID" scalar,
+	// resolve the actual object/interface type from @expectedType.
+	// Note: NewScalarTypeDef applies strcase.ToCamel, so "ID" becomes "Id".
+	// Check OriginalName for the raw GraphQL scalar name.
+	if argType.Kind == TypeDefKindScalar && argType.AsScalar.Valid && argType.AsScalar.Value.OriginalName == "ID" {
+		argType.Kind = TypeDefKindObject
+		argType.AsScalar = dagql.Nullable[*ScalarTypeDef]{}
+		argType.AsObject = dagql.NonNull(&ObjectTypeDef{Name: expectedName})
+		return
+	}
+
+	// Recurse into list element types (e.g. [ID!]! → [File!]!).
+	if argType.Kind == TypeDefKindList && argType.AsList.Valid {
+		resolveIDScalar(argType.AsList.Value.ElementTypeDef, expectedName)
+	}
+}
+
 func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*TypeDef, bool, error) {
 	switch introspectionType.Kind {
 	case introspection.TypeKindNonNull:
 		return introspectionRefToTypeDef(introspectionType.OfType, true, isInput)
 
 	case introspection.TypeKindScalar:
-		if isInput && strings.HasSuffix(introspectionType.Name, "ID") {
-			// convert ID inputs to the actual object
+		if isInput && introspectionType.Name != "ID" && strings.HasSuffix(introspectionType.Name, "ID") {
+			// convert per-type FooID inputs to the actual object
 			objName := strings.TrimSuffix(introspectionType.Name, "ID")
 			return &TypeDef{
 				Kind:     TypeDefKindObject,

@@ -24,6 +24,20 @@ export class Context {
     )
   }
 
+  /**
+   * Select via node(id:) with an inline fragment on the given type.
+   * Produces: node(id: "...") { ... on TypeName { children } }
+   */
+  selectNode(id: string, typeName: string): Context {
+    return new Context(
+      [
+        ...this._queryTree,
+        { operation: "node", args: { id }, inlineType: typeName },
+      ],
+      this._connection,
+    )
+  }
+
   execute<T>(): Promise<T> {
     return computeQuery(this._queryTree, this._connection.getGQLClient())
   }

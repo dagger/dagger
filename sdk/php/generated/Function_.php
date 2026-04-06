@@ -13,7 +13,7 @@ namespace Dagger;
  *
  * A function always evaluates against a parent object and is given a set of named arguments.
  */
-class Function_ extends Client\AbstractObject implements Client\IdAble
+class Function_ extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Arguments accepted by the function, if any.
@@ -45,10 +45,10 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Function.
      */
-    public function id(): FunctionId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\FunctionId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -92,12 +92,12 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
      */
     public function withArg(
         string $name,
-        TypeDefId|TypeDef $typeDef,
+        TypeDef $typeDef,
         ?string $description = '',
         ?Json $defaultValue = null,
         ?string $defaultPath = '',
-        ?array $ignore = null,
-        SourceMapId|SourceMap|null $sourceMap = null,
+        ?array $ignore = [],
+        ?SourceMap $sourceMap = null,
         ?string $deprecated = null,
         ?string $defaultAddress = '',
     ): Function_ {
@@ -184,7 +184,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns the function with the given source map.
      */
-    public function withSourceMap(SourceMapId|SourceMap $sourceMap): Function_
+    public function withSourceMap(SourceMap $sourceMap): Function_
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceMap');
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);

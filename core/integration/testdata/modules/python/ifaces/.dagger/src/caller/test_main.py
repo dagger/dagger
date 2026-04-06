@@ -51,7 +51,7 @@ def impl(dirs):
 
 @pytest.fixture
 def iface(impl: dagger.Impl):
-    return impl.as_test_custom_iface()
+    return impl
 
 
 async def test_void(iface: dagger.TestCustomIface):
@@ -181,17 +181,17 @@ async def test_static_other_iface_list(iface: dagger.TestCustomIface):
 
 
 async def test_dynamic_other_iface_list(impl: dagger.Impl):
-    ifaces = await dag.test().dynamic_other_iface_list(impl.as_test_custom_iface())
+    ifaces = await dag.test().dynamic_other_iface_list(impl)
 
     assert len(ifaces) == 0
 
     ifaces = await dag.test().dynamic_other_iface_list(
         dag.test().with_other_iface(
             dag.test().with_other_iface(
-                impl.as_test_custom_iface(),
-                impl.with_str("arg1").other_iface().as_test_other_iface(),
+                impl,
+                impl.with_str("arg1").other_iface(),
             ),
-            impl.with_str("arg2").other_iface().as_test_other_iface(),
+            impl.with_str("arg2").other_iface(),
         )
     )
 
@@ -202,7 +202,7 @@ async def test_dynamic_other_iface_list(impl: dagger.Impl):
 
 async def test_dynamic_other_iface_by_iface_list(impl: dagger.Impl):
     ifaces = await dag.test().dynamic_other_iface_by_iface_list(
-        impl.as_test_custom_iface()
+        impl
     )
 
     assert len(ifaces) == 0
@@ -210,10 +210,10 @@ async def test_dynamic_other_iface_by_iface_list(impl: dagger.Impl):
     ifaces = await dag.test().dynamic_other_iface_by_iface_list(
         dag.test().with_other_iface_by_iface(
             dag.test().with_other_iface_by_iface(
-                impl.as_test_custom_iface(),
-                impl.with_str("arg1").other_iface().as_test_other_iface(),
+                impl,
+                impl.with_str("arg1").other_iface(),
             ),
-            impl.with_str("arg2").other_iface().as_test_other_iface(),
+            impl.with_str("arg2").other_iface(),
         )
     )
 
@@ -225,12 +225,12 @@ async def test_dynamic_other_iface_by_iface_list(impl: dagger.Impl):
 async def test_iface_list_args(impl: dagger.Impl):
     strs = await dag.test().iface_list_args(
         [
-            impl.as_test_custom_iface(),
-            impl.self_iface().as_test_custom_iface(),
+            impl,
+            impl.self_iface(),
         ],
         [
-            impl.other_iface().as_test_other_iface(),
-            impl.self_iface().other_iface().as_test_other_iface(),
+            impl.other_iface(),
+            impl.self_iface().other_iface(),
         ],
     )
 
@@ -240,25 +240,25 @@ async def test_iface_list_args(impl: dagger.Impl):
 async def test_parent_iface_fields_basic(impl: dagger.Impl):
     strs = await (
         dag.test()
-        .with_iface(impl.as_test_custom_iface())
+        .with_iface(impl)
         .with_private_iface(
             dag.impl(
                 str_list=["private"],
                 int_list=[99],
                 bool_list=[False],
                 obj_list=[dag.directory()],
-            ).as_test_custom_iface()
+            )
         )
         .with_iface_list(
             [
-                impl.as_test_custom_iface(),
-                impl.self_iface().as_test_custom_iface(),
+                impl,
+                impl.self_iface(),
             ]
         )
         .with_other_iface_list(
             [
-                impl.other_iface().as_test_other_iface(),
-                impl.self_iface().other_iface().as_test_other_iface(),
+                impl.other_iface(),
+                impl.self_iface().other_iface(),
             ]
         )
         .parent_iface_fields()
@@ -280,12 +280,12 @@ async def test_parent_iface_fields_optionals(iface: dagger.TestCustomIface):
 async def test_parent_iface_fields_return_custom_obj(impl: dagger.Impl):
     custom_obj = dag.test().return_custom_obj(
         [
-            impl.as_test_custom_iface(),
-            impl.self_iface().as_test_custom_iface(),
+            impl,
+            impl.self_iface(),
         ],
         [
-            impl.other_iface().as_test_other_iface(),
-            impl.self_iface().other_iface().as_test_other_iface(),
+            impl.other_iface(),
+            impl.self_iface().other_iface(),
         ],
     )
 

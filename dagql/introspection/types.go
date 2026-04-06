@@ -688,7 +688,7 @@ func defaultValue(value *ast.Value) *string {
 }
 
 func (t *Type) Interfaces() []*Type {
-	if t.def == nil || t.def.Kind != ast.Object {
+	if t.def == nil || (t.def.Kind != ast.Object && t.def.Kind != ast.Interface) {
 		return []*Type{}
 	}
 

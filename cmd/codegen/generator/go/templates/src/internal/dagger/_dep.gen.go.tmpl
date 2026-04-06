@@ -4,9 +4,9 @@ package dagger
 
 import (
 {{ if IsModuleCode -}}
-	"{{.UtilityPkgImport}}/querybuilder"
+	"github.com/dagger/querybuilder"
 {{- else -}}
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 {{- end }}
 )
 
@@ -21,4 +21,5 @@ import (
       {{ template "_types/object.go.tmpl" . }}
     {{ end }}
   {{ end }}
+  {{ if eq .Kind "INTERFACE" }}{{ template "_types/interface.go.tmpl" . }}{{ end }}
 {{ end }}

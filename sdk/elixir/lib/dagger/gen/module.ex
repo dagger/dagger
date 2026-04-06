@@ -67,8 +67,9 @@ defmodule Dagger.Module do
          %Dagger.Module{
            query_builder:
              QB.query()
-             |> QB.select("loadModuleFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Module"),
            client: module.client
          }
        end}
@@ -100,8 +101,9 @@ defmodule Dagger.Module do
          %Dagger.TypeDef{
            query_builder:
              QB.query()
-             |> QB.select("loadTypeDefFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("TypeDef"),
            client: module.client
          }
        end}
@@ -123,9 +125,47 @@ defmodule Dagger.Module do
   end
 
   @doc """
+  Return the generator defined by the module with the given name. Must match to exactly one generator.
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec generator(t(), String.t()) :: Dagger.Generator.t()
+  def generator(%__MODULE__{} = module, name) do
+    query_builder =
+      module.query_builder |> QB.select("generator") |> QB.put_arg("name", name)
+
+    %Dagger.Generator{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
+  Return all generators defined by the module
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec generators(t(), [{:include, [String.t()]}]) :: Dagger.GeneratorGroup.t()
+  def generators(%__MODULE__{} = module, optional_args \\ []) do
+    query_builder =
+      module.query_builder
+      |> QB.select("generators")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.GeneratorGroup{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
   A unique identifier for this Module.
   """
-  @spec id(t()) :: {:ok, Dagger.ModuleID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = module) do
     query_builder =
       module.query_builder |> QB.select("id")
@@ -147,8 +187,9 @@ defmodule Dagger.Module do
          %Dagger.TypeDef{
            query_builder:
              QB.query()
-             |> QB.select("loadTypeDefFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("TypeDef"),
            client: module.client
          }
        end}
@@ -198,8 +239,9 @@ defmodule Dagger.Module do
          %Dagger.TypeDef{
            query_builder:
              QB.query()
-             |> QB.select("loadTypeDefFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("TypeDef"),
            client: module.client
          }
        end}
@@ -209,7 +251,7 @@ defmodule Dagger.Module do
   @doc """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  @spec runtime(t()) :: Dagger.Container.t()
+  @spec runtime(t()) :: Dagger.Container.t() | nil
   def runtime(%__MODULE__{} = module) do
     query_builder =
       module.query_builder |> QB.select("runtime")
@@ -239,12 +281,14 @@ defmodule Dagger.Module do
 
   Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
   """
-  @spec serve(t(), [{:include_dependencies, boolean() | nil}]) :: :ok | {:error, term()}
+  @spec serve(t(), [{:include_dependencies, boolean() | nil}, {:entrypoint, boolean() | nil}]) ::
+          :ok | {:error, term()}
   def serve(%__MODULE__{} = module, optional_args \\ []) do
     query_builder =
       module.query_builder
       |> QB.select("serve")
       |> QB.maybe_put_arg("includeDependencies", optional_args[:include_dependencies])
+      |> QB.maybe_put_arg("entrypoint", optional_args[:entrypoint])
 
     case Client.execute(module.client, query_builder) do
       {:ok, _} -> :ok
@@ -279,8 +323,9 @@ defmodule Dagger.Module do
        %Dagger.Module{
          query_builder:
            QB.query()
-           |> QB.select("loadModuleFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Module"),
          client: module.client
        }}
     end
@@ -372,6 +417,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Module do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_module_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Module{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Module"),
+       client: dag.client
+     }}
   end
 end

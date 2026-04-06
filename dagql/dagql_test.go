@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -592,9 +593,11 @@ func TestNullableResults(t *testing.T) {
 					Loaded points.Point
 				}
 				req(t, gql, `query {
-					loaded: loadPointFromID(id: "`+point.ID+`") {
-						x
-						y
+					loaded: node(id: "`+point.ID+`") {
+						... on Point {
+							x
+							y
+						}
 					}
 				}`, &res)
 				assert.Equal(t, point.X, res.Loaded.X)
@@ -713,34 +716,38 @@ func TestListResults(t *testing.T) {
 		assert.Assert(t, cmp.Len(res.ListOfRandomObjects, 2))
 
 		var res2 struct {
-			LoadPointFromID struct {
+			Node struct {
 				X int
 				Y int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+res.ListOfRandomObjects[0].ID+`") {
-				x
-				y
+			node(id: "`+res.ListOfRandomObjects[0].ID+`") {
+				... on Point {
+					x
+					y
+				}
 			}
 		}`, &res2)
-		assert.Equal(t, res2.LoadPointFromID.X, res2.LoadPointFromID.Y)
+		assert.Equal(t, res2.Node.X, res2.Node.Y)
 
 		var res3 struct {
-			LoadPointFromID struct {
+			Node struct {
 				X int
 				Y int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+res.ListOfRandomObjects[1].ID+`") {
-				x
-				y
+			node(id: "`+res.ListOfRandomObjects[1].ID+`") {
+				... on Point {
+					x
+					y
+				}
 			}
 		}`, &res3)
-		assert.Equal(t, res3.LoadPointFromID.X, res3.LoadPointFromID.Y)
+		assert.Equal(t, res3.Node.X, res3.Node.Y)
 
-		assert.Equal(t, res2.LoadPointFromID.X, res3.LoadPointFromID.X)
+		assert.Equal(t, res2.Node.X, res3.Node.X)
 	}
 }
 
@@ -800,57 +807,61 @@ func TestLoadingFromID(t *testing.T) {
 
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
 		var res struct {
-			LoadPointFromID struct {
+			Node struct {
 				ID string
 				X  int
 				Y  int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+neighbor.ID+`") {
-				id
-				x
-				y
+			node(id: "`+neighbor.ID+`") {
+				... on Point {
+					id
+					x
+					y
+				}
 			}
 		}`, &res)
 
-		assert.Equal(t, neighbor.ID, res.LoadPointFromID.ID)
-		assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
-		assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
+		assert.Equal(t, neighbor.ID, res.Node.ID)
+		assert.Equal(t, neighbor.X, res.Node.X)
+		assert.Equal(t, neighbor.Y, res.Node.Y)
 		switch i {
 		case 0:
-			assert.Equal(t, res.LoadPointFromID.X, 4)
-			assert.Equal(t, res.LoadPointFromID.Y, 7)
+			assert.Equal(t, res.Node.X, 4)
+			assert.Equal(t, res.Node.Y, 7)
 		case 1:
-			assert.Equal(t, res.LoadPointFromID.X, 6)
-			assert.Equal(t, res.LoadPointFromID.Y, 7)
+			assert.Equal(t, res.Node.X, 6)
+			assert.Equal(t, res.Node.Y, 7)
 		case 2:
-			assert.Equal(t, res.LoadPointFromID.X, 5)
-			assert.Equal(t, res.LoadPointFromID.Y, 6)
+			assert.Equal(t, res.Node.X, 5)
+			assert.Equal(t, res.Node.Y, 6)
 		case 3:
-			assert.Equal(t, res.LoadPointFromID.X, 5)
-			assert.Equal(t, res.LoadPointFromID.Y, 8)
+			assert.Equal(t, res.Node.X, 5)
+			assert.Equal(t, res.Node.Y, 8)
 		}
 
 		for _, neighbor := range neighbor.Neighbors {
 			var res struct {
-				LoadPointFromID struct {
+				Node struct {
 					ID string
 					X  int
 					Y  int
 				}
 			}
 			req(t, gql, `query {
-				loadPointFromID(id: "`+neighbor.ID+`") {
-					id
-					x
-					y
+				node(id: "`+neighbor.ID+`") {
+					... on Point {
+						id
+						x
+						y
+					}
 				}
 			}`, &res)
 
-			assert.Equal(t, neighbor.ID, res.LoadPointFromID.ID)
-			assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
-			assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
+			assert.Equal(t, neighbor.ID, res.Node.ID)
+			assert.Equal(t, neighbor.X, res.Node.X)
+			assert.Equal(t, neighbor.Y, res.Node.Y)
 		}
 	}
 }
@@ -904,35 +915,37 @@ func TestIDsReflectQuery(t *testing.T) {
 	assert.Assert(t, cmp.Len(res.Point.ShiftLeft.Neighbors, 4))
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
 		var res struct {
-			LoadPointFromID struct {
+			Node struct {
 				ID string
 				X  int
 				Y  int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+neighbor.ID+`") {
-				id
-				x
-				y
+			node(id: "`+neighbor.ID+`") {
+				... on Point {
+					id
+					x
+					y
+				}
 			}
 		}`, &res)
 
-		eqIDs(t, res.LoadPointFromID.ID, neighbor.ID)
+		eqIDs(t, res.Node.ID, neighbor.ID)
 
 		switch i {
 		case 0:
-			assert.Equal(t, res.LoadPointFromID.X, 4)
-			assert.Equal(t, res.LoadPointFromID.Y, 7)
+			assert.Equal(t, res.Node.X, 4)
+			assert.Equal(t, res.Node.Y, 7)
 		case 1:
-			assert.Equal(t, res.LoadPointFromID.X, 6)
-			assert.Equal(t, res.LoadPointFromID.Y, 7)
+			assert.Equal(t, res.Node.X, 6)
+			assert.Equal(t, res.Node.Y, 7)
 		case 2:
-			assert.Equal(t, res.LoadPointFromID.X, 5)
-			assert.Equal(t, res.LoadPointFromID.Y, 6)
+			assert.Equal(t, res.Node.X, 5)
+			assert.Equal(t, res.Node.Y, 6)
 		case 3:
-			assert.Equal(t, res.LoadPointFromID.X, 5)
-			assert.Equal(t, res.LoadPointFromID.Y, 8)
+			assert.Equal(t, res.Node.X, 5)
+			assert.Equal(t, res.Node.Y, 8)
 		}
 	}
 }
@@ -1055,19 +1068,16 @@ func TestEmptyID(t *testing.T) {
 	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	var res struct {
-		LoadPointFromID struct {
-			X int
-			Y int
+		Node struct {
+			ID string
 		}
 	}
 	err := gql.Post(`query {
-		loadPointFromID(id: "") {
+		node(id: "") {
 			id
-			x
-			y
 		}
 	}`, &res)
-	assert.ErrorContains(t, err, "cannot decode empty string as ID")
+	assert.ErrorContains(t, err, "missing required argument")
 }
 
 func TestPureIDsDoNotReEvaluate(t *testing.T) {
@@ -1102,23 +1112,25 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 	assert.Equal(t, called, 1)
 
 	var loaded struct {
-		LoadPointFromID struct {
+		Node struct {
 			ID string
 			X  int
 			Y  int
 		}
 	}
 	req(t, gql, `query {
-		loadPointFromID(id: "`+res.Point.Snitch.ID+`") {
-			id
-			x
-			y
+		node(id: "`+res.Point.Snitch.ID+`") {
+			... on Point {
+				id
+				x
+				y
+			}
 		}
 	}`, &loaded)
 
-	assert.Equal(t, loaded.LoadPointFromID.ID, res.Point.Snitch.ID)
-	assert.Equal(t, loaded.LoadPointFromID.X, 6)
-	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
+	assert.Equal(t, loaded.Node.ID, res.Point.Snitch.ID)
+	assert.Equal(t, loaded.Node.X, 6)
+	assert.Equal(t, loaded.Node.Y, 7)
 
 	assert.Equal(t, called, 1)
 }
@@ -1155,22 +1167,24 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 	assert.Equal(t, called, 1)
 
 	var loaded struct {
-		LoadPointFromID struct {
+		Node struct {
 			ID string
 			X  int
 			Y  int
 		}
 	}
 	req(t, gql, `query {
-		loadPointFromID(id: "`+res.Point.Snitch.ID+`") {
-			id
-			x
-			y
+		node(id: "`+res.Point.Snitch.ID+`") {
+			... on Point {
+				id
+				x
+				y
+			}
 		}
 	}`, &loaded)
-	assert.Equal(t, loaded.LoadPointFromID.ID, res.Point.Snitch.ID)
-	assert.Equal(t, loaded.LoadPointFromID.X, 6)
-	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
+	assert.Equal(t, loaded.Node.ID, res.Point.Snitch.ID)
+	assert.Equal(t, loaded.Node.X, 6)
+	assert.Equal(t, loaded.Node.Y, 7)
 
 	assert.Equal(t, called, 2)
 }
@@ -1466,21 +1480,23 @@ func TestInputObjects(t *testing.T) {
 		assert.Assert(t, id1.Display() != id2.Display())
 
 		var res struct {
-			LoadDefaultsFromID values
+			Node values
 		}
 		req(t, gql, `query {
-			loadDefaultsFromID(id: "`+idRes.MyInput.ID+`") {
-				boolean
-				int
-				string
-				emptyString
-				float
-				slice
-				deepSlice
+			node(id: "`+idRes.MyInput.ID+`") {
+				... on Defaults {
+					boolean
+					int
+					string
+					emptyString
+					float
+					slice
+					deepSlice
+				}
 			}
 		}`, &res)
 
-		assert.DeepEqual(t, values{false, 21, "goodbye, world!", "not empty", 6.28, []int{4, 5}, [][]int{{4}, {5}}}, res.LoadDefaultsFromID)
+		assert.DeepEqual(t, values{false, 21, "goodbye, world!", "not empty", 6.28, []int{4, 5}, [][]int{{4}, {5}}}, res.Node)
 	})
 
 	t.Run("inputs with builtins and defaults", func(t *testing.T) {
@@ -3073,4 +3089,522 @@ func TestInstallHooks(t *testing.T) {
 	require.Equal(t, 100, res.OtherPoint.X)
 	require.Equal(t, 200, res.OtherPoint.Y)
 	require.Equal(t, "hello world!", res.OtherPoint.Hello)
+}
+
+func TestInterfaces(t *testing.T) {
+	t.Run("install and introspect", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		introspection.Install[Query](srv)
+		points.Install[Query](srv)
+
+		// Create and install an interface
+		spatial := dagql.NewInterface("Spatial", "Something with spatial coordinates.")
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "y",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(spatial)
+
+		// Point should satisfy Spatial (it has x and y fields)
+		pointType, ok := srv.ObjectType("Point")
+		assert.Assert(t, ok, "Point type not found")
+		assert.Assert(t, spatial.Satisfies(pointType, ""), "Point should satisfy Spatial")
+
+		// Declare that Point implements Spatial
+		pointClass := pointType.(dagql.Class[*points.Point])
+		pointClass.Implements(spatial)
+
+		// Verify the interface shows up in introspection
+		gql := client.New(dagql.NewDefaultHandler(srv))
+		var res struct {
+			Type struct {
+				Kind       string
+				Name       string
+				Fields     []struct{ Name string }
+				Interfaces []struct{ Name string }
+			} `json:"__type"`
+		}
+
+		// Check the interface itself
+		var ifaceRes struct {
+			Type struct {
+				Kind          string
+				Name          string
+				Description   string
+				Fields        []struct{ Name string }
+				PossibleTypes []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Spatial") { kind name description fields { name } possibleTypes { name } } }`, &ifaceRes)
+		assert.Equal(t, "INTERFACE", ifaceRes.Type.Kind)
+		assert.Equal(t, "Spatial", ifaceRes.Type.Name)
+		assert.Equal(t, "Something with spatial coordinates.", ifaceRes.Type.Description)
+		assert.Assert(t, len(ifaceRes.Type.Fields) == 2)
+		// Check that Point is in possibleTypes
+		foundPoint := false
+		for _, pt := range ifaceRes.Type.PossibleTypes {
+			if pt.Name == "Point" {
+				foundPoint = true
+			}
+		}
+		assert.Assert(t, foundPoint, "Point should be in Spatial possibleTypes")
+
+		// Check that Point declares Spatial in its interfaces
+		req(t, gql, `{ __type(name: "Point") { kind name interfaces { name } } }`, &res)
+		assert.Equal(t, "OBJECT", res.Type.Kind)
+		foundSpatial := false
+		for _, iface := range res.Type.Interfaces {
+			if iface.Name == "Spatial" {
+				foundSpatial = true
+			}
+		}
+		assert.Assert(t, foundSpatial, "Point should declare Spatial interface")
+	})
+
+	t.Run("Satisfies checks", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		// Interface requiring a field that Point doesn't have
+		badIface := dagql.NewInterface("HasZ", "Something with a Z coordinate.")
+		badIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "z",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(badIface)
+
+		pointType, ok := srv.ObjectType("Point")
+		assert.Assert(t, ok)
+		assert.Assert(t, !badIface.Satisfies(pointType, ""), "Point should NOT satisfy HasZ")
+
+		// Calling Implements should panic
+		assert.Assert(t, func() (panicked bool) {
+			defer func() {
+				if r := recover(); r != nil {
+					panicked = true
+				}
+			}()
+			pointType.(dagql.Class[*points.Point]).Implements(badIface)
+			return false
+		}(), "Implements should panic for unsatisfied interface")
+	})
+
+	t.Run("Satisfies checks argument compatibility", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		pointType, ok := srv.ObjectType("Point")
+		assert.Assert(t, ok)
+
+		// Interface with matching args should satisfy.
+		// Point.shift(direction: Direction!, amount: Int = 1): Point!
+		shiftable := dagql.NewInterface("Shiftable", "Can be shifted.")
+		shiftable.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "shift",
+				Type: &points.Point{},
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "direction", Type: points.Direction("")},
+					dagql.InputSpec{Name: "amount", Type: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(shiftable)
+		assert.Assert(t, shiftable.Satisfies(pointType, ""), "Point should satisfy Shiftable (matching args)")
+
+		// Interface requiring a subset of args should also satisfy
+		// (extra args on object are allowed).
+		shiftableSubset := dagql.NewInterface("ShiftableSubset", "Can be shifted (subset args).")
+		shiftableSubset.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "shift",
+				Type: &points.Point{},
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "direction", Type: points.Direction("")},
+				),
+			},
+		})
+		srv.InstallInterface(shiftableSubset)
+		assert.Assert(t, shiftableSubset.Satisfies(pointType, ""), "Point should satisfy ShiftableSubset (subset of args)")
+
+		// Interface requiring an arg the object doesn't have should fail.
+		badArgs := dagql.NewInterface("BadArgs", "Requires unknown arg.")
+		badArgs.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "shift",
+				Type: &points.Point{},
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "direction", Type: points.Direction("")},
+					dagql.InputSpec{Name: "velocity", Type: dagql.Int(0)}, // doesn't exist on Point.shift
+				),
+			},
+		})
+		srv.InstallInterface(badArgs)
+		assert.Assert(t, !badArgs.Satisfies(pointType, ""), "Point should NOT satisfy BadArgs (missing arg)")
+
+		// Interface with wrong arg type should fail.
+		wrongArgType := dagql.NewInterface("WrongArgType", "Wrong arg type.")
+		wrongArgType.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "shift",
+				Type: &points.Point{},
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "direction", Type: dagql.String("")}, // wrong type: String vs Direction
+				),
+			},
+		})
+		srv.InstallInterface(wrongArgType)
+		assert.Assert(t, !wrongArgType.Satisfies(pointType, ""), "Point should NOT satisfy WrongArgType")
+	})
+
+	t.Run("SatisfiedByInterface checks argument compatibility", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+
+		// Interface A: transform(x: Int!, y: Int!): String!
+		ifaceA := dagql.NewInterface("TransformA", "Transform interface A.")
+		ifaceA.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "y", Type: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(ifaceA)
+
+		// Interface B: transform(x: Int!, y: Int!): String! — same args
+		ifaceB := dagql.NewInterface("TransformB", "Transform interface B.")
+		ifaceB.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "y", Type: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(ifaceB)
+
+		// A satisfies B and vice versa (same fields, same args)
+		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceB, ""), "B should satisfy A")
+		assert.Assert(t, ifaceB.SatisfiedByInterface(ifaceA, ""), "A should satisfy B")
+
+		// Interface C: transform(x: Int!, y: Int!, z: Int!): String! — extra arg
+		ifaceC := dagql.NewInterface("TransformC", "Transform interface C with extra arg.")
+		ifaceC.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "y", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "z", Type: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(ifaceC)
+
+		// C satisfies A (has all of A's args plus more)
+		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceC, ""), "C should satisfy A (superset of args)")
+		// A does NOT satisfy C (missing z arg)
+		assert.Assert(t, !ifaceC.SatisfiedByInterface(ifaceA, ""), "A should NOT satisfy C (missing arg)")
+
+		// Interface D: transform(x: String!): String! — different arg type
+		ifaceD := dagql.NewInterface("TransformD", "Transform interface D with wrong arg type.")
+		ifaceD.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.String("")}, // String instead of Int
+				),
+			},
+		})
+		srv.InstallInterface(ifaceD)
+
+		// D does NOT satisfy A (arg type mismatch)
+		assert.Assert(t, !ifaceA.SatisfiedByInterface(ifaceD, ""), "D should NOT satisfy A (arg type mismatch)")
+	})
+
+	t.Run("auto Node interface", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		introspection.Install[Query](srv)
+
+		// Node is auto-installed by NewServer; install Point after.
+		points.Install[Query](srv)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+		var res struct {
+			Type struct {
+				Interfaces []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Point") { interfaces { name } } }`, &res)
+		foundNode := false
+		for _, iface := range res.Type.Interfaces {
+			if iface.Name == "Node" {
+				foundNode = true
+			}
+		}
+		assert.Assert(t, foundNode, "Point should auto-implement Node")
+
+		// Node interface should have Point in possibleTypes
+		var ifaceRes struct {
+			Type struct {
+				PossibleTypes []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Node") { possibleTypes { name } } }`, &ifaceRes)
+		foundPoint := false
+		for _, pt := range ifaceRes.Type.PossibleTypes {
+			if pt.Name == "Point" {
+				foundPoint = true
+			}
+		}
+		assert.Assert(t, foundPoint, "Node interface should include Point in possibleTypes")
+	})
+
+	t.Run("AddAutoInterface and AutoImplementInterfaces", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		introspection.Install[Query](srv)
+
+		// Register a custom auto-interface with a "sync" field.
+		syncable := dagql.NewInterface("Syncable", "Can be synced.")
+		syncable.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "id",
+				Type: dagql.AnyID{},
+			},
+		})
+		syncable.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "sync",
+				Type: dagql.AnyID{},
+			},
+		})
+		srv.AddAutoInterface(syncable)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+
+		// The interface should exist and implement Node.
+		var ifaceRes struct {
+			Type struct {
+				Kind       string
+				Interfaces []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Syncable") { kind interfaces { name } } }`, &ifaceRes)
+		assert.Equal(t, "INTERFACE", ifaceRes.Type.Kind)
+		foundNode := false
+		for _, iface := range ifaceRes.Type.Interfaces {
+			if iface.Name == "Node" {
+				foundNode = true
+			}
+		}
+		assert.Assert(t, foundNode, "Syncable should implement Node")
+
+		// Point (no sync) should NOT implement it.
+		points.Install[Query](srv)
+		var pointRes struct {
+			Type struct {
+				Interfaces []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Point") { interfaces { name } } }`, &pointRes)
+		for _, iface := range pointRes.Type.Interfaces {
+			assert.Assert(t, iface.Name != "Syncable", "Point should NOT implement Syncable")
+		}
+
+		// Line with sync added via Fields[T].Install SHOULD implement it
+		// (AutoImplementInterfaces is called at the end of Install).
+		dagql.Fields[*points.Line]{
+			dagql.Func("sync", func(ctx context.Context, self *points.Line, _ struct{}) (dagql.ID[*points.Line], error) {
+				return dagql.ID[*points.Line]{}, nil
+			}),
+		}.Install(srv)
+
+		var lineRes struct {
+			Type struct {
+				Interfaces []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Line") { interfaces { name } } }`, &lineRes)
+		var lineIfaces []string
+		for _, iface := range lineRes.Type.Interfaces {
+			lineIfaces = append(lineIfaces, iface.Name)
+		}
+		assert.Assert(t, slices.Contains(lineIfaces, "Syncable"),
+			"Line with sync field should auto-implement Syncable, got: %v", lineIfaces)
+
+		// Syncable should have Line in possibleTypes.
+		var possibleRes struct {
+			Type struct {
+				PossibleTypes []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Syncable") { possibleTypes { name } } }`, &possibleRes)
+		var possibleNames []string
+		for _, pt := range possibleRes.Type.PossibleTypes {
+			possibleNames = append(possibleNames, pt.Name)
+		}
+		assert.Assert(t, slices.Contains(possibleNames, "Line"),
+			"Syncable possibleTypes should include Line, got: %v", possibleNames)
+	})
+
+	t.Run("inline fragments", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+
+		// Inline fragment with matching type condition
+		var res struct {
+			Point struct {
+				X int
+				Y int
+			}
+		}
+		req(t, gql, `query {
+			point(x: 3, y: 4) {
+				... on Point {
+					x
+					y
+				}
+			}
+		}`, &res)
+		assert.Equal(t, 3, res.Point.X)
+		assert.Equal(t, 4, res.Point.Y)
+
+		// Inline fragment without type condition (unconditional)
+		var res2 struct {
+			Point struct {
+				X int
+				Y int
+			}
+		}
+		req(t, gql, `query {
+			point(x: 5, y: 6) {
+				... {
+					x
+					y
+				}
+			}
+		}`, &res2)
+		assert.Equal(t, 5, res2.Point.X)
+		assert.Equal(t, 6, res2.Point.Y)
+	})
+
+	t.Run("fragment spreads with type condition", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+
+		// Fragment spread with matching type condition
+		var res struct {
+			Point struct {
+				X int
+				Y int
+			}
+		}
+		req(t, gql, `query {
+			point(x: 10, y: 20) {
+				...PointFields
+			}
+		}
+		fragment PointFields on Point {
+			x
+			y
+		}`, &res)
+		assert.Equal(t, 10, res.Point.X)
+		assert.Equal(t, 20, res.Point.Y)
+	})
+
+	t.Run("inline fragment with interface type condition", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		introspection.Install[Query](srv)
+
+		// Install interface before objects
+		spatial := dagql.NewInterface("Spatial", "Something with spatial coordinates.")
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "y",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(spatial)
+
+		points.Install[Query](srv)
+
+		// Have Point implement Spatial — this must happen before querying
+		// so the schema includes the relationship.
+		pointType, ok := srv.ObjectType("Point")
+		assert.Assert(t, ok)
+		pointType.(dagql.Class[*points.Point]).Implements(spatial)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+		var res struct {
+			Point struct {
+				X int
+				Y int
+			}
+		}
+		req(t, gql, `query {
+			point(x: 7, y: 8) {
+				... on Spatial {
+					x
+					y
+				}
+			}
+		}`, &res)
+		assert.Equal(t, 7, res.Point.X)
+		assert.Equal(t, 8, res.Point.Y)
+	})
+
+	t.Run("__typename", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+
+		// __typename on a concrete object
+		var res struct {
+			Point struct {
+				Typename string `json:"__typename"`
+				X        int
+			}
+		}
+		req(t, gql, `query { point(x: 1, y: 2) { __typename x } }`, &res)
+		assert.Equal(t, "Point", res.Point.Typename)
+		assert.Equal(t, 1, res.Point.X)
+	})
+
+	t.Run("duplicate InstallInterface returns existing", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		iface1 := dagql.NewInterface("Foo", "First.")
+		iface2 := dagql.NewInterface("Foo", "Second.")
+		installed1 := srv.InstallInterface(iface1)
+		installed2 := srv.InstallInterface(iface2)
+		assert.Assert(t, installed1 == installed2, "should return same interface")
+		assert.Equal(t, "First.", installed2.TypeDescription())
+	})
 }

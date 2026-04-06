@@ -1,17 +1,21 @@
-query CheckGroupListDetails($id: CheckGroupID!) {
-  group: loadCheckGroupFromID(id: $id) {
-    list {
-      name
-      description
+query CheckGroupListDetails($id: ID!) {
+  group: node(id: $id) {
+    ... on CheckGroup {
+      list {
+        name
+        description
+      }
     }
   }
 }
 
-query CheckGroupRunStatuses($checkGroup: CheckGroupID!) {
-  checkGroup: loadCheckGroupFromID(id: $checkGroup) {
-    run {
-      list {
-        passed
+query CheckGroupRunStatuses($checkGroup: ID!) {
+  checkGroup: node(id: $checkGroup) {
+    ... on CheckGroup {
+      run {
+        list {
+          passed
+        }
       }
     }
   }

@@ -103,14 +103,15 @@ const (
 )
 
 type Type struct {
-	Kind        TypeKind     `json:"kind"`
-	Name        string       `json:"name"`
-	Description string       `json:"description,omitempty"`
-	Fields      []*Field     `json:"fields,omitempty"`
-	InputFields []InputValue `json:"inputFields,omitempty"`
-	EnumValues  []EnumValue  `json:"enumValues,omitempty"`
-	Interfaces  []*Type      `json:"interfaces"`
-	Directives  Directives   `json:"directives"`
+	Kind          TypeKind     `json:"kind"`
+	Name          string       `json:"name"`
+	Description   string       `json:"description,omitempty"`
+	Fields        []*Field     `json:"fields,omitempty"`
+	InputFields   []InputValue `json:"inputFields,omitempty"`
+	EnumValues    []EnumValue  `json:"enumValues,omitempty"`
+	Interfaces    []*Type      `json:"interfaces"`
+	PossibleTypes []*Type      `json:"possibleTypes"`
+	Directives    Directives   `json:"directives"`
 }
 
 // Remove all occurrences of a type from the schema, including
@@ -225,10 +226,18 @@ func (r TypeRef) IsObject() bool {
 	if r.Kind == TypeKindNonNull {
 		ref = *ref.OfType
 	}
-	if ref.Kind == TypeKindObject {
+	if ref.Kind == TypeKindObject || ref.Kind == TypeKindInterface {
 		return true
 	}
 	return false
+}
+
+func (r TypeRef) IsInterface() bool {
+	ref := r
+	if r.Kind == TypeKindNonNull {
+		ref = *ref.OfType
+	}
+	return ref.Kind == TypeKindInterface
 }
 
 func (r TypeRef) IsList() bool {
@@ -366,6 +375,14 @@ func (t *Directives) SourceMap() *SourceMap {
 		Column:   fromJSON[int](d.Arg("column")),
 		URL:      fromJSON[string](d.Arg("url")),
 	}
+}
+
+func (t *Directives) ExpectedType() string {
+	d := t.Directive("expectedType")
+	if d == nil {
+		return ""
+	}
+	return fromJSON[string](d.Arg("name"))
 }
 
 func (t *Directives) EnumValue() string {

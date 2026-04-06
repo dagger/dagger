@@ -65,25 +65,42 @@ public class Helpers {
           "super",
           "while");
 
-  static ClassName convertScalarToObject(String typeName) {
-    if (typeName.endsWith("ID")) {
+  static ClassName convertScalarToObject(String typeName, String expectedType) {
+    if (expectedType != null && !expectedType.isEmpty()) {
+      return ClassName.bestGuess(expectedType);
+    }
+    if (typeName.endsWith("ID") && typeName.length() > 2) {
       return ClassName.bestGuess(typeName.substring(0, typeName.length() - 2));
     }
     return ClassName.bestGuess(typeName);
   }
 
-  /** returns true if the field returns an ID that should be converted into an object. */
+  static ClassName convertScalarToObject(String typeName) {
+    return convertScalarToObject(typeName, null);
+  }
+
+  /**
+   * Returns true if the field returns an ID that should be converted into an object (i.e.
+   * sync()-like fields). With unified IDs, checks @expectedType matches the parent object name.
+   */
   static boolean isIdToConvert(Field field) {
-    return !"id".equals(field.getName())
-        && field.getTypeRef().isScalar()
-        && field
-            .getParentObject()
-            .getName()
-            .equals(
-                field
-                    .getTypeRef()
-                    .getTypeName()
-                    .substring(0, field.getTypeRef().getTypeName().length() - 2));
+    if ("id".equals(field.getName())) {
+      return false;
+    }
+    if (!field.getTypeRef().isScalar()) {
+      return false;
+    }
+    // Unified ID: check @expectedType
+    String expectedType = field.getExpectedType();
+    if ("ID".equals(field.getTypeRef().getTypeName()) && expectedType != null) {
+      return expectedType.equals(field.getParentObject().getName());
+    }
+    // Legacy: FooID scalar
+    String typeName = field.getTypeRef().getTypeName();
+    if (typeName != null && typeName.endsWith("ID") && typeName.length() > 2) {
+      return field.getParentObject().getName().equals(typeName.substring(0, typeName.length() - 2));
+    }
+    return false;
   }
 
   static List<Field> getArrayField(Field field, Schema schema) {

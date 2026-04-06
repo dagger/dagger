@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
  */
-class ModuleSource extends Client\AbstractObject implements Client\IdAble
+class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
@@ -161,10 +161,10 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ModuleSource.
      */
-    public function id(): ModuleSourceId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -273,10 +273,11 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Forces evaluation of the module source, including any loading into the engine and associated validation.
      */
-    public function sync(): ModuleSourceId
+    public function sync(): ModuleSource
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\ModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
@@ -309,7 +310,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Set a blueprint for the module source.
      */
-    public function withBlueprint(ModuleSourceId|ModuleSource $blueprint): ModuleSource
+    public function withBlueprint(ModuleSource $blueprint): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlueprint');
         $innerQueryBuilder->setArgument('blueprint', $blueprint);

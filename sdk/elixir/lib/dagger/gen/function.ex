@@ -31,8 +31,9 @@ defmodule Dagger.Function do
          %Dagger.FunctionArg{
            query_builder:
              QB.query()
-             |> QB.select("loadFunctionArgFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("FunctionArg"),
            client: function.client
          }
        end}
@@ -64,7 +65,7 @@ defmodule Dagger.Function do
   @doc """
   A unique identifier for this Function.
   """
-  @spec id(t()) :: {:ok, Dagger.FunctionID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = function) do
     query_builder =
       function.query_builder |> QB.select("id")
@@ -112,6 +113,17 @@ defmodule Dagger.Function do
   end
 
   @doc """
+  If this function is provided by a module, the name of the module. Unset otherwise.
+  """
+  @spec source_module_name(t()) :: {:ok, String.t()} | {:error, term()}
+  def source_module_name(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("sourceModuleName")
+
+    Client.execute(function.client, query_builder)
+  end
+
+  @doc """
   Returns the function with the provided argument
   """
   @spec with_arg(t(), String.t(), Dagger.TypeDef.t(), [
@@ -119,8 +131,9 @@ defmodule Dagger.Function do
           {:default_value, Dagger.JSON.t() | nil},
           {:default_path, String.t() | nil},
           {:ignore, [String.t()]},
-          {:source_map, Dagger.SourceMapID.t() | nil},
-          {:deprecated, String.t() | nil}
+          {:source_map, Dagger.SourceMap.t() | nil},
+          {:deprecated, String.t() | nil},
+          {:default_address, String.t() | nil}
         ]) :: Dagger.Function.t()
   def with_arg(%__MODULE__{} = function, name, type_def, optional_args \\ []) do
     query_builder =
@@ -132,8 +145,12 @@ defmodule Dagger.Function do
       |> QB.maybe_put_arg("defaultValue", optional_args[:default_value])
       |> QB.maybe_put_arg("defaultPath", optional_args[:default_path])
       |> QB.maybe_put_arg("ignore", optional_args[:ignore])
-      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg(
+        "sourceMap",
+        if(optional_args[:source_map], do: Dagger.ID.id!(optional_args[:source_map]), else: nil)
+      )
       |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
+      |> QB.maybe_put_arg("defaultAddress", optional_args[:default_address])
 
     %Dagger.Function{
       query_builder: query_builder,
@@ -206,6 +223,20 @@ defmodule Dagger.Function do
   end
 
   @doc """
+  Returns the function with a flag indicating it's a generator.
+  """
+  @spec with_generator(t()) :: Dagger.Function.t()
+  def with_generator(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("withGenerator")
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc """
   Returns the function with the given source map.
   """
   @spec with_source_map(t(), Dagger.SourceMap.t()) :: Dagger.Function.t()
@@ -231,6 +262,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Function do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_function_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Function{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Function"),
+       client: dag.client
+     }}
   end
 end

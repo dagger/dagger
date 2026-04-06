@@ -86,7 +86,7 @@
 
     
     <p>        class
-    <strong>Service</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>Service</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
@@ -163,7 +163,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
@@ -183,7 +183,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a>
+                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_start">start</a>()
@@ -193,7 +193,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a>
+                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_stop">stop</a>(bool|null $kill = false)
@@ -203,7 +203,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a>
+                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_sync">sync</a>()
@@ -216,7 +216,7 @@
                     <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_terminal">terminal</a>(array|null $cmd = null)
+                    <a href="#method_terminal">terminal</a>(array|null $cmd = [])
         
                                             <p class="no-description">No description</p>
                                     </div>
@@ -420,7 +420,7 @@
                     <div class="method-item">
                     <h3 id="method_id">
         <div class="location">at line 47</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
     </h3>
@@ -437,7 +437,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -484,7 +484,7 @@
                     <div class="method-item">
                     <h3 id="method_start">
         <div class="location">at line 67</div>
-        <code>                    <a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a>
+        <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>start</strong>()
         </code>
     </h3>
@@ -501,7 +501,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a></td>
+            <td><a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -515,8 +515,8 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_stop">
-        <div class="location">at line 76</div>
-        <code>                    <a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a>
+        <div class="location">at line 77</div>
+        <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>stop</strong>(bool|null $kill = false)
         </code>
     </h3>
@@ -543,7 +543,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a></td>
+            <td><a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -557,8 +557,8 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 88</div>
-        <code>                    <a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a>
+        <div class="location">at line 90</div>
+        <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>sync</strong>()
         </code>
     </h3>
@@ -575,7 +575,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a></td>
+            <td><a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -589,9 +589,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_terminal">
-        <div class="location">at line 94</div>
+        <div class="location">at line 97</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>terminal</strong>(array|null $cmd = null)
+    <strong>terminal</strong>(array|null $cmd = [])
         </code>
     </h3>
     <div class="details">    
@@ -632,7 +632,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_up">
-        <div class="location">at line 106</div>
+        <div class="location">at line 109</div>
         <code>                    void
     <strong>up</strong>(array|null $ports = null, bool|null $random = false)
         </code>
@@ -679,7 +679,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withHostname">
-        <div class="location">at line 121</div>
+        <div class="location">at line 124</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>withHostname</strong>(string $hostname)
         </code>

@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class JsonValue extends Client\AbstractObject implements Client\IdAble
+class JsonValue extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Decode an array from json
@@ -83,10 +83,10 @@ class JsonValue extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this JSONValue.
      */
-    public function id(): JsonValueId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\JsonValueId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -132,7 +132,7 @@ class JsonValue extends Client\AbstractObject implements Client\IdAble
     /**
      * Set a new field at the given path
      */
-    public function withField(array $path, JsonValueId|JsonValue $value): JsonValue
+    public function withField(array $path, JsonValue $value): JsonValue
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withField');
         $innerQueryBuilder->setArgument('path', $path);

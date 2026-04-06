@@ -56,9 +56,16 @@ public static class QueryExecutor
     {
         var query = queryBuilder.Build();
         var response = await client.RequestAsync(query, cancellationToken);
-        // TODO: handle error here.
         var data = await response.Content.ReadAsStringAsync(cancellationToken);
         var jsonElement = JsonSerializer.Deserialize<JsonElement>(data);
+
+        // Check for GraphQL errors
+        if (jsonElement.TryGetProperty("errors", out var errors))
+        {
+            throw new InvalidOperationException(
+                $"GraphQL errors: {errors}");
+        }
+
         return jsonElement.GetProperty("data");
     }
 
@@ -71,6 +78,12 @@ public static class QueryExecutor
         var json = jsonElement;
         foreach (var fieldName in path.RemoveAt(path.Count - 1).Select(field => field.Name))
         {
+            if (json.ValueKind == JsonValueKind.Null)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot traverse property '{fieldName}': parent element is null. " +
+                    $"The node(id:) query may have returned null.");
+            }
             json = json.GetProperty(fieldName);
         }
 

@@ -1189,7 +1189,7 @@ func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id) {
@@ -1252,7 +1252,7 @@ func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t 
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id) {
@@ -1315,7 +1315,7 @@ func (ContainerSuite) TestWithMountedDirectoryPropagation(ctx context.Context, t
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id) {
@@ -1402,7 +1402,7 @@ func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: FileID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedFile(path: "/mnt/file", source: $id) {
@@ -1862,7 +1862,7 @@ func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) 
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!, $scratch: DirectoryID!) {
+		`query Test($id: ID!, $scratch: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withDirectory(path: "/mnt/dir", source: $scratch) {
@@ -2002,7 +2002,7 @@ func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2034,7 +2034,7 @@ func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2077,7 +2077,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 	id := dirRes.Directory.WithNewFile.WithNewFile.ID
 
 	_, err = testutil.QueryWithClient[any](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2094,7 +2094,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "path /mnt/dir/some-file is a file, not a directory")
 
 	_, err = testutil.QueryWithClient[any](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2127,7 +2127,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 
 	cacheID := newCache(t)
 	_, err = testutil.QueryWithClient[any](c, t,
-		`query Test($cache: CacheVolumeID!) {
+		`query Test($cache: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
@@ -2181,7 +2181,7 @@ func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T)
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2211,7 +2211,7 @@ func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T)
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2248,7 +2248,7 @@ func (ContainerSuite) TestFile(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2280,7 +2280,7 @@ func (ContainerSuite) TestFile(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: FileID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedFile(path: "/mnt/file", source: $id) {
@@ -2303,7 +2303,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("path not found", func(ctx context.Context, t *testctx.T) {
 		_, err := testutil.Query[any](t,
-			`query Test($id: DirectoryID!) {
+			`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2322,7 +2322,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("get directory as file", func(ctx context.Context, t *testctx.T) {
 		_, err := testutil.Query[any](t,
-			`query Test($id: DirectoryID!) {
+			`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2359,7 +2359,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 	t.Run("get path under cache", func(ctx context.Context, t *testctx.T) {
 		cacheID := newCache(t)
 		_, err := testutil.Query[any](t,
-			`query Test($cache: CacheVolumeID!) {
+			`query Test($cache: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
@@ -2378,7 +2378,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("get secret mount contents", func(ctx context.Context, t *testctx.T) {
 		_, err := testutil.Query[any](t,
-			`query Test($secret: SecretID!) {
+			`query Test($secret: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
@@ -2432,7 +2432,7 @@ func (ContainerSuite) TestFSDirectory(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/etc", source: $id) {
@@ -2501,7 +2501,7 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!, $cache: CacheVolumeID!) {
+		`query Test($id: ID!, $cache: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withExec(args: ["mkdir", "-p", "/mnt/sub"]) {
@@ -2555,7 +2555,7 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2607,7 +2607,7 @@ func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "node:18.10.0-alpine") {
 					withMountedDirectory(path: "/mnt", source: $id) {
@@ -3081,7 +3081,9 @@ func (ContainerSuite) TestFromIDPlatform(ctx context.Context, t *testctx.T) {
 	}).From(alpineImage).ID(ctx)
 	require.NoError(t, err)
 
-	platform, err := c.LoadContainerFromID(id).Platform(ctx)
+	ctr, err := dagger.Load[*dagger.Container](ctx, c, id)
+	require.NoError(t, err)
+	platform, err := ctr.Platform(ctx)
 	require.NoError(t, err)
 	require.Equal(t, desiredPlatform, platform)
 }

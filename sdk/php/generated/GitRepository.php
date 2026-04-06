@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A git repository.
  */
-class GitRepository extends Client\AbstractObject implements Client\IdAble
+class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Returns details of a branch.
@@ -57,10 +57,10 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this GitRepository.
      */
-    public function id(): GitRepositoryId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\GitRepositoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

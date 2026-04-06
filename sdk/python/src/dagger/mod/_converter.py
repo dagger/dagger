@@ -68,7 +68,7 @@ def dagger_type_structure(id_: str | Scalar, cls: type[Type]):
         raise TypeError(msg)
 
     return cls(
-        dag._select(f"load{cls._graphql_name()}FromID", [Arg("id", id_)])  # noqa: SLF001
+        dag._ctx.select_id(cls._graphql_name(), id_)  # noqa: SLF001
     )
 
 

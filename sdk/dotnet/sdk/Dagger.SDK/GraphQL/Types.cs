@@ -8,8 +8,7 @@ public abstract class Value
     public abstract Task<string> FormatAsync(CancellationToken cancellationToken = default);
 }
 
-public class IdValue<TId>(IId<TId> value) : Value
-    where TId : Scalar
+public class IdValue(IId value) : Value
 {
     public override async Task<string> FormatAsync(CancellationToken cancellationToken = default)
     {

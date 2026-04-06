@@ -64,14 +64,14 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// serialization rather than as an ID (so that SDKs can decode them without
 	// needing to make calls to their own API).
 	switch x := value.(type) {
-	case DynamicID:
+	case dagql.AnyID:
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current query: %w", err)
 		}
 		deps, err := query.IDDeps(ctx, x.ID())
 		if err != nil {
-			return nil, fmt.Errorf("failed to get deps for DynamicID: %w", err)
+			return nil, fmt.Errorf("failed to get deps for ID: %w", err)
 		}
 		dag, err := deps.Server(ctx)
 		if err != nil {
@@ -79,12 +79,10 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 		}
 		val, err := dag.Load(ctx, x.ID())
 		if err != nil {
-			return nil, fmt.Errorf("load DynamicID: %w", err)
+			return nil, fmt.Errorf("load ID: %w", err)
 		}
 		switch x := val.(type) {
 		case dagql.ObjectResult[*ModuleObject]:
-			return x.Self().Fields, nil
-		case dagql.ObjectResult[*InterfaceAnnotatedValue]:
 			return x.Self().Fields, nil
 		default:
 			return nil, fmt.Errorf("unexpected value type %T", x)
@@ -99,14 +97,11 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		return content.CollectJSONable(nil)
 	}
 
-	var objFields map[string]any
-	if obj, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
-		objFields = obj.Fields
-	} else if iface, ok := dagql.UnwrapAs[*InterfaceAnnotatedValue](value); ok {
-		objFields = iface.Fields
-	} else {
+	obj, ok := dagql.UnwrapAs[*ModuleObject](value)
+	if !ok {
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
+	objFields := obj.Fields
 
 	// Iterate fields in sorted order to produce a deterministic hash.
 	for _, k := range slices.Sorted(maps.Keys(objFields)) {

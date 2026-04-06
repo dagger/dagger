@@ -29,7 +29,7 @@ defmodule Dagger.SDKConfig do
   @doc """
   A unique identifier for this SDKConfig.
   """
-  @spec id(t()) :: {:ok, Dagger.SDKConfigID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = sdk_config) do
     query_builder =
       sdk_config.query_builder |> QB.select("id")
@@ -58,6 +58,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.SDKConfig do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_sdk_config_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.SDKConfig{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("SDKConfig"),
+       client: dag.client
+     }}
   end
 end

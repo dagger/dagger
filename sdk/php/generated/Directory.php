@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A directory.
  */
-class Directory extends Client\AbstractObject implements Client\IdAble
+class Directory extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Converts this directory to a local git repository
@@ -51,7 +51,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      *
      * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
      */
-    public function changes(DirectoryId|Directory $from): Changeset
+    public function changes(Directory $from): Changeset
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
         $innerQueryBuilder->setArgument('from', $from);
@@ -72,7 +72,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Return the difference between this directory and an another directory. The difference is encoded as a directory.
      */
-    public function diff(DirectoryId|Directory $other): Directory
+    public function diff(Directory $other): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('diff');
         $innerQueryBuilder->setArgument('other', $other);
@@ -108,7 +108,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         ?string $target = '',
         ?array $secrets = null,
         ?bool $noInit = false,
-        SocketId|Socket|null $ssh = null,
+        ?Socket $ssh = null,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
         if (null !== $dockerfile) {
@@ -189,7 +189,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Return a snapshot with some paths included or excluded
      */
-    public function filter(?array $exclude = null, ?array $include = null, ?bool $gitignore = false): Directory
+    public function filter(?array $exclude = [], ?array $include = [], ?bool $gitignore = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filter');
         if (null !== $exclude) {
@@ -228,10 +228,10 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Directory.
      */
-    public function id(): DirectoryId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -250,8 +250,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      */
     public function search(
         string $pattern,
-        ?array $paths = null,
-        ?array $globs = null,
+        ?array $paths = [],
+        ?array $globs = [],
         ?bool $literal = false,
         ?bool $multiline = false,
         ?bool $dotall = false,
@@ -312,18 +312,19 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Force evaluation in the engine.
      */
-    public function sync(): DirectoryId
+    public function sync(): Directory
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
      * Opens an interactive terminal in new container with this directory mounted inside.
      */
     public function terminal(
-        ContainerId|Container|null $container = null,
-        ?array $cmd = null,
+        ?Container $container = null,
+        ?array $cmd = [],
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
     ): Directory {
@@ -346,7 +347,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Return a directory with changes from another directory applied to it.
      */
-    public function withChanges(ChangesetId|Changeset $changes): Directory
+    public function withChanges(Changeset $changes): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
         $innerQueryBuilder->setArgument('changes', $changes);
@@ -358,9 +359,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      */
     public function withDirectory(
         string $path,
-        DirectoryId|Directory $source,
-        ?array $exclude = null,
-        ?array $include = null,
+        Directory $source,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
         ?string $owner = '',
     ): Directory {
@@ -395,12 +396,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this directory plus the contents of the given file copied to the given path.
      */
-    public function withFile(
-        string $path,
-        FileId|File $source,
-        ?int $permissions = null,
-        ?string $owner = '',
-    ): Directory {
+    public function withFile(string $path, File $source, ?int $permissions = null, ?string $owner = ''): Directory
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
@@ -467,7 +464,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this directory with the given Git-compatible patch file applied.
      */
-    public function withPatchFile(FileId|File $patch): Directory
+    public function withPatchFile(File $patch): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatchFile');
         $innerQueryBuilder->setArgument('patch', $patch);

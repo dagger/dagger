@@ -705,9 +705,9 @@ export class Test {
 			require.NoError(t, err)
 			require.Equal(t, idp.Display(), `test.set(data: "abc"): Test!`)
 
-			out, err = modGen.With(daggerQuery(`{loadTestFromID(id: "%s"){get}}`, id)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{test: node(id: "%s"){ ... on Test { get } }}`, id)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"loadTestFromID":{"get": "abc"}}`, out)
+			require.JSONEq(t, `{"test":{"get": "abc"}}`, out)
 		})
 	}
 }

@@ -11,6 +11,9 @@ public class Type {
   private List<Field> fields;
   private List<InputObject> inputFields;
   private List<EnumValue> enumValues;
+  private List<TypeRef> interfaces;
+  private List<TypeRef> possibleTypes;
+  private List<Directive> directives;
 
   public TypeKind getKind() {
     return kind;
@@ -53,7 +56,6 @@ public class Type {
         inputFields == null
             ? null
             : inputFields.stream().sorted(comparing(InputObject::getName)).toList();
-    // this.inputFields = inputFields;
   }
 
   public List<Field> getFields() {
@@ -63,21 +65,71 @@ public class Type {
   public void setFields(List<Field> fields) {
     this.fields =
         fields == null ? null : fields.stream().sorted(comparing(Field::getName)).toList();
-    // this.fields = fields;
   }
 
+  public List<TypeRef> getInterfaces() {
+    return interfaces;
+  }
+
+  public void setInterfaces(List<TypeRef> interfaces) {
+    this.interfaces = interfaces;
+  }
+
+  public List<TypeRef> getPossibleTypes() {
+    return possibleTypes;
+  }
+
+  public void setPossibleTypes(List<TypeRef> possibleTypes) {
+    this.possibleTypes = possibleTypes;
+  }
+
+  public List<Directive> getDirectives() {
+    return directives;
+  }
+
+  public void setDirectives(List<Directive> directives) {
+    this.directives = directives;
+  }
+
+  /**
+   * Checks if this type has an "id" field. With unified IDs, the id field returns the unified ID
+   * scalar. Falls back to legacy FooID check.
+   */
   private static boolean filterIDField(Field f) {
-    return "id".equals(f.getName())
-        && f.getTypeRef().isScalar()
-        && f.getTypeRef().getTypeName().equals(f.getParentObject().getName() + "ID");
+    if (!"id".equals(f.getName())) {
+      return false;
+    }
+    if (!f.getTypeRef().isScalar()) {
+      return false;
+    }
+    // Unified ID: scalar name is "ID" — the id field itself may not carry @expectedType,
+    // but the parent type name is implicit
+    if ("ID".equals(f.getTypeRef().getTypeName())) {
+      return true;
+    }
+    // Legacy: FooID scalar
+    return f.getTypeRef().getTypeName().equals(f.getParentObject().getName() + "ID");
   }
 
   boolean providesId() {
-    return fields.stream().filter(Type::filterIDField).count() > 0;
+    return fields != null && fields.stream().anyMatch(Type::filterIDField);
   }
 
   Field getIdField() {
     return fields.stream().filter(Type::filterIDField).findFirst().get();
+  }
+
+  /** Returns true if this type is a GraphQL INTERFACE. */
+  public boolean isInterface() {
+    return kind == TypeKind.INTERFACE;
+  }
+
+  /** Returns the list of interface names this object implements. */
+  public List<String> getImplementedInterfaceNames() {
+    if (interfaces == null) {
+      return List.of();
+    }
+    return interfaces.stream().map(TypeRef::getTypeName).toList();
   }
 
   @Override

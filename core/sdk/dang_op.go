@@ -783,14 +783,27 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 	switch v := val.(type) {
 	case string:
 		if modType, ok := fieldType.(*dang.Module); ok && modType != dang.StringType {
-			sel := &dang.FunCall{
-				Fun: &dang.Select{
-					Field: &dang.Symbol{Name: fmt.Sprintf("load%sFromID", modType.Named)},
+			// Build: node(id: "...").{... on <Type>!}
+			// The lazy inline fragment narrows the Node interface to the
+			// concrete type so subsequent field selections resolve correctly
+			// and the query chain includes the inline fragment.
+			sel := &dang.ObjectSelection{
+				Receiver: &dang.FunCall{
+					Fun: &dang.Select{
+						Field: &dang.Symbol{Name: "node"},
+					},
+					Args: dang.Record{
+						dang.Keyed[dang.Node]{
+							Key:   "id",
+							Value: &dang.String{Value: v},
+						},
+					},
 				},
-				Args: dang.Record{
-					dang.Keyed[dang.Node]{
-						Key:   "id",
-						Value: &dang.String{Value: v},
+				InlineFragments: []*dang.InlineFragment{
+					{
+						TypeName: &dang.Symbol{Name: modType.Named},
+						NonNull:  true,
+						Inferred: modType,
 					},
 				},
 			}

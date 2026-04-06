@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a list type in a Module.
  */
-class ListTypeDef extends Client\AbstractObject implements Client\IdAble
+class ListTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The type of the elements in the list.
@@ -25,9 +25,9 @@ class ListTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ListTypeDef.
      */
-    public function id(): ListTypeDefId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ListTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

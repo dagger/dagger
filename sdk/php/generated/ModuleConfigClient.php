@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * The client generated for the module.
  */
-class ModuleConfigClient extends Client\AbstractObject implements Client\IdAble
+class ModuleConfigClient extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The directory the client is generated in.
@@ -34,9 +34,9 @@ class ModuleConfigClient extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ModuleConfigClient.
      */
-    public function id(): ModuleConfigClientId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ModuleConfigClientId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

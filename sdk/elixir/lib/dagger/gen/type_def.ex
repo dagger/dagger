@@ -102,7 +102,7 @@ defmodule Dagger.TypeDef do
   @doc """
   A unique identifier for this TypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.TypeDefID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = type_def) do
     query_builder =
       type_def.query_builder |> QB.select("id")
@@ -158,7 +158,7 @@ defmodule Dagger.TypeDef do
   """
   @spec with_enum(t(), String.t(), [
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil}
+          {:source_map, Dagger.SourceMap.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_enum(%__MODULE__{} = type_def, name, optional_args \\ []) do
     query_builder =
@@ -166,7 +166,10 @@ defmodule Dagger.TypeDef do
       |> QB.select("withEnum")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg(
+        "sourceMap",
+        if(optional_args[:source_map], do: Dagger.ID.id!(optional_args[:source_map]), else: nil)
+      )
 
     %Dagger.TypeDef{
       query_builder: query_builder,
@@ -180,7 +183,7 @@ defmodule Dagger.TypeDef do
   @spec with_enum_member(t(), String.t(), [
           {:value, String.t() | nil},
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:source_map, Dagger.SourceMap.t() | nil},
           {:deprecated, String.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_enum_member(%__MODULE__{} = type_def, name, optional_args \\ []) do
@@ -190,7 +193,10 @@ defmodule Dagger.TypeDef do
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("value", optional_args[:value])
       |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg(
+        "sourceMap",
+        if(optional_args[:source_map], do: Dagger.ID.id!(optional_args[:source_map]), else: nil)
+      )
       |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
 
     %Dagger.TypeDef{
@@ -207,7 +213,7 @@ defmodule Dagger.TypeDef do
   """
   @spec with_enum_value(t(), String.t(), [
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:source_map, Dagger.SourceMap.t() | nil},
           {:deprecated, String.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_enum_value(%__MODULE__{} = type_def, value, optional_args \\ []) do
@@ -216,7 +222,10 @@ defmodule Dagger.TypeDef do
       |> QB.select("withEnumValue")
       |> QB.put_arg("value", value)
       |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg(
+        "sourceMap",
+        if(optional_args[:source_map], do: Dagger.ID.id!(optional_args[:source_map]), else: nil)
+      )
       |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
 
     %Dagger.TypeDef{
@@ -230,7 +239,7 @@ defmodule Dagger.TypeDef do
   """
   @spec with_field(t(), String.t(), Dagger.TypeDef.t(), [
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:source_map, Dagger.SourceMap.t() | nil},
           {:deprecated, String.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_field(%__MODULE__{} = type_def_, name, type_def, optional_args \\ []) do
@@ -240,7 +249,10 @@ defmodule Dagger.TypeDef do
       |> QB.put_arg("name", name)
       |> QB.put_arg("typeDef", Dagger.ID.id!(type_def))
       |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg(
+        "sourceMap",
+        if(optional_args[:source_map], do: Dagger.ID.id!(optional_args[:source_map]), else: nil)
+      )
       |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
 
     %Dagger.TypeDef{
@@ -270,7 +282,7 @@ defmodule Dagger.TypeDef do
   """
   @spec with_interface(t(), String.t(), [
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil}
+          {:source_map, Dagger.SourceMap.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_interface(%__MODULE__{} = type_def, name, optional_args \\ []) do
     query_builder =
@@ -278,7 +290,10 @@ defmodule Dagger.TypeDef do
       |> QB.select("withInterface")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg(
+        "sourceMap",
+        if(optional_args[:source_map], do: Dagger.ID.id!(optional_args[:source_map]), else: nil)
+      )
 
     %Dagger.TypeDef{
       query_builder: query_builder,
@@ -323,7 +338,7 @@ defmodule Dagger.TypeDef do
   """
   @spec with_object(t(), String.t(), [
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:source_map, Dagger.SourceMap.t() | nil},
           {:deprecated, String.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_object(%__MODULE__{} = type_def, name, optional_args \\ []) do
@@ -332,7 +347,10 @@ defmodule Dagger.TypeDef do
       |> QB.select("withObject")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg(
+        "sourceMap",
+        if(optional_args[:source_map], do: Dagger.ID.id!(optional_args[:source_map]), else: nil)
+      )
       |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
 
     %Dagger.TypeDef{
@@ -382,6 +400,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.TypeDef do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_type_def_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.TypeDef{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("TypeDef"),
+       client: dag.client
+     }}
   end
 end

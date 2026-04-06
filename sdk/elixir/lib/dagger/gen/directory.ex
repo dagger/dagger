@@ -141,8 +141,9 @@ defmodule Dagger.Directory do
           {:platform, Dagger.Platform.t() | nil},
           {:build_args, [Dagger.BuildArg.t()]},
           {:target, String.t() | nil},
-          {:secrets, [Dagger.SecretID.t()]},
-          {:no_init, boolean() | nil}
+          {:secrets, [Dagger.Secret.t()]},
+          {:no_init, boolean() | nil},
+          {:ssh, Dagger.Socket.t() | nil}
         ]) :: Dagger.Container.t()
   def docker_build(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =
@@ -160,6 +161,10 @@ defmodule Dagger.Directory do
         )
       )
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
+      |> QB.maybe_put_arg(
+        "ssh",
+        if(optional_args[:ssh], do: Dagger.ID.id!(optional_args[:ssh]), else: nil)
+      )
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -277,7 +282,7 @@ defmodule Dagger.Directory do
   @doc """
   A unique identifier for this Directory.
   """
-  @spec id(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = directory) do
     query_builder =
       directory.query_builder |> QB.select("id")
@@ -336,12 +341,31 @@ defmodule Dagger.Directory do
          %Dagger.SearchResult{
            query_builder:
              QB.query()
-             |> QB.select("loadSearchResultFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("SearchResult"),
            client: directory.client
          }
        end}
     end
+  end
+
+  @doc """
+  Return file status
+  """
+  @spec stat(t(), String.t(), [{:do_not_follow_symlinks, boolean() | nil}]) ::
+          Dagger.Stat.t() | nil
+  def stat(%__MODULE__{} = directory, path, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("stat")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+
+    %Dagger.Stat{
+      query_builder: query_builder,
+      client: directory.client
+    }
   end
 
   @doc """
@@ -357,8 +381,9 @@ defmodule Dagger.Directory do
        %Dagger.Directory{
          query_builder:
            QB.query()
-           |> QB.select("loadDirectoryFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Directory"),
          client: directory.client
        }}
     end
@@ -368,7 +393,7 @@ defmodule Dagger.Directory do
   Opens an interactive terminal in new container with this directory mounted inside.
   """
   @spec terminal(t(), [
-          {:container, Dagger.ContainerID.t() | nil},
+          {:container, Dagger.Container.t() | nil},
           {:cmd, [String.t()]},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil}
@@ -377,7 +402,10 @@ defmodule Dagger.Directory do
     query_builder =
       directory.query_builder
       |> QB.select("terminal")
-      |> QB.maybe_put_arg("container", optional_args[:container])
+      |> QB.maybe_put_arg(
+        "container",
+        if(optional_args[:container], do: Dagger.ID.id!(optional_args[:container]), else: nil)
+      )
       |> QB.maybe_put_arg("cmd", optional_args[:cmd])
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
@@ -472,7 +500,7 @@ defmodule Dagger.Directory do
   @doc """
   Retrieves this directory plus the contents of the given files copied to the given path.
   """
-  @spec with_files(t(), String.t(), [Dagger.FileID.t()], [{:permissions, integer() | nil}]) ::
+  @spec with_files(t(), String.t(), [String.t()], [{:permissions, integer() | nil}]) ::
           Dagger.Directory.t()
   def with_files(%__MODULE__{} = directory, path, sources, optional_args \\ []) do
     query_builder =
@@ -646,6 +674,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Directory do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_directory_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Directory{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Directory"),
+       client: dag.client
+     }}
   end
 end

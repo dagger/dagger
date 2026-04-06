@@ -8,7 +8,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"dagger.io/dagger/engineconn"
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 // Client is the Dagger Engine Client
@@ -124,6 +124,11 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 // GraphQLClient returns the underlying graphql.Client
 func (c *Client) GraphQLClient() graphql.Client {
 	return c.client
+}
+
+// GraphQLSelection returns the root query selection.
+func (c *Client) GraphQLSelection() *querybuilder.Selection {
+	return c.query
 }
 
 func (c *Client) QueryBuilder() *querybuilder.Selection {

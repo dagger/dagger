@@ -111,7 +111,7 @@ func (sdk *moduleTypes) ModuleTypes(
 
 	err = dag.Select(ctx, dag.Root(), &inst,
 		dagql.Selector{
-			Field: "loadModuleFromID",
+			Field: "node",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "id",

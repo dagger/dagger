@@ -34,7 +34,7 @@ defmodule Dagger.EngineCache do
   @doc """
   A unique identifier for this EngineCache.
   """
-  @spec id(t()) :: {:ok, Dagger.EngineCacheID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = engine_cache) do
     query_builder =
       engine_cache.query_builder |> QB.select("id")
@@ -67,12 +67,22 @@ defmodule Dagger.EngineCache do
   @doc """
   Prune the cache of releaseable entries
   """
-  @spec prune(t(), [{:use_default_policy, boolean() | nil}]) :: :ok | {:error, term()}
+  @spec prune(t(), [
+          {:use_default_policy, boolean() | nil},
+          {:max_used_space, String.t() | nil},
+          {:reserved_space, String.t() | nil},
+          {:min_free_space, String.t() | nil},
+          {:target_space, String.t() | nil}
+        ]) :: :ok | {:error, term()}
   def prune(%__MODULE__{} = engine_cache, optional_args \\ []) do
     query_builder =
       engine_cache.query_builder
       |> QB.select("prune")
       |> QB.maybe_put_arg("useDefaultPolicy", optional_args[:use_default_policy])
+      |> QB.maybe_put_arg("maxUsedSpace", optional_args[:max_used_space])
+      |> QB.maybe_put_arg("reservedSpace", optional_args[:reserved_space])
+      |> QB.maybe_put_arg("minFreeSpace", optional_args[:min_free_space])
+      |> QB.maybe_put_arg("targetSpace", optional_args[:target_space])
 
     case Client.execute(engine_cache.client, query_builder) do
       {:ok, _} -> :ok
@@ -112,6 +122,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.EngineCache do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_engine_cache_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.EngineCache{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("EngineCache"),
+       client: dag.client
+     }}
   end
 end

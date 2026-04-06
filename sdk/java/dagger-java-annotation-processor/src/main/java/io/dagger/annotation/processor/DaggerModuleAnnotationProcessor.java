@@ -14,9 +14,9 @@ import com.palantir.javapoet.TypeSpec;
 import io.dagger.client.Dagger;
 import io.dagger.client.FunctionCall;
 import io.dagger.client.FunctionCallArgValue;
+import io.dagger.client.ID;
 import io.dagger.client.JSON;
 import io.dagger.client.JsonConverter;
-import io.dagger.client.ModuleID;
 import io.dagger.client.TypeDef;
 import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
@@ -378,7 +378,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       var rm =
           MethodSpec.methodBuilder("register")
               .addModifiers(Modifier.PRIVATE)
-              .returns(ModuleID.class)
+              .returns(ID.class)
               .addException(ExecutionException.class)
               .addException(DaggerQueryException.class)
               .addException(InterruptedException.class)
@@ -554,7 +554,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addCode("\n")
                               .addStatement("$T result", JSON.class)
                               .beginControlFlow("if (parentName.isEmpty())")
-                              .addStatement("$T modID = register()", ModuleID.class)
+                              .addStatement("$T modID = register()", ID.class)
                               .addStatement("result = $T.toJSON(modID)", JsonConverter.class)
                               .nextControlFlow("else")
                               .addStatement(
