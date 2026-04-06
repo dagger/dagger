@@ -904,12 +904,13 @@ main()`, "./"+outputDir))
 						With(ts.setup).
 						With(daggerClientInstallAt(ts.generator, ts.outputDir))
 
-					// Mount SDK for go generator tests so SDK replace directives work
+					// Use local SDK for go generator tests so module proxy
+					// mismatches don't break the build.
 					if ts.generator == "go" {
-						moduleSrc = moduleSrc.WithDirectory(filepath.Join(ts.outputDir, "sdk"), c.Host().Directory("../../sdk/go"))
+						moduleSrc = moduleSrc.With(useLocalSDK(c, ts.outputDir))
+					} else {
+						moduleSrc = moduleSrc.With(ts.postSetup)
 					}
-
-					moduleSrc = moduleSrc.With(ts.postSetup)
 
 					t.Run(fmt.Sprintf("dagger run %s", strings.Join(ts.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 						out, err := moduleSrc.With(daggerNonNestedRun(ts.callCmd...)).
@@ -1002,8 +1003,13 @@ main()`, "."))
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
 					With(tc.setup).
-					With(daggerClientInstallAt(tc.generator, tc.outputDir)).
-					With(tc.postSetup)
+					With(daggerClientInstallAt(tc.generator, tc.outputDir))
+
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.With(useLocalSDK(c, tc.outputDir))
+				} else {
+					moduleSrc = moduleSrc.With(tc.postSetup)
+				}
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
@@ -1099,8 +1105,13 @@ main()`, "."))
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
 					With(tc.setup).
-					With(daggerClientInstallAt(tc.generator, tc.outputDir)).
-					With(tc.postSetup)
+					With(daggerClientInstallAt(tc.generator, tc.outputDir))
+
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.With(useLocalSDK(c, tc.outputDir))
+				} else {
+					moduleSrc = moduleSrc.With(tc.postSetup)
+				}
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
