@@ -67,8 +67,10 @@ type RunningService struct {
 	// or 0 frontend ports set to the same as the backend port.
 	Ports []Port
 
-	// Stop forcibly stops the service. It is normally called after all clients
-	// have detached, but may also be called manually by the user.
+	// Stop attempts to stop the service. It is normally called after all clients
+	// have detached, but may also be called manually by the user. It may be
+	// invoked concurrently, including with force=true to escalate an in-flight
+	// graceful stop.
 	Stop func(ctx context.Context, force bool) error
 
 	// Wait blocks until the service has exited or the provided context is canceled.
@@ -88,7 +90,7 @@ type RunningService struct {
 
 	manager *Services
 
-	stopOnce sync.Once
+	releaseOnce sync.Once
 }
 
 // ServiceKey is a unique identifier for a service.
@@ -431,23 +433,27 @@ func (svc *RunningService) ReleaseTrackedRefs(ctx context.Context) error {
 	return errs
 }
 
-func (svc *RunningService) stopFromManager(ctx context.Context, force bool) error {
+func (svc *RunningService) releaseTrackedRefsOnce(ctx context.Context) error {
 	var rerr error
-	svc.stopOnce.Do(func() {
-		if svc.Stop != nil {
-			rerr = stderrors.Join(rerr, svc.Stop(ctx, force))
-		}
-		rerr = stderrors.Join(rerr, svc.ReleaseTrackedRefs(context.WithoutCancel(ctx)))
+	svc.releaseOnce.Do(func() {
+		rerr = svc.ReleaseTrackedRefs(context.WithoutCancel(ctx))
 	})
 	return rerr
 }
 
-func (svc *RunningService) releaseAfterExit(ctx context.Context) error {
+func (svc *RunningService) stopFromManager(ctx context.Context, force bool) error {
 	var rerr error
-	svc.stopOnce.Do(func() {
-		rerr = svc.ReleaseTrackedRefs(context.WithoutCancel(ctx))
-	})
-	return rerr
+	if svc.Stop != nil {
+		rerr = stderrors.Join(rerr, svc.Stop(ctx, force))
+	}
+	if rerr != nil {
+		return rerr
+	}
+	return svc.releaseTrackedRefsOnce(ctx)
+}
+
+func (svc *RunningService) releaseAfterExit(ctx context.Context) error {
+	return svc.releaseTrackedRefsOnce(ctx)
 }
 
 func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {
@@ -550,7 +556,7 @@ func (ss *Services) startWithKey(
 
 			if err := svc.Start(svcCtx, running, key.Digest, sio); err != nil {
 				start.err = err
-				_ = running.ReleaseTrackedRefs(context.WithoutCancel(ctx))
+				_ = running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
 				ss.l.Lock()
 				delete(ss.starting, key)
 				ss.l.Unlock()
