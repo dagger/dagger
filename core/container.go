@@ -2304,6 +2304,9 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (dag
 	if err != nil {
 		return dagql.ObjectResult[*Container]{}, fmt.Errorf("failed to get Dagger server: %w", err)
 	}
+	// Desugar through the canonical server so entrypoint proxies on the
+	// outer Query root cannot shadow the core container constructor.
+	coreSrv := srv.Canonical()
 
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("from %s", addr),
 		telemetry.Internal(),
@@ -2311,7 +2314,7 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (dag
 	defer telemetry.EndWithCause(span, nil)
 
 	var ctr dagql.ObjectResult[*Container]
-	err = srv.Select(ctx, srv.Root(), &ctr,
+	err = coreSrv.Select(ctx, coreSrv.Root(), &ctr,
 		dagql.Selector{
 			Field: "container",
 			Args:  containerArgs,

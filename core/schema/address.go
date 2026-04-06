@@ -267,7 +267,10 @@ func (s *addressSchema) container(
 	if err != nil {
 		return inst, err
 	}
-	err = srv.Select(ctx, srv.Root(), &inst, q...)
+	// Desugar through the canonical server so entrypoint proxies on the
+	// outer Query root cannot shadow the core container constructor.
+	coreSrv := srv.Canonical()
+	err = coreSrv.Select(ctx, coreSrv.Root(), &inst, q...)
 	if err != nil {
 		return inst, err
 	}
