@@ -134,6 +134,8 @@ func (l *Loader) namedSDK(
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case sdkTypescript:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
+	case sdkRuby:
+		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.RubySDKManifestDigestEnvName)))
 	case sdkJava:
 		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	case sdkPHP:
@@ -226,7 +228,7 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 	}
 
 	// inbuilt sdk go/python/typescript currently does not support selecting a specific version
-	if slices.Contains([]sdk{sdkGo, sdkDang, sdkPython, sdkTypescript}, sdk(sdkNameParsed)) && hasVersion {
+	if slices.Contains([]sdk{sdkGo, sdkDang, sdkPython, sdkTypescript, sdkRuby}, sdk(sdkNameParsed)) && hasVersion {
 		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
 	}
 

@@ -11,6 +11,7 @@ const (
 	sdkDang       sdk = "dang"
 	sdkPython     sdk = "python"
 	sdkTypescript sdk = "typescript"
+	sdkRuby       sdk = "ruby"
 	sdkPHP        sdk = "php"
 	sdkElixir     sdk = "elixir"
 	sdkJava       sdk = "java"
@@ -23,6 +24,7 @@ var validInbuiltSDKs = []sdk{
 	sdkDang,
 	sdkPython,
 	sdkTypescript,
+	sdkRuby,
 	sdkPHP,
 	sdkElixir,
 	sdkJava,

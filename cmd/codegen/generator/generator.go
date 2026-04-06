@@ -16,6 +16,7 @@ type SDKLang string
 const (
 	SDKLangGo         SDKLang = "go"
 	SDKLangTypeScript SDKLang = "typescript"
+	SDKLangRuby       SDKLang = "ruby"
 )
 
 type Generator interface {

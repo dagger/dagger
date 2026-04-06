@@ -250,6 +250,40 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	}, nil
 }
 
+func (build *Builder) rubySDKContent(ctx context.Context) (*sdkContent, error) {
+	rootfs := dag.Directory().
+		WithDirectory("/", build.source.Directory("sdk/ruby"), dagger.DirectoryWithDirectoryOpts{
+			Include: []string{
+				"Gemfile",
+				"lib/**/*.rb",
+				"runtime/",
+			},
+		})
+
+	sdkCtrTarball := dag.Container().
+		WithRootfs(rootfs).
+		WithFile("/codegen", build.CodegenBinary()).
+		AsTarball(dagger.ContainerAsTarballOpts{
+			ForcedCompression: dagger.ImageLayerCompressionZstd,
+		})
+	sdkDir := unpackTar(sdkCtrTarball)
+
+	var index ocispecs.Index
+	indexContents, err := sdkDir.File("index.json").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
+		return nil, err
+	}
+
+	return &sdkContent{
+		index:   index,
+		sdkDir:  sdkDir,
+		envName: distconsts.RubySDKManifestDigestEnvName,
+	}, nil
+}
+
 func unpackTar(tarball *dagger.File) *dagger.Directory {
 	return dag.
 		Wolfi().
