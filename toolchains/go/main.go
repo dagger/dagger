@@ -647,8 +647,8 @@ func (p *Go) Lint(
 
 func (p *Go) LintModule(ctx context.Context, mod string) error {
 	lintImageRepo := "docker.io/golangci/golangci-lint"
-	lintImageTag := "v2.5.0-alpine"
-	lintImageDigest := "sha256:ac072ef3a8a6aa52c04630c68a7514e06be6f634d09d5975be60f2d53b484106"
+	lintImageTag := "v2.11.3-alpine"
+	lintImageDigest := "sha256:b1c3de5862ad0a95b4e45a993b0f00415835d687e4f12c845c7493b86c13414e"
 	lintImage := lintImageRepo + ":" + lintImageTag + "@" + lintImageDigest
 	p, err := p.GenerateDaggerRuntime(ctx, mod)
 	if err != nil {
