@@ -1430,7 +1430,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 	if err := modFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
 		return f, fmt.Errorf("failed to merge user defaults for %q: %w", fun.Name, err)
 	}
-	spec, err := fun.FieldSpec(ctx, NewUserMod(mod))
+	spec, err := modFun.metadata.FieldSpec(ctx, NewUserMod(mod))
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
