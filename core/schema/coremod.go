@@ -9,8 +9,8 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/dagql/call"
+	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -372,7 +372,7 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 				}
 				var fn dagql.ObjectResult[*core.Function]
 				if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
-					Field: "function",
+					Field: "__function",
 					Args: []dagql.NamedInput{
 						{Name: "name", Value: dagql.String(introspectionField.Name)},
 						{Name: "returnType", Value: rtTypeID},

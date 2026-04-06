@@ -34,6 +34,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the input type.`),
 			),
 
+		dagql.Func("__function", s.internalFunction),
 		dagql.Func("__functionArg", s.functionArg),
 		dagql.Func("__fieldTypeDef", s.fieldTypeDef),
 		dagql.Func("__enumMemberTypeDef", s.enumMemberTypeDef),
@@ -1176,6 +1177,31 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	return fn, nil
 }
 
+func (s *moduleSchema) internalFunction(ctx context.Context, _ *core.Query, args struct {
+	Name             string
+	ReturnType       core.TypeDefID
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
+}) (*core.Function, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	returnType, err := args.ReturnType.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode return type: %w", err)
+	}
+	fn := &core.Function{
+		Name:         args.Name,
+		OriginalName: args.Name,
+		ReturnType:   returnType,
+	}
+	if args.SourceModuleName.Valid {
+		fn.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return fn, nil
+}
+
 func (s *moduleSchema) sourceMap(ctx context.Context, _ *core.Query, args struct {
 	Module   dagql.Optional[dagql.String] `internal:"true"`
 	Filename string
@@ -2150,7 +2176,7 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 		}
 		var fn dagql.ObjectResult[*core.Function]
 		if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
-			Field: "function",
+			Field: "__function",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.String(introspectionField.Name)},
 				{Name: "returnType", Value: rtTypeID},
