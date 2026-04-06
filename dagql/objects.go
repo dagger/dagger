@@ -1122,6 +1122,19 @@ func (specs InputSpecs) ArgumentDefinitions(view call.View) []*ast.ArgumentDefin
 		if len(arg.Directives) > 0 {
 			schemaArg.Directives = slices.Clone(arg.Directives)
 		}
+		// Add @expectedType for ID-typed arguments that don't already
+		// have one. The reflection-based InputSpecsForType path adds
+		// this to spec.Directives, but directly-constructed InputSpecs
+		// (e.g. from ExtendEnvType) may not.
+		if arg.Type.Type().Name() == "ID" {
+			hasExpectedType := slices.ContainsFunc(schemaArg.Directives,
+				func(d *ast.Directive) bool { return d.Name == "expectedType" })
+			if !hasExpectedType {
+				if name := findExpectedTypeName(arg.Type); name != "" {
+					schemaArg.Directives = append(schemaArg.Directives, ExpectedTypeDirective(name))
+				}
+			}
+		}
 		if arg.DeprecatedReason != nil {
 			schemaArg.Directives = append(schemaArg.Directives, deprecated(arg.DeprecatedReason))
 		}
