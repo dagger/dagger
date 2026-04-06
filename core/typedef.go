@@ -728,17 +728,11 @@ func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
 		if err := idp.Decode(x); err != nil {
 			return nil, fmt.Errorf("decode %q ID: %w", d.typeName, err)
 		}
-		if !idp.IsHandle() {
-			return nil, fmt.Errorf("recipe-form IDs are not valid %q inputs", d.TypeName())
-		}
 		d.id = &idp
 		return d, nil
 	case *call.ID:
 		if x == nil {
 			return nil, fmt.Errorf("cannot create %q from nil ID", d.TypeName())
-		}
-		if !x.IsHandle() {
-			return nil, fmt.Errorf("recipe-form IDs are not valid %q inputs", d.TypeName())
 		}
 		d.id = x
 		return d, nil

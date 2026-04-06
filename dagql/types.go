@@ -926,9 +926,6 @@ func (i ID[T]) DecodeInput(val any) (Input, error) {
 		if x == nil {
 			return nil, fmt.Errorf("cannot create ID[%T] from nil *call.ID", i.inner)
 		}
-		if !x.IsHandle() {
-			return nil, fmt.Errorf("recipe-form IDs are not valid %q inputs", i.TypeName())
-		}
 		expectedName := i.inner.Type().Name()
 		if x.Type() == nil {
 			return nil, fmt.Errorf("expected %q ID, got untyped ID", expectedName)
@@ -1013,9 +1010,6 @@ func (i *ID[T]) Decode(str string) error {
 	var idp call.ID
 	if err := idp.Decode(str); err != nil {
 		return err
-	}
-	if !idp.IsHandle() {
-		return fmt.Errorf("recipe-form IDs are not valid %q inputs", i.TypeName())
 	}
 	if idp.Type() == nil {
 		return fmt.Errorf("expected %q ID, got untyped ID", expectedName)
