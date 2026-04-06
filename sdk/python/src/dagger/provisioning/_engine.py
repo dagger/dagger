@@ -92,7 +92,7 @@ class Engine:
         conn = await self.stack.enter_async_context(conn)
 
         client = dagger.Client.from_connection(conn)
-        self.stack.push_async_callback(self.progress.update, "Disconnecting")
+        self.stack.push_async_callback(self.progress.stop)
 
         return await self.verify(client)
 
@@ -123,10 +123,7 @@ class Engine:
         except dagger.QueryError as e:
             logger.warning("Failed to check Dagger engine version compatibility: %s", e)
 
-        # If log_output is set, we don't need to show any more progress.
-        if self.cfg.log_output:
-            await self.progress.stop()
-        else:
-            await self.progress.update("Running pipelines")
+        await self.progress.update("Running pipelines")
+        await self.progress.stop()
 
         return client
