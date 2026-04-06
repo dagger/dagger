@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	snapshotutil "github.com/dagger/dagger/engine/snapshots/util"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 )
 

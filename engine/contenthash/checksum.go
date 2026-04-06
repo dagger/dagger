@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 
 	cache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	iradix "github.com/hashicorp/go-immutable-radix/v2"

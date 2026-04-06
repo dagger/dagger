@@ -31,12 +31,12 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	containerdsnapshot "github.com/dagger/dagger/internal/buildkit/snapshot/containerd"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
@@ -404,7 +404,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		srv.snapshotterName,
 		srv.containerdMetaDB.Snapshotter(srv.snapshotterName),
 		"dagger",
-		nil, // no idmapping
 	)
 
 	workerGCPolicies := getDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)

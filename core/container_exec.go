@@ -19,9 +19,9 @@ import (
 	ctrdmount "github.com/containerd/containerd/v2/core/mount"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	utilsystem "github.com/dagger/dagger/internal/buildkit/util/system"
 	"github.com/moby/sys/userns"

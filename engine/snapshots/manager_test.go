@@ -8,8 +8,8 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	ctdsnapshots "github.com/containerd/containerd/v2/core/snapshots"
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/dagger/dagger/engine/snapshots/fsdiff"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -161,8 +161,6 @@ func (sn *applySnapshotDiffTestSnapshotter) Walk(context.Context, ctdsnapshots.W
 
 func (sn *applySnapshotDiffTestSnapshotter) Close() error { return nil }
 
-func (sn *applySnapshotDiffTestSnapshotter) IdentityMapping() *idtools.IdentityMapping { return nil }
-
 func (sn *applySnapshotDiffTestSnapshotter) Merge(_ context.Context, key string, diffs []snapshot.Diff, _ ...ctdsnapshots.Opt) error {
 	sn.mu.Lock()
 	defer sn.mu.Unlock()
@@ -242,6 +240,22 @@ func TestApplySnapshotDiffNilContract(t *testing.T) {
 		require.NotEqual(t, lower.SnapshotID(), ref.SnapshotID())
 		require.Len(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls, 1)
 		require.Empty(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls[0])
+	})
+
+	t.Run("uses content-aware comparison", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+		lower := addApplySnapshotDiffTestImmutable(t, cm, "lower-snapshot")
+		upper := addApplySnapshotDiffTestImmutable(t, cm, "upper-snapshot")
+
+		ref, err := cm.ApplySnapshotDiff(context.Background(), lower, upper)
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		require.Len(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls, 1)
+		require.Equal(t, []snapshot.Diff{{
+			Lower:      "lower-snapshot",
+			Upper:      "upper-snapshot",
+			Comparison: fsdiff.CompareContentOnMetadataMatch,
+		}}, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls[0])
 	})
 }
 

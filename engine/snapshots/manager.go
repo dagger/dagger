@@ -10,9 +10,10 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/engine/snapshots/fsdiff"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/moby/locker"
@@ -485,7 +486,8 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 	var diffs []snapshot.Diff
 	if upper == nil || lower.SnapshotID() != upper.SnapshotID() {
 		diff := snapshot.Diff{
-			Lower: lower.SnapshotID(),
+			Lower:      lower.SnapshotID(),
+			Comparison: fsdiff.CompareContentOnMetadataMatch,
 		}
 		if upper != nil {
 			diff.Upper = upper.SnapshotID()

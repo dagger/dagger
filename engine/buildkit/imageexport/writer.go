@@ -17,7 +17,7 @@ import (
 	"github.com/containerd/platforms"
 	cache "github.com/dagger/dagger/engine/snapshots"
 	cacheconfig "github.com/dagger/dagger/engine/snapshots/config"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"

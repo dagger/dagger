@@ -13,7 +13,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	copy "github.com/dagger/dagger/internal/fsutil/copy"

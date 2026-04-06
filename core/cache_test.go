@@ -6,16 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkconfig "github.com/dagger/dagger/engine/snapshots/config"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -84,10 +83,6 @@ func (*cacheVolumeTestSnapshotManager) ApplySnapshotDiff(context.Context, bkcach
 	panic("unexpected ApplySnapshotDiff call")
 }
 
-func (*cacheVolumeTestSnapshotManager) IdentityMapping() *idtools.IdentityMapping {
-	return nil
-}
-
 func (*cacheVolumeTestSnapshotManager) Merge(context.Context, []bkcache.ImmutableRef, ...bkcache.RefOption) (bkcache.ImmutableRef, error) {
 	panic("unexpected Merge call")
 }
@@ -144,10 +139,6 @@ func (*cacheVolumeTestImmutableRef) Release(context.Context) error {
 
 func (r *cacheVolumeTestImmutableRef) Size(context.Context) (int64, error) {
 	return r.size, nil
-}
-
-func (*cacheVolumeTestImmutableRef) IdentityMapping() *idtools.IdentityMapping {
-	return nil
 }
 
 func (*cacheVolumeTestImmutableRef) Clone() bkcache.ImmutableRef {

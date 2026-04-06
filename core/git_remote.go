@@ -20,9 +20,9 @@ import (
 
 	ctdmount "github.com/containerd/containerd/v2/core/mount"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/moby/sys/mount"

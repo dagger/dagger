@@ -15,7 +15,7 @@ import (
 	"github.com/containerd/continuity/sysx"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"

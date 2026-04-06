@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/frontend"
 	"github.com/dagger/dagger/internal/buildkit/session"
-	containerdsnapshot "github.com/dagger/dagger/internal/buildkit/snapshot/containerd"
+	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	"github.com/dagger/dagger/internal/buildkit/solver"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
