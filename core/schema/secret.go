@@ -125,7 +125,7 @@ func (s *secretSchema) secret(
 		return dagql.ObjectResult[*core.Secret]{}, err
 	}
 
-	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, concreteVal); err != nil {
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, concreteVal); err != nil {
 		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to bind concrete secret: %w", err)
 	}
 
@@ -209,7 +209,7 @@ func (s *secretSchema) setSecret(
 		return dagql.ObjectResult[*core.Secret]{}, err
 	}
 
-	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, concreteVal); err != nil {
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, concreteVal); err != nil {
 		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to bind concrete setSecret value: %w", err)
 	}
 

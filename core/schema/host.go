@@ -381,7 +381,7 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 		return inst, err
 	}
 
-	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, concreteVal); err != nil {
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, concreteVal); err != nil {
 		return inst, err
 	}
 
@@ -472,7 +472,7 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 	if err != nil {
 		return inst, err
 	}
-	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, handle, concreteSelf); err != nil {
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, concreteSelf); err != nil {
 		return inst, err
 	}
 

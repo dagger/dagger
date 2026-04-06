@@ -109,7 +109,7 @@ func resolveSessionSecret(ctx context.Context, secret *Secret) (*Secret, error) 
 	if err != nil {
 		return nil, fmt.Errorf("resolve session secret %q: current dagql cache: %w", secret.Handle, err)
 	}
-	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, secret.Handle)
+	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, secret.Handle)
 	if err != nil {
 		return nil, err
 	}

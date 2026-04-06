@@ -126,7 +126,7 @@ func ResolveSessionSocket(ctx context.Context, socket *Socket) (*Socket, error) 
 	if err != nil {
 		return nil, fmt.Errorf("resolve session socket %q: current dagql cache: %w", socket.Handle, err)
 	}
-	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, socket.Handle)
+	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, socket.Handle)
 	if err != nil {
 		return nil, err
 	}

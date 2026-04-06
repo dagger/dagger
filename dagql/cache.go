@@ -254,12 +254,15 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error
 	return nil
 }
 
-func (c *Cache) BindSessionResource(ctx context.Context, sessionID string, handle SessionResourceHandle, value any) error {
+func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientID string, handle SessionResourceHandle, value any) error {
 	if c == nil {
 		return errors.New("bind session resource: nil cache")
 	}
 	if sessionID == "" {
 		return errors.New("bind session resource: empty session ID")
+	}
+	if clientID == "" {
+		return errors.New("bind session resource: empty client ID")
 	}
 	if handle == "" {
 		return errors.New("bind session resource: empty handle")
@@ -270,17 +273,21 @@ func (c *Cache) BindSessionResource(ctx context.Context, sessionID string, handl
 
 	c.sessionMu.Lock()
 	if c.sessionResourcesBySession == nil {
-		c.sessionResourcesBySession = make(map[string]map[SessionResourceHandle]any)
+		c.sessionResourcesBySession = make(map[string]map[SessionResourceHandle]*sessionResourceBindings)
 	}
 	if c.sessionResourcesBySession[sessionID] == nil {
-		c.sessionResourcesBySession[sessionID] = make(map[SessionResourceHandle]any)
+		c.sessionResourcesBySession[sessionID] = make(map[SessionResourceHandle]*sessionResourceBindings)
 	}
-	bindings := c.sessionResourcesBySession[sessionID]
-	if _, found := bindings[handle]; found {
-		c.sessionMu.Unlock()
-		return nil
+	sessionBindings := c.sessionResourcesBySession[sessionID]
+	bindings := sessionBindings[handle]
+	if bindings == nil {
+		bindings = &sessionResourceBindings{
+			byClientID: make(map[string]any),
+		}
+		sessionBindings[handle] = bindings
 	}
-	bindings[handle] = value
+	bindings.byClientID[clientID] = value
+	bindings.latestClientID = clientID
 	if c.sessionHandlesBySession == nil {
 		c.sessionHandlesBySession = make(map[string]*set.TreeSet[SessionResourceHandle])
 	}
@@ -294,8 +301,9 @@ func (c *Cache) BindSessionResource(ctx context.Context, sessionID string, handl
 }
 
 func (c *Cache) ResolveSessionResource(
-	ctx context.Context,
+	_ context.Context,
 	sessionID string,
+	clientID string,
 	handle SessionResourceHandle,
 ) (any, error) {
 	if c == nil {
@@ -304,18 +312,32 @@ func (c *Cache) ResolveSessionResource(
 	if sessionID == "" {
 		return nil, errors.New("resolve session resource: empty session ID")
 	}
+	if clientID == "" {
+		return nil, errors.New("resolve session resource: empty client ID")
+	}
 	if handle == "" {
 		return nil, errors.New("resolve session resource: empty handle")
 	}
 
 	c.sessionMu.Lock()
-	bindings := c.sessionResourcesBySession[sessionID]
-	value := bindings[handle]
-	c.sessionMu.Unlock()
-	if value == nil {
+	sessionBindings := c.sessionResourcesBySession[sessionID]
+	bindings := sessionBindings[handle]
+	if bindings == nil || len(bindings.byClientID) == 0 {
+		c.sessionMu.Unlock()
 		return nil, fmt.Errorf("resolve session resource %q: no bound resource for session %q", handle, sessionID)
 	}
-	return value, nil
+	if value, ok := bindings.byClientID[clientID]; ok {
+		c.sessionMu.Unlock()
+		return value, nil
+	}
+	if bindings.latestClientID != "" {
+		if value, ok := bindings.byClientID[bindings.latestClientID]; ok {
+			c.sessionMu.Unlock()
+			return value, nil
+		}
+	}
+	c.sessionMu.Unlock()
+	return nil, fmt.Errorf("resolve session resource %q: no binding for client %q in session %q", handle, clientID, sessionID)
 }
 
 func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID string, res AnyResult) {
@@ -1012,7 +1034,7 @@ type Cache struct {
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
-	sessionResourcesBySession         map[string]map[SessionResourceHandle]any
+	sessionResourcesBySession         map[string]map[SessionResourceHandle]*sessionResourceBindings
 	sessionHandlesBySession           map[string]*set.TreeSet[SessionResourceHandle]
 
 	sqlDB *sql.DB
@@ -1038,6 +1060,11 @@ type callConcurrencyKeys struct {
 type OnReleaseFunc = func(context.Context) error
 
 type sharedResultID uint64
+
+type sessionResourceBindings struct {
+	latestClientID string
+	byClientID     map[string]any
+}
 
 const sharedResultSizeUnknown int64 = -1
 
