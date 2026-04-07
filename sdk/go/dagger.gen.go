@@ -12491,7 +12491,7 @@ func (r *Query) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 }
 
 // Load a DiffStat from its ID.
-func (r *Client) LoadDiffStatFromID(id DiffStatID) *DiffStat {
+func (r *Query) LoadDiffStatFromID(id DiffStatID) *DiffStat {
 	q := r.query.Select("loadDiffStatFromID")
 	q = q.Arg("id", id)
 
