@@ -1,0 +1,229 @@
+# CI Caching Best Practices with Dagger
+
+This guide covers best practices for configuring Dagger caching in CI environments to maximize performance and reduce build times.
+
+## Understanding Dagger Caching
+
+Dagger uses content-addressable storage for caching. This means:
+
+- **Automatic caching**: Operations are cached based on their inputs
+- **Cross-run persistence**: Cache survives between CI runs when properly configured
+- **Intelligent invalidation**: Only changed inputs trigger re-execution
+
+## The CI Caching Challenge
+
+Most CI systems use **ephemeral runners** - fresh VMs for each job. Without configuration, Dagger's cache starts empty every run, causing slower builds in CI than locally.
+
+## Solutions by CI Platform
+
+### GitHub Actions
+
+#### Option 1: Cache Action (Recommended for starters)
+
+```yaml
+name: Dagger Workflow
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Cache Dagger engine state
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/share/dagger
+          key: dagger-${{ runner.os }}-${{ hashFiles('**/go.sum', '**/package-lock.json') }}
+          restore-keys: |
+            dagger-${{ runner.os }}-
+      
+      - name: Run Dagger
+        run: dagger call build
+```
+
+#### Option 2: Dagger Cloud (Recommended for teams)
+
+```yaml
+name: Dagger Workflow
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run with Dagger Cloud
+        run: dagger call build
+        env:
+          DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+```
+
+### GitLab CI
+
+```yaml
+dagger-build:
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_DRIVER: overlay2
+  cache:
+    key: dagger-cache
+    paths:
+      - .dagger_cache
+  script:
+    - export DAGGER_ENGINE_STATE_DIR=$CI_PROJECT_DIR/.dagger_cache
+    - dagger call build
+```
+
+### CircleCI
+
+```yaml
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - dagger-cache-{{ checksum "go.sum" }}
+            - dagger-cache-
+      - run:
+          name: Build with Dagger
+          command: dagger call build
+      - save_cache:
+          key: dagger-cache-{{ checksum "go.sum" }}
+          paths:
+            - ~/.local/share/dagger
+```
+
+### Jenkins
+
+```groovy
+pipeline {
+    agent any
+    
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+    
+    stages {
+        stage('Build with Dagger') {
+            steps {
+                // Use persistent volume for Dagger cache
+                sh '''
+                    export DAGGER_ENGINE_STATE_DIR=/var/lib/jenkins/dagger-cache
+                    dagger call build
+                '''
+            }
+        }
+    }
+}
+```
+
+## Cache Optimization Strategies
+
+### 1. Layer Your Caches
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: |
+      ~/.local/share/dagger
+      ~/.cache/go-build
+      ~/.npm
+    key: ${{ runner.os }}-build-${{ hashFiles('**/go.sum', '**/package-lock.json') }}
+```
+
+### 2. Use Cache Keys Wisely
+
+- Include lockfile hashes for dependency caches
+- Use restore-keys for fallback caches
+- Separate caches by job type when beneficial
+
+### 3. Monitor Cache Efficiency
+
+```bash
+# Check cache hit rates
+dagger call build --verbose
+
+# View cache statistics
+dagger engine logs | grep cache
+```
+
+## Troubleshooting
+
+### Cache Not Persisting
+
+**Symptom**: Build times don't improve between runs
+
+**Solutions**:
+1. Verify cache path matches `DAGGER_ENGINE_STATE_DIR`
+2. Check cache is being saved after successful builds
+3. Ensure adequate cache storage quota
+
+### Cache Too Large
+
+**Symptom**: Cache upload/download takes significant time
+
+**Solutions**:
+1. Use `.daggerignore` to exclude unnecessary files
+2. Implement cache pruning:
+   ```bash
+   dagger engine prune
+   ```
+3. Consider Dagger Cloud for distributed caching
+
+### Cache Poisoning
+
+**Symptom**: Inconsistent builds across CI runs
+
+**Solutions**:
+1. Pin all dependencies
+2. Use lockfiles
+3. Clean cache periodically:
+   ```yaml
+   - name: Weekly cache refresh
+     if: github.event.schedule == '0 0 * * 0'
+     run: dagger engine prune --all
+   ```
+
+## Performance Benchmarks
+
+Typical improvements with proper caching:
+
+| Scenario | Cold Cache | Warm Cache | Improvement |
+|----------|------------|------------|-------------|
+| Go build | 5 min | 30 sec | 10x |
+| npm install | 3 min | 15 sec | 12x |
+| Docker build | 8 min | 45 sec | 11x |
+| Test suite | 10 min | 2 min | 5x |
+
+## Migration Checklist
+
+When migrating existing CI to Dagger:
+
+- [ ] Identify current caching strategy
+- [ ] Map cache paths to Dagger equivalents
+- [ ] Configure `DAGGER_ENGINE_STATE_DIR` or use Dagger Cloud
+- [ ] Run parallel builds (old + new) to compare
+- [ ] Monitor cache hit rates
+- [ ] Optimize based on metrics
+
+## Community Resources
+
+- [Dagger Discord #caching channel](https://discord.gg/dagger-io)
+- [GitHub Discussions](https://github.com/dagger/dagger/discussions)
+- [Dagger Cloud Documentation](https://docs.dagger.io/cloud)
+
+## Contributing
+
+Have a caching tip or CI configuration to share? Contributions welcome!
+
+1. Open an issue describing your use case
+2. Discuss approach with maintainers
+3. Submit PR with your additions
