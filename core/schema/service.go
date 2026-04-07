@@ -154,6 +154,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 
 	var cur dagql.AnyObjectResult = parent
 	var withExecCall *dagql.ResultCall
+	var postExecCalls []*dagql.ResultCall
 	for cur != nil {
 		call, err := cur.ResultCall()
 		if err != nil {
@@ -163,6 +164,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 			withExecCall = call
 			break
 		}
+		postExecCalls = append(postExecCalls, call)
 		cur, err = cur.Receiver(ctx, srv)
 		if err != nil {
 			return inst, err
@@ -179,7 +181,9 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)
 	}
 
-	// load the withExec parent
+	// load the withExec receiver and use it as the base container, then replay
+	// any later container-returning selectors on top so the final service keeps
+	// post-withExec mutations such as WithExposedPort.
 	receiver, err := cur.Receiver(ctx, srv)
 	if err != nil {
 		return inst, err
@@ -207,8 +211,43 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		return inst, err
 	}
 
-	// create a service based on that withExec
-	svc, err := ctr.Self().AsService(ctx, ctr, core.ContainerAsServiceArgs{
+	rebuilt := ctr
+	for i := len(postExecCalls) - 1; i >= 0; i-- {
+		call := postExecCalls[i]
+		field, ok := rebuilt.ObjectType().FieldSpec(call.Field, call.View)
+		if !ok {
+			return inst, fmt.Errorf("could not find %s on %s", call.Field, rebuilt.Type().NamedType)
+		}
+		inputs, err := field.Args.InputsFromResultCallArgs(ctx, call.Args, call.View)
+		if err != nil {
+			return inst, err
+		}
+		selectorArgs := make([]dagql.NamedInput, 0, len(inputs))
+		for _, argSpec := range field.Args.Inputs(call.View) {
+			input, ok := inputs[argSpec.Name]
+			if !ok {
+				continue
+			}
+			selectorArgs = append(selectorArgs, dagql.NamedInput{
+				Name:  argSpec.Name,
+				Value: input,
+			})
+		}
+		var next dagql.ObjectResult[*core.Container]
+		if err := srv.Select(ctx, rebuilt, &next, dagql.Selector{
+			Field: call.Field,
+			Args:  selectorArgs,
+			Nth:   int(call.Nth),
+			View:  call.View,
+		}); err != nil {
+			return inst, err
+		}
+		rebuilt = next
+	}
+
+	// create a service based on that withExec, but run it against the rebuilt
+	// container state after replaying the post-withExec container mutations.
+	svc, err := rebuilt.Self().AsService(ctx, rebuilt, core.ContainerAsServiceArgs{
 		Args:                          withExecArgs.Args,
 		UseEntrypoint:                 withExecArgs.UseEntrypoint,
 		ExperimentalPrivilegedNesting: withExecArgs.ExperimentalPrivilegedNesting,
@@ -217,6 +256,9 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	})
 	if err != nil {
 		return inst, err
+	}
+	if withExecArgs.ExecMD.Self != nil {
+		svc.ExecMD = withExecArgs.ExecMD.Self
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)
 }

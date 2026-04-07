@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	cerrdefs "github.com/containerd/errdefs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -24,10 +23,9 @@ type CacheVolume struct {
 	Sharing   CacheSharingMode
 	Owner     string
 
-	mu         sync.Mutex
-	snapshot   bkcache.MutableRef
-	snapshotID string
-	selector   string
+	mu       sync.Mutex
+	snapshot bkcache.MutableRef
+	selector string
 
 	persistedResultID uint64
 }
@@ -91,36 +89,11 @@ func (cache *CacheVolume) getSnapshotSelector() string {
 func (cache *CacheVolume) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
 	cache.mu.Lock()
 	snapshot := cache.snapshot
-	snapshotID := cache.snapshotID
 	cache.mu.Unlock()
-	if snapshot != nil && snapshot.SnapshotID() != identity {
+	if snapshot == nil || snapshot.SnapshotID() != identity {
 		return 0, false, nil
 	}
-	if snapshot == nil && (snapshotID == "" || snapshotID != identity) {
-		return 0, false, nil
-	}
-	if snapshot != nil {
-		size, err := snapshot.Size(ctx)
-		if err != nil {
-			return 0, false, err
-		}
-		return size, true, nil
-	}
-	if snapshotID == "" {
-		return 0, false, nil
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return 0, false, err
-	}
-	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshotID, bkcache.NoUpdateLastUsed)
-	if err != nil {
-		return 0, false, err
-	}
-	defer func() {
-		_ = ref.Release(context.WithoutCancel(ctx))
-	}()
-	size, err := ref.Size(ctx)
+	size, err := snapshot.Size(ctx)
 	if err != nil {
 		return 0, false, err
 	}
@@ -130,13 +103,10 @@ func (cache *CacheVolume) CacheUsageSize(ctx context.Context, identity string) (
 func (cache *CacheVolume) CacheUsageIdentities() []string {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
-	if cache.snapshot != nil {
-		return []string{cache.snapshot.SnapshotID()}
-	}
-	if cache.snapshotID == "" {
+	if cache.snapshot == nil {
 		return nil
 	}
-	return []string{cache.snapshotID}
+	return []string{cache.snapshot.SnapshotID()}
 }
 
 func (cache *CacheVolume) PersistedResultID() uint64 {
@@ -156,11 +126,7 @@ func (cache *CacheVolume) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotR
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	snapshotID := cache.snapshotID
-	if snapshotID == "" && cache.snapshot != nil {
-		snapshotID = cache.snapshot.SnapshotID()
-	}
-	if snapshotID == "" {
+	if cache.snapshot == nil {
 		return nil
 	}
 	slot := cache.selector
@@ -169,7 +135,7 @@ func (cache *CacheVolume) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotR
 	}
 	return []dagql.PersistedSnapshotRefLink{
 		{
-			RefKey: snapshotID,
+			RefKey: cache.snapshot.SnapshotID(),
 			Role:   "snapshot",
 			Slot:   slot,
 		},
@@ -236,25 +202,31 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 		persisted.Sharing,
 		persisted.Owner,
 	)
-	if resultID != 0 {
-		links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "cache volume")
+	if resultID == 0 {
+		return cache, nil
+	}
+	links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "cache volume")
+	if err != nil {
+		return nil, err
+	}
+	for _, link := range links {
+		if link.Role != "snapshot" {
+			continue
+		}
+		query, err := persistedDecodeQuery(dag)
 		if err != nil {
 			return nil, err
 		}
-		for _, link := range links {
-			if link.Role != "snapshot" {
-				continue
-			}
-			selector := link.Slot
-			if selector == "" {
-				selector = "/"
-			}
-			cache.mu.Lock()
-			cache.snapshotID = link.RefKey
-			cache.selector = selector
-			cache.mu.Unlock()
-			break
+		ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return nil, fmt.Errorf("reopen persisted cache volume snapshot %q: %w", link.RefKey, err)
 		}
+		cache.snapshot = ref
+		cache.selector = link.Slot
+		if cache.selector == "" {
+			cache.selector = "/"
+		}
+		break
 	}
 	return cache, nil
 }
@@ -286,19 +258,6 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
-	}
-
-	if cache.snapshotID != "" {
-		ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, cache.snapshotID, bkcache.NoUpdateLastUsed)
-		if err == nil {
-			cache.snapshot = ref
-			return nil
-		}
-		if !cerrdefs.IsNotFound(err) {
-			return err
-		}
-		cache.snapshotID = ""
-		cache.selector = "/"
 	}
 
 	var source dagql.ObjectResult[*Directory]
@@ -373,7 +332,6 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	}
 
 	cache.snapshot = newRef
-	cache.snapshotID = newRef.SnapshotID()
 	if sourceSelector == "" {
 		sourceSelector = "/"
 	}

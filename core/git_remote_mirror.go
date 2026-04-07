@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	cerrdefs "github.com/containerd/errdefs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -19,8 +18,6 @@ type RemoteGitMirror struct {
 
 	mu       sync.Mutex
 	snapshot bkcache.MutableRef
-
-	snapshotID string
 
 	persistedResultID uint64
 }
@@ -77,15 +74,11 @@ func (mirror *RemoteGitMirror) PersistedSnapshotRefLinks() []dagql.PersistedSnap
 	}
 	mirror.mu.Lock()
 	defer mirror.mu.Unlock()
-	snapshotID := mirror.snapshotID
-	if snapshotID == "" && mirror.snapshot != nil {
-		snapshotID = mirror.snapshot.SnapshotID()
-	}
-	if snapshotID == "" {
+	if mirror.snapshot == nil {
 		return nil
 	}
 	return []dagql.PersistedSnapshotRefLink{{
-		RefKey: snapshotID,
+		RefKey: mirror.snapshot.SnapshotID(),
 		Role:   "bare_repo",
 	}}
 }
@@ -95,39 +88,28 @@ func (mirror *RemoteGitMirror) CacheUsageMayChange() bool {
 }
 
 func (mirror *RemoteGitMirror) CacheUsageIdentities() []string {
-	if mirror == nil || mirror.snapshotID == "" {
+	if mirror == nil {
 		return nil
 	}
-	return []string{mirror.snapshotID}
+	mirror.mu.Lock()
+	defer mirror.mu.Unlock()
+	if mirror.snapshot == nil {
+		return nil
+	}
+	return []string{mirror.snapshot.SnapshotID()}
 }
 
 func (mirror *RemoteGitMirror) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
-	if mirror == nil || mirror.snapshotID == "" || mirror.snapshotID != identity {
+	if mirror == nil {
 		return 0, false, nil
 	}
 	mirror.mu.Lock()
 	snapshot := mirror.snapshot
-	snapshotID := mirror.snapshotID
 	mirror.mu.Unlock()
-	if snapshot != nil {
-		size, err := snapshot.Size(ctx)
-		if err != nil {
-			return 0, false, err
-		}
-		return size, true, nil
+	if snapshot == nil || snapshot.SnapshotID() != identity {
+		return 0, false, nil
 	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return 0, false, err
-	}
-	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshotID, bkcache.NoUpdateLastUsed)
-	if err != nil {
-		return 0, false, err
-	}
-	defer func() {
-		_ = ref.Release(context.WithoutCancel(ctx))
-	}()
-	size, err := ref.Size(ctx)
+	size, err := snapshot.Size(ctx)
 	if err != nil {
 		return 0, false, err
 	}
@@ -155,19 +137,22 @@ func (*RemoteGitMirror) DecodePersistedObject(ctx context.Context, dag *dagql.Se
 		return nil, fmt.Errorf("decode persisted remote git mirror payload: %w", err)
 	}
 	mirror := NewRemoteGitMirror(persisted.RemoteURL)
-	if resultID != 0 {
-		links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "remote git mirror")
-		if err != nil {
-			return nil, err
-		}
-		for _, link := range links {
-			if link.Role != "bare_repo" {
-				continue
-			}
-			mirror.snapshotID = link.RefKey
-			break
-		}
+	if resultID == 0 {
+		return mirror, nil
 	}
+	link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, "remote git mirror", "bare_repo")
+	if err != nil {
+		return nil, err
+	}
+	query, err := persistedDecodeQuery(dag)
+	if err != nil {
+		return nil, err
+	}
+	ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, fmt.Errorf("reopen persisted remote git mirror snapshot %q: %w", link.RefKey, err)
+	}
+	mirror.snapshot = ref
 	return mirror, nil
 }
 
@@ -196,17 +181,6 @@ func (mirror *RemoteGitMirror) ensureSnapshotLocked(ctx context.Context, query *
 	if mirror.snapshot != nil {
 		return nil
 	}
-	if mirror.snapshotID != "" {
-		ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, mirror.snapshotID, bkcache.NoUpdateLastUsed)
-		if err == nil {
-			mirror.snapshot = ref
-			return nil
-		}
-		if !cerrdefs.IsNotFound(err) {
-			return err
-		}
-		mirror.snapshotID = ""
-	}
 	ref, err := query.SnapshotManager().New(
 		ctx,
 		nil,
@@ -218,6 +192,5 @@ func (mirror *RemoteGitMirror) ensureSnapshotLocked(ctx context.Context, query *
 		return err
 	}
 	mirror.snapshot = ref
-	mirror.snapshotID = ref.SnapshotID()
 	return nil
 }

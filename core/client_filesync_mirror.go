@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
@@ -26,8 +25,7 @@ type ClientFilesyncMirror struct {
 
 	mu sync.Mutex
 
-	snapshotID string
-	snapshot   bkcache.MutableRef
+	snapshot bkcache.MutableRef
 
 	mounter snapshot.Mounter
 	mntPath string
@@ -67,11 +65,16 @@ func (m *ClientFilesyncMirror) SetPersistedResultID(resultID uint64) {
 }
 
 func (m *ClientFilesyncMirror) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
-	if m == nil || m.snapshotID == "" {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.snapshot == nil {
 		return nil
 	}
 	return []dagql.PersistedSnapshotRefLink{{
-		RefKey: m.snapshotID,
+		RefKey: m.snapshot.SnapshotID(),
 		Role:   "snapshot",
 		Slot:   "/",
 	}}
@@ -82,39 +85,28 @@ func (m *ClientFilesyncMirror) CacheUsageMayChange() bool {
 }
 
 func (m *ClientFilesyncMirror) CacheUsageIdentities() []string {
-	if m == nil || m.snapshotID == "" {
+	if m == nil {
 		return nil
 	}
-	return []string{m.snapshotID}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.snapshot == nil {
+		return nil
+	}
+	return []string{m.snapshot.SnapshotID()}
 }
 
 func (m *ClientFilesyncMirror) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
-	if m == nil || m.snapshotID == "" || m.snapshotID != identity {
+	if m == nil {
 		return 0, false, nil
 	}
 	m.mu.Lock()
 	snapshot := m.snapshot
-	snapshotID := m.snapshotID
 	m.mu.Unlock()
-	if snapshot != nil {
-		size, err := snapshot.Size(ctx)
-		if err != nil {
-			return 0, false, err
-		}
-		return size, true, nil
+	if snapshot == nil || snapshot.SnapshotID() != identity {
+		return 0, false, nil
 	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return 0, false, err
-	}
-	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshotID, bkcache.NoUpdateLastUsed)
-	if err != nil {
-		return 0, false, err
-	}
-	defer func() {
-		_ = ref.Release(context.WithoutCancel(ctx))
-	}()
-	size, err := ref.Size(ctx)
+	size, err := snapshot.Size(ctx)
 	if err != nil {
 		return 0, false, err
 	}
@@ -150,19 +142,23 @@ func (*ClientFilesyncMirror) DecodePersistedObject(ctx context.Context, dag *dag
 		StableClientID: persisted.StableClientID,
 		Drive:          persisted.Drive,
 	}
-	if resultID != 0 {
-		links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "client filesync mirror")
-		if err != nil {
-			return nil, err
-		}
-		for _, link := range links {
-			if link.Role != "snapshot" {
-				continue
-			}
-			mirror.snapshotID = link.RefKey
-			break
-		}
+	if resultID == 0 {
+		return mirror, nil
 	}
+
+	link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, "client filesync mirror", "snapshot")
+	if err != nil {
+		return nil, err
+	}
+	query, err := persistedDecodeQuery(dag)
+	if err != nil {
+		return nil, err
+	}
+	ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, fmt.Errorf("reopen persisted client filesync mirror snapshot %q: %w", link.RefKey, err)
+	}
+	mirror.snapshot = ref
 	return mirror, nil
 }
 
@@ -173,13 +169,18 @@ func (m *ClientFilesyncMirror) OnRelease(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.usageCount = 0
-	return m.releaseRuntimeLocked(ctx)
+	rerr := m.releaseRuntimeLocked(ctx)
+	if m.snapshot != nil {
+		rerr = errorsJoin(rerr, m.snapshot.Release(ctx))
+		m.snapshot = nil
+	}
+	return rerr
 }
 
 func (m *ClientFilesyncMirror) EnsureCreated(ctx context.Context, query *Query) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.snapshotID != "" || m.snapshot != nil {
+	if m.snapshot != nil {
 		return nil
 	}
 	ref, err := query.SnapshotManager().New(
@@ -198,7 +199,6 @@ func (m *ClientFilesyncMirror) EnsureCreated(ctx context.Context, query *Query) 
 		return err
 	}
 	m.snapshot = ref
-	m.snapshotID = ref.SnapshotID()
 	return nil
 }
 
@@ -246,21 +246,22 @@ func (m *ClientFilesyncMirror) ensureRuntimeLocked(ctx context.Context, query *Q
 		return nil
 	}
 	if m.snapshot == nil {
-		if m.snapshotID != "" {
-			ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, m.snapshotID, bkcache.NoUpdateLastUsed)
-			if err == nil {
-				m.snapshot = ref
-			} else if !cerrdefs.IsNotFound(err) {
-				return err
-			} else {
-				m.snapshotID = ""
-			}
+		ref, err := query.SnapshotManager().New(
+			ctx,
+			nil,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeLocalSource),
+			bkcache.WithDescription(func() string {
+				if m.StableClientID != "" {
+					return fmt.Sprintf("client filesync mirror for %s%s", m.Drive, m.StableClientID)
+				}
+				return fmt.Sprintf("ephemeral client filesync mirror for %s%s", m.Drive, m.EphemeralID)
+			}()),
+		)
+		if err != nil {
+			return err
 		}
-		if m.snapshot == nil {
-			if err := m.EnsureCreated(ctx, query); err != nil {
-				return err
-			}
-		}
+		m.snapshot = ref
 	}
 
 	mountable, err := m.snapshot.Mount(ctx, false)
@@ -283,10 +284,6 @@ func (m *ClientFilesyncMirror) releaseRuntimeLocked(ctx context.Context) (rerr e
 	}
 	m.mntPath = ""
 	m.sharedState = nil
-	if m.snapshot != nil {
-		rerr = errorsJoin(rerr, m.snapshot.Release(context.WithoutCancel(ctx)))
-		m.snapshot = nil
-	}
 	return rerr
 }
 
