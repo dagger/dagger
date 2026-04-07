@@ -329,28 +329,33 @@ Explicit migration persists the same `CompatWorkspace` that runtime compat mode 
 
 #### API: `Workspace.migrate()`
 
-Migration is engine-owned. The API returns a list of migrations, each with metadata and a changeset:
+Migration is engine-owned. The API returns one migration plan for the current workspace:
 
 ```graphql
 extend type Workspace {
-  migrate: [WorkspaceMigration!]!
+  migrate: WorkspaceMigration!
 }
 
 type WorkspaceMigration {
+  changes: Changeset!
+  steps: [WorkspaceMigrationStep!]!
+}
+
+type WorkspaceMigrationStep {
   code: String!           # stable identifier (e.g. "legacy-dagger-json")
   description: String!    # human-readable summary
   warnings: [String!]!    # non-fatal issues
-  changes: Changeset!     # filesystem changes
+  changes: Changeset!     # filesystem changes for this step
 }
 ```
 
 The engine guarantees:
-- All returned changesets are based on the same pre-migration state
-- The list can be merged into a single `Changeset` without conflicts
-- An empty list means "no migration needed"
+- `changes` and all `steps` are based on the same pre-migration state
+- `changes` is equivalent to merging the step changesets in order
+- `steps = []` and an empty `changes` means "no migration needed"
 - Warnings are informational and do not block application
 
-Returning a list (rather than a single migration) is intentional — it leaves room for future independent migration flows without changing the API.
+Returning one plan is intentional. Future migration expansion happens inside `steps`, not by returning multiple top-level migrations.
 
 #### CLI: `dagger migrate`
 
@@ -358,16 +363,15 @@ Returning a list (rather than a single migration) is intentional — it leaves r
 
 ```
 $ dagger migrate
-MIGRATION legacy-dagger-json
-Convert legacy dagger.json to .dagger/config.toml
-WARNING: 2 migration gaps need manual review
+Migrated to workspace format
+WARNING: 2 migration gaps need manual review; see .dagger/migration-report.md
 
 [changeset preview]
 
 Apply changes? [y/N]
 ```
 
-The CLI calls `Workspace.migrate()`, renders the migration list, merges the changesets, and uses the standard changeset preview/apply flow. With `-y`, changes are auto-applied. The CLI does not own migration orchestration — it renders what the engine returns.
+The CLI calls `Workspace.migrate()`, uses the combined `changes` as the source of truth, and reuses the standard changeset preview/apply flow. Human-readable progress and warnings are emitted by the engine during migration planning. With `-y`, changes are auto-applied.
 
 #### What Gets Migrated
 
