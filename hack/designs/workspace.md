@@ -248,6 +248,8 @@ When `-m` is used:
 - The specified module is loaded with its functions promoted to the Query root
 - Workspace detection still runs (the engine still knows the workspace root)
 
+If explicit extra modules nominate more than one distinct entrypoint, that is an error.
+
 Why `-m` exists:
 
 - **Backwards compatibility**: Existing CI scripts using `dagger call -m ./ci test` continue to work unchanged.
@@ -262,6 +264,8 @@ Multiple loading paths can nominate the same module (workspace config, CWD modul
 - Git modules: clone ref + source subpath (plus pin, if present)
 
 If multiple paths nominate the same module, the engine loads it once.
+
+After deduplication, the engine performs a separate entrypoint arbitration pass.
 
 #### Entrypoint Module
 
@@ -279,7 +283,15 @@ source = "modules/ci"
 entrypoint = true
 ```
 
-At most one module can be the entrypoint.
+At most one module can be the active entrypoint. After deduplication, entrypoint arbitration runs with this precedence:
+
+1. Extra modules (`-m`)
+2. CWD module
+3. Ambient workspace modules
+
+Cross-tier conflicts are resolved by precedence. Same-tier conflicts are errors. In particular:
+- More than one distinct ambient workspace entrypoint is an invalid workspace configuration.
+- More than one distinct extra-module entrypoint is an invalid request.
 
 The engine installs proxy fields at the Query root for each of the entrypoint module's methods. These proxies are pure routing — there is no ambiguity even when method names overlap with core fields.
 
