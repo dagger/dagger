@@ -470,6 +470,10 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 			sels = append(sels, dagql.Selector{
 				Field: "withGenerator",
 			})
+		case "up":
+			sels = append(sels, dagql.Selector{
+				Field: "withUp",
+			})
 		}
 	}
 

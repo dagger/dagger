@@ -357,6 +357,14 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationFieldDefinition,
 		},
 	},
+	{
+		Name:        "up",
+		Description: FormatDescription(`Indicates that this function returns a service for dagger up.`),
+		Args:        NewInputSpecs(), // none
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to

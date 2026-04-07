@@ -70,6 +70,7 @@ func (UpSuite) TestUpDirectSDK(ctx context.Context, t *testctx.T) {
 		{"typescript", "hello-with-services-ts"},
 		{"python", "hello-with-services-py"},
 		{"java", "hello-with-services-java"},
+		{"dang", "hello-with-services-dang"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			modGen, err := upTestEnv(t, c)
@@ -283,6 +284,7 @@ func (UpSuite) TestUpAsToolchain(ctx context.Context, t *testctx.T) {
 		{"typescript", "hello-with-services-ts"},
 		{"python", "hello-with-services-py"},
 		{"java", "hello-with-services-java"},
+		{"dang", "hello-with-services-dang"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			// install hello-with-services as toolchain
