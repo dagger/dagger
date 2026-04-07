@@ -16,7 +16,7 @@ defmodule Dagger.Mod.Registry do
           %__MODULE__{registry | enums: [module | registry.enums]}
 
         :object ->
-          %__MODULE__{modules: Map.put(registry.modules, module.__name__(), module)}
+          %__MODULE__{registry | modules: Map.put(registry.modules, module.__name__(), module)}
 
         _ ->
           registry
@@ -49,14 +49,14 @@ defmodule Dagger.Mod.Registry do
 
     ret_module = fun_def.return
 
-    modules_to_add = enum_modules
-
-    modules_to_add =
+    additional_modules =
       if object?(ret_module) and ret_module not in modules do
-        traverse(funs, [traverse(ret_module) | modules])
+        traverse(ret_module)
       else
-        modules_to_add
+        []
       end
+
+    modules_to_add = enum_modules ++ additional_modules
 
     traverse(funs, [modules_to_add | modules])
   end
