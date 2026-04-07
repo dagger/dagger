@@ -3,14 +3,12 @@ package core
 import (
 	"context"
 	"fmt"
-	"path"
-	"slices"
-	"strings"
-
-	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
+	"path"
+	"slices"
+	"strings"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -281,7 +279,7 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 		}
 		isLoader := strings.HasPrefix(field, "load") && strings.HasSuffix(field, "FromID")
 		if !isLoader {
-			if objDig, err := objectRecipeDigest(ctx, obj); err == nil && objDig != "" {
+			if objDig, err := obj.RecipeDigest(ctx); err == nil && objDig != "" {
 				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDig.String()))
 			}
 		}
@@ -493,18 +491,4 @@ func anyReturns(ctx context.Context, frame *dagql.ResultCall, types ...string) b
 		return false
 	}
 	return anyReturns(ctx, receiver, types...)
-}
-
-func objectRecipeDigest(ctx context.Context, obj dagql.AnyResult) (digest.Digest, error) {
-	type recipeDigester interface {
-		RecipeDigest(context.Context) (digest.Digest, error)
-	}
-	if digester, ok := any(obj).(recipeDigester); ok {
-		return digester.RecipeDigest(ctx)
-	}
-	id, err := obj.RecipeID(ctx)
-	if err != nil || id == nil {
-		return "", err
-	}
-	return id.Digest(), nil
 }

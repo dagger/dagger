@@ -11,7 +11,7 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
+$ viztest: Viztest! X.Xs CACHED
 ✘ .pending: Void X.Xs ERROR
 ├╴✔ container: Container! X.Xs
 ├╴$ .from(address: "alpine"): Container! X.Xs CACHED
@@ -19,6 +19,9 @@ Expected stderr:
 ├╴✔ withExec sleep 1 X.Xs
 ├╴✘ withExec false X.Xs ERROR
 │ ! exit code: 1
-╰╴○ withExec sleep 1 X.Xs
+╰╴✘ withExec sleep 1 X.Xs ERROR
+  ┇ .pending ›
+  ✘ withExec false X.Xs ERROR
+  ! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

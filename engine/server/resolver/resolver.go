@@ -28,6 +28,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	buildkitpush "github.com/dagger/dagger/internal/buildkit/util/push"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -143,7 +145,12 @@ func (r *Resolver) ResolveImageConfig(
 	ctx context.Context,
 	ref string,
 	opts ResolveImageConfigOpts,
-) (string, digest.Digest, []byte, error) {
+) (_ string, _ digest.Digest, _ []byte, rerr error) {
+	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+
 	key := ref
 	if opts.Platform != nil {
 		key += platforms.Format(platforms.Normalize(*opts.Platform))
@@ -199,6 +206,11 @@ func (r *Resolver) ResolveImageConfig(
 }
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
+	span, ctx := tracing.StartSpan(ctx, "pulling "+ref, telemetry.Encapsulated())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+
 	platformMatcher := platforms.Only(platforms.Normalize(opts.Platform))
 	if opts.ResolveMode == ResolveModeDefault {
 		if parsed, err := reference.ParseNormalizedNamed(ref); err == nil {
@@ -568,7 +580,12 @@ func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest
 	}, true, nil
 }
 
-func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, opts PushOpts) error {
+func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, opts PushOpts) (rerr error) {
+	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+
 	if img == nil {
 		return errors.New("pushed image is nil")
 	}

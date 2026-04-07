@@ -15,13 +15,13 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ rootMod: RootMod! X.Xs
+$ rootMod: RootMod! X.Xs CACHED
 ✔ .fn: String! X.Xs
 ┃ hi from root hi from dep hi from dep2
-├╴✔ depAlias: DepAlias! X.Xs
+├╴$ depAlias: DepAlias! X.Xs CACHED
 ╰╴✔ .fn: String! X.Xs
   ┃ hi from dep hi from dep2
-  ├╴✔ dep2: Dep2! X.Xs
+  ├╴$ dep2: Dep2! X.Xs CACHED
   ╰╴✔ .fn: String! X.Xs
     ┃ hi from dep2
 

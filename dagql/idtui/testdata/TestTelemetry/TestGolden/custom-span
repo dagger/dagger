@@ -16,7 +16,7 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
+$ viztest: Viztest! X.Xs CACHED
 ✔ .customSpan: String! X.Xs
 ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 ╰╴✔ custom span X.Xs

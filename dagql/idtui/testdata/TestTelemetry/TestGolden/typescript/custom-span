@@ -16,11 +16,12 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ typescript: Typescript! X.Xs
+$ typescript: Typescript! X.Xs CACHED
 ✔ .customSpan: String! X.Xs
 ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 ╰╴✔ custom span X.Xs
-  ├╴$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+  ├╴✔ container: Container! X.Xs
+  ├╴$ .from(address: "alpine:latest"): Container! X.Xs CACHED
   ├╴✔ withExec echo 'hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ' X.Xs
   │ ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
   ╰╴✔ .stdout: String! X.Xs

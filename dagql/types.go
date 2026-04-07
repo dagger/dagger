@@ -112,6 +112,9 @@ type AnyResult interface {
 	RecipeIDable
 	Setter
 
+	// RecipeDigest returns the semantic recipe digest of the value.
+	RecipeDigest(context.Context) (digest.Digest, error)
+
 	// DerefValue returns an AnyResult when the wrapped value is Derefable and
 	// has a value set. If the value is not derefable, it returns itself.
 	DerefValue() (AnyResult, bool)
