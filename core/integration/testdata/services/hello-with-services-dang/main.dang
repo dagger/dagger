@@ -2,7 +2,8 @@ type HelloWithServicesDang {
   """
   Returns a web server service
   """
-  pub web: Service! @up {
+  @up
+  pub web: Service! {
     container
       .from("nginx:alpine")
       .withExposedPort(80)
@@ -12,7 +13,8 @@ type HelloWithServicesDang {
   """
   Returns a redis service
   """
-  pub redis: Service! @up {
+  @up
+  pub redis: Service! {
     container
       .from("redis:alpine")
       .withExposedPort(6379)
@@ -28,7 +30,8 @@ type Infra {
   """
   Returns a postgres database service
   """
-  pub database: Service! @up {
+  @up
+  pub database: Service! {
     container
       .from("postgres:alpine")
       .withEnvVariable("POSTGRES_PASSWORD", "test")
