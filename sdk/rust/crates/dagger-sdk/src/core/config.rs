@@ -2,7 +2,7 @@ use crate::core::logger::DynLogger;
 use derive_builder::Builder;
 use std::path::PathBuf;
 
-#[derive(Default, Builder)]
+#[derive(Builder)]
 #[builder(build_fn(private, name = "fallible_build"))]
 #[builder(setter(strip_option))]
 pub struct Config {
@@ -29,6 +29,18 @@ impl ConfigBuilder {
     pub fn build(&mut self) -> Config {
         self.fallible_build()
             .expect("all fields have default values")
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            workdir_path: None,
+            config_path: None,
+            timeout_ms: 10 * 1000,
+            execute_timeout_ms: None,
+            logger: None,
+        }
     }
 }
 
@@ -63,5 +75,6 @@ mod tests {
     fn default_timeout_is_10s() {
         let cfg = Config::default();
         assert_eq!(cfg.timeout_ms, 10 * 1000);
+        assert!(cfg.execute_timeout_ms.is_none());
     }
 }

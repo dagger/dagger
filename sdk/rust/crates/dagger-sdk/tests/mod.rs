@@ -107,7 +107,11 @@ async fn test_execute_timeout() {
 #[tokio::test]
 async fn test_default_config_connects() {
     let mut cfg = config::Config::default();
-    assert_eq!(cfg.timeout_ms, 10 * 1000, "Config::default should keep 10s timeout");
+    assert_eq!(
+        cfg.timeout_ms,
+        10 * 1000,
+        "Config::default should keep 10s timeout"
+    );
     cfg.logger = Some(Arc::new(StdLogger::default()));
 
     connect_opts(cfg, |client| async move {
