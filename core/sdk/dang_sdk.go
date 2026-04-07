@@ -108,10 +108,12 @@ func (r *DangRuntime) Call(
 	if execMD.ExecID == "" {
 		execMD.ExecID = identity.NewID()
 	}
+
 	if execMD.SecretToken == "" {
 		execMD.SecretToken = identity.NewID()
 	}
 	execMD.ClientStableID = identity.NewID()
+
 	if execMD.EncodedModuleID == "" {
 		mod := fnCall.Module
 		if mod.ResultID == nil {

@@ -1,3 +1,6 @@
+"""
+Test suites to run
+"""
 type TestSplit {
   """
   Lower-level API for running specific tests
