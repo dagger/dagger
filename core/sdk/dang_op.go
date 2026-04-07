@@ -478,9 +478,9 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 			var policy core.FunctionCachePolicy
 			var ttl string
 			for _, arg := range directive.Args {
-				val, err := evalConstantValue(arg.Value)
+				val, err := evalDirectiveArg(ctx, env, arg.Value)
 				if err != nil {
-					return res, fmt.Errorf("failed to evaluate @cached argument %s: %w", arg.Key, err)
+					return res, fmt.Errorf("failed to evaluate @cache argument %s: %w", arg.Key, err)
 				}
 				switch arg.Key {
 				case "policy":
@@ -549,7 +549,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 				case "defaultPath":
 					for _, arg := range dir.Args {
 						if arg.Key == "path" { // TODO: positional
-							val, err := evalConstantValue(arg.Value)
+							val, err := evalDirectiveArg(ctx, env, arg.Value)
 							if err != nil {
 								return res, fmt.Errorf("failed to evaluate directive argument %s.%s.%s: %w", arg.Key, dir.Name, arg.Key, err)
 							}
@@ -561,7 +561,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 				case "ignorePatterns":
 					for _, arg := range dir.Args {
 						if arg.Key == "patterns" {
-							val, err := evalConstantValue(arg.Value)
+							val, err := evalDirectiveArg(ctx, env, arg.Value)
 							if err != nil {
 								return res, fmt.Errorf("failed to evaluate directive argument %s.%s.%s: %w", arg.Key, dir.Name, arg.Key, err)
 							}
@@ -599,39 +599,41 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 	return res, nil
 }
 
-// evalConstantValue converts AST nodes to Go values for directive arguments
-func evalConstantValue(node dang.Node) (any, error) {
-	switch n := node.(type) {
-	case *dang.String:
-		return n.Value, nil
-	case *dang.Int:
-		return n.Value, nil
-	case *dang.Boolean:
-		return n.Value, nil
-	case *dang.Symbol:
-		// Bare symbol, e.g. an unqualified enum value like Never
-		return n.Name, nil
-	case *dang.Select:
-		// Qualified enum reference like FunctionCachePolicy.Never —
-		// resolve to the field name (the enum value).
-		if n.Field != nil {
-			return n.Field.Name, nil
-		}
-		return nil, fmt.Errorf("select expression has no field")
-	case *dang.List:
-		var elements []any
-		for _, elem := range n.Elements {
-			if evalElem, err := evalConstantValue(elem); err == nil {
-				elements = append(elements, evalElem)
-			} else {
-				return nil, fmt.Errorf("failed to evaluate list element: %w", err)
+// evalDirectiveArg evaluates a directive argument AST node through the Dang
+// runtime and converts the resulting Value to a plain Go value.
+func evalDirectiveArg(ctx context.Context, env dang.EvalEnv, node dang.Node) (any, error) {
+	val, err := dang.EvalNode(ctx, env, node)
+	if err != nil {
+		return nil, err
+	}
+	return dangValToGo(val)
+}
+
+// dangValToGo converts a Dang Value to a plain Go value.
+func dangValToGo(val dang.Value) (any, error) {
+	switch v := val.(type) {
+	case dang.StringValue:
+		return v.Val, nil
+	case dang.IntValue:
+		return v.Val, nil
+	case dang.BoolValue:
+		return v.Val, nil
+	case dang.EnumValue:
+		return v.Val, nil
+	case dang.ListValue:
+		elements := make([]any, len(v.Elements))
+		for i, elem := range v.Elements {
+			g, err := dangValToGo(elem)
+			if err != nil {
+				return nil, fmt.Errorf("list element %d: %w", i, err)
 			}
+			elements[i] = g
 		}
 		return elements, nil
+	case dang.NullValue:
+		return nil, nil
 	default:
-		// For more complex nodes, we could try full evaluation
-		// but for now, directive arguments should be simple literals
-		return nil, fmt.Errorf("unsupported directive argument type: %T", node)
+		return nil, fmt.Errorf("unsupported directive argument value type: %T", val)
 	}
 }
 
