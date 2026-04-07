@@ -2174,6 +2174,14 @@
           "INPUT_OBJECT"
         ],
         "name": "sourceMap"
+      },
+      {
+        "args": [],
+        "description": "Indicates that this function returns a service for dagger up.",
+        "locations": [
+          "FIELD_DEFINITION"
+        ],
+        "name": "up"
       }
     ]
   },
