@@ -11,7 +11,7 @@ import (
 )
 
 func TestDebugCacheSnapshotIncludesResultMetadata(t *testing.T) {
-	base, err := NewCache(t.Context(), "", nil)
+	base, err := NewCache(t.Context(), "", nil, nil)
 	assert.NilError(t, err)
 	c := base
 
@@ -45,7 +45,7 @@ func TestDebugCacheSnapshotIncludesResultMetadata(t *testing.T) {
 }
 
 func TestDebugCacheSnapshotIncludesCompletedArbitraryCalls(t *testing.T) {
-	base, err := NewCache(t.Context(), "", nil)
+	base, err := NewCache(t.Context(), "", nil, nil)
 	assert.NilError(t, err)
 	c := base
 

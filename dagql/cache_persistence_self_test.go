@@ -53,7 +53,7 @@ func (*persistCodecObj) DecodePersistedObject(ctx context.Context, dag *Server, 
 
 func setupPersistCodecTest(t *testing.T) context.Context {
 	t.Helper()
-	baseCacheIface, err := NewCache(t.Context(), "", nil)
+	baseCacheIface, err := NewCache(t.Context(), "", nil, nil)
 	assert.NilError(t, err)
 	baseCache := baseCacheIface
 	srv := newDagqlServerForTest(t, &persistCodecRoot{})
@@ -130,7 +130,7 @@ func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil)
+	cacheIface, err := NewCache(ctx, "", nil, nil)
 	assert.NilError(t, err)
 	srv := newDagqlServerForTest(t, &persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))

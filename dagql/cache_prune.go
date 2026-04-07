@@ -132,6 +132,12 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 		c.egraphMu.Unlock()
 	}
 
+	if len(report.Entries) > 0 && c.snapshotGC != nil {
+		if err := c.snapshotGC(ctx); err != nil {
+			return report, fmt.Errorf("snapshot gc after prune: %w", err)
+		}
+	}
+
 	return report, nil
 }
 

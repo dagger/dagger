@@ -96,7 +96,7 @@ func TestResultCallRefReceiverUsesSharedFastPath(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil)
+	cacheIface, err := NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -129,7 +129,7 @@ func TestResultCallRefContentPreferredDigestUsesLatestSharedFrame(t *testing.T) 
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil)
+	cacheIface, err := NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -159,7 +159,7 @@ func TestResultCallRefRecipeIDUsesLatestSharedFrame(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil)
+	cacheIface, err := NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -190,7 +190,7 @@ func TestResultCallRefSharedFastPathDoesNotSurviveRemoval(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil)
+	cacheIface, err := NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface
@@ -223,7 +223,7 @@ func TestResultCallRefResultIDFallbackStillWorks(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil)
+	cacheIface, err := NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 	c := cacheIface

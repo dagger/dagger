@@ -31,7 +31,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
-	cacheA, err := NewCache(ctx, dbPath, nil)
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cA := cacheA
 
@@ -48,7 +48,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
-	cacheB, err := NewCache(ctx, dbPath, nil)
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
 	defer func() {
@@ -73,7 +73,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
-	cacheA, err := NewCache(ctx, dbPath, nil)
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cA := cacheA
 	srvA := newPersistCodecImportTestServer(cacheA)
@@ -93,7 +93,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
-	cacheB, err := NewCache(ctx, dbPath, nil)
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
 	defer func() {
@@ -125,7 +125,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
-	cacheA, err := NewCache(ctx, dbPath, nil)
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cA := cacheA
 	srvA := newPersistCodecImportTestServer(cacheA)
@@ -149,7 +149,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
-	cacheB, err := NewCache(ctx, dbPath, nil)
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
 	defer func() {
@@ -172,7 +172,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
-	cacheA, err := NewCache(ctx, dbPath, nil)
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cA := cacheA
 
@@ -193,7 +193,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0"))
 	assert.NilError(t, closeCacheDBs(db, q))
 
-	cacheB, err := NewCache(ctx, dbPath, nil)
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
 	defer func() {
@@ -218,7 +218,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
-	cacheA, err := NewCache(ctx, dbPath, nil)
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cA := cacheA
 
@@ -241,7 +241,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"))
 	assert.NilError(t, closeCacheDBs(db, q))
 
-	cacheB, err := NewCache(ctx, dbPath, nil)
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
 	defer func() {

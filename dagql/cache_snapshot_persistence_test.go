@@ -157,7 +157,7 @@ func TestCachePersistenceWorkerMirrorsSnapshotManagerMetadataRows(t *testing.T) 
 		},
 	}
 
-	cacheIface, err := NewCache(ctx, dbPath, snapshotManager)
+	cacheIface, err := NewCache(ctx, dbPath, snapshotManager, nil)
 	assert.NilError(t, err)
 	c := cacheIface
 	defer func() {
@@ -202,7 +202,7 @@ func TestCachePersistenceImportHydratesSnapshotMetadataAndSyncsOwnerLeases(t *te
 				Digest:     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			}},
 		},
-	})
+	}, nil)
 	assert.NilError(t, err)
 	cA := cacheA
 
@@ -229,7 +229,7 @@ func TestCachePersistenceImportHydratesSnapshotMetadataAndSyncsOwnerLeases(t *te
 	assert.NilError(t, cA.Close(context.Background()))
 
 	snapshotManagerB := &fakeSnapshotManager{}
-	cacheB, err := NewCache(ctx, dbPath, snapshotManagerB)
+	cacheB, err := NewCache(ctx, dbPath, snapshotManagerB, nil)
 	assert.NilError(t, err)
 	cB := cacheB
 	defer func() {

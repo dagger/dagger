@@ -38,7 +38,7 @@ func getIntrospection(ctx context.Context) (*introspection.Response, error) {
 	})
 
 	root := &core.Query{}
-	baseCache, err := dagql.NewCache(ctx, "", nil)
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
 	if err != nil {
 		return nil, err
 	}

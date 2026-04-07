@@ -501,7 +501,15 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup dagql caching
 	//
 	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
-	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache)
+	snapshotGC := func(ctx context.Context) error {
+		stats, err := srv.containerdMetaDB.GarbageCollect(ctx)
+		if err != nil {
+			return err
+		}
+		slog.Debug("containerd garbage collect after dagql prune", "stats", stats)
+		return nil
+	}
+	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC)
 	if err != nil {
 		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
 		// db and trying again.
@@ -509,7 +517,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
 			slog.Error("failed to remove existing dagql cache db", "error", err)
 		}
-		srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache)
+		srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
 		}

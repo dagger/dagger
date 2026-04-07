@@ -78,7 +78,7 @@ func testContext() context.Context {
 }
 
 func newTestClient(srv *dagql.Server) *client.Client {
-	cache, err := dagql.NewCache(context.Background(), "", nil)
+	cache, err := dagql.NewCache(context.Background(), "", nil, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -114,7 +114,7 @@ func recipeIDForObject[T dagql.Typed](t *testing.T, ctx context.Context, srv *da
 }
 
 func newCache(t *testing.T) *dagql.Cache {
-	baseCache, err := dagql.NewCache(t.Context(), "", nil)
+	baseCache, err := dagql.NewCache(t.Context(), "", nil, nil)
 	assert.NilError(t, err)
 	return baseCache
 }

@@ -59,7 +59,7 @@ func (ms *mockServer) CurrentModule(ctx context.Context) (dagql.ObjectResult[*Mo
 	if ms.moduleSource == nil {
 		return zero, nil
 	}
-	cacheIface, err := dagql.NewCache(context.Background(), "", nil)
+	cacheIface, err := dagql.NewCache(context.Background(), "", nil, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -248,7 +248,7 @@ func TestAroundFuncSkipsIntrospectionDescendantsViaContext(t *testing.T) {
 }
 
 func TestIsIntrospectionPreservesClassification(t *testing.T) {
-	cache, err := dagql.NewCache(t.Context(), "", nil)
+	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
 	require.NoError(t, err)
 	ctx := dagql.ContextWithCache(t.Context(), cache)
 
@@ -333,7 +333,7 @@ func (telemetryTestLazyString) LazyEvalFunc() dagql.LazyEvalFunc {
 
 func TestRecordStatusDoesNotMarkPendingLazyResultCached(t *testing.T) {
 	ctx := t.Context()
-	cacheIface, err := dagql.NewCache(ctx, "", nil)
+	cacheIface, err := dagql.NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cacheIface)
 

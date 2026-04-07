@@ -86,10 +86,16 @@ const cachePersistenceSchemaVersion = "12"
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
-func NewCache(ctx context.Context, dbPath string, snapshotManager bkcache.SnapshotManager) (*Cache, error) {
+func NewCache(
+	ctx context.Context,
+	dbPath string,
+	snapshotManager bkcache.SnapshotManager,
+	snapshotGC func(context.Context) error,
+) (*Cache, error) {
 	c := &Cache{
 		traceBootID:     newTraceBootID(),
 		snapshotManager: snapshotManager,
+		snapshotGC:      snapshotGC,
 	}
 
 	if dbPath == "" {
@@ -1046,6 +1052,7 @@ type Cache struct {
 	traceImportRuns   uint64
 
 	snapshotManager bkcache.SnapshotManager
+	snapshotGC      func(context.Context) error
 
 	closeOnce sync.Once
 	closeErr  error
