@@ -1,4 +1,4 @@
-package buildkit
+package engineutil
 
 import (
 	"bufio"

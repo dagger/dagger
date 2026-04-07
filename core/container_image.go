@@ -214,9 +214,9 @@ func (container *Container) AsTarball(
 		return nil, err
 	}
 
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
 	}
 	if mediaTypes == "" {
 		mediaTypes = OCIMediaTypes

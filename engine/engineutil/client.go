@@ -1,4 +1,4 @@
-package buildkit
+package engineutil
 
 import (
 	"context"
@@ -21,10 +21,6 @@ import (
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
-	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
-	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -38,20 +34,6 @@ import (
 	"github.com/dagger/dagger/engine/session/terminal"
 )
 
-const (
-	// from buildkit, cannot change
-	EntitlementsJobKey = "llb.entitlements"
-
-	// OCIStoreName is the name of the OCI content store used for OCI tarball
-	// imports.
-	OCIStoreName = "dagger-oci"
-
-	// BuiltinContentOCIStoreName is the name of the OCI content store used for
-	// builtins like SDKs that we package with the engine container but still use
-	// in LLB.
-	BuiltinContentOCIStoreName = "dagger-builtin-content"
-)
-
 // Opts for a Client that are shared across all instances for a given DaggerServer
 type Opts struct {
 	Worker              *Worker
@@ -63,26 +45,15 @@ type Opts struct {
 
 	Interactive        bool
 	InteractiveCommand []string
-
-	ParentClient *Client
 }
 
-// Client is dagger's internal interface to buildkit APIs
+// Client is dagger's internal engine utility client
 type Client struct {
 	*Opts
 
 	closeCtx context.Context
 	cancel   context.CancelCauseFunc
 	closeMu  sync.RWMutex
-	execMap  sync.Map
-
-	ops   map[digest.Digest]opCtx
-	opsmu sync.RWMutex
-}
-
-type opCtx struct {
-	od  *OpDAG
-	ctx trace.SpanContext
 }
 
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
@@ -92,19 +63,9 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		Opts:     opts,
 		closeCtx: ctx,
 		cancel:   cancel,
-		execMap:  sync.Map{},
-		ops:      make(map[digest.Digest]opCtx),
 	}
 
 	return client, nil
-}
-
-func (c *Client) RegisterInteractiveExec(execID string) bool {
-	if execID == "" {
-		return true
-	}
-	_, exists := c.execMap.LoadOrStore(execID, struct{}{})
-	return !exists
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelCauseFunc, error) {
@@ -124,21 +85,6 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 		}
 	}()
 	return ctx, cancel, nil
-}
-
-func (c *Client) getRootClient() *Client {
-	if c.ParentClient == nil {
-		return c
-	}
-	return c.ParentClient.getRootClient()
-}
-
-func (c *Client) LookupOp(vertex digest.Digest) (*OpDAG, trace.SpanContext, bool) {
-	c = c.getRootClient()
-	c.opsmu.Lock()
-	opCtx, ok := c.ops[vertex]
-	c.opsmu.Unlock()
-	return opCtx.od, opCtx.ctx, ok
 }
 
 func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {
@@ -185,12 +131,7 @@ func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.C
 		return nil, err
 	}
 	if caller == nil {
-		// This error can happen due to per-LLB-vertex deduplication in the buildkit solver,
-		// where for instance the first client cancels and closes its session while others
-		// are waiting on the result. In this case its safe to retry the operation again with
-		// the still connected client metadata.
-		err := flightcontrol.RetryableError{Err: fmt.Errorf("session for %q not found", clientMetadata.ClientID)}
-		return nil, err
+		return nil, fmt.Errorf("session for %q not found", clientMetadata.ClientID)
 	}
 	return caller, nil
 }
@@ -744,12 +685,4 @@ func withOutgoingContext(ctx context.Context) context.Context {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 	return ctx
-}
-
-func ToEntitlementStrings(ents entitlements.Set) []string {
-	var out []string
-	for ent := range ents {
-		out = append(out, string(ent))
-	}
-	return out
 }

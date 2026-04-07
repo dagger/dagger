@@ -469,9 +469,9 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	if err != nil {
 		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export changeset to host %s", destPath))

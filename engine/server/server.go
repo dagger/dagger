@@ -58,9 +58,9 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -88,7 +88,7 @@ type Server struct {
 	// buildkit+containerd entities/DBs
 	//
 
-	worker                *buildkit.Worker
+	worker                *engineutil.Worker
 	workerCache           bkcache.SnapshotManager
 	workerGCPolicies      []dagql.CachePrunePolicy
 	workerDefaultGCPolicy *dagql.CachePrunePolicy
@@ -197,7 +197,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// start the global namespace worker pool, which is used for running Go funcs
 	// in container namespaces dynamically
-	buildkit.GetGlobalNamespaceWorkerPool().Start()
+	engineutil.GetGlobalNamespaceWorkerPool().Start()
 
 	//
 	// setup directories and paths
@@ -407,7 +407,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	)
 
 	workerGCPolicies := getDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
-	workerOpt := buildkit.WorkerOpt{
+	workerOpt := engineutil.WorkerOpt{
 		ID:               rand.Text(),
 		Labels:           baseLabels,
 		Platforms:        srv.enabledPlatforms,
@@ -463,7 +463,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create clean mount namespace: %w", err)
 	}
 
-	srv.worker, err = buildkit.NewWorker(&buildkit.NewWorkerOpts{
+	srv.worker, err = engineutil.NewWorker(&engineutil.NewWorkerOpts{
 		WorkerOpt:        workerOpt,
 		WorkerRoot:       srv.workerRootDir,
 		ExecutorRoot:     srv.executorRootDir,
@@ -683,7 +683,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	err = errors.Join(err, srv.worker.Close())
 
 	// Shutdown the global namespace worker pool
-	buildkit.ShutdownGlobalNamespaceWorkerPool()
+	engineutil.ShutdownGlobalNamespaceWorkerPool()
 
 	var eg errgroup.Group
 	eg.Go(func() error {

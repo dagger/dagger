@@ -1,4 +1,4 @@
-package buildkit
+package engineutil
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
-	imageexport "github.com/dagger/dagger/engine/buildkit/imageexport"
+	imageexport "github.com/dagger/dagger/engine/engineutil/imageexport"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"

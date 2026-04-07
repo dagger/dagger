@@ -11,7 +11,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
@@ -19,13 +19,13 @@ import (
 )
 
 type portHealthChecker struct {
-	bk    *buildkit.Client
-	ns    buildkit.Namespaced
+	bk    *engineutil.Client
+	ns    engineutil.Namespaced
 	host  string
 	ports []Port
 }
 
-func newPortHealth(bk *buildkit.Client, ns buildkit.Namespaced, host string, ports []Port) *portHealthChecker {
+func newPortHealth(bk *engineutil.Client, ns engineutil.Namespaced, host string, ports []Port) *portHealthChecker {
 	return &portHealthChecker{
 		bk:    bk,
 		ns:    ns,
@@ -63,7 +63,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 			backoff.WithMaxInterval(10*time.Second),
 		)
 		endpoint, err := backoff.RetryWithData(func() (string, error) {
-			return buildkit.RunInNetNS(ctx, d.bk, d.ns, func() (string, error) {
+			return engineutil.RunInNetNS(ctx, d.bk, d.ns, func() (string, error) {
 				// NB(vito): it's a _little_ silly to dial a UDP network to see that it's
 				// up, since it'll be a false positive even if they're not listening yet,
 				// but it at least checks that we're able to resolve the container address.

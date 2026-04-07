@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
@@ -33,7 +33,7 @@ func DockerfileMainContextSentinelState() llb.State {
 	)
 }
 
-func (c *converter) convertImageSource(op *buildkit.ImageOp) (*call.ID, error) {
+func (c *converter) convertImageSource(op *engineutil.ImageOp) (*call.ID, error) {
 	ref, err := sourceIdentifierWithoutScheme(op.SourceOp.Identifier, srctypes.DockerImageScheme)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (c *converter) convertImageSource(op *buildkit.ImageOp) (*call.ID, error) {
 	return appendCall(ctrID, containerType(), "from", argString("address", ref)), nil
 }
 
-func (c *converter) convertGitSource(op *buildkit.GitOp) (*call.ID, error) {
+func (c *converter) convertGitSource(op *engineutil.GitOp) (*call.ID, error) {
 	gitID, err := sourceIdentifierWithoutScheme(op.SourceOp.Identifier, srctypes.GitScheme)
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func (c *converter) convertGitSource(op *buildkit.GitOp) (*call.ID, error) {
 	), nil
 }
 
-func (c *converter) convertLocalSource(op *buildkit.LocalOp) (*call.ID, error) {
+func (c *converter) convertLocalSource(op *engineutil.LocalOp) (*call.ID, error) {
 	name, err := sourceIdentifierWithoutScheme(op.SourceOp.Identifier, srctypes.LocalScheme)
 	if err != nil {
 		return nil, err
@@ -189,7 +189,7 @@ func isDockerfileMainContextSentinel(name string, attrs map[string]string) bool 
 	return attrs[pb.AttrSharedKeyHint] == DockerfileMainContextSentinelSharedKeyHint
 }
 
-func (c *converter) convertHTTPSource(op *buildkit.HTTPOp) (*call.ID, error) {
+func (c *converter) convertHTTPSource(op *engineutil.HTTPOp) (*call.ID, error) {
 	identifier := op.SourceOp.Identifier
 	if !strings.HasPrefix(identifier, srctypes.HTTPScheme+"://") && !strings.HasPrefix(identifier, srctypes.HTTPSScheme+"://") {
 		return nil, unsupported(opDigest(op.OpDAG), "source(http)", "invalid HTTP source identifier")
@@ -241,7 +241,7 @@ func (c *converter) convertHTTPSource(op *buildkit.HTTPOp) (*call.ID, error) {
 	return appendCall(dirID, directoryType(), "withFile", argString("path", name), argID("source", fileID)), nil
 }
 
-func (c *converter) convertOCISource(op *buildkit.OCIOp) (*call.ID, error) {
+func (c *converter) convertOCISource(op *engineutil.OCIOp) (*call.ID, error) {
 	_ = op
 	return nil, unsupported(opDigest(op.OpDAG), "source(oci-layout)", "oci-layout source is not yet supported")
 }

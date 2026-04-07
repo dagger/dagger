@@ -10,7 +10,7 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -150,7 +150,7 @@ type ModuleRuntime interface {
 	// Returns the output bytes and the client ID that was used for execution.
 	Call(
 		ctx context.Context,
-		execMD *buildkit.ExecutionMetadata,
+		execMD *engineutil.ExecutionMetadata,
 		fnCall *FunctionCall,
 	) (outputBytes []byte, clientID string, err error)
 }
@@ -168,7 +168,7 @@ func (r *ContainerRuntime) AsContainer() (dagql.ObjectResult[*Container], bool) 
 
 func (r *ContainerRuntime) Call(
 	ctx context.Context,
-	execMD *buildkit.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	fnCall *FunctionCall,
 ) ([]byte, string, error) {
 	hideCtx := dagql.WithSkip(ctx)

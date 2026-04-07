@@ -1,4 +1,4 @@
-package buildkit
+package engineutil
 
 import (
 	"cmp"
@@ -10,7 +10,7 @@ import (
 
 	archiveexporter "github.com/containerd/containerd/v2/core/images/archive"
 	"github.com/containerd/platforms"
-	imageexport "github.com/dagger/dagger/engine/buildkit/imageexport"
+	imageexport "github.com/dagger/dagger/engine/engineutil/imageexport"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	cacheconfig "github.com/dagger/dagger/engine/snapshots/config"

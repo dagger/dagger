@@ -5,12 +5,12 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 )
 
-func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
+func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 	if exec == nil || exec.ExecOp == nil {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec op")
 	}

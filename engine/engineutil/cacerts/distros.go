@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/dagger/dagger/engine/buildkit/containerfs"
+	"github.com/dagger/dagger/engine/engineutil/containerfs"
 )
 
 /* TODO:Open questions

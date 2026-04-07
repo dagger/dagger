@@ -11,9 +11,9 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -47,7 +47,7 @@ type mockServer struct {
 	clientMetadata *engine.ClientMetadata
 }
 
-func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata) {
+func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata) {
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {
@@ -144,7 +144,7 @@ func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error {
 
 func (ms *mockServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) { return nil, nil }
 
-func (ms *mockServer) Buildkit(context.Context) (*buildkit.Client, error) { return nil, nil }
+func (ms *mockServer) Engine(context.Context) (*engineutil.Client, error) { return nil, nil }
 
 func (ms *mockServer) RegistryResolver(context.Context) (*serverresolver.Resolver, error) {
 	return nil, nil

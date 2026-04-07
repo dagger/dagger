@@ -43,9 +43,9 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -144,10 +144,10 @@ type daggerClient struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
-	// buildkit job-related state/config
-	getClientCaller func(string) (bksession.Caller, error)
-	dialer          *net.Dialer
-	bkClient        *buildkit.Client
+	// engine utility job-related state/config
+	getClientCaller  func(string) (bksession.Caller, error)
+	dialer           *net.Dialer
+	engineUtilClient *engineutil.Client
 
 	// SQLite database storing telemetry + anything else
 	tracerProvider *sdktrace.TracerProvider
@@ -160,7 +160,7 @@ type daggerClient struct {
 	metricExporter sdkmetric.Exporter
 
 	// Workspace and extra module loading is deferred from initializeDaggerClient
-	// to serveQuery because it requires the client's buildkit session, which
+	// to serveQuery because it requires the client's engine utility session, which
 	// isn't available during initialization (the session attachables request
 	// is blocked on the same locks that initializeDaggerClient holds).
 
@@ -539,13 +539,7 @@ func (srv *Server) initializeDaggerClient(
 		},
 	}
 
-	var parentBuildkitClient *buildkit.Client
-	numParents := len(client.parents)
-	if numParents > 0 {
-		parentBuildkitClient = client.parents[numParents-1].bkClient
-	}
-
-	client.bkClient, err = buildkit.NewClient(ctx, &buildkit.Opts{
+	client.engineUtilClient, err = engineutil.NewClient(ctx, &engineutil.Opts{
 		Worker:              srv.worker,
 		SessionManager:      srv.bkSessionManager,
 		Dialer:              client.dialer,
@@ -555,11 +549,9 @@ func (srv *Server) initializeDaggerClient(
 
 		Interactive:        client.daggerSession.interactive,
 		InteractiveCommand: client.daggerSession.interactiveCommand,
-
-		ParentClient: parentBuildkitClient,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create buildkit client: %w", err)
+		return fmt.Errorf("failed to create engine client: %w", err)
 	}
 
 	if opts.EncodedFunctionCall != nil {
@@ -929,7 +921,7 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // execution metadata is passed alongside the request from the executor. We don't want to put all this execution metadata
 // in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
 // size.
-func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *buildkit.ExecutionMetadata) {
+func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *engineutil.ExecutionMetadata) {
 	clientVersion := execMD.ClientVersionOverride
 	if clientVersion == "" {
 		clientVersion = engine.Version
@@ -1610,13 +1602,13 @@ func (srv *Server) Auth(ctx context.Context) (*auth.RegistryAuthProvider, error)
 	return client.daggerSession.authProvider, nil
 }
 
-// The buildkit APIs for the current client
-func (srv *Server) Buildkit(ctx context.Context) (*buildkit.Client, error) {
+// The engine utility client for the current client
+func (srv *Server) Engine(ctx context.Context) (*engineutil.Client, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return client.bkClient, nil
+	return client.engineUtilClient, nil
 }
 
 func (srv *Server) RegistryResolver(ctx context.Context) (*serverresolver.Resolver, error) {
@@ -1704,7 +1696,7 @@ func (srv *Server) CloudEngineClient(
 		return nil, false, err
 	}
 	parentCallerCtx := engine.ContextWithClientMetadata(ctx, parentClient.clientMetadata)
-	parentSession, err := parentClient.bkClient.GetSessionCaller(parentCallerCtx, false)
+	parentSession, err := parentClient.engineUtilClient.GetSessionCaller(parentCallerCtx, false)
 	if err != nil {
 		return nil, false, err
 	}

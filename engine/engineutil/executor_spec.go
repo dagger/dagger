@@ -1,4 +1,4 @@
-package buildkit
+package engineutil
 
 import (
 	"bufio"
@@ -24,7 +24,7 @@ import (
 	ctdoci "github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/engine/buildkit/resources"
+	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/dagger/dagger/engine/slog"
@@ -47,8 +47,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit/cacerts"
-	"github.com/dagger/dagger/engine/buildkit/containerfs"
+	"github.com/dagger/dagger/engine/engineutil/cacerts"
+	"github.com/dagger/dagger/engine/engineutil/containerfs"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/network"
 	telemetry "github.com/dagger/otel-go"

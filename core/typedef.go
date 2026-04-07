@@ -2451,9 +2451,9 @@ func (fnCall *FunctionCall) ReturnValue(ctx context.Context, val JSON) error {
 	if err != nil {
 		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("get buildkit client: %w", err)
+		return fmt.Errorf("get engine client: %w", err)
 	}
 	return bk.IOReaderExport(
 		ctx,
@@ -2472,9 +2472,9 @@ func (fnCall *FunctionCall) ReturnError(ctx context.Context, errID dagql.ID[*Err
 	if err != nil {
 		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("get buildkit client: %w", err)
+		return fmt.Errorf("get engine client: %w", err)
 	}
 	enc, err := errID.Encode()
 	if err != nil {

@@ -165,7 +165,7 @@ func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *daggerClie
 }
 
 func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *daggerClient, hostPath string) error {
-	cwd, err := client.bkClient.AbsPath(ctx, hostPath)
+	cwd, err := client.engineUtilClient.AbsPath(ctx, hostPath)
 	if err != nil {
 		return fmt.Errorf("workspace detection: %w", err)
 	}
@@ -178,8 +178,8 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 	}
 
 	return srv.detectAndLoadWorkspace(ctx, client,
-		core.NewCallerStatFS(client.bkClient),
-		client.bkClient.ReadCallerHostFile,
+		core.NewCallerStatFS(client.engineUtilClient),
+		client.engineUtilClient.ReadCallerHostFile,
 		cwd,
 		resolveLocalRef,
 		resolveConfigLocalRef,
@@ -191,9 +191,9 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *daggerClient, workspaceRef string) error {
 	// Resolve as local path first (relative to the connecting client's cwd).
 	// If not found, fall back to parsing as a git workspace ref.
-	localPath, err := client.bkClient.AbsPath(ctx, workspaceRef)
+	localPath, err := client.engineUtilClient.AbsPath(ctx, workspaceRef)
 	if err == nil {
-		localStat, statErr := client.bkClient.StatCallerHostPath(ctx, localPath, true)
+		localStat, statErr := client.engineUtilClient.StatCallerHostPath(ctx, localPath, true)
 		switch {
 		case statErr == nil:
 			if !localStat.IsDir() {
@@ -966,9 +966,9 @@ func (srv *Server) mergeLegacyCallerEnvDefaults(
 	if err != nil {
 		return fmt.Errorf("get current query for legacy caller env: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("get buildkit for legacy caller env: %w", err)
+		return fmt.Errorf("get engine client for legacy caller env: %w", err)
 	}
 
 	envPath := filepath.Join(callerModuleDir, ".env")

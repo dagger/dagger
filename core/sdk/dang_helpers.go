@@ -15,7 +15,7 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/pkg/dang"
 	"github.com/vito/dang/pkg/hm"
@@ -28,7 +28,7 @@ func (r *DangRuntime) eval(
 	ctx context.Context,
 	query *core.Query,
 	schemaFile dagql.Result[*core.File],
-	execMD *buildkit.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	fnCall *core.FunctionCall,
 ) ([]byte, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")

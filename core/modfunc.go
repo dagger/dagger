@@ -19,7 +19,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -781,7 +781,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	curCall := dagql.CurrentCall(ctx)
-	execMD := buildkit.ExecutionMetadata{
+	execMD := engineutil.ExecutionMetadata{
 		ClientID:          identity.NewID(),
 		Call:              curCall,
 		ExecID:            identity.NewID(),

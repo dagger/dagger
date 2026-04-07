@@ -29,7 +29,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -729,7 +729,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 
 	var buf bytes.Buffer
 	w := &limitedWriter{
-		Limit:  buildkit.MaxFileContentsSize,
+		Limit:  engineutil.MaxFileContentsSize,
 		Writer: &buf,
 	}
 
@@ -799,7 +799,7 @@ type limitedWriter struct {
 
 func (cw *limitedWriter) Write(p []byte) (int, error) {
 	if cw.wrote+len(p) > cw.Limit {
-		return 0, fmt.Errorf("file size %d exceeds limit %d", cw.wrote+len(p), buildkit.MaxFileContentsSize)
+		return 0, fmt.Errorf("file size %d exceeds limit %d", cw.wrote+len(p), engineutil.MaxFileContentsSize)
 	}
 	n, err := cw.Writer.Write(p)
 	if err != nil {
@@ -1248,9 +1248,9 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 	if err != nil {
 		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", filepath.Base(file.File), dest))

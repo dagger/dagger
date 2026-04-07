@@ -27,8 +27,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -1721,7 +1721,7 @@ type DirModuleSource struct {
 // from the given depSrcRef, depPin and depName.
 func ResolveDepToSource(
 	ctx context.Context,
-	bk *buildkit.Client,
+	bk *engineutil.Client,
 	dag *dagql.Server,
 	parentSrc *ModuleSource,
 	depSrcRef string,
@@ -1914,10 +1914,10 @@ func StatFSExists(ctx context.Context, statFS StatFS, path string) (string, bool
 }
 
 type CallerStatFS struct {
-	bk *buildkit.Client
+	bk *engineutil.Client
 }
 
-func NewCallerStatFS(bk *buildkit.Client) *CallerStatFS {
+func NewCallerStatFS(bk *engineutil.Client) *CallerStatFS {
 	return &CallerStatFS{bk}
 }
 
@@ -1957,7 +1957,7 @@ func (csfs CallerStatFS) Exists(ctx context.Context, path string) (string, bool,
 }
 
 type ModuleSourceStatFS struct {
-	bk  *buildkit.Client
+	bk  *engineutil.Client
 	src *ModuleSource
 }
 

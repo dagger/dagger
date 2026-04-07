@@ -593,9 +593,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 			// Retrieve credential from host
 			authCtx := engine.ContextWithClientMetadata(ctx, parentClientMetadata)
-			bk, err := parent.Self().Buildkit(authCtx)
+			bk, err := parent.Self().Engine(authCtx)
 			if err != nil {
-				return inst, fmt.Errorf("failed to get buildkit: %w", err)
+				return inst, fmt.Errorf("failed to get engine client: %w", err)
 			}
 			credentials, err := bk.GetCredential(authCtx, remote.Scheme, remote.Host, remote.Path)
 			if err != nil {

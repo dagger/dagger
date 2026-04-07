@@ -31,7 +31,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 	"go.opentelemetry.io/otel/trace"
@@ -88,7 +88,7 @@ type ContainerExecState struct {
 
 	Parent             dagql.ObjectResult[*Container]
 	Opts               ContainerExecOpts
-	ExecMD             *buildkit.ExecutionMetadata
+	ExecMD             *engineutil.ExecutionMetadata
 	ExtractModuleError bool
 
 	Container *Container
@@ -99,10 +99,10 @@ type ContainerExecLazy struct {
 }
 
 type persistedContainerExecLazy struct {
-	ParentResultID     uint64                      `json:"parentResultID"`
-	Opts               ContainerExecOpts           `json:"opts"`
-	ExecMD             *buildkit.ExecutionMetadata `json:"execMD,omitempty"`
-	ExtractModuleError bool                        `json:"extractModuleError,omitempty"`
+	ParentResultID     uint64                        `json:"parentResultID"`
+	Opts               ContainerExecOpts             `json:"opts"`
+	ExecMD             *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	ExtractModuleError bool                          `json:"extractModuleError,omitempty"`
 }
 
 func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) error {
@@ -140,8 +140,8 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 	})
 }
 
-func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts, parent *buildkit.ExecutionMetadata) (*buildkit.ExecutionMetadata, error) {
-	execMD := buildkit.ExecutionMetadata{}
+func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts, parent *engineutil.ExecutionMetadata) (*engineutil.ExecutionMetadata, error) {
+	execMD := engineutil.ExecutionMetadata{}
 	if parent != nil {
 		execMD = *parent
 	}
@@ -628,7 +628,7 @@ func prepareMounts(
 	}
 
 	metaState := &execMountState{
-		Dest:        buildkit.MetaMountDestPath,
+		Dest:        engineutil.MetaMountDestPath,
 		Selector:    "/",
 		MountType:   pb.MountType_BIND,
 		ApplyOutput: metaOutput,
@@ -986,7 +986,7 @@ func (container *Container) WithExec(
 	ctx context.Context,
 	parent dagql.ObjectResult[*Container],
 	opts ContainerExecOpts,
-	execMD *buildkit.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	extractModuleError bool,
 ) error {
 	state := &ContainerExecState{
@@ -1103,11 +1103,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 			return err
 		}
 
-		bkClient, err := query.Buildkit(ctx)
+		engineClient, err := query.Engine(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get buildkit client: %w", err)
+			return fmt.Errorf("failed to get engine client: %w", err)
 		}
-		opWorker := bkClient.Worker
+		opWorker := engineClient.Worker
 		causeCtx := trace.SpanContextFromContext(ctx)
 		if opWorker == nil {
 			return fmt.Errorf("missing buildkit worker")
@@ -1359,7 +1359,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 		}
 
 		metaState := &execMountState{
-			Dest:        buildkit.MetaMountDestPath,
+			Dest:        engineutil.MetaMountDestPath,
 			Selector:    "/",
 			MountType:   pb.MountType_BIND,
 			ApplyOutput: metaOutputBinding,
@@ -1569,7 +1569,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 				return trackResolvedRef(ref), nil
 			}
 			for _, mountState := range mountStates {
-				keepRef := mountState.Dest == buildkit.MetaMountDestPath
+				keepRef := mountState.Dest == engineutil.MetaMountDestPath
 				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
 					keepRef = true
 				}
@@ -1584,7 +1584,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 				if ref == nil {
 					continue
 				}
-				if mountState.Dest == buildkit.MetaMountDestPath {
+				if mountState.Dest == engineutil.MetaMountDestPath {
 					metaRef = ref
 				}
 				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
@@ -1593,7 +1593,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 			}
 
 			if state.ExtractModuleError && moduleRef != nil {
-				errID, ok, err := moduleErrorIDFromRef(ctx, bkClient, moduleRef)
+				errID, ok, err := moduleErrorIDFromRef(ctx, engineClient, moduleRef)
 				if err != nil {
 					rerr = errors.Join(rerr, fmt.Errorf("extract module error: %w", err))
 					return
@@ -1606,25 +1606,14 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 
 			execMDPresent := execMD != nil
 			execInternal := false
-			execID := ""
 			hasMetaSpec := metaSpec != nil
-			registerAllowed := false
 			if execMDPresent {
 				execInternal = execMD.Internal
-				execID = execMD.ExecID
 			}
-			if bkClient.Interactive && execMDPresent && !execInternal && hasMetaSpec {
-				if execID == "" {
-					registerAllowed = true
-				} else {
-					registerAllowed = bkClient.RegisterInteractiveExec(execID)
-				}
-			}
-			if bkClient.Interactive &&
+			if engineClient.Interactive &&
 				execMDPresent &&
 				!execInternal &&
-				hasMetaSpec &&
-				registerAllowed {
+				hasMetaSpec {
 				var callID *call.ID
 				var callDig digest.Digest
 				if execMD.Call != nil {
@@ -1642,8 +1631,8 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 				}
 				meta := *metaSpec
 				meta.Args = []string{"/bin/sh"}
-				if len(bkClient.InteractiveCommand) > 0 {
-					meta.Args = bkClient.InteractiveCommand
+				if len(engineClient.InteractiveCommand) > 0 {
+					meta.Args = engineClient.InteractiveCommand
 				}
 				var terminalContainer *Container
 				terminalContainerNeedsRelease := false
@@ -1772,7 +1761,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 
 			var existingExecErr *ExecError
 			if !errors.As(rerr, &existingExecErr) {
-				execErr, ok, err := execErrorFromMetaRef(ctx, bkClient, causeCtx, rerr, metaSpec, metaRef)
+				execErr, ok, err := execErrorFromMetaRef(ctx, engineClient, causeCtx, rerr, metaSpec, metaRef)
 				if err != nil {
 					rerr = errors.Join(err, rerr)
 					return
@@ -1795,11 +1784,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 			return err
 		}
 		if emu != nil {
-			metaSpec.Args = append([]string{buildkit.BuildkitQemuEmulatorMountPoint}, metaSpec.Args...)
+			metaSpec.Args = append([]string{engineutil.BuildkitQemuEmulatorMountPoint}, metaSpec.Args...)
 			execMounts = append(execMounts, executor.Mount{
 				Readonly: true,
 				Src:      emu,
-				Dest:     buildkit.BuildkitQemuEmulatorMountPoint,
+				Dest:     engineutil.BuildkitQemuEmulatorMountPoint,
 			})
 		}
 
@@ -1909,19 +1898,19 @@ func addDefaultEnvvar(env []string, k, v string) []string {
 }
 
 func (container *Container) Stdout(ctx context.Context) (string, error) {
-	return container.metaFileContents(ctx, buildkit.MetaMountStdoutPath)
+	return container.metaFileContents(ctx, engineutil.MetaMountStdoutPath)
 }
 
 func (container *Container) Stderr(ctx context.Context) (string, error) {
-	return container.metaFileContents(ctx, buildkit.MetaMountStderrPath)
+	return container.metaFileContents(ctx, engineutil.MetaMountStderrPath)
 }
 
 func (container *Container) CombinedOutput(ctx context.Context) (string, error) {
-	return container.metaFileContents(ctx, buildkit.MetaMountCombinedOutputPath)
+	return container.metaFileContents(ctx, engineutil.MetaMountCombinedOutputPath)
 }
 
 func (container *Container) ExitCode(ctx context.Context) (int, error) {
-	contents, err := container.metaFileContents(ctx, buildkit.MetaMountExitCodePath)
+	contents, err := container.metaFileContents(ctx, engineutil.MetaMountExitCodePath)
 	if err != nil {
 		return 0, err
 	}

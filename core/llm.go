@@ -719,7 +719,7 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
 		return err
 	}
@@ -776,7 +776,7 @@ func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -981,7 +981,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		}
 	}
 
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
 		return fmt.Errorf("llm sync failed fetching bk client for llm allow prompting: %w", err)
 	}

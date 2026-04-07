@@ -301,9 +301,9 @@ func (s *fileSchema) export(ctx context.Context, parent dagql.ObjectResult[*core
 	if err != nil {
 		return "", err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+		return "", fmt.Errorf("failed to get engine client: %w", err)
 	}
 	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
 	if err != nil {

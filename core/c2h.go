@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/sourcegraph/conc/pool"
 )
 
 type c2hTunnel struct {
-	bk    *buildkit.Client
-	ns    buildkit.Namespaced
+	bk    *engineutil.Client
+	ns    engineutil.Namespaced
 	socks []*Socket
 }
 
@@ -41,7 +41,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 				"backend", port.Backend,
 			)
 
-			listener, err := buildkit.RunInNetNS(ctx, d.bk, d.ns, func() (net.Listener, error) {
+			listener, err := engineutil.RunInNetNS(ctx, d.bk, d.ns, func() (net.Listener, error) {
 				return net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", frontend))
 			})
 			if err != nil {

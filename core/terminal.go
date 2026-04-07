@@ -19,8 +19,8 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/engineutil"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
@@ -228,7 +228,7 @@ func (container *Container) TerminalExecError(
 	selectedID *call.ID,
 	selectedDigest digest.Digest,
 	containerRes dagql.ObjectResult[*Container],
-	execMD *buildkit.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	execMeta *executor.Meta,
 	execErr error,
 ) error {
@@ -241,7 +241,7 @@ func (container *Container) terminal(
 	selectedDigest digest.Digest,
 	containerRes dagql.ObjectResult[*Container],
 	args *TerminalArgs,
-	execMD *buildkit.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	execMeta *executor.Meta,
 	execErr error,
 ) error {
@@ -483,14 +483,14 @@ func (*Service) Terminal(
 	})
 }
 
-func prepTerminal(ctx context.Context, svcID *call.ID, execErr error) (*buildkit.TerminalClient, *termenv.Output, error) {
+func prepTerminal(ctx context.Context, svcID *call.ID, execErr error) (*engineutil.TerminalClient, *termenv.Output, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get current query: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, nil, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	term, err := bk.OpenTerminal(ctx)

@@ -7,12 +7,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 )
 
-func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
+func (c *converter) convertMerge(op *engineutil.MergeOp) (*call.ID, error) {
 	if op == nil {
 		return nil, unsupported(opDigest(op.OpDAG), "merge", "missing merge op")
 	}
@@ -57,7 +57,7 @@ func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
 	return id, nil
 }
 
-func (c *converter) convertDiff(op *buildkit.DiffOp) (*call.ID, error) {
+func (c *converter) convertDiff(op *engineutil.DiffOp) (*call.ID, error) {
 	if op == nil || op.DiffOp == nil {
 		return nil, unsupported(opDigest(op.OpDAG), "diff", "missing diff op")
 	}
@@ -86,7 +86,7 @@ func (c *converter) convertDiff(op *buildkit.DiffOp) (*call.ID, error) {
 	return diffID, nil
 }
 
-func (c *converter) resolveDiffInput(dag *buildkit.OpDAG, idx pb.InputIndex) (*call.ID, error) {
+func (c *converter) resolveDiffInput(dag *engineutil.OpDAG, idx pb.InputIndex) (*call.ID, error) {
 	if idx == pb.Empty {
 		return scratchDirectoryID(), nil
 	}
@@ -97,7 +97,7 @@ func (c *converter) resolveDiffInput(dag *buildkit.OpDAG, idx pb.InputIndex) (*c
 	return c.convertOp(dag.Inputs[i])
 }
 
-func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
+func (c *converter) convertFile(op *engineutil.FileOp) (*call.ID, error) {
 	if op == nil || op.FileOp == nil {
 		return nil, unsupported(opDigest(op.OpDAG), "file", "missing file op")
 	}
@@ -163,7 +163,7 @@ func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 }
 
 func resolveFileActionInput(
-	dag *buildkit.OpDAG,
+	dag *engineutil.OpDAG,
 	idx pb.InputIndex,
 	opInputIDs []*call.ID,
 	actionOutputs []*call.ID,
@@ -188,7 +188,7 @@ func resolveFileActionInput(
 }
 
 func resolveFileActionInputContainer(
-	dag *buildkit.OpDAG,
+	dag *engineutil.OpDAG,
 	idx pb.InputIndex,
 	opInputContainers []*call.ID,
 	actionOutputContainers []*call.ID,
@@ -214,7 +214,7 @@ func resolveFileActionInputContainer(
 }
 
 func (c *converter) applyFileAction(
-	dag *buildkit.OpDAG,
+	dag *engineutil.OpDAG,
 	baseID *call.ID,
 	baseContainerID *call.ID,
 	action *pb.FileAction,

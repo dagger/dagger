@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkexecutor "github.com/dagger/dagger/internal/buildkit/executor"
 	telemetry "github.com/dagger/otel-go"
@@ -63,7 +63,7 @@ func (e *ModuleExecError) Unwrap() error {
 
 func execErrorFromMetaRef(
 	ctx context.Context,
-	client *buildkit.Client,
+	client *engineutil.Client,
 	origin trace.SpanContext,
 	cause error,
 	meta *bkexecutor.Meta,
@@ -97,7 +97,7 @@ func execErrorFromMetaRef(
 
 func moduleErrorIDFromRef(
 	ctx context.Context,
-	client *buildkit.Client,
+	client *engineutil.Client,
 	ref bkcache.ImmutableRef,
 ) (dagql.ID[*Error], bool, error) {
 	var id dagql.ID[*Error]
@@ -117,17 +117,17 @@ func moduleErrorIDFromRef(
 	return id, true, nil
 }
 
-func getExecMeta(ctx context.Context, client *buildkit.Client, metaMount bkcache.ImmutableRef) (stdout []byte, stderr []byte, exitCode int, _ error) {
-	stdout, err := readSnapshotPathFromRef(ctx, client, metaMount, buildkit.MetaMountStdoutPath, buildkit.MaxExecErrorOutputBytes)
+func getExecMeta(ctx context.Context, client *engineutil.Client, metaMount bkcache.ImmutableRef) (stdout []byte, stderr []byte, exitCode int, _ error) {
+	stdout, err := readSnapshotPathFromRef(ctx, client, metaMount, engineutil.MetaMountStdoutPath, engineutil.MaxExecErrorOutputBytes)
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	stderr, err = readSnapshotPathFromRef(ctx, client, metaMount, buildkit.MetaMountStderrPath, buildkit.MaxExecErrorOutputBytes)
+	stderr, err = readSnapshotPathFromRef(ctx, client, metaMount, engineutil.MetaMountStderrPath, engineutil.MaxExecErrorOutputBytes)
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	exitCodeBytes, err := readSnapshotPathFromRef(ctx, client, metaMount, buildkit.MetaMountExitCodePath, buildkit.MaxExecErrorOutputBytes)
+	exitCodeBytes, err := readSnapshotPathFromRef(ctx, client, metaMount, engineutil.MetaMountExitCodePath, engineutil.MaxExecErrorOutputBytes)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -142,7 +142,7 @@ func getExecMeta(ctx context.Context, client *buildkit.Client, metaMount bkcache
 	return stdout, stderr, exitCode, nil
 }
 
-func readSnapshotPathFromRef(ctx context.Context, client *buildkit.Client, ref bkcache.ImmutableRef, filePath string, limit int) ([]byte, error) {
+func readSnapshotPathFromRef(ctx context.Context, client *engineutil.Client, ref bkcache.ImmutableRef, filePath string, limit int) ([]byte, error) {
 	if ref == nil {
 		return nil, nil
 	}
@@ -150,5 +150,5 @@ func readSnapshotPathFromRef(ctx context.Context, client *buildkit.Client, ref b
 	if err != nil {
 		return nil, err
 	}
-	return buildkit.ReadSnapshotPath(ctx, client, mountable, filePath, limit)
+	return engineutil.ReadSnapshotPath(ctx, client, mountable, filePath, limit)
 }

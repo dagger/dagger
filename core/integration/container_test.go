@@ -34,8 +34,8 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
@@ -3367,7 +3367,7 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 		// size, then base64 encode it
 		// include some newlines to avoid https://github.com/dagger/dagger/issues/7786
 		var stdoutBuf bytes.Buffer
-		for i := range buildkit.MaxExecErrorOutputBytes + extraByteCount {
+		for i := range engineutil.MaxExecErrorOutputBytes + extraByteCount {
 			if i > 0 && i%100 == 0 {
 				stdoutBuf.WriteByte('\n')
 			} else {
@@ -3378,7 +3378,7 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 		encodedOutMsg := base64.StdEncoding.EncodeToString(stdoutBuf.Bytes())
 
 		var stderrBuf bytes.Buffer
-		for i := range buildkit.MaxExecErrorOutputBytes + extraByteCount {
+		for i := range engineutil.MaxExecErrorOutputBytes + extraByteCount {
 			if i > 0 && i%100 == 0 {
 				stderrBuf.WriteByte('\n')
 			} else {
@@ -3388,7 +3388,7 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 		stderrStr := stderrBuf.String()
 		encodedErrMsg := base64.StdEncoding.EncodeToString(stderrBuf.Bytes())
 
-		truncMsg := fmt.Sprintf(buildkit.TruncationMessage, extraByteCount)
+		truncMsg := fmt.Sprintf(engineutil.TruncationMessage, extraByteCount)
 
 		_, err := c.Container().
 			From(alpineImage).
@@ -4087,7 +4087,7 @@ func (ContainerSuite) TestFromMergesWithParent(ctx context.Context, t *testctx.T
 	testCtr := c.Container().
 		WithEnvVariable("FOO", "BAR").
 		WithEnvVariable("PATH", "/replace/me").
-		WithLabel("moby.buildkit.frontend.caps", "replace-me").
+		WithLabel("moby.engineutil.frontend.caps", "replace-me").
 		WithLabel("com.example.test-should-exist", "exist").
 		WithExposedPort(5000).
 		From("docker/dockerfile:1.5")
@@ -4104,13 +4104,13 @@ func (ContainerSuite) TestFromMergesWithParent(ctx context.Context, t *testctx.T
 	require.NoError(t, err)
 	require.Equal(t, "exist", labelShouldExist)
 
-	existingLabelFromImageShouldExist, err := testCtr.Label(ctx, "moby.buildkit.frontend.network.none")
+	existingLabelFromImageShouldExist, err := testCtr.Label(ctx, "moby.engineutil.frontend.network.none")
 	require.NoError(t, err)
 	require.Equal(t, "true", existingLabelFromImageShouldExist)
 
-	labelShouldBeReplaced, err := testCtr.Label(ctx, "moby.buildkit.frontend.caps")
+	labelShouldBeReplaced, err := testCtr.Label(ctx, "moby.engineutil.frontend.caps")
 	require.NoError(t, err)
-	require.Equal(t, "moby.buildkit.frontend.inputs,moby.buildkit.frontend.subrequests,moby.buildkit.frontend.contexts", labelShouldBeReplaced)
+	require.Equal(t, "moby.engineutil.frontend.inputs,moby.engineutil.frontend.subrequests,moby.engineutil.frontend.contexts", labelShouldBeReplaced)
 
 	ports, err := testCtr.ExposedPorts(ctx)
 	require.NoError(t, err)

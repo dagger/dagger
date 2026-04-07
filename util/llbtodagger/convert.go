@@ -10,7 +10,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 )
@@ -56,7 +56,7 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 		return applyDockerImageConfig(scratchContainerID(), img)
 	}
 
-	dag, err := buildkit.DefToDAG(def)
+	dag, err := engineutil.DefToDAG(def)
 	if err != nil {
 		return nil, fmt.Errorf("llbtodagger: parse definition: %w", err)
 	}
@@ -76,7 +76,7 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 	}
 
 	conv := converter{
-		memo:                 map[*buildkit.OpDAG]*call.ID{},
+		memo:                 map[*engineutil.OpDAG]*call.ID{},
 		mainContextDirectory: opts.MainContextDirectoryID,
 		secretIDsByLLBID:     opts.SecretIDsByLLBID,
 		sshSocketIDsByLLBID:  opts.SSHSocketIDsByLLBID,
@@ -94,7 +94,7 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 }
 
 type converter struct {
-	memo map[*buildkit.OpDAG]*call.ID
+	memo map[*engineutil.OpDAG]*call.ID
 
 	mainContextDirectory *call.ID
 	secretIDsByLLBID     map[string]*call.ID
@@ -102,7 +102,7 @@ type converter struct {
 	noInit               bool
 }
 
-func (c *converter) convertOp(dag *buildkit.OpDAG) (*call.ID, error) {
+func (c *converter) convertOp(dag *engineutil.OpDAG) (*call.ID, error) {
 	if dag == nil {
 		return scratchDirectoryID(), nil
 	}
@@ -152,7 +152,7 @@ func (c *converter) convertOp(dag *buildkit.OpDAG) (*call.ID, error) {
 	return id, nil
 }
 
-func opDigest(dag *buildkit.OpDAG) digest.Digest {
+func opDigest(dag *engineutil.OpDAG) digest.Digest {
 	if dag == nil || dag.OpDigest == nil {
 		return ""
 	}
@@ -263,12 +263,12 @@ func cleanPath(p string) string {
 	return p
 }
 
-func hasExec(dag *buildkit.OpDAG) bool {
+func hasExec(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsExec()
 	return ok
 }
 
-func mustExec(dag *buildkit.OpDAG) *buildkit.ExecOp {
+func mustExec(dag *engineutil.OpDAG) *engineutil.ExecOp {
 	exec, ok := dag.AsExec()
 	if !ok {
 		panic("unreachable")
@@ -276,12 +276,12 @@ func mustExec(dag *buildkit.OpDAG) *buildkit.ExecOp {
 	return exec
 }
 
-func hasFile(dag *buildkit.OpDAG) bool {
+func hasFile(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsFile()
 	return ok
 }
 
-func mustFile(dag *buildkit.OpDAG) *buildkit.FileOp {
+func mustFile(dag *engineutil.OpDAG) *engineutil.FileOp {
 	file, ok := dag.AsFile()
 	if !ok {
 		panic("unreachable")
@@ -289,12 +289,12 @@ func mustFile(dag *buildkit.OpDAG) *buildkit.FileOp {
 	return file
 }
 
-func hasMerge(dag *buildkit.OpDAG) bool {
+func hasMerge(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsMerge()
 	return ok
 }
 
-func mustMerge(dag *buildkit.OpDAG) *buildkit.MergeOp {
+func mustMerge(dag *engineutil.OpDAG) *engineutil.MergeOp {
 	op, ok := dag.AsMerge()
 	if !ok {
 		panic("unreachable")
@@ -302,12 +302,12 @@ func mustMerge(dag *buildkit.OpDAG) *buildkit.MergeOp {
 	return op
 }
 
-func hasDiff(dag *buildkit.OpDAG) bool {
+func hasDiff(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsDiff()
 	return ok
 }
 
-func mustDiff(dag *buildkit.OpDAG) *buildkit.DiffOp {
+func mustDiff(dag *engineutil.OpDAG) *engineutil.DiffOp {
 	op, ok := dag.AsDiff()
 	if !ok {
 		panic("unreachable")
@@ -315,12 +315,12 @@ func mustDiff(dag *buildkit.OpDAG) *buildkit.DiffOp {
 	return op
 }
 
-func hasImage(dag *buildkit.OpDAG) bool {
+func hasImage(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsImage()
 	return ok
 }
 
-func mustImage(dag *buildkit.OpDAG) *buildkit.ImageOp {
+func mustImage(dag *engineutil.OpDAG) *engineutil.ImageOp {
 	op, ok := dag.AsImage()
 	if !ok {
 		panic("unreachable")
@@ -328,12 +328,12 @@ func mustImage(dag *buildkit.OpDAG) *buildkit.ImageOp {
 	return op
 }
 
-func hasGit(dag *buildkit.OpDAG) bool {
+func hasGit(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsGit()
 	return ok
 }
 
-func mustGit(dag *buildkit.OpDAG) *buildkit.GitOp {
+func mustGit(dag *engineutil.OpDAG) *engineutil.GitOp {
 	op, ok := dag.AsGit()
 	if !ok {
 		panic("unreachable")
@@ -341,12 +341,12 @@ func mustGit(dag *buildkit.OpDAG) *buildkit.GitOp {
 	return op
 }
 
-func hasLocal(dag *buildkit.OpDAG) bool {
+func hasLocal(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsLocal()
 	return ok
 }
 
-func mustLocal(dag *buildkit.OpDAG) *buildkit.LocalOp {
+func mustLocal(dag *engineutil.OpDAG) *engineutil.LocalOp {
 	op, ok := dag.AsLocal()
 	if !ok {
 		panic("unreachable")
@@ -354,12 +354,12 @@ func mustLocal(dag *buildkit.OpDAG) *buildkit.LocalOp {
 	return op
 }
 
-func hasHTTP(dag *buildkit.OpDAG) bool {
+func hasHTTP(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsHTTP()
 	return ok
 }
 
-func mustHTTP(dag *buildkit.OpDAG) *buildkit.HTTPOp {
+func mustHTTP(dag *engineutil.OpDAG) *engineutil.HTTPOp {
 	op, ok := dag.AsHTTP()
 	if !ok {
 		panic("unreachable")
@@ -367,12 +367,12 @@ func mustHTTP(dag *buildkit.OpDAG) *buildkit.HTTPOp {
 	return op
 }
 
-func hasOCI(dag *buildkit.OpDAG) bool {
+func hasOCI(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsOCI()
 	return ok
 }
 
-func mustOCI(dag *buildkit.OpDAG) *buildkit.OCIOp {
+func mustOCI(dag *engineutil.OpDAG) *engineutil.OCIOp {
 	op, ok := dag.AsOCI()
 	if !ok {
 		panic("unreachable")
@@ -380,12 +380,12 @@ func mustOCI(dag *buildkit.OpDAG) *buildkit.OCIOp {
 	return op
 }
 
-func isBlob(dag *buildkit.OpDAG) bool {
+func isBlob(dag *engineutil.OpDAG) bool {
 	_, ok := dag.AsBlob()
 	return ok
 }
 
-func nilBlob() *buildkit.BlobOp {
+func nilBlob() *engineutil.BlobOp {
 	return nil
 }
 

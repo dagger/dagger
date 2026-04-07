@@ -12,7 +12,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -56,7 +56,7 @@ func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
 		}
 	}()
 
-	if err := copy.Copy(context.TODO(), filepath.Dir(m.path), filepath.Base(m.path), tmpdir, buildkit.BuildkitQemuEmulatorMountPoint, func(ci *copy.CopyInfo) {
+	if err := copy.Copy(context.TODO(), filepath.Dir(m.path), filepath.Base(m.path), tmpdir, engineutil.BuildkitQemuEmulatorMountPoint, func(ci *copy.CopyInfo) {
 		m := 0555
 		ci.Mode = &m
 	}); err != nil {
@@ -66,7 +66,7 @@ func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
 	ret = true
 	return []mount.Mount{{
 			Type:    "bind",
-			Source:  filepath.Join(tmpdir, buildkit.BuildkitQemuEmulatorMountPoint),
+			Source:  filepath.Join(tmpdir, engineutil.BuildkitQemuEmulatorMountPoint),
 			Options: []string{"ro", "bind"},
 		}}, func() error {
 			return os.RemoveAll(tmpdir)

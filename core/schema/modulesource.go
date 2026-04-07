@@ -23,8 +23,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/sync/errgroup"
@@ -302,9 +302,9 @@ func (s *moduleSourceSchema) moduleSource(
 	query dagql.ObjectResult[*core.Query],
 	args moduleSourceArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
-	bk, err := query.Self().Buildkit(ctx)
+	bk, err := query.Self().Engine(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		return inst, fmt.Errorf("failed to get engine client: %w", err)
 	}
 	parsedRef, err := core.ParseRefString(ctx, core.NewCallerStatFS(bk), args.RefString, args.RefPin)
 	if err != nil {
@@ -337,7 +337,7 @@ func (s *moduleSourceSchema) moduleSource(
 func (s *moduleSourceSchema) localModuleSource(
 	ctx context.Context,
 	query dagql.ObjectResult[*core.Query],
-	bk *buildkit.Client,
+	bk *engineutil.Client,
 
 	// localPath is the path the user provided to load the module, it may be relative or absolute and
 	// may point to either the directory containing dagger.json or any subdirectory in the
@@ -600,9 +600,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 		},
 	}
 
-	bk, err := query.Self().Buildkit(ctx)
+	bk, err := query.Self().Engine(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		return inst, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	// TODO:(sipsma) support sparse loading of git repos similar to how local dirs are loaded.
@@ -732,7 +732,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 func (s *moduleSourceSchema) loadBlueprintModule(
 	ctx context.Context,
-	bk *buildkit.Client,
+	bk *engineutil.Client,
 	src *core.ModuleSource,
 ) error {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -851,9 +851,9 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	}
 
 	// load this module source's deps in parallel
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		return inst, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	var eg errgroup.Group
@@ -3229,9 +3229,9 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 			return nil, fmt.Errorf("failed to get current query: %w", err)
 		}
 
-		bk, err := query.Buildkit(ctx)
+		bk, err := query.Engine(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+			return nil, fmt.Errorf("failed to get engine client: %w", err)
 		}
 
 		clientModule, err := core.ResolveDepToSource(ctx, bk, dag, src, moduleConfigClient.Generator, "", "")
@@ -3266,9 +3266,9 @@ func (s *moduleSourceSchema) moduleSourceWithUpdatedClients(
 		return nil, fmt.Errorf("failed to get current query: %w", err)
 	}
 
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	updateReqs := make(map[string]string, len(args.Clients))

@@ -1,6 +1,6 @@
 //go:build !darwin && !windows
 
-package buildkit
+package engineutil
 
 import (
 	"context"

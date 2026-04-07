@@ -10,7 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -84,7 +84,7 @@ func (r *DangRuntime) AsContainer() (dagql.ObjectResult[*core.Container], bool) 
 
 func (r *DangRuntime) Call(
 	ctx context.Context,
-	execMD *buildkit.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	fnCall *core.FunctionCall,
 ) (res []byte, clientID string, rerr error) {
 	defer func() {

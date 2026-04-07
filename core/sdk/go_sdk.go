@@ -11,8 +11,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
@@ -298,7 +298,7 @@ func (sdk *goSDK) ModuleTypes(
 		return inst, err
 	}
 
-	execMD := buildkit.ExecutionMetadata{
+	execMD := engineutil.ExecutionMetadata{
 		ClientID: identity.NewID(),
 		Call:     dagql.CurrentCall(ctx),
 		ExecID:   identity.NewID(),
@@ -669,7 +669,7 @@ func (sdk *goSDK) baseWithCodegen(
 	selectors = append(selectors, configSelectors...)
 
 	// fetch gitconfig selectors
-	bk, err := sdk.root.Buildkit(ctx)
+	bk, err := sdk.root.Engine(ctx)
 	if err != nil {
 		return ctr, err
 	}
@@ -885,7 +885,7 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 	return ctr, nil
 }
 
-func gitConfigSelectors(ctx context.Context, bk *buildkit.Client) ([]dagql.Selector, error) {
+func gitConfigSelectors(ctx context.Context, bk *engineutil.Client) ([]dagql.Selector, error) {
 	// codegen runs `go mod tidy` and for private deps
 	// we allow users to configure GOPRIVATE env variable.
 	// But for it to work, we need to ensure we don't run into

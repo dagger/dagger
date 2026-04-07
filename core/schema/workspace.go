@@ -285,7 +285,7 @@ func (s *workspaceSchema) findUp(
 	if err != nil {
 		return none, err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
 		return none, fmt.Errorf("buildkit: %w", err)
 	}

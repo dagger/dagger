@@ -7,7 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
@@ -61,7 +61,7 @@ func (sdk *moduleTypes) ModuleTypes(
 		return inst, fmt.Errorf("failed to get schema introspection json ID during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
-	execMD := buildkit.ExecutionMetadata{
+	execMD := engineutil.ExecutionMetadata{
 		ClientID: identity.NewID(),
 		Call:     dagql.CurrentCall(ctx),
 		ExecID:   identity.NewID(),

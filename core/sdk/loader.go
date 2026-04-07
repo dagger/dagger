@@ -90,9 +90,9 @@ func (l *Loader) externalSDKForModule(
 	sdk *core.SDKConfig,
 	parentSrc *core.ModuleSource,
 ) (core.SDK, error) {
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit for sdk %s: %w", sdk.Source, err)
+		return nil, fmt.Errorf("failed to get engine client for sdk %s: %w", sdk.Source, err)
 	}
 	dag, err := query.Server.Server(ctx)
 	if err != nil {

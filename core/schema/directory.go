@@ -1210,9 +1210,9 @@ func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return "", err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+		return "", fmt.Errorf("failed to get engine client: %w", err)
 	}
 	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
 	if err != nil {
@@ -1277,9 +1277,9 @@ func (s *directorySchema) export(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return "", err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+		return "", fmt.Errorf("failed to get engine client: %w", err)
 	}
 	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
 	if err != nil {

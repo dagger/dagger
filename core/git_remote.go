@@ -752,7 +752,7 @@ func runWithStandardUmaskAndNetOverride(ctx context.Context, cmd *exec.Cmd, host
 // unshareAndRun needs to be called in a locked thread.
 func unshareAndRun(ctx context.Context, cmd *exec.Cmd, hosts, resolv string, cleanMntNS *os.File) error {
 	// avoid leaking mounts from the engine by using an isolated clean mount namespace (see container start code,
-	// currently in engine/buildkit/executor_spec.go, for more details)
+	// currently in engine/engineutil/executor_spec.go, for more details)
 	if err := unix.Unshare(unix.CLONE_FS); err != nil {
 		return fmt.Errorf("unshare fs attrs: %w", err)
 	}

@@ -17,9 +17,9 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"google.golang.org/grpc"
 )
@@ -40,7 +40,7 @@ var ErrNoCurrentModule = fmt.Errorf("no current module")
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
@@ -98,8 +98,8 @@ type Server interface {
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)
 
-	// The buildkit APIs for the current client
-	Buildkit(context.Context) (*buildkit.Client, error)
+	// The engine utility client for the current client
+	Engine(context.Context) (*engineutil.Client, error)
 
 	// The session-owned registry resolver for the current client.
 	RegistryResolver(context.Context) (*serverresolver.Resolver, error)

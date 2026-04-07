@@ -26,7 +26,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -1115,7 +1115,7 @@ type containerExecArgs struct {
 	SkipEntrypoint *bool `default:"false"`
 
 	// ExecMD carries internal runtime execution metadata.
-	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
+	ExecMD dagql.SerializedString[*engineutil.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
 }
 
 func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{ Err string }) (inst dagql.ObjectResult[*core.Container], rerr error) {
@@ -1176,7 +1176,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		}
 	}
 
-	var md *buildkit.ExecutionMetadata
+	var md *engineutil.ExecutionMetadata
 	if args.ExecMD.Self != nil {
 		md = args.ExecMD.Self
 	}
@@ -2895,9 +2895,9 @@ func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return "", err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get buildkit: %w", err)
+		return "", fmt.Errorf("failed to get engine client: %w", err)
 	}
 	stat, err := bk.StatCallerHostPath(ctx, path, true)
 	if err != nil {

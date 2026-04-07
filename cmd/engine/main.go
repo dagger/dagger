@@ -44,9 +44,9 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
-	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/ebpf/filetracer"
 	"github.com/dagger/dagger/engine/ebpf/ovltracer"
+	"github.com/dagger/dagger/engine/engineutil/cacerts"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"

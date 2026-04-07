@@ -33,7 +33,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -57,7 +57,7 @@ type Service struct {
 	ExperimentalPrivilegedNesting bool
 	InsecureRootCapabilities      bool
 	NoInit                        bool
-	ExecMD                        *buildkit.ExecutionMetadata
+	ExecMD                        *engineutil.ExecutionMetadata
 	ExecMeta                      *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
@@ -407,9 +407,9 @@ func (svc *Service) startContainer(
 
 	fullHost := host + "." + domain
 
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 	cache := query.SnapshotManager()
 
@@ -542,7 +542,7 @@ func (svc *Service) startContainer(
 		}()
 	} else {
 		go func() {
-			checked <- newPortHealth(bk, buildkit.NewDirectNS(svcID), fullHost, ctr.Ports).Check(ctx)
+			checked <- newPortHealth(bk, engineutil.NewDirectNS(svcID), fullHost, ctr.Ports).Check(ctx)
 		}()
 	}
 
@@ -772,9 +772,9 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService) (r
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	upstreamDig, err := svc.TunnelUpstream.ContentPreferredDigest(ctx)
@@ -897,9 +897,9 @@ func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningServ
 	if err != nil {
 		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	// we don't need a full container, just a CNI provisioned network namespace to listen in
@@ -1054,9 +1054,9 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("failed to get ref for source directory: %w", err)
 	}
 
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return res, false, fmt.Errorf("failed to get buildkit client: %w", err)
+		return res, false, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	mutableRef, err := query.SnapshotManager().New(ctx, ref,
@@ -1163,7 +1163,7 @@ func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath
 		return fmt.Errorf("open tree %s: %w", sourcePath, err)
 	}
 	defer unix.Close(fdMnt)
-	return buildkit.GetGlobalNamespaceWorkerPool().RunInNamespaces(ctx, containerID, []specs.LinuxNamespace{
+	return engineutil.GetGlobalNamespaceWorkerPool().RunInNamespaces(ctx, containerID, []specs.LinuxNamespace{
 		{Type: specs.MountNamespace},
 	}, func() error {
 		// Create target directory if it doesn't exist

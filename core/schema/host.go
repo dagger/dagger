@@ -165,9 +165,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get current query: %w", err)
 	}
 
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		return inst, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	copyPath := path.Clean(args.Path)
@@ -538,9 +538,9 @@ func (s *hostSchema) findUp(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return i, err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return i, fmt.Errorf("failed to get buildkit client: %w", err)
+		return i, fmt.Errorf("failed to get engine client: %w", err)
 	}
 	cwd, err := bk.AbsPath(ctx, ".")
 	if err != nil {
@@ -708,9 +708,9 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		return inst, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	imageReader, err := bk.ReadImage(ctx, refName.String())

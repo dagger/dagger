@@ -41,7 +41,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 )
 
 var ErrMountNotExist = errors.New("mount does not exist")
@@ -3909,9 +3909,9 @@ func (container *Container) Publish(
 	if err != nil {
 		return "", err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+		return "", fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression))
@@ -3966,8 +3966,8 @@ func filterEmptyContainers(containers []*Container) []*Container {
 	return l
 }
 
-func getVariantRefs(ctx context.Context, variants []*Container) (map[string]buildkit.ContainerExport, error) {
-	inputByPlatform := map[string]buildkit.ContainerExport{}
+func getVariantRefs(ctx context.Context, variants []*Container) (map[string]engineutil.ContainerExport, error) {
+	inputByPlatform := map[string]engineutil.ContainerExport{}
 	var eg errgroup.Group
 	var mu sync.Mutex
 	for _, variant := range variants {
@@ -4001,7 +4001,7 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]buil
 			mu.Lock()
 			defer mu.Unlock()
 
-			inputByPlatform[platformString] = buildkit.ContainerExport{
+			inputByPlatform[platformString] = engineutil.ContainerExport{
 				Ref:         fsRef,
 				Config:      variant.Config,
 				Annotations: variant.Annotations,
@@ -4045,9 +4045,9 @@ func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs
 	if err != nil {
 		return nil, err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	variants := filterEmptyContainers(append([]*Container{container}, opts.PlatformVariants...))
