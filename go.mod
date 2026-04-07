@@ -14,7 +14,7 @@ replace (
 
 require (
 	charm.land/lipgloss/v2 v2.0.2
-	cloud.google.com/go/secretmanager v1.17.0
+	cloud.google.com/go/secretmanager v1.16.0
 	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.89
 	github.com/Khan/genqlient v0.8.1
@@ -85,7 +85,7 @@ require (
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
-	github.com/googleapis/gax-go/v2 v2.20.0
+	github.com/googleapis/gax-go/v2 v2.16.0
 	github.com/goproxy/goproxy v0.26.0
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0
@@ -191,7 +191,7 @@ require (
 	golang.org/x/text v0.35.0
 	golang.org/x/time v0.15.0
 	golang.org/x/tools v0.43.0
-	google.golang.org/api v0.273.1
+	google.golang.org/api v0.257.0
 	google.golang.org/genai v1.52.1
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260319201613-d00831a3d3e7
 	google.golang.org/grpc v1.80.0
@@ -207,10 +207,10 @@ require github.com/mattn/go-pointer v0.0.1 // indirect
 
 require (
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.18.2 // indirect
+	cloud.google.com/go/auth v0.18.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	cloud.google.com/go/iam v1.6.0 // indirect
+	cloud.google.com/go/iam v1.5.3 // indirect
 	cyphar.com/go-pathrs v0.2.4 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.19.1 // indirect
