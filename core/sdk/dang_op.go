@@ -459,7 +459,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 		})
 	}
 
-	// Apply @check and @generate directives on the function.
+	// Apply function-level directives (@check, @generate, @up, @cached).
 	for _, directive := range mod.GetDirectives(name) {
 		switch directive.Name {
 		case "check":
@@ -473,6 +473,38 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 		case "up":
 			sels = append(sels, dagql.Selector{
 				Field: "withUp",
+			})
+		case "cached":
+			var policy core.FunctionCachePolicy
+			var ttl string
+			for _, arg := range directive.Args {
+				val, err := evalConstantValue(arg.Value)
+				if err != nil {
+					return res, fmt.Errorf("failed to evaluate @cached argument %s: %w", arg.Key, err)
+				}
+				switch arg.Key {
+				case "policy":
+					if s, ok := val.(string); ok {
+						policy = core.FunctionCachePolicy(s)
+					}
+				case "ttl":
+					if s, ok := val.(string); ok {
+						ttl = s
+					}
+				}
+			}
+			if policy == "" {
+				policy = core.FunctionCachePolicyDefault
+			}
+			cacheArgs := []dagql.NamedInput{
+				{Name: "policy", Value: policy},
+			}
+			if ttl != "" {
+				cacheArgs = append(cacheArgs, dagql.NamedInput{Name: "timeToLive", Value: dagql.Opt(dagql.String(ttl))})
+			}
+			sels = append(sels, dagql.Selector{
+				Field: "withCachePolicy",
+				Args:  cacheArgs,
 			})
 		}
 	}
@@ -576,6 +608,16 @@ func evalConstantValue(node dang.Node) (any, error) {
 		return n.Value, nil
 	case *dang.Boolean:
 		return n.Value, nil
+	case *dang.Symbol:
+		// Bare symbol, e.g. an unqualified enum value like Never
+		return n.Name, nil
+	case *dang.Select:
+		// Qualified enum reference like FunctionCachePolicy.Never —
+		// resolve to the field name (the enum value).
+		if n.Field != nil {
+			return n.Field.Name, nil
+		}
+		return nil, fmt.Errorf("select expression has no field")
 	case *dang.List:
 		var elements []any
 		for _, elem := range n.Elements {

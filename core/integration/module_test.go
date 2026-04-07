@@ -7631,6 +7631,31 @@ export class Test {
 
 `,
 		},
+		{
+			sdk: "dang",
+			source: `
+type Test {
+  @cached(ttl: "40s")
+  pub testTtl: String! {
+    UUID.v4
+  }
+
+  @cached(policy: FunctionCachePolicy.PerSession)
+  pub testCachePerSession: String! {
+    UUID.v4
+  }
+
+  @cached(policy: FunctionCachePolicy.Never)
+  pub testNeverCache: String! {
+    UUID.v4
+  }
+
+  pub testAlwaysCache: String! {
+    UUID.v4
+  }
+}
+`,
+		},
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			t.Run("always cache", func(ctx context.Context, t *testctx.T) {
@@ -8281,6 +8306,8 @@ func sdkSourceFile(sdk string) string {
 		return "src/index.ts"
 	case "java", "./sdk/java":
 		return "src/main/java/io/dagger/modules/test/Test.java"
+	case "dang":
+		return "main.dang"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -96,6 +97,31 @@ func (fn *Function) Directives() []*ast.Directive {
 		directives = append(directives, &ast.Directive{
 			Name: "check",
 		})
+	}
+	if (fn.CachePolicy != "" && fn.CachePolicy != FunctionCachePolicyDefault) || fn.CacheTTLSeconds.Valid {
+		dir := &ast.Directive{
+			Name: "cached",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "policy",
+					Value: &ast.Value{
+						Kind: ast.EnumValue,
+						Raw:  string(fn.CachePolicy),
+					},
+				},
+			},
+		}
+		if fn.CacheTTLSeconds.Valid {
+			ttl := time.Duration(fn.CacheTTLSeconds.Value.Int64()) * time.Second
+			dir.Arguments = append(dir.Arguments, &ast.Argument{
+				Name: "ttl",
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  ttl.String(),
+				},
+			})
+		}
+		directives = append(directives, dir)
 	}
 	return directives
 }
