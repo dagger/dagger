@@ -39,9 +39,8 @@ func (c *Client) WaitInfo(ctx context.Context) (*Info, error) {
 		switch code := grpcerrors.Code(err); code {
 		case codes.Unavailable:
 		case codes.Unimplemented:
-			// only buildkit v0.11+ supports the info api, but an unimplemented
-			// response error is still a response so we can ignore it
-			return nil, nil
+			// only buildkit v0.11+ supports the info api, which was used starting dagger v0.3.8.
+			return nil, errors.Wrap(err, "version is too old, please upgrade dagger engine")
 		default:
 			return nil, errors.Wrap(err, "failed to call info")
 		}
