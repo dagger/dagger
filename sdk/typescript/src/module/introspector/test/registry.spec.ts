@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
+import type { Context as MochaContext } from "mocha"
 
 import { dag, Container } from "../../../api/client.gen.js"
 import { connection } from "../../../connect.js"
@@ -227,7 +228,7 @@ describe("Registry", function () {
     assert.equal(result, 5)
   })
 
-  it("Should correctly serialize data", async function () {
+  it("Should correctly serialize data", async function (this: MochaContext) {
     this.timeout(60000)
 
     const registry = new Registry()
@@ -270,7 +271,7 @@ describe("Registry", function () {
     })
   })
 
-  it("Should support constructor", async function () {
+  it("Should support constructor", async function (this: MochaContext) {
     this.timeout(60000)
 
     const registry = new Registry()
@@ -309,7 +310,7 @@ describe("Registry", function () {
     assert.deepEqual(result, "Hello Dagger")
   })
 
-  it("Should support overriding default arg", async function () {
+  it("Should support overriding default arg", async function (this: MochaContext) {
     this.timeout(60000)
 
     const registry = new Registry()

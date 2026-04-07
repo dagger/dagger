@@ -353,6 +353,17 @@ export class AST {
   }
 
   public typeToStringType(type: ts.Type): string {
+    if (type.isUnion()) {
+      const unionType = type as ts.UnionType
+      const nonOptionalTypes = unionType.types.filter(
+        (unionMember) => !this.isSkippableUnionMember(unionMember),
+      )
+
+      if (nonOptionalTypes.length === 1) {
+        return this.typeToStringType(nonOptionalTypes[0])
+      }
+    }
+
     const stringType = this.checker.typeToString(type)
 
     return this.stringTypeToUnwrappedType(stringType)
@@ -377,6 +388,36 @@ export class AST {
     if (type.flags & ts.TypeFlags.Boolean)
       return { kind: TypeDefKind.BooleanKind }
     if (type.flags & ts.TypeFlags.Void) return { kind: TypeDefKind.VoidKind }
+
+    if (type.isUnion()) {
+      const unionType = type as ts.UnionType
+      const nonOptionalTypes = unionType.types.filter(
+        (unionMember) => !this.isSkippableUnionMember(unionMember),
+      )
+
+      if (nonOptionalTypes.length === 0) {
+        return undefined
+      }
+
+      if (nonOptionalTypes.length === 1) {
+        return this.tsTypeToTypeDef(node, nonOptionalTypes[0])
+      }
+
+      const aliasSymbol = type.aliasSymbol
+      const isEnumUnion =
+        aliasSymbol !== undefined &&
+        nonOptionalTypes.every(
+          (unionMember) => unionMember.flags & ts.TypeFlags.EnumLiteral,
+        )
+
+      if (isEnumUnion) {
+        return undefined
+      }
+
+      throw new IntrospectionError(
+        `could not resolve union type ${this.checker.typeToString(type)} at ${AST.getNodePosition(node)}, dagger does not support union types with multiple values.`,
+      )
+    }
 
     // If a type has a flag Object, is can basically be anything.
     // We firstly wants to see if it's a promise or an array so we can unwrap the
@@ -419,6 +460,14 @@ export class AST {
         }
       }
     }
+  }
+
+  private isSkippableUnionMember(type: ts.Type): boolean {
+    return (
+      (type.flags & ts.TypeFlags.Undefined) !== 0 ||
+      (type.flags & ts.TypeFlags.Null) !== 0 ||
+      (type.flags & ts.TypeFlags.Void) !== 0
+    )
   }
 
   private resolveParameterDefaultValueTypeReference(
