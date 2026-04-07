@@ -472,12 +472,12 @@ func TestDedupeResolvedModuleLoads(t *testing.T) {
 				Kind:       moduleLoadKindAmbient,
 				Ref:        "github.com/acme/app",
 				Name:       "app",
-				Entrypoint: true,
+				Entrypoint: false,
 			},
 		},
 		{
 			mod: pendingModule{
-				Kind:       moduleLoadKindCWD,
+				Kind:       moduleLoadKindExtra,
 				Ref:        "github.com/acme/app",
 				Name:       "app",
 				Entrypoint: true,
@@ -485,27 +485,99 @@ func TestDedupeResolvedModuleLoads(t *testing.T) {
 		},
 		{
 			mod: pendingModule{
-				Kind:       moduleLoadKindCWD,
-				Ref:        "github.com/acme/local",
-				Name:       "local",
-				Entrypoint: true,
+				Kind:       moduleLoadKindAmbient,
+				Ref:        "github.com/acme/other",
+				Name:       "other",
+				Entrypoint: false,
 			},
 		},
 	}
 	resolved := []resolvedModuleLoad{
+		{primary: &core.Module{NameField: "app"}, primaryEntrypoint: false},
 		{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
-		{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
-		{primary: &core.Module{NameField: "local"}, primaryEntrypoint: true},
+		{primary: &core.Module{NameField: "other"}, primaryEntrypoint: false},
 	}
 
 	dedupLoads, dedupResolved := dedupeResolvedModuleLoads(loads, resolved)
 	require.Len(t, dedupLoads, 2)
 
-	require.Equal(t, moduleLoadKindAmbient, dedupLoads[0].mod.Kind)
-	require.False(t, dedupResolved[0].primaryEntrypoint)
+	require.Equal(t, moduleLoadKindExtra, dedupLoads[0].mod.Kind)
+	require.True(t, dedupResolved[0].primaryEntrypoint)
 
-	require.Equal(t, moduleLoadKindCWD, dedupLoads[1].mod.Kind)
-	require.True(t, dedupResolved[1].primaryEntrypoint)
+	require.Equal(t, moduleLoadKindAmbient, dedupLoads[1].mod.Kind)
+	require.False(t, dedupResolved[1].primaryEntrypoint)
+}
+
+func TestArbitrateResolvedModuleLoads(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cwd beats ambient", func(t *testing.T) {
+		t.Parallel()
+
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindCWD, Ref: "github.com/acme/local", Name: "local", Entrypoint: true}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
+			{primary: &core.Module{NameField: "local"}, primaryEntrypoint: true},
+		}
+
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.NoError(t, err)
+		require.False(t, resolved[0].primaryEntrypoint)
+		require.True(t, resolved[1].primaryEntrypoint)
+	})
+
+	t.Run("extra beats ambient", func(t *testing.T) {
+		t.Parallel()
+
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra", Name: "extra", Entrypoint: true}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
+			{primary: &core.Module{NameField: "extra"}, primaryEntrypoint: true},
+		}
+
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.NoError(t, err)
+		require.False(t, resolved[0].primaryEntrypoint)
+		require.True(t, resolved[1].primaryEntrypoint)
+	})
+
+	t.Run("multiple ambient entrypoints are invalid", func(t *testing.T) {
+		t.Parallel()
+
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/other", Name: "other", Entrypoint: true}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
+			{primary: &core.Module{NameField: "other"}, primaryEntrypoint: true},
+		}
+
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.EqualError(t, err, "invalid workspace configuration: multiple distinct ambient entrypoint modules: app, other")
+	})
+
+	t.Run("multiple extra entrypoints are invalid", func(t *testing.T) {
+		t.Parallel()
+
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra1", Name: "extra1", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra2", Name: "extra2", Entrypoint: true}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: &core.Module{NameField: "extra1"}, primaryEntrypoint: true},
+			{primary: &core.Module{NameField: "extra2"}, primaryEntrypoint: true},
+		}
+
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.EqualError(t, err, "invalid extra-module request: multiple distinct extra-module entrypoints: extra1, extra2")
+	})
 }
 
 func TestSuppressPendingCWDModules(t *testing.T) {

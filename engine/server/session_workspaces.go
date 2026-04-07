@@ -796,6 +796,11 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 	}
 
 	loads, resolvedLoads = dedupeResolvedModuleLoads(loads, resolvedLoads)
+	if err := arbitrateResolvedModuleLoads(loads, resolvedLoads); err != nil {
+		client.modulesErr = err
+		client.modulesLoaded = true
+		return client.modulesErr
+	}
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
@@ -925,6 +930,34 @@ func moduleLoadErr(load moduleLoadRequest, err error) error {
 	return fmt.Errorf("%s %q: %w", prefix, load.mod.Ref, err)
 }
 
+func entrypointTierPriority(kind moduleLoadKind) int {
+	switch kind {
+	case moduleLoadKindExtra:
+		return 3
+	case moduleLoadKindCWD:
+		return 2
+	case moduleLoadKindAmbient:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func shouldPreferEntrypointNomination(
+	currentLoad moduleLoadRequest,
+	currentResolved resolvedModuleLoad,
+	nextLoad moduleLoadRequest,
+	nextResolved resolvedModuleLoad,
+) bool {
+	if !nextResolved.primaryEntrypoint {
+		return false
+	}
+	if !currentResolved.primaryEntrypoint {
+		return true
+	}
+	return entrypointTierPriority(nextLoad.mod.Kind) > entrypointTierPriority(currentLoad.mod.Kind)
+}
+
 func dedupeResolvedModuleLoads(
 	loads []moduleLoadRequest,
 	resolved []resolvedModuleLoad,
@@ -933,34 +966,110 @@ func dedupeResolvedModuleLoads(
 		return loads, resolved
 	}
 
-	seen := make(map[string]struct{}, len(loads))
-	dedupLoads := make([]moduleLoadRequest, 0, len(loads))
-	dedupResolved := make([]resolvedModuleLoad, 0, len(resolved))
-	hasDistinctCWD := false
+	type dedupedLoad struct {
+		index    int
+		load     moduleLoadRequest
+		resolved resolvedModuleLoad
+	}
+
+	seen := make(map[string]int, len(loads))
+	deduped := make([]dedupedLoad, 0, len(loads))
 
 	for i := range loads {
 		key := resolvedModuleLoadIdentity(resolved[i].primary)
-		if _, ok := seen[key]; ok {
+		if existingIdx, ok := seen[key]; ok {
+			if shouldPreferEntrypointNomination(deduped[existingIdx].load, deduped[existingIdx].resolved, loads[i], resolved[i]) {
+				deduped[existingIdx].index = i
+				deduped[existingIdx].load = loads[i]
+				deduped[existingIdx].resolved = resolved[i]
+			}
 			continue
 		}
-		seen[key] = struct{}{}
-		dedupLoads = append(dedupLoads, loads[i])
-		dedupResolved = append(dedupResolved, resolved[i])
-		if loads[i].mod.Kind == moduleLoadKindCWD {
-			hasDistinctCWD = true
-		}
+		deduped = append(deduped, dedupedLoad{
+			index:    i,
+			load:     loads[i],
+			resolved: resolved[i],
+		})
+		seen[key] = len(deduped) - 1
 	}
 
-	if hasDistinctCWD {
-		for i := range dedupLoads {
-			if dedupLoads[i].mod.Kind == moduleLoadKindCWD || dedupLoads[i].mod.Kind == moduleLoadKindExtra {
-				continue
-			}
-			dedupResolved[i].primaryEntrypoint = false
+	slices.SortFunc(deduped, func(a, b dedupedLoad) int {
+		switch {
+		case a.index < b.index:
+			return -1
+		case a.index > b.index:
+			return 1
+		default:
+			return 0
 		}
+	})
+
+	dedupLoads := make([]moduleLoadRequest, len(deduped))
+	dedupResolved := make([]resolvedModuleLoad, len(deduped))
+	for i := range deduped {
+		dedupLoads[i] = deduped[i].load
+		dedupResolved[i] = deduped[i].resolved
 	}
 
 	return dedupLoads, dedupResolved
+}
+
+func arbitrateResolvedModuleLoads(
+	loads []moduleLoadRequest,
+	resolved []resolvedModuleLoad,
+) error {
+	if len(loads) == 0 {
+		return nil
+	}
+
+	candidatesByTier := map[moduleLoadKind][]int{
+		moduleLoadKindAmbient: nil,
+		moduleLoadKindCWD:     nil,
+		moduleLoadKindExtra:   nil,
+	}
+	for i := range loads {
+		if !resolved[i].primaryEntrypoint {
+			continue
+		}
+		candidatesByTier[loads[i].mod.Kind] = append(candidatesByTier[loads[i].mod.Kind], i)
+	}
+
+	for _, kind := range []moduleLoadKind{moduleLoadKindAmbient, moduleLoadKindCWD, moduleLoadKindExtra} {
+		if len(candidatesByTier[kind]) > 1 {
+			return entrypointConflictError(kind, candidatesByTier[kind], loads)
+		}
+	}
+
+	winner := -1
+	for _, kind := range []moduleLoadKind{moduleLoadKindExtra, moduleLoadKindCWD, moduleLoadKindAmbient} {
+		if len(candidatesByTier[kind]) == 1 {
+			winner = candidatesByTier[kind][0]
+			break
+		}
+	}
+
+	for i := range resolved {
+		resolved[i].primaryEntrypoint = i == winner
+	}
+
+	return nil
+}
+
+func entrypointConflictError(kind moduleLoadKind, indexes []int, loads []moduleLoadRequest) error {
+	names := make([]string, 0, len(indexes))
+	for _, i := range indexes {
+		names = append(names, moduleProgressName(loads[i].mod))
+	}
+	switch kind {
+	case moduleLoadKindAmbient:
+		return fmt.Errorf("invalid workspace configuration: multiple distinct ambient entrypoint modules: %s", strings.Join(names, ", "))
+	case moduleLoadKindExtra:
+		return fmt.Errorf("invalid extra-module request: multiple distinct extra-module entrypoints: %s", strings.Join(names, ", "))
+	case moduleLoadKindCWD:
+		return fmt.Errorf("internal error: multiple distinct cwd entrypoint modules: %s", strings.Join(names, ", "))
+	default:
+		return fmt.Errorf("multiple distinct entrypoint modules: %s", strings.Join(names, ", "))
+	}
 }
 
 func resolvedModuleLoadIdentity(mod *core.Module) string {
