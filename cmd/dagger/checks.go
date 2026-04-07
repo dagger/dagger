@@ -20,13 +20,17 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-var checksListMode bool
+var (
+	checksListMode bool
+	checksFailFast bool
+)
 
 //go:embed checks.graphql
 var loadChecksQuery string
 
 func init() {
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
+	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
 }
 
 var checksCmd = &cobra.Command{
@@ -195,9 +199,14 @@ func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Check
 		}
 	}
 
+	opName := "CheckGroupRunStatuses"
+	if checksFailFast {
+		opName = "CheckGroupRunStatusesFailFast"
+	}
+
 	err = dag.Do(ctx, &dagger.Request{
 		Query:  loadChecksQuery,
-		OpName: "CheckGroupRunStatuses",
+		OpName: opName,
 		Variables: map[string]any{
 			"checkGroup": id,
 		},

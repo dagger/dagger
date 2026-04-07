@@ -254,6 +254,24 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type Up
+     */
+    public function asUp(): Up
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asUp');
+        return new \Dagger\Up($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type UpGroup
+     */
+    public function asUpGroup(): UpGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asUpGroup');
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Volume
      */
     public function asVolume(): Volume

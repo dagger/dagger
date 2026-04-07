@@ -934,6 +934,26 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Load a Up from its ID.
+     */
+    public function loadUpFromID(UpId|Up $id): Up
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadUpFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Up($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a UpGroup from its ID.
+     */
+    public function loadUpGroupFromID(UpGroupId|UpGroup $id): UpGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadUpGroupFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Volume from its ID.
      */
     public function loadVolumeFromID(VolumeId|Volume $id): Volume

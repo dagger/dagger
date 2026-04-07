@@ -560,6 +560,18 @@ func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	return client.LoadTypeDefFromID(id)
 }
 
+// Load a Up from its ID.
+func LoadUpFromID(id dagger.UpID) *dagger.Up {
+	client := initClient()
+	return client.LoadUpFromID(id)
+}
+
+// Load a UpGroup from its ID.
+func LoadUpGroupFromID(id dagger.UpGroupID) *dagger.UpGroup {
+	client := initClient()
+	return client.LoadUpGroupFromID(id)
+}
+
 // Load a Volume from its ID.
 func LoadVolumeFromID(id dagger.VolumeID) *dagger.Volume {
 	client := initClient()

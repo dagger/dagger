@@ -214,6 +214,15 @@ type ModuleConfigDependency struct {
 	// IgnoreGenerators is a list of generator patterns to exclude from this toolchain.
 	// Patterns can use glob syntax to match generator names.
 	IgnoreGenerators []string `json:"ignoreGenerators,omitempty"`
+
+	// IgnoreServices is a list of service (up) patterns to exclude from this toolchain.
+	// Patterns can use glob syntax to match service names.
+	IgnoreServices []string `json:"ignoreServices,omitempty"`
+
+	// PortMappings maps service names to port forwarding rules.
+	// Keys are service names (e.g. "web", "infra:database").
+	// Values are arrays of "hostPort:containerPort" strings (e.g. ["3000:80"]).
+	PortMappings map[string][]string `json:"portMappings,omitempty"`
 }
 
 // ModuleConfigArgument represents an argument override for a toolchain function

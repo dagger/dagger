@@ -202,6 +202,14 @@ func (env *Env) Checks(ctx context.Context, include []string) (*CheckGroup, erro
 	return env.MainModule.Checks(ctx, include)
 }
 
+// Services returns an UpGroup from the main module
+func (env *Env) Services(ctx context.Context, include []string) (*UpGroup, error) {
+	if env.MainModule == nil {
+		return nil, fmt.Errorf("no main module set on environment")
+	}
+	return env.MainModule.Services(ctx, include)
+}
+
 // Check returns a single check by name from the main module
 func (env *Env) Check(ctx context.Context, name string) (*Check, error) {
 	checkGroup, err := env.Checks(ctx, []string{name})

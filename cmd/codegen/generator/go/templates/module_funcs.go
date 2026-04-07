@@ -15,6 +15,7 @@ import (
 
 const errorTypeName = "error"
 
+//nolint:gocyclo
 func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
 	spec := &funcTypeSpec{
 		name: fn.Name(),
@@ -53,6 +54,17 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 			spec.isGenerator, ok = v.(bool)
 			if !ok {
 				return nil, fmt.Errorf("generate pragma %q, must be a valid boolean", v)
+			}
+		}
+	}
+
+	if v, ok := docPragmas["up"]; ok {
+		if v == nil {
+			spec.isUp = true
+		} else {
+			spec.isUp, ok = v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("up pragma %q, must be a valid boolean", v)
 			}
 		}
 	}
@@ -138,6 +150,7 @@ type funcTypeSpec struct {
 	cachePolicy string
 	isCheck     bool
 	isGenerator bool
+	isUp        bool
 
 	argSpecs []paramSpec
 
@@ -205,6 +218,9 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 	}
 	if spec.isGenerator {
 		fnTypeDef = fnTypeDef.WithGenerator()
+	}
+	if spec.isUp {
+		fnTypeDef = fnTypeDef.WithUp()
 	}
 
 	for _, argSpec := range spec.argSpecs {
