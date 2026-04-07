@@ -165,7 +165,9 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asString</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Returns the binding's string value</p></dd><dt><a href="Dagger/Binding.html#method_asWorkspace">
 <abbr title="Dagger\Binding">Binding</abbr>::asWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type Workspace</p></dd><dt><a href="Dagger/Binding.html#method_asWorkspaceModule">
+                    <dd><p>Retrieve the binding value, as type Workspace</p></dd><dt><a href="Dagger/Binding.html#method_asWorkspaceMigration">
+<abbr title="Dagger\Binding">Binding</abbr>::asWorkspaceMigration</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type WorkspaceMigration</p></dd><dt><a href="Dagger/Binding.html#method_asWorkspaceModule">
 <abbr title="Dagger\Binding">Binding</abbr>::asWorkspaceModule</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type WorkspaceModule</p></dd><dt><a href="Dagger/Changeset.html#method_addedPaths">
 <abbr title="Dagger\Changeset">Changeset</abbr>::addedPaths</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
@@ -375,7 +377,11 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::configRead</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Read a configuration value from config.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_configWrite">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configWrite</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Write a configuration value to config.toml.</p></dd>        </dl><h2 id="letterD">D</h2>
+                    <dd><p>Write a configuration value to config.toml.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_changes">
+<abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
+                    <dd><p>Filesystem changes needed for this migration.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_code">
+<abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::code</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
+                    <dd><p>Stable migration code identifying the migration flow.</p></dd>        </dl><h2 id="letterD">D</h2>
         <dl id="indexD"><dt><a href="Dagger/Address.html#method_directory">
 <abbr title="Dagger\Address">Address</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
                     <dd><p>Load a directory from the address.</p></dd><dt><a href="Dagger/Attribute/DaggerFunction.html"><abbr title="Dagger\Attribute\DaggerFunction">DaggerFunction</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
@@ -471,7 +477,9 @@
 <abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/ScalarTypeDef.html"><abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a></em></dt>
                     <dd><p>A doc string for the scalar, if any.</p></dd><dt><a href="Dagger/Workspace.html#method_directory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Returns a Directory from the workspace.</p></dd>        </dl><h2 id="letterE">E</h2>
+                    <dd><p>Returns a Directory from the workspace.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_description">
+<abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
+                    <dd><p>Generic summary of the migration's purpose and impact.</p></dd>        </dl><h2 id="letterE">E</h2>
         <dl id="indexE"><dt><a href="Dagger/Changeset.html#method_export">
 <abbr title="Dagger\Changeset">Changeset</abbr>::export</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Applies the diff represented by this changeset to a path on the host.</p></dd><dt><a href="Dagger/Check.html#method_error">
@@ -854,7 +862,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::initialized</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Whether .dagger/config.toml exists.</p></dd><dt><a href="Dagger/Workspace.html#method_install">
 <abbr title="Dagger\Workspace">Workspace</abbr>::install</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Install a module into the workspace, writing config.toml to the host.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_id">
+                    <dd><p>Install a module into the workspace, writing config.toml to the host.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_id">
+<abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this WorkspaceMigration.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_id">
 <abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a></em></dt>
                     <dd><p>A unique identifier for this WorkspaceModule.</p></dd>        </dl><h2 id="letterJ">J</h2>
         <dl id="indexJ"><dt><a href="Dagger/Client.html#method_json">
@@ -995,7 +1005,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a TypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadWorkspaceFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadWorkspaceFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a Workspace from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadWorkspaceModuleFromID">
+                    <dd><p>Load a Workspace from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadWorkspaceMigrationFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadWorkspaceMigrationFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a WorkspaceMigration from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadWorkspaceModuleFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadWorkspaceModuleFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a WorkspaceModule from its ID.</p></dd><dt>$<a href="Dagger/Client/AbstractObject.html#property_lastQuery">
 <abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr>#lastQuery</a> &mdash; <em>Property in class <a href="Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a></em></dt>
@@ -1066,7 +1078,9 @@
 <abbr title="Dagger\SearchResult">SearchResult</abbr>::matchedLines</a>() &mdash; <em>Method in class <a href="Dagger/SearchResult.html"><abbr title="Dagger\SearchResult">SearchResult</abbr></a></em></dt>
                     <dd><p>The line content that matched.</p></dd><dt><a href="Dagger/SourceMap.html#method_module">
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
-                    <dd><p>The module dependency this was declared in.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleInit">
+                    <dd><p>The module dependency this was declared in.</p></dd><dt><a href="Dagger/Workspace.html#method_migrate">
+<abbr title="Dagger\Workspace">Workspace</abbr>::migrate</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Plan explicit migrations needed for the current workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleInit">
 <abbr title="Dagger\Workspace">Workspace</abbr>::moduleInit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Create a new module owned by the workspace and auto-install it in config.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleList">
 <abbr title="Dagger\Workspace">Workspace</abbr>::moduleList</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -1714,7 +1728,11 @@
 <abbr title="Dagger\Env">Env</abbr>::withWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Returns a new environment with the provided workspace</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceInput">
 <abbr title="Dagger\Env">Env</abbr>::withWorkspaceInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Create or update a binding of type Workspace in the environment</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceModuleInput">
+                    <dd><p>Create or update a binding of type Workspace in the environment</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceMigrationInput">
+<abbr title="Dagger\Env">Env</abbr>::withWorkspaceMigrationInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type WorkspaceMigration in the environment</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceMigrationOutput">
+<abbr title="Dagger\Env">Env</abbr>::withWorkspaceMigrationOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired WorkspaceMigration output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceModuleInput">
 <abbr title="Dagger\Env">Env</abbr>::withWorkspaceModuleInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type WorkspaceModule in the environment</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceModuleOutput">
 <abbr title="Dagger\Env">Env</abbr>::withWorkspaceModuleOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
@@ -1854,7 +1872,11 @@
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::withScalar</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>Returns a TypeDef of kind Scalar with the provided name.</p></dd><dt><a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A Dagger workspace detected from the current working directory.</p></dd><dt><a href="Dagger/WorkspaceId.html"><abbr title="Dagger\WorkspaceId">WorkspaceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>The <code>WorkspaceID</code> scalar type represents an identifier for an object of type Workspace.</p></dd><dt><a href="Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>WorkspaceID</code> scalar type represents an identifier for an object of type Workspace.</p></dd><dt><a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A planned workspace migration.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_warnings">
+<abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::warnings</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
+                    <dd><p>Non-fatal warnings raised while planning this migration.</p></dd><dt><a href="Dagger/WorkspaceMigrationId.html"><abbr title="Dagger\WorkspaceMigrationId">WorkspaceMigrationId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>WorkspaceMigrationID</code> scalar type represents an identifier for an object of type WorkspaceMigration.</p></dd><dt><a href="Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A module entry in the workspace configuration.</p></dd><dt><a href="Dagger/WorkspaceModuleId.html"><abbr title="Dagger\WorkspaceModuleId">WorkspaceModuleId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>WorkspaceModuleID</code> scalar type represents an identifier for an object of type WorkspaceModule.</p></dd>        </dl><h2 id="letter_">_</h2>
         <dl id="index_"><dt><a href="Dagger/Attribute/DefaultPath.html#method___construct">

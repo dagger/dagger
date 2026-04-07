@@ -2080,6 +2080,41 @@ impl WorkspaceId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct WorkspaceMigrationId(pub String);
+impl From<&str> for WorkspaceMigrationId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for WorkspaceMigrationId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<WorkspaceMigrationId> for WorkspaceMigration {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<WorkspaceMigrationId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<WorkspaceMigrationId> for WorkspaceMigrationId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<WorkspaceMigrationId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<WorkspaceMigrationId, DaggerError>(self) })
+    }
+}
+impl WorkspaceMigrationId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct WorkspaceModuleId(pub String);
 impl From<&str> for WorkspaceModuleId {
     fn from(value: &str) -> Self {
@@ -2541,6 +2576,15 @@ impl Binding {
     pub fn as_workspace(&self) -> Workspace {
         let query = self.selection.select("asWorkspace");
         Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type WorkspaceMigration
+    pub fn as_workspace_migration(&self) -> WorkspaceMigration {
+        let query = self.selection.select("asWorkspaceMigration");
+        WorkspaceMigration {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -8583,6 +8627,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type WorkspaceMigration in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The WorkspaceMigration value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_workspace_migration_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<WorkspaceMigrationId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withWorkspaceMigrationInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired WorkspaceMigration output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_workspace_migration_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withWorkspaceMigrationOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type WorkspaceModule in the environment
     ///
     /// # Arguments
@@ -13680,6 +13773,25 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a WorkspaceMigration from its ID.
+    pub fn load_workspace_migration_from_id(
+        &self,
+        id: impl IntoID<WorkspaceMigrationId>,
+    ) -> WorkspaceMigration {
+        let mut query = self.selection.select("loadWorkspaceMigrationFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        WorkspaceMigration {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a WorkspaceModule from its ID.
     pub fn load_workspace_module_from_id(
         &self,
@@ -15131,6 +15243,16 @@ impl Workspace {
         }
         query.execute(self.graphql_client.clone()).await
     }
+    /// Plan explicit migrations needed for the current workspace.
+    /// Returns an empty list when no migration is needed.
+    pub fn migrate(&self) -> Vec<WorkspaceMigration> {
+        let query = self.selection.select("migrate");
+        vec![WorkspaceMigration {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
     /// Create a new module owned by the workspace and auto-install it in config.toml.
     ///
     /// # Arguments
@@ -15226,6 +15348,43 @@ impl Workspace {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+#[derive(Clone)]
+pub struct WorkspaceMigration {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl WorkspaceMigration {
+    /// Filesystem changes needed for this migration.
+    pub fn changes(&self) -> Changeset {
+        let query = self.selection.select("changes");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Stable migration code identifying the migration flow.
+    pub async fn code(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("code");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Generic summary of the migration's purpose and impact.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this WorkspaceMigration.
+    pub async fn id(&self) -> Result<WorkspaceMigrationId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Non-fatal warnings raised while planning this migration.
+    pub async fn warnings(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("warnings");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]

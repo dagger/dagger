@@ -2812,6 +2812,11 @@ export type WorkspaceRefreshModulesOpts = {
 export type WorkspaceID = string & { __WorkspaceID: never }
 
 /**
+ * The `WorkspaceMigrationID` scalar type represents an identifier for an object of type WorkspaceMigration.
+ */
+export type WorkspaceMigrationID = string & { __WorkspaceMigrationID: never }
+
+/**
  * The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
  */
 export type WorkspaceModuleID = string & { __WorkspaceModuleID: never }
@@ -3214,6 +3219,14 @@ export class Binding extends BaseClient {
   asWorkspace = (): Workspace => {
     const ctx = this._ctx.select("asWorkspace")
     return new Workspace(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceMigration
+   */
+  asWorkspaceMigration = (): WorkspaceMigration => {
+    const ctx = this._ctx.select("asWorkspaceMigration")
+    return new WorkspaceMigration(ctx)
   }
 
   /**
@@ -7328,6 +7341,38 @@ export class Env extends BaseClient {
     const ctx = this._ctx.select("withWorkspaceInput", {
       name,
       value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceMigration in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceMigration value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceMigrationInput = (
+    name: string,
+    value: WorkspaceMigration,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceMigration output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceMigrationOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationOutput", {
+      name,
       description,
     })
     return new Env(ctx)
@@ -12566,6 +12611,16 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a WorkspaceMigration from its ID.
+   */
+  loadWorkspaceMigrationFromID = (
+    id: WorkspaceMigrationID,
+  ): WorkspaceMigration => {
+    const ctx = this._ctx.select("loadWorkspaceMigrationFromID", { id })
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
    * Load a WorkspaceModule from its ID.
    */
   loadWorkspaceModuleFromID = (id: WorkspaceModuleID): WorkspaceModule => {
@@ -14158,6 +14213,25 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Plan explicit migrations needed for the current workspace.
+   *
+   * Returns an empty list when no migration is needed.
+   */
+  migrate = async (): Promise<WorkspaceMigration[]> => {
+    type migrate = {
+      id: WorkspaceMigrationID
+    }
+
+    const ctx = this._ctx.select("migrate").select("id")
+
+    const response: Awaited<migrate[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadWorkspaceMigrationFromID(r.id),
+    )
+  }
+
+  /**
    * Create a new module owned by the workspace and auto-install it in config.toml.
    * @param name Name of the new module.
    * @param opts.sdk SDK to use for the new module.
@@ -14234,6 +14308,95 @@ export class Workspace extends BaseClient {
   update = (): Changeset => {
     const ctx = this._ctx.select("update")
     return new Changeset(ctx)
+  }
+}
+
+/**
+ * A planned workspace migration.
+ */
+export class WorkspaceMigration extends BaseClient {
+  private readonly _id?: WorkspaceMigrationID = undefined
+  private readonly _code?: string = undefined
+  private readonly _description?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: WorkspaceMigrationID,
+    _code?: string,
+    _description?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._code = _code
+    this._description = _description
+  }
+
+  /**
+   * A unique identifier for this WorkspaceMigration.
+   */
+  id = async (): Promise<WorkspaceMigrationID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<WorkspaceMigrationID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Filesystem changes needed for this migration.
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Stable migration code identifying the migration flow.
+   */
+  code = async (): Promise<string> => {
+    if (this._code) {
+      return this._code
+    }
+
+    const ctx = this._ctx.select("code")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Generic summary of the migration's purpose and impact.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Non-fatal warnings raised while planning this migration.
+   */
+  warnings = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("warnings")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
   }
 }
 

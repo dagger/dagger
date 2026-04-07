@@ -151,6 +151,9 @@ type Binding {
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
+  """Retrieve the binding value, as type WorkspaceMigration"""
+  asWorkspaceMigration: WorkspaceMigration!
+
   """Retrieve the binding value, as type WorkspaceModule"""
   asWorkspaceModule: WorkspaceModule!
 
@@ -2951,6 +2954,31 @@ type Env {
     description: String!
   ): Env!
 
+  """
+  Create or update a binding of type WorkspaceMigration in the environment
+  """
+  withWorkspaceMigrationInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceMigration value to assign to the binding"""
+    value: WorkspaceMigrationID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceMigration output to be assigned in the environment
+  """
+  withWorkspaceMigrationOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type WorkspaceModule in the environment"""
   withWorkspaceModuleInput(
     """The name of the binding"""
@@ -5134,6 +5162,9 @@ type Query {
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
+  """Load a WorkspaceMigration from its ID."""
+  loadWorkspaceMigrationFromID(id: WorkspaceMigrationID!): WorkspaceMigration!
+
   """Load a WorkspaceModule from its ID."""
   loadWorkspaceModuleFromID(id: WorkspaceModuleID!): WorkspaceModule!
 
@@ -5916,6 +5947,13 @@ type Workspace {
   ): String!
 
   """
+  Plan explicit migrations needed for the current workspace.
+
+  Returns an empty list when no migration is needed.
+  """
+  migrate: [WorkspaceMigration!]!
+
+  """
   Create a new module owned by the workspace and auto-install it in config.toml.
   """
   moduleInit(
@@ -5966,6 +6004,29 @@ type Workspace {
 The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 """
 scalar WorkspaceID
+
+"""A planned workspace migration."""
+type WorkspaceMigration {
+  """Filesystem changes needed for this migration."""
+  changes: Changeset!
+
+  """Stable migration code identifying the migration flow."""
+  code: String!
+
+  """Generic summary of the migration's purpose and impact."""
+  description: String!
+
+  """A unique identifier for this WorkspaceMigration."""
+  id: WorkspaceMigrationID!
+
+  """Non-fatal warnings raised while planning this migration."""
+  warnings: [String!]!
+}
+
+"""
+The `WorkspaceMigrationID` scalar type represents an identifier for an object of type WorkspaceMigration.
+"""
+scalar WorkspaceMigrationID
 
 """A module entry in the workspace configuration."""
 type WorkspaceModule {

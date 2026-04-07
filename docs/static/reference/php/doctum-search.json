@@ -1418,6 +1418,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\WorkspaceMigration",
+			"p": "Dagger/WorkspaceMigration.html",
+			"d": "<p>A planned workspace migration.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceMigrationId",
+			"p": "Dagger/WorkspaceMigrationId.html",
+			"d": "<p>The <code>WorkspaceMigrationID</code> scalar type represents an identifier for an object of type WorkspaceMigration.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\WorkspaceModule",
 			"p": "Dagger/WorkspaceModule.html",
 			"d": "<p>A module entry in the workspace configuration.</p>",
@@ -1702,6 +1722,12 @@
 			"n": "Dagger\\Binding::asWorkspace",
 			"p": "Dagger/Binding.html#method_asWorkspace",
 			"d": "<p>Retrieve the binding value, as type Workspace</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asWorkspaceMigration",
+			"p": "Dagger/Binding.html#method_asWorkspaceMigration",
+			"d": "<p>Retrieve the binding value, as type WorkspaceMigration</p>"
 		},
 		{
 			"t": "M",
@@ -2434,6 +2460,12 @@
 			"n": "Dagger\\Client::loadWorkspaceFromID",
 			"p": "Dagger/Client.html#method_loadWorkspaceFromID",
 			"d": "<p>Load a Workspace from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceMigrationFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceMigrationFromID",
+			"d": "<p>Load a WorkspaceMigration from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -3976,6 +4008,18 @@
 			"n": "Dagger\\Env::withWorkspaceInput",
 			"p": "Dagger/Env.html#method_withWorkspaceInput",
 			"d": "<p>Create or update a binding of type Workspace in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceMigrationInput",
+			"p": "Dagger/Env.html#method_withWorkspaceMigrationInput",
+			"d": "<p>Create or update a binding of type WorkspaceMigration in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceMigrationOutput",
+			"p": "Dagger/Env.html#method_withWorkspaceMigrationOutput",
+			"d": "<p>Declare a desired WorkspaceMigration output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -6193,6 +6237,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::migrate",
+			"p": "Dagger/Workspace.html#method_migrate",
+			"d": "<p>Plan explicit migrations needed for the current workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::moduleInit",
 			"p": "Dagger/Workspace.html#method_moduleInit",
 			"d": "<p>Create a new module owned by the workspace and auto-install it in config.toml.</p>"
@@ -6220,6 +6270,36 @@
 			"n": "Dagger\\Workspace::update",
 			"p": "Dagger/Workspace.html#method_update",
 			"d": "<p>Refresh workspace-managed state and return the resulting changeset.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::changes",
+			"p": "Dagger/WorkspaceMigration.html#method_changes",
+			"d": "<p>Filesystem changes needed for this migration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::code",
+			"p": "Dagger/WorkspaceMigration.html#method_code",
+			"d": "<p>Stable migration code identifying the migration flow.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::description",
+			"p": "Dagger/WorkspaceMigration.html#method_description",
+			"d": "<p>Generic summary of the migration's purpose and impact.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::id",
+			"p": "Dagger/WorkspaceMigration.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceMigration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::warnings",
+			"p": "Dagger/WorkspaceMigration.html#method_warnings",
+			"d": "<p>Non-fatal warnings raised while planning this migration.</p>"
 		},
 		{
 			"t": "M",

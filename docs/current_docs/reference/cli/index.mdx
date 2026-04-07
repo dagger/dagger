@@ -32,6 +32,7 @@ dagger [options] [subcommand | file...]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -61,7 +62,7 @@ dagger [options] [subcommand | file...]
 Call one or more functions, interconnected into a pipeline
 
 ```
-dagger call [options] [workspace --] [function]...
+dagger call [options] [function]...
 ```
 
 ### Options
@@ -89,6 +90,7 @@ dagger call [options] [workspace --] [function]...
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -137,6 +139,7 @@ dagger config -m github.com/dagger/hello-dagger
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -172,6 +175,7 @@ dagger core [options]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -234,6 +238,7 @@ dagger develop [options]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -254,12 +259,12 @@ available functions.
 Examples:
   dagger functions                           # List top-level functions in current workspace
   dagger functions container                 # List functions on container
-  dagger functions github.com/acme/ws --     # List top-level functions in explicit workspace
-  dagger functions github.com/acme/ws -- container from
+  dagger -W github.com/acme/ws functions     # List top-level functions in explicit workspace
+  dagger -W github.com/acme/ws functions container from
 
 
 ```
-dagger functions [options] [workspace --] [function]...
+dagger functions [options] [function]...
 ```
 
 ### Options
@@ -284,6 +289,7 @@ dagger functions [options] [workspace --] [function]...
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -316,6 +322,7 @@ dagger init
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -362,6 +369,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -386,6 +394,7 @@ Manage workspace lockfiles
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -423,6 +432,7 @@ dagger lock update [module...]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -451,6 +461,7 @@ dagger login [options] [org]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -479,6 +490,7 @@ dagger logout
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -517,6 +529,7 @@ dagger migrate
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -541,6 +554,7 @@ Manage modules
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -612,6 +626,7 @@ dagger module init --sdk=go
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -664,6 +679,7 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -716,6 +732,7 @@ dagger module update [options] [<DEPENDENCY>...] [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -783,6 +800,7 @@ EOF
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -844,6 +862,7 @@ dagger run python main.py
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -868,6 +887,7 @@ Manage toolchains
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -920,6 +940,7 @@ dagger toolchain install github.com/dagger/dagger/toolchains/go
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -966,6 +987,7 @@ dagger toolchain list
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1013,6 +1035,7 @@ dagger toolchain uninstall mytoolchain
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1060,6 +1083,7 @@ dagger toolchain update
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1107,6 +1131,7 @@ dagger uninstall hello
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1150,6 +1175,7 @@ dagger update [module...]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1184,6 +1210,7 @@ dagger version
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1208,6 +1235,7 @@ Manage the current workspace
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1230,6 +1258,9 @@ With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
 With two arguments, sets the value at the given key.
 
+Local module source values are stored relative to .dagger/config.toml, so they may
+look different from the resolved paths shown by "dagger workspace list".
+
 ```
 dagger workspace config [key] [value] [flags]
 ```
@@ -1248,6 +1279,7 @@ dagger workspace config [key] [value] [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1276,6 +1308,7 @@ dagger workspace info [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1308,6 +1341,7 @@ dagger workspace init [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1323,7 +1357,8 @@ List workspace modules
 List all modules defined in the workspace configuration.
 
 Note:
-- Source paths are relative to the workspace root.
+- Source paths are resolved and shown relative to the workspace root.
+- "dagger workspace config" prints the raw config values stored in .dagger/config.toml, so local sources may look different there.
 - * means the module is a blueprint, with all its functions aliased to the root level.
 
 ```
@@ -1344,8 +1379,10 @@ dagger workspace list [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace to load (local path or git ref)
 ```
 
 ### SEE ALSO
 
 * [dagger workspace](#dagger-workspace)	 - Manage the current workspace
+

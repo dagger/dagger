@@ -199,6 +199,17 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Plan explicit migrations needed for the current workspace.
+     *
+     * Returns an empty list when no migration is needed.
+     */
+    public function migrate(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('migrate');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'migrate');
+    }
+
+    /**
      * Create a new module owned by the workspace and auto-install it in config.toml.
      */
     public function moduleInit(

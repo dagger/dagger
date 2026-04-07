@@ -320,6 +320,9 @@ type Void string
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 type WorkspaceID string
 
+// The `WorkspaceMigrationID` scalar type represents an identifier for an object of type WorkspaceMigration.
+type WorkspaceMigrationID string
+
 // The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
 type WorkspaceModuleID string
 
@@ -810,6 +813,15 @@ func (r *Binding) AsWorkspace() *Workspace {
 	q := r.query.Select("asWorkspace")
 
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type WorkspaceMigration
+func (r *Binding) AsWorkspaceMigration() *WorkspaceMigration {
+	q := r.query.Select("asWorkspaceMigration")
+
+	return &WorkspaceMigration{
 		query: q,
 	}
 }
@@ -6165,6 +6177,30 @@ func (r *Env) WithWorkspaceInput(name string, value *Workspace, description stri
 	q := r.query.Select("withWorkspaceInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type WorkspaceMigration in the environment
+func (r *Env) WithWorkspaceMigrationInput(name string, value *WorkspaceMigration, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceMigrationInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceMigration output to be assigned in the environment
+func (r *Env) WithWorkspaceMigrationOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceMigrationOutput")
+	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
 	return &Env{
@@ -12696,6 +12732,16 @@ func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	}
 }
 
+// Load a WorkspaceMigration from its ID.
+func (r *Query) LoadWorkspaceMigrationFromID(id WorkspaceMigrationID) *WorkspaceMigration {
+	q := r.query.Select("loadWorkspaceMigrationFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
 // Load a WorkspaceModule from its ID.
 func (r *Query) LoadWorkspaceModuleFromID(id WorkspaceModuleID) *WorkspaceModule {
 	q := r.query.Select("loadWorkspaceModuleFromID")
@@ -14705,6 +14751,41 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 	return response, q.Execute(ctx)
 }
 
+// Plan explicit migrations needed for the current workspace.
+//
+// Returns an empty list when no migration is needed.
+func (r *Workspace) Migrate(ctx context.Context) ([]WorkspaceMigration, error) {
+	q := r.query.Select("migrate")
+
+	q = q.Select("id")
+
+	type migrate struct {
+		Id WorkspaceMigrationID
+	}
+
+	convert := func(fields []migrate) []WorkspaceMigration {
+		out := []WorkspaceMigration{}
+
+		for i := range fields {
+			val := WorkspaceMigration{id: &fields[i].Id}
+			val.query = q.Root().Select("loadWorkspaceMigrationFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []migrate
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // WorkspaceModuleInitOpts contains options for Workspace.ModuleInit
 type WorkspaceModuleInitOpts struct {
 	// SDK to use for the new module.
@@ -14837,6 +14918,106 @@ func (r *Workspace) Update() *Changeset {
 	return &Changeset{
 		query: q,
 	}
+}
+
+// A planned workspace migration.
+type WorkspaceMigration struct {
+	query *querybuilder.Selection
+
+	code        *string
+	description *string
+	id          *WorkspaceMigrationID
+}
+
+func (r *WorkspaceMigration) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigration {
+	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
+// Filesystem changes needed for this migration.
+func (r *WorkspaceMigration) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Stable migration code identifying the migration flow.
+func (r *WorkspaceMigration) Code(ctx context.Context) (string, error) {
+	if r.code != nil {
+		return *r.code, nil
+	}
+	q := r.query.Select("code")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Generic summary of the migration's purpose and impact.
+func (r *WorkspaceMigration) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceMigration.
+func (r *WorkspaceMigration) ID(ctx context.Context) (WorkspaceMigrationID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceMigrationID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceMigration) XXX_GraphQLType() string {
+	return "WorkspaceMigration"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceMigration) XXX_GraphQLIDType() string {
+	return "WorkspaceMigrationID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceMigration) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceMigration) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Non-fatal warnings raised while planning this migration.
+func (r *WorkspaceMigration) Warnings(ctx context.Context) ([]string, error) {
+	q := r.query.Select("warnings")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A module entry in the workspace configuration.
