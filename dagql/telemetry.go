@@ -32,6 +32,12 @@ func WithNonInternalTelemetry(ctx context.Context) context.Context {
 	return context.WithValue(ctx, internalKey{}, false)
 }
 
+// withoutNonInternalTelemetry removes the internal flag from the context,
+// so that the one-shot non-internal override does not leak into deeper selects.
+func withoutNonInternalTelemetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, internalKey{}, nil)
+}
+
 func telemetryKeys(ctx context.Context) *sync.Map {
 	if v := ctx.Value(seenKeysCtxKey{}); v != nil {
 		return v.(*sync.Map)

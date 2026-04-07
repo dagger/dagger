@@ -1289,7 +1289,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		//
 		// FIXME: this is an absurd dance, we should maybe just remove the
 		// auto-Internaling, but that'll be a game of wack-a-mole
-		ctx = withInternal(ctx)
+		ctx = withoutNonInternalTelemetry(ctx)
 	} else {
 		// Annotate ctx with the internal flag so we can distinguish self-calls from
 		// user-calls in the UI.
