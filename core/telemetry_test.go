@@ -122,6 +122,7 @@ func (ms *mockServer) BuildkitSession() *bksession.Manager         { return nil 
 func (ms *mockServer) Locker() *locker.Locker                      { return nil }
 func (ms *mockServer) SecretSalt() []byte                          { return nil }
 func (ms *mockServer) FileSyncer() *filesync.FileSyncer            { return nil }
+func (ms *mockServer) FlushSessionTelemetry(context.Context) error { return nil }
 func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error) {
 	return nil, nil
 }
