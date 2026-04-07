@@ -33,7 +33,7 @@ The engine will:
 - persist that same `CompatWorkspace` through `Workspace.migrate()`
 - apply migration only through returned `Changeset` values
 
-The CLI will not own migration orchestration. It will call `Workspace.migrate()`, render the returned migration steps, and reuse the normal changeset preview/apply flow for the returned combined changeset.
+The CLI will not own migration orchestration. It will call `Workspace.migrate()`, rely on engine telemetry for human-readable migration progress, and reuse the normal changeset preview/apply flow for the returned combined changeset.
 
 ## Compat Workspace
 
@@ -201,18 +201,13 @@ Product code must not contain a second migration applier that writes files direc
 
 ```go
 func daggerMigrate(ctx context.Context, dag *dagger.Client) error {
-	migration := dag.CurrentWorkspace().Migrate()
-	if migration.Changes.IsEmpty() {
+	changes := dag.CurrentWorkspace().Migrate().Changes()
+	if changes.IsEmpty() {
 		fmt.Println("No migration needed.")
 		return nil
 	}
 
-	for _, step := range migration.Steps {
-		renderMigrationHeader(step.Code, step.Description)
-		renderWarnings(step.Warnings)
-	}
-
-	return renderOrApplyChangeset(migration.Changes)
+	return renderOrApplyChangeset(changes)
 }
 ```
 
@@ -220,9 +215,8 @@ User-facing flow:
 
 ```text
 $ dagger migrate
-MIGRATION legacy-dagger-json
-Convert legacy dagger.json compat workspace to .dagger/config.toml
-WARNING: 2 migration gaps need manual review
+[telemetry spans from engine]
+[telemetry/console warnings from engine]
 
 [changeset preview here]
 
@@ -230,6 +224,8 @@ Apply changes? [y/N]
 ```
 
 With `-y`, the combined changeset is auto-applied through the normal changeset path.
+
+The CLI does not need to fetch migration step metadata for this flow. Human-readable progress, step descriptions, and warnings come from engine telemetry spans and engine-emitted warnings during migration planning.
 
 ## Architecture
 
@@ -253,11 +249,11 @@ dagger migrate
 └─ currentWorkspace.migrate()
    ├─ read attached CompatWorkspace from current Workspace
    ├─ convert CompatWorkspace into WorkspaceMigration
+   ├─ emit migration spans and warnings
    └─ return combined changeset + step metadata
 
 CLI
-└─ render migration steps
-└─ preview/apply
+└─ preview/apply combined changeset
 ```
 
 ## Implementation Guidance

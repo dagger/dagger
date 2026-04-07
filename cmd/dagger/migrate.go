@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 
 	workspacecfg "github.com/dagger/dagger/core/workspace"
@@ -33,68 +32,19 @@ var migrateCmd = &cobra.Command{
 		}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 
-			migration, err := currentWorkspaceMigration(ctx, dag)
+			changes := dag.CurrentWorkspace().Migrate().Changes()
+			isEmpty, err := changes.IsEmpty(ctx)
 			if err != nil {
 				return fmt.Errorf("migration failed: %w", err)
 			}
-			if migration.Changes.IsEmpty {
+			if isEmpty {
 				_, err := fmt.Fprintln(cmd.OutOrStdout(), "No migration needed.")
 				return err
 			}
 
-			for i := range migration.Steps {
-				if i > 0 {
-					if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-						return err
-					}
-				}
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "MIGRATION %s\n", migration.Steps[i].Code); err != nil {
-					return err
-				}
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), migration.Steps[i].Description); err != nil {
-					return err
-				}
-				for _, warning := range migration.Steps[i].Warnings {
-					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Warning: %s\n", warning); err != nil {
-						return err
-					}
-				}
-			}
-
-			return handleChangesetResponse(ctx, dag, dag.LoadChangesetFromID(migration.Changes.ID), autoApply)
+			return handleChangesetResponse(ctx, dag, changes, autoApply)
 		})
 	},
-}
-
-type workspaceMigrationResponse struct {
-	Changes struct {
-		ID      dagger.ChangesetID `json:"id"`
-		IsEmpty bool               `json:"isEmpty"`
-	} `json:"changes"`
-	Steps []workspaceMigrationStepResponse `json:"steps"`
-}
-
-type workspaceMigrationStepResponse struct {
-	Code        string   `json:"code"`
-	Description string   `json:"description"`
-	Warnings    []string `json:"warnings"`
-}
-
-func currentWorkspaceMigration(ctx context.Context, dag *dagger.Client) (*workspaceMigrationResponse, error) {
-	var migration workspaceMigrationResponse
-	err := dag.QueryBuilder().
-		Select("currentWorkspace").
-		Select("migrate").
-		SelectMultiple(
-			"changes{id isEmpty}",
-			"steps{code description warnings}",
-		).
-		Bind(&migration).
-		Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &migration, nil
 }
 
 func init() {
