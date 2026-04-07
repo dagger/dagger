@@ -166,6 +166,7 @@
               <li><a href="#definition-Env">Env</a></li>
               <li><a href="#definition-EnvFile">EnvFile</a></li>
               <li><a href="#definition-EnvFileID">EnvFileID</a></li>
+              <li><a href="#definition-EnvFileVariableType">EnvFileVariableType</a></li>
               <li><a href="#definition-EnvID">EnvID</a></li>
               <li><a href="#definition-EnvVariable">EnvVariable</a></li>
               <li><a href="#definition-EnvVariableID">EnvVariableID</a></li>
@@ -10648,6 +10649,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Variable value</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>variableType</code></span> - <span class="property-type"><a href="#definition-EnvFileVariableType"><code>EnvFileVariableType</code></a></span></h6>
+                                <p>Control how the variable value is parsed. &quot;RAW&quot;: the values is used directly in the .env file, users will have to manually escape special characters, &quot;STATIC&quot;: no variable expansion is performed, and all special characters are escaped, &quot;AUTO&quot; quotes will be automatically escaped, users will have to escape the $ character when it is used outside of a quoted string, and all \ instances.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -10685,6 +10690,58 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>EnvFileID</code> scalar type represents an identifier for an object of type EnvFile.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EnvFileVariableType" class="definition definition-enum" data-traverse-target="definition-EnvFileVariableType">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnvFileVariableType</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>File type.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>RAW</code></p>
+                        </td>
+                        <td> do not apply any escaping logic to the variable value </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>AUTO</code></p>
+                        </td>
+                        <td> automatically escape quotes </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>STATIC</code></p>
+                        </td>
+                        <td> escape all special characters, effectively disallowing variable substitution </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"RAW"</span>
+</code></pre>
                 </div>
               </div>
             </div>

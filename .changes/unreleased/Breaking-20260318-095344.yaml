@@ -1,0 +1,6 @@
+kind: Breaking
+body: envfile.WithVariable will automatically escape quotes and will now only perform variable substitution (by default) when $XXX is found outside of quotes. envfile.WithVariable now has an optional variabletype enum which can override the escaping behavior with RAW, AUTO, or STATIC.
+time: 2026-03-18T09:53:44.30882338-07:00
+custom:
+    Author: alexcb
+    PR: "12014"

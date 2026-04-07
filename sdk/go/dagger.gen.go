@@ -6462,9 +6462,21 @@ func (r *EnvFile) Variables(ctx context.Context, opts ...EnvFileVariablesOpts) (
 	return convert(response), nil
 }
 
+// EnvFileWithVariableOpts contains options for EnvFile.WithVariable
+type EnvFileWithVariableOpts struct {
+	// Control how the variable value is parsed. "RAW": the values is used directly in the .env file, users will have to manually escape special characters, "STATIC": no variable expansion is performed, and all special characters are escaped, "AUTO" quotes will be automatically escaped, users will have to escape the $ character when it is used outside of a quoted string, and all \\ instances.
+	VariableType EnvFileVariableType
+}
+
 // Add a variable
-func (r *EnvFile) WithVariable(name string, value string) *EnvFile {
+func (r *EnvFile) WithVariable(name string, value string, opts ...EnvFileWithVariableOpts) *EnvFile {
 	q := r.query.Select("withVariable")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `variableType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VariableType) {
+			q = q.Arg("variableType", opts[i].VariableType)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 
@@ -15177,6 +15189,70 @@ const (
 
 	// Attempt the octopus merge and fail if git merge fails due to conflicts
 	ChangesetsMergeConflictFail ChangesetsMergeConflict = "FAIL"
+)
+
+// File type.
+type EnvFileVariableType string
+
+func (EnvFileVariableType) IsEnum() {}
+
+func (v EnvFileVariableType) Name() string {
+	switch v {
+	case EnvFileVariableTypeRaw:
+		return "RAW"
+	case EnvFileVariableTypeAuto:
+		return "AUTO"
+	case EnvFileVariableTypeStatic:
+		return "STATIC"
+	default:
+		return ""
+	}
+}
+
+func (v EnvFileVariableType) Value() string {
+	return string(v)
+}
+
+func (v *EnvFileVariableType) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *EnvFileVariableType) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "AUTO":
+		*v = EnvFileVariableTypeAuto
+	case "RAW":
+		*v = EnvFileVariableTypeRaw
+	case "STATIC":
+		*v = EnvFileVariableTypeStatic
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// do not apply any escaping logic to the variable value
+	EnvFileVariableTypeRaw EnvFileVariableType = "RAW"
+
+	// automatically escape quotes
+	EnvFileVariableTypeAuto EnvFileVariableType = "AUTO"
+
+	// escape all special characters, effectively disallowing variable substitution
+	EnvFileVariableTypeStatic EnvFileVariableType = "STATIC"
 )
 
 // File type.
