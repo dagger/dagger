@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,9 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 /*
@@ -233,7 +237,46 @@ func (r *ContainerRuntime) Call(
 			if loadErr != nil {
 				return nil, "", fmt.Errorf("load error instance: %w", loadErr)
 			}
-			return nil, "", errInst.Self()
+			dagErr := errInst.Self().Clone()
+
+			originCtx := trace.SpanContextFromContext(
+				telemetry.Propagator.Extract(
+					context.Background(),
+					telemetry.AnyMapCarrier(dagErr.Extensions()),
+				),
+			)
+			if !originCtx.IsValid() {
+				if origins := telemetry.ParseErrorOrigins(modExecErr.Err.Error()); len(origins) > 0 && origins[0].IsValid() {
+					originCtx = origins[0]
+				}
+			}
+			if !originCtx.IsValid() {
+				originCtx = trace.SpanContextFromContext(ctx)
+			}
+			if originCtx.IsValid() && len(telemetry.ParseErrorOrigins(dagErr.Message)) == 0 {
+				dagErr.Message = telemetry.TrackOrigin(errors.New(dagErr.Message), originCtx).Error()
+			}
+			if originCtx.IsValid() {
+				extOriginCtx := trace.SpanContextFromContext(
+					telemetry.Propagator.Extract(
+						context.Background(),
+						telemetry.AnyMapCarrier(dagErr.Extensions()),
+					),
+				)
+				if !extOriginCtx.IsValid() {
+					carrier := propagation.MapCarrier{}
+					telemetry.Propagator.Inject(trace.ContextWithSpanContext(context.Background(), originCtx), carrier)
+					for _, key := range carrier.Keys() {
+						valJSON, marshalErr := json.Marshal(carrier.Get(key))
+						if marshalErr != nil {
+							return nil, "", fmt.Errorf("marshal error extension %q: %w", key, marshalErr)
+						}
+						dagErr = dagErr.WithValue(key, JSON(valJSON))
+					}
+				}
+			}
+
+			return nil, "", dagErr
 		}
 		if fnCall.Name == "" {
 			return nil, "", fmt.Errorf("call constructor: %w", err)

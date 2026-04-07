@@ -1559,6 +1559,8 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 
 			var metaRef bkcache.ImmutableRef
 			var moduleRef bkcache.ImmutableRef
+			var moduleErrID dagql.ID[*Error]
+			haveModuleErrID := false
 			resolveAndTrackFailureRef := func(state *execMountState) (bkcache.ImmutableRef, error) {
 				ref, err := resolveFailureRef(state)
 				if err != nil {
@@ -1597,11 +1599,8 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 					return
 				}
 				if ok {
-					rerr = &ModuleExecError{
-						Err:     rerr,
-						ErrorID: errID,
-					}
-					return
+					moduleErrID = errID
+					haveModuleErrID = true
 				}
 			}
 
@@ -1772,17 +1771,22 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 			}
 
 			var existingExecErr *ExecError
-			if errors.As(rerr, &existingExecErr) {
-				return
+			if !errors.As(rerr, &existingExecErr) {
+				execErr, ok, err := execErrorFromMetaRef(ctx, bkClient, causeCtx, rerr, metaSpec, metaRef)
+				if err != nil {
+					rerr = errors.Join(err, rerr)
+					return
+				}
+				if ok {
+					rerr = execErr
+				}
 			}
 
-			execErr, ok, err := execErrorFromMetaRef(ctx, bkClient, causeCtx, rerr, metaSpec, metaRef)
-			if err != nil {
-				rerr = errors.Join(err, rerr)
-				return
-			}
-			if ok {
-				rerr = execErr
+			if haveModuleErrID {
+				rerr = &ModuleExecError{
+					Err:     rerr,
+					ErrorID: moduleErrID,
+				}
 			}
 		}()
 
