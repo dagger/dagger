@@ -8,17 +8,20 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"structs"
 
 	"github.com/cilium/ebpf"
 )
 
 type fileopsKprobeCtx struct {
+	_       structs.HostLayout
 	StartNs uint64
 	Op      uint32
 	_       [4]byte
 }
 
 type fileopsSyscallCtx struct {
+	_       structs.HostLayout
 	StartNs uint64
 	Op      uint32
 	Flags   uint32
