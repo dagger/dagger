@@ -320,6 +320,23 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, "HIGH"} = Dagger.EnumValueTypeDef.name(high)
       assert {:ok, "UNKNOWN"} = Dagger.EnumValueTypeDef.name(unknown)
     end
+
+    test "enum arguments on object-returning functions get registered", %{dag: dag} do
+      module = Module.define(dag, EnumOnObjectReturn)
+
+      assert {:ok, enums} = Dagger.Module.enums(module)
+
+      enum_names =
+        enums
+        |> Enum.map(fn enum ->
+          enum
+          |> Dagger.TypeDef.as_enum()
+          |> Dagger.EnumTypeDef.name()
+        end)
+        |> Enum.map(fn {:ok, name} -> name end)
+
+      assert "SimpleEnum" in enum_names
+    end
   end
 
   test "deprecated directive", %{dag: dag} do

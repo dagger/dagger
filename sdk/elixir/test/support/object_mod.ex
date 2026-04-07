@@ -280,3 +280,26 @@ defmodule CustomEnum do
     :ok
   end
 end
+
+defmodule EnumReturnChild do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "EnumReturnChild"
+
+  object do
+  end
+end
+
+defmodule EnumOnObjectReturn do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "EnumOnObjectReturn"
+
+  object do
+  end
+
+  defn child_with_enum(status: SimpleEnum.t()) :: EnumReturnChild.t() do
+    _ = status
+    %EnumReturnChild{}
+  end
+end
