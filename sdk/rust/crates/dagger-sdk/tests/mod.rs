@@ -2,8 +2,10 @@ use dagger_sdk::{
     connect, connect_opts,
     core::{config, gql_client::GraphQlExtension, graphql_client::GraphQLError},
     errors::DaggerError,
+    logging::StdLogger,
 };
 use pretty_assertions::assert_eq;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_error_parsing() {
@@ -100,6 +102,26 @@ async fn test_execute_timeout() {
     })
     .await
     .expect("should not timeout");
+}
+
+#[tokio::test]
+async fn test_default_config_connects() {
+    let mut cfg = config::Config::default();
+    assert_eq!(cfg.timeout_ms, 10 * 1000, "Config::default should keep 10s timeout");
+    cfg.logger = Some(Arc::new(StdLogger::default()));
+
+    connect_opts(cfg, |client| async move {
+        client
+            .container()
+            .from("alpine:3.16.2")
+            .with_exec(vec!["/bin/true"])
+            .stdout()
+            .await?;
+
+        Ok(())
+    })
+    .await
+    .expect("default config should connect with non-zero timeout");
 }
 
 #[tokio::test]

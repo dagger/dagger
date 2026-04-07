@@ -54,3 +54,14 @@ impl Config {
         ConfigBuilder::default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+
+    #[test]
+    fn default_timeout_is_10s() {
+        let cfg = Config::default();
+        assert_eq!(cfg.timeout_ms, 10 * 1000);
+    }
+}
