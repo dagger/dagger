@@ -15,7 +15,7 @@ replace (
 require (
 	charm.land/lipgloss/v2 v2.0.2
 	cloud.google.com/go/secretmanager v1.17.0
-	github.com/1password/onepassword-sdk-go v0.4.0
+	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.89
 	github.com/Khan/genqlient v0.8.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
