@@ -187,7 +187,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "Paths to explicitly exclude from the module, relative to the configuration file. Deprecated: Use !\u003cpattern\u003e in the include list instead."
+          "description": "Paths to explicitly exclude from the module, relative to the configuration file.\n\nDeprecated: Use !\u003cpattern\u003e in the include list instead."
         },
         "clients": {
           "items": {

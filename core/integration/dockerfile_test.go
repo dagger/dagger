@@ -1124,3 +1124,29 @@ COPY --exclude=no data data
 	require.NoError(t, err)
 	require.False(t, found)
 }
+
+func (DockerfileSuite) TestAddUnpack(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := c.Container().
+		From(alpineImage).
+		WithWorkdir("/src").
+		WithExec([]string{"sh", "-c", "mkdir -p payload && printf hello > payload/hello.txt && tar -cf archive.tar payload"}).
+		Directory(".")
+
+	t.Run("local archive can disable unpacking", func(ctx context.Context, t *testctx.T) {
+		dir := contextDir.
+			WithNewFile("Dockerfile", `FROM `+alpineImage+`
+ADD --unpack=false archive.tar /out/
+`)
+		ctr := dir.DockerBuild()
+
+		found, err := ctr.Exists(ctx, "/out/archive.tar")
+		require.NoError(t, err)
+		require.True(t, found)
+
+		found, err = ctr.Exists(ctx, "/out/payload/hello.txt")
+		require.NoError(t, err)
+		require.False(t, found)
+	})
+}

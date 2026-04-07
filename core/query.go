@@ -143,6 +143,9 @@ type Server interface {
 	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
 
+	// Flush telemetry for all clients in the current session.
+	FlushSessionTelemetry(ctx context.Context) error
+
 	// Open a client's telemetry database.
 	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error)
 

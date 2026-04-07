@@ -1669,12 +1669,24 @@ func (srv *Server) SecretSalt() []byte {
 }
 
 // Provides access to the client's telemetry database.
+func (srv *Server) FlushSessionTelemetry(ctx context.Context) error {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return client.daggerSession.FlushTelemetry(ctx)
+}
+
 func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string) (*clientdb.DB, error) {
 	client, err := srv.clientFromIDs(sessID, clientID)
 	if err != nil {
 		return nil, err
 	}
-	if err := client.FlushTelemetry(ctx); err != nil {
+	// Flush ALL clients in the session, not just the requested one.
+	// Spans from nested clients may still be buffered in their
+	// BatchSpanProcessor. A session-wide flush ensures the span tree
+	// is complete before captureLogs walks it via SelectLogsBeneathSpan.
+	if err := client.daggerSession.FlushTelemetry(ctx); err != nil {
 		return nil, fmt.Errorf("flush telemetry: %w", err)
 	}
 	return client.TelemetryDB(ctx)

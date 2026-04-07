@@ -127,6 +127,10 @@ func (s *currentTypeDefsTestServer) Locker() *locker.Locker { return nil }
 
 func (s *currentTypeDefsTestServer) SecretSalt() []byte { return nil }
 
+func (s *currentTypeDefsTestServer) FlushSessionTelemetry(context.Context) error {
+	return nil
+}
+
 func (s *currentTypeDefsTestServer) ClientTelemetry(context.Context, string, string) (*clientdb.DB, error) {
 	return nil, nil
 }
