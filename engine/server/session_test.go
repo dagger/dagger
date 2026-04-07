@@ -508,6 +508,30 @@ func TestDedupeResolvedModuleLoads(t *testing.T) {
 	require.True(t, dedupResolved[1].primaryEntrypoint)
 }
 
+func TestSuppressPendingCWDModules(t *testing.T) {
+	t.Parallel()
+
+	mods := []pendingModule{
+		{
+			Kind: moduleLoadKindAmbient,
+			Ref:  "github.com/acme/app",
+		},
+		{
+			Kind: moduleLoadKindCWD,
+			Ref:  "github.com/acme/local",
+		},
+		{
+			Kind: moduleLoadKindExtra,
+			Ref:  "github.com/acme/extra",
+		},
+	}
+
+	filtered := suppressPendingCWDModules(mods)
+	require.Len(t, filtered, 2)
+	require.Equal(t, moduleLoadKindAmbient, filtered[0].Kind)
+	require.Equal(t, moduleLoadKindExtra, filtered[1].Kind)
+}
+
 func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {
 	t.Parallel()
 

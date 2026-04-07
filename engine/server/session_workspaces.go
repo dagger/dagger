@@ -495,6 +495,24 @@ func legacyCallerModuleDir(isLocal bool, moduleDir string) string {
 	return moduleDir
 }
 
+func hasPendingExtraModules(client *daggerClient) bool {
+	return len(client.pendingExtraModules) > 0
+}
+
+func suppressPendingCWDModules(mods []pendingModule) []pendingModule {
+	if len(mods) == 0 {
+		return nil
+	}
+	filtered := mods[:0]
+	for _, mod := range mods {
+		if mod.Kind == moduleLoadKindCWD {
+			continue
+		}
+		filtered = append(filtered, mod)
+	}
+	return filtered
+}
+
 // detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection
 // and module gathering. It detects the current workspace root, applies legacy
 // dagger.json compat, and gathers all modules to be loaded later by
@@ -610,7 +628,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	// (2) CWD module (nearest dagger.json by find-up from the caller)
-	if hasModuleConfig {
+	if hasModuleConfig && !hasPendingExtraModules(client) {
 		wsDir := filepath.Join(ws.Root, ws.Path)
 		rel, _ := filepath.Rel(wsDir, moduleDir)
 		pending = append(pending, pendingModule{

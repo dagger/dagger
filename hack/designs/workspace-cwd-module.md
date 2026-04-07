@@ -10,6 +10,8 @@ The CWD module is the nearest `dagger.json` found by find-up from the caller's w
 
 It is a permanent convenience. It is detected separately from ambient workspace context. If it is distinct from the already-loaded ambient modules, it is loaded as an additional module and becomes the active entrypoint for the invocation.
 
+If explicit extra modules (`-m`) are present, the CWD module is suppressed entirely.
+
 The CWD module participates in the same generic module-deduplication mechanism as other module-loading paths. If multiple paths nominate the same module, the engine loads it once.
 
 ## Problem
@@ -30,6 +32,8 @@ The engine will:
 - then let the distinct CWD module win as the active entrypoint for the invocation
 
 This rule is independent of how the ambient workspace was detected.
+
+If explicit extra modules (`-m`) are present, the engine skips CWD-module detection.
 
 ## CWD Module
 
@@ -60,6 +64,8 @@ find-up nearest dagger.json
 
 This step has no eligibility filter.
 
+If explicit extra modules (`-m`) are present, this step is skipped.
+
 ### 2. Dedupe
 
 The CWD module participates in generic module dedupe with other module-loading paths, including:
@@ -84,6 +90,8 @@ Ambient workspace modules remain loaded.
 
 If the CWD module is not distinct after dedupe, nothing extra is loaded and the already-loaded module keeps its role.
 
+If explicit extra modules (`-m`) are present, the CWD module is not loaded and therefore has no entrypoint role.
+
 ## Architecture
 
 Target runtime path:
@@ -96,7 +104,8 @@ then
 
 engine/server
 └─ detect CWD module
-   ├─ find-up nearest dagger.json
+   ├─ if `-m` present, skip
+   ├─ else find-up nearest dagger.json
    ├─ dedupe against already-nominated modules
    └─ if distinct, load as CWD module
 
@@ -120,4 +129,3 @@ engine/server
 - This document does not define how ambient workspace context is detected.
 - This document does not define migration or compat-workspace planning.
 - This document does not define the full global module-loading pipeline beyond the CWD-module rule.
-

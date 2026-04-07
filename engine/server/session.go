@@ -965,6 +965,7 @@ func (srv *Server) getOrInitClient(
 		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
 			client.clientMetadata.ExtraModules = opts.ExtraModules
 			client.pendingExtraModules = opts.ExtraModules
+			client.pendingModules = suppressPendingCWDModules(client.pendingModules)
 		}
 	}
 
