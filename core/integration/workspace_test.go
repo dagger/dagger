@@ -265,7 +265,7 @@ type Myapp {
 		require.Error(t, err, "root dagger.json should have been removed")
 	})
 
-	t.Run("keeps root source modules at the project root", func(ctx context.Context, t *testctx.T) {
+	t.Run("does not migrate sdk-only root source modules", func(ctx context.Context, t *testctx.T) {
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
   "sdk": {"source": "dang"}
@@ -277,22 +277,20 @@ type Myapp {
   }
 }
 `)
-		}).With(daggerExec("migrate"))
+		})
 
-		_, err := ctr.WithExec([]string{"test", "-f", "main.dang"}).Sync(ctx)
-		require.NoError(t, err, "source file should remain at root for source='.'")
-
-		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+		out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, djson, `"name": "myapp"`)
-		require.Contains(t, djson, `"source": "../../../"`)
+		require.Contains(t, out, "No migration needed.")
 
-		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, configOut, "modules/myapp")
+		_, err = ctr.WithExec([]string{"test", "-f", "main.dang"}).Sync(ctx)
+		require.NoError(t, err, "source file should remain at root")
 
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
-		require.Error(t, err, "root dagger.json should have been removed")
+		require.NoError(t, err, "legacy dagger.json should remain in place")
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		require.Error(t, err, "workspace config should not be created")
 	})
 
 	t.Run("writes generic lock entries for migrated remote refs", func(ctx context.Context, t *testctx.T) {

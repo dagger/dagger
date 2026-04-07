@@ -425,10 +425,10 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 	)
 
 	require.Len(t, loads, 4)
-	require.False(t, loads[0].extra)
-	require.False(t, loads[1].extra)
-	require.True(t, loads[2].extra)
-	require.True(t, loads[3].extra)
+	require.Equal(t, moduleLoadKindAmbient, loads[0].mod.Kind)
+	require.Equal(t, moduleLoadKindAmbient, loads[1].mod.Kind)
+	require.Equal(t, moduleLoadKindExtra, loads[2].mod.Kind)
+	require.Equal(t, moduleLoadKindExtra, loads[3].mod.Kind)
 
 	require.Equal(t, "github.com/acme/a", loads[0].mod.Ref)
 	require.Equal(t, "github.com/acme/b", loads[1].mod.Ref)
@@ -455,10 +455,57 @@ func TestModuleLoadErr(t *testing.T) {
 	require.ErrorContains(t, normal, `loading module "github.com/acme/mod": boom`)
 
 	extra := moduleLoadErr(moduleLoadRequest{
-		mod:   pendingModule{Ref: "github.com/acme/extra"},
-		extra: true,
+		mod: pendingModule{
+			Kind: moduleLoadKindExtra,
+			Ref:  "github.com/acme/extra",
+		},
 	}, err)
 	require.ErrorContains(t, extra, `loading extra module "github.com/acme/extra": boom`)
+}
+
+func TestDedupeResolvedModuleLoads(t *testing.T) {
+	t.Parallel()
+
+	loads := []moduleLoadRequest{
+		{
+			mod: pendingModule{
+				Kind:       moduleLoadKindAmbient,
+				Ref:        "github.com/acme/app",
+				Name:       "app",
+				Entrypoint: true,
+			},
+		},
+		{
+			mod: pendingModule{
+				Kind:       moduleLoadKindCWD,
+				Ref:        "github.com/acme/app",
+				Name:       "app",
+				Entrypoint: true,
+			},
+		},
+		{
+			mod: pendingModule{
+				Kind:       moduleLoadKindCWD,
+				Ref:        "github.com/acme/local",
+				Name:       "local",
+				Entrypoint: true,
+			},
+		},
+	}
+	resolved := []resolvedModuleLoad{
+		{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
+		{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
+		{primary: &core.Module{NameField: "local"}, primaryEntrypoint: true},
+	}
+
+	dedupLoads, dedupResolved := dedupeResolvedModuleLoads(loads, resolved)
+	require.Len(t, dedupLoads, 2)
+
+	require.Equal(t, moduleLoadKindAmbient, dedupLoads[0].mod.Kind)
+	require.False(t, dedupResolved[0].primaryEntrypoint)
+
+	require.Equal(t, moduleLoadKindCWD, dedupLoads[1].mod.Kind)
+	require.True(t, dedupResolved[1].primaryEntrypoint)
 }
 
 func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {

@@ -1,11 +1,9 @@
 package workspace
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -36,14 +34,6 @@ func isLocalRef(source, pin string) bool {
 	return !strings.Contains(source, ".")
 }
 
-// MigrationIO abstracts host file operations needed for migration.
-type MigrationIO interface {
-	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
-	LocalFileExport(ctx context.Context, srcPath string, filePath string, destPath string, allowParentDirPath bool) error
-	LocalDirExport(ctx context.Context, srcPath string, destPath string, merge bool, removePaths []string) error
-	ImportCallerHostDir(ctx context.Context, hostPath string) (string, error)
-}
-
 // MigrationResult holds the output of a successful migration.
 type MigrationResult struct {
 	ProjectRoot         string
@@ -59,6 +49,21 @@ type MigrationResult struct {
 	BlueprintMigrated   bool
 	RemovedFiles        []string
 	Warnings            []string
+}
+
+// MigrationPlan is the pure filesystem plan for migrating a legacy
+// dagger.json project to workspace format.
+type MigrationPlan struct {
+	Result                   *MigrationResult
+	WorkspaceConfigData      []byte
+	MigratedModuleConfigData []byte
+	MigratedModuleConfigPath string
+	SourceCopyPath           string
+	SourceCopyDest           string
+	RemoveOldSource          bool
+	MigrationReportData      []byte
+	LockData                 []byte
+	GapCount                 int
 }
 
 // Summary returns a human-readable summary of the migration.
@@ -95,29 +100,32 @@ func (r *MigrationResult) Summary() string {
 	return b.String()
 }
 
-// Migrate performs the legacy dagger.json -> workspace format migration.
-func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) (*MigrationResult, error) {
-	data, err := bk.ReadCallerHostFile(ctx, migErr.ConfigPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading legacy config: %w", err)
+// PlanMigration computes the pure filesystem plan for migrating a compat
+// workspace into workspace format.
+func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
+	if compatWorkspace == nil || compatWorkspace.Config == nil {
+		return nil, fmt.Errorf("compat workspace is required")
+	}
+	if compatWorkspace.ProjectRoot == "" {
+		return nil, fmt.Errorf("compat workspace project root is required")
+	}
+	if compatWorkspace.ConfigPath == "" {
+		return nil, fmt.Errorf("compat workspace config path is required")
 	}
 
-	cfg, err := parseLegacyConfig(data)
-	if err != nil {
-		return nil, err
-	}
-
+	cfg := compatWorkspace.Config
 	result := &MigrationResult{
-		ProjectRoot: migErr.ProjectRoot,
-		ConfigPath:  filepath.Join(migErr.ProjectRoot, LockDirName, ConfigFileName),
+		ProjectRoot: compatWorkspace.ProjectRoot,
+		ConfigPath:  filepath.Join(compatWorkspace.ProjectRoot, LockDirName, ConfigFileName),
 	}
 
 	hasSDK := cfg.SDK != nil && cfg.SDK.Source != ""
 	hasNonLocalSource := cfg.Source != "" && cfg.Source != "."
 	needsProjectModuleMigration := hasSDK
 
-	migrateLock := NewLock()
-	hasLockEntries := false
+	plan := &MigrationPlan{
+		Result: result,
+	}
 
 	if needsProjectModuleMigration {
 		modulePath := filepath.Join("modules", cfg.Name)
@@ -130,20 +138,13 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 		}
 		result.DepRewriteCount = depCount
 		result.IncRewriteCount = incCount
-
-		newJSONPath := filepath.Join(migErr.ProjectRoot, LockDirName, modulePath, ModuleConfigFileName)
-		if err := writeHostFile(ctx, bk, newJSONPath, newJSON); err != nil {
-			return nil, fmt.Errorf("writing migrated module config: %w", err)
-		}
+		plan.MigratedModuleConfigData = newJSON
+		plan.MigratedModuleConfigPath = filepath.Join(LockDirName, modulePath, ModuleConfigFileName)
 
 		if hasNonLocalSource {
-			srcDir := filepath.Join(migErr.ProjectRoot, cfg.Source)
-			destDir := filepath.Join(migErr.ProjectRoot, LockDirName, modulePath)
 			result.OldSourcePath = cfg.Source
-
-			if err := copyHostDir(ctx, bk, srcDir, destDir); err != nil {
-				return nil, fmt.Errorf("moving source files: %w", err)
-			}
+			plan.SourceCopyPath = cfg.Source
+			plan.SourceCopyDest = filepath.Join(LockDirName, modulePath)
 
 			newFullPath := filepath.Join(LockDirName, modulePath)
 			if strings.HasPrefix(newFullPath+"/", cfg.Source+"/") {
@@ -152,37 +153,30 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 				result.Warnings = append(result.Warnings,
 					fmt.Sprintf("old source dir %q is ancestor of new location; skipped cleanup", cfg.Source))
 			} else {
-				if err := deleteHostDir(ctx, bk, srcDir); err != nil {
-					slog.Warn("could not remove old source directory",
-						"path", srcDir, "error", err)
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("could not remove old source directory %q: %v", cfg.Source, err))
-				} else {
-					result.RemovedFiles = append(result.RemovedFiles, cfg.Source+"/")
-				}
+				plan.RemoveOldSource = true
 			}
 		}
 	}
 
 	warnings := analyzeCustomizations(cfg.Toolchains)
+	plan.GapCount = len(warnings)
 	for _, w := range warnings {
 		result.Warnings = append(result.Warnings, w.message)
 	}
 
-	legacyWorkspace := legacyWorkspaceFromConfig(cfg)
 	wsCfg := &Config{Modules: make(map[string]ModuleEntry)}
-	if legacyWorkspace != nil {
-		wsCfg = legacyWorkspace.WorkspaceConfig()
+	if compatWorkspace != nil {
+		wsCfg = compatWorkspace.WorkspaceConfig()
 	}
-	if needsProjectModuleMigration {
-		wsCfg.Modules[cfg.Name] = ModuleEntry{
-			Source:    filepath.Join("modules", cfg.Name),
-			Blueprint: true,
-		}
+	if needsProjectModuleMigration && compatWorkspace != nil && compatWorkspace.MainModule != nil {
+		wsCfg.Modules[cfg.Name] = compatWorkspace.MainModule.Entry
 	}
+	plan.WorkspaceConfigData = SerializeConfig(wsCfg)
 
-	if legacyWorkspace != nil {
-		for _, mod := range legacyWorkspace.Modules {
+	migrateLock := NewLock()
+	hasLockEntries := false
+	if compatWorkspace != nil {
+		for _, mod := range compatWorkspace.Modules {
 			if mod.Entry.Blueprint {
 				result.BlueprintMigrated = true
 			} else {
@@ -200,18 +194,9 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 	}
 	finalizeMigrationLookupSources(result)
 
-	configPath := filepath.Join(migErr.ProjectRoot, LockDirName, ConfigFileName)
-	if err := writeHostFile(ctx, bk, configPath, SerializeConfig(wsCfg)); err != nil {
-		return nil, fmt.Errorf("writing workspace config: %w", err)
-	}
-
 	if len(warnings) > 0 {
 		result.MigrationReportPath = filepath.Join(LockDirName, "migration-report.md")
-		reportPath := filepath.Join(migErr.ProjectRoot, result.MigrationReportPath)
-		reportContent := generateMigrationReportMarkdown(migErr.ConfigPath, warnings)
-		if err := writeHostFile(ctx, bk, reportPath, []byte(reportContent)); err != nil {
-			return nil, fmt.Errorf("writing migration report: %w", err)
-		}
+		plan.MigrationReportData = []byte(generateMigrationReportMarkdown(compatWorkspace.ConfigPath, warnings))
 	}
 
 	if hasLockEntries {
@@ -219,18 +204,10 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 		if err != nil {
 			return nil, fmt.Errorf("serializing workspace lock: %w", err)
 		}
-		lockPath := filepath.Join(migErr.ProjectRoot, LockDirName, LockFileName)
-		if err := writeHostFile(ctx, bk, lockPath, lockBytes); err != nil {
-			return nil, fmt.Errorf("writing workspace lock: %w", err)
-		}
+		plan.LockData = lockBytes
 	}
 
-	if err := deleteHostFile(ctx, bk, migErr.ConfigPath); err != nil {
-		return nil, fmt.Errorf("removing legacy config: %w", err)
-	}
-	result.RemovedFiles = append(result.RemovedFiles, ModuleConfigFileName)
-
-	return result, nil
+	return plan, nil
 }
 
 // buildMigratedModuleJSON creates the cleaned-up dagger.json for the migrated
@@ -383,140 +360,6 @@ func analyzeCustomizations(toolchains []*modules.ModuleConfigDependency) []migra
 
 func isConstructorCustomization(cust *modules.ModuleConfigArgument) bool {
 	return len(cust.Function) == 0
-}
-
-func writeHostFile(ctx context.Context, bk MigrationIO, destPath string, data []byte) error {
-	tmpFile, err := os.CreateTemp("", "dagger-migrate-*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
-	}
-
-	fileName := filepath.Base(destPath)
-	if err := bk.LocalFileExport(ctx, tmpFile.Name(), fileName, destPath, true); err != nil {
-		return fmt.Errorf("export file: %w", err)
-	}
-	return nil
-}
-
-func deleteHostFile(ctx context.Context, bk MigrationIO, filePath string) error {
-	dir := filepath.Dir(filePath)
-	fileName := filepath.Base(filePath)
-
-	tmpDir, err := os.MkdirTemp("", "dagger-migrate-empty-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	return bk.LocalDirExport(ctx, tmpDir, dir, true, []string{fileName})
-}
-
-func copyHostDir(ctx context.Context, bk MigrationIO, srcPath, destPath string) error {
-	tmpDir, err := bk.ImportCallerHostDir(ctx, srcPath)
-	if err != nil {
-		return fmt.Errorf("import source dir %q: %w", srcPath, err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	if err := bk.LocalDirExport(ctx, tmpDir, destPath, true, nil); err != nil {
-		return fmt.Errorf("export to dest dir %q: %w", destPath, err)
-	}
-	return nil
-}
-
-func deleteHostDir(ctx context.Context, bk MigrationIO, dirPath string) error {
-	parentDir := filepath.Dir(dirPath)
-	dirName := filepath.Base(dirPath) + "/"
-
-	tmpDir, err := os.MkdirTemp("", "dagger-migrate-empty-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	return bk.LocalDirExport(ctx, tmpDir, parentDir, true, []string{dirName})
-}
-
-// LocalMigrationIO implements MigrationIO using direct local filesystem
-// operations.
-type LocalMigrationIO struct{}
-
-func (LocalMigrationIO) ReadCallerHostFile(_ context.Context, path string) ([]byte, error) {
-	return os.ReadFile(path)
-}
-
-func (LocalMigrationIO) LocalFileExport(_ context.Context, srcPath, _ string, destPath string, allowParentDirPath bool) error {
-	if allowParentDirPath {
-		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-			return err
-		}
-	}
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(destPath, data, 0o644)
-}
-
-func (LocalMigrationIO) LocalDirExport(_ context.Context, srcPath, destPath string, merge bool, removePaths []string) error {
-	for _, p := range removePaths {
-		target := filepath.Join(destPath, p)
-		if err := os.RemoveAll(target); err != nil {
-			return err
-		}
-	}
-	if !merge {
-		if err := os.RemoveAll(destPath); err != nil {
-			return err
-		}
-	}
-	return copyDirLocal(srcPath, destPath)
-}
-
-func (LocalMigrationIO) ImportCallerHostDir(_ context.Context, hostPath string) (string, error) {
-	tmpDir, err := os.MkdirTemp("", "dagger-migrate-import-*")
-	if err != nil {
-		return "", err
-	}
-	if err := copyDirLocal(hostPath, tmpDir); err != nil {
-		os.RemoveAll(tmpDir)
-		return "", err
-	}
-	return tmpDir, nil
-}
-
-func copyDirLocal(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, info.Mode())
-	})
 }
 
 func addMigrationLookupSource(result *MigrationResult, source string) {

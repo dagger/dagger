@@ -1480,23 +1480,6 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 				return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
 			}
 		}
-
-		// Also serve toolchains so their functions are available in the
-		// client schema (e.g. when `dagger shell` `.cd`s into a module).
-		if src := mod.GetSource(); src != nil {
-			for _, tcSrc := range src.Toolchains {
-				if tcSrc.Self() == nil {
-					continue
-				}
-				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc)
-				if err != nil {
-					return fmt.Errorf("error resolving toolchain module: %w", err)
-				}
-				if err := srv.serveModule(client, tcMod, core.InstallOpts{}); err != nil {
-					return fmt.Errorf("error serving toolchain %s: %w", tcMod.Name(), err)
-				}
-			}
-		}
 	}
 	return nil
 }

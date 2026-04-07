@@ -1,38 +1,24 @@
 package workspace
 
 import (
-	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestMigrateWritesLockForLegacyPins(t *testing.T) {
+func TestPlanMigrationWritesLockForLegacyPins(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, ModuleConfigFileName)
-	require.NoError(t, os.WriteFile(cfgPath, []byte(`{
+	plan := testMigrationPlan(t, "repo", `{
   "name": "myapp",
   "toolchains": [
     {"name": "toolchain", "source": "github.com/acme/toolchain@main", "pin": "1111111"}
   ],
   "blueprint": {"name": "blueprint", "source": "github.com/acme/blueprint@main", "pin": "2222222"}
-}`), 0o644))
+}`)
 
-	_, err := Migrate(context.Background(), LocalMigrationIO{}, &ErrMigrationRequired{
-		ConfigPath:  cfgPath,
-		ProjectRoot: root,
-	})
-	require.NoError(t, err)
-
-	lockPath := filepath.Join(root, LockDirName, LockFileName)
-	lockData, err := os.ReadFile(lockPath)
-	require.NoError(t, err)
-
-	lock, err := ParseLock(lockData)
+	lock, err := ParseLock(plan.LockData)
 	require.NoError(t, err)
 
 	result, ok, err := lock.GetModuleResolve("github.com/acme/toolchain@main")
@@ -48,34 +34,23 @@ func TestMigrateWritesLockForLegacyPins(t *testing.T) {
 	require.Equal(t, PolicyPin, result.Policy)
 }
 
-func TestMigrateSkipsLockWithoutPins(t *testing.T) {
+func TestPlanMigrationSkipsLockWithoutPins(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, ModuleConfigFileName)
-	require.NoError(t, os.WriteFile(cfgPath, []byte(`{
+	plan := testMigrationPlan(t, "repo", `{
   "name": "myapp",
   "toolchains": [
     {"name": "toolchain", "source": "github.com/acme/toolchain@main"}
   ]
-}`), 0o644))
+}`)
 
-	_, err := Migrate(context.Background(), LocalMigrationIO{}, &ErrMigrationRequired{
-		ConfigPath:  cfgPath,
-		ProjectRoot: root,
-	})
-	require.NoError(t, err)
-
-	_, err = os.Stat(filepath.Join(root, LockDirName, LockFileName))
-	require.ErrorIs(t, err, os.ErrNotExist)
+	require.Empty(t, plan.LockData)
 }
 
-func TestMigrateReturnsLookupSources(t *testing.T) {
+func TestPlanMigrationReturnsLookupSources(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, ModuleConfigFileName)
-	require.NoError(t, os.WriteFile(cfgPath, []byte(`{
+	plan := testMigrationPlan(t, "repo", `{
   "name": "myapp",
   "toolchains": [
     {"name": "toolchain-a", "source": "github.com/acme/toolchain@main"},
@@ -83,25 +58,18 @@ func TestMigrateReturnsLookupSources(t *testing.T) {
     {"name": "local-toolchain", "source": "./toolchains/local"}
   ],
   "blueprint": {"name": "blueprint", "source": "github.com/acme/blueprint@v1.0.0"}
-}`), 0o644))
+}`)
 
-	result, err := Migrate(context.Background(), LocalMigrationIO{}, &ErrMigrationRequired{
-		ConfigPath:  cfgPath,
-		ProjectRoot: root,
-	})
-	require.NoError(t, err)
 	require.Equal(t, []string{
 		"github.com/acme/blueprint@v1.0.0",
 		"github.com/acme/toolchain@main",
-	}, result.LookupSources)
+	}, plan.Result.LookupSources)
 }
 
-func TestMigrateWritesMigrationReportForGaps(t *testing.T) {
+func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, ModuleConfigFileName)
-	require.NoError(t, os.WriteFile(cfgPath, []byte(`{
+	plan := testMigrationPlan(t, "repo", `{
   "name": "myapp",
   "toolchains": [
     {
@@ -121,85 +89,58 @@ func TestMigrateWritesMigrationReportForGaps(t *testing.T) {
       ]
     }
   ]
-}`), 0o644))
+}`)
 
-	result, err := Migrate(context.Background(), LocalMigrationIO{}, &ErrMigrationRequired{
-		ConfigPath:  cfgPath,
-		ProjectRoot: root,
-	})
-	require.NoError(t, err)
-	require.Len(t, result.Warnings, 2)
-	require.Equal(t, filepath.Join(LockDirName, "migration-report.md"), result.MigrationReportPath)
+	require.Len(t, plan.Result.Warnings, 2)
+	require.Equal(t, filepath.Join(LockDirName, "migration-report.md"), plan.Result.MigrationReportPath)
 
-	summary := result.Summary()
+	summary := plan.Result.Summary()
 	require.Contains(t, summary, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
 	require.NotContains(t, summary, "defaultPath")
 
-	configData, err := os.ReadFile(filepath.Join(root, LockDirName, ConfigFileName))
-	require.NoError(t, err)
-	require.NotContains(t, string(configData), "# WARNING:")
-	require.NotContains(t, string(configData), "# Original:")
+	configData := string(plan.WorkspaceConfigData)
+	require.NotContains(t, configData, "# WARNING:")
+	require.NotContains(t, configData, "# Original:")
 
-	reportData, err := os.ReadFile(filepath.Join(root, result.MigrationReportPath))
-	require.NoError(t, err)
-	require.Contains(t, string(reportData), "# Migration Report")
-	require.Contains(t, string(reportData), "Module `toolchain`")
-	require.Contains(t, string(reportData), `"defaultPath": "./custom-config.txt"`)
-	require.Contains(t, string(reportData), `"function": [`)
+	reportData := string(plan.MigrationReportData)
+	require.Contains(t, reportData, "# Migration Report")
+	require.Contains(t, reportData, "Module `toolchain`")
+	require.Contains(t, reportData, `"defaultPath": "./custom-config.txt"`)
+	require.Contains(t, reportData, `"function": [`)
 }
 
-func TestMigrateFailsOnConflictingLegacyPins(t *testing.T) {
+func TestPlanMigrationFailsOnConflictingLegacyPins(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, ModuleConfigFileName)
-	require.NoError(t, os.WriteFile(cfgPath, []byte(`{
+	compat := testCompatWorkspace(t, "repo", `{
   "name": "myapp",
   "toolchains": [
     {"name": "toolchain-a", "source": "github.com/acme/toolchain@main", "pin": "1111111"},
     {"name": "toolchain-b", "source": "github.com/acme/toolchain@main", "pin": "2222222"}
   ]
-}`), 0o644))
+}`)
 
-	_, err := Migrate(context.Background(), LocalMigrationIO{}, &ErrMigrationRequired{
-		ConfigPath:  cfgPath,
-		ProjectRoot: root,
-	})
+	_, err := PlanMigration(compat)
 	require.ErrorContains(t, err, "conflicting pins for source")
 }
 
-func TestMigrateConvertsStandaloneRootModule(t *testing.T) {
-	t.Parallel()
+func testMigrationPlan(t *testing.T, projectRoot, cfg string) *MigrationPlan {
+	t.Helper()
 
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, ModuleConfigFileName)
-	require.NoError(t, os.WriteFile(cfgPath, []byte(`{
-  "name": "myapp",
-  "sdk": {"source": "dang"}
-}`), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "main.dang"), []byte("type Myapp {}\n"), 0o644))
+	plan, err := PlanMigration(testCompatWorkspace(t, projectRoot, cfg))
+	require.NoError(t, err)
+	return plan
+}
 
-	_, err := Migrate(context.Background(), LocalMigrationIO{}, &ErrMigrationRequired{
-		ConfigPath:  cfgPath,
-		ProjectRoot: root,
-	})
-	require.NoError(t, err)
+func testCompatWorkspace(t *testing.T, projectRoot, cfg string) *CompatWorkspace {
+	t.Helper()
 
-	configData, err := os.ReadFile(filepath.Join(root, LockDirName, ConfigFileName))
+	configPath := filepath.Join(projectRoot, ModuleConfigFileName)
+	compat, err := ParseCompatWorkspace([]byte(cfg))
 	require.NoError(t, err)
-	cfg, err := ParseConfig(configData)
-	require.NoError(t, err)
-	require.Equal(t, ModuleEntry{
-		Source:    "modules/myapp",
-		Blueprint: true,
-	}, cfg.Modules["myapp"])
+	require.NotNil(t, compat)
 
-	moduleData, err := os.ReadFile(filepath.Join(root, LockDirName, "modules", "myapp", ModuleConfigFileName))
-	require.NoError(t, err)
-	moduleCfg, err := parseLegacyConfig(moduleData)
-	require.NoError(t, err)
-	require.Equal(t, "../../../", moduleCfg.Source)
-
-	_, err = os.Stat(filepath.Join(root, "main.dang"))
-	require.NoError(t, err)
+	compat.ProjectRoot = projectRoot
+	compat.ConfigPath = configPath
+	return compat
 }

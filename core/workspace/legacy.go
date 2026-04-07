@@ -8,15 +8,19 @@ import (
 	"github.com/dagger/dagger/core/modules"
 )
 
-// LegacyWorkspace is the shared projection of legacy workspace-owned module
-// semantics used by both compat mode and on-disk migration.
-type LegacyWorkspace struct {
-	Modules []LegacyWorkspaceModule
+// CompatWorkspace is the shared projection of legacy dagger.json semantics
+// used by both runtime compat mode and on-disk migration.
+type CompatWorkspace struct {
+	Modules     []CompatWorkspaceModule
+	MainModule  *CompatMainModule
+	Config      *modules.ModuleConfig
+	ConfigPath  string
+	ProjectRoot string
 }
 
-// LegacyWorkspaceModule is one workspace-owned module projected out of a
+// CompatWorkspaceModule is one workspace-owned module projected out of a
 // legacy dagger.json.
-type LegacyWorkspaceModule struct {
+type CompatWorkspaceModule struct {
 	Name              string
 	ConfigName        string
 	Source            string
@@ -24,6 +28,21 @@ type LegacyWorkspaceModule struct {
 	Entry             ModuleEntry
 	ArgCustomizations []*modules.ModuleConfigArgument
 }
+
+// CompatMainModule is the projected legacy root module. It remains a distinct
+// part of the compat workspace so runtime compat can load it from the original
+// legacy location while migration persists it under .dagger/modules/<name>.
+type CompatMainModule struct {
+	Name       string
+	ConfigName string
+	Entry      ModuleEntry
+	Config     *modules.ModuleConfig
+}
+
+// LegacyWorkspace and LegacyWorkspaceModule remain as compatibility aliases
+// for the narrower pre-compat naming used by current callers and tests.
+type LegacyWorkspace = CompatWorkspace
+type LegacyWorkspaceModule = CompatWorkspaceModule
 
 // LegacyToolchain represents a toolchain extracted from a legacy dagger.json,
 // with constructor arg defaults already resolved from customizations.
@@ -42,14 +61,24 @@ type LegacyBlueprint struct {
 	Pin    string
 }
 
-// ParseLegacyWorkspace parses a legacy dagger.json and projects its
-// workspace-owned module semantics into a shared in-memory form.
-func ParseLegacyWorkspace(data []byte) (*LegacyWorkspace, error) {
+// ParseCompatWorkspace parses an eligible legacy dagger.json into the shared
+// compat-workspace representation. Returns nil if the legacy config does not
+// create ambient workspace context.
+func ParseCompatWorkspace(data []byte) (*CompatWorkspace, error) {
 	cfg, err := parseLegacyConfig(data)
 	if err != nil {
 		return nil, err
 	}
-	return legacyWorkspaceFromConfig(cfg), nil
+	if !legacyConfigCreatesCompatWorkspace(cfg) {
+		return nil, nil
+	}
+	return compatWorkspaceFromConfig(cfg), nil
+}
+
+// ParseLegacyWorkspace preserves the previous helper name while returning the
+// full compat-workspace projection.
+func ParseLegacyWorkspace(data []byte) (*LegacyWorkspace, error) {
+	return ParseCompatWorkspace(data)
 }
 
 // ParseLegacyBlueprint parses a legacy dagger.json and extracts its blueprint.
@@ -99,14 +128,20 @@ func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error) {
 	return result, nil
 }
 
-func legacyWorkspaceFromConfig(cfg *modules.ModuleConfig) *LegacyWorkspace {
-	legacyWorkspace := &LegacyWorkspace{}
+func compatWorkspaceFromConfig(cfg *modules.ModuleConfig) *CompatWorkspace {
+	if cfg == nil {
+		return nil
+	}
+
+	compatWorkspace := &CompatWorkspace{
+		Config: cfg,
+	}
 
 	for _, tc := range cfg.Toolchains {
 		if tc == nil {
 			continue
 		}
-		legacyWorkspace.Modules = append(legacyWorkspace.Modules, LegacyWorkspaceModule{
+		compatWorkspace.Modules = append(compatWorkspace.Modules, CompatWorkspaceModule{
 			Name:       tc.Name,
 			ConfigName: tc.Name,
 			Source:     tc.Source,
@@ -125,7 +160,7 @@ func legacyWorkspaceFromConfig(cfg *modules.ModuleConfig) *LegacyWorkspace {
 		if name == "" {
 			name = "blueprint"
 		}
-		legacyWorkspace.Modules = append(legacyWorkspace.Modules, LegacyWorkspaceModule{
+		compatWorkspace.Modules = append(compatWorkspace.Modules, CompatWorkspaceModule{
 			Name:       cfg.Blueprint.Name,
 			ConfigName: name,
 			Source:     cfg.Blueprint.Source,
@@ -138,10 +173,22 @@ func legacyWorkspaceFromConfig(cfg *modules.ModuleConfig) *LegacyWorkspace {
 		})
 	}
 
-	if len(legacyWorkspace.Modules) == 0 {
+	if cfg.SDK != nil && cfg.Name != "" {
+		compatWorkspace.MainModule = &CompatMainModule{
+			Name:       cfg.Name,
+			ConfigName: cfg.Name,
+			Entry: ModuleEntry{
+				Source:    filepath.Join("modules", cfg.Name),
+				Blueprint: cfg.Blueprint == nil,
+			},
+			Config: cfg,
+		}
+	}
+
+	if len(compatWorkspace.Modules) == 0 && compatWorkspace.MainModule == nil {
 		return nil
 	}
-	return legacyWorkspace
+	return compatWorkspace
 }
 
 func legacyWorkspaceModuleSource(source, pin string) string {
@@ -151,14 +198,14 @@ func legacyWorkspaceModuleSource(source, pin string) string {
 	return source
 }
 
-func (legacyWorkspace *LegacyWorkspace) WorkspaceConfig() *Config {
-	if legacyWorkspace == nil {
+func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
+	if compatWorkspace == nil {
 		return &Config{Modules: map[string]ModuleEntry{}}
 	}
 	cfg := &Config{
-		Modules: make(map[string]ModuleEntry, len(legacyWorkspace.Modules)),
+		Modules: make(map[string]ModuleEntry, len(compatWorkspace.Modules)),
 	}
-	for _, mod := range legacyWorkspace.Modules {
+	for _, mod := range compatWorkspace.Modules {
 		cfg.Modules[mod.ConfigName] = ModuleEntry{
 			Source:            mod.Entry.Source,
 			Config:            cloneConfigDefaults(mod.Entry.Config),
@@ -169,16 +216,26 @@ func (legacyWorkspace *LegacyWorkspace) WorkspaceConfig() *Config {
 	return cfg
 }
 
-func (legacyWorkspace *LegacyWorkspace) Blueprint() *LegacyWorkspaceModule {
-	if legacyWorkspace == nil {
+func (compatWorkspace *CompatWorkspace) Blueprint() *CompatWorkspaceModule {
+	if compatWorkspace == nil {
 		return nil
 	}
-	for i := range legacyWorkspace.Modules {
-		if legacyWorkspace.Modules[i].Entry.Blueprint {
-			return &legacyWorkspace.Modules[i]
+	for i := range compatWorkspace.Modules {
+		if compatWorkspace.Modules[i].Entry.Blueprint {
+			return &compatWorkspace.Modules[i]
 		}
 	}
 	return nil
+}
+
+func legacyConfigCreatesCompatWorkspace(cfg *modules.ModuleConfig) bool {
+	if cfg == nil {
+		return false
+	}
+	if cfg.Blueprint != nil || len(cfg.Toolchains) > 0 {
+		return true
+	}
+	return cfg.SDK != nil && cfg.Source != "" && cfg.Source != "."
 }
 
 // parseLegacyConfig parses a legacy dagger.json into the internal representation.

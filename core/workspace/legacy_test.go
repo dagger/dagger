@@ -111,3 +111,34 @@ func TestParseLegacyPins(t *testing.T) {
 	require.Empty(t, unnamedBlueprint.Modules[0].Name)
 	require.Equal(t, "blueprint", unnamedBlueprint.Modules[0].ConfigName)
 }
+
+func TestParseCompatWorkspace(t *testing.T) {
+	t.Parallel()
+
+	compat, err := ParseCompatWorkspace([]byte(`{
+		"name": "app",
+		"sdk": {"source": "dang"},
+		"source": "ci",
+		"toolchains": [{
+			"name": "go",
+			"source": "./toolchains/go"
+		}]
+	}`))
+	require.NoError(t, err)
+	require.NotNil(t, compat)
+	require.NotNil(t, compat.MainModule)
+	require.Equal(t, "app", compat.MainModule.Name)
+	require.Equal(t, ModuleEntry{
+		Source:    "modules/app",
+		Blueprint: true,
+	}, compat.MainModule.Entry)
+	require.Len(t, compat.Modules, 1)
+	require.Equal(t, "../toolchains/go", compat.Modules[0].Entry.Source)
+
+	noCompat, err := ParseCompatWorkspace([]byte(`{
+		"name": "app",
+		"sdk": {"source": "dang"}
+	}`))
+	require.NoError(t, err)
+	require.Nil(t, noCompat)
+}
