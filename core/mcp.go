@@ -421,6 +421,9 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 	entries := make([]patchpreview.Entry, len(stats))
 	for i, s := range stats {
 		entries[i] = patchpreview.Entry{Path: s.Path, Kind: string(s.Kind), Added: s.AddedLines, Removed: s.RemovedLines}
+		if s.OldPath != nil {
+			entries[i].OldPath = *s.OldPath
+		}
 	}
 	return patchpreview.SummarizeString(entries, summaryWidth)
 }

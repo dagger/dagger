@@ -285,6 +285,35 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.Equal(t, 1, diffStats[2].RemovedLines)
 	})
 
+	t.Run("diffStats rename includes oldPath", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithNewFile("old.txt", "same\ncontent\n")
+
+		newDir := c.Directory().
+			WithNewFile("new.txt", "same\ncontent\n")
+
+		var diffStats []struct {
+			Path         string `json:"path"`
+			OldPath      string `json:"oldPath"`
+			Kind         string `json:"kind"`
+			AddedLines   int    `json:"addedLines"`
+			RemovedLines int    `json:"removedLines"`
+		}
+		err := c.QueryBuilder().
+			Select("loadChangesetFromID").
+			Arg("id", newDir.Changes(oldDir)).
+			Select("diffStats").
+			Bind(&diffStats).Execute(ctx)
+		require.NoError(t, err)
+
+		require.Len(t, diffStats, 1)
+		require.Equal(t, "new.txt", diffStats[0].Path)
+		require.Equal(t, "old.txt", diffStats[0].OldPath)
+		require.Equal(t, "RENAMED", diffStats[0].Kind)
+	})
+
 	t.Run("diffStats includes nested removed paths", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

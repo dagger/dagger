@@ -15,10 +15,11 @@ func PreviewPatch(ctx context.Context, dag *dagger.Client, changeset *dagger.Cha
 		Select("diffStats")
 
 	var diffStat []struct {
-		Path         string `json:"path"`
-		Kind         string `json:"kind"`
-		AddedLines   int    `json:"addedLines"`
-		RemovedLines int    `json:"removedLines"`
+		Path         string  `json:"path"`
+		OldPath      *string `json:"oldPath"`
+		Kind         string  `json:"kind"`
+		AddedLines   int     `json:"addedLines"`
+		RemovedLines int     `json:"removedLines"`
 	}
 	if err := q.Bind(&diffStat).Execute(ctx); err != nil {
 		return nil, fmt.Errorf("query diff stat: %w", err)
@@ -27,6 +28,9 @@ func PreviewPatch(ctx context.Context, dag *dagger.Client, changeset *dagger.Cha
 	entries := make([]patchpreview.Entry, len(diffStat))
 	for i, s := range diffStat {
 		entries[i] = patchpreview.Entry{Path: s.Path, Kind: s.Kind, Added: s.AddedLines, Removed: s.RemovedLines}
+		if s.OldPath != nil {
+			entries[i].OldPath = *s.OldPath
+		}
 	}
 	return entries, nil
 }

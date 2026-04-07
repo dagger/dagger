@@ -10,6 +10,7 @@ import (
 
 type Entry struct {
 	Path    string
+	OldPath string
 	Kind    string
 	Added   int
 	Removed int
@@ -45,7 +46,7 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 	maxFilenameLen := max(maxWidth-20, 10)
 	longestFilenameLen := 0
 	for _, e := range entries {
-		if l := len(e.Path); l > longestFilenameLen {
+		if l := len(entryLabel(e)); l > longestFilenameLen {
 			longestFilenameLen = l
 		}
 	}
@@ -55,10 +56,7 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 
 	var totalAdded, totalRemoved int
 	for _, e := range entries {
-		filename := e.Path
-		if len(filename) > maxFilenameLen {
-			filename = "..." + filename[len(filename)-(maxFilenameLen-3):]
-		}
+		filename := truncateLabel(e, maxFilenameLen)
 
 		var color termenv.Color
 		switch e.Kind {
@@ -101,6 +99,82 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		}
 		out.WriteString(" lines")
 	}
+}
+
+func entryLabel(e Entry) string {
+	if e.Kind == KindRenamed && e.OldPath != "" {
+		return e.OldPath + " => " + e.Path
+	}
+	return e.Path
+}
+
+func truncateLabel(e Entry, maxLen int) string {
+	if e.Kind == KindRenamed && e.OldPath != "" {
+		return truncateRenameLabel(e.OldPath, e.Path, maxLen)
+	}
+	return truncatePath(e.Path, maxLen)
+}
+
+func truncateRenameLabel(oldPath, newPath string, maxLen int) string {
+	const sep = " => "
+
+	if len(oldPath)+len(sep)+len(newPath) <= maxLen {
+		return oldPath + sep + newPath
+	}
+	if maxLen <= len(sep)+2 {
+		return truncateMiddleString(oldPath+sep+newPath, maxLen)
+	}
+
+	available := maxLen - len(sep)
+	oldLen := available / 2
+	newLen := available - oldLen
+	return truncatePath(oldPath, oldLen) + sep + truncatePath(newPath, newLen)
+}
+
+func truncatePath(path string, maxLen int) string {
+	if len(path) <= maxLen {
+		return path
+	}
+	if maxLen <= 3 {
+		return strings.Repeat(".", maxLen)
+	}
+
+	trailingSlash := ""
+	if strings.HasSuffix(path, "/") {
+		trailingSlash = "/"
+		path = strings.TrimSuffix(path, "/")
+	}
+
+	parts := strings.Split(path, "/")
+	if len(parts) >= 3 {
+		label := parts[0] + "/.../" + parts[len(parts)-1] + trailingSlash
+		if len(label) <= maxLen {
+			return label
+		}
+	}
+
+	if len(parts) >= 2 {
+		label := ".../" + parts[len(parts)-1] + trailingSlash
+		if len(label) <= maxLen {
+			return label
+		}
+	}
+
+	return truncateMiddleString(path+trailingSlash, maxLen)
+}
+
+func truncateMiddleString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return strings.Repeat(".", maxLen)
+	}
+
+	keep := maxLen - 3
+	left := (keep + 1) / 2
+	right := keep - left
+	return s[:left] + "..." + s[len(s)-right:]
 }
 
 // foldRemovedDirs merges removed entries (files and subdirectories) into
