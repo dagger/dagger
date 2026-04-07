@@ -136,11 +136,8 @@ func testCompatWorkspace(t *testing.T, projectRoot, cfg string) *CompatWorkspace
 	t.Helper()
 
 	configPath := filepath.Join(projectRoot, ModuleConfigFileName)
-	compat, err := ParseCompatWorkspace([]byte(cfg))
+	compat, err := ParseCompatWorkspaceAt([]byte(cfg), configPath)
 	require.NoError(t, err)
 	require.NotNil(t, compat)
-
-	compat.ProjectRoot = projectRoot
-	compat.ConfigPath = configPath
 	return compat
 }

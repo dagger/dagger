@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -115,7 +116,8 @@ func TestParseLegacyPins(t *testing.T) {
 func TestParseCompatWorkspace(t *testing.T) {
 	t.Parallel()
 
-	compat, err := ParseCompatWorkspace([]byte(`{
+	configPath := filepath.Join("repo", ModuleConfigFileName)
+	compat, err := ParseCompatWorkspaceAt([]byte(`{
 		"name": "app",
 		"sdk": {"source": "dang"},
 		"source": "ci",
@@ -123,9 +125,11 @@ func TestParseCompatWorkspace(t *testing.T) {
 			"name": "go",
 			"source": "./toolchains/go"
 		}]
-	}`))
+	}`), configPath)
 	require.NoError(t, err)
 	require.NotNil(t, compat)
+	require.Equal(t, configPath, compat.ConfigPath)
+	require.Equal(t, "repo", compat.ProjectRoot)
 	require.NotNil(t, compat.MainModule)
 	require.Equal(t, "app", compat.MainModule.Name)
 	require.Equal(t, ModuleEntry{

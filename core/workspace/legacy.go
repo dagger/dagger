@@ -36,7 +36,6 @@ type CompatMainModule struct {
 	Name       string
 	ConfigName string
 	Entry      ModuleEntry
-	Config     *modules.ModuleConfig
 }
 
 // LegacyWorkspace and LegacyWorkspaceModule remain as compatibility aliases
@@ -65,6 +64,14 @@ type LegacyBlueprint struct {
 // compat-workspace representation. Returns nil if the legacy config does not
 // create ambient workspace context.
 func ParseCompatWorkspace(data []byte) (*CompatWorkspace, error) {
+	return ParseCompatWorkspaceAt(data, "")
+}
+
+// ParseCompatWorkspaceAt parses an eligible legacy dagger.json into the shared
+// compat-workspace representation, with optional provenance from the config
+// path. Returns nil if the legacy config does not create ambient workspace
+// context.
+func ParseCompatWorkspaceAt(data []byte, configPath string) (*CompatWorkspace, error) {
 	cfg, err := parseLegacyConfig(data)
 	if err != nil {
 		return nil, err
@@ -72,7 +79,7 @@ func ParseCompatWorkspace(data []byte) (*CompatWorkspace, error) {
 	if !legacyConfigCreatesCompatWorkspace(cfg) {
 		return nil, nil
 	}
-	return compatWorkspaceFromConfig(cfg), nil
+	return buildCompatWorkspace(cfg, configPath), nil
 }
 
 // ParseLegacyWorkspace preserves the previous helper name while returning the
@@ -128,13 +135,18 @@ func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error) {
 	return result, nil
 }
 
-func compatWorkspaceFromConfig(cfg *modules.ModuleConfig) *CompatWorkspace {
+func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatWorkspace {
 	if cfg == nil {
 		return nil
 	}
 
 	compatWorkspace := &CompatWorkspace{
-		Config: cfg,
+		Config:      cfg,
+		ConfigPath:  configPath,
+		ProjectRoot: filepath.Dir(configPath),
+	}
+	if configPath == "" {
+		compatWorkspace.ProjectRoot = ""
 	}
 
 	for _, tc := range cfg.Toolchains {
@@ -181,7 +193,6 @@ func compatWorkspaceFromConfig(cfg *modules.ModuleConfig) *CompatWorkspace {
 				Source:    filepath.Join("modules", cfg.Name),
 				Blueprint: cfg.Blueprint == nil,
 			},
-			Config: cfg,
 		}
 	}
 

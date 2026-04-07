@@ -543,11 +543,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if wsConfig == nil && hasModuleConfig {
 		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
 		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
-			compatWorkspace, _ = workspace.ParseCompatWorkspace(data)
+			compatWorkspace, _ = workspace.ParseCompatWorkspaceAt(data, cfgPath)
 		}
 		if compatWorkspace != nil {
-			compatWorkspace.ProjectRoot = moduleDir
-			compatWorkspace.ConfigPath = cfgPath
 			console(ctx, "Inferring workspace behavior from legacy module config.")
 			slog.Warn("Inferring workspace behavior from legacy module config.",
 				"config", cfgPath)

@@ -264,18 +264,19 @@ CLI
 
 1. Introduce a single shared engine-owned `CompatWorkspace` result in `core/workspace`.
 2. Build `CompatWorkspace` from `modules.ModuleConfig`.
-3. Make ambient workspace detection produce either:
+3. Construct `CompatWorkspace` complete in one helper, including provenance such as legacy config path and project root when available. Callers must not patch those fields later.
+4. Make ambient workspace detection produce either:
    - a normal workspace
    - a compat workspace
    - or no workspace
-4. Attach the originating `CompatWorkspace` to the loaded `Workspace`.
-5. Add `Workspace.migrate()` in `core/schema/workspace.go`.
-6. Make `Workspace.migrate()` persist the same attached `CompatWorkspace` used by runtime compat mode. It must not rediscover legacy config from disk.
-7. Keep `dagger migrate` generic. It must not perform `os.Stat`, `LocalMigrationIO`, or migration-specific filesystem orchestration.
-8. Keep one migration applier in product code: the changeset path. Direct host-mutation migration helpers must not remain in product code.
-9. Stop giving legacy `blueprint` and `toolchains` fields generic module-loading semantics outside compat projection.
-10. Delete the resulting dead generic blueprint/toolchain routing code.
-11. Keep migration-specific lock/report generation inside the engine-side migration planner.
+5. Attach the originating `CompatWorkspace` to the loaded `Workspace`.
+6. Add `Workspace.migrate()` in `core/schema/workspace.go`.
+7. Make `Workspace.migrate()` persist the same attached `CompatWorkspace` used by runtime compat mode. It must not rediscover legacy config from disk.
+8. Keep `dagger migrate` generic. It must not perform `os.Stat`, `LocalMigrationIO`, or migration-specific filesystem orchestration.
+9. Keep one migration applier in product code: the changeset path. Direct host-mutation migration helpers must not remain in product code.
+10. Stop giving legacy `blueprint` and `toolchains` fields generic module-loading semantics outside compat projection.
+11. Delete the resulting dead generic blueprint/toolchain routing code.
+12. Keep migration-specific lock/report generation inside the engine-side migration planner.
 
 ## Non-Goals
 
