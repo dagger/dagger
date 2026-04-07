@@ -31,7 +31,9 @@ var migrateCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			migrations, err := currentWorkspaceMigrations(ctx, engineClient)
+			dag := engineClient.Dagger()
+
+			migrations, err := dag.CurrentWorkspace().Migrate(ctx)
 			if err != nil {
 				return fmt.Errorf("migration failed: %w", err)
 			}
@@ -40,22 +42,42 @@ var migrateCmd = &cobra.Command{
 				return err
 			}
 
-			for _, migration := range migrations {
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), migration.Description); err != nil {
+			changesets := make([]*dagger.Changeset, 0, len(migrations))
+			for i := range migrations {
+				code, err := migrations[i].Code(ctx)
+				if err != nil {
 					return err
 				}
-				for _, warning := range migration.Warnings {
+				description, err := migrations[i].Description(ctx)
+				if err != nil {
+					return err
+				}
+				warnings, err := migrations[i].Warnings(ctx)
+				if err != nil {
+					return err
+				}
+
+				if i > 0 {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+						return err
+					}
+				}
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "MIGRATION %s\n", code); err != nil {
+					return err
+				}
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), description); err != nil {
+					return err
+				}
+				for _, warning := range warnings {
 					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Warning: %s\n", warning); err != nil {
 						return err
 					}
 				}
+
+				changesets = append(changesets, migrations[i].Changes())
 			}
 
-			changesets := make([]*dagger.Changeset, 0, len(migrations))
-			for _, migration := range migrations {
-				changesets = append(changesets, engineClient.Dagger().LoadChangesetFromID(dagger.ChangesetID(migration.ChangesID)))
-			}
-			return handleChangesetResponse(ctx, engineClient.Dagger(), engineClient.Dagger().Changeset().WithChangesets(changesets), true)
+			return handleChangesetResponse(ctx, dag, dag.Changeset().WithChangesets(changesets), autoApply)
 		})
 	},
 }
@@ -171,50 +193,4 @@ func findMigratableModuleConfigs(root string) ([]string, error) {
 	}
 
 	return paths, nil
-}
-
-type workspaceMigration struct {
-	Description string
-	Warnings    []string
-	ChangesID   string
-}
-
-func currentWorkspaceMigrations(ctx context.Context, engineClient *client.Client) ([]workspaceMigration, error) {
-	const query = `
-query CurrentWorkspaceMigrations {
-  currentWorkspace {
-    migrate {
-      description
-      warnings
-      changes {
-        id
-      }
-    }
-  }
-}`
-
-	var res struct {
-		CurrentWorkspace struct {
-			Migrate []struct {
-				Description string   `json:"description"`
-				Warnings    []string `json:"warnings"`
-				Changes     struct {
-					ID string `json:"id"`
-				} `json:"changes"`
-			} `json:"migrate"`
-		} `json:"currentWorkspace"`
-	}
-	if err := engineClient.Do(ctx, query, "CurrentWorkspaceMigrations", nil, &res); err != nil {
-		return nil, err
-	}
-
-	out := make([]workspaceMigration, 0, len(res.CurrentWorkspace.Migrate))
-	for _, migration := range res.CurrentWorkspace.Migrate {
-		out = append(out, workspaceMigration{
-			Description: migration.Description,
-			Warnings:    append([]string(nil), migration.Warnings...),
-			ChangesID:   migration.Changes.ID,
-		})
-	}
-	return out, nil
 }
