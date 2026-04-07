@@ -409,8 +409,8 @@ For each toolchain:
    | Customization type | Action |
    |--------------------|--------|
    | Default value for constructor arg | Migrate to `config.*` |
-   | `ignore`, `defaultPath`, or other non-value customization | Warning comment with original value |
-   | Customization targeting a non-constructor function | Warning comment (cannot be migrated) |
+   | `ignore`, `defaultPath`, or other non-value customization | Emit a warning and record it in `.dagger/migration-report.md` |
+   | Customization targeting a non-constructor function | Emit a warning and record it in `.dagger/migration-report.md` |
 
 3. Remove `toolchains` from the migrated `dagger.json`.
 
@@ -467,15 +467,22 @@ source = "../toolchains/ci"
 
 [modules.go]
 source = "../toolchains/go"
-# WARNING: constructor arg 'source' had 'ignore' customization that cannot
-# be expressed as a config value. Original:
-# {"argument":"source","ignore":["bin",".git","**/node_modules",...]}
 
 [modules.security]
 source = "../toolchains/security"
-# WARNING: customization for function 'scanSource' could not be migrated
-# (non-constructor). Original:
-# {"function":["scanSource"],"argument":"source","ignore":["bin",".git","docs",...]}
+```
+
+After `dagger migrate` — `.dagger/migration-report.md`:
+```md
+# Migration Report
+
+## Module `go`
+
+- Constructor arg `source` had `ignore` customization that cannot be expressed as a workspace config value.
+
+## Module `security`
+
+- Function `scanSource` had argument customization that could not be migrated because it does not target the constructor.
 ```
 
 After `dagger migrate` — `.dagger/modules/dagger-dev/dagger.json`:
