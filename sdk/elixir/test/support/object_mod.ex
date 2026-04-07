@@ -265,3 +265,41 @@ defmodule Deps do
     %Deps.A{}
   end
 end
+
+defmodule CustomEnum do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "CustomEnum"
+
+  defn scan(severity: SimpleEnum.t()) :: SimpleEnum.t() do
+    severity
+  end
+
+  defn enum_opt(opt: EnumWithOption.t()) :: Dagger.Void.t() do
+    _ = opt
+    :ok
+  end
+end
+
+defmodule EnumReturnChild do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "EnumReturnChild"
+
+  object do
+  end
+end
+
+defmodule EnumOnObjectReturn do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "EnumOnObjectReturn"
+
+  object do
+  end
+
+  defn child_with_enum(status: SimpleEnum.t()) :: EnumReturnChild.t() do
+    _ = status
+    %EnumReturnChild{}
+  end
+end

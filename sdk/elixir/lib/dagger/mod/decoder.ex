@@ -50,10 +50,23 @@ defmodule Dagger.Mod.Decoder do
   defp cast(value, module, dag) when (is_map(value) or is_binary(value)) and is_atom(module) do
     Code.ensure_loaded!(module)
 
-    if function_exported?(module, :__struct__, 0) do
-      Nestru.decode(value, module, dag)
-    else
-      {:ok, value}
+    case module.__kind__() do
+      :object ->
+        if function_exported?(module, :__struct__, 0) do
+          Nestru.decode(value, module, dag)
+        else
+          {:ok, value}
+        end
+
+      :enum ->
+        if function_exported?(module, :__enum__, 2) do
+          {:ok, module.__enum__(:key, value)}
+        else
+          {:ok, value}
+        end
+
+      :scalar ->
+        {:ok, value}
     end
   end
 
