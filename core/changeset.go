@@ -97,7 +97,7 @@ func (k DiffStatKind) ToLiteral() call.Literal {
 
 type DiffStat struct {
 	Path         string       `field:"true" doc:"Path of the changed file or directory."`
-	OldPath      string       `field:"true" doc:"Previous path of the file, set only for renames."`
+	OldPath      *string      `field:"true" doc:"Previous path of the file, set only for renames."`
 	Kind         DiffStatKind `field:"true" doc:"Type of change."`
 	AddedLines   int          `field:"true" doc:"Number of added lines for this path."`
 	RemovedLines int          `field:"true" doc:"Number of removed lines for this path."`
@@ -364,7 +364,7 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	for _, path := range paths.Added {
 		if oldPath, isRenamed := paths.Renamed[path]; isRenamed {
 			entry := addEntry(path, DiffStatKindRenamed)
-			entry.OldPath = oldPath
+			entry.OldPath = &oldPath
 			entries = append(entries, entry)
 		} else {
 			entries = append(entries, addEntry(path, DiffStatKindAdded))

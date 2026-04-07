@@ -1713,7 +1713,7 @@ type DiffStat {
   kind: DiffStatKind!
 
   """Previous path of the file, set only for renames."""
-  oldPath: String!
+  oldPath: String
 
   """Path of the changed file or directory."""
   path: String!
