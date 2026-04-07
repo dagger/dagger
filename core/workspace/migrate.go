@@ -166,7 +166,7 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	hasLockEntries := false
 	if compatWorkspace != nil {
 		for _, mod := range compatWorkspace.Modules {
-			if mod.Entry.Blueprint {
+			if mod.Entry.Entrypoint {
 				result.BlueprintMigrated = true
 			} else {
 				result.ToolchainCount++

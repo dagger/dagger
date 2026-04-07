@@ -109,7 +109,7 @@ var workspaceListCmd = &cobra.Command{
 Note:
 - Source paths are resolved and shown relative to the workspace root.
 - "dagger workspace config" prints the raw config values stored in .dagger/config.toml, so local sources may look different there.
-- * means the module is a blueprint, with all its functions aliased to the root level.`,
+- * means the module is the workspace entrypoint, with all its functions aliased to the root level.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), client.Params{
@@ -121,7 +121,7 @@ Note:
 			}
 			moduleViews := make([]workspaceModuleView, len(modules))
 			for i := range modules {
-				moduleViews[i] = &modules[i]
+				moduleViews[i] = sdkWorkspaceModuleView{module: &modules[i]}
 			}
 			return writeWorkspaceModuleList(ctx, cmd.OutOrStdout(), moduleViews)
 		})
@@ -132,6 +132,33 @@ type workspaceInfoView struct {
 	Address    string
 	Path       string
 	ConfigPath string
+}
+
+type sdkWorkspaceModuleView struct {
+	module any
+}
+
+func (v sdkWorkspaceModuleView) Name(ctx context.Context) (string, error) {
+	return v.module.(interface {
+		Name(context.Context) (string, error)
+	}).Name(ctx)
+}
+
+func (v sdkWorkspaceModuleView) Source(ctx context.Context) (string, error) {
+	return v.module.(interface {
+		Source(context.Context) (string, error)
+	}).Source(ctx)
+}
+
+func (v sdkWorkspaceModuleView) Entrypoint(ctx context.Context) (bool, error) {
+	if mod, ok := v.module.(interface {
+		Entrypoint(context.Context) (bool, error)
+	}); ok {
+		return mod.Entrypoint(ctx)
+	}
+	return v.module.(interface {
+		Blueprint(context.Context) (bool, error)
+	}).Blueprint(ctx)
 }
 
 func init() {
@@ -217,7 +244,7 @@ func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client,
 type workspaceModuleView interface {
 	Name(context.Context) (string, error)
 	Source(context.Context) (string, error)
-	Blueprint(context.Context) (bool, error)
+	Entrypoint(context.Context) (bool, error)
 }
 
 func writeWorkspaceModuleList(ctx context.Context, out io.Writer, modules []workspaceModuleView) error {
@@ -227,7 +254,7 @@ func writeWorkspaceModuleList(ctx context.Context, out io.Writer, modules []work
 	if _, err := fmt.Fprintln(out, `"dagger workspace config" prints the raw values stored in .dagger/config.toml, so local sources may look different there`); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(out, "* indicates a module is a blueprint, with all its functions aliased to the root level"); err != nil {
+	if _, err := fmt.Fprintln(out, "* indicates a module is the workspace entrypoint, with all its functions aliased to the root level"); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintln(out); err != nil {
@@ -243,11 +270,11 @@ func writeWorkspaceModuleList(ctx context.Context, out io.Writer, modules []work
 		if err != nil {
 			return err
 		}
-		blueprint, err := mod.Blueprint(ctx)
+		entrypoint, err := mod.Entrypoint(ctx)
 		if err != nil {
 			return err
 		}
-		if blueprint {
+		if entrypoint {
 			name += "*"
 		}
 		source, err := mod.Source(ctx)

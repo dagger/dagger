@@ -14,12 +14,12 @@ namespace Dagger;
 class WorkspaceModule extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * Whether the module is a blueprint (functions aliased to Query root).
+     * Whether the module is the workspace entrypoint (functions aliased to Query root).
      */
-    public function blueprint(): bool
+    public function entrypoint(): bool
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('blueprint');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'blueprint');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('entrypoint');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'entrypoint');
     }
 
     /**

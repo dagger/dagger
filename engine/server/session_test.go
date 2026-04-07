@@ -85,9 +85,9 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 		DefaultsFromDotEnv: true,
 		Modules: map[string]workspace.ModuleEntry{
 			"zeta": {
-				Source:    "github.com/acme/zeta@main",
-				Blueprint: true,
-				Config:    map[string]any{"message": "hello"},
+				Source:     "github.com/acme/zeta@main",
+				Entrypoint: true,
+				Config:     map[string]any{"message": "hello"},
 			},
 			"alpha": {
 				Source: "modules/alpha",

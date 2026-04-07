@@ -15,7 +15,7 @@ defaults_from_dotenv = true
 
 [modules.greeter]
 source = "modules/greeter"
-blueprint = true
+entrypoint = true
 legacy-default-path = true
 
 [modules.greeter.config]
@@ -27,7 +27,7 @@ enabled = true
 	require.True(t, cfg.DefaultsFromDotEnv)
 	require.Equal(t, ModuleEntry{
 		Source:            "modules/greeter",
-		Blueprint:         true,
+		Entrypoint:        true,
 		LegacyDefaultPath: true,
 		Config: map[string]any{
 			"enabled":  true,
@@ -48,7 +48,7 @@ func TestSerializeConfig(t *testing.T) {
 			},
 			"greeter": {
 				Source:            "modules/greeter",
-				Blueprint:         true,
+				Entrypoint:        true,
 				LegacyDefaultPath: true,
 				Config: map[string]any{
 					"tags":     []string{"main", "develop"},
@@ -65,7 +65,7 @@ defaults_from_dotenv = true
 
 [modules.greeter]
 source = "modules/greeter"
-blueprint = true
+entrypoint = true
 legacy-default-path = true
 
 [modules.greeter.config]
@@ -128,7 +128,7 @@ func TestWriteConfigValue(t *testing.T) {
 
 		data, err := WriteConfigValue(nil, "modules.greeter.source", "modules/greeter")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.blueprint", "true")
+		data, err = WriteConfigValue(data, "modules.greeter.entrypoint", "true")
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.config.greeting", "hello")
 		require.NoError(t, err)
@@ -143,8 +143,8 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, cfg.DefaultsFromDotEnv)
 		require.Equal(t, ModuleEntry{
-			Source:    "modules/greeter",
-			Blueprint: true,
+			Source:     "modules/greeter",
+			Entrypoint: true,
 			Config: map[string]any{
 				"count":    int64(42),
 				"greeting": "hello",
@@ -157,10 +157,10 @@ func TestWriteConfigValue(t *testing.T) {
 		t.Parallel()
 
 		_, err := WriteConfigValue(nil, "modules.greeter", "value")
-		require.EqualError(t, err, "cannot set \"modules.greeter\" directly; specify a field like modules.greeter.blueprint")
+		require.EqualError(t, err, "cannot set \"modules.greeter\" directly; specify a field like modules.greeter.config")
 
 		_, err = WriteConfigValue(nil, "modules.greeter.unknown", "value")
-		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: blueprint, config, legacy-default-path, source")
+		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: config, entrypoint, legacy-default-path, source")
 
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")

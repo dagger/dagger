@@ -15141,10 +15141,10 @@ func (r *WorkspaceMigrationStep) Warnings(ctx context.Context) ([]string, error)
 type WorkspaceModule struct {
 	query *querybuilder.Selection
 
-	blueprint *bool
-	id        *WorkspaceModuleID
-	name      *string
-	source    *string
+	entrypoint *bool
+	id         *WorkspaceModuleID
+	name       *string
+	source     *string
 }
 
 func (r *WorkspaceModule) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModule {
@@ -15153,12 +15153,12 @@ func (r *WorkspaceModule) WithGraphQLQuery(q *querybuilder.Selection) *Workspace
 	}
 }
 
-// Whether the module is a blueprint (functions aliased to Query root).
-func (r *WorkspaceModule) Blueprint(ctx context.Context) (bool, error) {
-	if r.blueprint != nil {
-		return *r.blueprint, nil
+// Whether the module is the workspace entrypoint (functions aliased to Query root).
+func (r *WorkspaceModule) Entrypoint(ctx context.Context) (bool, error) {
+	if r.entrypoint != nil {
+		return *r.entrypoint, nil
 	}
-	q := r.query.Select("blueprint")
+	q := r.query.Select("entrypoint")
 
 	var response bool
 

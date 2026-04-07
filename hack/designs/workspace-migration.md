@@ -279,7 +279,7 @@ CLI
 - This document does not define CWD-module behavior.
 - This document does not lock the exact internal Go fields of `CompatWorkspace`.
 - This document does not require multiple migration steps in the initial implementation; a single `legacy-dagger-json` step is acceptable.
-- This document does not rename existing `config.toml` `blueprint = true` surface by itself, though the longer-term direction is to align that with `entrypoint`.
+- This document does not define legacy `dagger.json` blueprint behavior outside compat projection.
 
 ## Notes
 

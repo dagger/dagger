@@ -104,7 +104,7 @@ func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatW
 			Pin:        cfg.Blueprint.Pin,
 			Entry: ModuleEntry{
 				Source:            legacyWorkspaceModuleSource(cfg.Blueprint.Source, cfg.Blueprint.Pin),
-				Blueprint:         true,
+				Entrypoint:        true,
 				LegacyDefaultPath: true,
 			},
 		})
@@ -115,8 +115,8 @@ func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatW
 			Name:       cfg.Name,
 			ConfigName: cfg.Name,
 			Entry: ModuleEntry{
-				Source:    filepath.Join("modules", cfg.Name),
-				Blueprint: cfg.Blueprint == nil,
+				Source:     filepath.Join("modules", cfg.Name),
+				Entrypoint: cfg.Blueprint == nil,
 			},
 		}
 	}
@@ -145,7 +145,7 @@ func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
 		cfg.Modules[mod.ConfigName] = ModuleEntry{
 			Source:            mod.Entry.Source,
 			Config:            cloneConfigDefaults(mod.Entry.Config),
-			Blueprint:         mod.Entry.Blueprint,
+			Entrypoint:        mod.Entry.Entrypoint,
 			LegacyDefaultPath: mod.Entry.LegacyDefaultPath,
 		}
 	}
@@ -157,7 +157,7 @@ func (compatWorkspace *CompatWorkspace) Blueprint() *CompatWorkspaceModule {
 		return nil
 	}
 	for i := range compatWorkspace.Modules {
-		if compatWorkspace.Modules[i].Entry.Blueprint {
+		if compatWorkspace.Modules[i].Entry.Entrypoint {
 			return &compatWorkspace.Modules[i]
 		}
 	}

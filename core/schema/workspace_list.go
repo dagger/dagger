@@ -30,9 +30,9 @@ func (s *workspaceSchema) moduleList(
 			source = path.Join(configDir, source)
 		}
 		modules = append(modules, &core.WorkspaceModule{
-			Name:      name,
-			Blueprint: entry.Blueprint,
-			Source:    source,
+			Name:       name,
+			Entrypoint: entry.Entrypoint,
+			Source:     source,
 		})
 	}
 	modules.Sort()

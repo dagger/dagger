@@ -6365,9 +6365,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\WorkspaceModule::blueprint",
-			"p": "Dagger/WorkspaceModule.html#method_blueprint",
-			"d": "<p>Whether the module is a blueprint (functions aliased to Query root).</p>"
+			"n": "Dagger\\WorkspaceModule::entrypoint",
+			"p": "Dagger/WorkspaceModule.html#method_entrypoint",
+			"d": "<p>Whether the module is the workspace entrypoint (functions aliased to Query root).</p>"
 		},
 		{
 			"t": "M",

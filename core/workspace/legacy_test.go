@@ -85,7 +85,7 @@ func TestParseCompatWorkspacePins(t *testing.T) {
 	require.Equal(t, "../toolchains/go", compatWorkspace.Modules[0].Entry.Source)
 	require.Equal(t, map[string]any{"version": "1.24.1"}, compatWorkspace.Modules[0].Entry.Config)
 	require.Equal(t, "../blueprint", compatWorkspace.Modules[1].Entry.Source)
-	require.True(t, compatWorkspace.Modules[1].Entry.Blueprint)
+	require.True(t, compatWorkspace.Modules[1].Entry.Entrypoint)
 
 	cfg := compatWorkspace.WorkspaceConfig()
 	require.Equal(t, ModuleEntry{
@@ -95,7 +95,7 @@ func TestParseCompatWorkspacePins(t *testing.T) {
 	}, cfg.Modules["go"])
 	require.Equal(t, ModuleEntry{
 		Source:            "../blueprint",
-		Blueprint:         true,
+		Entrypoint:        true,
 		LegacyDefaultPath: true,
 	}, cfg.Modules["blueprint"])
 
@@ -131,8 +131,8 @@ func TestParseCompatWorkspace(t *testing.T) {
 	require.NotNil(t, compat.MainModule)
 	require.Equal(t, "app", compat.MainModule.Name)
 	require.Equal(t, ModuleEntry{
-		Source:    "modules/app",
-		Blueprint: true,
+		Source:     "modules/app",
+		Entrypoint: true,
 	}, compat.MainModule.Entry)
 	require.Len(t, compat.Modules, 1)
 	require.Equal(t, "../toolchains/go", compat.Modules[0].Entry.Source)

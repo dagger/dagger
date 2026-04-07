@@ -15075,8 +15075,9 @@ class WorkspaceMigrationStep(Type):
 class WorkspaceModule(Type):
     """A module entry in the workspace configuration."""
 
-    async def blueprint(self) -> bool:
-        """Whether the module is a blueprint (functions aliased to Query root).
+    async def entrypoint(self) -> bool:
+        """Whether the module is the workspace entrypoint (functions aliased to
+        Query root).
 
         Returns
         -------
@@ -15091,7 +15092,7 @@ class WorkspaceModule(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("blueprint", _args)
+        _ctx = self._select("entrypoint", _args)
         return await _ctx.execute(bool)
 
     async def id(self) -> WorkspaceModuleID:

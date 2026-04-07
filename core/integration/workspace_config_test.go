@@ -34,7 +34,7 @@ func newWorkspaceConfigWorkdir(ctx context.Context, t *testctx.T, configTOML str
 func (WorkspaceSuite) TestWorkspaceConfigRead(ctx context.Context, t *testctx.T) {
 	workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.greeter]
 source = "modules/greeter"
-blueprint = true
+entrypoint = true
 
 [modules.greeter.config]
 greeting = "hello"
@@ -47,7 +47,7 @@ source = "github.com/dagger/dagger/modules/wolfi"
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config")
 		require.NoError(t, err)
 		require.Contains(t, string(out), `source = "modules/greeter"`)
-		require.Contains(t, string(out), "blueprint = true")
+		require.Contains(t, string(out), "entrypoint = true")
 		require.Contains(t, string(out), `source = "github.com/dagger/dagger/modules/wolfi"`)
 	})
 
@@ -61,7 +61,7 @@ source = "github.com/dagger/dagger/modules/wolfi"
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter")
 		require.NoError(t, err)
 		require.Contains(t, string(out), `source = "modules/greeter"`)
-		require.Contains(t, string(out), "blueprint = true")
+		require.Contains(t, string(out), "entrypoint = true")
 	})
 
 	t.Run("missing key", func(ctx context.Context, t *testctx.T) {
@@ -75,19 +75,19 @@ func (WorkspaceSuite) TestWorkspaceConfigWrite(ctx context.Context, t *testctx.T
 	t.Run("writes string and bool values", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.greeter]
 source = "modules/greeter"
-blueprint = true
+entrypoint = true
 `)
 
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.source", "github.com/acme/greeter")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.blueprint", "false")
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.entrypoint", "false")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.source")
 		require.NoError(t, err)
 		require.Equal(t, "github.com/acme/greeter", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.blueprint")
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.entrypoint")
 		require.NoError(t, err)
 		require.Equal(t, "false", strings.TrimSpace(string(out)))
 	})
@@ -95,7 +95,7 @@ blueprint = true
 	t.Run("writes array values", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.greeter]
 source = "modules/greeter"
-blueprint = true
+entrypoint = true
 `)
 
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.config.tags", "main, develop")
@@ -111,7 +111,7 @@ blueprint = true
 	t.Run("rejects invalid keys", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.greeter]
 source = "modules/greeter"
-blueprint = true
+entrypoint = true
 `)
 
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.badfield", "value")

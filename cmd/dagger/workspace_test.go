@@ -175,9 +175,9 @@ func TestWriteWorkspaceModuleList(t *testing.T) {
 
 	err := writeWorkspaceModuleList(context.Background(), &out, []workspaceModuleView{
 		testWorkspaceModuleView{
-			name:      "greeter",
-			blueprint: true,
-			source:    ".dagger/modules/greeter",
+			name:       "greeter",
+			entrypoint: true,
+			source:     ".dagger/modules/greeter",
 		},
 		testWorkspaceModuleView{
 			name:   "wolfi",
@@ -188,7 +188,7 @@ func TestWriteWorkspaceModuleList(t *testing.T) {
 	require.Equal(t,
 		"Source paths below are resolved and shown relative to the workspace root\n"+
 			"\"dagger workspace config\" prints the raw values stored in .dagger/config.toml, so local sources may look different there\n"+
-			"* indicates a module is a blueprint, with all its functions aliased to the root level\n"+
+			"* indicates a module is the workspace entrypoint, with all its functions aliased to the root level\n"+
 			"\n"+
 			"Name       Resolved Source\n"+
 			"greeter*   .dagger/modules/greeter\n"+
@@ -198,9 +198,9 @@ func TestWriteWorkspaceModuleList(t *testing.T) {
 }
 
 type testWorkspaceModuleView struct {
-	name      string
-	source    string
-	blueprint bool
+	name       string
+	source     string
+	entrypoint bool
 }
 
 func (m testWorkspaceModuleView) Name(context.Context) (string, error) {
@@ -211,6 +211,6 @@ func (m testWorkspaceModuleView) Source(context.Context) (string, error) {
 	return m.source, nil
 }
 
-func (m testWorkspaceModuleView) Blueprint(context.Context) (bool, error) {
-	return m.blueprint, nil
+func (m testWorkspaceModuleView) Entrypoint(context.Context) (bool, error) {
+	return m.entrypoint, nil
 }

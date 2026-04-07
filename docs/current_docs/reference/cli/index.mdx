@@ -1359,7 +1359,7 @@ List all modules defined in the workspace configuration.
 Note:
 - Source paths are resolved and shown relative to the workspace root.
 - "dagger workspace config" prints the raw config values stored in .dagger/config.toml, so local sources may look different there.
-- * means the module is a blueprint, with all its functions aliased to the root level.
+- * means the module is the workspace entrypoint, with all its functions aliased to the root level.
 
 ```
 dagger workspace list [flags]

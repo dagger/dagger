@@ -441,7 +441,7 @@ func workspaceConfigPendingModules(
 			Kind:               moduleLoadKindAmbient,
 			Ref:                entry.Source,
 			Name:               name,
-			Entrypoint:         entry.Blueprint,
+			Entrypoint:         entry.Entrypoint,
 			LegacyDefaultPath:  entry.LegacyDefaultPath,
 			DisableFindUp:      true,
 			ConfigDefaults:     entry.Config,
@@ -588,11 +588,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				legacyMod.Name,
 				legacyMod.Source,
 				legacyMod.Pin,
-				legacyMod.Entry.Blueprint,
+				legacyMod.Entry.Entrypoint,
 				legacyMod.Entry.Config,
 				legacyMod.ArgCustomizations,
 			)
-			if legacyMod.Entry.Blueprint {
+			if legacyMod.Entry.Entrypoint {
 				mod.LegacyCallerModuleDir = legacyCallerDir
 			}
 			pending = append(pending, mod)
@@ -604,7 +604,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				Kind:       moduleLoadKindAmbient,
 				Ref:        resolveLocalRef(ws, rel),
 				Name:       compatWorkspace.MainModule.Name,
-				Entrypoint: compatWorkspace.MainModule.Entry.Blueprint,
+				Entrypoint: compatWorkspace.MainModule.Entry.Entrypoint,
 			})
 		}
 	}

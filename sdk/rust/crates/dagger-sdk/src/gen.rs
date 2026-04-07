@@ -15541,9 +15541,9 @@ pub struct WorkspaceModule {
     pub graphql_client: DynGraphQLClient,
 }
 impl WorkspaceModule {
-    /// Whether the module is a blueprint (functions aliased to Query root).
-    pub async fn blueprint(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("blueprint");
+    /// Whether the module is the workspace entrypoint (functions aliased to Query root).
+    pub async fn entrypoint(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("entrypoint");
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this WorkspaceModule.

@@ -21,7 +21,7 @@ type Config struct {
 type ModuleEntry struct {
 	Source            string         `toml:"source"`
 	Config            map[string]any `toml:"config,omitempty"`
-	Blueprint         bool           `toml:"blueprint,omitempty"`
+	Entrypoint        bool           `toml:"entrypoint,omitempty"`
 	LegacyDefaultPath bool           `toml:"legacy-default-path,omitempty"`
 }
 
@@ -71,8 +71,8 @@ func SerializeConfig(cfg *Config) []byte {
 		entry := cfg.Modules[name]
 		fmt.Fprintf(&b, "[modules.%s]\n", name)
 		fmt.Fprintf(&b, "source = %q\n", entry.Source)
-		if entry.Blueprint {
-			b.WriteString("blueprint = true\n")
+		if entry.Entrypoint {
+			b.WriteString("entrypoint = true\n")
 		}
 		if entry.LegacyDefaultPath {
 			b.WriteString("legacy-default-path = true\n")
@@ -322,7 +322,7 @@ func parseValueString(key string, rawValue string) any {
 	parts := strings.Split(key, ".")
 	leaf := parts[len(parts)-1]
 
-	if leaf == "blueprint" || leaf == "legacy-default-path" || key == "defaults_from_dotenv" {
+	if leaf == "entrypoint" || leaf == "legacy-default-path" || key == "defaults_from_dotenv" {
 		return rawValue == "true"
 	}
 

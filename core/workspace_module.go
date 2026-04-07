@@ -8,9 +8,9 @@ import (
 
 // WorkspaceModule describes a module entry in the workspace config.
 type WorkspaceModule struct {
-	Name      string `field:"true" doc:"The module name."`
-	Blueprint bool   `field:"true" doc:"Whether the module is a blueprint (functions aliased to Query root)."`
-	Source    string `field:"true" doc:"The module source path."`
+	Name       string `field:"true" doc:"The module name."`
+	Entrypoint bool   `field:"true" doc:"Whether the module is the workspace entrypoint (functions aliased to Query root)."`
+	Source     string `field:"true" doc:"The module source path."`
 }
 
 func (*WorkspaceModule) Type() *ast.Type {

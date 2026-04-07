@@ -6078,8 +6078,10 @@ scalar WorkspaceMigrationStepID
 
 """A module entry in the workspace configuration."""
 type WorkspaceModule {
-  """Whether the module is a blueprint (functions aliased to Query root)."""
-  blueprint: Boolean!
+  """
+  Whether the module is the workspace entrypoint (functions aliased to Query root).
+  """
+  entrypoint: Boolean!
 
   """A unique identifier for this WorkspaceModule."""
   id: WorkspaceModuleID!

@@ -14512,7 +14512,7 @@ export class WorkspaceMigrationStep extends BaseClient {
  */
 export class WorkspaceModule extends BaseClient {
   private readonly _id?: WorkspaceModuleID = undefined
-  private readonly _blueprint?: boolean = undefined
+  private readonly _entrypoint?: boolean = undefined
   private readonly _name?: string = undefined
   private readonly _source?: string = undefined
 
@@ -14522,14 +14522,14 @@ export class WorkspaceModule extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: WorkspaceModuleID,
-    _blueprint?: boolean,
+    _entrypoint?: boolean,
     _name?: string,
     _source?: string,
   ) {
     super(ctx)
 
     this._id = _id
-    this._blueprint = _blueprint
+    this._entrypoint = _entrypoint
     this._name = _name
     this._source = _source
   }
@@ -14550,14 +14550,14 @@ export class WorkspaceModule extends BaseClient {
   }
 
   /**
-   * Whether the module is a blueprint (functions aliased to Query root).
+   * Whether the module is the workspace entrypoint (functions aliased to Query root).
    */
-  blueprint = async (): Promise<boolean> => {
-    if (this._blueprint) {
-      return this._blueprint
+  entrypoint = async (): Promise<boolean> => {
+    if (this._entrypoint) {
+      return this._entrypoint
     }
 
-    const ctx = this._ctx.select("blueprint")
+    const ctx = this._ctx.select("entrypoint")
 
     const response: Awaited<boolean> = await ctx.execute()
 

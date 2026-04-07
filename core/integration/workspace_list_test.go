@@ -11,7 +11,7 @@ import (
 func (WorkspaceSuite) TestWorkspaceList(ctx context.Context, t *testctx.T) {
 	workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.greeter]
 source = "modules/greeter"
-blueprint = true
+entrypoint = true
 
 [modules.wolfi]
 source = "github.com/dagger/dagger/modules/wolfi"
@@ -22,7 +22,7 @@ source = "github.com/dagger/dagger/modules/wolfi"
 
 	output := string(out)
 	require.Contains(t, output, "Source paths are relative to the workspace root")
-	require.Contains(t, output, "* indicates a module is a blueprint")
+	require.Contains(t, output, "* indicates a module is the workspace entrypoint")
 	require.Contains(t, output, "greeter*")
 	require.Contains(t, output, ".dagger/modules/greeter")
 	require.Contains(t, output, "wolfi")

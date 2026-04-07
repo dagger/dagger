@@ -35,7 +35,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceInstall(ctx context.Context, t *testct
 		require.NoError(t, err)
 		require.Contains(t, cfg.Modules, "mywolfi")
 		require.Equal(t, ref, cfg.Modules["mywolfi"].Source)
-		require.False(t, cfg.Modules["mywolfi"].Blueprint)
+		require.False(t, cfg.Modules["mywolfi"].Entrypoint)
 
 		require.NoError(t, c.Close())
 
