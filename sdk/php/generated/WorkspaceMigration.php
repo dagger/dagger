@@ -14,30 +14,12 @@ namespace Dagger;
 class WorkspaceMigration extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * Filesystem changes needed for this migration.
+     * Filesystem changes for the full migration plan.
      */
     public function changes(): Changeset
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Stable migration code identifying the migration flow.
-     */
-    public function code(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('code');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'code');
-    }
-
-    /**
-     * Generic summary of the migration's purpose and impact.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -50,11 +32,11 @@ class WorkspaceMigration extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Non-fatal warnings raised while planning this migration.
+     * Logical migration steps, each identified by a stable code.
      */
-    public function warnings(): array
+    public function steps(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('warnings');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'warnings');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('steps');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'steps');
     }
 }

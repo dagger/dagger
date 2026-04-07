@@ -20,13 +20,22 @@ func (s *workspaceSchema) migrate(
 	ctx context.Context,
 	ws *core.Workspace,
 	_ workspaceMigrateArgs,
-) (dagql.Array[*core.WorkspaceMigration], error) {
+) (*core.WorkspaceMigration, error) {
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("workspace migration is local-only")
 	}
+
+	emptyChanges, err := core.NewEmptyChangeset(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	compatWorkspace := ws.CompatWorkspace()
 	if compatWorkspace == nil {
-		return nil, nil
+		return &core.WorkspaceMigration{
+			Changes: emptyChanges,
+			Steps:   nil,
+		}, nil
 	}
 
 	workspaceCtx, err := s.withWorkspaceClientContext(ctx, ws)
@@ -54,12 +63,15 @@ func (s *workspaceSchema) migrate(
 		return nil, err
 	}
 
-	return dagql.Array[*core.WorkspaceMigration]{
-		&core.WorkspaceMigration{
-			Code:        "legacy-dagger-json",
-			Description: "Migrated to workspace format",
-			Warnings:    workspaceMigrationWarnings(plan),
-			Changes:     changes,
+	return &core.WorkspaceMigration{
+		Changes: changes,
+		Steps: []*core.WorkspaceMigrationStep{
+			{
+				Code:        "legacy-dagger-json",
+				Description: "Migrated to workspace format",
+				Warnings:    workspaceMigrationWarnings(plan),
+				Changes:     changes,
+			},
 		},
 	}, nil
 }

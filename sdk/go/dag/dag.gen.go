@@ -572,6 +572,12 @@ func LoadWorkspaceMigrationFromID(id dagger.WorkspaceMigrationID) *dagger.Worksp
 	return client.LoadWorkspaceMigrationFromID(id)
 }
 
+// Load a WorkspaceMigrationStep from its ID.
+func LoadWorkspaceMigrationStepFromID(id dagger.WorkspaceMigrationStepID) *dagger.WorkspaceMigrationStep {
+	client := initClient()
+	return client.LoadWorkspaceMigrationStepFromID(id)
+}
+
 // Load a WorkspaceModule from its ID.
 func LoadWorkspaceModuleFromID(id dagger.WorkspaceModuleID) *dagger.WorkspaceModule {
 	client := initClient()

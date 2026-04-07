@@ -326,6 +326,11 @@ class WorkspaceMigrationID(Scalar):
     an object of type WorkspaceMigration."""
 
 
+class WorkspaceMigrationStepID(Scalar):
+    """The `WorkspaceMigrationStepID` scalar type represents an identifier
+    for an object of type WorkspaceMigrationStep."""
+
+
 class WorkspaceModuleID(Scalar):
     """The `WorkspaceModuleID` scalar type represents an identifier for an
     object of type WorkspaceModule."""
@@ -923,6 +928,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asWorkspaceMigration", _args)
         return WorkspaceMigration(_ctx)
+
+    def as_workspace_migration_step(self) -> "WorkspaceMigrationStep":
+        """Retrieve the binding value, as type WorkspaceMigrationStep"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceMigrationStep", _args)
+        return WorkspaceMigrationStep(_ctx)
 
     def as_workspace_module(self) -> "WorkspaceModule":
         """Retrieve the binding value, as type WorkspaceModule"""
@@ -6782,6 +6793,50 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withWorkspaceMigrationOutput", _args)
+        return Env(_ctx)
+
+    def with_workspace_migration_step_input(
+        self,
+        name: str,
+        value: "WorkspaceMigrationStep",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceMigrationStep in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceMigrationStep value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceMigrationStepInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_migration_step_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceMigrationStep output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceMigrationStepOutput", _args)
         return Env(_ctx)
 
     def with_workspace_module_input(
@@ -12828,6 +12883,16 @@ class Query(Root):
         _ctx = self._select("loadWorkspaceMigrationFromID", _args)
         return WorkspaceMigration(_ctx)
 
+    def load_workspace_migration_step_from_id(
+        self, id: WorkspaceMigrationStepID
+    ) -> "WorkspaceMigrationStep":
+        """Load a WorkspaceMigrationStep from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadWorkspaceMigrationStepFromID", _args)
+        return WorkspaceMigrationStep(_ctx)
+
     def load_workspace_module_from_id(self, id: WorkspaceModuleID) -> "WorkspaceModule":
         """Load a WorkspaceModule from its ID."""
         _args = [
@@ -14740,14 +14805,15 @@ class Workspace(Type):
         _ctx = self._select("install", _args)
         return await _ctx.execute(str)
 
-    async def migrate(self) -> list["WorkspaceMigration"]:
-        """Plan explicit migrations needed for the current workspace.
+    def migrate(self) -> "WorkspaceMigration":
+        """Plan the explicit migration needed for the current workspace.
 
-        Returns an empty list when no migration is needed.
+        The returned plan has an empty changeset and no steps when no
+        migration is needed.
         """
         _args: list[Arg] = []
         _ctx = self._select("migrate", _args)
-        return await _ctx.execute_object_list(WorkspaceMigration)
+        return WorkspaceMigration(_ctx)
 
     async def module_init(
         self,
@@ -14871,52 +14937,10 @@ class WorkspaceMigration(Type):
     """A planned workspace migration."""
 
     def changes(self) -> Changeset:
-        """Filesystem changes needed for this migration."""
+        """Filesystem changes for the full migration plan."""
         _args: list[Arg] = []
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
-
-    async def code(self) -> str:
-        """Stable migration code identifying the migration flow.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("code", _args)
-        return await _ctx.execute(str)
-
-    async def description(self) -> str:
-        """Generic summary of the migration's purpose and impact.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("description", _args)
-        return await _ctx.execute(str)
 
     async def id(self) -> WorkspaceMigrationID:
         """A unique identifier for this WorkspaceMigration.
@@ -14942,8 +14966,91 @@ class WorkspaceMigration(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(WorkspaceMigrationID)
 
+    async def steps(self) -> list["WorkspaceMigrationStep"]:
+        """Logical migration steps, each identified by a stable code."""
+        _args: list[Arg] = []
+        _ctx = self._select("steps", _args)
+        return await _ctx.execute_object_list(WorkspaceMigrationStep)
+
+
+@typecheck
+class WorkspaceMigrationStep(Type):
+    """A single logical part of a workspace migration."""
+
+    def changes(self) -> Changeset:
+        """Filesystem changes for this step."""
+        _args: list[Arg] = []
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
+    async def code(self) -> str:
+        """Stable code identifying this logical migration step.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("code", _args)
+        return await _ctx.execute(str)
+
+    async def description(self) -> str:
+        """Generic summary of this step's purpose and impact.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> WorkspaceMigrationStepID:
+        """A unique identifier for this WorkspaceMigrationStep.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        WorkspaceMigrationStepID
+            The `WorkspaceMigrationStepID` scalar type represents an
+            identifier for an object of type WorkspaceMigrationStep.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(WorkspaceMigrationStepID)
+
     async def warnings(self) -> list[str]:
-        """Non-fatal warnings raised while planning this migration.
+        """Non-fatal warnings raised while planning this step.
 
         Returns
         -------
@@ -15205,6 +15312,8 @@ __all__ = [
     "WorkspaceID",
     "WorkspaceMigration",
     "WorkspaceMigrationID",
+    "WorkspaceMigrationStep",
+    "WorkspaceMigrationStepID",
     "WorkspaceModule",
     "WorkspaceModuleID",
     "dag",

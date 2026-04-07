@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\WorkspaceMigration | API</title>
+    <title>Dagger\WorkspaceMigrationStep | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_WorkspaceMigration" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_WorkspaceMigrationStep" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceMigration</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceMigrationStep</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>WorkspaceMigration    
+        <h1>WorkspaceMigrationStep    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>WorkspaceMigration</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>WorkspaceMigrationStep</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>A planned workspace migration.</p></p>                    </div>
+            <p><p>A single logical part of a workspace migration.</p></p>                    </div>
             
         
     
@@ -148,7 +148,27 @@
                 <div class="col-md-8">
                     <a href="#method_changes">changes</a>()
         
-                                            <p><p>Filesystem changes for the full migration plan.</p></p>                </div>
+                                            <p><p>Filesystem changes for this step.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_code">code</a>()
+        
+                                            <p><p>Stable code identifying this logical migration step.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_description">description</a>()
+        
+                                            <p><p>Generic summary of this step's purpose and impact.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -158,7 +178,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this WorkspaceMigration.</p></p>                </div>
+                                            <p><p>A unique identifier for this WorkspaceMigrationStep.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -166,9 +186,9 @@
                     array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_steps">steps</a>()
+                    <a href="#method_warnings">warnings</a>()
         
-                                            <p><p>Logical migration steps, each identified by a stable code.</p></p>                </div>
+                                            <p><p>Non-fatal warnings raised while planning this step.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -278,7 +298,7 @@
             
 
         <div class="method-description">
-                            <p><p>Filesystem changes for the full migration plan.</p></p>                        
+                            <p><p>Filesystem changes for this step.</p></p>                        
         </div>
         <div class="tags">
             
@@ -299,8 +319,72 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_id">
+                    <h3 id="method_code">
         <div class="location">at line 28</div>
+        <code>                    string
+    <strong>code</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Stable code identifying this logical migration step.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_description">
+        <div class="location">at line 37</div>
+        <code>                    string
+    <strong>description</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Generic summary of this step's purpose and impact.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_id">
+        <div class="location">at line 46</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -310,7 +394,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this WorkspaceMigration.</p></p>                        
+                            <p><p>A unique identifier for this WorkspaceMigrationStep.</p></p>                        
         </div>
         <div class="tags">
             
@@ -331,10 +415,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_steps">
-        <div class="location">at line 37</div>
+                    <h3 id="method_warnings">
+        <div class="location">at line 55</div>
         <code>                    array
-    <strong>steps</strong>()
+    <strong>warnings</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -342,7 +426,7 @@
             
 
         <div class="method-description">
-                            <p><p>Logical migration steps, each identified by a stable code.</p></p>                        
+                            <p><p>Non-fatal warnings raised while planning this step.</p></p>                        
         </div>
         <div class="tags">
             

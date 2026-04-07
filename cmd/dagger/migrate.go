@@ -33,53 +33,70 @@ var migrateCmd = &cobra.Command{
 		}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 
-			migrations, err := dag.CurrentWorkspace().Migrate(ctx)
+			migration, err := currentWorkspaceMigration(ctx, dag)
 			if err != nil {
 				return fmt.Errorf("migration failed: %w", err)
 			}
-			if len(migrations) == 0 {
+			if migration.Changes.ID == "" {
 				_, err := fmt.Fprintln(cmd.OutOrStdout(), "No migration needed.")
 				return err
 			}
 
-			changesets := make([]*dagger.Changeset, 0, len(migrations))
-			for i := range migrations {
-				code, err := migrations[i].Code(ctx)
-				if err != nil {
-					return err
-				}
-				description, err := migrations[i].Description(ctx)
-				if err != nil {
-					return err
-				}
-				warnings, err := migrations[i].Warnings(ctx)
-				if err != nil {
-					return err
-				}
-
+			for i := range migration.Steps {
 				if i > 0 {
 					if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
 						return err
 					}
 				}
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "MIGRATION %s\n", code); err != nil {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "MIGRATION %s\n", migration.Steps[i].Code); err != nil {
 					return err
 				}
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), description); err != nil {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), migration.Steps[i].Description); err != nil {
 					return err
 				}
-				for _, warning := range warnings {
+				for _, warning := range migration.Steps[i].Warnings {
 					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Warning: %s\n", warning); err != nil {
 						return err
 					}
 				}
-
-				changesets = append(changesets, migrations[i].Changes())
 			}
 
-			return handleChangesetResponse(ctx, dag, dag.Changeset().WithChangesets(changesets), autoApply)
+			return handleChangesetResponse(ctx, dag, dag.LoadChangesetFromID(migration.Changes.ID), autoApply)
 		})
 	},
+}
+
+type workspaceMigrationResponse struct {
+	Changes struct {
+		ID dagger.ChangesetID `json:"id"`
+	} `json:"changes"`
+	Steps []workspaceMigrationStepResponse `json:"steps"`
+}
+
+type workspaceMigrationStepResponse struct {
+	Code        string   `json:"code"`
+	Description string   `json:"description"`
+	Warnings    []string `json:"warnings"`
+	Changes     struct {
+		ID dagger.ChangesetID `json:"id"`
+	} `json:"changes"`
+}
+
+func currentWorkspaceMigration(ctx context.Context, dag *dagger.Client) (*workspaceMigrationResponse, error) {
+	var migration workspaceMigrationResponse
+	err := dag.QueryBuilder().
+		Select("currentWorkspace").
+		Select("migrate").
+		SelectMultiple(
+			"changes{id}",
+			"steps{code description warnings changes{id}}",
+		).
+		Bind(&migration).
+		Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &migration, nil
 }
 
 func init() {

@@ -323,6 +323,9 @@ type WorkspaceID string
 // The `WorkspaceMigrationID` scalar type represents an identifier for an object of type WorkspaceMigration.
 type WorkspaceMigrationID string
 
+// The `WorkspaceMigrationStepID` scalar type represents an identifier for an object of type WorkspaceMigrationStep.
+type WorkspaceMigrationStepID string
+
 // The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
 type WorkspaceModuleID string
 
@@ -822,6 +825,15 @@ func (r *Binding) AsWorkspaceMigration() *WorkspaceMigration {
 	q := r.query.Select("asWorkspaceMigration")
 
 	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type WorkspaceMigrationStep
+func (r *Binding) AsWorkspaceMigrationStep() *WorkspaceMigrationStep {
+	q := r.query.Select("asWorkspaceMigrationStep")
+
+	return &WorkspaceMigrationStep{
 		query: q,
 	}
 }
@@ -6200,6 +6212,30 @@ func (r *Env) WithWorkspaceMigrationInput(name string, value *WorkspaceMigration
 // Declare a desired WorkspaceMigration output to be assigned in the environment
 func (r *Env) WithWorkspaceMigrationOutput(name string, description string) *Env {
 	q := r.query.Select("withWorkspaceMigrationOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type WorkspaceMigrationStep in the environment
+func (r *Env) WithWorkspaceMigrationStepInput(name string, value *WorkspaceMigrationStep, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceMigrationStepInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceMigrationStep output to be assigned in the environment
+func (r *Env) WithWorkspaceMigrationStepOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceMigrationStepOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -12742,6 +12778,16 @@ func (r *Query) LoadWorkspaceMigrationFromID(id WorkspaceMigrationID) *Workspace
 	}
 }
 
+// Load a WorkspaceMigrationStep from its ID.
+func (r *Query) LoadWorkspaceMigrationStepFromID(id WorkspaceMigrationStepID) *WorkspaceMigrationStep {
+	q := r.query.Select("loadWorkspaceMigrationStepFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceMigrationStep{
+		query: q,
+	}
+}
+
 // Load a WorkspaceModule from its ID.
 func (r *Query) LoadWorkspaceModuleFromID(id WorkspaceModuleID) *WorkspaceModule {
 	q := r.query.Select("loadWorkspaceModuleFromID")
@@ -14751,39 +14797,15 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 	return response, q.Execute(ctx)
 }
 
-// Plan explicit migrations needed for the current workspace.
+// Plan the explicit migration needed for the current workspace.
 //
-// Returns an empty list when no migration is needed.
-func (r *Workspace) Migrate(ctx context.Context) ([]WorkspaceMigration, error) {
+// The returned plan has an empty changeset and no steps when no migration is needed.
+func (r *Workspace) Migrate() *WorkspaceMigration {
 	q := r.query.Select("migrate")
 
-	q = q.Select("id")
-
-	type migrate struct {
-		Id WorkspaceMigrationID
+	return &WorkspaceMigration{
+		query: q,
 	}
-
-	convert := func(fields []migrate) []WorkspaceMigration {
-		out := []WorkspaceMigration{}
-
-		for i := range fields {
-			val := WorkspaceMigration{id: &fields[i].Id}
-			val.query = q.Root().Select("loadWorkspaceMigrationFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []migrate
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
 }
 
 // WorkspaceModuleInitOpts contains options for Workspace.ModuleInit
@@ -14924,9 +14946,7 @@ func (r *Workspace) Update() *Changeset {
 type WorkspaceMigration struct {
 	query *querybuilder.Selection
 
-	code        *string
-	description *string
-	id          *WorkspaceMigrationID
+	id *WorkspaceMigrationID
 }
 
 func (r *WorkspaceMigration) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigration {
@@ -14935,39 +14955,13 @@ func (r *WorkspaceMigration) WithGraphQLQuery(q *querybuilder.Selection) *Worksp
 	}
 }
 
-// Filesystem changes needed for this migration.
+// Filesystem changes for the full migration plan.
 func (r *WorkspaceMigration) Changes() *Changeset {
 	q := r.query.Select("changes")
 
 	return &Changeset{
 		query: q,
 	}
-}
-
-// Stable migration code identifying the migration flow.
-func (r *WorkspaceMigration) Code(ctx context.Context) (string, error) {
-	if r.code != nil {
-		return *r.code, nil
-	}
-	q := r.query.Select("code")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Generic summary of the migration's purpose and impact.
-func (r *WorkspaceMigration) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this WorkspaceMigration.
@@ -15010,8 +15004,131 @@ func (r *WorkspaceMigration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Non-fatal warnings raised while planning this migration.
-func (r *WorkspaceMigration) Warnings(ctx context.Context) ([]string, error) {
+// Logical migration steps, each identified by a stable code.
+func (r *WorkspaceMigration) Steps(ctx context.Context) ([]WorkspaceMigrationStep, error) {
+	q := r.query.Select("steps")
+
+	q = q.Select("id")
+
+	type steps struct {
+		Id WorkspaceMigrationStepID
+	}
+
+	convert := func(fields []steps) []WorkspaceMigrationStep {
+		out := []WorkspaceMigrationStep{}
+
+		for i := range fields {
+			val := WorkspaceMigrationStep{id: &fields[i].Id}
+			val.query = q.Root().Select("loadWorkspaceMigrationStepFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []steps
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A single logical part of a workspace migration.
+type WorkspaceMigrationStep struct {
+	query *querybuilder.Selection
+
+	code        *string
+	description *string
+	id          *WorkspaceMigrationStepID
+}
+
+func (r *WorkspaceMigrationStep) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigrationStep {
+	return &WorkspaceMigrationStep{
+		query: q,
+	}
+}
+
+// Filesystem changes for this step.
+func (r *WorkspaceMigrationStep) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Stable code identifying this logical migration step.
+func (r *WorkspaceMigrationStep) Code(ctx context.Context) (string, error) {
+	if r.code != nil {
+		return *r.code, nil
+	}
+	q := r.query.Select("code")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Generic summary of this step's purpose and impact.
+func (r *WorkspaceMigrationStep) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceMigrationStep.
+func (r *WorkspaceMigrationStep) ID(ctx context.Context) (WorkspaceMigrationStepID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceMigrationStepID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceMigrationStep) XXX_GraphQLType() string {
+	return "WorkspaceMigrationStep"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceMigrationStep) XXX_GraphQLIDType() string {
+	return "WorkspaceMigrationStepID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceMigrationStep) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceMigrationStep) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Non-fatal warnings raised while planning this step.
+func (r *WorkspaceMigrationStep) Warnings(ctx context.Context) ([]string, error) {
 	q := r.query.Select("warnings")
 
 	var response []string

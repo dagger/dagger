@@ -113,6 +113,7 @@
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
               <li><a href="#query-loadWorkspaceFromID">loadWorkspaceFromID</a></li>
               <li><a href="#query-loadWorkspaceMigrationFromID">loadWorkspaceMigrationFromID</a></li>
+              <li><a href="#query-loadWorkspaceMigrationStepFromID">loadWorkspaceMigrationStepFromID</a></li>
               <li><a href="#query-loadWorkspaceModuleFromID">loadWorkspaceModuleFromID</a></li>
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
@@ -267,6 +268,8 @@
               <li><a href="#definition-WorkspaceID">WorkspaceID</a></li>
               <li><a href="#definition-WorkspaceMigration">WorkspaceMigration</a></li>
               <li><a href="#definition-WorkspaceMigrationID">WorkspaceMigrationID</a></li>
+              <li><a href="#definition-WorkspaceMigrationStep">WorkspaceMigrationStep</a></li>
+              <li><a href="#definition-WorkspaceMigrationStepID">WorkspaceMigrationStepID</a></li>
               <li><a href="#definition-WorkspaceModule">WorkspaceModule</a></li>
               <li><a href="#definition-WorkspaceModuleID">WorkspaceModuleID</a></li>
             </ul>
@@ -4729,6 +4732,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadWorkspaceMigrationStepFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceMigrationStepFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadWorkspaceMigrationStepFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a WorkspaceMigrationStep from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-WorkspaceMigrationStep"><code>WorkspaceMigrationStep!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-WorkspaceMigrationStepID"><code>WorkspaceMigrationStepID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadWorkspaceModuleFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceModuleFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -5397,6 +5453,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceMigration" href="#Binding-asWorkspaceMigration"><code>asWorkspaceMigration</code></a> - <span class="property-type"><a href="#definition-WorkspaceMigration"><code>WorkspaceMigration!</code></a></span> </td>
                         <td> Retrieve the binding value, as type WorkspaceMigration </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceMigrationStep" href="#Binding-asWorkspaceMigrationStep"><code>asWorkspaceMigrationStep</code></a> - <span class="property-type"><a href="#definition-WorkspaceMigrationStep"><code>WorkspaceMigrationStep!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type WorkspaceMigrationStep </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceModule" href="#Binding-asWorkspaceModule"><code>asWorkspaceModule</code></a> - <span class="property-type"><a href="#definition-WorkspaceModule"><code>WorkspaceModule!</code></a></span> </td>
@@ -10400,6 +10460,52 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withWorkspaceMigrationOutput" href="#Env-withWorkspaceMigrationOutput"><code>withWorkspaceMigrationOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired WorkspaceMigration output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceMigrationStepInput" href="#Env-withWorkspaceMigrationStepInput"><code>withWorkspaceMigrationStepInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type WorkspaceMigrationStep in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-WorkspaceMigrationStepID"><code>WorkspaceMigrationStepID!</code></a></span></h6>
+                                <p>The WorkspaceMigrationStep value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceMigrationStepOutput" href="#Env-withWorkspaceMigrationStepOutput"><code>withWorkspaceMigrationStepOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired WorkspaceMigrationStep output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -16253,10 +16359,10 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-migrate" href="#Workspace-migrate"><code>migrate</code></a> - <span class="property-type"><a href="#definition-WorkspaceMigration"><code>[WorkspaceMigration!]!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Workspace-migrate" href="#Workspace-migrate"><code>migrate</code></a> - <span class="property-type"><a href="#definition-WorkspaceMigration"><code>WorkspaceMigration!</code></a></span> </td>
                         <td>
-                          <p>Plan explicit migrations needed for the current workspace.</p>
-                          <p>Returns an empty list when no migration is needed.</p>
+                          <p>Plan the explicit migration needed for the current workspace.</p>
+                          <p>The returned plan has an empty changeset and no steps when no migration is needed.</p>
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
@@ -16374,23 +16480,15 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="WorkspaceMigration-changes" href="#WorkspaceMigration-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
-                        <td> Filesystem changes needed for this migration. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="WorkspaceMigration-code" href="#WorkspaceMigration-code"><code>code</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Stable migration code identifying the migration flow. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="WorkspaceMigration-description" href="#WorkspaceMigration-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Generic summary of the migration's purpose and impact. </td>
+                        <td> Filesystem changes for the full migration plan. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="WorkspaceMigration-id" href="#WorkspaceMigration-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceMigrationID"><code>WorkspaceMigrationID!</code></a></span> </td>
                         <td> A unique identifier for this WorkspaceMigration. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="WorkspaceMigration-warnings" href="#WorkspaceMigration-warnings"><code>warnings</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
-                        <td> Non-fatal warnings raised while planning this migration. </td>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceMigration-steps" href="#WorkspaceMigration-steps"><code>steps</code></a> - <span class="property-type"><a href="#definition-WorkspaceMigrationStep"><code>[WorkspaceMigrationStep!]!</code></a></span> </td>
+                        <td> Logical migration steps, each identified by a stable code. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -16408,6 +16506,67 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>WorkspaceMigrationID</code> scalar type represents an identifier for an object of type WorkspaceMigration.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-WorkspaceMigrationStep" class="definition definition-object" data-traverse-target="definition-WorkspaceMigrationStep">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">WorkspaceMigrationStep</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A single logical part of a workspace migration.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceMigrationStep-changes" href="#WorkspaceMigrationStep-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> Filesystem changes for this step. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceMigrationStep-code" href="#WorkspaceMigrationStep-code"><code>code</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Stable code identifying this logical migration step. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceMigrationStep-description" href="#WorkspaceMigrationStep-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Generic summary of this step's purpose and impact. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceMigrationStep-id" href="#WorkspaceMigrationStep-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceMigrationStepID"><code>WorkspaceMigrationStepID!</code></a></span> </td>
+                        <td> A unique identifier for this WorkspaceMigrationStep. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceMigrationStep-warnings" href="#WorkspaceMigrationStep-warnings"><code>warnings</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Non-fatal warnings raised while planning this step. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-WorkspaceMigrationStepID" class="definition definition-scalar" data-traverse-target="definition-WorkspaceMigrationStepID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">WorkspaceMigrationStepID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>WorkspaceMigrationStepID</code> scalar type represents an identifier for an object of type WorkspaceMigrationStep.</p>
                 </div>
               </div>
             </div>

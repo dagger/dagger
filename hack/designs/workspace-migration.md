@@ -14,7 +14,7 @@ Explicit migration persists the same compat workspace that runtime compat mode w
 
 `Workspace.migrate()` operates on the compat workspace already attached to that `Workspace`. It does not rediscover legacy config from disk.
 
-Migration planning and migration application are separate. Product code has one migration applier only: the `Changeset` values returned from `Workspace.migrate()`.
+Migration planning and migration application are separate. Product code has one migration applier only: the `Changeset` returned from `Workspace.migrate()`.
 
 ## Problem
 
@@ -33,7 +33,7 @@ The engine will:
 - persist that same `CompatWorkspace` through `Workspace.migrate()`
 - apply migration only through returned `Changeset` values
 
-The CLI will not own migration orchestration. It will call `Workspace.migrate()`, render the returned migration list, combine the returned changesets, and reuse the normal changeset preview/apply flow.
+The CLI will not own migration orchestration. It will call `Workspace.migrate()`, render the returned migration steps, and reuse the normal changeset preview/apply flow for the returned combined changeset.
 
 ## Compat Workspace
 
@@ -140,32 +140,42 @@ Compat-workspace loading and migration must participate in the same generic modu
 ```graphql
 extend type Workspace {
   """
-  Compute all explicit migrations needed for the current workspace.
-
-  Returns an empty list when no migration is needed.
+  Compute the explicit migration plan for the current workspace.
   """
-  migrate: [WorkspaceMigration!]!
+  migrate: WorkspaceMigration!
 }
 
 type WorkspaceMigration {
   """
-  Stable migration code identifying the migration flow.
+  Filesystem changes for the full migration plan.
+  """
+  changes: Changeset!
+
+  """
+  Logical migration steps, each identified by a stable code.
+  """
+  steps: [WorkspaceMigrationStep!]!
+}
+
+type WorkspaceMigrationStep {
+  """
+  Stable code identifying this logical migration step.
   New Dagger versions may introduce additional codes.
   """
   code: String!
 
   """
-  Generic summary of the migration's purpose and impact.
+  Generic summary of this step's purpose and impact.
   """
   description: String!
 
   """
-  Non-fatal warnings raised while planning this migration.
+  Non-fatal warnings raised while planning this step.
   """
   warnings: [String!]!
 
   """
-  Filesystem changes needed for this migration.
+  Filesystem changes for this step.
   """
   changes: Changeset!
 }
@@ -175,9 +185,10 @@ type WorkspaceMigration {
 
 The engine guarantees:
 
-- every returned `WorkspaceMigration.changes` is based on the same pre-migration workspace state
-- the returned list can be merged into a single `Changeset` without conflicts
-- an empty list means "no migration needed"
+- `WorkspaceMigration.changes` is based on the pre-migration workspace state
+- every returned step is based on that same pre-migration workspace state
+- `WorkspaceMigration.changes` is equivalent to merging all step changesets in order
+- `WorkspaceMigration.steps = []` and an empty `WorkspaceMigration.changes` means "no migration needed"
 - warnings are informational; they do not block application
 
 If a migration wants to create `.dagger/migration-report.md`, that file is part of `changes`. It is not modeled as separate API metadata.
@@ -190,19 +201,18 @@ Product code must not contain a second migration applier that writes files direc
 
 ```go
 func daggerMigrate(ctx context.Context, dag *dagger.Client) error {
-	migrations := dag.CurrentWorkspace().Migrate()
-	if len(migrations) == 0 {
+	migration := dag.CurrentWorkspace().Migrate()
+	if migration.Changes.IsEmpty() {
 		fmt.Println("No migration needed.")
 		return nil
 	}
 
-	for _, migration := range migrations {
-		renderMigrationHeader(migration.Code, migration.Description)
-		renderWarnings(migration.Warnings)
+	for _, step := range migration.Steps {
+		renderMigrationHeader(step.Code, step.Description)
+		renderWarnings(step.Warnings)
 	}
 
-	combined := dag.Changeset().WithChangesets(mapMigrationsToChangesets(migrations))
-	return renderOrApplyChangeset(combined)
+	return renderOrApplyChangeset(migration.Changes)
 }
 ```
 
@@ -241,15 +251,12 @@ Target explicit migration path:
 ```text
 dagger migrate
 └─ currentWorkspace.migrate()
-   ├─ detect workspace boundary
-   ├─ parse legacy dagger.json -> modules.ModuleConfig
-   ├─ build CompatWorkspace
-   ├─ convert CompatWorkspace into WorkspaceMigration values
-   └─ return metadata + changesets
+   ├─ read attached CompatWorkspace from current Workspace
+   ├─ convert CompatWorkspace into WorkspaceMigration
+   └─ return combined changeset + step metadata
 
 CLI
-└─ render migration list
-└─ merge changesets
+└─ render migration steps
 └─ preview/apply
 ```
 
@@ -263,7 +270,7 @@ CLI
    - or no workspace
 4. Attach the originating `CompatWorkspace` to the loaded `Workspace`.
 5. Add `Workspace.migrate()` in `core/schema/workspace.go`.
-6. Make `Workspace.migrate()` persist the same attached `CompatWorkspace` used by runtime compat mode.
+6. Make `Workspace.migrate()` persist the same attached `CompatWorkspace` used by runtime compat mode. It must not rediscover legacy config from disk.
 7. Keep `dagger migrate` generic. It must not perform `os.Stat`, `LocalMigrationIO`, or migration-specific filesystem orchestration.
 8. Keep one migration applier in product code: the changeset path. Direct host-mutation migration helpers must not remain in product code.
 9. Stop giving legacy `blueprint` and `toolchains` fields generic module-loading semantics outside compat projection.
@@ -274,10 +281,10 @@ CLI
 
 - This document does not define CWD-module behavior.
 - This document does not lock the exact internal Go fields of `CompatWorkspace`.
-- This document does not require multiple migration flows in the initial implementation; a single `legacy-dagger-json` flow is acceptable.
+- This document does not require multiple migration steps in the initial implementation; a single `legacy-dagger-json` step is acceptable.
 - This document does not rename existing `config.toml` `blueprint = true` surface by itself, though the longer-term direction is to align that with `entrypoint`.
 
 ## Notes
 
-- Returning a list from `Workspace.migrate()` is intentional. It leaves room for future independent migration flows without changing the top-level API.
-- Returning `Changeset!` directly from `Workspace.migrate` is too thin; the CLI needs code, description, and warnings for legible UX.
+- `Workspace.migrate()` returns one migration plan per workspace. Future expansion happens inside `steps`, not by returning multiple top-level migrations.
+- Returning `Changeset!` directly from `Workspace.migrate` is too thin; the CLI still needs per-step code, description, and warnings for legible UX.

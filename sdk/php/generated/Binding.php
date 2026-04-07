@@ -272,6 +272,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type WorkspaceMigrationStep
+     */
+    public function asWorkspaceMigrationStep(): WorkspaceMigrationStep
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspaceMigrationStep');
+        return new \Dagger\WorkspaceMigrationStep($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type WorkspaceModule
      */
     public function asWorkspaceModule(): WorkspaceModule

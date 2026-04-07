@@ -954,6 +954,17 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Load a WorkspaceMigrationStep from its ID.
+     */
+    public function loadWorkspaceMigrationStepFromID(
+        WorkspaceMigrationStepId|WorkspaceMigrationStep $id,
+    ): WorkspaceMigrationStep {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceMigrationStepFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceMigrationStep($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a WorkspaceModule from its ID.
      */
     public function loadWorkspaceModuleFromID(WorkspaceModuleId|WorkspaceModule $id): WorkspaceModule

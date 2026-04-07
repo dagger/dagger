@@ -117,12 +117,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),
 		dagql.Func("migrate", s.migrate).
 			DoNotCache("Plans workspace migration against live host filesystem").
-			Doc("Plan explicit migrations needed for the current workspace.",
-				"Returns an empty list when no migration is needed."),
+			Doc("Plan the explicit migration needed for the current workspace.",
+				"The returned plan has an empty changeset and no steps when no migration is needed."),
 	}.Install(srv)
 
 	dagql.Fields[*core.WorkspaceModule]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
+	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
 }
 
 func (s *workspaceSchema) currentWorkspace(
