@@ -38,28 +38,6 @@ type CompatMainModule struct {
 	Entry      ModuleEntry
 }
 
-// LegacyWorkspace and LegacyWorkspaceModule remain as compatibility aliases
-// for the narrower pre-compat naming used by current callers and tests.
-type LegacyWorkspace = CompatWorkspace
-type LegacyWorkspaceModule = CompatWorkspaceModule
-
-// LegacyToolchain represents a toolchain extracted from a legacy dagger.json,
-// with constructor arg defaults already resolved from customizations.
-type LegacyToolchain struct {
-	Name           string
-	Source         string
-	Pin            string
-	ConfigDefaults map[string]any
-	Customizations []*modules.ModuleConfigArgument
-}
-
-// LegacyBlueprint represents a blueprint extracted from a legacy dagger.json.
-type LegacyBlueprint struct {
-	Name   string
-	Source string
-	Pin    string
-}
-
 // ParseCompatWorkspace parses an eligible legacy dagger.json into the shared
 // compat-workspace representation. Returns nil if the legacy config does not
 // create ambient workspace context.
@@ -80,59 +58,6 @@ func ParseCompatWorkspaceAt(data []byte, configPath string) (*CompatWorkspace, e
 		return nil, nil
 	}
 	return buildCompatWorkspace(cfg, configPath), nil
-}
-
-// ParseLegacyWorkspace preserves the previous helper name while returning the
-// full compat-workspace projection.
-func ParseLegacyWorkspace(data []byte) (*LegacyWorkspace, error) {
-	return ParseCompatWorkspace(data)
-}
-
-// ParseLegacyBlueprint parses a legacy dagger.json and extracts its blueprint.
-// Returns nil if no blueprint is present.
-func ParseLegacyBlueprint(data []byte) (*LegacyBlueprint, error) {
-	legacyWorkspace, err := ParseLegacyWorkspace(data)
-	if err != nil {
-		return nil, err
-	}
-	blueprint := legacyWorkspace.Blueprint()
-	if blueprint == nil {
-		return nil, nil
-	}
-	return &LegacyBlueprint{
-		Name:   blueprint.Name,
-		Source: blueprint.Source,
-		Pin:    blueprint.Pin,
-	}, nil
-}
-
-// ParseLegacyToolchains parses a legacy dagger.json and extracts its toolchains
-// with their constructor arg defaults. Returns nil if no toolchains are present.
-func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error) {
-	legacyWorkspace, err := ParseLegacyWorkspace(data)
-	if err != nil {
-		return nil, err
-	}
-	if legacyWorkspace == nil {
-		return nil, nil
-	}
-	result := make([]LegacyToolchain, 0, len(legacyWorkspace.Modules))
-	for _, mod := range legacyWorkspace.Modules {
-		if mod.Entry.Blueprint {
-			continue
-		}
-		result = append(result, LegacyToolchain{
-			Name:           mod.Name,
-			Source:         mod.Source,
-			Pin:            mod.Pin,
-			ConfigDefaults: cloneConfigDefaults(mod.Entry.Config),
-			Customizations: cloneCustomizations(mod.ArgCustomizations),
-		})
-	}
-	if len(result) == 0 {
-		return nil, nil
-	}
-	return result, nil
 }
 
 func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatWorkspace {

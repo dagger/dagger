@@ -37,7 +37,7 @@ var migrateCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("migration failed: %w", err)
 			}
-			if migration.Changes.ID == "" {
+			if migration.Changes.IsEmpty {
 				_, err := fmt.Fprintln(cmd.OutOrStdout(), "No migration needed.")
 				return err
 			}
@@ -68,7 +68,8 @@ var migrateCmd = &cobra.Command{
 
 type workspaceMigrationResponse struct {
 	Changes struct {
-		ID dagger.ChangesetID `json:"id"`
+		ID      dagger.ChangesetID `json:"id"`
+		IsEmpty bool               `json:"isEmpty"`
 	} `json:"changes"`
 	Steps []workspaceMigrationStepResponse `json:"steps"`
 }
@@ -77,9 +78,6 @@ type workspaceMigrationStepResponse struct {
 	Code        string   `json:"code"`
 	Description string   `json:"description"`
 	Warnings    []string `json:"warnings"`
-	Changes     struct {
-		ID dagger.ChangesetID `json:"id"`
-	} `json:"changes"`
 }
 
 func currentWorkspaceMigration(ctx context.Context, dag *dagger.Client) (*workspaceMigrationResponse, error) {
@@ -88,8 +86,8 @@ func currentWorkspaceMigration(ctx context.Context, dag *dagger.Client) (*worksp
 		Select("currentWorkspace").
 		Select("migrate").
 		SelectMultiple(
-			"changes{id}",
-			"steps{code description warnings changes{id}}",
+			"changes{id isEmpty}",
+			"steps{code description warnings}",
 		).
 		Bind(&migration).
 		Execute(ctx)
@@ -104,8 +102,13 @@ func init() {
 	setWorkspaceFlagPolicy(migrateCmd, workspaceFlagPolicyDisallow)
 }
 
-func detectMigrationTarget(cwd string) (*workspacecfg.ErrMigrationRequired, string, error) {
-	configPath := filepath.Join(cwd, workspacecfg.ModuleConfigFileName)
+type migrationTarget struct {
+	ConfigPath  string
+	ProjectRoot string
+}
+
+func probeMigratableModuleConfig(dir string) (*migrationTarget, string, error) {
+	configPath := filepath.Join(dir, workspacecfg.ModuleConfigFileName)
 	switch _, err := os.Stat(configPath); {
 	case os.IsNotExist(err):
 		return nil, "No migration needed: no dagger.json found.", nil
@@ -113,7 +116,7 @@ func detectMigrationTarget(cwd string) (*workspacecfg.ErrMigrationRequired, stri
 		return nil, "", fmt.Errorf("checking %s: %w", configPath, err)
 	}
 
-	workspaceConfigPath := filepath.Join(cwd, workspacecfg.LockDirName, workspacecfg.ConfigFileName)
+	workspaceConfigPath := filepath.Join(dir, workspacecfg.LockDirName, workspacecfg.ConfigFileName)
 	switch _, err := os.Stat(workspaceConfigPath); {
 	case err == nil:
 		return nil, "No migration needed: workspace already initialized.", nil
@@ -133,10 +136,14 @@ func detectMigrationTarget(cwd string) (*workspacecfg.ErrMigrationRequired, stri
 		return nil, "No migration needed: legacy dagger.json does not create compat workspace.", nil
 	}
 
-	return &workspacecfg.ErrMigrationRequired{
+	return &migrationTarget{
 		ConfigPath:  configPath,
-		ProjectRoot: cwd,
+		ProjectRoot: dir,
 	}, "", nil
+}
+
+func detectMigrationTarget(cwd string) (*migrationTarget, string, error) {
+	return probeMigratableModuleConfig(cwd)
 }
 
 func migrateListModules(cmd *cobra.Command) error {
@@ -178,23 +185,11 @@ func findMigratableModuleConfigs(root string) ([]string, error) {
 			return nil
 		}
 
-		dir := filepath.Dir(path)
-		workspaceConfigPath := filepath.Join(dir, workspacecfg.LockDirName, workspacecfg.ConfigFileName)
-		if _, err := os.Stat(workspaceConfigPath); err == nil {
-			return nil
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-
-		data, err := os.ReadFile(path)
+		target, _, err := probeMigratableModuleConfig(filepath.Dir(path))
 		if err != nil {
 			return err
 		}
-		compatWorkspace, err := workspacecfg.ParseCompatWorkspace(data)
-		if err != nil {
-			return err
-		}
-		if compatWorkspace == nil {
+		if target == nil {
 			return nil
 		}
 

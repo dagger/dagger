@@ -11,17 +11,6 @@ import (
 	"github.com/dagger/dagger/core/modules"
 )
 
-// ErrMigrationRequired indicates a dagger.json needs migration to the
-// workspace format.
-type ErrMigrationRequired struct {
-	ConfigPath  string
-	ProjectRoot string
-}
-
-func (e *ErrMigrationRequired) Error() string {
-	return `Migration required: run "dagger migrate" to update this project to the workspace format.`
-}
-
 // isLocalRef performs a fast heuristic check to determine whether a module
 // reference string refers to a local path instead of a git source.
 func isLocalRef(source, pin string) bool {
