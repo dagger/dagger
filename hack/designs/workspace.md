@@ -183,9 +183,9 @@ The flag is an opaque string passed to the engine, which resolves it (local path
 
 `--workspace` does not change the process working directory. The hidden legacy `--workdir` flag changes cwd but carries no workspace semantics. When both are present, `--workdir` applies first, then `--workspace` is interpreted relative to the resulting cwd.
 
-Commands that accept `--workspace`: `call`, `functions`, `check`, `generate`, `workspace info`, `workspace list`, `init`, `install`, `update`, `lock update`, `workspace config`.
+Commands that accept `--workspace`: `call`, `functions`, `check`, `generate`, `workspace info`, `workspace list`, `init`, `install`, `update`, `lock update`, `workspace config`, `config` (alias of `workspace config`).
 
-Commands that are module-centric or otherwise unrelated (`config`, `migrate`, `module ...`) reject `--workspace`.
+Commands that are module-centric or otherwise unrelated (`migrate`, `module ...`) reject `--workspace`.
 
 #### Remote Workspaces
 
@@ -708,6 +708,7 @@ This is distinct from workspace → module dependencies, which are project confi
 | `dagger install` | Adds code dependency to a module | Adds a module to the workspace |
 | `dagger call` | Loads module from `dagger.json` | Loads modules from workspace config |
 | `dagger call -m` | Specifies the current module | Loads an explicit module, skips workspace modules |
+| `dagger config` | Reads module config/metadata | Alias of `dagger workspace config` |
 
 ### Removed Commands
 

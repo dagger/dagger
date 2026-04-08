@@ -425,7 +425,7 @@ func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
 }
 
 func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
-	if commandName(cmd) == "workspace config" && len(args) == 2 {
+	if isWorkspaceConfigCommand(cmd) && len(args) == 2 {
 		return workspaceFlagPolicyLocalOnly
 	}
 
@@ -436,6 +436,15 @@ func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
 	}
 
 	return ""
+}
+
+func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
+	switch commandName(cmd) {
+	case "config", "workspace config":
+		return true
+	default:
+		return false
+	}
 }
 
 func isObviouslyRemoteWorkspaceRef(ref string) bool {

@@ -198,9 +198,6 @@ func init() {
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
 
-	// module management commands
-	moduleAddFlags(configCmd, configCmd.PersistentFlags(), false)
-
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
 	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")

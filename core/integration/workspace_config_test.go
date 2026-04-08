@@ -140,6 +140,24 @@ entrypoint = true
 	})
 }
 
+func (WorkspaceSuite) TestConfigAlias(ctx context.Context, t *testctx.T) {
+	workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.greeter]
+source = "modules/greeter"
+entrypoint = true
+`)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.greeter.source")
+	require.NoError(t, err)
+	require.Equal(t, "modules/greeter", strings.TrimSpace(string(out)))
+
+	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.greeter.entrypoint", "false")
+	require.NoError(t, err)
+
+	out, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.entrypoint")
+	require.NoError(t, err)
+	require.Equal(t, "false", strings.TrimSpace(string(out)))
+}
+
 func (WorkspaceSuite) TestWorkspaceConfigRequiresInit(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)

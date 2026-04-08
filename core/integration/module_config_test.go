@@ -476,55 +476,6 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 	})
 }
 
-// test the `dagger config` command
-func (ConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	ctr := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--sdk=go", "test"))
-
-	for _, tc := range []struct {
-		name       string
-		workdir    string
-		modFlagVal string
-	}{
-		{
-			name:    "from source root",
-			workdir: "/work/test",
-		},
-		{
-			name:       "from source root parent",
-			workdir:    "/work",
-			modFlagVal: "test",
-		},
-		{
-			// find-up should work
-			name:    "from subdir",
-			workdir: "/work/test/some/subdir",
-		},
-		{
-			// not sure why anyone would do this, but it should work
-			name:       "from subdir with mod flag",
-			workdir:    "/work/test/some/subdir",
-			modFlagVal: "..",
-		},
-	} {
-		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			out, err := ctr.
-				WithWorkdir(tc.workdir).
-				With(daggerExec("config", "-m", tc.modFlagVal)).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Regexp(t, `Name:\s+test`, out)
-			require.Regexp(t, `SDK:\s+go`, out)
-			require.Regexp(t, `Context Directory:\s+/work`, out)
-			require.Regexp(t, `Source Root Directory:\s+/work/test`, out)
-		})
-	}
-}
-
 func (ConfigSuite) TestSDKConfig(ctx context.Context, t *testctx.T) {
 	t.Run("go sdk", func(ctx context.Context, t *testctx.T) {
 		testcases := []struct {

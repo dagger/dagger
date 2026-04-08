@@ -47,6 +47,7 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 }
 
 func TestWorkspaceCommandGrouping(t *testing.T) {
+	require.Equal(t, workspaceGroup.ID, configCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, initCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, workspaceCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, moduleDepInstallCmd.GroupID)
@@ -77,6 +78,7 @@ func TestRootHelpShowsWorkspaceCommandGroup(t *testing.T) {
 	require.NotEqual(t, -1, moduleIdx)
 
 	workspaceSection := help[workspaceIdx:moduleIdx]
+	require.Contains(t, workspaceSection, "  config")
 	require.Contains(t, workspaceSection, "  init")
 	require.Contains(t, workspaceSection, "  install")
 	require.Contains(t, workspaceSection, "  update")
@@ -120,6 +122,14 @@ func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
 	require.Equal(t, "w", webFlag.Shorthand)
 }
 
+func TestConfigAliasFlags(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"config"})
+	require.NoError(t, err)
+	require.Same(t, configCmd, cmd)
+	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("json"))
+}
+
 func TestWorkspaceFlagPolicy(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
 	t.Cleanup(func() {
@@ -129,6 +139,8 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	workspaceRef = "github.com/acme/ws"
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil), "must be a local path")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(migrateCmd, nil), "not supported")
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source", "x"}), "must be a local path")
+	require.NoError(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source"}))
 

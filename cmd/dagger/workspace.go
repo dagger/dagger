@@ -81,24 +81,7 @@ With two arguments, sets the value at the given key.
 Local module source values are stored relative to .dagger/config.toml, so they may
 look different from the resolved paths shown by "dagger workspace list".`,
 	Args: cobra.MaximumNArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{
-			SkipWorkspaceModules: true,
-		}, func(ctx context.Context, engineClient *client.Client) error {
-			ws := engineClient.Dagger().CurrentWorkspace()
-
-			switch len(args) {
-			case 0:
-				return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, "")
-			case 1:
-				return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0])
-			case 2:
-				return writeWorkspaceConfig(ctx, ws, args[0], args[1])
-			default:
-				return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
-			}
-		})
-	},
+	RunE: runWorkspaceConfig,
 }
 
 var workspaceListCmd = &cobra.Command{
@@ -177,6 +160,25 @@ func runWorkspaceInit(cmd *cobra.Command, _ []string) error {
 
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Initialized workspace in %s\n", configDir)
 		return err
+	})
+}
+
+func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		ws := engineClient.Dagger().CurrentWorkspace()
+
+		switch len(args) {
+		case 0:
+			return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, "")
+		case 1:
+			return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0])
+		case 2:
+			return writeWorkspaceConfig(ctx, ws, args[0], args[1])
+		default:
+			return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
+		}
 	})
 }
 

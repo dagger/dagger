@@ -89,13 +89,13 @@ a workspace binding.
 - `update`
 - `lock update`
 - `workspace config`
+- `config` (alias of `workspace config`)
 
 ### Reject `--workspace`
 
 Reject in the CLI for commands that are module-centric or otherwise unrelated to
 workspace selection:
 
-- `config`
 - `migrate`
 - `module ...`
 - `toolchain ...`
@@ -112,6 +112,7 @@ Examples:
 - `update`
 - `lock update`
 - `workspace config <key> <value>`
+- `config <key> <value>` (alias of `workspace config <key> <value>`)
 
 Important rule:
 
