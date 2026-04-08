@@ -12,6 +12,7 @@ import (
 
 type Driver interface {
 	// Available returns true if the driver backend is running and available for use.
+	//
 	// Deprecated: only used by deprecated GetDriver()
 	Available(ctx context.Context) (bool, error)
 
