@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type querySchema struct {
@@ -205,11 +206,12 @@ func (s *querySchema) schemaJSONFile(
 	}
 
 	file := &core.File{
-		File:     schemaJSONFilename,
 		Platform: parent.Self().Platform(),
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
 
-	if err := file.WithContents(ctx, dirInst, moduleSchemaJSON, perm, nil); err != nil {
+	if err := file.WithContents(ctx, dirInst, schemaJSONFilename, moduleSchemaJSON, perm, nil); err != nil {
 		return inst, err
 	}
 

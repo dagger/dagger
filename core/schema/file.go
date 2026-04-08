@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type fileSchema struct{}
@@ -156,14 +158,7 @@ func (s *fileSchema) contents(ctx context.Context, file dagql.ObjectResult[*core
 	OffsetLines *int
 	LimitLines  *int
 }) (dagql.String, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := cache.Evaluate(ctx, file); err != nil {
-		return "", err
-	}
-	content, err := file.Self().Contents(ctx, args.OffsetLines, args.LimitLines)
+	content, err := file.Self().Contents(ctx, file, args.OffsetLines, args.LimitLines)
 	if err != nil {
 		return "", err
 	}
@@ -172,14 +167,7 @@ func (s *fileSchema) contents(ctx context.Context, file dagql.ObjectResult[*core
 }
 
 func (s *fileSchema) size(ctx context.Context, file dagql.ObjectResult[*core.File], args struct{}) (dagql.Int, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return 0, err
-	}
-	if err := cache.Evaluate(ctx, file); err != nil {
-		return 0, err
-	}
-	info, err := file.Self().Stat(ctx)
+	info, err := file.Self().Stat(ctx, file)
 	if err != nil {
 		return 0, err
 	}
@@ -187,19 +175,16 @@ func (s *fileSchema) size(ctx context.Context, file dagql.ObjectResult[*core.Fil
 	return dagql.NewInt(info.Size), nil
 }
 
-func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
-	return dagql.NewString(filepath.Base(file.File)), nil
+func (s *fileSchema) name(ctx context.Context, file dagql.ObjectResult[*core.File], args struct{}) (dagql.String, error) {
+	filePath, err := file.Self().File.GetOrEval(ctx, file.Result)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(filepath.Base(filePath)), nil
 }
 
 func (s *fileSchema) stat(ctx context.Context, parent dagql.ObjectResult[*core.File], args struct{}) (*core.Stat, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
-	}
-	return parent.Self().Stat(ctx)
+	return parent.Self().Stat(ctx, parent)
 }
 
 type fileDigestArgs struct {
@@ -207,14 +192,7 @@ type fileDigestArgs struct {
 }
 
 func (s *fileSchema) digest(ctx context.Context, file dagql.ObjectResult[*core.File], args fileDigestArgs) (dagql.String, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := cache.Evaluate(ctx, file); err != nil {
-		return "", err
-	}
-	digest, err := file.Self().Digest(ctx, args.ExcludeMetadata)
+	digest, err := file.Self().Digest(ctx, file, args.ExcludeMetadata)
 	if err != nil {
 		return "", err
 	}
@@ -231,13 +209,23 @@ func (s *fileSchema) withName(ctx context.Context, parent dagql.ObjectResult[*co
 	if err != nil {
 		return inst, err
 	}
+	if dir, _ := filepath.Split(args.Name); dir != "" {
+		return inst, fmt.Errorf("file name %q must not contain a directory", args.Name)
+	}
 
-	file := core.NewFileChild(parent)
-	file.File = args.Name
-	file.Lazy = &core.FileWithNameLazy{
-		LazyState:  core.NewLazyState(),
-		Parent:     parent,
-		SourcePath: parent.Self().File,
+	file := &core.File{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.FileWithNameLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Filename:  args.Name,
+		},
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+	}
+	if parentPath, ok := parent.Self().File.Peek(); ok {
+		file.File.setValue(filepath.Join(filepath.Dir(parentPath), args.Name))
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
@@ -249,14 +237,7 @@ type fileExportArgs struct {
 }
 
 func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
-	}
-	return parent.Self().Search(ctx, args.SearchOpts, true)
+	return parent.Self().Search(ctx, parent, args.SearchOpts, true)
 }
 
 type fileReplaceArgs struct {
@@ -272,28 +253,29 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 		return inst, err
 	}
 
-	file := core.NewFileChild(parent)
-	file.Lazy = &core.FileWithReplacedLazy{
-		LazyState:   core.NewLazyState(),
-		Parent:      parent,
-		Search:      args.Search,
-		Replacement: args.Replacement,
-		FirstFrom:   args.FirstFrom,
-		All:         args.All,
+	file := &core.File{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.FileWithReplacedLazy{
+			LazyState:   core.NewLazyState(),
+			Parent:      parent,
+			Search:      args.Search,
+			Replacement: args.Replacement,
+			FirstFrom:   args.FirstFrom,
+			All:         args.All,
+		},
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+	}
+	if parentPath, ok := parent.Self().File.Peek(); ok {
+		file.File.setValue(parentPath)
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
 func (s *fileSchema) export(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileExportArgs) (dagql.String, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return "", err
-	}
-	err = parent.Self().Export(ctx, args.Path, args.AllowParentDirPath)
+	err := parent.Self().Export(ctx, parent, args.Path, args.AllowParentDirPath)
 	if err != nil {
 		return "", err
 	}
@@ -330,11 +312,19 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 		return inst, fmt.Errorf("failed to get Dagger server: %w", err)
 	}
 
-	f := core.NewFileChild(parent)
-	f.Lazy = &core.FileWithTimestampsLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Timestamp: args.Timestamp,
+	f := &core.File{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.FileWithTimestampsLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Timestamp: args.Timestamp,
+		},
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+	}
+	if parentPath, ok := parent.Self().File.Peek(); ok {
+		f.File.setValue(parentPath)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
@@ -353,24 +343,25 @@ func (s *fileSchema) chown(
 		return inst, err
 	}
 
-	f := core.NewFileChild(parent)
-	f.Lazy = &core.FileChownLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Owner:     args.Owner,
+	f := &core.File{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.FileChownLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Owner:     args.Owner,
+		},
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+	}
+	if parentPath, ok := parent.Self().File.Peek(); ok {
+		f.File.setValue(parentPath)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
 
 func (s *fileSchema) asJSON(ctx context.Context, parent dagql.ObjectResult[*core.File], args struct{}) (*core.JSONValue, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
-	}
-	json, err := parent.Self().AsJSON(ctx)
+	json, err := parent.Self().AsJSON(ctx, parent)
 	if err != nil {
 		return nil, err
 	}

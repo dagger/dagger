@@ -801,11 +801,10 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
-	parentDir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+	filename, err := fileResult.Self().File.GetOrEval(ctx, fileResult.Result)
 	if err != nil {
 		return inst, err
 	}
-	filename := path.Join(parentDir, args.Path)
 	dgst = hashutil.HashStrings(
 		filename,
 		string(dgst),
@@ -922,8 +921,12 @@ func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 			return inst, err
 		}
 
+		filePath, err := file.Self().File.GetOrEval(ctx, file.Result)
+		if err != nil {
+			return inst, err
+		}
 		withFileArgs := []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(path.Join(args.Path, path.Base(file.Self().File)))},
+			{Name: "path", Value: dagql.String(path.Join(args.Path, path.Base(filePath)))},
 			{Name: "source", Value: dagql.NewID[*core.File](fileID)},
 		}
 		if args.Permissions.Valid {

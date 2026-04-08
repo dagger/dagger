@@ -390,3 +390,315 @@
   * All lazy-sensitive directory reads go through `Dir` / `Snapshot` accessors.
   * All non-evaluating paths use `Peek()` only.
   * Empty/resolved directory states normalize back to canonical scratch rather than persisting nil snapshots.
+
+### File
+* **Target object shape**
+  * Hard-cut `core.File` to:
+    ```go
+    type File struct {
+    	Platform Platform
+    	Services ServiceBindings
+
+    	Lazy     Lazy[*File]
+    	File     *LazyAccessor[string, *File]
+    	Snapshot *LazyAccessor[bkcache.ImmutableRef, *File]
+    }
+    ```
+  * Delete `snapshotMu`, `snapshotReady`, `snapshotSource`, `getSnapshot`, `setSnapshot`, and `setSnapshotSource`.
+  * Delete `FileSnapshotSource`, `FileFromSourceLazy`, `NewFileChild`, `NewFileWithSnapshot`, and any helper that implicitly copies file state.
+  * `LazyAccessor.Peek` / `GetOrEval` semantics are exactly the same as for `Directory`.
+
+* **Core design rules**
+  * Every `File` allocates both accessors at construction time.
+  * `File` is not guaranteed to be peekable. `Peek()` is best-effort only.
+    * If code truly needs the selected file path, it must use `File.GetOrEval(...)`.
+    * If code must not evaluate, it must use `File.Peek()` and handle the missing case explicitly.
+  * `File` should be pre-seeded at construction time whenever the selected path is semantically known without evaluation.
+    * `withName` => full resulting path immediately when it can be derived from the parent selected path plus the rename argument
+    * `withReplaced`, `withTimestamps`, `chown` => same selected path as parent when already known
+    * `directory.file(path)` / `Subfile(path)` are the file equivalent of `subdirectory`: they are allowed to leave `File` unset until evaluation if the parent directory path is not already known
+  * `file.File` always means the full selected path inside the snapshot, never just a basename.
+    * `directory.file("foo/bar")` over a directory selected at `"/src"` means the resulting file path is `"/src/foo/bar"`.
+    * `withName("baz")` over a file selected at `"/src/foo/bar"` must produce the full resulting path, not just `"baz"`.
+  * For file-path composition in this model, use `filepath` consistently.
+    * We are on Linux in the engine and these are Linux paths, so consistency is more valuable than mixing `path` and `filepath`.
+  * We do not keep “resolved but nil snapshot” as a valid materialized file state.
+    * A materialized `File` must always have a real non-nil snapshot ref.
+    * No-op operations must reopen the existing parent snapshot instead of leaving `Snapshot` unset or explicitly nil.
+    * Missing-file states are errors, not a materialized “empty file” equivalent to directory scratch.
+  * Non-evaluating paths (`OnRelease`, cache usage, persisted snapshot-link reporting, persistence encode deciding lazy-vs-materialized form) must use `Peek()` only and must never call `GetOrEval`.
+  * We are not preserving a generic source-backed file abstraction on `File` itself during this cut.
+    * `FileSnapshotSource` and `FileFromSourceLazy` go away.
+    * The one real directory/file source case that matters in this bubble becomes a dedicated lazy op for `directory.file(...)`.
+
+* **Representative code shape**
+  * Materialized file construction:
+    ```go
+    file := &File{
+    	Platform: platform,
+    	Services: slices.Clone(services),
+    	File:     new(LazyAccessor[string, *File]),
+    	Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+    }
+    file.File.setValue(filePath)
+    file.Snapshot.setValue(snapshot)
+    ```
+  * Lazy file construction that preserves parent metadata explicitly:
+    ```go
+    file := &File{
+    	Platform: parent.Self().Platform,
+    	Services: slices.Clone(parent.Self().Services),
+    	Lazy:     &FileWithReplacedLazy{...},
+    	File:     new(LazyAccessor[string, *File]),
+    	Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+    }
+    if parentPath, ok := parent.Self().File.Peek(); ok {
+    	file.File.setValue(parentPath)
+    }
+    ```
+  * Directory subfile lazy shape:
+    ```go
+    file := &File{
+    	Platform: parent.Self().Platform,
+    	Services: slices.Clone(parent.Self().Services),
+    	Lazy: &FileSubfileLazy{
+    		LazyState: NewLazyState(),
+    		Parent:    parentDirectory,
+    		Path:      requestedPath,
+    	},
+    	File:     new(LazyAccessor[string, *File]),
+    	Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+    }
+    ```
+  * Mutator/evaluation shape:
+    ```go
+    parentPath, err := parent.Self().File.GetOrEval(ctx, parent.Result)
+    parentRef, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
+    file.File.setValue(parentPath)
+    // do work...
+    file.Snapshot.setValue(ref)
+    file.Lazy = nil
+    ```
+
+#### core/file.go
+* **Type / lifecycle surface**
+  * `type File`:
+    * remove all old snapshot-side state
+    * add accessor fields
+  * `OnRelease`:
+    * use `file.Snapshot.Peek()` only
+    * if unset, return nil; do not evaluate
+  * `AttachDependencyResults`:
+    * remove all source attachment logic from `File` itself
+    * if `file.Lazy == nil`, return nil
+    * otherwise delegate entirely to `file.Lazy.AttachDependencies`
+  * `LazyEvalFunc`:
+    * keep current shape and just call `file.Lazy.Evaluate`
+  * Delete any helper that copies hidden file state (`NewFileChild`, `NewFileWithSnapshot`, metadata sync helpers, source setters/getters).
+
+* **Cache usage / persistence**
+  * `CacheUsageSize`, `CacheUsageIdentities`, and `PersistedSnapshotRefLinks`:
+    * use `file.Snapshot.Peek()` only
+    * if unset, return empty/unknown without evaluation
+  * `EncodePersistedObject`:
+    * payload `File` comes from `file.File.Peek()`
+    * payload form is:
+      * `snapshot` if `Snapshot.Peek()` returns a real non-nil snapshot ref
+      * `lazy` if snapshot is unset and `file.Lazy != nil`
+      * error if neither is true
+    * it must never evaluate
+    * a materialized file with `Snapshot.Peek() == (nil, true)` is a bug
+  * `DecodePersistedObject`:
+    * allocate `File` and `Snapshot` accessors in both forms
+    * snapshot form:
+      * set `File` from payload
+      * load the persisted snapshot ref and set `Snapshot`
+      * leave `Lazy = nil`
+    * lazy form:
+      * set `File` from payload only if already known
+      * leave `Snapshot` unset
+      * decode and attach `Lazy`
+  * `decodePersistedFileLazy`:
+    * keep payload formats for mutator-style file lazy ops
+    * add dedicated payload decoding for `FileSubfileLazy`
+    * do not reconstruct old snapshot/source fields
+
+* **Lazy ops**
+  * Keep the mutator-style lazy ops for:
+    * `FileWithReplacedLazy`
+    * `FileWithNameLazy`
+    * `FileWithTimestampsLazy`
+    * `FileChownLazy`
+  * Change `FileWithNameLazy` payload shape:
+    * stop persisting `SourcePath`
+    * persist the target filename explicitly instead
+  * Add `FileSubfileLazy`:
+    * `Evaluate`:
+      * evaluate the parent directory
+      * compute the final selected file path from the parent directory path plus `Path`
+      * validate the path exists and is not a directory via `parent.Stat(...)`
+      * reopen the parent snapshot by `SnapshotID` onto the child file
+      * set both `File` and `Snapshot` on the child
+      * never materialize a nil snapshot
+    * `AttachDependencies`:
+      * attach/update the parent directory result
+    * `EncodePersisted`:
+      * persist `ParentResultID` plus `Path`
+  * We do not keep `FileFromSourceLazy`.
+
+* **Concrete method changes**
+  * `WithContents`:
+    * change signature to take the destination file path explicitly rather than reading output state opaquely
+    * use the parent directory snapshot accessor (`parent.Self().Snapshot.GetOrEval(ctx, parent.Result)`)
+    * set output `File` explicitly from the provided path
+    * set `Snapshot` on success
+  * `Contents`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `File.GetOrEval`
+  * `Open`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `File.GetOrEval`
+    * do not call `file.Lazy.Evaluate` directly
+  * `Search`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `File.GetOrEval`
+  * `Digest`:
+    * add the owning result wrapper parameter
+    * metadata-including path uses `Snapshot.GetOrEval` and `File.GetOrEval`
+    * metadata-excluding path delegates through `Open(ctx, self)`
+  * `Stat`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `File.GetOrEval`
+  * `Export`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `File.GetOrEval`
+  * `Mount`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `File.GetOrEval`
+  * `AsJSON` and `AsEnvFile`:
+    * add the owning result wrapper parameter
+    * delegate through `Contents(ctx, self, ...)`
+  * `WithReplaced`:
+    * read parent path/snapshot through accessors
+    * set output `File` explicitly from the parent path
+    * stop constructing a cloned `sourceFile` via `NewFileWithSnapshot`
+    * reuse the parent result directly for internal `Search` / `Contents` calls
+    * on no-op (`all == true` and no matches), reopen the parent snapshot and set it on the output file instead of returning with no snapshot
+  * `WithName`:
+    * stop mutating raw `file.File` before evaluation
+    * read the parent path/snapshot through accessors
+    * use the explicit rename argument from the lazy op / method argument
+    * compute the destination path explicitly from the parent selected path and the rename argument
+    * set output `File` to the full resulting path, never to the raw rename argument alone
+    * set `Snapshot` on success
+  * `WithTimestamps`:
+    * read parent path/snapshot through accessors
+    * set output `File` explicitly
+    * set `Snapshot` on success
+  * `Chown`:
+    * read parent path/snapshot through accessors
+    * set output `File` explicitly
+    * set `Snapshot` on success
+
+#### core/schema/file.go
+* **Resolver construction rule**
+  * Every resolver that returns a new `*core.File` must construct it explicitly inline.
+  * No use of `NewFileChild`, `NewFileWithSnapshot`, or any helper that hides which fields are copied.
+  * Every constructed file allocates both accessors.
+  * Constructors copy `Platform` and `Services` explicitly from `parent.Self()` where appropriate.
+  * Constructors pre-seed `File` when it is already semantically known and available via `Peek()`, but they do not force evaluation just to populate it.
+
+* **Materialized constructor**
+  * `query.file(...)` can stay as the selector chain through `query.directory().withNewFile(...).file(...)`.
+    * It does not need a separate direct file materialization path during this cut.
+
+* **Lazy constructor resolvers**
+  * `withName`
+    * inline construct the result file
+    * copy `Platform` and `Services` explicitly
+    * allocate `File` and `Snapshot`
+    * if the parent selected path is already known, pre-seed `File` to the full resulting path derived from the parent path plus the rename argument
+    * attach `FileWithNameLazy{Parent: parent, Filename: args.Name}`
+  * `withReplaced`
+    * inline construct the result file
+    * copy `Platform` and `Services` explicitly
+    * allocate `File` and `Snapshot`
+    * pre-seed `File` from `parent.Self().File.Peek()` when available
+    * attach `FileWithReplacedLazy`
+  * `withTimestamps`
+    * inline construct the result file
+    * copy `Platform` and `Services` explicitly
+    * allocate `File` and `Snapshot`
+    * pre-seed `File` from `parent.Self().File.Peek()` when available
+    * attach `FileWithTimestampsLazy`
+  * `chown`
+    * inline construct the result file
+    * copy `Platform` and `Services` explicitly
+    * allocate `File` and `Snapshot`
+    * pre-seed `File` from `parent.Self().File.Peek()` when available
+    * attach `FileChownLazy`
+
+* **Resolvers that must stop reading raw file fields**
+  * `name`:
+    * change signature to accept `dagql.ObjectResult[*core.File]`
+    * call `file.Self().File.GetOrEval(ctx, file.Result)`
+  * `contents`, `size`, `stat`, `digest`, `search`, `export`, `exportLegacy`, `asJSON`:
+    * pass the owning result wrapper through to the updated core methods
+    * remove redundant `cache.Evaluate` when the core method already goes through `GetOrEval`
+
+#### directory/file boundary
+* **core/directory.go**
+  * `Subfile`:
+    * stop constructing a file with `setSnapshotSource`
+    * return an explicit lazy file using `FileSubfileLazy`
+  * `WithFile`:
+    * once file accessors land, replace `src.Self().getSnapshot()` and raw `src.Self().File` reads with:
+      * `src.Self().Snapshot.GetOrEval(ctx, src.Result)`
+      * `src.Self().File.GetOrEval(ctx, src.Result)`
+* **core/schema/directory.go**
+  * `file(...)`:
+    * after selecting the child file result, use the returned file accessor path for content hashing rather than reconstructing the path through raw parent state
+  * `withFiles(...)`:
+    * replace `path.Base(file.Self().File)` with accessor-based path retrieval from the source file result
+* **Path-semantics audit result**
+  * The intended invariant across the directory/file seam is:
+    * `dir.Dir` is the full selected directory path inside the snapshot
+    * `file.File` is the full selected file path inside the snapshot
+  * `Subfile`, `directory.file(...)`, `Directory.WithFile`, and `directory.withFiles(...)` should all preserve and consume that full-path model.
+  * The main currently-known divergence to fix is `withName`, which must preserve full-path semantics instead of treating the rename argument as the entire selected file path.
+
+#### Expected Fanout
+* This file cut will intentionally fan out outside the immediate bubble because many places still construct or consume `File` through the old raw-field helper model.
+* Expected follow-up compile breakage / update points include:
+  * [core/directory.go](/home/sipsma/repo/github.com/sipsma/dagger/core/directory.go)
+  * [core/schema/directory.go](/home/sipsma/repo/github.com/sipsma/dagger/core/schema/directory.go)
+  * [core/schema/query.go](/home/sipsma/repo/github.com/sipsma/dagger/core/schema/query.go)
+  * [core/container.go](/home/sipsma/repo/github.com/sipsma/dagger/core/container.go)
+  * [core/schema/container.go](/home/sipsma/repo/github.com/sipsma/dagger/core/schema/container.go)
+  * [core/container_exec.go](/home/sipsma/repo/github.com/sipsma/dagger/core/container_exec.go)
+  * [core/container_image.go](/home/sipsma/repo/github.com/sipsma/dagger/core/container_image.go)
+  * [core/http.go](/home/sipsma/repo/github.com/sipsma/dagger/core/http.go)
+  * [core/changeset.go](/home/sipsma/repo/github.com/sipsma/dagger/core/changeset.go)
+  * [core/llm.go](/home/sipsma/repo/github.com/sipsma/dagger/core/llm.go)
+  * [core/schema/envfile.go](/home/sipsma/repo/github.com/sipsma/dagger/core/schema/envfile.go)
+  * [core/schema/llm.go](/home/sipsma/repo/github.com/sipsma/dagger/core/schema/llm.go)
+  * [core/sdk/dang_helpers.go](/home/sipsma/repo/github.com/sipsma/dagger/core/sdk/dang_helpers.go)
+* Those are acceptable follow-up breakages for this phase. The goal of this plan is to get `File` itself, plus the immediate directory/file seam, into the right shape first.
+
+* **Done criterion for the file cut**
+  * `core/file.go` and `core/schema/file.go` have no remaining references to:
+    * `snapshotMu`
+    * `snapshotReady`
+    * `snapshotSource`
+    * `FileSnapshotSource`
+    * `FileFromSourceLazy`
+    * `getSnapshot`
+    * `setSnapshot`
+    * `setSnapshotSource`
+    * `NewFileChild`
+    * `NewFileWithSnapshot`
+    * any helper that implicitly copies file state
+  * All lazy-sensitive file reads go through `File` / `Snapshot` accessors.
+  * All non-evaluating file paths use `Peek()` only.
+  * No materialized file state can survive with a nil snapshot.
+  * The immediate directory/file seam (`Subfile`, `Directory.WithFile`, `directory.file`, `directory.withFiles`) is updated to the new file accessor model.

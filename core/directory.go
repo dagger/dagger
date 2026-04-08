@@ -1591,7 +1591,7 @@ func (dir *Directory) WithPatchFile(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return err
 	}
-	patchBytes, err := patch.Self().Contents(ctx, nil, nil)
+	patchBytes, err := patch.Self().Contents(ctx, patch, nil, nil)
 	if err != nil {
 		if !errors.Is(err, errEmptyResultRef) {
 			return err
@@ -1725,45 +1725,21 @@ func (e notADirectoryError) Unwrap() error {
 }
 
 func (dir *Directory) Subfile(ctx context.Context, parent dagql.ObjectResult[*Directory], file string) (*File, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	srv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
-	}
-	parentDir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
-	if err != nil {
-		return nil, err
-	}
-	stat, err := parent.Self().Stat(ctx, parent, srv, file, false)
-	if err != nil {
-		return nil, err
-	}
-	if stat.FileType == FileTypeDirectory {
-		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", file)}
-	}
-
-	filePath := path.Join(parentDir, file)
+	_ = ctx
 	subfile := &File{
-		File:     filePath,
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
+		Lazy: &FileSubfileLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Path:      file,
+		},
+		File:     new(LazyAccessor[string, *File]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	if err := subfile.setSnapshotSource(FileSnapshotSource{Directory: parent}); err != nil {
-		return nil, err
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		subfile.File.setValue(filepath.Join(parentDir, file))
 	}
-
 	return subfile, nil
 }
 
@@ -2603,9 +2579,16 @@ func (dir *Directory) WithFile(
 		return err
 	}
 	dir.Dir.setValue(ourDir)
-	srcCacheRef, err := src.Self().getSnapshot()
+	srcPath, err := src.Self().File.GetOrEval(ctx, src.Result)
 	if err != nil {
 		return err
+	}
+	srcCacheRef, err := src.Self().Snapshot.GetOrEval(ctx, src.Result)
+	if err != nil {
+		return err
+	}
+	if srcCacheRef == nil {
+		return fmt.Errorf("with file: nil source snapshot")
 	}
 
 	dirCacheRef, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
@@ -2625,7 +2608,7 @@ func (dir *Directory) WithFile(
 		}
 	}
 	newRef, err := query.SnapshotManager().New(ctx, dirCacheRef, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(src.Self().File))))
+		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(srcPath))))
 	if err != nil {
 		return err
 	}
@@ -2652,7 +2635,7 @@ func (dir *Directory) WithFile(
 			return err
 		}
 		if destIsDir {
-			_, srcFilename := filepath.Split(src.Self().File)
+			_, srcFilename := filepath.Split(srcPath)
 			mntedDestPath = path.Join(mntedDestPath, srcFilename)
 		}
 
@@ -2704,7 +2687,7 @@ func (dir *Directory) WithFile(
 
 	var realSrcPath string
 	if err := MountRef(ctx, srcCacheRef, func(root string, srcMnt *mount.Mount) (rerr error) {
-		srcPath, err := containerdfs.RootPath(root, src.Self().File)
+		resolvedSrcPath, err := containerdfs.RootPath(root, srcPath)
 		if err != nil {
 			return err
 		}
@@ -2712,7 +2695,7 @@ func (dir *Directory) WithFile(
 		if err != nil {
 			return err
 		}
-		realSrcPath, err = srcResolver(srcPath)
+		realSrcPath, err = srcResolver(resolvedSrcPath)
 		if err != nil {
 			return err
 		}
