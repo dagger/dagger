@@ -1,3 +1,14 @@
+"""Controls the caching behavior of a function."""
+directive @cache(
+  """The cache policy to use."""
+  policy: FunctionCachePolicy
+
+  """
+  The time-to-live for cached results, as a duration string (e.g. "5m", "1h30s"). Only valid with the Default policy.
+  """
+  ttl: String
+) on FIELD_DEFINITION
+
 """Indicates that this function is a check."""
 directive @check on FIELD_DEFINITION
 
