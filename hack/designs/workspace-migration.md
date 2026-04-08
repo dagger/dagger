@@ -117,6 +117,23 @@ The target is:
 
 This simplification is intentional. It is not just cleanup left for later.
 
+### 4a. Follow-Up Improvement: Recursive Local Migration
+
+As a follow-up improvement, `dagger migrate` may recursively migrate a local path dependency that turns out to be a legacy workspace rather than a plain module.
+
+This should only happen when all of the following are true:
+
+- the dependency is a local path
+- that path resolves to a compat workspace
+- that compat workspace has an unambiguous projected main module
+
+In that case, migration may:
+
+- recursively migrate the dependency project
+- rewrite the parent source to point at the migrated main module under `.dagger/modules/<name>/`
+
+This follow-up does not apply to remote dependencies, or to legacy workspaces with no obvious single module target. Those cases should continue to fail with an explicit error.
+
 ### 5. Migration Equivalence
 
 This must hold:
