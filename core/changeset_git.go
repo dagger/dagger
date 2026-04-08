@@ -29,6 +29,8 @@ type lineChanges struct {
 // -z uses NUL delimiters so filenames with spaces/newlines are handled correctly.
 func compareDirectories(ctx context.Context, oldDir, newDir string) (fileChanges, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--name-status", "-z", oldDir, newDir)
+	// Avoid inheriting a caller cwd with a broken worktree .git file.
+	cmd.Dir = oldDir
 	out, err := cmd.Output()
 	if err != nil {
 		// git diff exits 1 when differences exist, which is not an error here.
@@ -43,6 +45,8 @@ func compareDirectories(ctx context.Context, oldDir, newDir string) (fileChanges
 // compareDirectoriesNumStat returns per-file line-change counts between two directories.
 func compareDirectoriesNumStat(ctx context.Context, oldDir, newDir string) (map[string]lineChanges, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--numstat", "-z", oldDir, newDir)
+	// Avoid inheriting a caller cwd with a broken worktree .git file.
+	cmd.Dir = oldDir
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
