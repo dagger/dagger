@@ -162,12 +162,8 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return nil, err
 	}
 
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	updatedDir := baseDir
+	dirSchema := &directorySchema{}
 
 	if plan.SourceCopyPath != "" {
 		if err := func() (rerr error) {
@@ -178,26 +174,18 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 			if err != nil {
 				return fmt.Errorf("migration source directory %q: %w", plan.SourceCopyPath, err)
 			}
-			if err := srv.Select(copyCtx, updatedDir, &updatedDir,
-				dagql.Selector{
-					Field: "withDirectory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyDest)))},
-						{Name: "directory", Value: dagql.NewID[*core.Directory](srcDir.ID())},
-					},
-				},
-			); err != nil {
+			updatedDir, err = dirSchema.withDirectory(copyCtx, updatedDir, WithDirectoryArgs{
+				Path:   path.Clean(filepath.ToSlash(plan.SourceCopyDest)),
+				Source: dagql.NewID[*core.Directory](srcDir.ID()),
+			})
+			if err != nil {
 				return fmt.Errorf("migration copy source directory: %w", err)
 			}
 			if plan.RemoveOldSource {
-				if err := srv.Select(copyCtx, updatedDir, &updatedDir,
-					dagql.Selector{
-						Field: "withoutDirectory",
-						Args: []dagql.NamedInput{
-							{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyPath)))},
-						},
-					},
-				); err != nil {
+				updatedDir, err = dirSchema.withoutDirectory(copyCtx, updatedDir, withoutDirectoryArgs{
+					Path: path.Clean(filepath.ToSlash(plan.SourceCopyPath)),
+				})
+				if err != nil {
 					return fmt.Errorf("migration remove old source directory: %w", err)
 				}
 			}
@@ -208,27 +196,27 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	}
 
 	if len(plan.MigratedModuleConfigData) > 0 {
-		updatedDir, err = withWorkspaceMigrationFile(ctx, srv, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "write migrated module config")
+		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "write migrated module config")
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	updatedDir, err = withWorkspaceMigrationFile(ctx, srv, updatedDir, filepath.Join(workspace.LockDirName, workspace.ConfigFileName), plan.WorkspaceConfigData, "write workspace config")
+	updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, filepath.Join(workspace.LockDirName, workspace.ConfigFileName), plan.WorkspaceConfigData, "write workspace config")
 	if err != nil {
 		return nil, err
 	}
 
 	if len(plan.MigrationReportData) > 0 {
 		workspaceMigrationConsole(ctx, "If you apply this migration, review %s.", plan.MigrationReportPath)
-		updatedDir, err = withWorkspaceMigrationFile(ctx, srv, updatedDir, plan.MigrationReportPath, plan.MigrationReportData, "write migration report")
+		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigrationReportPath, plan.MigrationReportData, "write migration report")
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if len(lockBytes) > 0 {
-		updatedDir, err = withWorkspaceMigrationFile(ctx, srv, updatedDir, filepath.Join(workspace.LockDirName, workspace.LockFileName), lockBytes, "write workspace lock")
+		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, filepath.Join(workspace.LockDirName, workspace.LockFileName), lockBytes, "write workspace lock")
 		if err != nil {
 			return nil, err
 		}
@@ -237,40 +225,34 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	if err := func() (rerr error) {
 		removeCtx, span := core.Tracer(ctx).Start(ctx, "remove legacy config")
 		defer telemetry.EndWithCause(span, &rerr)
-		return srv.Select(removeCtx, updatedDir, &updatedDir,
-			dagql.Selector{
-				Field: "withoutFile",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.NewString(workspace.ModuleConfigFileName)},
-				},
-			},
-		)
+		var err error
+		updatedDir, err = dirSchema.withoutFile(removeCtx, updatedDir, withoutFileArgs{
+			Path: workspace.ModuleConfigFileName,
+		})
+		return err
 	}(); err != nil {
 		return nil, fmt.Errorf("migration remove legacy config: %w", err)
 	}
 
-	var changes dagql.ObjectResult[*core.Changeset]
+	var changes *core.Changeset
 	if err := func() (rerr error) {
 		diffCtx, span := core.Tracer(ctx).Start(ctx, "compute migration changeset")
 		defer telemetry.EndWithCause(span, &rerr)
-		return srv.Select(diffCtx, updatedDir, &changes,
-			dagql.Selector{
-				Field: "changes",
-				Args: []dagql.NamedInput{
-					{Name: "from", Value: dagql.NewID[*core.Directory](baseDir.ID())},
-				},
-			},
-		)
+		var err error
+		changes, err = dirSchema.changes(diffCtx, updatedDir, struct {
+			From core.DirectoryID
+		}{
+			From: dagql.NewID[*core.Directory](baseDir.ID()),
+		})
+		return err
 	}(); err != nil {
 		return nil, fmt.Errorf("migration changeset: %w", err)
 	}
-
-	return changes.Self(), nil
+	return changes, nil
 }
 
 func withWorkspaceMigrationFile(
 	ctx context.Context,
-	srv *dagql.Server,
 	dir dagql.ObjectResult[*core.Directory],
 	filePath string,
 	contents []byte,
@@ -281,16 +263,12 @@ func withWorkspaceMigrationFile(
 	}
 	ctx, span := core.Tracer(ctx).Start(ctx, spanName)
 	defer telemetry.EndWithCause(span, &rerr)
-	if err := srv.Select(ctx, dir, &updated,
-		dagql.Selector{
-			Field: "withNewFile",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(filePath)))},
-				{Name: "contents", Value: dagql.String(string(contents))},
-				{Name: "permissions", Value: dagql.Int(0o644)},
-			},
-		},
-	); err != nil {
+	updated, err := (&directorySchema{}).withNewFile(ctx, dir, WithNewFileArgs{
+		Path:        path.Clean(filepath.ToSlash(filePath)),
+		Contents:    string(contents),
+		Permissions: 0o644,
+	})
+	if err != nil {
 		return dir, fmt.Errorf("migration write %q: %w", filePath, err)
 	}
 	return updated, nil
