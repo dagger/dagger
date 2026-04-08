@@ -161,8 +161,7 @@ func (dev *EngineDev) test(
 
 	cgoEnabledEnv := "0"
 	args := []string{
-		"go",
-		"test",
+		"otelgotest",
 	}
 
 	// allow verbose
@@ -310,6 +309,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 
 	utilDirPath := "/dagger-dev"
 	tests := dag.Go(dagger.GoOpts{Source: dev.sourceWithEbpfObjects()}).Env().
+		WithExec([]string{"go", "install", "github.com/dagger/otel-go/cmd/otelgotest"}).
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithServiceBinding("daggerengine", devEngineSvc).
