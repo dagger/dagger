@@ -162,13 +162,13 @@ type ModuleSource struct {
 	// Dependencies are the loaded sources for the module's dependencies
 	Dependencies dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
-	// Blueprint (from `dagger init --blueprint`)
+	// Blueprint (from legacy dagger.json)
 	ConfigBlueprint *modules.ModuleConfigDependency
-	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source."`
+	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source." deprecated:"Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead."`
 
-	// Toolchains (from `dagger toolchain install`)
+	// Toolchains (from legacy dagger.json)
 	ConfigToolchains []*modules.ModuleConfigDependency
-	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source."`
+	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source." deprecated:"Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead."`
 
 	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.

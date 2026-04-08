@@ -99,9 +99,12 @@ Legacy `dagger.json` fields:
 
 are interpreted only while building `CompatWorkspace`.
 
-Generic module loading may still parse and round-trip those fields, but outside compat-workspace construction they have no runtime effect. In particular, ordinary `asModule()` / module serving / extra-module loading must not load related modules or entrypoint behavior from them. A deprecation warning is acceptable.
+Generic module loading may still parse and round-trip those fields, but outside compat-workspace construction it must not give them runtime meaning. In particular, ordinary `asModule()` / module serving / extra-module loading must not load related modules or entrypoint behavior from them.
 
-This is an intentional target behavior change from the current code.
+If generic module loading encounters those fields:
+
+- direct module load must fail and direct the user to load the ref as a workspace instead
+- workspace module load must fail and explain that the source points at a legacy workspace, not a plain module
 
 ### 4. Simplification Opportunity
 
@@ -112,10 +115,10 @@ Once legacy `blueprint` and `toolchains` are confined to compat-workspace constr
 The target is:
 
 - compat workspace construction keeps the legacy behavior
-- generic module loading keeps only parse/round-trip support, plus optional warning behavior
+- generic module loading keeps only parse/round-trip support
 - generic blueprint/toolchain routing code is removed
 
-This simplification is intentional. It is not just cleanup left for later.
+This simplification is intentional.
 
 ### 4a. Follow-Up Improvement: Recursive Local Migration
 

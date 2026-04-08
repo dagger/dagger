@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,4 +59,59 @@ func TestModuleLocaLSource(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLegacyWorkspaceFieldHandling(t *testing.T) {
+	t.Parallel()
+
+	local := &core.ModuleSource{
+		Kind: core.ModuleSourceKindLocal,
+		Local: &core.LocalModuleSource{
+			ContextDirectoryPath: "/work/repo-b",
+		},
+		SourceRootSubpath: ".",
+		ConfigBlueprint: &modules.ModuleConfigDependency{
+			Name:   "bp",
+			Source: "./blueprint",
+		},
+		ConfigToolchains: []*modules.ModuleConfigDependency{{
+			Name:   "go",
+			Source: "./toolchains/go",
+		}},
+	}
+
+	require.True(t, usesLegacyWorkspaceFields(local))
+	require.Equal(t, []string{"blueprint", "toolchains"}, legacyWorkspaceFieldNames(local))
+
+	stripped := stripLegacyWorkspaceFields(local)
+	require.Nil(t, stripped.ConfigBlueprint)
+	require.Nil(t, stripped.ConfigToolchains)
+	require.False(t, usesLegacyWorkspaceFields(stripped))
+
+	require.EqualError(t,
+		directLegacyWorkspaceLoadError(local),
+		"cannot load this ref as a module: its dagger.json uses legacy workspace fields \"blueprint, toolchains\"\n\nload it as a workspace instead, for example with `-W`",
+	)
+	require.EqualError(t,
+		nestedLegacyWorkspaceLoadError(local),
+		"workspace module source \"/work/repo-b\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint, toolchains\"\n\nrun `dagger migrate` in \"/work/repo-b\", then update this source to point at one of the migrated modules under \"/work/repo-b/.dagger/modules\"",
+	)
+
+	remote := &core.ModuleSource{
+		Kind: core.ModuleSourceKindGit,
+		Git: &core.GitModuleSource{
+			CloneRef: "https://github.com/acme/repo-b",
+			Version:  "main",
+		},
+		SourceRootSubpath: ".",
+		ConfigBlueprint: &modules.ModuleConfigDependency{
+			Name:   "bp",
+			Source: "./blueprint",
+		},
+	}
+
+	require.EqualError(t,
+		nestedLegacyWorkspaceLoadError(remote),
+		"workspace module source \"https://github.com/acme/repo-b@main\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint\"\n\nuse a migrated ref that points at one of its real modules. If you control that repo, migrate it first",
+	)
 }
