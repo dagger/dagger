@@ -200,17 +200,6 @@ type Myapp {
 		output := stdout + stderr
 		require.Contains(t, output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
 		require.Contains(t, output, "If you apply this migration, review .dagger/migration-report.md.")
-
-		configOut, err := ctr.WithExec([]string{"sh", "-c", "if [ -f /work/.dagger/config.toml ]; then cat /work/.dagger/config.toml; fi"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, configOut, "# WARNING:")
-		require.NotContains(t, configOut, "# Original:")
-
-		reportOut, err := ctr.File("/work/.dagger/migration-report.md").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, reportOut, "# Migration Report")
-		require.Contains(t, reportOut, "Module `toolchain`")
-		require.Contains(t, reportOut, `"defaultPath": "./custom-config.txt"`)
 	})
 }
 

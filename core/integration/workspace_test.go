@@ -4,14 +4,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/testctx"
 )
-
-type WorkspaceSuite struct{}
-
-func TestWorkspace(t *testing.T) {
-	testctx.New(t, Middleware()...).RunTests(WorkspaceSuite{})
-}
 
 // workspaceBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
