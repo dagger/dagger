@@ -2,9 +2,10 @@ package schema
 
 import (
 	"context"
-	"path"
+	"path/filepath"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -22,13 +23,10 @@ func (s *workspaceSchema) moduleList(
 		return nil, err
 	}
 
-	configDir := path.Dir(parent.ConfigPath)
+	configDir := filepath.Dir(parent.ConfigPath)
 	modules := make(core.WorkspaceModules, 0, len(cfg.Modules))
 	for name, entry := range cfg.Modules {
-		source := entry.Source
-		if core.FastModuleSourceKindCheck(source, "") == core.ModuleSourceKindLocal {
-			source = path.Join(configDir, source)
-		}
+		source := filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 		modules = append(modules, &core.WorkspaceModule{
 			Name:       name,
 			Entrypoint: entry.Entrypoint,

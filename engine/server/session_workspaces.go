@@ -462,7 +462,7 @@ func workspaceConfigPendingModules(
 		}
 
 		if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
-			mod.Ref = resolveLocalRef(ws, filepath.Join(workspace.LockDirName, entry.Source))
+			mod.Ref = resolveLocalRef(ws, workspace.ResolveModuleEntrySource(workspace.LockDirName, entry.Source))
 		}
 
 		pending = append(pending, mod)

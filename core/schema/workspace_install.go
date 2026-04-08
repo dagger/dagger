@@ -80,46 +80,30 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 		return "", "", fmt.Errorf("dagql server: %w", err)
 	}
 
-	selector := workspaceInstallModuleSourceSelector(ref)
-
-	if name == "" {
-		var moduleName dagql.String
-		if err := srv.Select(ctx, srv.Root(), &moduleName,
-			selector,
-			dagql.Selector{Field: "moduleName"},
-		); err != nil {
-			return "", "", fmt.Errorf("resolve module name: %w", err)
-		}
-		name = string(moduleName)
+	var src dagql.ObjectResult[*core.ModuleSource]
+	if err := srv.Select(ctx, srv.Root(), &src, workspaceInstallModuleSourceSelector(ref)); err != nil {
+		return "", "", fmt.Errorf("load module source: %w", err)
 	}
-
-	var kind core.ModuleSourceKind
-	if err := srv.Select(ctx, srv.Root(), &kind,
-		selector,
-		dagql.Selector{Field: "kind"},
-	); err != nil {
-		return "", "", fmt.Errorf("resolve module source kind: %w", err)
+	source := src.Self()
+	if source == nil {
+		return "", "", fmt.Errorf("load module source: empty result")
+	}
+	if !source.ConfigExists {
+		return "", "", fmt.Errorf("ref %q does not point to an initialized module", ref)
+	}
+	if name == "" {
+		name = source.ModuleName
+	}
+	if name == "" {
+		return "", "", fmt.Errorf("ref %q does not point to an initialized module", ref)
 	}
 
 	sourcePath := ref
-	if kind != core.ModuleSourceKindLocal {
+	if source.Kind != core.ModuleSourceKindLocal {
 		return name, sourcePath, nil
 	}
-
-	var contextDirPath dagql.String
-	if err := srv.Select(ctx, srv.Root(), &contextDirPath,
-		selector,
-		dagql.Selector{Field: "localContextDirectoryPath"},
-	); err != nil {
-		return "", "", fmt.Errorf("resolve local context directory: %w", err)
-	}
-
-	var sourceRootSubpath dagql.String
-	if err := srv.Select(ctx, srv.Root(), &sourceRootSubpath,
-		selector,
-		dagql.Selector{Field: "sourceRootSubpath"},
-	); err != nil {
-		return "", "", fmt.Errorf("resolve source root subpath: %w", err)
+	if source.Local == nil {
+		return "", "", fmt.Errorf("resolve local module source %q: missing local metadata", ref)
 	}
 
 	workspaceConfigDir, err := workspaceHostPath(ws, workspace.LockDirName)
@@ -127,7 +111,7 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 		return "", "", err
 	}
 
-	depAbsPath := filepath.Join(string(contextDirPath), string(sourceRootSubpath))
+	depAbsPath := filepath.Join(source.Local.ContextDirectoryPath, source.SourceRootSubpath)
 	sourcePath, err = filepath.Rel(workspaceConfigDir, depAbsPath)
 	if err != nil {
 		return "", "", fmt.Errorf("compute relative install path: %w", err)

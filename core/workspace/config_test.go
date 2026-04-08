@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -164,5 +165,24 @@ func TestWriteConfigValue(t *testing.T) {
 
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
+	})
+}
+
+func TestResolveModuleEntrySource(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resolves relative local source from config dir", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, filepath.Clean(".dagger/modules/greeter"), ResolveModuleEntrySource(LockDirName, "modules/greeter"))
+	})
+
+	t.Run("preserves absolute local source", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, filepath.Clean("/tmp/greeter"), ResolveModuleEntrySource(LockDirName, "/tmp/greeter"))
+	})
+
+	t.Run("leaves remote source unchanged", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "github.com/dagger/dagger/modules/wolfi", ResolveModuleEntrySource(LockDirName, "github.com/dagger/dagger/modules/wolfi"))
 	})
 }

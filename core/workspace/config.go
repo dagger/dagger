@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -23,6 +24,23 @@ type ModuleEntry struct {
 	Config            map[string]any `toml:"config,omitempty"`
 	Entrypoint        bool           `toml:"entrypoint,omitempty"`
 	LegacyDefaultPath bool           `toml:"legacy-default-path,omitempty"`
+}
+
+// ResolveModuleEntrySource converts a workspace-config module source into the
+// path that should actually be loaded or displayed from the workspace root.
+// Relative local sources are resolved from the config directory; absolute local
+// sources are preserved as-is.
+func ResolveModuleEntrySource(configDir, source string) string {
+	if source == "" || !isLocalRef(source, "") {
+		return source
+	}
+	if filepath.IsAbs(source) {
+		return filepath.Clean(source)
+	}
+	if configDir == "" {
+		return filepath.Clean(source)
+	}
+	return filepath.Clean(filepath.Join(configDir, source))
 }
 
 // ParseConfig parses config.toml bytes into a workspace config.
