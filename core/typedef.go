@@ -100,7 +100,7 @@ func (fn *Function) Directives() []*ast.Directive {
 	}
 	if (fn.CachePolicy != "" && fn.CachePolicy != FunctionCachePolicyDefault) || fn.CacheTTLSeconds.Valid {
 		dir := &ast.Directive{
-			Name: "cached",
+			Name: "cache",
 			Arguments: ast.ArgumentList{
 				{
 					Name: "policy",

@@ -131,7 +131,7 @@ var moduleDirectives = []dagql.DirectiveSpec{
 		},
 	},
 	{
-		Name:        "cached",
+		Name:        "cache",
 		Description: dagql.FormatDescription(`Controls the caching behavior of a function.`),
 		Args: dagql.NewInputSpecs(
 			dagql.InputSpec{

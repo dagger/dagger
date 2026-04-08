@@ -474,7 +474,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 			sels = append(sels, dagql.Selector{
 				Field: "withUp",
 			})
-		case "cached":
+		case "cache":
 			var policy core.FunctionCachePolicy
 			var ttl string
 			for _, arg := range directive.Args {

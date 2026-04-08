@@ -7635,17 +7635,17 @@ export class Test {
 			sdk: "dang",
 			source: `
 type Test {
-  @cached(ttl: "40s")
+  @cache(ttl: "40s")
   pub testTtl: String! {
     UUID.v4
   }
 
-  @cached(policy: FunctionCachePolicy.PerSession)
+  @cache(policy: FunctionCachePolicy.PerSession)
   pub testCachePerSession: String! {
     UUID.v4
   }
 
-  @cached(policy: FunctionCachePolicy.Never)
+  @cache(policy: FunctionCachePolicy.Never)
   pub testNeverCache: String! {
     UUID.v4
   }
