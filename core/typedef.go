@@ -267,12 +267,14 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 	if modInst := mod.ModuleResult(); modInst.Self() != nil {
 		cachePolicy = fn.derivedCachePolicy(modInst.Self())
 	}
-	// TODO: optimize this later by skipping persistable marking for cache policies
-	// that can never be reused across sessions (e.g. per-session, never-cache).
 	spec.IsPersistable = true
 	switch cachePolicy {
 	case FunctionCachePolicyNever:
 		spec.DoNotCache = "function explicitly marked as never cache"
+		spec.IsPersistable = false
+
+	case FunctionCachePolicyPerSession:
+		spec.IsPersistable = false
 
 	case FunctionCachePolicyDefault:
 		if fn.CacheTTLSeconds.Valid {
