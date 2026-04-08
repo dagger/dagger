@@ -1485,11 +1485,14 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		return nil, fmt.Errorf("attach dependency result: missing shared result")
 	}
 	if shared.id != 0 {
-		c.registerLazyEvaluation(shared, res)
+		loaded, err := c.ensurePersistedHitValueLoaded(ctx, resolver, res)
+		if err != nil {
+			return nil, fmt.Errorf("attach dependency result: refresh cache-backed value: %w", err)
+		}
 		touchSharedResultLastUsed(shared, time.Now().UnixNano())
 		c.traceAttachResultReusedCacheBacked(ctx, sessionID, shared)
-		c.trackSessionResult(ctx, sessionID, res, true)
-		return res, nil
+		c.trackSessionResult(ctx, sessionID, loaded, true)
+		return loaded, nil
 	}
 	frame := shared.loadResultCall()
 	if frame == nil {

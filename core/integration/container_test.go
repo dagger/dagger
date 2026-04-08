@@ -2156,7 +2156,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						directory(path: "/mnt/dir/some-file") {
-							id
+							sync
 						}
 					}
 				}
@@ -2173,7 +2173,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						directory(path: "/mnt/dir/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2190,7 +2190,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedTemp(path: "/mnt/tmp") {
 						directory(path: "/mnt/tmp/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2206,7 +2206,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
 						directory(path: "/mnt/cache/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2382,7 +2382,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						file(path: "/mnt/dir/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2401,7 +2401,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						file(path: "/mnt/dir") {
-							id
+							sync
 						}
 					}
 				}
@@ -2420,7 +2420,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedTemp(path: "/mnt/tmp") {
 						file(path: "/mnt/tmp/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2438,7 +2438,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
 						file(path: "/mnt/cache/bogus") {
-							id
+							sync
 						}
 					}
 				}

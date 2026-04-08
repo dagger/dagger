@@ -106,6 +106,15 @@ func NewFileChild(parent dagql.ObjectResult[*File]) *File {
 	return &cp
 }
 
+func (file *File) syncMetadataFromParent(parent *File) {
+	if file == nil || parent == nil {
+		return
+	}
+	file.File = parent.File
+	file.Platform = parent.Platform
+	file.Services = slices.Clone(parent.Services)
+}
+
 func NewFileWithSnapshot(filePath string, platform Platform, services ServiceBindings, snapshot bkcache.ImmutableRef) (*File, error) {
 	if snapshot == nil {
 		return nil, fmt.Errorf("new file with snapshot: nil snapshot")
@@ -1078,7 +1087,6 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 }
 
 func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File], filename string) error {
-	sourcePath := file.File
 	file.File = filename
 
 	query, err := CurrentQuery(ctx)
@@ -1092,6 +1100,9 @@ func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File]
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return err
 	}
+	sourcePath := parent.Self().File
+	file.syncMetadataFromParent(parent.Self())
+	file.File = filename
 	parentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
@@ -1144,6 +1155,7 @@ func (file *File) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return err
 	}
+	file.syncMetadataFromParent(parent.Self())
 	parentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
@@ -1197,6 +1209,11 @@ func (frc fileReadCloser) Close() error {
 var _ io.ReadCloser = fileReadCloser{}
 
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
+	if file.Lazy != nil {
+		if err := file.Lazy.Evaluate(ctx, file); err != nil {
+			return nil, err
+		}
+	}
 	snapshot, err := file.getSnapshot()
 	if err != nil {
 		return nil, err
@@ -1329,6 +1346,7 @@ func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], o
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return err
 	}
+	file.syncMetadataFromParent(parent.Self())
 	parentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err

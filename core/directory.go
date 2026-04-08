@@ -100,6 +100,15 @@ func NewDirectoryChild(parent dagql.ObjectResult[*Directory]) *Directory {
 	return &cp
 }
 
+func (dir *Directory) syncMetadataFromParent(parent *Directory) {
+	if dir == nil || parent == nil {
+		return
+	}
+	dir.Dir = parent.Dir
+	dir.Platform = parent.Platform
+	dir.Services = slices.Clone(parent.Services)
+}
+
 func NewDirectoryWithSnapshot(dir string, platform Platform, services ServiceBindings, snapshot bkcache.ImmutableRef) (*Directory, error) {
 	if snapshot == nil {
 		return nil, fmt.Errorf("new directory with snapshot: nil snapshot")
@@ -1416,6 +1425,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, parent dagql.ObjectResult
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	parentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
@@ -1603,6 +1613,7 @@ func (dir *Directory) WithPatchFile(ctx context.Context, parent dagql.ObjectResu
 	if err := cache.Evaluate(ctx, parent, patch); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	parentRef, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
@@ -1703,7 +1714,6 @@ func cleanDotsAndSlashes(path string) string {
 }
 
 func (dir *Directory) Subdirectory(ctx context.Context, parent dagql.ObjectResult[*Directory], subdir string) (*Directory, error) {
-	dir = NewDirectoryChild(parent)
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, err
@@ -1711,6 +1721,8 @@ func (dir *Directory) Subdirectory(ctx context.Context, parent dagql.ObjectResul
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return nil, err
 	}
+	dir.syncMetadataFromParent(parent.Self())
+	dir = NewDirectoryChild(parent)
 	if cleanDotsAndSlashes(subdir) == "" {
 		if err := dir.setSnapshotSource(parent); err != nil {
 			return nil, err
@@ -1777,6 +1789,7 @@ func (dir *Directory) Subfile(ctx context.Context, parent dagql.ObjectResult[*Di
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return nil, err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	stat, err := parent.Self().Stat(ctx, srv, file, false)
 	if err != nil {
 		return nil, err
@@ -1840,6 +1853,7 @@ func (dir *Directory) WithDirectory(
 	if err := dagqlCache.Evaluate(ctx, parent, src); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	dirRef, err := parent.Self().getSnapshot()
 	if err != nil {
 		return fmt.Errorf("failed to get directory ref: %w", err)
@@ -2046,6 +2060,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 	if err := dagqlCache.Evaluate(ctx, parent, src); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 
 	dirRef, err := parent.Self().getSnapshot()
 	if err != nil {
@@ -2603,6 +2618,7 @@ func (dir *Directory) WithFile(
 	if err := cache.Evaluate(ctx, parent, src); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	srcCacheRef, err := src.Self().getSnapshot()
 	if err != nil {
 		return err
@@ -2768,6 +2784,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectRes
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	parentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
@@ -2826,6 +2843,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, parent dagql.ObjectR
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	parentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
@@ -2928,6 +2946,7 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 	if err := cache.Evaluate(ctx, parent, changes); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -3068,6 +3087,7 @@ func (dir *Directory) Without(ctx context.Context, parent dagql.ObjectResult[*Di
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	parentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
@@ -3267,6 +3287,7 @@ func (dir *Directory) WithSymlink(ctx context.Context, parent dagql.ObjectResult
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	parentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
@@ -3390,6 +3411,7 @@ func (dir *Directory) Chown(ctx context.Context, parent dagql.ObjectResult[*Dire
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return err
 	}
+	dir.syncMetadataFromParent(parent.Self())
 	parentSnapshot, err := parent.Self().getSnapshot()
 	if err != nil {
 		return err
