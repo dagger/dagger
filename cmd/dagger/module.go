@@ -409,8 +409,8 @@ dagger module init --sdk=go
 				blueprintSrc := dag.ModuleSource(initBlueprint, dagger.ModuleSourceOpts{
 					DisableFindUp: true,
 				})
-				// Install the blueprint
-				modSrc = modSrc.WithBlueprint(blueprintSrc)
+				// Install the blueprint while the CLI still supports the legacy flag.
+				modSrc = modSrc.WithBlueprint(blueprintSrc) //nolint:staticcheck
 			}
 
 			if selfCalls {
@@ -448,9 +448,7 @@ With module names, refresh only those modules from .dagger/config.toml.
 `,
 	Example: `"dagger update" or "dagger update wolfi"`,
 	GroupID: workspaceGroup.ID,
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		return runWorkspaceUpdate(cmd, extraArgs)
-	},
+	RunE:    runWorkspaceUpdate,
 }
 
 var moduleDepInstallCmd = &cobra.Command{
@@ -522,9 +520,7 @@ To update only specific dependencies, specify their short names or a complete ad
 If no dependency is specified, all dependencies are updated.
 `,
 	Example: `"dagger module update" or "dagger module update hello" "dagger module update github.com/shykes/daggerverse/hello@v0.3.0"`,
-	RunE: func(cmd *cobra.Command, extraArgs []string) error {
-		return runModuleDependencyUpdate(cmd, extraArgs)
-	},
+	RunE:    runModuleDependencyUpdate,
 }
 
 var moduleDevelopCmd = &cobra.Command{

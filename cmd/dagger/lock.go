@@ -70,9 +70,7 @@ With no module names, refresh entries already recorded in .dagger/lock.
 
 With module names, refresh only those modules from .dagger/config.toml.`,
 	Args: cobra.ArbitraryArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runWorkspaceUpdate(cmd, args)
-	},
+	RunE: runWorkspaceUpdate,
 }
 
 func runWorkspaceUpdate(cmd *cobra.Command, moduleNames []string) error {

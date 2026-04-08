@@ -572,6 +572,7 @@ func (s *moduleSourceSchema) localModuleSource(
 	return dagql.NewResultForCurrentID(ctx, localSrc)
 }
 
+//nolint:gocyclo // Lockfile-aware git source resolution is easier to follow as one flow.
 func (s *moduleSourceSchema) gitModuleSource(
 	ctx context.Context,
 	query dagql.ObjectResult[*core.Query],

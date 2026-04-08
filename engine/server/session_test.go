@@ -81,7 +81,7 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 		return "/resolved/" + filepath.Clean(relPath)
 	}
 
-	pending, err := workspaceConfigPendingModules(ws, &workspace.Config{
+	pending := workspaceConfigPendingModules(ws, &workspace.Config{
 		DefaultsFromDotEnv: true,
 		Modules: map[string]workspace.ModuleEntry{
 			"zeta": {
@@ -94,7 +94,6 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 			},
 		},
 	}, resolveLocalRef)
-	require.NoError(t, err)
 	require.Len(t, pending, 2)
 
 	require.Equal(t, "alpha", pending[0].Name)

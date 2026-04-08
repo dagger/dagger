@@ -435,9 +435,9 @@ func workspaceConfigPendingModules(
 	ws *workspace.Workspace,
 	cfg *workspace.Config,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
-) ([]pendingModule, error) {
+) []pendingModule {
 	if cfg == nil || len(cfg.Modules) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	names := make([]string, 0, len(cfg.Modules))
@@ -468,7 +468,7 @@ func workspaceConfigPendingModules(
 		pending = append(pending, mod)
 	}
 
-	return pending, nil
+	return pending
 }
 
 func pendingLegacyModule(
@@ -613,10 +613,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// --- Gather all modules to load ---
 	var pending []pendingModule
 
-	pending, err = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
-	if err != nil {
-		return err
-	}
+	pending = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
 
 	// (1) Ambient compat-workspace modules projected from legacy dagger.json.
 	if compatWorkspace != nil {
@@ -851,21 +848,6 @@ func (srv *Server) resolveModuleLoad(
 		primary:           primary,
 		primaryEntrypoint: load.mod.Entrypoint,
 	}, nil
-}
-
-func (srv *Server) resolveModuleSourceAsModule(
-	ctx context.Context,
-	dag *dagql.Server,
-	src dagql.ObjectResult[*core.ModuleSource],
-) (*core.Module, error) {
-	var resolved dagql.ObjectResult[*core.Module]
-	err := dag.Select(ctx, src, &resolved,
-		dagql.Selector{Field: "asModule"},
-	)
-	if err != nil {
-		return nil, err
-	}
-	return resolved.Self(), nil
 }
 
 // serveAllResolvedModuleLoads serves all resolved primary modules and their

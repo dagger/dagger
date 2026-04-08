@@ -4,7 +4,7 @@ import "github.com/vektah/gqlparser/v2/ast"
 
 // WorkspaceMigration describes the explicit migration plan for a workspace.
 type WorkspaceMigration struct {
-	Changes *Changeset                 `field:"true" doc:"Filesystem changes for the full migration plan."`
+	Changes *Changeset                `field:"true" doc:"Filesystem changes for the full migration plan."`
 	Steps   []*WorkspaceMigrationStep `field:"true" doc:"Logical migration steps, each identified by a stable code."`
 }
 

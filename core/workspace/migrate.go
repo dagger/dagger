@@ -94,27 +94,22 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 		plan.Warnings = append(plan.Warnings, w.message)
 	}
 
-	wsCfg := &Config{Modules: make(map[string]ModuleEntry)}
-	if compatWorkspace != nil {
-		wsCfg = compatWorkspace.WorkspaceConfig()
-	}
-	if needsProjectModuleMigration && compatWorkspace != nil && compatWorkspace.MainModule != nil {
+	wsCfg := compatWorkspace.WorkspaceConfig()
+	if needsProjectModuleMigration && compatWorkspace.MainModule != nil {
 		wsCfg.Modules[cfg.Name] = compatWorkspace.MainModule.Entry
 	}
 	plan.WorkspaceConfigData = SerializeConfig(wsCfg)
 
 	migrateLock := NewLock()
 	hasLockEntries := false
-	if compatWorkspace != nil {
-		for _, mod := range compatWorkspace.Modules {
-			addMigrationLookupSource(plan, mod.Entry.Source)
+	for _, mod := range compatWorkspace.Modules {
+		addMigrationLookupSource(plan, mod.Entry.Source)
 
-			if mod.Pin != "" {
-				if err := setMigrationModuleResolvePin(migrateLock, mod.Entry.Source, mod.Pin); err != nil {
-					return nil, fmt.Errorf("setting lock for module %q: %w", mod.ConfigName, err)
-				}
-				hasLockEntries = true
+		if mod.Pin != "" {
+			if err := setMigrationModuleResolvePin(migrateLock, mod.Entry.Source, mod.Pin); err != nil {
+				return nil, fmt.Errorf("setting lock for module %q: %w", mod.ConfigName, err)
 			}
+			hasLockEntries = true
 		}
 	}
 	finalizeMigrationLookupSources(plan)

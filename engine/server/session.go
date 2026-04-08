@@ -1631,7 +1631,7 @@ func (srv *Server) loadWorkspaceLockStateLocked(
 	if err != nil {
 		return nil, err
 	}
-	lock, _, err := readWorkspaceLockState(workspaceCtx, bk, ws)
+	lock, err := readWorkspaceLockState(workspaceCtx, bk, ws)
 	if err != nil {
 		return nil, err
 	}
@@ -1683,25 +1683,25 @@ func workspaceLockPath(ws *core.Workspace) (string, error) {
 
 func readWorkspaceLockState(ctx context.Context, bk interface {
 	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
-}, ws *core.Workspace) (*workspace.Lock, bool, error) {
+}, ws *core.Workspace) (*workspace.Lock, error) {
 	lockPath, err := workspaceLockPath(ws)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	data, err := bk.ReadCallerHostFile(ctx, lockPath)
 	if err != nil {
 		if isWorkspaceLockNotFound(err) {
-			return workspace.NewLock(), false, nil
+			return workspace.NewLock(), nil
 		}
-		return nil, false, fmt.Errorf("reading lock: %w", err)
+		return nil, fmt.Errorf("reading lock: %w", err)
 	}
 
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
-		return nil, false, fmt.Errorf("parsing lock: %w", err)
+		return nil, fmt.Errorf("parsing lock: %w", err)
 	}
-	return lock, true, nil
+	return lock, nil
 }
 
 func isWorkspaceLockNotFound(err error) bool {
@@ -1775,7 +1775,7 @@ func (srv *Server) flushWorkspaceLocks(ctx context.Context, client *daggerClient
 		workspaceCtx, bk, err := srv.workspaceOwnerAccess(ctx, sess, export.ws)
 		if err == nil {
 			var latest *workspace.Lock
-			latest, _, err = readWorkspaceLockState(workspaceCtx, bk, export.ws)
+			latest, err = readWorkspaceLockState(workspaceCtx, bk, export.ws)
 			if err == nil {
 				err = latest.Merge(export.delta)
 			}
