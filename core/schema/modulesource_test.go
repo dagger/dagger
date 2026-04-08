@@ -80,20 +80,20 @@ func TestLegacyWorkspaceFieldHandling(t *testing.T) {
 		}},
 	}
 
-	require.True(t, usesLegacyWorkspaceFields(local))
-	require.Equal(t, []string{"blueprint", "toolchains"}, legacyWorkspaceFieldNames(local))
+	require.True(t, local.UsesLegacyWorkspaceFields())
+	require.Equal(t, []string{"blueprint", "toolchains"}, local.LegacyWorkspaceFieldNames())
 
-	stripped := stripLegacyWorkspaceFields(local)
+	stripped := local.StripLegacyWorkspaceFields()
 	require.Nil(t, stripped.ConfigBlueprint)
 	require.Nil(t, stripped.ConfigToolchains)
-	require.False(t, usesLegacyWorkspaceFields(stripped))
+	require.False(t, stripped.UsesLegacyWorkspaceFields())
 
 	require.EqualError(t,
-		directLegacyWorkspaceLoadError(local),
+		local.DirectLegacyWorkspaceLoadError(),
 		"cannot load this ref as a module: its dagger.json uses legacy workspace fields \"blueprint, toolchains\"\n\nload it as a workspace instead, for example with `-W`",
 	)
 	require.EqualError(t,
-		nestedLegacyWorkspaceLoadError(local),
+		local.NestedLegacyWorkspaceLoadError(),
 		"workspace module source \"/work/repo-b\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint, toolchains\"\n\nrun `dagger migrate` in \"/work/repo-b\", then update this source to point at one of the migrated modules under \"/work/repo-b/.dagger/modules\"",
 	)
 
@@ -111,7 +111,7 @@ func TestLegacyWorkspaceFieldHandling(t *testing.T) {
 	}
 
 	require.EqualError(t,
-		nestedLegacyWorkspaceLoadError(remote),
+		remote.NestedLegacyWorkspaceLoadError(),
 		"workspace module source \"https://github.com/acme/repo-b@main\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint\"\n\nuse a migrated ref that points at one of its real modules. If you control that repo, migrate it first",
 	)
 }

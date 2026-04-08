@@ -8,7 +8,7 @@ Locked.
 
 As a temporary compatibility stopgap, an eligible legacy `dagger.json` can stand in for a missing workspace config. The engine projects it into a compat workspace (`CompatWorkspace`), uses that result at runtime, and persists that same result during `dagger migrate`.
 
-Legacy `blueprint` and `toolchains` fields are interpreted only while building the compat workspace. Generic module loading otherwise ignores them, except for optional deprecation warnings.
+Legacy `blueprint` and `toolchains` fields are interpreted only while building the compat workspace. The compat main module is stripped before generic module loading, and other generic module loads fail instead of honoring those fields.
 
 Explicit migration persists the same compat workspace that runtime compat mode would build in memory. `dagger migrate` is therefore a thin CLI wrapper over `Workspace.migrate()`.
 
@@ -105,6 +105,8 @@ If generic module loading encounters those fields:
 
 - direct module load must fail and direct the user to load the ref as a workspace instead
 - workspace module load must fail and explain that the source points at a legacy workspace, not a plain module
+
+The compat main module is the only exception: compat construction strips those fields before the projected main module enters generic module loading.
 
 ### 4. Simplification Opportunity
 

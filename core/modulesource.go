@@ -305,6 +305,70 @@ func (src *ModuleSource) SetRelatedModules(typ ModuleRelationType, modules []dag
 	}
 }
 
+// LegacyWorkspaceFieldNames returns the legacy workspace-only dagger.json fields
+// currently stored on this module source.
+func (src *ModuleSource) LegacyWorkspaceFieldNames() []string {
+	var fields []string
+	if src != nil && src.ConfigBlueprint != nil {
+		fields = append(fields, "blueprint")
+	}
+	if src != nil && len(src.ConfigToolchains) > 0 {
+		fields = append(fields, "toolchains")
+	}
+	return fields
+}
+
+// UsesLegacyWorkspaceFields reports whether this module source still carries
+// legacy workspace-only dagger.json fields.
+func (src *ModuleSource) UsesLegacyWorkspaceFields() bool {
+	return len(src.LegacyWorkspaceFieldNames()) > 0
+}
+
+// StripLegacyWorkspaceFields clones the module source and removes any legacy
+// workspace-only dagger.json fields from the clone.
+func (src *ModuleSource) StripLegacyWorkspaceFields() *ModuleSource {
+	if src == nil {
+		return nil
+	}
+	stripped := src.Clone()
+	stripped.ConfigBlueprint = nil
+	stripped.Blueprint = dagql.ObjectResult[*ModuleSource]{}
+	stripped.ConfigToolchains = nil
+	stripped.Toolchains = nil
+	return stripped
+}
+
+// DirectLegacyWorkspaceLoadError returns the direct-load error for a module
+// source that still carries legacy workspace-only dagger.json fields.
+func (src *ModuleSource) DirectLegacyWorkspaceLoadError() error {
+	fields := strings.Join(src.LegacyWorkspaceFieldNames(), ", ")
+	return fmt.Errorf(
+		"cannot load this ref as a module: its dagger.json uses legacy workspace fields %q\n\nload it as a workspace instead, for example with `-W`",
+		fields,
+	)
+}
+
+// NestedLegacyWorkspaceLoadError returns the workspace-load error for a module
+// source that still points at a legacy workspace rather than a plain module.
+func (src *ModuleSource) NestedLegacyWorkspaceLoadError() error {
+	fields := strings.Join(src.LegacyWorkspaceFieldNames(), ", ")
+	ref := src.AsString()
+	if src.Kind == ModuleSourceKindLocal {
+		return fmt.Errorf(
+			"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nrun `dagger migrate` in %q, then update this source to point at one of the migrated modules under %q",
+			ref,
+			fields,
+			ref,
+			filepath.Join(ref, ".dagger", "modules"),
+		)
+	}
+	return fmt.Errorf(
+		"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nuse a migrated ref that points at one of its real modules. If you control that repo, migrate it first",
+		ref,
+		fields,
+	)
+}
+
 func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, error) {
 	// We only allow loading an env file from local modules, for safety
 	if src.Kind != ModuleSourceKindLocal {

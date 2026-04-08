@@ -33,9 +33,10 @@ type CompatWorkspaceModule struct {
 // part of the compat workspace so runtime compat can load it from the original
 // legacy location while migration persists it under .dagger/modules/<name>.
 type CompatMainModule struct {
-	Name       string
-	ConfigName string
-	Entry      ModuleEntry
+	Name                       string
+	ConfigName                 string
+	Entry                      ModuleEntry
+	StripLegacyWorkspaceFields bool
 }
 
 // ParseCompatWorkspace parses an eligible legacy dagger.json into the shared
@@ -118,6 +119,7 @@ func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatW
 				Source:     filepath.Join("modules", cfg.Name),
 				Entrypoint: cfg.Blueprint == nil,
 			},
+			StripLegacyWorkspaceFields: true,
 		}
 	}
 

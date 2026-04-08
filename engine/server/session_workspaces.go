@@ -325,6 +325,14 @@ func (srv *Server) detectAndLoadWorkspace(
 
 // pendingModule represents a module to be loaded from compat parsing,
 // -m flags, or the implicit CWD module.
+type legacyWorkspaceFieldPolicy uint8
+
+const (
+	legacyWorkspaceFieldPolicyDirect legacyWorkspaceFieldPolicy = iota
+	legacyWorkspaceFieldPolicyRejectAsWorkspace
+	legacyWorkspaceFieldPolicyStripCompatMain
+)
+
 type pendingModule struct {
 	Kind moduleLoadKind
 
@@ -355,9 +363,9 @@ type pendingModule struct {
 	DefaultsFromDotEnv bool
 	ArgCustomizations  []*modules.ModuleConfigArgument
 
-	// Strip legacy blueprint/toolchains fields before generic module loading.
-	// Used only for the top-level compat main module.
-	StripLegacyWorkspaceFields bool
+	// How legacy workspace-only dagger.json fields should be handled before
+	// generic module loading.
+	legacyFieldPolicy legacyWorkspaceFieldPolicy
 
 	// For legacy blueprints, the caller module's own .env should still behave
 	// like the "inner" env file even though the code now loads from the
@@ -450,6 +458,7 @@ func workspaceConfigPendingModules(
 			DisableFindUp:      true,
 			ConfigDefaults:     entry.Config,
 			DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
+			legacyFieldPolicy:  legacyWorkspaceFieldPolicyRejectAsWorkspace,
 		}
 
 		if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
@@ -485,6 +494,7 @@ func pendingLegacyModule(
 		LegacyDefaultPath: true,
 		ConfigDefaults:    configDefaults,
 		ArgCustomizations: argCustomizations,
+		legacyFieldPolicy: legacyWorkspaceFieldPolicyRejectAsWorkspace,
 	}
 	if kind == core.ModuleSourceKindLocal {
 		mod.RefPin = ""
@@ -622,13 +632,17 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		if compatWorkspace.MainModule != nil {
 			wsDir := filepath.Join(ws.Root, ws.Path)
 			rel, _ := filepath.Rel(wsDir, moduleDir)
-			pending = append(pending, pendingModule{
-				Kind:                       moduleLoadKindAmbient,
-				Ref:                        resolveLocalRef(ws, rel),
-				Name:                       compatWorkspace.MainModule.Name,
-				Entrypoint:                 compatWorkspace.MainModule.Entry.Entrypoint,
-				StripLegacyWorkspaceFields: true,
-			})
+			mod := pendingModule{
+				Kind:              moduleLoadKindAmbient,
+				Ref:               resolveLocalRef(ws, rel),
+				Name:              compatWorkspace.MainModule.Name,
+				Entrypoint:        compatWorkspace.MainModule.Entry.Entrypoint,
+				legacyFieldPolicy: legacyWorkspaceFieldPolicyDirect,
+			}
+			if compatWorkspace.MainModule.StripLegacyWorkspaceFields {
+				mod.legacyFieldPolicy = legacyWorkspaceFieldPolicyStripCompatMain
+			}
+			pending = append(pending, mod)
 		}
 	}
 
@@ -1123,6 +1137,18 @@ func (srv *Server) resolveModule(
 			return nil, err
 		}
 	}
+	if src.Self().UsesLegacyWorkspaceFields() {
+		switch mod.legacyFieldPolicy {
+		case legacyWorkspaceFieldPolicyStripCompatMain:
+			stripped, err := dagql.NewObjectResultForID(src.Self().StripLegacyWorkspaceFields(), dag, src.ID())
+			if err != nil {
+				return nil, fmt.Errorf("failed to strip legacy workspace fields from %q: %w", mod.Ref, err)
+			}
+			src = stripped
+		case legacyWorkspaceFieldPolicyRejectAsWorkspace:
+			return nil, src.Self().NestedLegacyWorkspaceLoadError()
+		}
+	}
 
 	// Build asModule args — legacy settings flow through dagql so they are
 	// applied before Install runs inside moduleSourceAsModule.
@@ -1160,17 +1186,6 @@ func (srv *Server) resolveModule(
 			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
 		})
 	}
-	if mod.Kind == moduleLoadKindAmbient {
-		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-			Name: "workspaceModuleLoad", Value: dagql.Boolean(true),
-		})
-	}
-	if mod.StripLegacyWorkspaceFields {
-		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-			Name: "stripLegacyWorkspaceFields", Value: dagql.Boolean(true),
-		})
-	}
-
 	var resolved dagql.ObjectResult[*core.Module]
 	err = dag.Select(ctx, src, &resolved,
 		dagql.Selector{Field: "asModule", Args: asModuleArgs},

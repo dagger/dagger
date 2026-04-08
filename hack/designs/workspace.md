@@ -324,7 +324,7 @@ A legacy `dagger.json` is eligible for compat if any of these are true:
 
 If a legacy `dagger.json` is found but is not eligible, it does not create ambient workspace context (it is a plain module).
 
-Legacy fields (`blueprint`, `toolchains`) are interpreted **only** while building the compat workspace. Generic module loading does not honor them outside this context; direct module load fails, and workspace module sources that still point at a legacy workspace fail with an explicit migration error.
+Legacy fields (`blueprint`, `toolchains`) are interpreted **only** while building the compat workspace. The compat main module is stripped before generic module loading; other generic module loads do not honor those fields. Direct module load fails, and workspace module sources that still point at a legacy workspace fail with an explicit migration error.
 
 Inside the compat workspace:
 - If a legacy `blueprint` exists, the blueprint module is the compat entrypoint.

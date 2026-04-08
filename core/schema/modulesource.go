@@ -1283,60 +1283,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	return nil
 }
 
-func legacyWorkspaceFieldNames(src *core.ModuleSource) []string {
-	var fields []string
-	if src != nil && src.ConfigBlueprint != nil {
-		fields = append(fields, "blueprint")
-	}
-	if src != nil && len(src.ConfigToolchains) > 0 {
-		fields = append(fields, "toolchains")
-	}
-	return fields
-}
-
-func usesLegacyWorkspaceFields(src *core.ModuleSource) bool {
-	return len(legacyWorkspaceFieldNames(src)) > 0
-}
-
-func stripLegacyWorkspaceFields(src *core.ModuleSource) *core.ModuleSource {
-	if src == nil {
-		return nil
-	}
-	stripped := src.Clone()
-	stripped.ConfigBlueprint = nil
-	stripped.Blueprint = dagql.ObjectResult[*core.ModuleSource]{}
-	stripped.ConfigToolchains = nil
-	stripped.Toolchains = nil
-	return stripped
-}
-
-func directLegacyWorkspaceLoadError(src *core.ModuleSource) error {
-	fields := strings.Join(legacyWorkspaceFieldNames(src), ", ")
-	return fmt.Errorf(
-		"cannot load this ref as a module: its dagger.json uses legacy workspace fields %q\n\nload it as a workspace instead, for example with `-W`",
-		fields,
-	)
-}
-
-func nestedLegacyWorkspaceLoadError(src *core.ModuleSource) error {
-	fields := strings.Join(legacyWorkspaceFieldNames(src), ", ")
-	ref := src.AsString()
-	if src.Kind == core.ModuleSourceKindLocal {
-		return fmt.Errorf(
-			"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nrun `dagger migrate` in %q, then update this source to point at one of the migrated modules under %q",
-			ref,
-			fields,
-			ref,
-			filepath.Join(ref, workspace.LockDirName, "modules"),
-		)
-	}
-	return fmt.Errorf(
-		"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nuse a migrated ref that points at one of its real modules. If you control that repo, migrate it first",
-		ref,
-		fields,
-	)
-}
-
 // load (or re-load) the context directory for the given module source
 func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
@@ -3295,15 +3241,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// LegacyDefaultsFromDotEnv, when true and workspace config is set,
 		// also load .env defaults for args not found in WorkspaceConfig.
 		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
-
-		// StripLegacyWorkspaceFields, when true, removes legacy workspace-only
-		// fields from the loaded module source before generic module loading.
-		// Used for the top-level compat main module only.
-		StripLegacyWorkspaceFields bool `internal:"true" default:"false"`
-
-		// WorkspaceModuleLoad indicates this module is being loaded as a module
-		// source from workspace configuration rather than directly.
-		WorkspaceModuleLoad bool `internal:"true" default:"false"`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -3315,18 +3252,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module name must be set")
 	}
 
-	if usesLegacyWorkspaceFields(src.Self()) {
-		if args.StripLegacyWorkspaceFields {
-			stripped, err := dagql.NewObjectResultForID(stripLegacyWorkspaceFields(src.Self()), dag, src.ID())
-			if err != nil {
-				return inst, fmt.Errorf("failed to strip legacy workspace fields: %w", err)
-			}
-			src = stripped
-		} else if args.WorkspaceModuleLoad {
-			return inst, nestedLegacyWorkspaceLoadError(src.Self())
-		} else {
-			return inst, directLegacyWorkspaceLoadError(src.Self())
-		}
+	if src.Self().UsesLegacyWorkspaceFields() {
+		return inst, src.Self().DirectLegacyWorkspaceLoadError()
 	}
 
 	// Check engine version compatibility
