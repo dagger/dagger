@@ -230,6 +230,7 @@ type Paths {
 
 func (WorkspaceSuite) TestMigrate(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
+	migrateApply := daggerExec("migrate", "-y")
 
 	t.Run("moves non-local source into workspace module", func(ctx context.Context, t *testctx.T) {
 		ctr := legacyWorkspaceBase(t, c, `{
@@ -244,7 +245,7 @@ type Myapp {
   }
 }
 `)
-		}).With(daggerExec("migrate"))
+		}).With(migrateApply)
 
 		_, err := ctr.WithExec([]string{"test", "-d", "ci"}).Sync(ctx)
 		require.Error(t, err, "old source directory 'ci' should have been removed")
@@ -300,7 +301,7 @@ type Myapp {
   "toolchains": [
     {"name": "tc", "source": "`+source+`"}
   ]
-}`).With(daggerExec("migrate"))
+}`).With(migrateApply)
 
 		lockOut, err := ctr.File("/work/.dagger/lock").Contents(ctx)
 		require.NoError(t, err)
@@ -365,7 +366,7 @@ type Myapp {
   ]
 }`)
 
-		out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+		out, err := ctr.With(migrateApply).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
 		require.NotContains(t, out, "defaultPath")
@@ -413,6 +414,59 @@ func (m *Hello) Greet(ctx context.Context) string {
 	require.NoError(t, err, string(out))
 	require.Contains(t, string(out), "Inferring workspace behavior from legacy module config.")
 	require.Contains(t, string(out), "hello from blueprint")
+}
+
+func (WorkspaceSuite) TestAbsoluteLocalWorkspaceModuleSource(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	depDir := t.TempDir()
+
+	initGitRepo(ctx, t, workdir)
+	initGitRepo(ctx, t, depDir)
+
+	_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
+
+type Dep struct{}
+
+func (m *Dep) Greet() string {
+	return "hello from absolute workspace module"
+}
+`), 0o644))
+
+	writeWorkspaceConfigFile(t, workdir, `[modules.dep]
+source = "`+depDir+`"
+entrypoint = true
+`)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "list")
+	require.NoError(t, err)
+	require.Contains(t, string(out), depDir)
+
+	out, err = hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
+	require.NoError(t, err)
+	require.Equal(t, "hello from absolute workspace module", strings.TrimSpace(string(out)))
+}
+
+func (WorkspaceSuite) TestLegacyWorkspaceDirectLoadError(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "toolchains", "go"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.json"), []byte(`{
+  "name": "app",
+  "toolchains": [
+    {
+      "name": "go",
+      "source": "./toolchains/go"
+    }
+  ]
+}`), 0o644))
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
+	require.Error(t, err)
+	requireErrOut(t, err, "cannot load this ref as a module")
+	requireErrOut(t, err, "load it as a workspace instead, for example with `-W`")
 }
 
 // TestWorkspaceArg verifies that a module function accepting a Workspace

@@ -191,6 +191,29 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 		require.Error(t, err)
 		requireErrOut(t, err, "unknown flag: --mod")
 	})
+
+	t.Run("rejects non-module directories without corrupting config", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		emptyDir := filepath.Join(workdir, "empty")
+
+		require.NoError(t, os.MkdirAll(emptyDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./empty")
+		require.Error(t, err)
+		requireErrOut(t, err, `ref "./empty" does not point to an initialized module`)
+
+		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+		require.NoError(t, err)
+		require.NotContains(t, string(configBytes), "[modules.]")
+
+		cfg, err := workspacecfg.ParseConfig(configBytes)
+		require.NoError(t, err)
+		require.Empty(t, cfg.Modules)
+	})
 }
 
 func (WorkspaceSuite) TestModuleInstallCommand(ctx context.Context, t *testctx.T) {
