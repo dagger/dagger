@@ -151,14 +151,9 @@ func (v sdkWorkspaceModuleView) Source(ctx context.Context) (string, error) {
 }
 
 func (v sdkWorkspaceModuleView) Entrypoint(ctx context.Context) (bool, error) {
-	if mod, ok := v.module.(interface {
-		Entrypoint(context.Context) (bool, error)
-	}); ok {
-		return mod.Entrypoint(ctx)
-	}
 	return v.module.(interface {
-		Blueprint(context.Context) (bool, error)
-	}).Blueprint(ctx)
+		Entrypoint(context.Context) (bool, error)
+	}).Entrypoint(ctx)
 }
 
 func init() {

@@ -110,8 +110,8 @@ func (s *workspaceSchema) workspaceMigrationLockBytes(
 		lock = workspace.NewLock()
 	}
 
-	refreshMods := make([]workspaceRefreshModule, 0, len(plan.Result.LookupSources))
-	for _, source := range plan.Result.LookupSources {
+	refreshMods := make([]workspaceRefreshModule, 0, len(plan.LookupSources))
+	for _, source := range plan.LookupSources {
 		if _, ok, err := lock.GetModuleResolve(source); err != nil {
 			return nil, err
 		} else if ok {
@@ -220,8 +220,8 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	}
 
 	if len(plan.MigrationReportData) > 0 {
-		workspaceMigrationConsole(ctx, "If you apply this migration, review %s.", plan.Result.MigrationReportPath)
-		updatedDir, err = withWorkspaceMigrationFile(ctx, srv, updatedDir, plan.Result.MigrationReportPath, plan.MigrationReportData, "write migration report")
+		workspaceMigrationConsole(ctx, "If you apply this migration, review %s.", plan.MigrationReportPath)
+		updatedDir, err = withWorkspaceMigrationFile(ctx, srv, updatedDir, plan.MigrationReportPath, plan.MigrationReportData, "write migration report")
 		if err != nil {
 			return nil, err
 		}
@@ -307,35 +307,35 @@ func workspaceMigrationProjectRootPath(ws *core.Workspace, plan *workspace.Migra
 	if ws.HostPath() == "" {
 		return "", fmt.Errorf("workspace migration is local-only")
 	}
-	if plan == nil || plan.Result == nil || plan.Result.ProjectRoot == "" {
+	if plan == nil || plan.ProjectRoot == "" {
 		return "", fmt.Errorf("migration project root is unavailable")
 	}
 
-	rel, err := filepath.Rel(ws.HostPath(), plan.Result.ProjectRoot)
+	rel, err := filepath.Rel(ws.HostPath(), plan.ProjectRoot)
 	if err != nil {
 		return "", fmt.Errorf("migration project root: %w", err)
 	}
 	rel = filepath.Clean(rel)
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("migration project root %q escapes workspace boundary %q", plan.Result.ProjectRoot, ws.HostPath())
+		return "", fmt.Errorf("migration project root %q escapes workspace boundary %q", plan.ProjectRoot, ws.HostPath())
 	}
 	return rel, nil
 }
 
 func workspaceMigrationWarnings(plan *workspace.MigrationPlan) []string {
-	if plan == nil || plan.Result == nil || len(plan.Result.Warnings) == 0 {
+	if plan == nil || len(plan.Warnings) == 0 {
 		return nil
 	}
 
-	warnings := make([]string, 0, len(plan.Result.Warnings))
-	nonGapCount := len(plan.Result.Warnings) - plan.GapCount
+	warnings := make([]string, 0, len(plan.Warnings))
+	nonGapCount := len(plan.Warnings) - plan.MigrationGapCount
 	if nonGapCount < 0 {
 		nonGapCount = 0
 	}
-	warnings = append(warnings, plan.Result.Warnings[:nonGapCount]...)
-	if plan.GapCount > 0 {
+	warnings = append(warnings, plan.Warnings[:nonGapCount]...)
+	if plan.MigrationGapCount > 0 {
 		warnings = append(warnings,
-			fmt.Sprintf("%d migration gap(s) need manual review; see %s", plan.GapCount, plan.Result.MigrationReportPath),
+			fmt.Sprintf("%d migration gap(s) need manual review; see %s", plan.MigrationGapCount, plan.MigrationReportPath),
 		)
 	}
 	return warnings

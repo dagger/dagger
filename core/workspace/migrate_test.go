@@ -63,7 +63,7 @@ func TestPlanMigrationReturnsLookupSources(t *testing.T) {
 	require.Equal(t, []string{
 		"github.com/acme/blueprint@v1.0.0",
 		"github.com/acme/toolchain@main",
-	}, plan.Result.LookupSources)
+	}, plan.LookupSources)
 }
 
 func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
@@ -91,12 +91,8 @@ func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
   ]
 }`)
 
-	require.Len(t, plan.Result.Warnings, 2)
-	require.Equal(t, filepath.Join(LockDirName, "migration-report.md"), plan.Result.MigrationReportPath)
-
-	summary := plan.Result.Summary()
-	require.Contains(t, summary, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
-	require.NotContains(t, summary, "defaultPath")
+	require.Len(t, plan.Warnings, 2)
+	require.Equal(t, filepath.Join(LockDirName, "migration-report.md"), plan.MigrationReportPath)
 
 	configData := string(plan.WorkspaceConfigData)
 	require.NotContains(t, configData, "# WARNING:")

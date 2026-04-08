@@ -23,27 +23,14 @@ func isLocalRef(source, pin string) bool {
 	return !strings.Contains(source, ".")
 }
 
-// MigrationResult holds the output of a successful migration.
-type MigrationResult struct {
-	ProjectRoot         string
-	ConfigPath          string
-	MigrationReportPath string
-	ModuleName          string
-	ModuleNewPath       string
-	OldSourcePath       string
-	LookupSources       []string
-	DepRewriteCount     int
-	IncRewriteCount     int
-	ToolchainCount      int
-	BlueprintMigrated   bool
-	RemovedFiles        []string
-	Warnings            []string
-}
-
 // MigrationPlan is the pure filesystem plan for migrating a legacy
 // dagger.json project to workspace format.
 type MigrationPlan struct {
-	Result                   *MigrationResult
+	ProjectRoot              string
+	LookupSources            []string
+	Warnings                 []string
+	MigrationGapCount        int
+	MigrationReportPath      string
 	WorkspaceConfigData      []byte
 	MigratedModuleConfigData []byte
 	MigratedModuleConfigPath string
@@ -52,41 +39,6 @@ type MigrationPlan struct {
 	RemoveOldSource          bool
 	MigrationReportData      []byte
 	LockData                 []byte
-	GapCount                 int
-}
-
-// Summary returns a human-readable summary of the migration.
-func (r *MigrationResult) Summary() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Migrated to workspace format: %s\n", r.ConfigPath)
-	if r.ModuleName != "" {
-		fmt.Fprintf(&b, "  Module %q configured at %s\n", r.ModuleName, r.ModuleNewPath)
-	}
-	if r.OldSourcePath != "" {
-		fmt.Fprintf(&b, "  Source moved: %s -> %s\n", r.OldSourcePath, r.ModuleNewPath)
-	}
-	if r.DepRewriteCount > 0 || r.IncRewriteCount > 0 {
-		fmt.Fprintf(&b, "  Rewritten %d dependency path(s), %d include path(s)\n", r.DepRewriteCount, r.IncRewriteCount)
-	}
-	if r.ToolchainCount > 0 {
-		fmt.Fprintf(&b, "  %d toolchain(s) converted to workspace modules\n", r.ToolchainCount)
-	}
-	if r.BlueprintMigrated {
-		b.WriteString("  Blueprint converted to workspace module\n")
-	}
-	for _, f := range r.RemovedFiles {
-		fmt.Fprintf(&b, "  Removed: %s\n", f)
-	}
-	if len(r.Warnings) > 0 {
-		if r.MigrationReportPath != "" {
-			fmt.Fprintf(&b, "  Warning: %d migration gap(s) need manual review; see %s\n", len(r.Warnings), r.MigrationReportPath)
-		} else {
-			for _, w := range r.Warnings {
-				fmt.Fprintf(&b, "  Warning: %s\n", w)
-			}
-		}
-	}
-	return b.String()
 }
 
 // PlanMigration computes the pure filesystem plan for migrating a compat
@@ -103,35 +55,24 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	}
 
 	cfg := compatWorkspace.Config
-	result := &MigrationResult{
-		ProjectRoot: compatWorkspace.ProjectRoot,
-		ConfigPath:  filepath.Join(compatWorkspace.ProjectRoot, LockDirName, ConfigFileName),
-	}
-
 	hasSDK := cfg.SDK != nil && cfg.SDK.Source != ""
 	hasNonLocalSource := cfg.Source != "" && cfg.Source != "."
 	needsProjectModuleMigration := hasSDK
 
 	plan := &MigrationPlan{
-		Result: result,
+		ProjectRoot: compatWorkspace.ProjectRoot,
 	}
 
 	if needsProjectModuleMigration {
 		modulePath := filepath.Join("modules", cfg.Name)
-		result.ModuleName = cfg.Name
-		result.ModuleNewPath = filepath.Join(LockDirName, modulePath)
-
-		newJSON, depCount, incCount, err := buildMigratedModuleJSON(cfg, modulePath)
+		newJSON, err := buildMigratedModuleJSON(cfg, modulePath)
 		if err != nil {
 			return nil, fmt.Errorf("building migrated module JSON: %w", err)
 		}
-		result.DepRewriteCount = depCount
-		result.IncRewriteCount = incCount
 		plan.MigratedModuleConfigData = newJSON
 		plan.MigratedModuleConfigPath = filepath.Join(LockDirName, modulePath, ModuleConfigFileName)
 
 		if hasNonLocalSource {
-			result.OldSourcePath = cfg.Source
 			plan.SourceCopyPath = cfg.Source
 			plan.SourceCopyDest = filepath.Join(LockDirName, modulePath)
 
@@ -139,7 +80,7 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 			if strings.HasPrefix(newFullPath+"/", cfg.Source+"/") {
 				slog.Warn("old source dir is ancestor of new location; skipping cleanup",
 					"oldSource", cfg.Source, "newLocation", newFullPath)
-				result.Warnings = append(result.Warnings,
+				plan.Warnings = append(plan.Warnings,
 					fmt.Sprintf("old source dir %q is ancestor of new location; skipped cleanup", cfg.Source))
 			} else {
 				plan.RemoveOldSource = true
@@ -148,9 +89,9 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	}
 
 	warnings := analyzeCustomizations(cfg.Toolchains)
-	plan.GapCount = len(warnings)
+	plan.MigrationGapCount = len(warnings)
 	for _, w := range warnings {
-		result.Warnings = append(result.Warnings, w.message)
+		plan.Warnings = append(plan.Warnings, w.message)
 	}
 
 	wsCfg := &Config{Modules: make(map[string]ModuleEntry)}
@@ -166,12 +107,7 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	hasLockEntries := false
 	if compatWorkspace != nil {
 		for _, mod := range compatWorkspace.Modules {
-			if mod.Entry.Entrypoint {
-				result.BlueprintMigrated = true
-			} else {
-				result.ToolchainCount++
-			}
-			addMigrationLookupSource(result, mod.Entry.Source)
+			addMigrationLookupSource(plan, mod.Entry.Source)
 
 			if mod.Pin != "" {
 				if err := setMigrationModuleResolvePin(migrateLock, mod.Entry.Source, mod.Pin); err != nil {
@@ -181,10 +117,10 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 			}
 		}
 	}
-	finalizeMigrationLookupSources(result)
+	finalizeMigrationLookupSources(plan)
 
 	if len(warnings) > 0 {
-		result.MigrationReportPath = filepath.Join(LockDirName, "migration-report.md")
+		plan.MigrationReportPath = filepath.Join(LockDirName, "migration-report.md")
 		plan.MigrationReportData = []byte(generateMigrationReportMarkdown(compatWorkspace.ConfigPath, warnings))
 	}
 
@@ -200,9 +136,8 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 }
 
 // buildMigratedModuleJSON creates the cleaned-up dagger.json for the migrated
-// module. It returns the JSON bytes, the number of rewritten dependency paths,
-// and the number of rewritten include paths.
-func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([]byte, int, int, error) {
+// module.
+func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([]byte, error) {
 	depth := len(strings.Split(filepath.ToSlash(newModulePath), "/")) + 1
 	prefix := strings.Repeat("../", depth)
 
@@ -212,7 +147,6 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([
 	}
 
 	deps := make([]*modules.ModuleConfigDependency, 0, len(cfg.Dependencies))
-	depRewriteCount := 0
 	for _, dep := range cfg.Dependencies {
 		if dep == nil {
 			continue
@@ -221,7 +155,6 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([
 		depSource := dep.Source
 		if isLocalRef(dep.Source, dep.Pin) {
 			depSource = filepath.Join(prefix, dep.Source)
-			depRewriteCount++
 		}
 
 		deps = append(deps, &modules.ModuleConfigDependency{
@@ -235,14 +168,12 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([
 	}
 
 	includes := make([]string, 0, len(cfg.Include))
-	incRewriteCount := 0
 	for _, inc := range cfg.Include {
 		if strings.HasPrefix(inc, "!") {
 			includes = append(includes, "!"+prefix+inc[1:])
 		} else {
 			includes = append(includes, prefix+inc)
 		}
-		incRewriteCount++
 	}
 
 	newCfg := modules.ModuleConfig{
@@ -259,10 +190,10 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([
 
 	out, err := json.MarshalIndent(newCfg, "", "  ")
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, err
 	}
 	out = append(out, '\n')
-	return out, depRewriteCount, incRewriteCount, nil
+	return out, nil
 }
 
 type migrationWarning struct {
@@ -351,26 +282,26 @@ func isConstructorCustomization(cust *modules.ModuleConfigArgument) bool {
 	return len(cust.Function) == 0
 }
 
-func addMigrationLookupSource(result *MigrationResult, source string) {
+func addMigrationLookupSource(plan *MigrationPlan, source string) {
 	if source == "" || isLocalRef(source, "") {
 		return
 	}
-	result.LookupSources = append(result.LookupSources, source)
+	plan.LookupSources = append(plan.LookupSources, source)
 }
 
-func finalizeMigrationLookupSources(result *MigrationResult) {
-	if len(result.LookupSources) < 2 {
+func finalizeMigrationLookupSources(plan *MigrationPlan) {
+	if len(plan.LookupSources) < 2 {
 		return
 	}
 
-	sort.Strings(result.LookupSources)
-	compacted := result.LookupSources[:1]
-	for _, source := range result.LookupSources[1:] {
+	sort.Strings(plan.LookupSources)
+	compacted := plan.LookupSources[:1]
+	for _, source := range plan.LookupSources[1:] {
 		if source != compacted[len(compacted)-1] {
 			compacted = append(compacted, source)
 		}
 	}
-	result.LookupSources = compacted
+	plan.LookupSources = compacted
 }
 
 func setMigrationModuleResolvePin(lock *Lock, source, pin string) error {
