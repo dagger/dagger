@@ -98,18 +98,19 @@ func (fn *Function) Directives() []*ast.Directive {
 			Name: "check",
 		})
 	}
-	if (fn.CachePolicy != "" && fn.CachePolicy != FunctionCachePolicyDefault) || fn.CacheTTLSeconds.Valid {
+	hasNonDefaultCachePolicy := (fn.CachePolicy != "" && fn.CachePolicy != FunctionCachePolicyDefault)
+	if hasNonDefaultCachePolicy || fn.CacheTTLSeconds.Valid {
 		dir := &ast.Directive{
 			Name: "cache",
-			Arguments: ast.ArgumentList{
-				{
-					Name: "policy",
-					Value: &ast.Value{
-						Kind: ast.EnumValue,
-						Raw:  string(fn.CachePolicy),
-					},
+		}
+		if hasNonDefaultCachePolicy {
+			dir.Arguments = append(dir.Arguments, &ast.Argument{
+				Name: "policy",
+				Value: &ast.Value{
+					Kind: ast.EnumValue,
+					Raw:  string(fn.CachePolicy),
 				},
-			},
+			})
 		}
 		if fn.CacheTTLSeconds.Valid {
 			ttl := time.Duration(fn.CacheTTLSeconds.Value.Int64()) * time.Second
