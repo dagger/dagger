@@ -1,4 +1,4 @@
-{{- if .Values.engine.port }}
+{{- if or .Values.engine.containerPorts .Values.engine.port }}
 apiVersion: v1
 kind: Service
 metadata:
