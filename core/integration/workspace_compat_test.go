@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"dagger.io/dagger"
@@ -11,7 +13,7 @@ import (
 
 // WorkspaceCompatSuite owns legacy dagger.json compatibility behavior:
 // fallback compat loading, migration handoff, and direct-load error handling.
-// Current workspace entrypoint behavior belongs in workspace_entrypoint_test.go.
+// Current module loading behavior belongs in module_loading_test.go.
 type WorkspaceCompatSuite struct{}
 
 func TestWorkspaceCompat(t *testing.T) {
@@ -137,21 +139,59 @@ func (WorkspaceCompatSuite) TestCompatDetection(ctx context.Context, t *testctx.
 // TestCompatWarning should pin down the user-facing warning emitted when the
 // engine infers workspace behavior from a legacy dagger.json.
 func (WorkspaceCompatSuite) TestCompatWarning(ctx context.Context, t *testctx.T) {
-	t.Fatal(`FIXME: implement compat warning coverage.
+	workdir := t.TempDir()
+	blueprintDir := filepath.Join(workdir, "blueprint")
+	require.NoError(t, os.MkdirAll(blueprintDir, 0o755))
 
-Run a compat-backed invocation and verify the warning text is emitted once,
-with wording that clearly says workspace behavior is being inferred from a
-legacy module config.`)
+	_, err := hostDaggerExec(ctx, t, blueprintDir, "module", "init", "--sdk=go", "--name=hello")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(blueprintDir, "main.go"), []byte(`package main
+
+import "context"
+
+type Hello struct{}
+
+func (m *Hello) Greet(ctx context.Context) string {
+	return "hello from blueprint"
+}
+`), 0o644))
+
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.json"), []byte(`{
+  "name": "app",
+  "blueprint": {
+    "name": "hello",
+    "source": "./blueprint"
+  }
+}`), 0o644))
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), "Inferring workspace behavior from legacy module config.")
+	require.Contains(t, string(out), "hello from blueprint")
 }
 
 // TestLegacyWorkspaceDirectLoadErrors should cover the new hard failures when
 // legacy workspace concepts are used through generic module loading.
 func (WorkspaceCompatSuite) TestLegacyWorkspaceDirectLoadErrors(ctx context.Context, t *testctx.T) {
 	t.Run("direct load tells the user to use -W", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement direct legacy workspace load error coverage.
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
 
-Load a legacy workspace as a module with -m and verify the error tells the
-user to load it as a workspace instead, for example with -W.`)
+		require.NoError(t, os.MkdirAll(filepath.Join(workdir, "toolchains", "go"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.json"), []byte(`{
+  "name": "app",
+  "toolchains": [
+    {
+      "name": "go",
+      "source": "./toolchains/go"
+    }
+  ]
+}`), 0o644))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
+		require.Error(t, err)
+		requireErrOut(t, err, "cannot load this ref as a module")
+		requireErrOut(t, err, "load it as a workspace instead, for example with `-W`")
 	})
 
 	t.Run("local workspace module source tells the user to migrate that project", func(ctx context.Context, t *testctx.T) {

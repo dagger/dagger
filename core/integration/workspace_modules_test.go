@@ -2,9 +2,13 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
 )
 
 // WorkspaceModulesSuite owns configuration-facing module behavior in a
@@ -34,10 +38,35 @@ into this file.`)
 	})
 
 	t.Run("absolute local installs preserve absolute source paths", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement absolute local module install coverage.
+		workdir := t.TempDir()
+		depDir := t.TempDir()
 
-Carry forward the absolute local source coverage and verify the configured
-source path stays absolute in workspace config and workspace list output.`)
+		initGitRepo(ctx, t, workdir)
+		initGitRepo(ctx, t, depDir)
+
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
+
+type Dep struct{}
+
+func (m *Dep) Greet() string {
+	return "hello from absolute workspace module"
+}
+`), 0o644))
+
+		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
+source = "`+depDir+`"
+entrypoint = true
+`)
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "list")
+		require.NoError(t, err)
+		require.Contains(t, string(out), depDir)
+
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
+		require.NoError(t, err)
+		require.Equal(t, "hello from absolute workspace module", strings.TrimSpace(string(out)))
 	})
 
 	t.Run("install rejects non-module refs without corrupting config", func(ctx context.Context, t *testctx.T) {
@@ -80,4 +109,77 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInit(ctx context.Context, t *tes
 
 Move the current workspace_module_init_test.go coverage into this file once the
 desired module-init UX for workspaces is locked.`)
+}
+
+// TestWorkspaceManagedModuleBehavior covers runtime behavior that depends on a
+// module being configured in a workspace, but is not about entrypoint routing.
+func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	source := `
+type Objects {
+  pub objectA: ObjectsA! {
+    ObjectsA()
+  }
+}
+
+type ObjectsA {
+  pub message: String! {
+    "Hello from A"
+  }
+
+  pub objectB: ObjectsB! {
+    ObjectsB()
+  }
+}
+
+type ObjectsB {
+  pub message: String! {
+    "Hello from B"
+  }
+}
+`
+
+	t.Run("main object with prefixed children", func(ctx context.Context, t *testctx.T) {
+		base := workspaceBase(t, c).
+			With(initDangModule("objects", source))
+
+		out, err := base.With(daggerCall("objects", "object-a", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from A", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("objects", "object-a", "object-b", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello from B", strings.TrimSpace(out))
+	})
+
+	t.Run("renamed workspace-installed module", func(ctx context.Context, t *testctx.T) {
+		base := workspaceBase(t, c).
+			With(initDangModule("hello-world", `
+type HelloWorld {
+  pub greet(name: String! = "world"): String! {
+    "hello, " + name + "!"
+  }
+}
+`)).
+			With(daggerExec("workspace", "config", "modules.hello-world.source", "modules/hello-world")).
+			With(daggerExec("workspace", "config", "modules.hello-world.entrypoint", "false")).
+			With(daggerExec("workspace", "config", "modules.greeter.source", "modules/hello-world"))
+
+		out, err := base.With(daggerCall("greeter", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, world!", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("greeter", "greet", "--name", "dagger")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, dagger!", strings.TrimSpace(out))
+
+		out, err = base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "greeter")
+
+		out, err = base.With(daggerShell("greeter | greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, world!", out)
+	})
 }

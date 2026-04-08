@@ -4,7 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
 )
 
 // WorkspaceMigrationSuite owns explicit workspace migration behavior through
@@ -26,10 +29,40 @@ modifying files on disk.`)
 	})
 
 	t.Run("apply writes workspace config and migrated modules", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement migration apply coverage.
+		c := connect(ctx, t)
+		migrateApply := daggerExec("migrate", "-y")
 
-Run dagger migrate -y on a compat-eligible project and verify the legacy
-dagger.json is replaced by .dagger/config.toml plus migrated module files.`)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from migrated source"
+  }
+}
+`)
+		}).With(migrateApply)
+
+		_, err := ctr.WithExec([]string{"test", "-d", "ci"}).Sync(ctx)
+		require.Error(t, err, "old source directory 'ci' should have been removed")
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
+		require.NoError(t, err, "source file should exist at new location")
+
+		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "myapp"`)
+		require.NotContains(t, djson, `"source": "ci"`)
+
+		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, "modules/myapp")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		require.Error(t, err, "root dagger.json should have been removed")
 	})
 }
 
@@ -43,14 +76,47 @@ Move the current coverage for migrating source = "ci" into this file.`)
 	})
 
 	t.Run("sdk-only root-source modules are a no-op", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement no-op migration coverage for sdk-only root-source modules.`)
+		c := connect(ctx, t)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"}
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from root source"
+  }
+}
+`)
+		})
+
+		out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "No migration needed.")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "main.dang"}).Sync(ctx)
+		require.NoError(t, err, "source file should remain at root")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "legacy dagger.json should remain in place")
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		require.Error(t, err, "workspace config should not be created")
 	})
 
 	t.Run("remote refs refresh lock entries", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement migration lock refresh coverage.
+		c := connect(ctx, t)
+		source := "github.com/dagger/dagger/modules/wolfi@main"
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "tc", "source": "`+source+`"}
+  ]
+}`).With(daggerExec("migrate", "-y"))
 
-Move the current lock-entry refresh coverage for migrated remote refs into this
-file.`)
+		lockOut, err := ctr.File("/work/.dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+		assertModuleResolveLockEntry(t, []byte(lockOut), source, workspace.PolicyFloat)
 	})
 }
 
@@ -58,17 +124,83 @@ file.`)
 // explicit migration.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Context, t *testctx.T) {
 	t.Run("summary is printed for applied migrations", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement migration summary coverage.
+		c := connect(ctx, t)
 
-Move the current 'Migrated to workspace format' output coverage into this
-file.`)
+		t.Run("refreshing migrated remote refs", func(ctx context.Context, t *testctx.T) {
+			ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "wolfi", "source": "github.com/dagger/dagger/modules/wolfi@main", "pin": "main"}
+  ]
+}`)
+
+			out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "Migrated to workspace format")
+		})
+
+		t.Run("general migration summary", func(ctx context.Context, t *testctx.T) {
+			ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci",
+  "dependencies": [
+    {"name": "dep1", "source": "./lib/dep1"}
+  ],
+  "include": ["extra/"]
+}`, func(ctr *dagger.Container) *dagger.Container {
+				return ctr.WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! { "hi" }
+}
+`)
+			})
+
+			out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "Migrated to workspace format")
+		})
 	})
 
 	t.Run("migration report is written for unsupported gaps", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement migration report coverage.
+		c := connect(ctx, t)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {
+      "name": "toolchain",
+      "source": "./toolchain",
+      "customizations": [
+        {
+          "argument": "src",
+          "defaultPath": "./custom-config.txt",
+          "ignore": ["node_modules"]
+        },
+        {
+          "function": ["build"],
+          "argument": "tag",
+          "default": "dev"
+        }
+      ]
+    }
+  ]
+}`)
 
-Move the current gap-report coverage into this file and ensure the config file
-stays free of warning graffiti.`)
+		out, err := ctr.With(daggerExec("migrate", "-y")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
+		require.NotContains(t, out, "defaultPath")
+
+		configOut, err := ctr.File("/work/.dagger/config.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, configOut, "# WARNING:")
+		require.NotContains(t, configOut, "# Original:")
+
+		reportOut, err := ctr.File("/work/.dagger/migration-report.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, reportOut, "# Migration Report")
+		require.Contains(t, reportOut, "Module `toolchain`")
+		require.Contains(t, reportOut, `"defaultPath": "./custom-config.txt"`)
 	})
 }
 
