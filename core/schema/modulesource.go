@@ -340,6 +340,8 @@ func (s *moduleSourceSchema) moduleSource(
 		return inst, fmt.Errorf("unknown module source kind: %s", parsedRef.Kind)
 	}
 
+	inst.Self().OriginalRefString = args.RefString
+
 	return inst, nil
 }
 

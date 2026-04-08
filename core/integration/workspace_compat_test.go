@@ -190,8 +190,7 @@ func (WorkspaceCompatSuite) TestLegacyWorkspaceDirectLoadErrors(ctx context.Cont
 
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
 		require.Error(t, err)
-		requireErrOut(t, err, "cannot load this ref as a module")
-		requireErrOut(t, err, "load it as a workspace instead, for example with `-W`")
+		requireErrOut(t, err, "This module must be migrated to a workspace. Run 'dagger -W .'")
 	})
 
 	t.Run("local workspace module source tells the user to migrate that project", func(ctx context.Context, t *testctx.T) {

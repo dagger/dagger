@@ -30,6 +30,22 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+type quietCLIError struct {
+	message string
+}
+
+func (e quietCLIError) Error() string {
+	return e.message
+}
+
+func (e quietCLIError) Extensions() map[string]any {
+	return map[string]any{
+		"_quiet":    true,
+		"_message":  e.message,
+		"_exitCode": 1,
+	}
+}
+
 type ModuleSourceKind string
 
 var ModuleSourceKindEnum = dagql.NewEnum[ModuleSourceKind]()
@@ -178,6 +194,10 @@ type ModuleSource struct {
 	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"The path, relative to the context directory, that contains the module's dagger.json."`
 	// SourceSubpath is the relative path from the context dir to the dir containing the module's source code
 	SourceSubpath string
+
+	// OriginalRefString is the exact ref string used to instantiate this module
+	// source. Internal only, used for user-facing follow-up commands.
+	OriginalRefString string
 
 	OriginalSubpath string
 
@@ -341,11 +361,13 @@ func (src *ModuleSource) StripLegacyWorkspaceFields() *ModuleSource {
 // DirectLegacyWorkspaceLoadError returns the direct-load error for a module
 // source that still carries legacy workspace-only dagger.json fields.
 func (src *ModuleSource) DirectLegacyWorkspaceLoadError() error {
-	fields := strings.Join(src.LegacyWorkspaceFieldNames(), ", ")
-	return fmt.Errorf(
-		"cannot load this ref as a module: its dagger.json uses legacy workspace fields %q\n\nload it as a workspace instead, for example with `-W`",
-		fields,
-	)
+	ref := src.OriginalRefString
+	if ref == "" {
+		ref = src.AsString()
+	}
+	return quietCLIError{
+		message: fmt.Sprintf("This module must be migrated to a workspace. Run 'dagger -W %s'", ref),
+	}
 }
 
 // NestedLegacyWorkspaceLoadError returns the workspace-load error for a module

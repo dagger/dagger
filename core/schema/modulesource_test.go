@@ -2,10 +2,12 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -69,6 +71,7 @@ func TestLegacyWorkspaceFieldHandling(t *testing.T) {
 		Local: &core.LocalModuleSource{
 			ContextDirectoryPath: "/work/repo-b",
 		},
+		OriginalRefString: ".",
 		SourceRootSubpath: ".",
 		ConfigBlueprint: &modules.ModuleConfigDependency{
 			Name:   "bp",
@@ -88,10 +91,18 @@ func TestLegacyWorkspaceFieldHandling(t *testing.T) {
 	require.Nil(t, stripped.ConfigToolchains)
 	require.False(t, stripped.UsesLegacyWorkspaceFields())
 
+	directErr := local.DirectLegacyWorkspaceLoadError()
 	require.EqualError(t,
-		local.DirectLegacyWorkspaceLoadError(),
-		"cannot load this ref as a module: its dagger.json uses legacy workspace fields \"blueprint, toolchains\"\n\nload it as a workspace instead, for example with `-W`",
+		directErr,
+		"This module must be migrated to a workspace. Run 'dagger -W .'",
 	)
+	var ext dagql.ExtendedError
+	require.True(t, errors.As(directErr, &ext))
+	require.Equal(t, map[string]any{
+		"_quiet":    true,
+		"_message":  "This module must be migrated to a workspace. Run 'dagger -W .'",
+		"_exitCode": 1,
+	}, ext.Extensions())
 	require.EqualError(t,
 		local.NestedLegacyWorkspaceLoadError(),
 		"workspace module source \"/work/repo-b\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint, toolchains\"\n\nrun `dagger migrate` in \"/work/repo-b\", then update this source to point at one of the migrated modules under \"/work/repo-b/.dagger/modules\"",
