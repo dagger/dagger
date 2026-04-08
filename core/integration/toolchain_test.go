@@ -557,6 +557,104 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 	})
 }
 
+func (ToolchainSuite) TestToolchainIgnoreChecksGenerators(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("ignore generate-as-checks via ignoreChecks config", func(ctx context.Context, t *testctx.T) {
+		// Set up test environment with hello-with-generate-checks as a toolchain
+		modGen := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init"))
+
+		// Install hello-with-generate-checks as a toolchain
+		modGen = modGen.With(daggerExec("toolchain", "install", "../hello-with-generate-checks"))
+
+		// Verify all items are visible by default (regular check + both generators)
+		out, err := modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.Contains(t, out, "hello-with-generate-checks:empty-generate")
+		require.Contains(t, out, "hello-with-generate-checks:non-empty-generate")
+
+		// Now add ignoreChecks to filter out the failing generator
+		modGen = modGen.WithNewFile("dagger.json", `{
+  "name": "app",
+  "engineVersion": "v0.16.0",
+  "toolchains": [
+    {
+      "name": "hello-with-generate-checks",
+      "source": "../hello-with-generate-checks",
+      "ignoreChecks": [
+        "non-empty-generate"
+      ]
+    }
+  ]
+}`)
+
+		// List checks - the non-empty-generate should be filtered out
+		out, err = modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.Contains(t, out, "hello-with-generate-checks:empty-generate")
+		require.NotContains(t, out, "non-empty-generate")
+
+		// Run all checks - should succeed since the failing generator is ignored
+		out, err = modGen.
+			With(daggerExec("--progress=report", "check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `passing-check.*OK`, out)
+		require.Regexp(t, `empty-generate.*OK`, out)
+		require.NotContains(t, out, "non-empty-generate")
+	})
+
+	t.Run("ignore generate-as-checks with glob pattern", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init"))
+
+		modGen = modGen.With(daggerExec("toolchain", "install", "../hello-with-generate-checks"))
+
+		// Exclude all generators with a glob pattern
+		modGen = modGen.WithNewFile("dagger.json", `{
+  "name": "app",
+  "engineVersion": "v0.16.0",
+  "toolchains": [
+    {
+      "name": "hello-with-generate-checks",
+      "source": "../hello-with-generate-checks",
+      "ignoreChecks": [
+        "*-generate"
+      ]
+    }
+  ]
+}`)
+
+		out, err := modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.NotContains(t, out, "empty-generate")
+		require.NotContains(t, out, "non-empty-generate")
+	})
+}
+
 func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
