@@ -604,6 +604,32 @@ func TestSuppressPendingCWDModules(t *testing.T) {
 	require.Equal(t, moduleLoadKindExtra, filtered[1].Kind)
 }
 
+func TestSuppressCWDModuleForCompatWorkspace(t *testing.T) {
+	t.Parallel()
+
+	t.Run("suppresses cwd module at compat root", func(t *testing.T) {
+		t.Parallel()
+
+		require.True(t, suppressCWDModuleForCompatWorkspace(&workspace.CompatWorkspace{
+			ProjectRoot: "/repo",
+		}, "/repo"))
+	})
+
+	t.Run("does not suppress nested cwd module", func(t *testing.T) {
+		t.Parallel()
+
+		require.False(t, suppressCWDModuleForCompatWorkspace(&workspace.CompatWorkspace{
+			ProjectRoot: "/repo",
+		}, "/repo/modules/foo"))
+	})
+
+	t.Run("does not suppress without compat workspace", func(t *testing.T) {
+		t.Parallel()
+
+		require.False(t, suppressCWDModuleForCompatWorkspace(nil, "/repo"))
+	})
+}
+
 func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {
 	t.Parallel()
 

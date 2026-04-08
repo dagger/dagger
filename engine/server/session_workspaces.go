@@ -527,6 +527,13 @@ func suppressPendingCWDModules(mods []pendingModule) []pendingModule {
 	return filtered
 }
 
+func suppressCWDModuleForCompatWorkspace(compatWorkspace *workspace.CompatWorkspace, moduleDir string) bool {
+	if compatWorkspace == nil || compatWorkspace.ProjectRoot == "" || moduleDir == "" {
+		return false
+	}
+	return filepath.Clean(compatWorkspace.ProjectRoot) == filepath.Clean(moduleDir)
+}
+
 // detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection
 // and module gathering. It detects the current workspace root, applies legacy
 // dagger.json compat, and gathers all modules to be loaded later by
@@ -647,7 +654,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	// (2) CWD module (nearest dagger.json by find-up from the caller)
-	if hasModuleConfig && !hasPendingExtraModules(client) {
+	if hasModuleConfig && !hasPendingExtraModules(client) && !suppressCWDModuleForCompatWorkspace(compatWorkspace, moduleDir) {
 		wsDir := filepath.Join(ws.Root, ws.Path)
 		rel, _ := filepath.Rel(wsDir, moduleDir)
 		pending = append(pending, pendingModule{
