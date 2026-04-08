@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
 )
 
 // WorkspaceCompatSuite owns legacy dagger.json compatibility behavior:
@@ -16,30 +18,99 @@ func TestWorkspaceCompat(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceCompatSuite{})
 }
 
+func legacyBlueprintTestEnv(t *testctx.T, c *dagger.Client) *dagger.Container {
+	return c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"}).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithDirectory(".", c.Host().Directory("./testdata/test-blueprint")).
+		WithDirectory("app", c.Directory())
+}
+
 // TestLegacyBlueprintInit replaces the old blueprint_test.go coverage.
 // It should pin down what legacy --blueprint init still supports, and what it
 // should reject, now that blueprint is a compatibility concept rather than a
 // current workspace feature.
 func (WorkspaceCompatSuite) TestLegacyBlueprintInit(ctx context.Context, t *testctx.T) {
 	t.Run("local legacy blueprint init still works", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement legacy --blueprint init coverage.
+		c := connect(ctx, t)
 
-Recreate the old local blueprint init flow and verify the initialized project
-still works as intended under the compatibility contract.`)
+		modGen := legacyBlueprintTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--blueprint=../hello"))
+
+		out, err := modGen.
+			With(daggerExec("call", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+
+		blueprintConfig, err := modGen.
+			With(daggerExec("call", "blueprint-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, blueprintConfig, "this is the blueprint configuration")
+
+		modGen = modGen.WithNewFile("app-config.txt", "this is the app configuration")
+		appConfig, err := modGen.
+			With(daggerExec("call", "app-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, appConfig, "this is the app configuration")
 	})
 
 	t.Run("legacy blueprint init covers dependency-bearing and multi-sdk cases", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement expanded legacy --blueprint init coverage.
+		type testCase struct {
+			name          string
+			blueprintPath string
+		}
 
-Carry forward the old dependency-bearing / TypeScript / Python blueprint cases
-from blueprint_test.go and decide which of them remain supported as compat.`)
+		for _, tc := range []testCase{
+			{
+				name:          "use a blueprint which has a dependency",
+				blueprintPath: "../myblueprint-with-dep",
+			},
+			{
+				name:          "init with typescript blueprint",
+				blueprintPath: "../myblueprint-ts",
+			},
+			{
+				name:          "init with python blueprint",
+				blueprintPath: "../myblueprint-py",
+			},
+		} {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				modGen := legacyBlueprintTestEnv(t, c).
+					WithWorkdir("app").
+					With(daggerExec("init", "--blueprint="+tc.blueprintPath))
+
+				out, err := modGen.
+					With(daggerExec("call", "hello")).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "hello from blueprint")
+			})
+		}
 	})
 
 	t.Run("legacy blueprint init still rejects --sdk with --blueprint", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement legacy --blueprint flag validation coverage.
+		c := connect(ctx, t)
+		modGen := legacyBlueprintTestEnv(t, c).
+			WithWorkdir("app").
+			WithExec(
+				[]string{"dagger", "module", "init", "--sdk=go", "--blueprint=../myblueprint"},
+				dagger.ContainerWithExecOpts{
+					ExperimentalPrivilegedNesting: true,
+					Expect:                        dagger.ReturnTypeFailure,
+				},
+			)
 
-Verify the CLI still rejects --sdk together with --blueprint and that the
-error message stays clear.`)
+		stderr, err := modGen.Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stderr, "--sdk")
+		require.Contains(t, stderr, "--blueprint")
 	})
 }
 
