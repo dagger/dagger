@@ -4087,7 +4087,7 @@ func (ContainerSuite) TestFromMergesWithParent(ctx context.Context, t *testctx.T
 	testCtr := c.Container().
 		WithEnvVariable("FOO", "BAR").
 		WithEnvVariable("PATH", "/replace/me").
-		WithLabel("moby.engineutil.frontend.caps", "replace-me").
+		WithLabel("moby.buildkit.frontend.caps", "replace-me").
 		WithLabel("com.example.test-should-exist", "exist").
 		WithExposedPort(5000).
 		From("docker/dockerfile:1.5")
@@ -4104,13 +4104,13 @@ func (ContainerSuite) TestFromMergesWithParent(ctx context.Context, t *testctx.T
 	require.NoError(t, err)
 	require.Equal(t, "exist", labelShouldExist)
 
-	existingLabelFromImageShouldExist, err := testCtr.Label(ctx, "moby.engineutil.frontend.network.none")
+	existingLabelFromImageShouldExist, err := testCtr.Label(ctx, "moby.buildkit.frontend.network.none")
 	require.NoError(t, err)
 	require.Equal(t, "true", existingLabelFromImageShouldExist)
 
-	labelShouldBeReplaced, err := testCtr.Label(ctx, "moby.engineutil.frontend.caps")
+	labelShouldBeReplaced, err := testCtr.Label(ctx, "moby.buildkit.frontend.caps")
 	require.NoError(t, err)
-	require.Equal(t, "moby.engineutil.frontend.inputs,moby.engineutil.frontend.subrequests,moby.engineutil.frontend.contexts", labelShouldBeReplaced)
+	require.Equal(t, "moby.buildkit.frontend.inputs,moby.buildkit.frontend.subrequests,moby.buildkit.frontend.contexts", labelShouldBeReplaced)
 
 	ports, err := testCtr.ExposedPorts(ctx)
 	require.NoError(t, err)
