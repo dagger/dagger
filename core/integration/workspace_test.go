@@ -49,8 +49,8 @@ func legacyWorkspaceBase(t testing.TB, c *dagger.Client, config string, ops ...d
 
 // initDangModule creates a Dang module in the workspace with the given name
 // and source code. Uses `dagger module init`, `dagger init`, and
-// `dagger toolchain install` to scaffold the module and workspace, then
-// overwrites main.dang with the provided source.
+// `dagger install` to scaffold the module and workspace, then overwrites
+// main.dang with the provided source.
 func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
@@ -59,7 +59,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 			WithNewFile("main.dang", source).
 			WithWorkdir("../../").
 			With(daggerExecRaw("init")).
-			With(daggerExec("toolchain", "install", "./toolchains/"+name))
+			With(daggerExec("install", "./toolchains/"+name))
 	}
 }
 
