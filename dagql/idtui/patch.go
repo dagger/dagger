@@ -8,10 +8,57 @@ import (
 	"github.com/dagger/dagger/util/patchpreview"
 )
 
-func PreviewPatch(ctx context.Context, changeset *dagger.Changeset) (*patchpreview.PatchPreview, error) {
-	rawPatch, err := changeset.AsPatch().Contents(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get patch: %w", err)
+const previewPatchQuery = `
+query PreviewPatch($changeset: ChangesetID!) {
+	loadChangesetFromID(id: $changeset) {
+		diffStats {
+			path
+			oldPath
+			kind
+			addedLines
+			removedLines
+		}
 	}
-	return patchpreview.New(ctx, rawPatch, changeset)
+}
+`
+
+func PreviewPatch(ctx context.Context, dag *dagger.Client, changeset *dagger.Changeset) ([]patchpreview.Entry, error) {
+	changesetID, err := changeset.ID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query diff stat: get changeset id: %w", err)
+	}
+
+	var res struct {
+		LoadChangesetFromID struct {
+			DiffStats []struct {
+				Path         string
+				OldPath      *string
+				Kind         string
+				AddedLines   int
+				RemovedLines int
+			}
+		}
+	}
+
+	err = dag.Do(ctx, &dagger.Request{
+		Query: previewPatchQuery,
+		Variables: map[string]any{
+			"changeset": changesetID,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("query diff stat: %w", err)
+	}
+
+	diffStat := res.LoadChangesetFromID.DiffStats
+	entries := make([]patchpreview.Entry, len(diffStat))
+	for i, s := range diffStat {
+		entries[i] = patchpreview.Entry{Path: s.Path, Kind: s.Kind, Added: s.AddedLines, Removed: s.RemovedLines}
+		if s.OldPath != nil {
+			entries[i].OldPath = *s.OldPath
+		}
+	}
+	return entries, nil
 }
