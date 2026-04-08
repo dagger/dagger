@@ -166,7 +166,7 @@ func (m *Hello) Greet(ctx context.Context) string {
 
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
 	require.NoError(t, err, string(out))
-	require.Contains(t, string(out), "Inferring workspace behavior from legacy module config.")
+	require.Contains(t, string(out), "No workspace config found, inferring from dagger.json. Run 'dagger migrate' soon.")
 	require.Contains(t, string(out), "hello from blueprint")
 }
 

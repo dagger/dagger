@@ -590,8 +590,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			compatWorkspace, _ = workspace.ParseCompatWorkspaceAt(data, cfgPath)
 		}
 		if compatWorkspace != nil {
-			console(ctx, "Inferring workspace behavior from legacy module config.")
-			slog.Warn("Inferring workspace behavior from legacy module config.",
+			msg := legacyWorkspaceCompatMessage(cwd, cfgPath)
+			console(ctx, msg)
+			slog.Warn(msg,
 				"config", cfgPath)
 		}
 	} else if wsConfig == nil {
@@ -678,6 +679,14 @@ func console(ctx context.Context, msg string, args ...any) {
 		msg += "\n"
 	}
 	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
+}
+
+func legacyWorkspaceCompatMessage(cwd, cfgPath string) string {
+	relPath := cfgPath
+	if rel, err := filepath.Rel(cwd, cfgPath); err == nil {
+		relPath = rel
+	}
+	return fmt.Sprintf("No workspace config found, inferring from %s. Run 'dagger migrate' soon.", relPath)
 }
 
 // buildCoreWorkspace converts the internal workspace detection result into
