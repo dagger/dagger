@@ -92,14 +92,14 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 }
 
 type dockerHealthcheck struct {
-	args    []string
-	creator trace.SpanContext
-	ctr     *Container
-	exec    executor.Executor
-	svcID   string
+	args   []string
+	origin trace.SpanContext
+	ctr    *Container
+	exec   executor.Executor
+	svcID  string
 }
 
-func newDockerHealthcheck(exec executor.Executor, svcID string, ctr *Container, creator trace.SpanContext) (*dockerHealthcheck, error) {
+func newDockerHealthcheck(exec executor.Executor, svcID string, ctr *Container, origin trace.SpanContext) (*dockerHealthcheck, error) {
 	if ctr == nil || ctr.Config.Healthcheck == nil || len(ctr.Config.Healthcheck.Test) == 0 || ctr.Config.Healthcheck.Test[0] == "NONE" {
 		return nil, fmt.Errorf("container does not have a healthcheck command")
 	}
@@ -126,11 +126,11 @@ func newDockerHealthcheck(exec executor.Executor, svcID string, ctr *Container, 
 	}
 
 	return &dockerHealthcheck{
-		args:    args,
-		creator: creator,
-		ctr:     ctr,
-		exec:    exec,
-		svcID:   svcID,
+		args:   args,
+		origin: origin,
+		ctr:    ctr,
+		exec:   exec,
+		svcID:  svcID,
 	}, nil
 }
 
@@ -204,7 +204,7 @@ func (chk *dockerHealthcheck) check(ctx context.Context) error {
 		var gwErr *gwpb.ExitError
 		if errors.As(err, &gwErr) {
 			return &ExecError{
-				Err:      telemetry.TrackOrigin(gwErr, chk.creator),
+				Err:      telemetry.TrackOrigin(gwErr, chk.origin),
 				Cmd:      healthcheckMeta.Args,
 				ExitCode: int(gwErr.ExitCode),
 				Stdout:   stdoutBuf.String(),

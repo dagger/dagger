@@ -12,7 +12,6 @@ import (
 	bkgwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
@@ -307,7 +306,6 @@ func (container *Container) terminal(
 		})
 	} else {
 		svc = &Service{
-			Creator:   trace.SpanContextFromContext(ctx),
 			Container: containerRes,
 			ExecMD:    execMD,
 			ExecMeta:  execMeta,

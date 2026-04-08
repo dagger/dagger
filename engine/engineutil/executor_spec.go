@@ -24,10 +24,10 @@ import (
 	ctdoci "github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/client/pathutil"
-	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
+	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/slog"
+	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	randid "github.com/dagger/dagger/internal/buildkit/identity"
@@ -40,6 +40,7 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -47,9 +48,9 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil/cacerts"
 	"github.com/dagger/dagger/engine/engineutil/containerfs"
-	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/network"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -729,7 +730,13 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		destClientID = w.execMD.CallerClientID
 	}
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	stdioAttrs := []log.KeyValue{}
+	if w.execMD != nil && w.execMD.LogTargetCallDigest != "" {
+		stdioAttrs = append(stdioAttrs,
+			log.String(telemetry.DagDigestAttr, w.execMD.LogTargetCallDigest.String()),
+		)
+	}
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, stdioAttrs...)
 	state.cleanups.Add("close logs", stdio.Close)
 	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
 	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}

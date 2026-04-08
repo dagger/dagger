@@ -68,6 +68,10 @@ type ExecutionMetadata struct {
 	EncodedFunctionCall    json.RawMessage
 	CallerClientID         string
 
+	// If set, stdout/stderr emitted by this execution should be associated
+	// with this DAG call digest on the client side.
+	LogTargetCallDigest digest.Digest
+
 	// If set, overrides the buildkit cache key used for this execution.
 	// Bridges us to the non-buildkit world by just telling buildkit to do
 	// exactly what we say for now.

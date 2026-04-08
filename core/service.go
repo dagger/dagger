@@ -20,6 +20,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
@@ -28,6 +29,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 
@@ -44,10 +46,6 @@ const (
 )
 
 type Service struct {
-	// The span that created the service, which future runs of the service will
-	// link to.
-	Creator trace.SpanContext
-
 	// A custom hostname set by the user.
 	CustomHostname string
 
@@ -228,19 +226,6 @@ func (svc *Service) Endpoint(ctx context.Context, dig digest.Digest, port int, s
 	return endpoint, nil
 }
 
-func (svc *Service) StartAndTrack(ctx context.Context, dig digest.Digest) error {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = svcs.Start(ctx, dig, svc, svc.TunnelUpstream.Self() != nil)
-	return err
-}
-
 func (svc *Service) Stop(ctx context.Context, dig digest.Digest, kill bool) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -289,15 +274,15 @@ func (svc *Service) Start(
 	ctx context.Context,
 	running *RunningService,
 	dig digest.Digest,
-	sio *ServiceIO,
+	opts ServiceStartOpts,
 ) error {
 	switch {
 	case svc.Container.Self() != nil:
-		return svc.startContainer(ctx, running, dig, sio)
+		return svc.startContainer(ctx, running, dig, opts)
 	case svc.TunnelUpstream.Self() != nil:
-		return svc.startTunnel(ctx, running)
+		return svc.startTunnel(ctx, running, opts)
 	case len(svc.HostSockets) > 0:
-		return svc.startReverseTunnel(ctx, running, dig)
+		return svc.startReverseTunnel(ctx, running, dig, opts)
 	default:
 		return fmt.Errorf("unknown service type")
 	}
@@ -308,7 +293,7 @@ func (svc *Service) startContainer(
 	ctx context.Context,
 	running *RunningService,
 	dig digest.Digest,
-	sio *ServiceIO,
+	opts ServiceStartOpts,
 ) (rerr error) {
 	if running == nil {
 		return fmt.Errorf("running service is nil")
@@ -367,6 +352,12 @@ func (svc *Service) startContainer(
 		if err != nil {
 			return err
 		}
+	} else {
+		cloned := *execMD
+		execMD = &cloned
+	}
+	if opts.LogTargetCallDigest != "" {
+		execMD.LogTargetCallDigest = opts.LogTargetCallDigest
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -451,9 +442,14 @@ func (svc *Service) startContainer(
 		}
 		meta.Hostname = fullHost
 	}
-	if sio != nil && sio.Interactive {
+	if opts.IO != nil && opts.IO.Interactive {
 		meta.Tty = true
 		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
+	}
+
+	attrs := []attribute.KeyValue{}
+	if opts.LogTargetCallDigest != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.UIResumeOutputAttr, opts.LogTargetCallDigest.String()))
 	}
 
 	ctx, span := Tracer(ctx).Start(
@@ -461,8 +457,7 @@ func (svc *Service) startContainer(
 		ctx,
 		// Match naming scheme of normal exec span.
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
-		// This span continues the original withExec, by linking to it.
-		telemetry.Resume(trace.ContextWithSpanContext(ctx, svc.Creator)),
+		trace.WithAttributes(attrs...),
 	)
 	defer func() {
 		if rerr != nil {
@@ -484,24 +479,24 @@ func (svc *Service) startContainer(
 	defer errBufWC.Close()
 
 	var stdinReader io.ReadCloser
-	if sio != nil && sio.Stdin != nil {
-		stdinReader = sio.Stdin
+	if opts.IO != nil && opts.IO.Stdin != nil {
+		stdinReader = opts.IO.Stdin
 	}
 	stdoutWriters := multiWriteCloser{outBufWC}
-	if sio != nil && sio.Stdout != nil {
-		stdoutWriters = append(stdoutWriters, sio.Stdout)
+	if opts.IO != nil && opts.IO.Stdout != nil {
+		stdoutWriters = append(stdoutWriters, opts.IO.Stdout)
 	}
 	stderrWriters := multiWriteCloser{errBufWC}
-	if sio != nil && sio.Stderr != nil {
-		stderrWriters = append(stderrWriters, sio.Stderr)
+	if opts.IO != nil && opts.IO.Stderr != nil {
+		stderrWriters = append(stderrWriters, opts.IO.Stderr)
 	}
 
 	started := make(chan struct{})
 
 	signal := make(chan syscall.Signal)
 	var resize <-chan executor.WinSize
-	if sio != nil {
-		resize = convertResizeChannel(ctx, sio.ResizeCh)
+	if opts.IO != nil {
+		resize = convertResizeChannel(ctx, opts.IO.ResizeCh)
 	}
 
 	secretEnv, err := ctr.secretEnvValues(ctx)
@@ -510,7 +505,7 @@ func (svc *Service) startContainer(
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
-	worker := bk.Worker.ExecWorker(svc.Creator, *execMD)
+	worker := bk.Worker.ExecWorker(span.SpanContext(), *execMD)
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {
@@ -533,7 +528,7 @@ func (svc *Service) startContainer(
 	checked := make(chan error, 1)
 
 	if ctr.Config.Healthcheck != nil {
-		dockerHealthcheck, err := newDockerHealthcheck(worker, svcID, ctr, svc.Creator)
+		dockerHealthcheck, err := newDockerHealthcheck(worker, svcID, ctr, span.SpanContext())
 		if err != nil {
 			return fmt.Errorf("failed to setup docker healthcheck: %w", err)
 		}
@@ -551,7 +546,7 @@ func (svc *Service) startContainer(
 	var exitErr error
 	go func() {
 		defer func() {
-			sio.Close()
+			opts.IO.Close()
 			close(exited)
 		}()
 
@@ -582,7 +577,7 @@ func (svc *Service) startContainer(
 			slog.Info("service exited in signal")
 		case signal <- sig:
 			// close stdio, else we hang waiting on i/o piping goroutines
-			sio.Close()
+			opts.IO.Close()
 		}
 		return nil
 	}
@@ -664,7 +659,7 @@ func (svc *Service) startContainer(
 			if errors.As(exitErr, &gwErr) {
 				// Create ExecError with available service information
 				return &ExecError{
-					Err:      telemetry.TrackOrigin(gwErr, svc.Creator),
+					Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
 					Cmd:      meta.Args,
 					ExitCode: int(gwErr.ExitCode),
 					Stdout:   stdoutBuf.String(),
@@ -747,7 +742,7 @@ func (mwc multiWriteCloser) Close() error {
 	return errs
 }
 
-func (svc *Service) startTunnel(ctx context.Context, running *RunningService) (rerr error) {
+func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ ServiceStartOpts) (rerr error) {
 	if running == nil {
 		return fmt.Errorf("running service is nil")
 	}
@@ -777,11 +772,7 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService) (r
 		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 
-	upstreamDig, err := svc.TunnelUpstream.ContentPreferredDigest(ctx)
-	if err != nil {
-		return fmt.Errorf("upstream service digest: %w", err)
-	}
-	upstream, err := svcs.Start(svcCtx, upstreamDig, svc.TunnelUpstream.Self(), svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
+	upstream, err := svcs.StartResult(svcCtx, svc.TunnelUpstream, svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
 	if err != nil {
 		return fmt.Errorf("start upstream: %w", err)
 	}
@@ -877,7 +868,7 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService) (r
 	return nil
 }
 
-func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningService, dig digest.Digest) (rerr error) {
+func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningService, dig digest.Digest, _ ServiceStartOpts) (rerr error) {
 	if running == nil {
 		return fmt.Errorf("running service is nil")
 	}
@@ -924,9 +915,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningServ
 		})
 	}
 
-	ctx, span := Tracer(ctx).Start(ctx, strings.Join(descs, ", "), trace.WithLinks(
-		trace.Link{SpanContext: svc.Creator},
-	))
+	ctx, span := Tracer(ctx).Start(ctx, strings.Join(descs, ", "))
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was

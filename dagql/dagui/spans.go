@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -210,6 +211,7 @@ type SpanSnapshot struct {
 	Final bool
 
 	ID        SpanID
+	TraceID   TraceID
 	Name      string
 	StartTime time.Time
 	EndTime   time.Time
@@ -274,6 +276,8 @@ type SpanSnapshot struct {
 
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
+
+	ResumeOutput string `json:",omitempty"`
 
 	CallDigest  string `json:",omitempty"`
 	CallPayload string `json:",omitempty"`
@@ -382,6 +386,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.DagOutputAttr:
 		snapshot.Output = val.(string)
+
+	case telemetryattrs.UIResumeOutputAttr:
+		snapshot.ResumeOutput = val.(string)
 
 	case telemetry.ContentTypeAttr:
 		snapshot.ContentType = val.(string)

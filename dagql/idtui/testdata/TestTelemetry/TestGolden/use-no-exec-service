@@ -16,25 +16,30 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
+$ viztest: Viztest! X.Xs CACHED
 ✔ .useNoExecService: String! X.Xs
 ┃ PONG
-├╴✔ container: Container! X.Xs
-├╴$ .from(address: "redis:7.4.3"): Container! X.Xs CACHED
-├╴✔ .withExposedPort(port: 6379): Container! X.Xs
-├╴✔ .asService: Service! X.Xs ✔ 1
-│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
-│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Redis version=X.X.X, bits=64, commit=00000000, modified=0, pid=X, just started
-│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
-│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * monotonic clock: POSIX clock_gettime
-│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Running mode=standalone, port=6379.
-│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Server initialized
-│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Ready to accept connections tcp
+├╴$ container: Container! X.Xs CACHED
+├╴✔ .from(address: "redis:7.4.3"): Container! X.Xs
+├╴$ .withExposedPort(port: 6379): Container! X.Xs CACHED
+├╴$ .asService: Service! X.Xs CACHED ✔ 1
+│ ╰╴✔ exec docker-entrypoint.sh redis-server X.Xs
+│   ┃ X:M XX XXX 20XX XX:XX:XX.XXX * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+│   ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Redis version=X.X.X, bits=64, commit=00000000, modified=0, pid=X, just started
+│   ┃ X:M XX XXX 20XX XX:XX:XX.XXX # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+│   ┃ X:M XX XXX 20XX XX:XX:XX.XXX * monotonic clock: POSIX clock_gettime
+│   ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Running mode=standalone, port=6379.
+│   ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Server initialized
+│   ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Ready to accept connections tcp
+│   ╰╴✔ 6379/tcp X.Xs
+│     ┃ XX:XX:XX WRN port not ready host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local error="dial tcp 10.XX.XX.XX:6379: connect: connection refused" elapsed=X.Xs
+│     ┃ XX:XX:XX WRN port not ready host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local error="dial tcp 10.XX.XX.XX:6379: connect: connection refused" elapsed=X.Xs
+│     ┃ XX:XX:XX INF port is healthy host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local endpoint=10.XX.XX.XX:6379
 │
-├╴✔ Container.withServiceBinding(
+├╴$ Container.withServiceBinding(
 │   ┆ alias: "redis"
 │   ┆ service: Container.asService: Service!
-│   ): Container! X.Xs
+│   ): Container! X.Xs CACHED
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
 ├╴✔ withExec redis-cli -h redis ping X.Xs
 │ ┃ PONG

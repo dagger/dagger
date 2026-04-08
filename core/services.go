@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -168,8 +169,14 @@ type Startable interface {
 		ctx context.Context,
 		running *RunningService,
 		digest digest.Digest,
-		io *ServiceIO,
+		opts ServiceStartOpts,
 	) error
+}
+
+type ServiceStartOpts struct {
+	ClientSpecific      bool
+	IO                  *ServiceIO
+	LogTargetCallDigest digest.Digest
 }
 
 // Start starts the given service, returning the running service. If the
@@ -177,7 +184,15 @@ type Startable interface {
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
 func (ss *Services) Start(ctx context.Context, dig digest.Digest, svc Startable, clientSpecific bool) (*RunningService, error) {
-	return ss.StartWithIO(ctx, dig, svc, clientSpecific, nil)
+	return ss.StartWithOpts(ctx, dig, svc, ServiceStartOpts{
+		ClientSpecific: clientSpecific,
+	})
+}
+
+func (ss *Services) StartResult(ctx context.Context, svc dagql.ObjectResult[*Service], clientSpecific bool) (*RunningService, error) {
+	return ss.StartResultWithOpts(ctx, svc, ServiceStartOpts{
+		ClientSpecific: clientSpecific,
+	})
 }
 
 func (ss *Services) StartWithIO(
@@ -186,6 +201,18 @@ func (ss *Services) StartWithIO(
 	svc Startable,
 	clientSpecific bool,
 	sio *ServiceIO,
+) (*RunningService, error) {
+	return ss.StartWithOpts(ctx, dig, svc, ServiceStartOpts{
+		ClientSpecific: clientSpecific,
+		IO:             sio,
+	})
+}
+
+func (ss *Services) StartWithOpts(
+	ctx context.Context,
+	dig digest.Digest,
+	svc Startable,
+	opts ServiceStartOpts,
 ) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -199,12 +226,46 @@ func (ss *Services) StartWithIO(
 		SessionID: clientMetadata.SessionID,
 		Kind:      ServiceRuntimeShared,
 	}
-	if clientSpecific {
+	if opts.ClientSpecific {
 		key.ClientID = clientMetadata.ClientID
 	}
 
-	running, _, err := ss.startWithKey(ctx, key, svc, sio)
+	running, _, err := ss.startWithKey(ctx, key, svc, opts)
 	return running, err
+}
+
+func (ss *Services) StartResultWithIO(
+	ctx context.Context,
+	svc dagql.ObjectResult[*Service],
+	clientSpecific bool,
+	sio *ServiceIO,
+) (*RunningService, error) {
+	return ss.StartResultWithOpts(ctx, svc, ServiceStartOpts{
+		ClientSpecific: clientSpecific,
+		IO:             sio,
+	})
+}
+
+func (ss *Services) StartResultWithOpts(
+	ctx context.Context,
+	svc dagql.ObjectResult[*Service],
+	opts ServiceStartOpts,
+) (*RunningService, error) {
+	if svc.Self() == nil {
+		return nil, fmt.Errorf("service result is nil")
+	}
+	serviceDig, err := svc.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("service digest: %w", err)
+	}
+	if opts.LogTargetCallDigest == "" {
+		callDig, err := svc.RecipeDigest(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("service recipe digest: %w", err)
+		}
+		opts.LogTargetCallDigest = callDig
+	}
+	return ss.StartWithOpts(ctx, serviceDig, svc.Self(), opts)
 }
 
 func (ss *Services) StartInteractive(
@@ -227,7 +288,10 @@ func (ss *Services) StartInteractive(
 		Kind:       ServiceRuntimeInteractive,
 		InstanceID: identity.NewID(),
 	}
-	return ss.startWithKey(ctx, key, svc, sio)
+	return ss.startWithKey(ctx, key, svc, ServiceStartOpts{
+		ClientSpecific: true,
+		IO:             sio,
+	})
 }
 
 // StartBindings starts each of the bound services in parallel and returns a
@@ -252,11 +316,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	eg := new(errgroup.Group)
 	for i, bnd := range bindings {
 		eg.Go(func() error {
-			serviceDig, err := bnd.Service.ContentPreferredDigest(ctx)
-			if err != nil {
-				return fmt.Errorf("service %s content-preferred digest: %w", bnd.Hostname, err)
-			}
-			runningSvc, err := ss.Start(ctx, serviceDig, bnd.Service.Self(), false)
+			runningSvc, err := ss.StartResult(ctx, bnd.Service, false)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
@@ -513,7 +573,7 @@ func (ss *Services) startWithKey(
 	ctx context.Context,
 	key ServiceKey,
 	svc Startable,
-	sio *ServiceIO,
+	opts ServiceStartOpts,
 ) (_ *RunningService, release func(), err error) {
 	for {
 		ss.l.Lock()
@@ -554,7 +614,7 @@ func (ss *Services) startWithKey(
 
 			defer close(start.done)
 
-			if err := svc.Start(svcCtx, running, key.Digest, sio); err != nil {
+			if err := svc.Start(svcCtx, running, key.Digest, opts); err != nil {
 				start.err = err
 				_ = running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
 				ss.l.Lock()

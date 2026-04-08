@@ -40,7 +40,7 @@ func (s *streamingLogExporter) Export(ctx context.Context, records []sdklog.Reco
 	// Group records by span and either flush immediately if span exists, or store for later
 	spanGroups := make(map[dagui.SpanID][]sdklog.Record)
 	for _, record := range records {
-		spanID := dagui.SpanID{SpanID: record.SpanID()}
+		spanID := s.db.LogTargetSpanID(record)
 		spanGroups[spanID] = append(spanGroups[spanID], record)
 	}
 

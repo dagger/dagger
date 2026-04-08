@@ -337,7 +337,7 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 			continue
 		}
 
-		spanID := dagui.SpanID{SpanID: record.SpanID()}
+		spanID := fe.db.LogTargetSpanID(record)
 		spanDt, ok := fe.data[spanID]
 		if !ok {
 			spanDt = &spanData{}

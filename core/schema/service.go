@@ -423,11 +423,15 @@ func (s *serviceSchema) start(ctx context.Context, parent dagql.ObjectResult[*co
 		}
 	}()
 
-	parentDig, err := parent.ContentPreferredDigest(ctx)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return res, fmt.Errorf("service digest: %w", err)
+		return res, err
 	}
-	if err := parent.Self().StartAndTrack(ctx, parentDig); err != nil {
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return res, err
+	}
+	if _, err := svcs.StartResult(ctx, parent, parent.Self().TunnelUpstream.Self() != nil); err != nil {
 		return res, err
 	}
 
@@ -522,11 +526,6 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	if err != nil {
 		return res, fmt.Errorf("failed to select host service: %w", err)
 	}
-	hostSvcDig, err := hostSvc.ContentPreferredDigest(ctx)
-	if err != nil {
-		return res, fmt.Errorf("host service digest: %w", err)
-	}
-
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return res, err
@@ -534,6 +533,10 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	svcs, err := query.Services(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get host services: %w", err)
+	}
+	hostSvcDig, err := hostSvc.ContentPreferredDigest(ctx)
+	if err != nil {
+		return res, fmt.Errorf("host service digest: %w", err)
 	}
 	runningSvc, err := svcs.Start(ctx, hostSvcDig, hostSvc.Self(), true)
 	if err != nil {

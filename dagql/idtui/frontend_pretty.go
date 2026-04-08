@@ -1056,29 +1056,30 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 	copy(logsCopy, logs)
 	fe.dispatch(func() {
 		for _, log := range logsCopy {
-			if log.SpanID().IsValid() {
-				spanID := dagui.SpanID{SpanID: log.SpanID()}
-				if sr, ok := fe.spanTrees[spanID]; ok {
-					sr.Update()
-				}
-				// Also mark roll-up parent spans dirty
-				if _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
-					for id := spanID; ; {
-						span := fe.db.Spans.Map[id]
-						if span == nil || span.Boundary || span.Encapsulate || span.Internal {
-							break
-						}
-						if span.RollUpLogs {
-							if sr, ok := fe.spanTrees[id]; ok {
-								sr.Update()
-							}
-							break
-						}
-						if !span.ParentID.IsValid() {
-							break
-						}
-						id = span.ParentID
+			spanID := fe.db.LogTargetSpanID(log)
+			if !spanID.IsValid() {
+				continue
+			}
+			if sr, ok := fe.spanTrees[spanID]; ok {
+				sr.Update()
+			}
+			// Also mark roll-up parent spans dirty
+			if _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
+				for id := spanID; ; {
+					span := fe.db.Spans.Map[id]
+					if span == nil || span.Boundary || span.Encapsulate || span.Internal {
+						break
 					}
+					if span.RollUpLogs {
+						if sr, ok := fe.spanTrees[id]; ok {
+							sr.Update()
+						}
+						break
+					}
+					if !span.ParentID.IsValid() {
+						break
+					}
+					id = span.ParentID
 				}
 			}
 		}
@@ -3319,14 +3320,12 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			}
 		}
 
-		if eof && log.SpanID().IsValid() {
-			l.SawEOF[dagui.SpanID{SpanID: log.SpanID()}] = true
+		spanID := l.DB.LogTargetSpanID(log)
+		if eof && spanID.IsValid() {
+			l.SawEOF[spanID] = true
 			continue
 		}
 
-		targetID := log.SpanID()
-
-		spanID := dagui.SpanID{SpanID: targetID}
 		pw, rolledUp := l.findRollUpSpan(spanID)
 		if rolledUp && !verbose && !global {
 			var context string
@@ -3334,7 +3333,7 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if ok {
 				context = l.extractSpanContext(span)
 			} else {
-				context = targetID.String()
+				context = spanID.String()
 			}
 			pw.Prefix = l.Output.String("["+context+"]").Foreground(termenv.ANSICyan).String() + " "
 			fmt.Fprint(pw, log.Body().AsString())

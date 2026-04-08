@@ -302,7 +302,7 @@ func (f *fakeStartable) Digest() digest.Digest {
 	return f.digest
 }
 
-func (f *fakeStartable) Start(_ context.Context, running *core.RunningService, _ digest.Digest, _ *core.ServiceIO) error {
+func (f *fakeStartable) Start(_ context.Context, running *core.RunningService, _ digest.Digest, _ core.ServiceStartOpts) error {
 	atomic.AddInt32(&f.starts, 1)
 	res := <-f.startResults
 	if res.failed != nil {

@@ -9,6 +9,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -56,6 +57,13 @@ type DB struct {
 	// UpdatedSnapshots so that we can know whether we need to send them when we
 	// finally see them
 	seenSpans map[SpanID]struct{}
+
+	pendingResumeOutputs map[resumeOutputKey]SpanSet
+}
+
+type resumeOutputKey struct {
+	TraceID TraceID
+	Output  string
 }
 
 func NewDB() *DB {
@@ -76,6 +84,8 @@ func NewDB() *DB {
 
 		updatedSpans: NewSpanSet(),
 		seenSpans:    make(map[SpanID]struct{}),
+
+		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
 	}
 }
 
@@ -237,7 +247,7 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// eof; ignore
 			continue
 		}
-		spanID := SpanID{log.SpanID()}
+		spanID := db.LogTargetSpanID(log)
 		if spanID == db.PrimarySpan {
 			// buffer raw logs so we can replay them later
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
@@ -380,6 +390,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	// create or update the span itself
 	spanData := db.findOrAllocSpan(spanID)
 	spanData.Received = true
+	spanData.TraceID = TraceID{span.SpanContext().TraceID()}
 	spanData.ParentID.SpanID = span.Parent().SpanID()
 	spanData.Name = span.Name()
 	spanData.StartTime = span.StartTime()
@@ -721,7 +732,11 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.CreatorSpans[span.Output] = NewSpanSet()
 		}
 		db.CreatorSpans[span.Output].Add(span)
+
+		db.resolvePendingResumeOutputs(span.Output, span.TraceID)
 	}
+
+	db.maybeResumeOutput(span)
 
 	// finally, install the span if we don't already have it
 	//
@@ -732,6 +747,99 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// FIXME: refactor? can we keep some sort of flat map of spans an append
 	// children to them instead of having the single big ordered list?
 	db.Spans.Add(span)
+}
+
+func (db *DB) linkResumedOutput(span *Span, creator *Span) {
+	changed := creator.ChildSpans.Add(span)
+	creator.effectsViaLinks.Add(span)
+	span.causesViaLinks.Add(creator)
+	if changed {
+		db.update(creator)
+	}
+}
+
+func (db *DB) creatorSpanForDigestInTrace(dig string, traceID trace.TraceID) *Span {
+	creators, ok := db.CreatorSpans[dig]
+	if !ok {
+		return nil
+	}
+
+	var best *Span
+	for _, creator := range creators.Order {
+		if creator.TraceID.TraceID != traceID {
+			continue
+		}
+		if best == nil || creator.StartTime.After(best.StartTime) {
+			best = creator
+		}
+	}
+
+	return best
+}
+
+func (db *DB) maybeResumeOutput(span *Span) {
+	if span.ResumeOutput == "" {
+		return
+	}
+
+	creator := db.creatorSpanForDigestInTrace(span.ResumeOutput, span.TraceID.TraceID)
+	if creator == nil {
+		key := resumeOutputKey{
+			TraceID: span.TraceID,
+			Output:  span.ResumeOutput,
+		}
+		if db.pendingResumeOutputs[key] == nil {
+			db.pendingResumeOutputs[key] = NewSpanSet()
+		}
+		db.pendingResumeOutputs[key].Add(span)
+		return
+	}
+
+	db.linkResumedOutput(span, creator)
+}
+
+func (db *DB) resolvePendingResumeOutputs(output string, traceID TraceID) {
+	key := resumeOutputKey{
+		TraceID: traceID,
+		Output:  output,
+	}
+	pending, ok := db.pendingResumeOutputs[key]
+	if !ok {
+		return
+	}
+	creator := db.creatorSpanForDigestInTrace(output, traceID.TraceID)
+	if creator == nil {
+		return
+	}
+	delete(db.pendingResumeOutputs, key)
+	for _, span := range pending.Order {
+		db.linkResumedOutput(span, creator)
+		span.PropagateStatusToParentsAndLinks()
+		db.update(span)
+	}
+}
+
+func (db *DB) LogTargetSpanID(record sdklog.Record) SpanID {
+	fallback := SpanID{SpanID: record.SpanID()}
+
+	var targetDig string
+	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		if kv.Key == telemetry.DagDigestAttr {
+			targetDig = kv.Value.AsString()
+			return false
+		}
+		return true
+	})
+
+	if targetDig == "" {
+		return fallback
+	}
+
+	if creator := db.creatorSpanForDigestInTrace(targetDig, record.TraceID()); creator != nil {
+		return creator.ID
+	}
+
+	return fallback
 }
 
 func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
@@ -748,7 +856,7 @@ func (db *DB) MostInterestingSpan(dig string) *Span {
 	sort.Slice(vs, func(i, j int) bool {
 		return vs[i].StartTime.Before(vs[j].StartTime)
 	})
-	for _, span := range db.Intervals[dig] {
+	for _, span := range vs {
 		// a running vertex is always most interesting, and these are already in
 		// order
 		if span.IsRunningOrEffectsRunning() {

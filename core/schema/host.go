@@ -21,7 +21,6 @@ import (
 	"github.com/distribution/reference"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -616,7 +615,6 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 	}
 
 	return &core.Service{
-		Creator:        trace.SpanContextFromContext(ctx),
 		TunnelUpstream: inst,
 		TunnelPorts:    ports,
 	}, nil
@@ -795,7 +793,6 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 	}
 
 	svc := &core.Service{
-		Creator:     trace.SpanContextFromContext(ctx),
 		HostSockets: socks,
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)

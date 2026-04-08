@@ -36,7 +36,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
@@ -4193,7 +4192,6 @@ func (container *Container) AsService(ctx context.Context, containerRes dagql.Ob
 	}
 
 	return &Service{
-		Creator:                       trace.SpanContextFromContext(ctx),
 		Container:                     containerRes,
 		Args:                          cmdargs,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
