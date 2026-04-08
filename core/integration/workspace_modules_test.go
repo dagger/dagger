@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger"
+	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -23,18 +25,107 @@ func TestWorkspaceModules(t *testing.T) {
 // TestWorkspaceModuleInstall should cover module installation into a
 // workspace, through both CLI commands and CurrentWorkspace.Install.
 func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *testctx.T) {
-	t.Run("install initializes a workspace when needed", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement workspace module install-init coverage.
+	t.Run("CurrentWorkspace.Install initializes a workspace for remote modules", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
 
-Move the current coverage for installing into a repo with no existing workspace
-config into this file.`)
+		c := connect(ctx, t, dagger.WithWorkdir(workdir))
+		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
+
+		msg, err := c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
+		require.NoError(t, err)
+		require.Equal(t,
+			"Initialized workspace in "+filepath.Join(workdir, ".dagger")+"\n"+
+				`Installed module "mywolfi" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName),
+			msg,
+		)
+
+		configBytes, err := os.ReadFile(filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName))
+		require.NoError(t, err)
+
+		cfg, err := workspacecfg.ParseConfig(configBytes)
+		require.NoError(t, err)
+		require.Contains(t, cfg.Modules, "mywolfi")
+		require.Equal(t, ref, cfg.Modules["mywolfi"].Source)
+		require.False(t, cfg.Modules["mywolfi"].Entrypoint)
+
+		require.NoError(t, c.Close())
+
+		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.LockFileName))
+		require.NoError(t, err)
+		assertModuleResolveLockEntry(t, lockBytes, ref, workspacecfg.PolicyPin)
+
+		c = connect(ctx, t, dagger.WithWorkdir(workdir))
+		msg, err = c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
+		require.NoError(t, err)
+		require.Equal(t, `Module "mywolfi" is already installed`, msg)
 	})
 
-	t.Run("local installs are rewritten relative to .dagger", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement relative local module install coverage.
+	t.Run("CurrentWorkspace.Install rewrites local refs relative to .dagger", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
 
-Move the current coverage that rewrites local module refs relative to .dagger
-into this file.`)
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		c := connect(ctx, t, dagger.WithWorkdir(workdir))
+		msg, err := c.CurrentWorkspace().Install(ctx, "./dep")
+		require.NoError(t, err)
+		require.Equal(t,
+			"Initialized workspace in "+filepath.Join(workdir, ".dagger")+"\n"+
+				`Installed module "dep" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName),
+			msg,
+		)
+
+		configBytes, err := os.ReadFile(filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName))
+		require.NoError(t, err)
+
+		cfg, err := workspacecfg.ParseConfig(configBytes)
+		require.NoError(t, err)
+		require.Contains(t, cfg.Modules, "dep")
+		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
+	})
+
+	t.Run("workspace install initializes a workspace when needed", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
+
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
+		require.NoError(t, err)
+		outStr := strings.TrimSpace(string(out))
+		require.Contains(t, outStr, "Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName))
+		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Contains(t, cfg.Modules, "dep")
+		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
+	})
+
+	t.Run("workspace install writes install lock entries by default", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", ref)
+		require.NoError(t, err)
+		require.Equal(t,
+			"Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName)+"\n"+
+				`Installed module "wolfi" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName),
+			strings.TrimSpace(string(out)),
+		)
+
+		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.LockFileName))
+		require.NoError(t, err)
+		assertModuleResolveLockEntry(t, lockBytes, ref, workspacecfg.PolicyPin)
 	})
 
 	t.Run("absolute local installs preserve absolute source paths", func(ctx context.Context, t *testctx.T) {
@@ -69,11 +160,63 @@ entrypoint = true
 		require.Equal(t, "hello from absolute workspace module", strings.TrimSpace(string(out)))
 	})
 
-	t.Run("install rejects non-module refs without corrupting config", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement non-module install rejection coverage.
+	t.Run("workspace install creates workspace config instead of editing dagger.json for standalone modules", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
 
-Move the current coverage that rejects non-module directories without writing
-[modules.] or otherwise corrupting the workspace config into this file.`)
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--name=app", "--sdk=go")
+		require.NoError(t, err)
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
+		require.NoError(t, err)
+		outStr := strings.TrimSpace(string(out))
+		require.Contains(t, outStr, "Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName))
+		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+
+		moduleConfig, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ModuleConfigFileName))
+		require.NoError(t, err)
+		require.NotContains(t, string(moduleConfig), `"name": "dep"`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Contains(t, cfg.Modules, "dep")
+		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
+	})
+
+	t.Run("workspace install rejects module-specific flags", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "--mod=.", "./dep")
+		require.Error(t, err)
+		requireErrOut(t, err, "unknown flag: --mod")
+	})
+
+	t.Run("install rejects non-module refs without corrupting config", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		emptyDir := filepath.Join(workdir, "empty")
+
+		require.NoError(t, os.MkdirAll(emptyDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./empty")
+		require.Error(t, err)
+		requireErrOut(t, err, `ref "./empty" does not point to an initialized module`)
+
+		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+		require.NoError(t, err)
+		require.NotContains(t, string(configBytes), "[modules.]")
+
+		cfg, err := workspacecfg.ParseConfig(configBytes)
+		require.NoError(t, err)
+		require.Empty(t, cfg.Modules)
 	})
 }
 
@@ -105,16 +248,51 @@ source = "github.com/dagger/dagger/modules/wolfi"
 // around configured modules.
 func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t *testctx.T) {
 	t.Run("name collisions are rejected without rewriting config", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement workspace module collision coverage.
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
 
-Move the current duplicate-name rejection coverage into this file.`)
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
+source = "../existing"
+`)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "--name=dep", "./dep")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "dep" already exists in workspace config with source "../existing" (new source "../dep")`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Contains(t, cfg.Modules, "dep")
+		require.Equal(t, "../existing", cfg.Modules["dep"].Source)
 	})
 
 	t.Run("local dependency updates are rejected when unsupported", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement workspace module update rejection coverage.
+		workdir := t.TempDir()
+		appDir := filepath.Join(workdir, "app")
+		depDir := filepath.Join(workdir, "dep")
 
-Move the current module update rejection coverage for local dependencies into
-this file.`)
+		require.NoError(t, os.MkdirAll(appDir, 0o755))
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--name=app", "--sdk=go", ".")
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go", ".")
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "module", "update", "--mod=./app", "dep")
+		requireErrOut(t, err, `updating local dependencies is not supported`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Empty(t, cfg.Modules)
 	})
 }
 
@@ -124,6 +302,38 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInit(ctx context.Context, t *tes
 
 Move the current workspace_module_init_test.go coverage into this file once the
 desired module-init UX for workspaces is locked.`)
+}
+
+// TestModuleScopedDependencyCommands covers module-specific dependency changes
+// made from inside a workspace without mutating workspace config.
+func (WorkspaceModulesSuite) TestModuleScopedDependencyCommands(ctx context.Context, t *testctx.T) {
+	t.Run("module install writes the target module config, not workspace config", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		appDir := filepath.Join(workdir, "app")
+		depDir := filepath.Join(workdir, "dep")
+
+		require.NoError(t, os.MkdirAll(appDir, 0o755))
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--name=app", "--sdk=go", ".")
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go", ".")
+		require.NoError(t, err)
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
+		require.NoError(t, err)
+		require.Equal(t, `Installed module dependency "dep"`, strings.TrimSpace(string(out)))
+
+		moduleConfig, err := os.ReadFile(filepath.Join(appDir, workspacecfg.ModuleConfigFileName))
+		require.NoError(t, err)
+		require.Contains(t, string(moduleConfig), `"name": "dep"`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Empty(t, cfg.Modules)
+	})
 }
 
 // TestWorkspaceManagedModuleBehavior covers runtime behavior that depends on a
@@ -197,4 +407,15 @@ type HelloWorld {
 		require.NoError(t, err)
 		require.Equal(t, "hello, world!", out)
 	})
+}
+
+func readInstalledWorkspaceConfig(t *testctx.T, workdir string) *workspacecfg.Config {
+	t.Helper()
+
+	configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+	require.NoError(t, err)
+
+	cfg, err := workspacecfg.ParseConfig(configBytes)
+	require.NoError(t, err)
+	return cfg
 }
