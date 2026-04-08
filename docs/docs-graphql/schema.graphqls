@@ -4438,7 +4438,7 @@ type ModuleSource {
   asString: String!
 
   """The blueprint referenced by the module source."""
-  blueprint: ModuleSource!
+  blueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.")
 
   """
   The ref to clone the root of the git repo from. Only valid for git sources.
@@ -4562,7 +4562,7 @@ type ModuleSource {
   sync: ModuleSourceID!
 
   """The toolchains referenced by the module source."""
-  toolchains: [ModuleSource!]!
+  toolchains: [ModuleSource!]! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.")
 
   """User-defined defaults read from local .env files"""
   userDefaults: EnvFile!
@@ -4574,7 +4574,7 @@ type ModuleSource {
   withBlueprint(
     """The blueprint module to set."""
     blueprint: ModuleSourceID!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update the module source with a new client to generate."""
   withClient(
@@ -4638,10 +4638,10 @@ type ModuleSource {
   withToolchains(
     """The toolchain modules to add."""
     toolchains: [ModuleSourceID!]!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update the blueprint module to the latest version."""
-  withUpdateBlueprint: ModuleSource!
+  withUpdateBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update one or more module dependencies."""
   withUpdateDependencies(
@@ -4653,7 +4653,7 @@ type ModuleSource {
   withUpdateToolchains(
     """The toolchains to update."""
     toolchains: [String!]!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update one or more clients."""
   withUpdatedClients(
@@ -4662,7 +4662,7 @@ type ModuleSource {
   ): ModuleSource!
 
   """Remove the current blueprint from the module source."""
-  withoutBlueprint: ModuleSource!
+  withoutBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Remove a client from the module source."""
   withoutClient(
@@ -4688,7 +4688,7 @@ type ModuleSource {
   withoutToolchains(
     """The toolchains to remove."""
     toolchains: [String!]!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 }
 
 """Experimental features of a module"""

@@ -13951,8 +13951,9 @@
                         <td> A human readable ref string representation of this module source. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-blueprint" href="#ModuleSource-blueprint"><code>blueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> The blueprint referenced by the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-blueprint" href="#ModuleSource-blueprint"><code>blueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> The blueprint referenced by the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.</span>
+                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-cloneRef" href="#ModuleSource-cloneRef"><code>cloneRef</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -14076,8 +14077,9 @@
                         <td> Forces evaluation of the module source, including any loading into the engine and associated validation. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-toolchains" href="#ModuleSource-toolchains"><code>toolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>[ModuleSource!]!</code></a></span> </td>
-                        <td> The toolchains referenced by the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-toolchains" href="#ModuleSource-toolchains"><code>toolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>[ModuleSource!]!</code></a></span> </td>
+                        <td> The toolchains referenced by the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.</span>
+                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-userDefaults" href="#ModuleSource-userDefaults"><code>userDefaults</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
@@ -14088,8 +14090,9 @@
                         <td> The specified version of the git repo this source points to. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withBlueprint" href="#ModuleSource-withBlueprint"><code>withBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Set a blueprint for the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withBlueprint" href="#ModuleSource-withBlueprint"><code>withBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Set a blueprint for the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -14245,8 +14248,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withToolchains" href="#ModuleSource-withToolchains"><code>withToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Add toolchains to the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withToolchains" href="#ModuleSource-withToolchains"><code>withToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Add toolchains to the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -14262,8 +14266,9 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateBlueprint" href="#ModuleSource-withUpdateBlueprint"><code>withUpdateBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Update the blueprint module to the latest version. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withUpdateBlueprint" href="#ModuleSource-withUpdateBlueprint"><code>withUpdateBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update the blueprint module to the latest version. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateDependencies" href="#ModuleSource-withUpdateDependencies"><code>withUpdateDependencies</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -14283,8 +14288,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateToolchains" href="#ModuleSource-withUpdateToolchains"><code>withUpdateToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Update one or more toolchains. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withUpdateToolchains" href="#ModuleSource-withUpdateToolchains"><code>withUpdateToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update one or more toolchains. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -14317,8 +14323,9 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutBlueprint" href="#ModuleSource-withoutBlueprint"><code>withoutBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Remove the current blueprint from the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withoutBlueprint" href="#ModuleSource-withoutBlueprint"><code>withoutBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Remove the current blueprint from the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withoutClient" href="#ModuleSource-withoutClient"><code>withoutClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -14372,8 +14379,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutToolchains" href="#ModuleSource-withoutToolchains"><code>withoutToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Remove the provided toolchains from the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withoutToolchains" href="#ModuleSource-withoutToolchains"><code>withoutToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Remove the provided toolchains from the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">

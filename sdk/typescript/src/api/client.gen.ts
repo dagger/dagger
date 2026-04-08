@@ -11061,6 +11061,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The blueprint referenced by the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
    */
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
@@ -11407,6 +11408,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The toolchains referenced by the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
    */
   toolchains = async (): Promise<ModuleSource[]> => {
     type toolchains = {
@@ -11448,6 +11450,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Set a blueprint for the module source.
    * @param blueprint The blueprint module to set.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withBlueprint = (blueprint: ModuleSource): ModuleSource => {
     const ctx = this._ctx.select("withBlueprint", { blueprint })
@@ -11532,6 +11535,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Add toolchains to the module source.
    * @param toolchains The toolchain modules to add.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withToolchains = (toolchains: ModuleSource[]): ModuleSource => {
     const ctx = this._ctx.select("withToolchains", { toolchains })
@@ -11540,6 +11544,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Update the blueprint module to the latest version.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withUpdateBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withUpdateBlueprint")
@@ -11558,6 +11563,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Update one or more toolchains.
    * @param toolchains The toolchains to update.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withUpdateToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateToolchains", { toolchains })
@@ -11575,6 +11581,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Remove the current blueprint from the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withoutBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withoutBlueprint")
@@ -11613,6 +11620,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Remove the provided toolchains from the module source.
    * @param toolchains The toolchains to remove.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withoutToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutToolchains", { toolchains })
