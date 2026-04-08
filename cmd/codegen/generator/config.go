@@ -87,4 +87,7 @@ type ClientGeneratorConfig struct {
 	// The engine version from dagger.json, used to pin the dagger.io/dagger dependency.
 	// This is only populated when generating from a module source (not in tests).
 	EngineVersion string
+
+	// If set, use `@dagger.io/dagger` with the given version and use it in the generated client.
+	LibVersion string
 }

@@ -116,6 +116,7 @@ func (sdk *goSDK) GenerateClient(
 		"generate-client",
 		"--output", dagql.String(filepath.Join(goSDKUserModContextDirPath, rootSourcePath)),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
+		"--lib-version", dagql.String(goSDKLibVersion),
 		dagql.String(fmt.Sprintf("--module-source-id=%s", modSourceID)),
 		dagql.String(fmt.Sprintf("--client-dir=%s", outputDir)),
 	}
