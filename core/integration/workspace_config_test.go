@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -10,6 +12,24 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
+
+const currentWorkspaceConfigQuery = `{
+  currentWorkspace {
+    path
+    initialized
+    hasConfig
+    configPath
+  }
+}
+`
+
+func initGitRepo(ctx context.Context, t *testctx.T, workdir string) {
+	t.Helper()
+
+	initCmd := exec.CommandContext(ctx, "git", "init", workdir)
+	output, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+}
 
 func writeWorkspaceConfigFile(t *testctx.T, workdir, configTOML string) {
 	t.Helper()
@@ -129,26 +149,101 @@ func (WorkspaceSuite) TestWorkspaceConfigRequiresInit(ctx context.Context, t *te
 	requireErrOut(t, err, "no config.toml found in workspace")
 }
 
+func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	appDir := filepath.Join(workdir, "app")
+	nestedDir := filepath.Join(appDir, "sub")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(appDir, workspace.LockDirName), 0o755))
+	require.NoError(t, os.MkdirAll(nestedDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(appDir, workspace.LockDirName, workspace.ConfigFileName),
+		[]byte("# Dagger workspace configuration\n"),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(nestedDir, "query.graphql"),
+		[]byte(currentWorkspaceConfigQuery),
+		0o644,
+	))
+
+	initGitRepo(ctx, t, workdir)
+
+	out, err := hostDaggerExec(ctx, t, nestedDir, "--silent", "query", "--doc", "query.graphql")
+	require.NoError(t, err)
+	require.JSONEq(t, fmt.Sprintf(`{
+		"currentWorkspace": {
+			"path": "app",
+			"initialized": true,
+			"hasConfig": true,
+			"configPath": %q
+		}
+	}`, filepath.Join("app", workspace.LockDirName, workspace.ConfigFileName)), string(out))
+}
+
+func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T) {
+	t.Run("creates config for the current workspace directory", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		nestedDir := filepath.Join(workdir, "app", "sub")
+
+		require.NoError(t, os.MkdirAll(nestedDir, 0o755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(nestedDir, "query.graphql"),
+			[]byte(currentWorkspaceConfigQuery),
+			0o644,
+		))
+		initGitRepo(ctx, t, workdir)
+
+		out, err := hostDaggerExecRaw(ctx, t, nestedDir, "--silent", "init")
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("Initialized workspace in %s", filepath.Join(nestedDir, workspace.LockDirName)), strings.TrimSpace(string(out)))
+
+		configHostPath := filepath.Join(nestedDir, workspace.LockDirName, workspace.ConfigFileName)
+		configContents, err := os.ReadFile(configHostPath)
+		require.NoError(t, err)
+		require.Contains(t, string(configContents), "[modules]")
+
+		out, err = hostDaggerExec(ctx, t, nestedDir, "--silent", "query", "--doc", "query.graphql")
+		require.NoError(t, err)
+		require.JSONEq(t, fmt.Sprintf(`{
+			"currentWorkspace": {
+				"path": "app/sub",
+				"initialized": true,
+				"hasConfig": true,
+				"configPath": %q
+			}
+		}`, filepath.Join("app", "sub", workspace.LockDirName, workspace.ConfigFileName)), string(out))
+	})
+
+	t.Run("rejects reinitialization", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		nestedDir := filepath.Join(workdir, "app")
+
+		require.NoError(t, os.MkdirAll(nestedDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, nestedDir, "--silent", "workspace", "init")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, nestedDir, "--silent", "workspace", "init")
+		require.Error(t, err)
+		requireErrOut(t, err, fmt.Sprintf("workspace already initialized at %s", filepath.Join(nestedDir, workspace.LockDirName)))
+	})
+}
+
 // TestWorkspaceConfigurationLifecycle is the planning scaffold for the full
 // scope this file should eventually own: initializing, editing, and detecting
 // workspaces from .dagger/config.toml. Module management, compat, and
 // migration belong in their own files.
 func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t *testctx.T) {
-	t.Run("current workspace init creates config for the repo", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement CurrentWorkspace.Init coverage.
+	t.Run("CurrentWorkspace.Init creates config for the repo", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement CurrentWorkspace.Init API coverage.
 
 Exercise the API form of workspace initialization and verify it creates the
 expected .dagger/config.toml rooted at the current repo.`)
 	})
 
-	t.Run("workspace init command is idempotent", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement workspace init idempotence coverage.
-
-Run dagger workspace init twice and verify the second invocation does not
-rewrite an already-initialized workspace unexpectedly.`)
-	})
-
-	t.Run("workspace config is detected from the nearest initialized boundary", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace config detects the nearest initialized boundary", func(ctx context.Context, t *testctx.T) {
 		t.Fatal(`FIXME: implement workspace config boundary detection coverage.
 
 Invoke workspace config commands from nested directories and verify they use
