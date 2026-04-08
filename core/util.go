@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,12 +17,10 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
 	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/sys/user"
-	"github.com/opencontainers/go-digest"
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
@@ -38,23 +35,6 @@ var (
 type Syncable interface {
 	dagql.Typed
 	Sync(context.Context) error
-}
-
-type Digestable interface {
-	// Digest returns a content-digest of an object.
-	Digest() (digest.Digest, error)
-}
-
-func DigestOf(v any) (digest.Digest, error) {
-	if v, ok := v.(Digestable); ok {
-		return v.Digest()
-	}
-
-	vs, err := json.Marshal(v)
-	if err != nil {
-		return "", err
-	}
-	return digest.FromBytes(vs), nil
 }
 
 func absPath(workDir string, containerPath string) string {
@@ -353,106 +333,6 @@ func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 		return "", err
 	}
 	return path.Join(resolvedLinkDir, linkBasename), nil
-}
-
-type mountObjOpt struct {
-	commitSnapshot bool
-	cacheDesc      string
-}
-
-type mountObjOptFn func(opt *mountObjOpt)
-
-func withSavedSnapshot(format string, a ...any) mountObjOptFn {
-	return func(opt *mountObjOpt) {
-		opt.cacheDesc = fmt.Sprintf(format, a...)
-		opt.commitSnapshot = true
-	}
-}
-
-type fileOrDirectory interface {
-	*File | *Directory
-	getSnapshot() (bkcache.ImmutableRef, error)
-	setSnapshot(bkcache.ImmutableRef) error
-}
-
-// mountObj evaluates an object and mounts the root fs and returns the mounted path and a closer, which will unmount
-// the file or directory object's root filesystem, and potentially return a modified object, if both the withSavedSnapshot option is specified and the abort flag was not set.
-// The abort flag is only used when the withSavedSnapshot option is specified.
-// NOTE: prefer execInMount where possible, unless finer-grained control of the filesystem mount is required.
-func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjOptFn) (string, func(abort bool) (T, error), error) {
-	var opt mountObjOpt
-	for _, optFn := range optFns {
-		optFn(&opt)
-	}
-
-	var parentRef bkcache.ImmutableRef
-	if obj != nil {
-		var err error
-		parentRef, err = obj.getSnapshot()
-		if err != nil {
-			return "", nil, err
-		}
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return "", nil, err
-	}
-
-	var mountRef bkcache.Ref
-	var newRef bkcache.MutableRef
-	if opt.commitSnapshot {
-		if opt.cacheDesc == "" {
-			return "", nil, fmt.Errorf("mountObj saveSnapshotOpt missing cache description")
-		}
-		newRef, err = query.SnapshotManager().New(ctx, parentRef,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(opt.cacheDesc))
-		if err != nil {
-			return "", nil, err
-		}
-		mountRef = newRef
-	} else {
-		if parentRef == nil {
-			return "", nil, errEmptyResultRef
-		}
-		mountRef = parentRef
-	}
-	var mountRefOpts []mountRefOptFn
-	if !opt.commitSnapshot {
-		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
-	}
-	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, mountRefOpts...)
-	if err != nil {
-		return "", nil, err
-	}
-
-	if opt.commitSnapshot {
-		return rootPath, func(abort bool) (T, error) {
-			err := closer()
-			if err != nil {
-				return nil, err
-			}
-			if !abort {
-				snap, err := newRef.Commit(ctx)
-				if err != nil {
-					return nil, err
-				}
-				if err := obj.setSnapshot(snap); err != nil {
-					_ = snap.Release(context.WithoutCancel(ctx))
-					return nil, err
-				}
-			}
-			return obj, nil
-		}, nil
-	}
-
-	return rootPath, func(_ bool) (T, error) {
-		err := closer()
-		if err != nil {
-			return nil, err
-		}
-		return obj, nil
-	}, nil
 }
 
 // RestoreErrPath will restore the path of an error, which is useful for both removing buildkit mount root paths and referencing uncleaned paths

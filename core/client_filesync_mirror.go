@@ -32,8 +32,6 @@ type ClientFilesyncMirror struct {
 
 	sharedState *filesync.MirrorSharedState
 	usageCount  int
-
-	persistedResultID uint64
 }
 
 var _ dagql.PersistedObject = (*ClientFilesyncMirror)(nil)
@@ -49,19 +47,6 @@ func (*ClientFilesyncMirror) Type() *ast.Type {
 
 func (*ClientFilesyncMirror) TypeDescription() string {
 	return "An internal persistent filesync mirror."
-}
-
-func (m *ClientFilesyncMirror) PersistedResultID() uint64 {
-	if m == nil {
-		return 0
-	}
-	return m.persistedResultID
-}
-
-func (m *ClientFilesyncMirror) SetPersistedResultID(resultID uint64) {
-	if m != nil {
-		m.persistedResultID = resultID
-	}
 }
 
 func (m *ClientFilesyncMirror) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {

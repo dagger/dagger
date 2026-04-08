@@ -195,8 +195,6 @@ type ModuleSource struct {
 	Local  *LocalModuleSource
 	Git    *GitModuleSource
 	DirSrc *DirModuleSource
-
-	persistedResultID uint64
 }
 
 var moduleSourceSDKLoader func(context.Context, *Query, *SDKConfig, *ModuleSource) (SDK, error)
@@ -214,19 +212,6 @@ func (src *ModuleSource) Type() *ast.Type {
 
 func (src *ModuleSource) TypeDescription() string {
 	return "The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc."
-}
-
-func (src *ModuleSource) PersistedResultID() uint64 {
-	if src == nil {
-		return 0
-	}
-	return src.persistedResultID
-}
-
-func (src *ModuleSource) SetPersistedResultID(resultID uint64) {
-	if src != nil {
-		src.persistedResultID = resultID
-	}
 }
 
 var _ dagql.HasDependencyResults = (*ModuleSource)(nil)

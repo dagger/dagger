@@ -418,7 +418,6 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if !res.hasValue && res.persistedEnvelope != nil {
 				res.self = decoded.Unwrap()
 				res.hasValue = true
-				setTypedPersistedResultID(res.self, resultID)
 				decodedShared := decoded.cacheSharedResult()
 				if decodedShared != nil {
 					res.sessionResourceHandle = decodedShared.sessionResourceHandle
@@ -584,7 +583,6 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	if !res.hasValue && res.persistedEnvelope != nil {
 		res.self = decoded.Unwrap()
 		res.hasValue = true
-		setTypedPersistedResultID(res.self, res.id)
 		decodedShared := decoded.cacheSharedResult()
 		if decodedShared != nil {
 			res.sessionResourceHandle = decodedShared.sessionResourceHandle

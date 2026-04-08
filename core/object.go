@@ -440,8 +440,6 @@ type ModuleObject struct {
 
 	TypeDef *ObjectTypeDef
 	Fields  map[string]any
-
-	persistedResultID uint64
 }
 
 var _ dagql.HasDependencyResults = (*ModuleObject)(nil)
@@ -466,19 +464,6 @@ type persistedModuleObjectValue struct {
 
 type persistedModuleObjectPayload struct {
 	Fields map[string]persistedModuleObjectValue `json:"fields,omitempty"`
-}
-
-func (obj *ModuleObject) PersistedResultID() uint64 {
-	if obj == nil {
-		return 0
-	}
-	return obj.persistedResultID
-}
-
-func (obj *ModuleObject) SetPersistedResultID(resultID uint64) {
-	if obj != nil {
-		obj.persistedResultID = resultID
-	}
 }
 
 func (obj *ModuleObject) AttachDependencyResults(
@@ -748,15 +733,6 @@ func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.Persisted
 
 	switch x := val.(type) {
 	case dagql.AnyResult:
-		resultID, err := encodePersistedObjectRef(cache, x, "module object value")
-		if err != nil {
-			return persistedModuleObjectValue{}, err
-		}
-		return persistedModuleObjectValue{
-			Kind:     persistedModuleObjectValueKindResultRef,
-			ResultID: resultID,
-		}, nil
-	case dagql.PersistedResultIDHolder:
 		resultID, err := encodePersistedObjectRef(cache, x, "module object value")
 		if err != nil {
 			return persistedModuleObjectValue{}, err

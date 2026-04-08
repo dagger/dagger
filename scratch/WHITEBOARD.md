@@ -54,3 +54,339 @@
    * This is partially a pre-existing condition though, so not a big deal yet. But will probably make a great optimization in the near-ish future
 
 # Lazy And Snapshot Cleanup
+
+## Problems
+* Unlazy of parent affecting children is confusing + messy and probably broken
+* Remembering to need to eval before accessing fields impacted by laziness is error-prone, not efficient if not done in parallel, etc.
+* container exec is still very very complicated
+* we currently end up needing to eval in places we don't need to in order to avoid bugs
+* there is likely some snapshot/lease bug lurking that is hard to identify due to the complication of this system
+* persistence encode/decode is also extremely overly convoluted
+
+## High-level design ideas
+* Each field of an object like Directory/File/Container that is impacted by laziness is wrapped in an accessor that unlazies on demand
+  * if a field of a child object depends on a lazy field of a parent object, it is still wrapped in an accessor that ensures parent is unlazied and returns that value
+
+## Agreed on Points
+* **Lazy-sensitive fields should be behind accessors, and code should not be able to bypass them accidentally.**
+  * The goal is not just to add helper methods; it is to make the correct access path the only practical path.
+  * Callers should not need to remember which fields require explicit eval and which happen to be safe to read directly.
+* **We are keeping the ability to persist lazy/source forms and reconstruct them on load.**
+  * This is a little boilerplatey, but it avoids even trickier questions elsewhere and is still the preferred direction for now.
+  * The model should be made solid and understandable rather than replaced with a design that only persists already-normalized state.
+* **We are keeping the `Result` vs `Value` duality for container rootfs/mounts for now.**
+  * In particular, container exec makes a pure “everything is its own attached object result” model very messy.
+  * Trying to force mount outputs into their own attached object results introduces circular-dependency/ownership confusion and makes snapshot accounting harder, since the exec result is the true owner of the produced snapshot state.
+  * We should still simplify this duality wherever possible, but not by forcing a model that breaks exec semantics.
+* OnRelease must not accidentally evaluate.
+
+## Implementation Plan
+
+### Directory
+* **Target object shape**
+  * Hard-cut `core.Directory` to:
+    ```go
+    type Directory struct {
+    	Platform Platform
+    	Services ServiceBindings
+
+    	Lazy     Lazy[*Directory]
+    	Dir      *LazyAccessor[string, *Directory]
+    	Snapshot *LazyAccessor[bkcache.ImmutableRef, *Directory]
+    }
+    ```
+  * Delete `snapshotMu`, `snapshotReady`, `snapshotSource`, `getSnapshot`, `setSnapshot`, and `setSnapshotSource`.
+  * Delete `NewDirectoryChild`, `NewDirectoryWithSnapshot`, and any similar “copy some hidden state” helpers. Construction is always explicit inline so the reader can see exactly which fields are being set.
+  * `LazyAccessor.Peek` is non-evaluating and context-free. `GetOrEval` remains explicit and warning-heavy about requiring the matching dagql result wrapper.
+
+* **Core design rules**
+  * Every `Directory` allocates both accessors at construction time.
+  * `Dir` is not guaranteed to be peekable. `Peek()` is a best-effort non-evaluating inspection API, not a promise that the field is already known.
+    * If code truly needs the selected path, it must use `Dir.GetOrEval(...)`.
+    * If code must not evaluate, it must use `Dir.Peek()` and handle the missing case explicitly.
+  * `Dir` should still be pre-seeded at construction time whenever the selected path is semantically known without evaluation.
+    * `query.directory` => `"/"`
+    * `withDirectory`, `withDirectoryDockerfileCompat`, `withNewDirectory`, `withNewFile`, `withPatch`, `withPatchFile`, `withFile`, `withFiles`, `withTimestamps`, `withChanges`, `withoutDirectory`, `withoutFile`, `withoutFiles`, `withSymlink`, `chown` => same selected path as parent when already known
+    * `diff` => `"/"` after schema-side rebasing
+    * `subdirectory` is its own lazy case and is allowed to leave `Dir` unset until evaluation
+  * `Snapshot` is only set by:
+    * materialized constructors
+    * successful lazy evaluation
+    * successful eager mutator methods
+  * We do not keep “resolved but nil snapshot” as a stable materialized directory state.
+    * Any path that would otherwise resolve to an empty/nil directory snapshot must normalize back to the canonical scratch directory by selecting `query.directory` and using its snapshot.
+    * Persistence should therefore only need two stable forms: materialized snapshot form and lazy form.
+  * Non-evaluating paths (`OnRelease`, cache usage, persisted snapshot-link reporting, persistence encode deciding lazy-vs-materialized form, schema rebase decisions) must use `Peek()` only and must never call `GetOrEval`.
+  * `Subdirectory` gets its own dedicated lazy op, `DirectorySubdirectoryLazy`.
+    * We are not preserving `DirectoryFromSourceLazy`.
+    * We are not trying to keep a generic source-backed directory abstraction alive during the directory cut.
+
+* **Representative code shape**
+  * Materialized directory construction:
+    ```go
+    dir := &Directory{
+    	Platform: platform,
+    	Services: slices.Clone(services),
+    	Dir:      new(LazyAccessor[string, *Directory]),
+    	Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+    }
+    dir.Dir.setValue("/")
+    dir.Snapshot.setValue(finalRef)
+    ```
+  * Lazy directory construction that preserves parent metadata explicitly:
+    ```go
+    dir := &Directory{
+    	Platform: parent.Self().Platform,
+    	Services: slices.Clone(parent.Self().Services),
+    	Lazy:     &DirectoryWithNewFileLazy{...},
+    	Dir:      new(LazyAccessor[string, *Directory]),
+    	Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+    }
+    if parentDir, ok := parent.Self().Dir.Peek(); ok {
+    	dir.Dir.setValue(parentDir)
+    }
+    ```
+  * Subdirectory lazy shape:
+    ```go
+    dir := &Directory{
+    	Platform: parent.Self().Platform,
+    	Services: slices.Clone(parent.Self().Services),
+    	Lazy: &DirectorySubdirectoryLazy{
+    		LazyState: NewLazyState(),
+    		Parent:    parent,
+    		Subdir:    subdir,
+    	},
+    	Dir:      new(LazyAccessor[string, *Directory]),
+    	Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+    }
+    ```
+  * Mutator/evaluation shape:
+    ```go
+    parentDir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+    parentRef, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
+    dir.Dir.setValue(parentDir)
+    // do work...
+    dir.Snapshot.setValue(ref)
+    dir.Lazy = nil
+    ```
+
+#### core/directory.go
+* **Type / lifecycle surface**
+  * `type Directory`:
+    * remove all old snapshot-side state
+    * add accessor fields
+  * `OnRelease`:
+    * use `dir.Snapshot.Peek()` only
+    * if unset, return nil; do not evaluate
+  * `AttachDependencyResults`:
+    * remove all directory-owned source attachment logic
+    * if `dir.Lazy == nil`, return nil
+    * otherwise delegate entirely to `dir.Lazy.AttachDependencies`
+  * `LazyEvalFunc`:
+    * keep current shape and just call `dir.Lazy.Evaluate`
+  * Delete any helper that “syncs metadata from parent” or otherwise hides copied state. Platform and services must already be set explicitly by the constructor that created the directory.
+
+* **Cache usage / persistence**
+  * `CacheUsageSize`, `CacheUsageIdentities`, and `PersistedSnapshotRefLinks`:
+    * use `dir.Snapshot.Peek()` only
+    * if unset, return empty/unknown without evaluation
+  * `EncodePersistedObject`:
+    * payload `Dir` comes from `dir.Dir.Peek()`
+    * payload form is:
+      * `snapshot` if `Snapshot.Peek()` returns a real non-nil snapshot ref
+      * `lazy` if snapshot is unset and `dir.Lazy != nil`
+      * error if neither is true
+    * it must never evaluate
+    * if a materialized directory somehow still has `Snapshot.Peek() == (nil, true)`, that is a bug; those states should have been normalized back to canonical scratch earlier
+  * `DecodePersistedObject`:
+    * allocate `Dir` and `Snapshot` accessors in both forms
+    * snapshot form:
+      * set `Dir` from payload
+      * load the persisted snapshot ref and set `Snapshot`
+      * leave `Lazy = nil`
+    * lazy form:
+      * set `Dir` from payload only if already known
+      * leave `Snapshot` unset
+      * decode and attach `Lazy`
+  * `decodePersistedDirectoryLazy`:
+    * keep existing payload formats for directory lazy ops
+    * add dedicated payload decoding for `DirectorySubdirectoryLazy`
+    * never reconstruct old snapshot/source fields
+
+* **Lazy ops**
+  * Keep the existing mutator-style lazy ops for:
+    * `DirectoryWithDirectoryLazy`
+    * `DirectoryWithDirectoryDockerfileCompatLazy`
+    * `DirectoryWithPatchFileLazy`
+    * `DirectoryWithNewFileLazy`
+    * `DirectoryWithFileLazy`
+    * `DirectoryWithTimestampsLazy`
+    * `DirectoryWithNewDirectoryLazy`
+    * `DirectoryDiffLazy`
+    * `DirectoryWithChangesLazy`
+    * `DirectoryWithoutLazy`
+    * `DirectoryWithSymlinkLazy`
+    * `DirectoryChownLazy`
+  * Add `DirectorySubdirectoryLazy`:
+    * `Evaluate`:
+      * evaluate the parent
+      * compute the final selected path from the parent path plus `Subdir`
+      * if `Subdir` is non-empty, validate it exists and is a directory
+      * reopen the parent snapshot by `SnapshotID` onto the child
+      * set both `Dir` and `Snapshot` on the child
+      * if the parent directory is empty/nil, normalize the child to canonical scratch rather than materializing a resolved nil snapshot
+    * `AttachDependencies`:
+      * attach/update `Parent`
+    * `EncodePersisted`:
+      * persist `ParentResultID` plus `Subdir`
+  * We do not keep `DirectoryFromSourceLazy`.
+
+* **Concrete method changes**
+  * `Digest`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `Dir.GetOrEval`
+  * `Entries`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `Dir.GetOrEval`
+  * `Glob`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `Dir.GetOrEval`
+  * `Search`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `Dir.GetOrEval`
+  * `WithNewFile`:
+    * read parent path/snapshot through accessors
+    * set output `Dir` explicitly
+    * set `Snapshot` on success
+    * if the result would otherwise be empty/nil, normalize to canonical scratch
+  * `applyPatchToSnapshot` and `withoutPathsFromSnapshot`:
+    * keep them as explicit snapshot/path helpers
+    * thread selected path explicitly as a parameter rather than reading object fields internally
+  * `WithPatchFile`:
+    * read parent path/snapshot through accessors
+    * set output `Dir` explicitly
+    * set `Snapshot` on success
+    * normalize nil result snapshot to canonical scratch
+  * `Subdirectory`:
+    * return a lazily constructed child with `DirectorySubdirectoryLazy`
+    * do not evaluate the parent eagerly in the constructor
+  * `Subfile`:
+    * read the parent selected path through accessors
+    * keep file-source attachment in the old file model for now
+  * `WithDirectory` and `WithDirectoryDockerfileCompat`:
+    * use parent/source `Dir.GetOrEval` and `Snapshot.GetOrEval`
+    * set output `Dir` explicitly from the parent selected path
+    * set output `Snapshot` on success
+    * if merge/copy would otherwise yield nil, normalize to canonical scratch
+  * `WithFile`:
+    * same parent-directory pattern as `WithDirectory`
+    * source file snapshot/path still use the file-side old model for now
+    * set output `Dir` explicitly
+    * set output `Snapshot` on success
+  * `WithTimestamps`, `WithNewDirectory`, `Without`, `WithSymlink`, `Chown`:
+    * read parent path/snapshot through accessors
+    * set output `Dir` explicitly
+    * set output `Snapshot` on success
+    * normalize nil result snapshot to canonical scratch
+  * `Diff`:
+    * read both paths/snapshots through accessors
+    * preserve the root-rebased invariant
+    * set output `Dir` to `"/"`
+    * set output `Snapshot` on success
+    * if the diff is empty, normalize to canonical scratch
+  * `WithChanges`:
+    * read parent path/snapshot through accessors
+    * set output `Dir` explicitly
+    * any selected directories used internally must already be in accessor form
+    * if merge/remove/add-dir work produces an empty result, normalize to canonical scratch
+  * `Exists`, `Stat`, `Export`, and `Mount`:
+    * add the owning result wrapper parameter
+    * use `Snapshot.GetOrEval` and `Dir.GetOrEval`
+
+* **Helpers intentionally unchanged except for threaded parameters**
+  * `copyFile`
+  * `attemptCopyArchiveUnpack`
+  * `copyAttemptUnpackNonArchiveSingleFile`
+  * `resolveAttemptUnpackMatches`
+  * `unpackArchiveFile`
+  * `isArchivePath`
+  * `isDir`
+  * `ensureCopyDestParentExists`
+  * owner-parsing helpers
+  * validation / enum / json helpers
+
+#### core/schema/directory.go
+* **Resolver construction rule**
+  * Every resolver that returns a new `*core.Directory` must construct it explicitly inline.
+  * No use of `NewDirectoryChild`, `NewDirectoryWithSnapshot`, or any helper that hides which fields are copied.
+  * Every constructed directory allocates both accessors.
+  * Constructors copy `Platform` and `Services` explicitly from `parent.Self()` where appropriate.
+  * Constructors pre-seed `Dir` when it is already semantically known and available via `Peek()`, but they do not force evaluation just to populate it.
+
+* **Materialized constructor**
+  * `directory(...)`:
+    * inline scratch directory construction
+    * allocate both accessors
+    * set `Dir = "/"` and `Snapshot = finalRef`
+
+* **Lazy constructor resolvers**
+  * `withNewDirectory`
+  * `withDirectory`
+  * `withDirectoryDockerfileCompat`
+  * `withTimestamps`
+  * `withPatch`
+  * `withPatchFile`
+  * `withNewFile`
+  * `withFile`
+  * `withoutDirectory`
+  * `withoutFile`
+  * `withoutFiles`
+  * `withChanges`
+  * `withSymlink`
+  * `chown`
+  * For all of the above:
+    * inline construct the `Directory`
+    * copy `Platform` and `Services` explicitly
+    * allocate `Dir` and `Snapshot`
+    * pre-seed `Dir` from `parent.Self().Dir.Peek()` when available
+    * attach the corresponding lazy op
+  * `subdirectory`:
+    * return the explicit lazy child from `core.Directory.Subdirectory`
+    * do not force evaluation just to populate `Dir`
+  * `diff`:
+    * after rebasing logic, inline construct the result directory
+    * set `Dir` to `"/"`
+    * attach `DirectoryDiffLazy`
+
+* **Resolvers that must stop reading raw directory fields**
+  * `name`:
+    * change signature to accept `dagql.ObjectResult[*core.Directory]`
+    * call `parent.Self().Dir.GetOrEval(ctx, parent.Result)`
+  * `entries`, `glob`, `search`, `digest`, `exists`, `stat`, `export`, `exportLegacy`:
+    * pass the owning result wrapper through to the updated core methods
+  * `file`:
+    * compute parent selected path through `parent.Self().Dir.GetOrEval(ctx, parent.Result)` rather than reading a raw field
+  * `diff`:
+    * use accessor-based path checks during rebasing
+    * rebasing remains non-evaluating only when `Peek()` already has the information; otherwise evaluation is acceptable if the code truly needs the path
+  * `getDockerIgnoreFileContent`, `applyDockerIgnore`, `dockerBuild`, `terminal`, and `asGit`:
+    * they must not become new raw-field escape hatches
+    * if they need selected path or snapshot locally, use accessor-based APIs only
+  * `withFiles`:
+    * remains a follow-up dependency on the file accessor cutover because it still needs file-side path access
+
+* **Done criterion for the directory cut**
+  * `core/directory.go` and `core/schema/directory.go` have no remaining references to:
+    * `snapshotMu`
+    * `snapshotReady`
+    * `snapshotSource`
+    * `getSnapshot`
+    * `setSnapshot`
+    * `setSnapshotSource`
+    * `NewDirectoryChild`
+    * `NewDirectoryWithSnapshot`
+    * `DirectoryFromSourceLazy`
+    * any helper that implicitly copies directory state
+  * All lazy-sensitive directory reads go through `Dir` / `Snapshot` accessors.
+  * All non-evaluating paths use `Peek()` only.
+  * Empty/resolved directory states normalize back to canonical scratch rather than persisting nil snapshots.

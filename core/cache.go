@@ -26,8 +26,6 @@ type CacheVolume struct {
 	mu       sync.Mutex
 	snapshot bkcache.MutableRef
 	selector string
-
-	persistedResultID uint64
 }
 
 func (*CacheVolume) Type() *ast.Type {
@@ -107,19 +105,6 @@ func (cache *CacheVolume) CacheUsageIdentities() []string {
 		return nil
 	}
 	return []string{cache.snapshot.SnapshotID()}
-}
-
-func (cache *CacheVolume) PersistedResultID() uint64 {
-	if cache == nil {
-		return 0
-	}
-	return cache.persistedResultID
-}
-
-func (cache *CacheVolume) SetPersistedResultID(resultID uint64) {
-	if cache != nil {
-		cache.persistedResultID = resultID
-	}
 }
 
 func (cache *CacheVolume) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {

@@ -1335,17 +1335,6 @@ func newDetachedResult[T Typed](call *ResultCall, self T) Result[T] {
 	}
 }
 
-func setTypedPersistedResultID(val Typed, resultID sharedResultID) {
-	if resultID == 0 || val == nil {
-		return
-	}
-	setter, ok := val.(PersistedResultIDSetter)
-	if !ok {
-		return
-	}
-	setter.SetPersistedResultID(uint64(resultID))
-}
-
 func (c *Cache) normalizePendingResultCallRefs(ctx context.Context, frame *ResultCall) error {
 	return c.normalizePendingResultCallRefsWithSeen(ctx, frame, map[*ResultCall]struct{}{})
 }

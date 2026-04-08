@@ -22,8 +22,6 @@ type Secret struct {
 	NameVal        string
 	PlaintextVal   []byte `json:"-"`
 	SourceClientID string
-
-	persistedResultID uint64
 }
 
 func (*Secret) Type() *ast.Type {
@@ -48,20 +46,6 @@ func (secret *Secret) Clone() *Secret {
 	return &cp
 }
 
-func (secret *Secret) PersistedResultID() uint64 {
-	if secret == nil {
-		return 0
-	}
-	return secret.persistedResultID
-}
-
-func (secret *Secret) SetPersistedResultID(resultID uint64) {
-	if secret == nil {
-		return
-	}
-	secret.persistedResultID = resultID
-}
-
 type persistedSecretPayload struct {
 	Handle dagql.SessionResourceHandle `json:"handle,omitempty"`
 	Name   string                      `json:"name,omitempty"`
@@ -76,7 +60,7 @@ func (secret *Secret) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	return json.Marshal(payload)
 }
 
-func (*Secret) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Secret) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedSecretPayload
 	if len(payload) > 0 {
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -84,9 +68,8 @@ func (*Secret) DecodePersistedObject(ctx context.Context, dag *dagql.Server, res
 		}
 	}
 	return &Secret{
-		Handle:            persisted.Handle,
-		NameVal:           persisted.Name,
-		persistedResultID: resultID,
+		Handle:  persisted.Handle,
+		NameVal: persisted.Name,
 	}, nil
 }
 

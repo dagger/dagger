@@ -414,11 +414,13 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 		return inst, fmt.Errorf("failed to commit scratch ref: %w", err)
 	}
 
-	dir, err := core.NewDirectoryWithSnapshot("/", platform, nil, finalRef)
-	if err != nil {
-		_ = finalRef.Release(context.WithoutCancel(ctx))
-		return inst, err
+	dir := &core.Directory{
+		Platform: platform,
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
+	dir.Dir.setValue("/")
+	dir.Snapshot.setValue(finalRef)
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
@@ -463,12 +465,20 @@ func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithNewDirectoryLazy{
-		LazyState:   core.NewLazyState(),
-		Parent:      parent,
-		Dest:        args.Path,
-		Permissions: fs.FileMode(args.Permissions),
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithNewDirectoryLazy{
+			LazyState:   core.NewLazyState(),
+			Parent:      parent,
+			Dest:        args.Path,
+			Permissions: fs.FileMode(args.Permissions),
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -499,16 +509,26 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithDirectoryLazy{
-		LazyState:   core.NewLazyState(),
-		Parent:      parent,
-		DestDir:     args.Path,
-		Source:      srcDir,
-		Filter:      args.CopyFilter,
-		Owner:       args.Owner,
-		Permissions: perms,
+
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithDirectoryLazy{
+			LazyState:   core.NewLazyState(),
+			Parent:      parent,
+			DestDir:     args.Path,
+			Source:      srcDir,
+			Filter:      args.CopyFilter,
+			Owner:       args.Owner,
+			Permissions: perms,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
+	}
+
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
@@ -548,23 +568,31 @@ func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, par
 		perms = &p
 	}
 
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithDirectoryDockerfileCompatLazy{
-		LazyState:                        core.NewLazyState(),
-		Parent:                           parent,
-		DestDir:                          args.Path,
-		SrcPath:                          args.SrcPath,
-		Source:                           srcDir,
-		Filter:                           args.CopyFilter,
-		Owner:                            args.Owner,
-		Permissions:                      perms,
-		FollowSymlink:                    args.FollowSymlink,
-		DirCopyContents:                  args.DirCopyContents,
-		AttemptUnpackDockerCompatibility: args.AttemptUnpackDockerCompatibility,
-		CreateDestPath:                   args.CreateDestPath,
-		AllowWildcard:                    args.AllowWildcard,
-		AllowEmptyWildcard:               args.AllowEmptyWildcard,
-		AlwaysReplaceExistingDestPaths:   args.AlwaysReplaceExistingDestPaths,
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithDirectoryDockerfileCompatLazy{
+			LazyState:                        core.NewLazyState(),
+			Parent:                           parent,
+			DestDir:                          args.Path,
+			SrcPath:                          args.SrcPath,
+			Source:                           srcDir,
+			Filter:                           args.CopyFilter,
+			Owner:                            args.Owner,
+			Permissions:                      perms,
+			FollowSymlink:                    args.FollowSymlink,
+			DirCopyContents:                  args.DirCopyContents,
+			AttemptUnpackDockerCompatibility: args.AttemptUnpackDockerCompatibility,
+			CreateDestPath:                   args.CreateDestPath,
+			AllowWildcard:                    args.AllowWildcard,
+			AllowEmptyWildcard:               args.AllowEmptyWildcard,
+			AlwaysReplaceExistingDestPaths:   args.AlwaysReplaceExistingDestPaths,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -610,17 +638,29 @@ func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.Objec
 	if err != nil {
 		return inst, err
 	}
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithTimestampsLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Timestamp: args.Timestamp,
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithTimestampsLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Timestamp: args.Timestamp,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
-func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
-	name := path.Base(parent.Dir)
+func (s *directorySchema) name(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct{}) (dagql.String, error) {
+	dirPath, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+	if err != nil {
+		return "", err
+	}
+	name := path.Base(dirPath)
 	if core.SupportsDirSlash(ctx) {
 		name = strings.TrimSuffix(name, "/") + "/"
 	}
@@ -632,14 +672,7 @@ type entriesArgs struct {
 }
 
 func (s *directorySchema) entries(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args entriesArgs) (dagql.Array[dagql.String], error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
-	}
-	ents, err := parent.Self().Entries(ctx, args.Path.Value.String())
+	ents, err := parent.Self().Entries(ctx, parent, args.Path.Value.String())
 	if err != nil {
 		return nil, err
 	}
@@ -651,14 +684,7 @@ type globArgs struct {
 }
 
 func (s *directorySchema) glob(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args globArgs) (dagql.Array[dagql.String], error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
-	}
-	ents, err := parent.Self().Glob(ctx, args.Pattern)
+	ents, err := parent.Self().Glob(ctx, parent, args.Pattern)
 	if err != nil {
 		return nil, err
 	}
@@ -672,14 +698,7 @@ type searchArgs struct {
 }
 
 func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args searchArgs) (dagql.Array[*core.SearchResult], error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
-	}
-	return parent.Self().Search(ctx, args.SearchOpts, true, args.Paths, args.Globs)
+	return parent.Self().Search(ctx, parent, args.SearchOpts, true, args.Paths, args.Globs)
 }
 
 type withPatchArgs struct {
@@ -701,11 +720,19 @@ func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResu
 	}); err != nil {
 		return inst, err
 	}
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithPatchFileLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Patch:     patchFile,
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithPatchFileLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Patch:     patchFile,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -724,24 +751,25 @@ func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return inst, err
 	}
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithPatchFileLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Patch:     patchFile,
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithPatchFileLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Patch:     patchFile,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 func (s *directorySchema) digest(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct{}) (dagql.String, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return "", err
-	}
-	digest, err := parent.Self().Digest(ctx)
+	digest, err := parent.Self().Digest(ctx, parent)
 	if err != nil {
 		return "", err
 	}
@@ -773,7 +801,11 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
-	filename := path.Join(parent.Self().Dir, args.Path)
+	parentDir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+	if err != nil {
+		return inst, err
+	}
+	filename := path.Join(parentDir, args.Path)
 	dgst = hashutil.HashStrings(
 		filename,
 		string(dgst),
@@ -797,13 +829,21 @@ func (s *directorySchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithNewFileLazy{
-		LazyState:   core.NewLazyState(),
-		Parent:      parent,
-		Dest:        args.Path,
-		Content:     []byte(args.Contents),
-		Permissions: fs.FileMode(args.Permissions),
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithNewFileLazy{
+			LazyState:   core.NewLazyState(),
+			Parent:      parent,
+			Dest:        args.Path,
+			Content:     []byte(args.Contents),
+			Permissions: fs.FileMode(args.Permissions),
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
@@ -837,16 +877,24 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, err
 	}
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithFileLazy{
-		LazyState:                        core.NewLazyState(),
-		Parent:                           parent,
-		DestPath:                         args.Path,
-		Source:                           file,
-		Permissions:                      perms,
-		Owner:                            args.Owner,
-		DoNotCreateDestPath:              args.DoNotCreateDestPath,
-		AttemptUnpackDockerCompatibility: args.AttemptUnpackDockerCompatibility,
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithFileLazy{
+			LazyState:                        core.NewLazyState(),
+			Parent:                           parent,
+			DestPath:                         args.Path,
+			Source:                           file,
+			Permissions:                      perms,
+			Owner:                            args.Owner,
+			DoNotCreateDestPath:              args.DoNotCreateDestPath,
+			AttemptUnpackDockerCompatibility: args.AttemptUnpackDockerCompatibility,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -906,11 +954,19 @@ func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithoutLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Paths:     []string{args.Path},
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithoutLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Paths:     []string{args.Path},
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -925,11 +981,19 @@ func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithoutLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Paths:     []string{args.Path},
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithoutLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Paths:     []string{args.Path},
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -944,11 +1008,19 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 		return inst, err
 	}
 
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithoutLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Paths:     slices.Clone(args.Paths),
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithoutLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Paths:     slices.Clone(args.Paths),
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -960,19 +1032,12 @@ type existsArgs struct {
 }
 
 func (s *directorySchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args existsArgs) (dagql.Boolean, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return false, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return false, err
-	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return false, err
 	}
 
-	exists, err := parent.Self().Exists(ctx, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
+	exists, err := parent.Self().Exists(ctx, parent, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
 	return dagql.NewBoolean(exists), err
 }
 
@@ -982,18 +1047,11 @@ type statArgs struct {
 }
 
 func (s *directorySchema) stat(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args statArgs) (*core.Stat, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return nil, err
-	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return parent.Self().Stat(ctx, srv, args.Path, args.DoNotFollowSymlinks)
+	return parent.Self().Stat(ctx, parent, srv, args.Path, args.DoNotFollowSymlinks)
 }
 
 type diffArgs struct {
@@ -1006,7 +1064,11 @@ func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*c
 		return res, err
 	}
 
-	if parent.Self().Dir != "" && parent.Self().Dir != "/" {
+	parentDir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+	if err != nil {
+		return res, err
+	}
+	if parentDir != "" && parentDir != "/" {
 		// in order to compare different directories, they must be rebased to /
 		parentID, err := parent.ID()
 		if err != nil {
@@ -1031,7 +1093,11 @@ func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*c
 		return res, err
 	}
 
-	if otherDir.Self().Dir != "" && otherDir.Self().Dir != "/" {
+	otherDirPath, err := otherDir.Self().Dir.GetOrEval(ctx, otherDir.Result)
+	if err != nil {
+		return res, err
+	}
+	if otherDirPath != "" && otherDirPath != "/" {
 		// in order to compare different directories, they must be rebased to /
 		otherDirID, err := otherDir.ID()
 		if err != nil {
@@ -1051,12 +1117,18 @@ func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*c
 		otherDir = rebasedDir
 	}
 
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryDiffLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Other:     otherDir,
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryDiffLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Other:     otherDir,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
+	dir.Dir.setValue("/")
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1149,11 +1221,19 @@ func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return res, err
 	}
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithChangesLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Changes:   changes,
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithChangesLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Changes:   changes,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1262,14 +1342,7 @@ type dirExportArgs struct {
 }
 
 func (s *directorySchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirExportArgs) (dagql.String, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return "", err
-	}
-	err = parent.Self().Export(ctx, args.Path, !args.Wipe)
+	err := parent.Self().Export(ctx, parent, args.Path, !args.Wipe)
 	if err != nil {
 		return "", err
 	}
@@ -1663,12 +1736,20 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryWithSymlinkLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Target:    args.Target,
-		LinkName:  args.LinkName,
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithSymlinkLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Target:    args.Target,
+			LinkName:  args.LinkName,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1695,12 +1776,20 @@ func (s *directorySchema) chown(
 	if err != nil {
 		return inst, err
 	}
-	dir := core.NewDirectoryChild(parent)
-	dir.Lazy = &core.DirectoryChownLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		ChownPath: args.Path,
-		Owner:     args.Owner,
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryChownLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			ChownPath: args.Path,
+			Owner:     args.Owner,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.setValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }

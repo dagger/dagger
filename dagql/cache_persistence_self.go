@@ -34,14 +34,6 @@ type PersistedResultEnvelope struct {
 	Items                 []PersistedResultEnvelope `json:"items,omitempty"`
 }
 
-type PersistedResultIDHolder interface {
-	PersistedResultID() uint64
-}
-
-type PersistedResultIDSetter interface {
-	SetPersistedResultID(uint64)
-}
-
 type PersistedObjectCache interface {
 	PersistedResultID(AnyResult) (uint64, error)
 }

@@ -1533,7 +1533,6 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		res.storeResultCall(requestFrame.clone())
 		c.traceResultCallFrameUpdated(ctx, res, "index_wait_result_request_frame", nil, res.loadResultCall())
 	}
-	setTypedPersistedResultID(res.loadPayloadState().self, res.id)
 	c.traceResultCreated(ctx, res)
 
 	//

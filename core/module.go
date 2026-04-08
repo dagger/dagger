@@ -54,7 +54,6 @@ type Module struct {
 	// The module's enumerations
 	EnumDefs dagql.ObjectResultArray[*TypeDef] `field:"true" name:"enums" doc:"Enumerations served by this module."`
 
-	persistedResultID uint64
 	IncludeSelfInDeps bool
 
 	// If true, disable the new default function caching behavior for this module. Functions will
@@ -95,18 +94,6 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
-func (mod *Module) PersistedResultID() uint64 {
-	if mod == nil {
-		return 0
-	}
-	return mod.persistedResultID
-}
-
-func (mod *Module) SetPersistedResultID(resultID uint64) {
-	if mod != nil {
-		mod.persistedResultID = resultID
-	}
-}
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	// Use OriginalName for type lookup: the SDK registers the main object
 	// under the intrinsic module name (from dagger.json), which may differ
@@ -926,7 +913,6 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 
 	persisted.IncludeSelfInDeps = mod.IncludeSelfInDeps
 	if mod.Deps != nil {
-		selfResultID := mod.PersistedResultID()
 		persisted.DepModuleResultIDs = make([]uint64, 0, len(mod.Deps.Mods()))
 		for _, dep := range mod.Deps.Mods() {
 			depInst := dep.ModuleResult()
@@ -937,7 +923,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 			if err != nil {
 				return nil, err
 			}
-			if mod.IncludeSelfInDeps && selfResultID != 0 && depResultID == selfResultID {
+			if mod.IncludeSelfInDeps && depInst.Self() == mod {
 				continue
 			}
 			persisted.DepModuleResultIDs = append(persisted.DepModuleResultIDs, depResultID)

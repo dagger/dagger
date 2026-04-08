@@ -46,7 +46,6 @@ type File struct {
 	snapshotReady                 bool
 	snapshotSource                FileSnapshotSource
 	Snapshot                      bkcache.ImmutableRef
-	persistedResultID             uint64
 	containerSourceParentResultID uint64
 }
 
@@ -64,19 +63,6 @@ func (*File) Type() *ast.Type {
 
 func (*File) TypeDescription() string {
 	return "A file."
-}
-
-func (file *File) PersistedResultID() uint64 {
-	if file == nil {
-		return 0
-	}
-	return file.persistedResultID
-}
-
-func (file *File) SetPersistedResultID(resultID uint64) {
-	if file != nil {
-		file.persistedResultID = resultID
-	}
 }
 
 var _ dagql.OnReleaser = (*File)(nil)

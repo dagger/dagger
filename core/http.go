@@ -36,8 +36,6 @@ type HTTPState struct {
 
 	snapshot   bkcache.ImmutableRef
 	snapshotID string
-
-	persistedResultID uint64
 }
 
 type persistedHTTPStatePayload struct {
@@ -74,19 +72,6 @@ func (*HTTPState) Type() *ast.Type {
 
 func (*HTTPState) TypeDescription() string {
 	return "An internal persistent HTTP state."
-}
-
-func (state *HTTPState) PersistedResultID() uint64 {
-	if state == nil {
-		return 0
-	}
-	return state.persistedResultID
-}
-
-func (state *HTTPState) SetPersistedResultID(resultID uint64) {
-	if state != nil {
-		state.persistedResultID = resultID
-	}
 }
 
 func (state *HTTPState) OnRelease(ctx context.Context) error {

@@ -18,8 +18,6 @@ type RemoteGitMirror struct {
 
 	mu       sync.Mutex
 	snapshot bkcache.MutableRef
-
-	persistedResultID uint64
 }
 
 var _ dagql.PersistedObject = (*RemoteGitMirror)(nil)
@@ -39,19 +37,6 @@ func (*RemoteGitMirror) Type() *ast.Type {
 
 func (*RemoteGitMirror) TypeDescription() string {
 	return "An internal persistent bare git mirror."
-}
-
-func (mirror *RemoteGitMirror) PersistedResultID() uint64 {
-	if mirror == nil {
-		return 0
-	}
-	return mirror.persistedResultID
-}
-
-func (mirror *RemoteGitMirror) SetPersistedResultID(resultID uint64) {
-	if mirror != nil {
-		mirror.persistedResultID = resultID
-	}
 }
 
 func (mirror *RemoteGitMirror) OnRelease(ctx context.Context) error {

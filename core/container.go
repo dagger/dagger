@@ -106,8 +106,6 @@ type Container struct {
 	DefaultArgs bool
 
 	Lazy Lazy[*Container]
-
-	persistedResultID uint64
 }
 
 type DirectoryFromContainerLazy struct {
@@ -231,19 +229,6 @@ func (*Container) TypeDescription() string {
 	return "An OCI-compatible container, also known as a Docker container."
 }
 
-func (container *Container) PersistedResultID() uint64 {
-	if container == nil {
-		return 0
-	}
-	return container.persistedResultID
-}
-
-func (container *Container) SetPersistedResultID(resultID uint64) {
-	if container != nil {
-		container.persistedResultID = resultID
-	}
-}
-
 func NewContainer(platform Platform) *Container {
 	return &Container{
 		Platform: platform,
@@ -264,7 +249,6 @@ func cloneBareDirectoryForContainerChild(src *Directory, source dagql.ObjectResu
 		LazyState: NewLazyState(),
 		Source:    source,
 	}
-	cp.containerSourceParentResultID = sourceParentResultID
 	return &cp
 }
 
@@ -1050,12 +1034,11 @@ type persistedContainerFileOutputValue struct {
 }
 
 type persistedContainerDirectorySourceValue struct {
-	Dir                     string          `json:"dir,omitempty"`
-	Platform                Platform        `json:"platform"`
-	Services                ServiceBindings `json:"services,omitempty"`
-	ParentContainerResultID uint64          `json:"parentContainerResultID"`
-	OriginKind              string          `json:"originKind"`
-	OriginPath              string          `json:"originPath,omitempty"`
+	Dir        string          `json:"dir,omitempty"`
+	Platform   Platform        `json:"platform"`
+	Services   ServiceBindings `json:"services,omitempty"`
+	OriginKind string          `json:"originKind"`
+	OriginPath string          `json:"originPath,omitempty"`
 }
 
 type persistedContainerFileSourceValue struct {
@@ -1347,21 +1330,16 @@ func encodePersistedContainerDirectoryValue(
 		default:
 			form = persistedContainerValueFormSourceReady
 		}
-		parentContainerResultID := dir.containerSourceParentResultID
-		var err error
-		if parentContainerResultID == 0 {
-			parentContainerResultID, err = persistedContainerParentResultIDFromDirectorySource(source, originKind, originPath)
-		}
+		parentContainerResultID, err = persistedContainerParentResultIDFromDirectorySource(source, originKind, originPath)
 		if err != nil {
 			return nil, fmt.Errorf("encode persisted container directory source provenance: %w", err)
 		}
 		value, err := json.Marshal(persistedContainerDirectorySourceValue{
-			Dir:                     dir.Dir,
-			Platform:                dir.Platform,
-			Services:                slices.Clone(dir.Services),
-			ParentContainerResultID: parentContainerResultID,
-			OriginKind:              originKind,
-			OriginPath:              originPath,
+			Dir:        dir.Dir,
+			Platform:   dir.Platform,
+			Services:   slices.Clone(dir.Services),
+			OriginKind: originKind,
+			OriginPath: originPath,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("marshal persisted container directory source value: %w", err)
@@ -1681,10 +1659,9 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 			return decodedContainerDirectoryValue{}, err
 		}
 		dir := &Directory{
-			Dir:                           sourceVal.Dir,
-			Platform:                      sourceVal.Platform,
-			Services:                      slices.Clone(sourceVal.Services),
-			containerSourceParentResultID: sourceVal.ParentContainerResultID,
+			Dir:      sourceVal.Dir,
+			Platform: sourceVal.Platform,
+			Services: slices.Clone(sourceVal.Services),
 		}
 		if err := dir.setSnapshotSource(source); err != nil {
 			return decodedContainerDirectoryValue{}, err

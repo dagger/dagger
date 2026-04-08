@@ -37,8 +37,6 @@ type Socket struct {
 	URLVal         string
 	PortForwardVal PortForward
 	SourceClientID string
-
-	persistedResultID uint64
 }
 
 func (*Socket) Type() *ast.Type {
@@ -60,20 +58,6 @@ func HostUnixSocketHandle(ctx context.Context, query *Query, path string) (dagql
 	return dagql.SessionResourceHandle(hashutil.HashStrings(accessor)), nil
 }
 
-func (socket *Socket) PersistedResultID() uint64 {
-	if socket == nil {
-		return 0
-	}
-	return socket.persistedResultID
-}
-
-func (socket *Socket) SetPersistedResultID(resultID uint64) {
-	if socket == nil {
-		return
-	}
-	socket.persistedResultID = resultID
-}
-
 type persistedSocketPayload struct {
 	Kind        SocketKind                  `json:"kind,omitempty"`
 	Handle      dagql.SessionResourceHandle `json:"handle,omitempty"`
@@ -92,7 +76,7 @@ func (socket *Socket) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	return json.Marshal(payload)
 }
 
-func (*Socket) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Socket) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedSocketPayload
 	if len(payload) > 0 {
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -100,10 +84,9 @@ func (*Socket) DecodePersistedObject(ctx context.Context, dag *dagql.Server, res
 		}
 	}
 	return &Socket{
-		Kind:              persisted.Kind,
-		Handle:            persisted.Handle,
-		PortForwardVal:    persisted.PortForward,
-		persistedResultID: resultID,
+		Kind:           persisted.Kind,
+		Handle:         persisted.Handle,
+		PortForwardVal: persisted.PortForward,
 	}, nil
 }
 

@@ -15,10 +15,6 @@ type Lazy[T dagql.Typed] interface {
 	EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error)
 }
 
-// TODO: use a more proper implementation here; this is a simple one to get
-// started. In particular, we need to handle context cancellation from one
-// caller without necessarily breaking all other callers. One option is to use
-// the implementation of ChangesCache in the filesync package.
 type LazyState struct {
 	LazyMu           *sync.Mutex
 	LazyInitComplete bool
@@ -54,4 +50,56 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 	}
 	lazy.LazyInitComplete = true
 	return nil
+}
+
+type LazyAccessor[V any, T dagql.Typed] struct {
+	value V // should not be gotten/set directly except for actual evaluation implementations!
+	isSet bool
+	mu    sync.RWMutex
+}
+
+// WARN: res MUST be the dagql result wrapper for the same owner object as this
+// accessor. The accessor cannot validate that today due to the current
+// Directory/File/Container vs dagql.Result split, so callers must pass the
+// matching result explicitly and carefully.
+func (a *LazyAccessor[V, T]) GetOrEval(ctx context.Context, res dagql.Result[T]) (V, error) {
+	var zero V
+
+	c, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return zero, err
+	}
+	err = c.Evaluate(ctx, res)
+	if err != nil {
+		return zero, err
+	}
+
+	// evaluate should have set our value now, so we can return it
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if !a.isSet {
+		return zero, fmt.Errorf("lazy accessor value not set after evaluation")
+	}
+	return a.value, nil
+}
+
+// Peek returns the current stored value without triggering lazy evaluation.
+func (a *LazyAccessor[V, T]) Peek() (V, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.isSet {
+		return a.value, true
+	}
+	var zero V
+	return zero, false
+}
+
+// should only be called by implementations of evaluate for the relevant type!
+func (a *LazyAccessor[V, T]) setValue(v V) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.value = v
+	a.isSet = true
 }

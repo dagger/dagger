@@ -44,12 +44,6 @@ func encodePersistedObjectRef(cache dagql.PersistedObjectCache, ref any, label s
 			return 0, fmt.Errorf("encode persisted %s ref: %w", label, err)
 		}
 		return resultID, nil
-	case dagql.PersistedResultIDHolder:
-		resultID := x.PersistedResultID()
-		if resultID == 0 {
-			return 0, fmt.Errorf("encode persisted %s ref: zero persisted result ID", label)
-		}
-		return resultID, nil
 	default:
 		return 0, fmt.Errorf("encode persisted %s ref: unsupported value %T", label, ref)
 	}
