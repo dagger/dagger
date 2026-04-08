@@ -252,6 +252,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all checks defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
 			),
 
 		dagql.NodeFunc("check", s.moduleCheck).
@@ -2595,7 +2596,8 @@ func (s *moduleSchema) moduleChecks(
 	ctx context.Context,
 	mod dagql.ObjectResult[*core.Module],
 	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Include    dagql.Optional[dagql.ArrayInput[dagql.String]]
+		NoGenerate dagql.Optional[dagql.Boolean]
 	},
 ) (*core.CheckGroup, error) {
 	var include []string
@@ -2604,7 +2606,7 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return core.NewCheckGroup(ctx, mod, include)
+	return core.NewCheckGroup(ctx, mod, include, args.NoGenerate.GetOr(false).Bool())
 }
 
 func (s *moduleSchema) moduleCheck(
@@ -2614,7 +2616,7 @@ func (s *moduleSchema) moduleCheck(
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name})
+	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name}, false)
 	if err != nil {
 		return nil, err
 	}
