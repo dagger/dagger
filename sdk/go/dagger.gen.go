@@ -148,6 +148,9 @@ type CheckGroupID string
 // The `CheckID` scalar type represents an identifier for an object of type Check.
 type CheckID string
 
+// The `ClientFilesyncMirrorID` scalar type represents an identifier for an object of type ClientFilesyncMirror.
+type ClientFilesyncMirrorID string
+
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
 type CloudID string
 
@@ -226,6 +229,9 @@ type GitRefID string
 // The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
 type GitRepositoryID string
 
+// The `HTTPStateID` scalar type represents an identifier for an object of type HTTPState.
+type HTTPStateID string
+
 // The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
 type HealthcheckConfigID string
 
@@ -278,6 +284,9 @@ type PortID string
 
 // The `QueryID` scalar type represents an identifier for an object of type Query.
 type QueryID string
+
+// The `RemoteGitMirrorID` scalar type represents an identifier for an object of type RemoteGitMirror.
+type RemoteGitMirrorID string
 
 // The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
 type SDKConfigID string
@@ -701,6 +710,15 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	q := r.query.Select("asGitRepository")
 
 	return &GitRepository{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type HTTPState
+func (r *Binding) AsHTTPState() *HTTPState {
+	q := r.query.Select("asHTTPState")
+
+	return &HTTPState{
 		query: q,
 	}
 }
@@ -1493,6 +1511,59 @@ func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
 	return &CheckGroup{
 		query: q,
 	}
+}
+
+// An internal persistent filesync mirror.
+type ClientFilesyncMirror struct {
+	query *querybuilder.Selection
+
+	id *ClientFilesyncMirrorID
+}
+
+func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *ClientFilesyncMirror {
+	return &ClientFilesyncMirror{
+		query: q,
+	}
+}
+
+// A unique identifier for this ClientFilesyncMirror.
+func (r *ClientFilesyncMirror) ID(ctx context.Context) (ClientFilesyncMirrorID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ClientFilesyncMirrorID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ClientFilesyncMirror) XXX_GraphQLType() string {
+	return "ClientFilesyncMirror"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ClientFilesyncMirror) XXX_GraphQLIDType() string {
+	return "ClientFilesyncMirrorID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ClientFilesyncMirror) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ClientFilesyncMirror) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // Dagger Cloud configuration and state
@@ -4312,11 +4383,11 @@ type DirectoryWithDirectoryOpts struct {
 	Gitignore bool
 	// A user:group to set for the copied directory and its contents.
 	//
-	// The user and group must be an ID (1000:1000), not a name (foo:bar).
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-
+	// Permission given to the copied directory and contents (e.g., 0755).
 	Permissions int
 }
 
@@ -4370,7 +4441,7 @@ type DirectoryWithFileOpts struct {
 	Permissions int
 	// A user:group to set for the copied directory and its contents.
 	//
-	// The user and group must be an ID (1000:1000), not a name (foo:bar).
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
@@ -5916,6 +5987,30 @@ func (r *Env) WithGitRepositoryInput(name string, value *GitRepository, descript
 // Declare a desired GitRepository output to be assigned in the environment
 func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	q := r.query.Select("withGitRepositoryOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type HTTPState in the environment
+func (r *Env) WithHTTPStateInput(name string, value *HTTPState, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withHTTPStateInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired HTTPState output to be assigned in the environment
+func (r *Env) WithHTTPStateOutput(name string, description string) *Env {
+	q := r.query.Select("withHTTPStateOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -8733,6 +8828,59 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// An internal persistent HTTP state.
+type HTTPState struct {
+	query *querybuilder.Selection
+
+	id *HTTPStateID
+}
+
+func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
+	return &HTTPState{
+		query: q,
+	}
+}
+
+// A unique identifier for this HTTPState.
+func (r *HTTPState) ID(ctx context.Context) (HTTPStateID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response HTTPStateID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *HTTPState) XXX_GraphQLType() string {
+	return "HTTPState"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *HTTPState) XXX_GraphQLIDType() string {
+	return "HTTPStateID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *HTTPState) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *HTTPState) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // Image healthcheck configuration.
@@ -11763,7 +11911,7 @@ func (r *Query) Address(value string) *Address {
 	}
 }
 
-// CacheVolumeOpts contains options for Client.CacheVolume
+// CacheVolumeOpts contains options for Query.CacheVolume
 type CacheVolumeOpts struct {
 	// Identifier of the directory to use as the cache volume's root.
 	Source *Directory
@@ -12331,6 +12479,16 @@ func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
 	}
 }
 
+// Load a ClientFilesyncMirror from its ID.
+func (r *Query) LoadClientFilesyncMirrorFromID(id ClientFilesyncMirrorID) *ClientFilesyncMirror {
+	q := r.query.Select("loadClientFilesyncMirrorFromID")
+	q = q.Arg("id", id)
+
+	return &ClientFilesyncMirror{
+		query: q,
+	}
+}
+
 // Load a Cloud from its ID.
 func (r *Query) LoadCloudFromID(id CloudID) *Cloud {
 	q := r.query.Select("loadCloudFromID")
@@ -12591,6 +12749,16 @@ func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	}
 }
 
+// Load a HTTPState from its ID.
+func (r *Query) LoadHTTPStateFromID(id HTTPStateID) *HTTPState {
+	q := r.query.Select("loadHTTPStateFromID")
+	q = q.Arg("id", id)
+
+	return &HTTPState{
+		query: q,
+	}
+}
+
 // Load a HealthcheckConfig from its ID.
 func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
 	q := r.query.Select("loadHealthcheckConfigFromID")
@@ -12737,6 +12905,16 @@ func (r *Query) LoadQueryFromID(id QueryID) *Query {
 	q = q.Arg("id", id)
 
 	return &Query{
+		query: q,
+	}
+}
+
+// Load a RemoteGitMirror from its ID.
+func (r *Query) LoadRemoteGitMirrorFromID(id RemoteGitMirrorID) *RemoteGitMirror {
+	q := r.query.Select("loadRemoteGitMirrorFromID")
+	q = q.Arg("id", id)
+
+	return &RemoteGitMirror{
 		query: q,
 	}
 }
@@ -12998,6 +13176,59 @@ func (r *Query) Version(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// An internal persistent bare git mirror.
+type RemoteGitMirror struct {
+	query *querybuilder.Selection
+
+	id *RemoteGitMirrorID
+}
+
+func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGitMirror {
+	return &RemoteGitMirror{
+		query: q,
+	}
+}
+
+// A unique identifier for this RemoteGitMirror.
+func (r *RemoteGitMirror) ID(ctx context.Context) (RemoteGitMirrorID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response RemoteGitMirrorID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *RemoteGitMirror) XXX_GraphQLType() string {
+	return "RemoteGitMirror"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *RemoteGitMirror) XXX_GraphQLIDType() string {
+	return "RemoteGitMirrorID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *RemoteGitMirror) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *RemoteGitMirror) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // The SDK config of the module.
@@ -14126,6 +14357,7 @@ type TypeDef struct {
 
 	id       *TypeDefID
 	kind     *TypeDefKind
+	name     *string
 	optional *bool
 }
 type WithTypeDefFunc func(r *TypeDef) *TypeDef
@@ -14245,6 +14477,19 @@ func (r *TypeDef) Kind(ctx context.Context) (TypeDefKind, error) {
 	q := r.query.Select("kind")
 
 	var response TypeDefKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The canonical non-optional name of the type.
+func (r *TypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

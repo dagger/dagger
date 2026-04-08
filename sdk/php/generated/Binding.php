@@ -146,6 +146,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type HTTPState
+     */
+    public function asHTTPState(): HTTPState
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asHTTPState');
+        return new \Dagger\HTTPState($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type JSONValue
      */
     public function asJSONValue(): JsonValue

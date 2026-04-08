@@ -271,6 +271,13 @@ export type CheckGroupID = string & { __CheckGroupID: never }
 export type CheckID = string & { __CheckID: never }
 
 /**
+ * The `ClientFilesyncMirrorID` scalar type represents an identifier for an object of type ClientFilesyncMirror.
+ */
+export type ClientFilesyncMirrorID = string & {
+  __ClientFilesyncMirrorID: never
+}
+
+/**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
  */
 export type CloudID = string & { __CloudID: never }
@@ -554,6 +561,7 @@ export type ContainerWithDirectoryOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+  permissions?: number
 }
 
 export type ContainerWithDockerHealthcheckOpts = {
@@ -754,6 +762,11 @@ export type ContainerWithMountedDirectoryOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
+
+  /**
+   * Mount the directory read-only.
+   */
+  readOnly?: boolean
 
   /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -1157,11 +1170,16 @@ export type DirectoryWithDirectoryOpts = {
   /**
    * A user:group to set for the copied directory and its contents.
    *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
+
+  /**
+   * Permission given to the copied directory and contents (e.g., 0755).
+   */
+  permissions?: number
 }
 
 export type DirectoryWithFileOpts = {
@@ -1173,7 +1191,7 @@ export type DirectoryWithFileOpts = {
   /**
    * A user:group to set for the copied directory and its contents.
    *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
    */
@@ -1726,6 +1744,11 @@ export type GitRepositoryTagsOpts = {
 export type GitRepositoryID = string & { __GitRepositoryID: never }
 
 /**
+ * The `HTTPStateID` scalar type represents an identifier for an object of type HTTPState.
+ */
+export type HTTPStateID = string & { __HTTPStateID: never }
+
+/**
  * The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
  */
 export type HealthcheckConfigID = string & { __HealthcheckConfigID: never }
@@ -2151,6 +2174,27 @@ export type PortForward = {
  */
 export type PortID = string & { __PortID: never }
 
+export type ClientCacheVolumeOpts = {
+  /**
+   * Identifier of the directory to use as the cache volume's root.
+   */
+  source?: Directory
+
+  /**
+   * Sharing mode of the cache volume.
+   */
+  sharing?: CacheSharingMode
+
+  /**
+   * A user:group to set for the cache volume root.
+   *
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  owner?: string
+}
+
 export type ClientContainerOpts = {
   /**
    * Platform to initialize the container with. Defaults to the native platform of the current engine
@@ -2159,6 +2203,11 @@ export type ClientContainerOpts = {
 }
 
 export type ClientCurrentTypeDefsOpts = {
+  /**
+   * Return the full referenced typedef closure instead of only top-level served typedefs.
+   */
+  returnAllTypes?: boolean
+
   /**
    * Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
    *
@@ -2246,6 +2295,11 @@ export type ClientHttpOpts = {
   permissions?: number
 
   /**
+   * Expected digest of the downloaded content (e.g., "sha256:...").
+   */
+  checksum?: string
+
+  /**
    * Secret used to populate the Authorization HTTP header
    */
   authHeader?: Secret
@@ -2305,6 +2359,11 @@ export type ClientSecretOpts = {
  * The `QueryID` scalar type represents an identifier for an object of type Query.
  */
 export type QueryID = string & { __QueryID: never }
+
+/**
+ * The `RemoteGitMirrorID` scalar type represents an identifier for an object of type RemoteGitMirror.
+ */
+export type RemoteGitMirrorID = string & { __RemoteGitMirrorID: never }
 
 /**
  * Expected return type of an execution
@@ -3099,6 +3158,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type HTTPState
+   */
+  asHTTPState = (): HTTPState => {
+    const ctx = this._ctx.select("asHTTPState")
+    return new HTTPState(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type JSONValue
    */
   asJSONValue = (): JSONValue => {
@@ -3753,6 +3820,37 @@ export class CheckGroup extends BaseClient {
    */
   with = (arg: (param: CheckGroup) => CheckGroup) => {
     return arg(this)
+  }
+}
+
+/**
+ * An internal persistent filesync mirror.
+ */
+export class ClientFilesyncMirror extends BaseClient {
+  private readonly _id?: ClientFilesyncMirrorID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ClientFilesyncMirrorID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this ClientFilesyncMirror.
+   */
+  id = async (): Promise<ClientFilesyncMirrorID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ClientFilesyncMirrorID> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -4738,6 +4836,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.readOnly Mount the directory read-only.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withMountedDirectory = (
@@ -5346,7 +5445,7 @@ export class Directory extends BaseClient {
    * @param path Path of the directory to change ownership of (e.g., "/").
    * @param owner A user:group to set for the mounted directory and its contents.
    *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
    */
@@ -5617,9 +5716,10 @@ export class Directory extends BaseClient {
    * @param opts.gitignore Apply .gitignore filter rules inside the directory
    * @param opts.owner A user:group to set for the copied directory and its contents.
    *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.permissions Permission given to the copied directory and contents (e.g., 0755).
    */
   withDirectory = (
     path: string,
@@ -5646,7 +5746,7 @@ export class Directory extends BaseClient {
    * @param opts.permissions Permission given to the copied file (e.g., 0600).
    * @param opts.owner A user:group to set for the copied directory and its contents.
    *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
    */
@@ -5824,7 +5924,7 @@ export class Engine extends BaseClient {
   }
 
   /**
-   * The local (on-disk) cache for the Dagger engine
+   * The local engine cache state tracked by dagql
    */
   localCache = (): EngineCache => {
     const ctx = this._ctx.select("localCache")
@@ -6324,6 +6424,7 @@ export class EnumTypeDef extends BaseClient {
   }
 
   /**
+   * The members of the enum.
    * @deprecated use members instead
    */
   values = async (): Promise<EnumValueTypeDef[]> => {
@@ -6970,6 +7071,35 @@ export class Env extends BaseClient {
       name,
       description,
     })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type HTTPState in the environment
+   * @param name The name of the binding
+   * @param value The HTTPState value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withHTTPStateInput = (
+    name: string,
+    value: HTTPState,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withHTTPStateInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired HTTPState output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withHTTPStateOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withHTTPStateOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -7951,7 +8081,7 @@ export class File extends BaseClient {
    * Change the owner of the file recursively.
    * @param owner A user:group to set for the file.
    *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
    */
@@ -9321,6 +9451,37 @@ export class GitRepository extends BaseClient {
     const ctx = this._ctx.select("url")
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * An internal persistent HTTP state.
+ */
+export class HTTPState extends BaseClient {
+  private readonly _id?: HTTPStateID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: HTTPStateID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this HTTPState.
+   */
+  id = async (): Promise<HTTPStateID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<HTTPStateID> = await ctx.execute()
 
     return response
   }
@@ -11620,7 +11781,7 @@ export class ObjectTypeDef extends BaseClient {
   }
 
   /**
-   * The function used to construct new instances of this object, if any
+   * The function used to construct new instances of this object, if any.
    */
   constructor_ = (): Function_ => {
     const ctx = this._ctx.select("constructor")
@@ -11887,9 +12048,24 @@ export class Client extends BaseClient {
   /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
+   * @param opts.source Identifier of the directory to use as the cache volume's root.
+   * @param opts.sharing Sharing mode of the cache volume.
+   * @param opts.owner A user:group to set for the cache volume root.
+   *
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
    */
-  cacheVolume = (key: string): CacheVolume => {
-    const ctx = this._ctx.select("cacheVolume", { key })
+  cacheVolume = (key: string, opts?: ClientCacheVolumeOpts): CacheVolume => {
+    const metadata = {
+      sharing: { is_enum: true, value_to_name: CacheSharingModeValueToName },
+    }
+
+    const ctx = this._ctx.select("cacheVolume", {
+      key,
+      ...opts,
+      __metadata: metadata,
+    })
     return new CacheVolume(ctx)
   }
 
@@ -11953,6 +12129,7 @@ export class Client extends BaseClient {
 
   /**
    * The TypeDef representations of the objects currently being served in the session.
+   * @param opts.returnAllTypes Return the full referenced typedef closure instead of only top-level served typedefs.
    * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
    *
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
@@ -12098,6 +12275,7 @@ export class Client extends BaseClient {
    * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
    * @param opts.name File name to use for the file. Defaults to the last part of the URL.
    * @param opts.permissions Permissions to set on the file.
+   * @param opts.checksum Expected digest of the downloaded content (e.g., "sha256:...").
    * @param opts.authHeader Secret used to populate the Authorization HTTP header
    * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
@@ -12171,6 +12349,16 @@ export class Client extends BaseClient {
   loadCheckGroupFromID = (id: CheckGroupID): CheckGroup => {
     const ctx = this._ctx.select("loadCheckGroupFromID", { id })
     return new CheckGroup(ctx)
+  }
+
+  /**
+   * Load a ClientFilesyncMirror from its ID.
+   */
+  loadClientFilesyncMirrorFromID = (
+    id: ClientFilesyncMirrorID,
+  ): ClientFilesyncMirror => {
+    const ctx = this._ctx.select("loadClientFilesyncMirrorFromID", { id })
+    return new ClientFilesyncMirror(ctx)
   }
 
   /**
@@ -12386,6 +12574,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a HTTPState from its ID.
+   */
+  loadHTTPStateFromID = (id: HTTPStateID): HTTPState => {
+    const ctx = this._ctx.select("loadHTTPStateFromID", { id })
+    return new HTTPState(ctx)
+  }
+
+  /**
    * Load a HealthcheckConfig from its ID.
    */
   loadHealthcheckConfigFromID = (
@@ -12507,6 +12703,14 @@ export class Client extends BaseClient {
   loadQueryFromID = (id: QueryID): Client => {
     const ctx = this._ctx.select("loadQueryFromID", { id })
     return new Client(ctx)
+  }
+
+  /**
+   * Load a RemoteGitMirror from its ID.
+   */
+  loadRemoteGitMirrorFromID = (id: RemoteGitMirrorID): RemoteGitMirror => {
+    const ctx = this._ctx.select("loadRemoteGitMirrorFromID", { id })
+    return new RemoteGitMirror(ctx)
   }
 
   /**
@@ -12719,6 +12923,37 @@ export class Client extends BaseClient {
    */
   with = (arg: (param: Client) => Client) => {
     return arg(this)
+  }
+}
+
+/**
+ * An internal persistent bare git mirror.
+ */
+export class RemoteGitMirror extends BaseClient {
+  private readonly _id?: RemoteGitMirrorID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: RemoteGitMirrorID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this RemoteGitMirror.
+   */
+  id = async (): Promise<RemoteGitMirrorID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<RemoteGitMirrorID> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -13664,6 +13899,7 @@ export class Terminal extends BaseClient {
 export class TypeDef extends BaseClient {
   private readonly _id?: TypeDefID = undefined
   private readonly _kind?: TypeDefKind = undefined
+  private readonly _name?: string = undefined
   private readonly _optional?: boolean = undefined
 
   /**
@@ -13673,12 +13909,14 @@ export class TypeDef extends BaseClient {
     ctx?: Context,
     _id?: TypeDefID,
     _kind?: TypeDefKind,
+    _name?: string,
     _optional?: boolean,
   ) {
     super(ctx)
 
     this._id = _id
     this._kind = _kind
+    this._name = _name
     this._optional = _optional
   }
 
@@ -13758,6 +13996,21 @@ export class TypeDef extends BaseClient {
     const response: Awaited<TypeDefKind> = await ctx.execute()
 
     return TypeDefKindNameToValue(response)
+  }
+
+  /**
+   * The canonical non-optional name of the type.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
