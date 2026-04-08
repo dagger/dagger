@@ -163,7 +163,6 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	}
 
 	updatedDir := baseDir
-	dirSchema := &directorySchema{}
 
 	if plan.SourceCopyPath != "" {
 		if err := func() (rerr error) {
@@ -174,16 +173,16 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 			if err != nil {
 				return fmt.Errorf("migration source directory %q: %w", plan.SourceCopyPath, err)
 			}
-			updatedDir, err = dirSchema.withDirectory(copyCtx, updatedDir, WithDirectoryArgs{
-				Path:   path.Clean(filepath.ToSlash(plan.SourceCopyDest)),
-				Source: dagql.NewID[*core.Directory](srcDir.ID()),
+			updatedDir, err = workspaceMigrationSelectDirectory(copyCtx, updatedDir, "withDirectory", []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyDest)))},
+				{Name: "source", Value: dagql.NewID[*core.Directory](srcDir.ID())},
 			})
 			if err != nil {
 				return fmt.Errorf("migration copy source directory: %w", err)
 			}
 			if plan.RemoveOldSource {
-				updatedDir, err = dirSchema.withoutDirectory(copyCtx, updatedDir, withoutDirectoryArgs{
-					Path: path.Clean(filepath.ToSlash(plan.SourceCopyPath)),
+				updatedDir, err = workspaceMigrationSelectDirectory(copyCtx, updatedDir, "withoutDirectory", []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyPath)))},
 				})
 				if err != nil {
 					return fmt.Errorf("migration remove old source directory: %w", err)
@@ -226,8 +225,8 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		removeCtx, span := core.Tracer(ctx).Start(ctx, "remove legacy config")
 		defer telemetry.EndWithCause(span, &rerr)
 		var err error
-		updatedDir, err = dirSchema.withoutFile(removeCtx, updatedDir, withoutFileArgs{
-			Path: workspace.ModuleConfigFileName,
+		updatedDir, err = workspaceMigrationSelectDirectory(removeCtx, updatedDir, "withoutFile", []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(workspace.ModuleConfigFileName)},
 		})
 		return err
 	}(); err != nil {
@@ -239,11 +238,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		diffCtx, span := core.Tracer(ctx).Start(ctx, "compute migration changeset")
 		defer telemetry.EndWithCause(span, &rerr)
 		var err error
-		changes, err = dirSchema.changes(diffCtx, updatedDir, struct {
-			From core.DirectoryID
-		}{
-			From: dagql.NewID[*core.Directory](baseDir.ID()),
-		})
+		changes, err = workspaceMigrationChanges(diffCtx, updatedDir, baseDir)
 		return err
 	}(); err != nil {
 		return nil, fmt.Errorf("migration changeset: %w", err)
@@ -263,15 +258,56 @@ func withWorkspaceMigrationFile(
 	}
 	ctx, span := core.Tracer(ctx).Start(ctx, spanName)
 	defer telemetry.EndWithCause(span, &rerr)
-	updated, err := (&directorySchema{}).withNewFile(ctx, dir, WithNewFileArgs{
-		Path:        path.Clean(filepath.ToSlash(filePath)),
-		Contents:    string(contents),
-		Permissions: 0o644,
+	updated, err := workspaceMigrationSelectDirectory(ctx, dir, "withNewFile", []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(filePath)))},
+		{Name: "contents", Value: dagql.String(contents)},
+		{Name: "permissions", Value: dagql.Int(0o644)},
 	})
 	if err != nil {
 		return dir, fmt.Errorf("migration write %q: %w", filePath, err)
 	}
 	return updated, nil
+}
+
+func workspaceMigrationSelectDirectory(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+	field string,
+	args []dagql.NamedInput,
+) (updated dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return updated, err
+	}
+	if err := srv.Select(ctx, dir, &updated, dagql.Selector{
+		Field: field,
+		Args:  args,
+	}); err != nil {
+		return updated, err
+	}
+	return updated, nil
+}
+
+func workspaceMigrationChanges(
+	ctx context.Context,
+	after dagql.ObjectResult[*core.Directory],
+	before dagql.ObjectResult[*core.Directory],
+) (*core.Changeset, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var changes dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, after, &changes, dagql.Selector{
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*core.Directory](before.ID())},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return changes.Self(), nil
 }
 
 func workspaceMigrationConsole(ctx context.Context, msg string, args ...any) {
