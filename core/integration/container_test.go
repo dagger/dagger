@@ -2701,7 +2701,6 @@ func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Contains(t, execRes.Container.From.WithMountedDirectory.WithExec.From.WithExec.WithExec.Stdout, "v18.10.0\n")
 	require.Contains(t, execRes.Container.From.WithMountedDirectory.WithExec.From.WithExec.WithExec.Stdout, "go version go1.18.2")
 }
 

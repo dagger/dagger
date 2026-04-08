@@ -3179,7 +3179,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	oc.res = &sharedResult{}
 	if oc.val != nil {
 		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.id != 0 {
-			oc.res = existingRes
+			c.egraphMu.Lock()
+			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix())
+			c.egraphMu.Unlock()
+
 			resWasCacheBacked = true
 		} else {
 			oc.res.self = oc.val.Unwrap()

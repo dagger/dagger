@@ -948,6 +948,11 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	return baseObj.Select(callCtx, state.srv, sel)
 }
 
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
 func rewriteWithFileRecipeToDirectoryFallback(id *call.ID, err error) (*call.ID, bool) {
 	if err == nil || id == nil || id.IsHandle() || id.Field() != "withFile" {
 		return nil, false
