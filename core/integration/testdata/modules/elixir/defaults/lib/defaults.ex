@@ -1,3 +1,9 @@
+defmodule BasicEnum do
+  @moduledoc false
+
+  use Dagger.Mod.Enum, name: "BasicEnum", values: [:FOO, BAR: {"BAR", doc: "bar"}, GAR: "GAR"]
+end
+
 defmodule Defaults do
   @moduledoc false
 
@@ -41,5 +47,13 @@ defmodule Defaults do
     with {:ok, entries} <- Dagger.Directory.entries(dir) do
       Enum.join(entries, " ")
     end
+  end
+
+  defn echo_enum(value: BasicEnum.t() | nil) :: String.t() do
+    Atom.to_string(value)
+  end
+
+  defn enum_value(value: {BasicEnum.t() | nil, default: BasicEnum.foo()}) :: String.t() do
+    Atom.to_string(value)
   end
 end

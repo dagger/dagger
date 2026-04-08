@@ -27,6 +27,9 @@ directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
+"""Indicates that this function returns a service for dagger up."""
+directive @up on FIELD_DEFINITION
+
 """
 A standardized address to load containers, directories, secrets, and other
 object types. Address format depends on the type, and is validated at type

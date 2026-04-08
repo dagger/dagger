@@ -9,6 +9,7 @@ use JMS\Serializer\EventDispatcher\PreDeserializeEvent;
 use JMS\Serializer\EventDispatcher\PreSerializeEvent;
 use JMS\Serializer\Handler\HandlerRegistry;
 use JMS\Serializer\Handler\SubscribingHandlerInterface;
+use JMS\Serializer\Naming\IdenticalPropertyNamingStrategy;
 use JMS\Serializer\SerializationContext;
 use JMS\Serializer\Serializer;
 use JMS\Serializer\SerializerBuilder;
@@ -39,6 +40,7 @@ final readonly class Serialiser
                 }
             )
             ->addDefaultHandlers()
+            ->setPropertyNamingStrategy(new IdenticalPropertyNamingStrategy())
             ->build();
     }
 

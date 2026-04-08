@@ -1,0 +1,6 @@
+kind: Added
+body: Add support for implicit getters
+time: 2026-01-14T14:23:59.086155254Z
+custom:
+    Author: charjr
+    PR: "11689"

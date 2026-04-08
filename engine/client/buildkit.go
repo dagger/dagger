@@ -42,11 +42,7 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.C
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	if err := c.Wait(ctx); err != nil {
-		return nil, nil, err
-	}
-
-	info, err := c.Info(ctx)
+	info, err := c.WaitInfo(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
