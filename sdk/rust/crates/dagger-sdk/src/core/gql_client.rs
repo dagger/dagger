@@ -11,14 +11,29 @@ pub struct GraphQLError {
     json: Option<Vec<GraphQLErrorMessage>>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+#[serde(tag = "_type")]
+pub enum GraphQlExtension {
+    #[serde(rename = "EXEC_ERROR")]
+    ExecError {
+        cmd: Vec<String>,
+        #[serde(rename(deserialize = "exitCode"))]
+        exit_code: i32,
+        stderr: String,
+        stdout: String,
+    },
+    #[serde(other)]
+    Other,
+}
+
 // https://spec.graphql.org/June2018/#sec-Errors
 #[derive(Deserialize, Debug, Clone)]
 #[allow(dead_code)]
 pub struct GraphQLErrorMessage {
     pub message: String,
-    locations: Option<Vec<GraphQLErrorLocation>>,
-    extensions: Option<HashMap<String, String>>,
-    path: Option<Vec<GraphQLErrorPathParam>>,
+    pub locations: Option<Vec<GraphQLErrorLocation>>,
+    pub extensions: Option<GraphQlExtension>,
+    pub path: Option<Vec<GraphQLErrorPathParam>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -108,8 +123,10 @@ impl From<Error> for GraphQLError {
 pub struct ClientConfig {
     /// the endpoint about graphql server
     pub endpoint: String,
-    /// gql query timeout, unit: seconds
-    pub timeout: Option<u64>,
+    /// gql query timeout, unit: milliseconds
+    pub execute_timeout_ms: Option<u64>,
+    /// gql connect timeout, unit: seconds
+    pub connect_timeout_ms: Option<u64>,
     /// additional request header
     pub headers: Option<HashMap<String, String>>,
     /// request proxy
@@ -176,9 +193,16 @@ struct GraphQLResponse<T> {
 
 impl GQLClient {
     fn client(&self) -> Result<Client, GraphQLError> {
-        let mut builder = Client::builder().timeout(std::time::Duration::from_secs(
-            self.config.timeout.unwrap_or(5),
-        ));
+        let mut builder = Client::builder();
+
+        if let Some(connect_timeout_ms) = self.config.connect_timeout_ms {
+            builder = builder.connect_timeout(std::time::Duration::from_millis(connect_timeout_ms));
+        }
+
+        if let Some(execute_timeout_ms) = self.config.execute_timeout_ms {
+            builder = builder.timeout(std::time::Duration::from_millis(execute_timeout_ms));
+        }
+
         if let Some(proxy) = &self.config.proxy {
             builder = builder.proxy(proxy.clone().try_into()?);
         }
@@ -194,7 +218,8 @@ impl GQLClient {
         Self {
             config: ClientConfig {
                 endpoint: endpoint.as_ref().to_string(),
-                timeout: None,
+                connect_timeout_ms: None,
+                execute_timeout_ms: None,
                 headers: Default::default(),
                 proxy: None,
             },
@@ -212,7 +237,8 @@ impl GQLClient {
         Self {
             config: ClientConfig {
                 endpoint: endpoint.as_ref().to_string(),
-                timeout: None,
+                connect_timeout_ms: None,
+                execute_timeout_ms: None,
                 headers: Some(_headers),
                 proxy: None,
             },
