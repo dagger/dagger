@@ -777,6 +777,27 @@ class Foo:
     assert fn.parameters[1].default_value == 1
 
 
+def test_ast_kwonly_falsey_defaults():
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, *, enabled: bool = False, retries: int = 0) -> bool:
+        return enabled
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    assert len(fn.parameters) == 2
+    enabled, retries = fn.parameters
+    assert enabled.python_name == "enabled"
+    assert enabled.has_default is True
+    assert enabled.default_value is False
+    assert retries.python_name == "retries"
+    assert retries.has_default is True
+    assert retries.default_value == 0
+
+
 # -- Module metadata ---------------------------------------------------------
 
 

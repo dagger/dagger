@@ -855,7 +855,7 @@ class ModuleParser:
         kw_defaults = {
             arg.arg: default
             for arg, default in zip(args.kwonlyargs, args.kw_defaults, strict=False)
-            if default
+            if default is not None
         }
 
         for i, arg in enumerate(all_args):
