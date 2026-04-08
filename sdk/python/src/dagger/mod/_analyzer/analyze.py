@@ -92,15 +92,20 @@ def analyze_module(
 
 
 def _extract_module_doc(source_files: list[Path]) -> str | None:
-    """Extract module-level docstring from the first source file."""
-    # Prefer __init__.py
+    """Extract module-level docstring, preferring the root package."""
+
+    def _depth(path: Path) -> int:
+        # Include the path itself but ignore the synthetic root ('/' or drive).
+        return len(path.parts)
+
+    if not source_files:
+        return None
+
     init_files = [f for f in source_files if f.name == "__init__.py"]
     if init_files:
-        target = init_files[0]
-    elif source_files:
-        target = source_files[0]
+        target = min(init_files, key=_depth)
     else:
-        return None
+        target = min(source_files, key=_depth)
 
     try:
         source = target.read_text(encoding="utf-8")
