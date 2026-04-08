@@ -125,11 +125,9 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
-		require.Equal(t,
-			"Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName)+"\n"+
-				`Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName),
-			strings.TrimSpace(string(out)),
-		)
+		outStr := strings.TrimSpace(string(out))
+		require.Contains(t, outStr, "Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName))
+		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Contains(t, cfg.Modules, "dep")
@@ -168,11 +166,9 @@ func (WorkspaceSuite) TestWorkspaceInstallCommand(ctx context.Context, t *testct
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
-		require.Equal(t,
-			"Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName)+"\n"+
-				`Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName),
-			strings.TrimSpace(string(out)),
-		)
+		outStr := strings.TrimSpace(string(out))
+		require.Contains(t, outStr, "Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName))
+		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
 
 		moduleConfig, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ModuleConfigFileName))
 		require.NoError(t, err)

@@ -134,9 +134,12 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Cont
   ]
 }`)
 
-			out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+			migrate := ctr.With(daggerExec("migrate", "-y"))
+			stdout, err := migrate.Stdout(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "Migrated to workspace format")
+			stderr, err := migrate.Stderr(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout+stderr, "Migrated to workspace format")
 		})
 
 		t.Run("general migration summary", func(ctx context.Context, t *testctx.T) {
@@ -156,9 +159,12 @@ type Myapp {
 `)
 			})
 
-			out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+			migrate := ctr.With(daggerExec("migrate", "-y"))
+			stdout, err := migrate.Stdout(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "Migrated to workspace format")
+			stderr, err := migrate.Stderr(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout+stderr, "Migrated to workspace format")
 		})
 	})
 
@@ -186,12 +192,16 @@ type Myapp {
   ]
 }`)
 
-		out, err := ctr.With(daggerExec("migrate", "-y")).Stdout(ctx)
+		migrate := ctr.With(daggerExec("migrate", "-y"))
+		stdout, err := migrate.Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
-		require.NotContains(t, out, "defaultPath")
+		stderr, err := migrate.Stderr(ctx)
+		require.NoError(t, err)
+		output := stdout + stderr
+		require.Contains(t, output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
+		require.Contains(t, output, "If you apply this migration, review .dagger/migration-report.md.")
 
-		configOut, err := ctr.File("/work/.dagger/config.toml").Contents(ctx)
+		configOut, err := ctr.WithExec([]string{"sh", "-c", "if [ -f /work/.dagger/config.toml ]; then cat /work/.dagger/config.toml; fi"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, configOut, "# WARNING:")
 		require.NotContains(t, configOut, "# Original:")

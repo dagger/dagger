@@ -21,7 +21,7 @@ source = "github.com/dagger/dagger/modules/wolfi"
 	require.NoError(t, err)
 
 	output := string(out)
-	require.Contains(t, output, "Source paths are relative to the workspace root")
+	require.Contains(t, output, "Source paths below are resolved and shown relative to the workspace root")
 	require.Contains(t, output, "* indicates a module is the workspace entrypoint")
 	require.Contains(t, output, "greeter*")
 	require.Contains(t, output, ".dagger/modules/greeter")
