@@ -11,10 +11,10 @@ require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
+	github.com/dagger/otel-go v1.43.1-0.20260429234604-565634f4374b
 	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/otel v1.43.0
-	go.opentelemetry.io/otel/sdk v1.42.0
+	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/mod v0.34.0
 )
@@ -53,7 +53,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.41.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.41.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.42.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.35.0 // indirect

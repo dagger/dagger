@@ -34,22 +34,21 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/util/scrub"
+	"github.com/dagger/otel-go/oteltestctx"
 	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/oteltest"
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(oteltest.Main(m))
+	os.Exit(oteltestctx.Main(m))
 }
 
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
-		oteltest.WithTracing(
-			oteltest.TraceConfig[*testing.T]{
+		oteltestctx.WithTracing(
+			oteltestctx.TraceConfig[*testing.T]{
 				StartOptions: testutil.SpanOpts[*testing.T],
 			},
 		),
-		oteltest.WithLogging[*testing.T](),
 	}
 }
 
