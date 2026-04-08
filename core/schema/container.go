@@ -966,12 +966,25 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 
-		// detach identity from the :tag, make the result purely content-addressed based on the digest
-		return inst.WithContentDigest(ctx, hashutil.HashStrings(
-			"container.from",
-			refName.Digest().String(),
-			ctr.Platform.Format(),
-		))
+		// detach identity from the :tag, make the result purely content-addressed based on the digest, but
+		// only when we are starting from scratch (as opposed to the weird case of calling from later in a chain)
+		parentCall, err := parent.ResultCall()
+		if err != nil {
+			return inst, fmt.Errorf("failed to get parent call: %w", err)
+		}
+		if parentCall.Field == "container" {
+			var err error
+			inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(
+				"container.from",
+				refName.Digest().String(),
+				ctr.Platform.Format(),
+			))
+			if err != nil {
+				return inst, fmt.Errorf("failed to set content digest: %w", err)
+			}
+		}
+
+		return inst, nil
 	}
 
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical
