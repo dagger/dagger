@@ -128,3 +128,30 @@ func (WorkspaceSuite) TestWorkspaceConfigRequiresInit(ctx context.Context, t *te
 	require.Error(t, err)
 	requireErrOut(t, err, "no config.toml found in workspace")
 }
+
+// TestWorkspaceConfigurationLifecycle is the planning scaffold for the full
+// scope this file should eventually own: initializing, editing, and detecting
+// workspaces from .dagger/config.toml. Module management, compat, and
+// migration belong in their own files.
+func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t *testctx.T) {
+	t.Run("current workspace init creates config for the repo", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement CurrentWorkspace.Init coverage.
+
+Exercise the API form of workspace initialization and verify it creates the
+expected .dagger/config.toml rooted at the current repo.`)
+	})
+
+	t.Run("workspace init command is idempotent", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement workspace init idempotence coverage.
+
+Run dagger workspace init twice and verify the second invocation does not
+rewrite an already-initialized workspace unexpectedly.`)
+	})
+
+	t.Run("workspace config is detected from the nearest initialized boundary", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement workspace config boundary detection coverage.
+
+Invoke workspace config commands from nested directories and verify they use
+the nearest .dagger/config.toml boundary rather than the current directory.`)
+	})
+}
