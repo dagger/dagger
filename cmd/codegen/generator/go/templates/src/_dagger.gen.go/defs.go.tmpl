@@ -18,7 +18,8 @@ import (
 
 {{ if IsModuleCode }}
 	"{{.UtilityPkgImport}}/querybuilder"
-	
+	"dagger.io/dagger"
+
 	telemetry "github.com/dagger/otel-go"
 {{ end }}
 
@@ -150,11 +151,142 @@ func (e *ExecError) Message() string {
 func (e *ExecError) Unwrap() error {
 	return e.original
 }
+{{ if or IsStandaloneClient IsModuleCode }}
+{{/* Standalone client / module: alias core types from dagger.io/dagger, fully generate extendable types */}}
+{{ range .Types }}
+
+{{- if and (IsCoreType .) (not (IsExtendableType .)) }}
+{{- $name := .Name | FormatName }}
+
+{{- if eq .Kind "SCALAR" }}
+{{ .Description | Comment }}
+type {{ $name }} = dagger.{{ $name }}
+{{- end }}
+
+{{- if eq .Kind "OBJECT" }}
+{{ .Description | Comment }}
+type {{ $name }} = dagger.{{ $name }}
+{{- if . | IsSelfChainable }}
+type With{{ $name }}Func = dagger.With{{ $name }}Func
+{{- end }}
+{{- range $field := .Fields }}
+{{- if HasOptionals $field.Args }}
+type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStructName }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- if eq .Kind "INPUT_OBJECT" }}
+{{ .Description | Comment }}
+type {{ $name }} = dagger.{{ $name }}
+{{- end }}
+
+{{- if IsEnum . }}
+{{- $enumName := .Name }}
+{{ .Description | Comment }}
+type {{ $enumName }} = dagger.{{ $enumName }}
+
+const (
+{{- range $fields := .EnumValues | GroupEnumByValue }}
+{{- $mainFieldName := "" }}
+{{- range $idx, $field := slice $fields }}
+	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
+	{{- if eq $idx 0 }}
+		{{- $mainFieldName = $fullFieldName }}
+	{{ $fullFieldName }} {{ $enumName }} = dagger.{{ $fullFieldName }}
+	{{- else }}
+	{{ $fullFieldName }} {{ $enumName }} = {{ $mainFieldName }}
+	{{- end }}
+{{- end }}
+{{- end }}
+)
+{{- end }}
+
+{{- else if IsExtendableType . }}
+{{- if eq .Kind "OBJECT" }}
+{{- $name := .Name | FormatName }}
+{{ .Description | Comment }}
+type {{ $name }} struct {
+	query *querybuilder.Selection
+	dagger.{{ $name }}
+}
+{{- if . | IsSelfChainable }}
+type With{{ $name }}Func func(r *{{ $name }}) *{{ $name }}
+
+// With calls the provided function with current {{ $name }}.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *{{ $name }}) With(f With{{ $name }}Func) *{{ $name }} {
+	return f(r)
+}
+{{- end }}
+
+func (r *{{ $name }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ $name }} {
+	return &{{ $name }}{
+		query: q,
+		{{ $name }}: *new(dagger.{{ $name }}).WithGraphQLQuery(q),
+	}
+}
+
+{{/* Generate only methods that return extendable types — other methods are inherited from the embedded type */}}
+{{ range $field := .Fields }}
+{{- if ReturnsExtendableType $field }}
+{{- if HasOptionals $field.Args }}
+type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStructName }}
+{{- end }}
+
+{{- $convertID := $field | ConvertID }}
+{{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
+{{ FieldFunction $field false $supportsVoid }} {
+	{{- range $arg := $field.Args }}
+	    {{- if and (IsPointer $arg) (not (IsArgOptional $arg)) }}
+        assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})
+        {{- end }}
+    {{- end }}
+	q := r.query.Select("{{ $field.Name }}")
+	{{- if HasOptionals $field.Args }}
+	for i := len(opts) - 1; i >= 0; i-- {
+	{{- range $arg := $field.Args }}
+	{{- if IsArgOptional $arg }}
+	if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
+		q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
+	}
+	{{- end }}
+	{{- end }}
+	}
+	{{- end }}
+	{{- range $arg := $field.Args }}
+	{{- if not (IsArgOptional $arg) }}
+	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
+	{{- end }}
+	{{- end }}
+	{{- $typeName := $field.TypeRef | FormatOutputType }}
+	{{- if $convertID }}
+	var id {{ $typeName }}
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return new({{ $field.ParentObject.Name }}).WithGraphQLQuery(q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id)), nil
+	{{- else if $field.TypeRef.IsObject }}
+	return new({{ $typeName }}).WithGraphQLQuery(q)
+	{{- end }}
+}
+{{- else if HasOptionals $field.Args }}
+type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStructName }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{ end }}
+{{ else }}
+{{/* Library and module code: generate full type definitions */}}
 {{ range .Types }}
 {{ if eq .Kind "SCALAR" }}{{ template "_types/scalar.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "OBJECT" }}{{ template "_types/object.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "INPUT_OBJECT" }}{{ template "_types/input.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "ENUM" }}{{ template "_types/enum.go.tmpl" . }}{{ end }}
+{{ end }}
 {{ end }}
 
 {{ if IsModuleCode }}
@@ -168,9 +300,7 @@ var dag *Client
 func init() {
 	gqlClient, q := getClientParams()
 	dag = &Client{
-		Query: &Query{
-			query: q.Client(gqlClient),
-		},
+		Query: new(Query).WithGraphQLQuery(q.Client(gqlClient)),
 		client: gqlClient,
 	}
 }

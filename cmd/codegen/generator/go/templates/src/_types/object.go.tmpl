@@ -116,14 +116,22 @@ type {{ $field | FieldOptionsStructName }} struct {
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
+	{{- if IsLibraryCode }}
 	return &{{ $field.ParentObject.Name }} {
 		query: q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id),
 	}, nil
+	{{- else }}
+	return new({{ $field.ParentObject.Name }}).WithGraphQLQuery(q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id)), nil
+	{{- end }}
 
 	{{- else if $field.TypeRef.IsObject }}
+	{{- if IsLibraryCode }}
 	return &{{ $typeName }} {
 		query: q,
 	}
+	{{- else }}
+	return new({{ $typeName }}).WithGraphQLQuery(q)
+	{{- end }}
 
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
 		{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
@@ -140,9 +148,17 @@ type {{ $field | FieldOptionsStructName }} struct {
         out := {{ $field.TypeRef | FormatOutputType }}{}
 
         for i := range fields {
+            {{- if IsLibraryCode }}
             val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
             {{- if $eleType | IsIDableObject }}
               val.query = q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
+            {{- end }}
+            {{- else }}
+            {{- if $eleType | IsIDableObject }}
+            val := *new({{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}).WithGraphQLQuery(q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id))
+            {{- else }}
+            val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
+            {{- end }}
             {{- end }}
             out = append(out, val)
         }
