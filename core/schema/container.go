@@ -1110,14 +1110,21 @@ func (s *containerSchema) pipeline(ctx context.Context, parent *core.Container, 
 }
 
 func (s *containerSchema) rootfs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (dagql.ObjectResult[*core.Directory], error) {
-	cache, err := dagql.EngineCache(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return dagql.ObjectResult[*core.Directory]{}, err
+
+	dir := &core.Directory{
+		Dir:      "/",
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.ContainerRootFSLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		},
 	}
-	return parent.Self().RootFS(ctx)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 type containerExecArgs struct {
@@ -2276,11 +2283,8 @@ type containerDirectoryArgs struct {
 }
 
 func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
-	cache, err := dagql.EngineCache(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return dagql.ObjectResult[*core.Directory]{}, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
 
@@ -2288,8 +2292,19 @@ func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
+	resolvedPath := absPath(parent.Self().Config.WorkingDir, path)
 
-	return parent.Self().Directory(ctx, parent, path)
+	dir := &core.Directory{
+		Dir:      resolvedPath,
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.ContainerDirectoryLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Path:      path,
+		},
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 type containerFileArgs struct {
@@ -2298,11 +2313,8 @@ type containerFileArgs struct {
 }
 
 func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFileArgs) (dagql.ObjectResult[*core.File], error) {
-	cache, err := dagql.EngineCache(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return dagql.ObjectResult[*core.File]{}, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
 		return dagql.ObjectResult[*core.File]{}, err
 	}
 
@@ -2310,8 +2322,19 @@ func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return dagql.ObjectResult[*core.File]{}, err
 	}
+	resolvedPath := absPath(parent.Self().Config.WorkingDir, path)
 
-	return parent.Self().File(ctx, parent, path)
+	file := &core.File{
+		File:     resolvedPath,
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.ContainerFileLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Path:      path,
+		},
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
 func absPath(workDir string, containerPath string) string {
