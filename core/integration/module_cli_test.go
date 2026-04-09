@@ -294,7 +294,7 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 				modGen := goGitBase(t, c).
 					With(daggerExec("init", "--name=bare", "--source=."))
 
-				// TODO: use dagger config to set this once support is added there
+				// TODO: make this configurable
 				modCfgContents, err := modGen.File("dagger.json").Contents(ctx)
 				require.NoError(t, err)
 				modCfg := &modules.ModuleConfig{}
@@ -1783,20 +1783,6 @@ func (m *Hello) Hello() string {
 	require.NoError(t, err)
 	require.NotContains(t, daggerJSON, `"sdk"`)
 
-	t.Run("shell help does not segfault and stdlib functions are shown", func(ctx context.Context, t *testctx.T) {
-		out, err := testCtr.With(daggerShell(".help")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "container") // stdlib
-		require.Contains(t, out, "directory") // stdlib
-		require.Contains(t, out, "Use \".help <command> | <function>\" for more information.")
-	})
-
-	t.Run("core types are still available and working", func(ctx context.Context, t *testctx.T) {
-		out, err := testCtr.With(daggerShell("container | from alpine | with-exec echo Hello | stdout")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Hello\n", out)
-	})
-
 	t.Run("functions with no SDK show just the headers", func(ctx context.Context, t *testctx.T) {
 		out, err := testCtr.With(daggerExec("functions")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1821,11 +1807,5 @@ func (m *Hello) Hello() string {
 	t.Run("call a module without sdk", func(ctx context.Context, t *testctx.T) {
 		_, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerExec("call")).Stdout(ctx)
 		require.NoError(t, err)
-	})
-
-	t.Run("no-sdk module can load module with sdk", func(ctx context.Context, t *testctx.T) {
-		out, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerShell("hello | hello")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hi", out)
 	})
 }

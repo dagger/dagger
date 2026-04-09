@@ -3,14 +3,18 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -37,6 +41,148 @@ func daggerShellNoMod(script string) dagger.WithContainerFunc {
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
+}
+
+func (ShellSuite) TestNoSDK(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	helloCode := `package main
+
+// A Dagger module to say hello to the world!
+type Hello struct{}
+
+// Hello prints out a greeting
+func (m *Hello) Hello() string {
+	return "hi"
+}
+`
+
+	testCtr := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithWorkdir("/work/test/nosdk/hello").
+		With(daggerExec("init", "--sdk=go", "--name=hello")).
+		WithNewFile("main.go", helloCode).
+		WithWorkdir("/work/test/nosdk").
+		With(daggerExec("init", "--name=nosdk")).
+		With(daggerExec("install", "./hello")).
+		WithWorkdir("/work/test").
+		With(daggerExec("init", "--name=test")).
+		With(daggerExec("install", "./nosdk"))
+
+	daggerJSON, err := testCtr.File("dagger.json").Contents(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, daggerJSON, `"sdk"`)
+
+	t.Run("shell help does not segfault and stdlib functions are shown", func(ctx context.Context, t *testctx.T) {
+		out, err := testCtr.With(daggerShell(".help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container")
+		require.Contains(t, out, "directory")
+		require.Contains(t, out, "Use \".help <command> | <function>\" for more information.")
+	})
+
+	t.Run("core types are still available and working", func(ctx context.Context, t *testctx.T) {
+		out, err := testCtr.With(daggerShell("container | from alpine | with-exec echo Hello | stdout")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello\n", out)
+	})
+
+	t.Run("no-sdk module can load module with sdk", func(ctx context.Context, t *testctx.T) {
+		out, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerShell("hello | hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi", out)
+	})
+}
+
+func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {
+	tmpdir := t.TempDir()
+	initCmd := hostDaggerCommand(ctx, t, tmpdir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (string, error) {
+	return secret.Plaintext(ctx)
+}
+
+func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
+	return dag.Container().From("alpine:3.20").
+		WithSecretVariable("TOPSECRET", secret).
+		WithExec([]string{"sh", "-c", "echo -n $(echo -n $TOPSECRET | base64)"})
+}
+`), 0o644)
+	require.NoError(t, err)
+
+	t.Run("dagger shell default cache key", func(ctx context.Context, t *testctx.T) {
+		c1 := connect(ctx, t)
+		c2 := connect(ctx, t)
+
+		{
+			out, err := goGitBase(t, c1).
+				WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
+				WithWorkdir("/src").
+				WithEnvVariable("FOO", "1").
+				With(daggerExec("-s", "-c", "fn-2 env://FOO | stdout")).
+				Stdout(ctx)
+			require.NoError(t, err, out)
+			outDecoded, err := base64.StdEncoding.DecodeString(out)
+			require.NoError(t, err, out)
+			require.Equal(t, "1", string(outDecoded))
+		}
+		{
+			out, err := goGitBase(t, c2).
+				WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
+				WithWorkdir("/src").
+				WithEnvVariable("FOO", "2").
+				With(daggerExec("-s", "-c", "fn-2 env://FOO | stdout")).
+				Stdout(ctx)
+			require.NoError(t, err, out)
+			outDecoded, err := base64.StdEncoding.DecodeString(out)
+			require.NoError(t, err, out)
+			require.Equal(t, "2", string(outDecoded))
+		}
+	})
+
+	t.Run("dagger shell custom cache key", func(ctx context.Context, t *testctx.T) {
+		c1 := connect(ctx, t)
+		c2 := connect(ctx, t)
+
+		cacheKey := identity.NewID()
+		plaintext := identity.NewID()
+		{
+			out, err := goGitBase(t, c1).
+				WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
+				WithWorkdir("/src").
+				WithEnvVariable("FOO", plaintext).
+				With(daggerExec("-s", "-c", "fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout")).
+				Stdout(ctx)
+			require.NoError(t, err, out)
+			outDecoded, err := base64.StdEncoding.DecodeString(out)
+			require.NoError(t, err, out)
+			require.Equal(t, plaintext, string(outDecoded))
+		}
+		{
+			out, err := goGitBase(t, c2).
+				WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
+				WithWorkdir("/src").
+				WithEnvVariable("FOO", identity.NewID()).
+				With(daggerExec("-s", "-c", "fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout")).
+				Stdout(ctx)
+			require.NoError(t, err, out)
+			outDecoded, err := base64.StdEncoding.DecodeString(out)
+			require.NoError(t, err, out)
+			require.Equal(t, plaintext, string(outDecoded))
+		}
+	})
 }
 
 func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
