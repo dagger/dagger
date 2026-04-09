@@ -796,17 +796,28 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
-	dgst, err := core.GetContentHashFromFile(ctx, fileResult)
+	if lazy := fileResult.Self().LazyEvalFunc(); lazy != nil {
+		if err := lazy(ctx); err != nil {
+			return inst, err
+		}
+	}
+
+	snapshot, ok := fileResult.Self().Snapshot.Peek()
+	if !ok {
+		return inst, fmt.Errorf("file snapshot not set after detached evaluation")
+	}
+	filePath, ok := fileResult.Self().File.Peek()
+	if !ok {
+		return inst, fmt.Errorf("file path not set after detached evaluation")
+	}
+
+	dgst, err := core.GetContentHashFromFile(ctx, snapshot, filePath)
 	if err != nil {
 		return inst, err
 	}
 
-	filename, err := fileResult.Self().File.GetOrEval(ctx, fileResult.Result)
-	if err != nil {
-		return inst, err
-	}
 	dgst = hashutil.HashStrings(
-		filename,
+		filePath,
 		string(dgst),
 	)
 

@@ -101,32 +101,11 @@ func GetContentHashFromDirectory(
 
 func GetContentHashFromFile(
 	ctx context.Context,
-	fileInst dagql.ObjectResult[*File],
+	snapshot bkcache.ImmutableRef,
+	filePath string,
 ) (digest.Digest, error) {
-	if fileInst.Self() == nil {
-		return "", fmt.Errorf("file instance is nil")
-	}
-	if _, err := fileInst.ID(); err == nil {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return "", err
-		}
-		if err := cache.Evaluate(ctx, fileInst); err != nil {
-			return "", err
-		}
-	}
-
-	snapshot, err := fileInst.Self().Snapshot.GetOrEval(ctx, fileInst.Result)
-	if err != nil {
-		return "", fmt.Errorf("failed to get file snapshot: %w", err)
-	}
 	if snapshot == nil {
 		return "", fmt.Errorf("failed to get file snapshot: nil")
-	}
-
-	filePath, err := fileInst.Self().File.GetOrEval(ctx, fileInst.Result)
-	if err != nil {
-		return "", fmt.Errorf("failed to get file path: %w", err)
 	}
 	dgst, err := getContentHashFromRef(ctx, snapshot, filePath)
 	if err != nil {
