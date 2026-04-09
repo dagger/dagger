@@ -40,6 +40,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 )
 
@@ -1319,9 +1320,22 @@ func targetParentDirectoryForContainerPath(ctx context.Context, parent dagql.Obj
 	}
 	switch {
 	case mnt == nil:
-		return containerRootFSSelection(ctx, srv, parent, current.FS)
+		var dir dagql.ObjectResult[*Directory]
+		if err := srv.Select(ctx, parent, &dir, dagql.Selector{Field: "rootfs"}); err != nil {
+			return dagql.ObjectResult[*Directory]{}, err
+		}
+		return dir, nil
 	case mnt.DirectorySource != nil:
-		return containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
+		var dir dagql.ObjectResult[*Directory]
+		if err := srv.Select(ctx, parent, &dir, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(mnt.Target)},
+			},
+		}); err != nil {
+			return dagql.ObjectResult[*Directory]{}, err
+		}
+		return dir, nil
 	default:
 		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("path %s does not resolve to a directory target parent", targetPath)
 	}
@@ -1366,34 +1380,36 @@ func (lazy *ContainerRootFSLazy) Evaluate(ctx context.Context, dir *Directory) e
 			return err
 		}
 
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return err
-		}
-		rootfs, err := containerRootFSSelection(ctx, srv, lazy.Parent, lazy.Parent.Self().FS)
-		if err != nil {
-			return err
-		}
-		if err := cache.Evaluate(ctx, rootfs); err != nil {
-			return err
+		parent := lazy.Parent.Self()
+		if parent == nil {
+			return fmt.Errorf("container rootfs lazy: nil parent container")
 		}
 
-		src := rootfs.Self()
-		if src == nil {
-			return fmt.Errorf("container rootfs lazy: nil rootfs result")
+		if parent.FS != nil {
+			if src, ok := parent.FS.Peek(); ok && src != nil {
+				detached, err := cloneDetachedDirectoryForContainerResult(ctx, src)
+				if err != nil {
+					return err
+				}
+				dir.Platform = detached.Platform
+				dir.Services = slices.Clone(detached.Services)
+				if dirPath, ok := detached.Dir.Peek(); ok {
+					dir.Dir.setValue(dirPath)
+				}
+				if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
+					dir.Snapshot.setValue(snapshot)
+				}
+				dir.Lazy = nil
+				return nil
+			}
 		}
-		detached, err := cloneDetachedDirectoryForContainerResult(ctx, src)
+
+		scratchDir, scratchSnapshot, err := loadCanonicalScratchDirectory(ctx)
 		if err != nil {
 			return err
 		}
-		dir.Platform = detached.Platform
-		dir.Services = slices.Clone(detached.Services)
-		if dirPath, ok := detached.Dir.Peek(); ok {
-			dir.Dir.setValue(dirPath)
-		}
-		if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
-			dir.Snapshot.setValue(snapshot)
-		}
+		dir.Dir.setValue(scratchDir)
+		dir.Snapshot.setValue(scratchSnapshot)
 		dir.Lazy = nil
 		return nil
 	})
@@ -1469,10 +1485,92 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 		if parent == nil {
 			return fmt.Errorf("container directory lazy: nil parent container")
 		}
-		resolved, err := parent.Directory(ctx, lazy.Parent, lazy.Path)
+
+		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return err
 		}
+
+		mnt, subpath, err := locatePath(parent, lazy.Path)
+		if err != nil {
+			return err
+		}
+
+		var resolved dagql.ObjectResult[*Directory]
+		switch {
+		case mnt == nil:
+			var rootfs dagql.ObjectResult[*Directory]
+			if err := srv.Select(ctx, lazy.Parent, &rootfs, dagql.Selector{Field: "rootfs"}); err != nil {
+				return err
+			}
+			if subpath == "" || subpath == "." || subpath == "/" {
+				resolved = rootfs
+			} else {
+				if err := srv.Select(ctx, rootfs, &resolved, dagql.Selector{
+					Field: "directory",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(subpath)},
+					},
+				}); err != nil {
+					return err
+				}
+			}
+		case mnt.DirectorySource != nil:
+			mountedDir, ok := mnt.DirectorySource.Peek()
+			if !ok || mountedDir == nil {
+				return fmt.Errorf("container directory lazy: missing mounted directory source for %s", mnt.Target)
+			}
+			if subpath == "" || subpath == "." {
+				detached, err := cloneDetachedDirectoryForContainerResult(ctx, mountedDir)
+				if err != nil {
+					return err
+				}
+				dir.Platform = detached.Platform
+				dir.Services = slices.Clone(detached.Services)
+				if dirPath, ok := detached.Dir.Peek(); ok {
+					dir.Dir.setValue(dirPath)
+				}
+				if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
+					dir.Snapshot.setValue(snapshot)
+				}
+				dir.Lazy = nil
+				return nil
+			}
+
+			detachedMountRoot, err := cloneDetachedDirectoryForContainerResult(ctx, mountedDir)
+			if err != nil {
+				return err
+			}
+			detachedRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, detachedMountRoot)
+			if err != nil {
+				return err
+			}
+			md, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return err
+			}
+			attachedAny, err := cache.AttachResult(ctx, md.SessionID, srv, detachedRes)
+			if err != nil {
+				return err
+			}
+			mountRoot, ok := attachedAny.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return fmt.Errorf("container directory lazy: unexpected attached mount root result %T", attachedAny)
+			}
+			if err := srv.Select(ctx, mountRoot, &resolved, dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(subpath)},
+				},
+			}); err != nil {
+				return err
+			}
+		case mnt.FileSource != nil:
+			return notADirectoryError{fmt.Errorf("path %s is a file, not a directory", lazy.Path)}
+		default:
+			return fmt.Errorf("container directory lazy: invalid path %s in container mounts", lazy.Path)
+		}
+
 		if err := cache.Evaluate(ctx, resolved); err != nil {
 			return err
 		}
@@ -1525,10 +1623,91 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 		if parent == nil {
 			return fmt.Errorf("container file lazy: nil parent container")
 		}
-		resolved, err := parent.File(ctx, lazy.Parent, lazy.Path)
+
+		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return err
 		}
+
+		mnt, subpath, err := locatePath(parent, lazy.Path)
+		if err != nil {
+			return err
+		}
+
+		var resolved dagql.ObjectResult[*File]
+		switch {
+		case mnt == nil:
+			var rootfs dagql.ObjectResult[*Directory]
+			if err := srv.Select(ctx, lazy.Parent, &rootfs, dagql.Selector{Field: "rootfs"}); err != nil {
+				return err
+			}
+			if err := srv.Select(ctx, rootfs, &resolved, dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(subpath)},
+				},
+			}); err != nil {
+				return err
+			}
+		case mnt.DirectorySource != nil:
+			mountedDir, ok := mnt.DirectorySource.Peek()
+			if !ok || mountedDir == nil {
+				return fmt.Errorf("container file lazy: missing mounted directory source for %s", mnt.Target)
+			}
+			detachedMountRoot, err := cloneDetachedDirectoryForContainerResult(ctx, mountedDir)
+			if err != nil {
+				return err
+			}
+			detachedRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, detachedMountRoot)
+			if err != nil {
+				return err
+			}
+			md, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return err
+			}
+			attachedAny, err := cache.AttachResult(ctx, md.SessionID, srv, detachedRes)
+			if err != nil {
+				return err
+			}
+			mountRoot, ok := attachedAny.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return fmt.Errorf("container file lazy: unexpected attached mount root result %T", attachedAny)
+			}
+			if err := srv.Select(ctx, mountRoot, &resolved, dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(subpath)},
+				},
+			}); err != nil {
+				return err
+			}
+		case mnt.FileSource != nil:
+			mountedFile, ok := mnt.FileSource.Peek()
+			if !ok || mountedFile == nil {
+				return fmt.Errorf("container file lazy: missing mounted file source for %s", mnt.Target)
+			}
+			if subpath != "" && subpath != "." {
+				return notAFileError{fmt.Errorf("path %s is a directory, not a file", lazy.Path)}
+			}
+			detached, err := cloneDetachedFileForContainerResult(ctx, mountedFile)
+			if err != nil {
+				return err
+			}
+			file.Platform = detached.Platform
+			file.Services = slices.Clone(detached.Services)
+			if filePath, ok := detached.File.Peek(); ok {
+				file.File.setValue(filePath)
+			}
+			if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
+				file.Snapshot.setValue(snapshot)
+			}
+			file.Lazy = nil
+			return nil
+		default:
+			return fmt.Errorf("container file lazy: invalid path %s in container mounts", lazy.Path)
+		}
+
 		if err := cache.Evaluate(ctx, resolved); err != nil {
 			return err
 		}
@@ -2768,36 +2947,6 @@ func (container *Container) Build(
 	return loadedContainer, nil
 }
 
-func (container *Container) RootFS(ctx context.Context) (dagql.ObjectResult[*Directory], error) {
-	if container.FS != nil {
-		if dir, ok := container.FS.Peek(); ok && dir != nil {
-			srv, err := CurrentDagqlServer(ctx)
-			if err != nil {
-				return dagql.ObjectResult[*Directory]{}, fmt.Errorf("failed to get dagql server: %w", err)
-			}
-			dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, dir)
-			if err != nil {
-				return dagql.ObjectResult[*Directory]{}, err
-			}
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
-		}
-	}
-
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("failed to get dagql server: %w", err)
-	}
-
-	var rootfs dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &rootfs, dagql.Selector{
-		Field: "directory",
-	}); err != nil {
-		return dagql.ObjectResult[*Directory]{}, err
-	}
-
-	return rootfs, nil
-}
-
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResult[*Directory]) (*Container, error) {
 	cache, err := dagql.EngineCache(ctx)
@@ -3428,174 +3577,6 @@ func (container *Container) WithoutSecretVariable(ctx context.Context, name stri
 	return container, nil
 }
 
-func (container *Container) Directory(ctx context.Context, parent dagql.ObjectResult[*Container], dirPath string) (dagql.ObjectResult[*Directory], error) {
-	var dir dagql.ObjectResult[*Directory]
-
-	mnt, subpath, err := locatePath(container, dirPath)
-	if err != nil {
-		return dir, err
-	}
-
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return dir, fmt.Errorf("failed to get dagql server: %w", err)
-	}
-
-	directorySelector := dagql.Selector{
-		Field: "directory",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(subpath)},
-		},
-	}
-
-	switch {
-	case mnt == nil: // rootfs
-		if container.FS != nil {
-			if rootfsDir, ok := container.FS.Peek(); ok && rootfsDir != nil {
-				if subpath == "" || subpath == "." {
-					dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, rootfsDir)
-					if err != nil {
-						return dir, err
-					}
-					return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
-				}
-				rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
-				if err != nil {
-					return dir, err
-				}
-				bareDir, err := rootfsDir.Subdirectory(ctx, rootfs, subpath)
-				if err != nil {
-					return dir, err
-				}
-				return dagql.NewObjectResultForCurrentCall(ctx, srv, bareDir)
-			}
-		}
-		rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
-		if err != nil {
-			return dir, err
-		}
-		if subpath == "" || subpath == "." {
-			return rootfs, nil
-		}
-		err = srv.Select(ctx, rootfs, &dir, directorySelector)
-	case mnt.DirectorySource != nil: // mounted directory
-		if mountedDir, ok := mnt.DirectorySource.Peek(); ok && mountedDir != nil {
-			if subpath == "" || subpath == "." {
-				dirVal, err := cloneDetachedDirectoryForContainerResult(ctx, mountedDir)
-				if err != nil {
-					return dir, err
-				}
-				return dagql.NewObjectResultForCurrentCall(ctx, srv, dirVal)
-			}
-			parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
-			if err != nil {
-				return dir, err
-			}
-			bareDir, err := mountedDir.Subdirectory(ctx, parentDir, subpath)
-			if err != nil {
-				return dir, err
-			}
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, bareDir)
-		}
-		parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
-		if err != nil {
-			return dir, err
-		}
-		if subpath == "" || subpath == "." {
-			return parentDir, nil
-		}
-		err = srv.Select(ctx, parentDir, &dir, directorySelector)
-	case mnt.FileSource != nil: // mounted file
-		return dir, fmt.Errorf("path %s is a file, not a directory", dirPath)
-	default:
-		return dir, fmt.Errorf("invalid path %s in container mounts", dirPath)
-	}
-
-	switch {
-	case err == nil:
-		return dir, nil
-	case errors.As(err, &notADirectoryError{}):
-		// fix the error message to use dirPath rather than subpath
-		return dir, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", dirPath)}
-	default:
-		return dir, err
-	}
-}
-
-func (container *Container) File(ctx context.Context, parent dagql.ObjectResult[*Container], filePath string) (dagql.ObjectResult[*File], error) {
-	var f dagql.ObjectResult[*File]
-
-	mnt, subpath, err := locatePath(container, filePath)
-	if err != nil {
-		return f, err
-	}
-
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return f, fmt.Errorf("failed to get dagql server: %w", err)
-	}
-
-	fileSelector := dagql.Selector{
-		Field: "file",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(subpath)},
-		},
-	}
-
-	switch {
-	case mnt == nil: // rootfs
-		rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
-		if err != nil {
-			return f, err
-		}
-		if container.FS != nil {
-			if rootfsDir, ok := container.FS.Peek(); ok && rootfsDir != nil {
-				bareFile, err := rootfsDir.Subfile(ctx, rootfs, subpath)
-				if err != nil {
-					return f, err
-				}
-				return dagql.NewObjectResultForCurrentCall(ctx, srv, bareFile)
-			}
-		}
-		err = srv.Select(ctx, rootfs, &f, fileSelector)
-	case mnt.DirectorySource != nil: // mounted directory
-		if mountedDir, ok := mnt.DirectorySource.Peek(); ok && mountedDir != nil {
-			parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
-			if err != nil {
-				return f, err
-			}
-			bareFile, err := mountedDir.Subfile(ctx, parentDir, subpath)
-			if err != nil {
-				return f, err
-			}
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, bareFile)
-		}
-		parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
-		if err != nil {
-			return f, err
-		}
-		err = srv.Select(ctx, parentDir, &f, fileSelector)
-		err = RestoreErrPath(err, filePath) // preserve the full filePath, rather than subpath
-	case mnt.FileSource != nil: // mounted file
-		if subpath != "" && subpath != "." {
-			return f, notAFileError{fmt.Errorf("path %s is a directory, not a file", filePath)}
-		}
-		return containerFileMountSelection(ctx, srv, parent, mnt.FileSource, mnt.Target)
-	default:
-		return f, fmt.Errorf("invalid path %s in container mounts", filePath)
-	}
-
-	switch {
-	case err == nil:
-		return f, nil
-	case errors.As(err, &notAFileError{}):
-		// fix the error message to use filePath rather than subpath
-		return f, notAFileError{fmt.Errorf("path %s is a directory, not a file", filePath)}
-	default:
-		return f, err
-	}
-}
-
 // locatePath finds the mount that contains the given container path. It returns
 // the mount and the subpath of containerPath relative to the mountpoint.
 func locatePath(
@@ -3627,69 +3608,6 @@ func locatePath(
 
 	// Not found in a mount
 	return nil, containerPath, nil
-}
-
-func containerRootFSSelection(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*Container], src *LazyAccessor[*Directory, *Container]) (dagql.ObjectResult[*Directory], error) {
-	var dir dagql.ObjectResult[*Directory]
-	if src != nil {
-		if dirVal, ok := src.Peek(); ok && dirVal != nil {
-			detached, err := cloneDetachedDirectoryForContainerResult(ctx, dirVal)
-			if err != nil {
-				return dir, err
-			}
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, detached)
-		}
-	}
-	if parent.Self() == nil || parent.Self().Lazy == nil {
-		if err := srv.Select(ctx, srv.Root(), &dir, dagql.Selector{Field: "directory"}); err != nil {
-			return dir, err
-		}
-		return dir, nil
-	}
-	if err := srv.Select(ctx, parent, &dir, dagql.Selector{Field: "rootfs"}); err != nil {
-		return dir, err
-	}
-	return dir, nil
-}
-
-func containerDirectoryMountSelection(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*Container], src *LazyAccessor[*Directory, *Container], target string) (dagql.ObjectResult[*Directory], error) {
-	var dir dagql.ObjectResult[*Directory]
-	if src != nil {
-		if dirVal, ok := src.Peek(); ok && dirVal != nil {
-			detached, err := cloneDetachedDirectoryForContainerResult(ctx, dirVal)
-			if err != nil {
-				return dir, err
-			}
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, detached)
-		}
-	}
-	err := srv.Select(ctx, parent, &dir, dagql.Selector{
-		Field: "directory",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(target)},
-		},
-	})
-	return dir, err
-}
-
-func containerFileMountSelection(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*Container], src *LazyAccessor[*File, *Container], target string) (dagql.ObjectResult[*File], error) {
-	var file dagql.ObjectResult[*File]
-	if src != nil {
-		if fileVal, ok := src.Peek(); ok && fileVal != nil {
-			detached, err := cloneDetachedFileForContainerResult(ctx, fileVal)
-			if err != nil {
-				return file, err
-			}
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, detached)
-		}
-	}
-	err := srv.Select(ctx, parent, &file, dagql.Selector{
-		Field: "file",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(target)},
-		},
-	})
-	return file, err
 }
 
 func (container *Container) chownDir(
@@ -3805,14 +3723,10 @@ func (container *Container) Exists(ctx context.Context, parent dagql.ObjectResul
 	var exists bool
 	switch {
 	case mnt == nil: // rootfs
-		rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+		var rootfs dagql.ObjectResult[*Directory]
+		err := srv.Select(ctx, parent, &rootfs, dagql.Selector{Field: "rootfs"})
 		if err != nil {
 			return false, err
-		}
-		if container.FS != nil {
-			if rootfsDir, ok := container.FS.Peek(); ok && rootfsDir != nil {
-				return rootfsDir.Exists(ctx, rootfs, srv, mntSubpath, targetType, doNotFollowSymlinks)
-			}
 		}
 		err = srv.Select(ctx, rootfs, &exists, dagql.Selector{
 			Field: "exists",
@@ -3823,12 +3737,15 @@ func (container *Container) Exists(ctx context.Context, parent dagql.ObjectResul
 		}
 
 	case mnt.DirectorySource != nil: // directory mount
-		parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
+		var parentDir dagql.ObjectResult[*Directory]
+		err := srv.Select(ctx, parent, &parentDir, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(mnt.Target)},
+			},
+		})
 		if err != nil {
 			return false, err
-		}
-		if mountedDir, ok := mnt.DirectorySource.Peek(); ok && mountedDir != nil {
-			return mountedDir.Exists(ctx, parentDir, srv, mntSubpath, targetType, doNotFollowSymlinks)
 		}
 		err = srv.Select(ctx, parentDir, &exists, dagql.Selector{
 			Field: "exists",
@@ -3842,10 +3759,26 @@ func (container *Container) Exists(ctx context.Context, parent dagql.ObjectResul
 		if mntSubpath != "" && mntSubpath != "." {
 			return false, nil
 		}
+		var fileRes dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, parent, &fileRes, dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(mnt.Target)},
+			},
+		}); err != nil {
+			return false, err
+		}
+		var stat *Stat
+		if err := srv.Select(ctx, fileRes, &stat, dagql.Selector{Field: "stat"}); err != nil {
+			return false, err
+		}
+		if stat == nil {
+			return false, nil
+		}
 		if targetType == "" {
 			return true, nil
 		}
-		return targetType == ExistsTypeRegular, nil
+		return targetType == ExistsTypeRegular && stat.FileType == FileTypeRegular, nil
 
 	default:
 		return false, fmt.Errorf("invalid mount source for %s", targetPath)
@@ -3870,14 +3803,10 @@ func (container *Container) Stat(ctx context.Context, parent dagql.ObjectResult[
 	var stat *Stat
 	switch {
 	case mnt == nil: // rootfs
-		rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+		var rootfs dagql.ObjectResult[*Directory]
+		err := srv.Select(ctx, parent, &rootfs, dagql.Selector{Field: "rootfs"})
 		if err != nil {
 			return nil, err
-		}
-		if container.FS != nil {
-			if rootfsDir, ok := container.FS.Peek(); ok && rootfsDir != nil {
-				return rootfsDir.Stat(ctx, rootfs, srv, mntSubpath, doNotFollowSymlinks)
-			}
 		}
 		err = srv.Select(ctx, rootfs, &stat, dagql.Selector{
 			Field: "stat",
@@ -3888,12 +3817,15 @@ func (container *Container) Stat(ctx context.Context, parent dagql.ObjectResult[
 		}
 
 	case mnt.DirectorySource != nil: // directory mount
-		parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
+		var parentDir dagql.ObjectResult[*Directory]
+		err := srv.Select(ctx, parent, &parentDir, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(mnt.Target)},
+			},
+		})
 		if err != nil {
 			return nil, err
-		}
-		if mountedDir, ok := mnt.DirectorySource.Peek(); ok && mountedDir != nil {
-			return mountedDir.Stat(ctx, parentDir, srv, mntSubpath, doNotFollowSymlinks)
 		}
 		err = srv.Select(ctx, parentDir, &stat, dagql.Selector{
 			Field: "stat",
@@ -3907,8 +3839,13 @@ func (container *Container) Stat(ctx context.Context, parent dagql.ObjectResult[
 		if mntSubpath != "" && mntSubpath != "." {
 			return nil, &os.PathError{Op: "stat", Path: targetPath, Err: syscall.ENOENT}
 		}
-		fileRes, err := containerFileMountSelection(ctx, srv, parent, mnt.FileSource, mnt.Target)
-		if err != nil {
+		var fileRes dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, parent, &fileRes, dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(mnt.Target)},
+			},
+		}); err != nil {
 			return nil, err
 		}
 		err = srv.Select(ctx, fileRes, &stat, dagql.Selector{
