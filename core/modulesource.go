@@ -1243,9 +1243,21 @@ func (src *ModuleSource) LoadContextDir(
 		return inst, fmt.Errorf("context directory call: %w", err)
 	}
 	if instID != nil && instCall.ContentDigest() == "" {
-		inst, err = MakeDirectoryContentHashed(ctx, inst)
+		snapshot, err := inst.Self().Snapshot.GetOrEval(ctx, inst.Result)
+		if err != nil {
+			return inst, fmt.Errorf("context directory snapshot: %w", err)
+		}
+		dirPath, err := inst.Self().Dir.GetOrEval(ctx, inst.Result)
+		if err != nil {
+			return inst, fmt.Errorf("context directory path: %w", err)
+		}
+		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
 		if err != nil {
 			return inst, fmt.Errorf("failed to content-hash contextual directory: %w", err)
+		}
+		inst, err = inst.WithContentDigest(ctx, dgst)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set contextual directory content digest: %w", err)
 		}
 	}
 
@@ -1442,9 +1454,21 @@ func (src *ModuleSource) loadContextFromSource(
 			}
 		}
 
-		inst, err = MakeDirectoryContentHashed(ctx, ctxDir)
+		snapshot, err := ctxDir.Self().Snapshot.GetOrEval(ctx, ctxDir.Result)
+		if err != nil {
+			return inst, fmt.Errorf("context directory snapshot: %w", err)
+		}
+		dirPath, err := ctxDir.Self().Dir.GetOrEval(ctx, ctxDir.Result)
+		if err != nil {
+			return inst, fmt.Errorf("context directory path: %w", err)
+		}
+		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
 		if err != nil {
 			return inst, err
+		}
+		inst, err = ctxDir.WithContentDigest(ctx, dgst)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set contextual directory content digest: %w", err)
 		}
 
 	default:

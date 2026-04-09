@@ -1824,7 +1824,27 @@ func maintainContentHashing[A any](
 			return res, err
 		}
 		if parentCall.ContentDigest() != "" {
-			res, err = core.MakeDirectoryContentHashed(ctx, res)
+			if res.Self() == nil {
+				return res, fmt.Errorf("failed to make directory content hashed: nil directory result")
+			}
+			if lazy := res.Self().LazyEvalFunc(); lazy != nil {
+				if err := lazy(ctx); err != nil {
+					return res, fmt.Errorf("failed to make directory content hashed: %w", err)
+				}
+			}
+			snapshot, ok := res.Self().Snapshot.Peek()
+			if !ok {
+				return res, fmt.Errorf("failed to make directory content hashed: failed to get directory snapshot: unset")
+			}
+			dirPath, ok := res.Self().Dir.Peek()
+			if !ok {
+				return res, fmt.Errorf("failed to make directory content hashed: failed to get directory path: unset")
+			}
+			dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+			if err != nil {
+				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
+			}
+			res, err = res.WithContentDigest(ctx, dgst)
 			if err != nil {
 				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
 			}

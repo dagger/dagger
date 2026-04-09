@@ -1082,7 +1082,20 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 			// do a full hash of the actual files/dirs in the private git repo so
 			// that the cache key of the returned value can't be known unless the
 			// full contents are already known
-			dgst, err := core.GetContentHashFromDirectory(ctx, inst)
+			if lazy := inst.Self().LazyEvalFunc(); lazy != nil {
+				if err := lazy(ctx); err != nil {
+					return inst, fmt.Errorf("failed to evaluate tree before hashing: %w", err)
+				}
+			}
+			snapshot, ok := inst.Self().Snapshot.Peek()
+			if !ok {
+				return inst, fmt.Errorf("failed to get tree snapshot: unset")
+			}
+			dirPath, ok := inst.Self().Dir.Peek()
+			if !ok {
+				return inst, fmt.Errorf("failed to get tree path: unset")
+			}
+			dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
 			if err != nil {
 				return inst, fmt.Errorf("failed to get content hash: %w", err)
 			}

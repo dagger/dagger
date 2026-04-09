@@ -18,74 +18,15 @@ import (
 
 var checksumG singleflight.Group[string, digest.Digest]
 
-// MakeDirectoryContentHashed returns an updated instance of the given Directory that
-// has it's dagql ID digest set to a content hash of the directory. This allows all
-// directory instances with the same content to be deduplicated in dagql's cache.
-func MakeDirectoryContentHashed(
-	ctx context.Context,
-	dirInst dagql.ObjectResult[*Directory],
-) (retInst dagql.ObjectResult[*Directory], err error) {
-	dgst, err := GetContentHashFromDirectory(ctx, dirInst)
-	if err != nil {
-		return retInst, err
-	}
-	dirPath := ""
-	if dirInst.Self() != nil {
-		dirPath, _ = dirInst.Self().Dir.Peek()
-	}
-	dagql.TraceEGraphDebug(ctx, "directory_content_hash_computed", "phase", "runtime", "path", dirPath, "content_digest", dgst)
-
-	if _, err := dirInst.ID(); err == nil {
-		frame, frameErr := dirInst.ResultCall()
-		oldContentDigest := ""
-		if frameErr == nil && frame != nil {
-			oldContentDigest = frame.ContentDigest().String()
-		}
-		dagql.TraceEGraphDebug(ctx, "directory_content_hash_teach_attempt", "phase", "runtime", "path", dirPath, "old_content_digest", oldContentDigest, "new_content_digest", dgst)
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return retInst, err
-		}
-		if err := cache.TeachContentDigest(ctx, dirInst, dgst); err != nil {
-			return retInst, fmt.Errorf("teach directory content digest: %w", err)
-		}
-		dagql.TraceEGraphDebug(ctx, "directory_content_hash_taught", "phase", "runtime", "path", dirPath, "content_digest", dgst)
-		return dirInst, nil
-	}
-
-	dagql.TraceEGraphDebug(ctx, "directory_content_hash_detached_result", "phase", "runtime", "path", dirPath, "content_digest", dgst)
-	return dirInst.WithContentDigest(ctx, dgst)
-}
-
 func GetContentHashFromDirectory(
 	ctx context.Context,
-	dirInst dagql.ObjectResult[*Directory],
+	snapshot bkcache.ImmutableRef,
+	dirPath string,
 ) (digest.Digest, error) {
-	if dirInst.Self() == nil {
-		return "", fmt.Errorf("directory instance is nil")
-	}
-	if _, err := dirInst.ID(); err == nil {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return "", err
-		}
-		if err := cache.Evaluate(ctx, dirInst); err != nil {
-			return "", err
-		}
-	}
-
-	snapshot, err := dirInst.Self().Snapshot.GetOrEval(ctx, dirInst.Result)
-	if err != nil {
-		return "", fmt.Errorf("failed to get directory snapshot: %w", err)
-	}
 	if snapshot == nil {
 		return "", fmt.Errorf("failed to get directory snapshot: nil")
 	}
 
-	dirPath, err := dirInst.Self().Dir.GetOrEval(ctx, dirInst.Result)
-	if err != nil {
-		return "", fmt.Errorf("failed to get directory path: %w", err)
-	}
 	if !strings.HasSuffix(dirPath, "/") {
 		// omit directory name from the hash
 		dirPath += "/"
