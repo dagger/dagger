@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	ctrdmount "github.com/containerd/containerd/v2/core/mount"
+	containerdfs "github.com/containerd/continuity/fs"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
@@ -1973,29 +1974,27 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 	if err != nil {
 		return "", err
 	}
-	file := &File{
-		Platform: container.Platform,
-		Services: slices.Clone(container.Services),
-		File:     new(LazyAccessor[string, *File]),
-		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
-	}
-	file.File.setValue(filePath)
-	file.Snapshot.setValue(reopened)
 	defer func() {
-		_ = file.OnRelease(context.WithoutCancel(ctx))
+		_ = reopened.Release(context.WithoutCancel(ctx))
 	}()
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return "", err
-	}
-	fileRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, file)
-	if err != nil {
-		return "", err
-	}
 
-	content, err := file.Contents(ctx, fileRes, nil, nil)
+	var content []byte
+	err = MountRef(ctx, reopened, func(root string, _ *ctrdmount.Mount) error {
+		fullPath, err := containerdfs.RootPath(root, filePath)
+		if err != nil {
+			return err
+		}
+		content, err = os.ReadFile(fullPath)
+		if err != nil {
+			return TrimErrPathPrefix(err, root)
+		}
+		return nil
+	}, mountRefAsReadOnly)
 	if err != nil {
 		if errors.Is(err, errEmptyResultRef) {
+			return "", ErrNoCommand
+		}
+		if errors.Is(err, os.ErrNotExist) {
 			return "", ErrNoCommand
 		}
 		return "", err
