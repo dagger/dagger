@@ -12,8 +12,6 @@ import (
 
 type Driver interface {
 	// Available returns true if the driver backend is running and available for use.
-	//
-	// Deprecated: only used by deprecated GetDriver()
 	Available(ctx context.Context) (bool, error)
 
 	// Provision creates any underlying resources for a driver, and returns a
@@ -52,28 +50,16 @@ const (
 	EnvGPUSupport       = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 )
 
-var driversByScheme = map[string][]Driver{}
+var drivers = map[string][]Driver{}
 
 func register(scheme string, driver ...Driver) {
-	driversByScheme[scheme] = driver
+	drivers[scheme] = driver
 }
 
-// GetDrivers returns the list of drivers irrespective of whether they are Available.
-// Loop through them until a Connector returned by Provision() is able to Connect().
-func GetDrivers(ctx context.Context, scheme string) ([]Driver, error) {
-	drivers, ok := driversByScheme[scheme]
+func GetDriver(ctx context.Context, name string) (Driver, error) {
+	drivers, ok := drivers[name]
 	if !ok {
-		return nil, fmt.Errorf("no driver for scheme %q found", scheme)
-	}
-	return drivers, nil
-}
-
-// Deprecated: GetDriver returns a Driver that is available as indicated by Driver.Available()
-// Use GetDrivers() instead.
-func GetDriver(ctx context.Context, scheme string) (Driver, error) {
-	drivers, err := GetDrivers(ctx, scheme)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("no driver for scheme %q found", name)
 	}
 	for _, driver := range drivers {
 		available, err := driver.Available(ctx)
@@ -84,5 +70,5 @@ func GetDriver(ctx context.Context, scheme string) (Driver, error) {
 			return driver, nil
 		}
 	}
-	return nil, fmt.Errorf("driver for scheme %q was not available", scheme)
+	return nil, fmt.Errorf("driver for scheme %q was not available", name)
 }
