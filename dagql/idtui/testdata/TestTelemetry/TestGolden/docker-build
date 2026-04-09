@@ -44,7 +44,7 @@ $ viztest: Viztest! X.Xs CACHED
   │ ┃ im another layer
   ├╴✔ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs
   ├╴✔ .withoutEntrypoint(keepDefaultArgs: true): Container! X.Xs
-  ╰╴○ .withDefaultArgs(args: ["sh"]): Container! X.Xs
+  ╰╴✔ .withDefaultArgs(args: ["sh"]): Container! X.Xs
 ✔ withExec echo hey X.Xs
 ┃ hey
 ✔ .stdout: String! X.Xs

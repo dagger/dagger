@@ -50,11 +50,11 @@ $ viztest: Viztest! X.Xs CACHED
   ├╴✘ withExec /bin/sh -c 'echo im failing && false' X.Xs ERROR
   │ ┃ im failing
   │ ! exit code: 1
-  ╰╴✘ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs ERROR
-    ╰╴✘ Container.rootfs: Directory! X.Xs ERROR
-      ┇ .dockerBuildFail › .dockerBuild ›
-      ✘ withExec /bin/sh -c 'echo im failing && false' X.Xs ERROR
-      ┃ im failing
-      ! exit code: 1
+  ├╴✘ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs ERROR
+  │ ! exit code: 1
+  ├╴✘ .withoutEntrypoint(keepDefaultArgs: true): Container! X.Xs ERROR
+  │ ! exit code: 1
+  ╰╴✘ .withDefaultArgs(args: ["sh"]): Container! X.Xs ERROR
+    ! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
