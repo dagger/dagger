@@ -1016,6 +1016,9 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if err := dagCache.Evaluate(ctx, state.Parent); err != nil {
 			return err
 		}
+		if err := materializeContainerStateFromParent(ctx, container, state.Parent); err != nil {
+			return err
+		}
 
 		parent := state.Parent.Self()
 		if parent == nil {
@@ -1024,8 +1027,8 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if container == nil {
 			return fmt.Errorf("exec output container is nil")
 		}
-		inputRootFS := parent.FS
-		inputMounts := slices.Clone(parent.Mounts)
+		inputRootFS := container.FS
+		inputMounts := slices.Clone(container.Mounts)
 
 		query, err := CurrentQuery(ctx)
 		if err != nil {
