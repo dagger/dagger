@@ -9,21 +9,50 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
-✔ .dockerBuildFail: Container! X.Xs
+$ viztest: Viztest! X.Xs CACHED
+✘ .dockerBuildFail: Container! X.Xs ERROR
 ├╴✔ withNewFile Dockerfile (contents: "FROM busybox:1.34\nRUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo im failing && false\n") X.Xs
-╰╴✘ .dockerBuild: Container! X.Xs ERROR ✘ [4/4] RUN echo im failing && false ✔ 2 $ 1
-  ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-  ├╴$ [1/4] FROM docker.io/library/busybox:1.34@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs CACHED
-  ├╴✔ [2/4] RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
+╰╴✘ .dockerBuild: Container! X.Xs ERROR
+  ├╴✘ Directory.file(path: "Dockerfile.dockerignore"): File! X.Xs ERROR
+  │ ! stat Dockerfile.dockerignore: no such file or directory
+  │
+  ├╴✘ Directory.file(path: ".dockerignore"): File! X.Xs ERROR
+  │ ! stat .dockerignore: no such file or directory
+  │
+  ├╴✔ resolving docker.io/library/busybox:1.34 X.Xs
+  │ ├╴✔ remotes.docker.resolver.HTTPRequest X.Xs
+  │ │ ╰╴✔ HTTP HEAD X.Xs
+  │ │
+  │ ├╴✔ remotes.docker.resolver.HTTPRequest X.Xs
+  │ │ ╰╴✔ HTTP GET X.Xs
+  │ │
+  │ ├╴✔ remotes.docker.resolver.HTTPRequest X.Xs
+  │ │ ╰╴✔ HTTP GET X.Xs
+  │ │
+  │ ├╴✔ remotes.docker.resolver.HTTPRequest X.Xs
+  │ │ ╰╴✔ HTTP GET X.Xs
+  │ │
+  │ ╰╴✔ remotes.docker.resolver.HTTPRequest X.Xs
+  │   ╰╴✔ HTTP GET X.Xs
+  │
+  ├╴$ Container.from(address: "docker.io/library/busybox:1.34@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Container! X.Xs CACHED
+  │
+  ├╴✔ withExec /bin/sh -c 'echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X' X.Xs
   │ ┃ the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-  ├╴✔ [3/4] RUN echo hello, world! X.Xs
+  ├╴✔ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs
+  ├╴✔ withWorkdir / X.Xs
+  ├╴✔ withExec /bin/sh -c 'echo hello, world!' X.Xs
   │ ┃ hello, world!
-  ╰╴✘ [4/4] RUN echo im failing && false X.Xs ERROR
-    ┃ im failing
-    ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-$ withExec echo hey X.Xs CACHED
-✘ .stdout: String! X.Xs ERROR
-! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
+  ├╴✔ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs
+  ├╴✔ withWorkdir / X.Xs
+  ├╴✘ withExec /bin/sh -c 'echo im failing && false' X.Xs ERROR
+  │ ┃ im failing
+  │ ! exit code: 1
+  ╰╴✘ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs ERROR
+    ╰╴✘ Container.rootfs: Directory! X.Xs ERROR
+      ┇ .dockerBuildFail › .dockerBuild ›
+      ✘ withExec /bin/sh -c 'echo im failing && false' X.Xs ERROR
+      ┃ im failing
+      ! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

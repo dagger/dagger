@@ -17,7 +17,7 @@ Expected stderr:
 
 $ viztest: Viztest! X.Xs CACHED
 ✔ .list(
-│ ┆ dir: Address.directory: Directory!
+│ ┆ dir: Host.directory: Directory!
 │ ): String! X.Xs
 ┃ test.txt
 ┃ test2.txt

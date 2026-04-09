@@ -11,7 +11,7 @@ Expected stderr:
 
 $ viztest: Viztest! X.Xs CACHED
 ✔ .useExecService: Void X.Xs
-├╴✔ container: Container! X.Xs
+├╴$ container: Container! X.Xs CACHED
 ├╴✔ .from(address: "busybox"): Container! X.Xs
 ├╴✔ withNewFile /srv/index.html (contents: "<h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>") X.Xs
 ├╴✔ .withExposedPort(port: 80): Container! X.Xs

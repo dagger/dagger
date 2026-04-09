@@ -18,7 +18,7 @@ $ typescript: Typescript! X.Xs CACHED
 ✔ .customSpan: String! X.Xs
 ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 ╰╴✔ custom span X.Xs
-  ├╴✔ container: Container! X.Xs
+  ├╴$ container: Container! X.Xs CACHED
   ├╴$ .from(address: "alpine:latest"): Container! X.Xs CACHED
   ├╴✔ withExec echo 'hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ' X.Xs
   │ ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ

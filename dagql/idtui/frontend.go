@@ -379,7 +379,15 @@ func (r *renderer) renderCall( //nolint: gocyclo
 	if !specialTitle {
 		if call.ReceiverDigest != "" {
 			if !chained {
-				r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+				if span != nil {
+					if base := span.Base(); base != nil {
+						r.renderIDBase(out, base)
+					} else {
+						r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+					}
+				} else {
+					r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+				}
 			}
 			fmt.Fprint(out, out.String("."))
 		}

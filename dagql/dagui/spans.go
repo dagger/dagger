@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -179,7 +180,23 @@ func (span *Span) Base() *callpbv1.Call {
 	// TODO: respect an already-set base value computed server-side, and client
 	// subsequently requests necessary DAG
 	if call.ReceiverDigest != "" {
-		parentCall := span.db.MustCall(call.ReceiverDigest)
+		parentCall := span.db.Call(call.ReceiverDigest)
+		if parentCall == nil {
+			suffix := "." + call.Field
+			if span.Name != "" && strings.HasSuffix(span.Name, suffix) {
+				baseName := strings.TrimSuffix(span.Name, suffix)
+				if baseName != "" {
+					span.baseCache = &callpbv1.Call{
+						Digest: call.ReceiverDigest,
+						Type: &callpbv1.Type{
+							NamedType: baseName,
+						},
+					}
+					return span.baseCache
+				}
+			}
+		}
+		parentCall = span.db.MustCall(call.ReceiverDigest)
 		if parentCall != nil {
 			span.baseCache = span.db.Simplify(parentCall, span.Internal)
 			return span.baseCache
