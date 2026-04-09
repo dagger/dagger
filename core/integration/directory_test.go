@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -1641,7 +1641,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 		WithExec([]string{
 			"sh",
 			"-c",
-			fmt.Sprintf("head -c %d /dev/zero | tr '\\000' 'a' > /large.txt", buildkit.MaxFileContentsSize+1),
+			fmt.Sprintf("head -c %d /dev/zero | tr '\\000' 'a' > /large.txt", engineutil.MaxFileContentsSize+1),
 		}).
 		File("/large.txt")
 
@@ -1652,7 +1652,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 
 	patchSize, err := patchFile.Size(ctx)
 	require.NoError(t, err)
-	require.Greater(t, patchSize, buildkit.MaxFileContentsSize)
+	require.Greater(t, patchSize, engineutil.MaxFileContentsSize)
 
 	patchID, err := patchFile.ID(ctx)
 	require.NoError(t, err)
@@ -1672,7 +1672,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 
 	size, err := patchedDir.File("large.txt").Size(ctx)
 	require.NoError(t, err)
-	require.Equal(t, buildkit.MaxFileContentsSize+1, size)
+	require.Equal(t, engineutil.MaxFileContentsSize+1, size)
 }
 
 func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
