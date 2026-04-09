@@ -4942,7 +4942,7 @@ func (container *Container) withoutPath(
 	if err != nil {
 		return nil, err
 	}
-	if err := dir.Without(ctx, targetParent, dagql.CurrentCall(ctx), mntSubpath); err != nil {
+	if err := dir.Without(ctx, targetParent, dagql.CurrentCall(ctx), false, mntSubpath); err != nil {
 		return nil, err
 	}
 	container.ImageRef = ""

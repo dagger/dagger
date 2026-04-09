@@ -1138,7 +1138,7 @@ func (lazy *DirectoryWithChangesLazy) EncodePersisted(ctx context.Context, cache
 
 func (lazy *DirectoryWithoutLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return lazy.LazyState.Evaluate(ctx, "Directory.without", func(ctx context.Context) error {
-		return dir.Without(ctx, lazy.Parent, dagql.CurrentCall(ctx), lazy.Paths...)
+		return dir.Without(ctx, lazy.Parent, dagql.CurrentCall(ctx), true, lazy.Paths...)
 	})
 }
 
@@ -3138,7 +3138,7 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 	return nil
 }
 
-func (dir *Directory) Without(ctx context.Context, parent dagql.ObjectResult[*Directory], opCall *dagql.ResultCall, paths ...string) error {
+func (dir *Directory) Without(ctx context.Context, parent dagql.ObjectResult[*Directory], opCall *dagql.ResultCall, teachNoopEquivalence bool, paths ...string) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
@@ -3170,7 +3170,7 @@ func (dir *Directory) Without(ctx context.Context, parent dagql.ObjectResult[*Di
 		dir.Snapshot.setValue(snapshot)
 	}
 
-	if !anyPathsRemoved && opCall != nil && parent.Self() != nil {
+	if teachNoopEquivalence && !anyPathsRemoved && opCall != nil && parent.Self() != nil {
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return fmt.Errorf("directory no-op equivalence client metadata: %w", err)
