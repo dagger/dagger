@@ -33,6 +33,8 @@ DAGGER_DECORATORS = {
     "check": {"check", "dagger.check", "mod.check"},
     # @dagger.generate or @mod.generate or @generate
     "generate": {"generate", "dagger.generate", "mod.generate"},
+    # @dagger.up or @mod.up or @up
+    "up": {"up", "dagger.up", "mod.up"},
 }
 
 

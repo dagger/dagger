@@ -443,6 +443,38 @@ class Foo:
     assert fn.is_generate is False
 
 
+# -- @up decorator -----------------------------------------------------------
+
+
+def test_ast_function_up_metadata():
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    @dagger.up
+    def web(self) -> dagger.Service:
+        ...
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    assert fn.is_service is True
+
+
+def test_ast_function_up_default_false():
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def regular(self) -> str:
+        return "ok"
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    assert fn.is_service is False
+
+
 # -- Type resolution ---------------------------------------------------------
 
 

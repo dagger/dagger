@@ -721,9 +721,10 @@ class ModuleParser:
         decorator = find_decorator(node, "function")
         decorator_info = extract_decorator_info(decorator) if decorator else None
 
-        # Check for @check and @generate decorators
+        # Check for decorator flags
         is_check = has_decorator(node, "check")
         is_generate = has_decorator(node, "generate")
+        is_service = has_decorator(node, "up")
 
         # Extract decorator kwargs
         func_kwargs: dict[str, Any] = {}
@@ -757,6 +758,7 @@ class ModuleParser:
             cache_policy=func_kwargs.get("cache"),
             is_check=is_check,
             is_generate=is_generate,
+            is_service=is_service,
             is_async=isinstance(node, ast.AsyncFunctionDef),
             is_classmethod=is_classmethod(node),
             is_constructor=False,

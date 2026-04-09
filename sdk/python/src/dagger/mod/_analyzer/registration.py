@@ -119,6 +119,19 @@ def _build_function_def(func_meta: FunctionMetadata) -> dagger.Function:
         return_typedef,
     )
 
+    func_def = _apply_function_metadata(func_def, func_meta)
+
+    for param_meta in func_meta.parameters:
+        func_def = _add_parameter(func_def, param_meta)
+
+    return func_def
+
+
+def _apply_function_metadata(
+    func_def: dagger.Function,
+    func_meta: FunctionMetadata,
+) -> dagger.Function:
+    """Apply metadata flags and cache policy to a function definition."""
     if func_meta.doc:
         func_def = func_def.with_description(func_meta.doc)
 
@@ -131,22 +144,30 @@ def _build_function_def(func_meta: FunctionMetadata) -> dagger.Function:
     if func_meta.is_generate:
         func_def = func_def.with_generator()
 
-    # Handle cache policy
-    if func_meta.cache_policy is not None:
-        if func_meta.cache_policy == "never":
-            func_def = func_def.with_cache_policy(dagger.FunctionCachePolicy.Never)
-        elif func_meta.cache_policy == "session":
-            func_def = func_def.with_cache_policy(dagger.FunctionCachePolicy.PerSession)
-        elif func_meta.cache_policy != "":
-            func_def = func_def.with_cache_policy(
-                dagger.FunctionCachePolicy.Default,
-                time_to_live=func_meta.cache_policy,
-            )
+    if func_meta.is_service:
+        func_def = func_def.with_up()
 
-    # Add parameters
-    for param_meta in func_meta.parameters:
-        func_def = _add_parameter(func_def, param_meta)
+    cache_policy = func_meta.cache_policy
+    if cache_policy is not None:
+        func_def = _apply_cache_policy(func_def, cache_policy)
 
+    return func_def
+
+
+def _apply_cache_policy(
+    func_def: dagger.Function,
+    cache_policy: str,
+) -> dagger.Function:
+    """Apply cache policy to a function definition."""
+    if cache_policy == "never":
+        return func_def.with_cache_policy(dagger.FunctionCachePolicy.Never)
+    if cache_policy == "session":
+        return func_def.with_cache_policy(dagger.FunctionCachePolicy.PerSession)
+    if cache_policy != "":
+        return func_def.with_cache_policy(
+            dagger.FunctionCachePolicy.Default,
+            time_to_live=cache_policy,
+        )
     return func_def
 
 
