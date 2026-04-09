@@ -24,7 +24,24 @@ func Stabilize(out string) string {
 	for _, s := range scrubs {
 		out = s.re.ReplaceAllString(out, s.repl)
 	}
-	return out
+
+	lines := strings.SplitAfter(out, "\n")
+	stable := make([]string, 0, len(lines))
+	var lastPortNotReady string
+
+	for _, line := range lines {
+		if strings.Contains(line, "WRN port not ready") {
+			if line == lastPortNotReady {
+				continue
+			}
+			lastPortNotReady = line
+		} else {
+			lastPortNotReady = ""
+		}
+		stable = append(stable, line)
+	}
+
+	return strings.Join(stable, "")
 }
 
 var scrubs = []scrubber{
