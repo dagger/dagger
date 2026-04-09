@@ -81,12 +81,10 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 		ctrID = appendCall(ctrID, containerType(), "withRootfs", argID("directory", rootDirID))
 	}
 
-	addedMountPaths := make([]string, 0, len(exec.Mounts))
-	addedMountPathSet := map[string]struct{}{}
+	cleanupMountPaths := make([]string, 0, len(exec.Mounts))
+	cleanupMountPathSet := map[string]struct{}{}
 	addedUnixSocketPaths := make([]string, 0, len(exec.Mounts))
 	addedUnixSocketPathSet := map[string]struct{}{}
-	addedSecretEnvNames := make([]string, 0, len(exec.Secretenv))
-	addedSecretEnvSet := map[string]struct{}{}
 
 	for _, secretEnv := range exec.Secretenv {
 		secretID, include, err := c.resolveSecretID(opDigest(exec.OpDAG), secretEnv.ID, secretEnv.Optional)
@@ -103,10 +101,10 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 			argString("name", secretEnv.Name),
 			argID("secret", secretID),
 		)
-		if _, exists := addedSecretEnvSet[secretEnv.Name]; !exists {
-			addedSecretEnvSet[secretEnv.Name] = struct{}{}
-			addedSecretEnvNames = append(addedSecretEnvNames, secretEnv.Name)
-		}
+		// Back-compat: preserve Dockerfile secret env injections in the resulting
+		// container instead of stripping them with withoutSecretVariable after
+		// withExec. This keeps later execs able to scrub secret output even when
+		// they run outside the original single RUN that introduced the secret.
 	}
 
 	for _, m := range exec.Mounts {
@@ -140,9 +138,9 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 				args...,
 			)
 			path := cleanPath(m.Dest)
-			if _, exists := addedMountPathSet[path]; !exists {
-				addedMountPathSet[path] = struct{}{}
-				addedMountPaths = append(addedMountPaths, path)
+			if _, exists := cleanupMountPathSet[path]; !exists {
+				cleanupMountPathSet[path] = struct{}{}
+				cleanupMountPaths = append(cleanupMountPaths, path)
 			}
 
 		case pb.MountType_CACHE:
@@ -168,9 +166,9 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 			}
 			ctrID = appendCall(ctrID, containerType(), "withMountedCache", args...)
 			path := cleanPath(m.Dest)
-			if _, exists := addedMountPathSet[path]; !exists {
-				addedMountPathSet[path] = struct{}{}
-				addedMountPaths = append(addedMountPaths, path)
+			if _, exists := cleanupMountPathSet[path]; !exists {
+				cleanupMountPathSet[path] = struct{}{}
+				cleanupMountPaths = append(cleanupMountPaths, path)
 			}
 
 		case pb.MountType_TMPFS:
@@ -180,9 +178,9 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 			}
 			ctrID = appendCall(ctrID, containerType(), "withMountedTemp", args...)
 			path := cleanPath(m.Dest)
-			if _, exists := addedMountPathSet[path]; !exists {
-				addedMountPathSet[path] = struct{}{}
-				addedMountPaths = append(addedMountPaths, path)
+			if _, exists := cleanupMountPathSet[path]; !exists {
+				cleanupMountPathSet[path] = struct{}{}
+				cleanupMountPaths = append(cleanupMountPaths, path)
 			}
 
 		case pb.MountType_SECRET:
@@ -205,11 +203,11 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 				argString("owner", fmt.Sprintf("%d:%d", m.SecretOpt.Uid, m.SecretOpt.Gid)),
 				argInt("mode", int64(m.SecretOpt.Mode)),
 			)
-			path := cleanPath(m.Dest)
-			if _, exists := addedMountPathSet[path]; !exists {
-				addedMountPathSet[path] = struct{}{}
-				addedMountPaths = append(addedMountPaths, path)
-			}
+			// Back-compat: preserve Dockerfile secret mounts in the resulting
+			// container instead of stripping them with withoutMount after
+			// withExec. This keeps later execs able to scrub secret output even
+			// when they run outside the original single RUN that mounted the
+			// secret.
 		case pb.MountType_SSH:
 			if m.SSHOpt == nil {
 				return nil, unsupported(opDigest(exec.OpDAG), "exec", "ssh mount is missing ssh options")
@@ -286,7 +284,7 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 	}
 	if outMount.Dest == "/" {
 		cleanedID := withExecID
-		for _, path := range addedMountPaths {
+		for _, path := range cleanupMountPaths {
 			if path == "/" {
 				continue
 			}
@@ -297,9 +295,6 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 				continue
 			}
 			cleanedID = appendCall(cleanedID, containerType(), "withoutUnixSocket", argString("path", path))
-		}
-		for _, name := range addedSecretEnvNames {
-			cleanedID = appendCall(cleanedID, containerType(), "withoutSecretVariable", argString("name", name))
 		}
 		return cleanedID, nil
 	}
