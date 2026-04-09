@@ -698,6 +698,19 @@ func runOnReleaseFuncs(ctx context.Context, onReleases []OnReleaseFunc) error {
 	return rerr
 }
 
+func (c *Cache) releaseSharedResultOwnership(ctx context.Context, res *sharedResult) error {
+	if c == nil || res == nil {
+		return nil
+	}
+
+	releaseCtx := context.WithoutCancel(ctx)
+	c.egraphMu.Lock()
+	queue, decErr := c.decrementIncomingOwnershipLocked(ctx, res, nil)
+	collectReleases, collectErr := c.collectUnownedResultsLocked(releaseCtx, queue)
+	c.egraphMu.Unlock()
+	return errors.Join(decErr, collectErr, runOnReleaseFuncs(releaseCtx, collectReleases))
+}
+
 func resultSnapshotLeaseID(resultID sharedResultID, role, slot string) string {
 	if slot == "" {
 		return fmt.Sprintf("dagql/result/%d/%s", resultID, url.PathEscape(role))
@@ -3060,11 +3073,20 @@ func (c *Cache) wait(
 		c.callsMu.Lock()
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
+		releaseHold := lastWaiter && oc.handoffHoldActive
+		if releaseHold {
+			oc.handoffHoldActive = false
+		}
 		if lastWaiter {
 			delete(c.ongoingCalls, oc.callConcurrencyKeys)
 			oc.cancel(canceledErr)
 		}
 		c.callsMu.Unlock()
+		if releaseHold {
+			if err := c.releaseSharedResultOwnership(ctx, oc.res); err != nil {
+				return nil, err
+			}
+		}
 		return nil, canceledErr
 	}
 
@@ -3090,15 +3112,14 @@ func (c *Cache) wait(
 		c.callsMu.Lock()
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
-		c.callsMu.Unlock()
-		if lastWaiter && oc.handoffHoldActive {
-			c.egraphMu.Lock()
-			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-			c.egraphMu.Unlock()
+		releaseHold := lastWaiter && oc.handoffHoldActive
+		if releaseHold {
 			oc.handoffHoldActive = false
-			if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
-				return nil, relErr
+		}
+		c.callsMu.Unlock()
+		if releaseHold {
+			if err := c.releaseSharedResultOwnership(ctx, oc.res); err != nil {
+				return nil, err
 			}
 		}
 		return nil, oc.initCompletedResultErr
@@ -3107,15 +3128,14 @@ func (c *Cache) wait(
 		c.callsMu.Lock()
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
-		c.callsMu.Unlock()
-		if lastWaiter && oc.handoffHoldActive {
-			c.egraphMu.Lock()
-			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-			c.egraphMu.Unlock()
+		releaseHold := lastWaiter && oc.handoffHoldActive
+		if releaseHold {
 			oc.handoffHoldActive = false
-			if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
-				return nil, relErr
+		}
+		c.callsMu.Unlock()
+		if releaseHold {
+			if err := c.releaseSharedResultOwnership(ctx, oc.res); err != nil {
+				return nil, err
 			}
 		}
 		return nil, fmt.Errorf("cache wait completed without initialized result")
@@ -3132,15 +3152,14 @@ func (c *Cache) wait(
 	c.callsMu.Lock()
 	oc.waiters--
 	lastWaiter := oc.waiters == 0
-	c.callsMu.Unlock()
-	if lastWaiter && oc.handoffHoldActive {
-		c.egraphMu.Lock()
-		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
+	releaseHold := lastWaiter && oc.handoffHoldActive
+	if releaseHold {
 		oc.handoffHoldActive = false
-		if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
-			return nil, relErr
+	}
+	c.callsMu.Unlock()
+	if releaseHold {
+		if err := c.releaseSharedResultOwnership(ctx, oc.res); err != nil {
+			return nil, err
 		}
 	}
 
@@ -3162,6 +3181,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		resultTermInputs []digest.Digest
 		resultTermRefs   []ResultCallStructuralInputRef
 		hasResultTerm    bool
+		attachedDeps     []AnyResult
 	)
 	if req == nil || req.ResultCall == nil {
 		return fmt.Errorf("call request is nil")
@@ -3252,6 +3272,11 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			resultTermInputs = inputDigests
 			resultTermRefs = inputRefs
 			hasResultTerm = true
+		}
+		var attachErr error
+		attachedDeps, attachErr = c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val)
+		if attachErr != nil {
+			return attachErr
 		}
 	}
 
@@ -3435,6 +3460,33 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
 	}
+	for _, dep := range attachedDeps {
+		if dep == nil {
+			continue
+		}
+		attachedDepRes := dep.cacheSharedResult()
+		if attachedDepRes == nil || attachedDepRes.id == 0 {
+			c.egraphMu.Unlock()
+			return fmt.Errorf("attach dependency result %T: unexpected detached result", dep)
+		}
+		if attachedDepRes.id == oc.res.id {
+			continue
+		}
+		depRes := c.resultsByID[attachedDepRes.id]
+		if depRes == nil {
+			c.egraphMu.Unlock()
+			return fmt.Errorf("attach dependency result %d: missing cached result", attachedDepRes.id)
+		}
+		if oc.res.deps == nil {
+			oc.res.deps = make(map[sharedResultID]struct{})
+		}
+		if _, alreadyHeld := oc.res.deps[attachedDepRes.id]; alreadyHeld {
+			continue
+		}
+		oc.res.deps[attachedDepRes.id] = struct{}{}
+		c.incrementIncomingOwnershipLocked(ctx, depRes)
+		c.traceExplicitDepAdded(ctx, oc.res.id, depRes.id, "attached_dependency_result")
+	}
 	if err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
 		c.egraphMu.Unlock()
 		return err
@@ -3443,37 +3495,35 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.upsertPersistedEdgeLocked(ctx, oc.res, candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds), false)
 	}
 	c.incrementIncomingOwnershipLocked(ctx, oc.res)
+	c.callsMu.Lock()
 	oc.handoffHoldActive = true
+	c.callsMu.Unlock()
 	c.egraphMu.Unlock()
 
-	if err := c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
-		c.egraphMu.Lock()
-		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
-		oc.handoffHoldActive = false
-		return errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
-	}
 	if err := c.syncResultSnapshotLeases(ctx, oc.res); err != nil {
-		c.egraphMu.Lock()
-		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
-		oc.handoffHoldActive = false
-		return errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+		c.callsMu.Lock()
+		releaseHold := oc.handoffHoldActive
+		if releaseHold {
+			oc.handoffHoldActive = false
+		}
+		c.callsMu.Unlock()
+		if releaseHold {
+			err = errors.Join(err, c.releaseSharedResultOwnership(ctx, oc.res))
+		}
+		return err
 	}
 	c.registerLazyEvaluation(oc.res, oc.val)
 
 	return nil
 }
 
-func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
+func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) ([]AnyResult, error) {
 	if parent == nil || val == nil {
-		return nil
+		return nil, nil
 	}
 	withDeps, ok := UnwrapAs[HasDependencyResults](val)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	self := Result[Typed]{shared: parent}
 	var attachedSelf AnyResult = self
@@ -3481,7 +3531,7 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	if parentState.hasValue && parentState.isObject {
 		objSelf, err := wrapSharedResultWithResolver(parent, false, resolver)
 		if err != nil {
-			return fmt.Errorf("attach dependency results: reconstruct attached self: %w", err)
+			return nil, fmt.Errorf("attach dependency results: reconstruct attached self: %w", err)
 		}
 		attachedSelf = objSelf
 	}
@@ -3493,34 +3543,9 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 		return attached, nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(deps) == 0 || parent.id == 0 {
-		return nil
-	}
-
-	seen := make(map[sharedResultID]struct{}, len(deps))
-	for _, dep := range deps {
-		if dep == nil {
-			continue
-		}
-		attachedDepRes := dep.cacheSharedResult()
-		if attachedDepRes == nil || attachedDepRes.id == 0 {
-			return fmt.Errorf("attach dependency result %T: unexpected detached result", dep)
-		}
-		if attachedDepRes.id == parent.id {
-			continue
-		}
-		if _, ok := seen[attachedDepRes.id]; ok {
-			continue
-		}
-		seen[attachedDepRes.id] = struct{}{}
-		if err := c.AddExplicitDependency(ctx, attachedSelf, dep, "attached_dependency_result"); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return deps, nil
 }
 
 func candidateSharedResultExpiryUnix(nowUnix, ttlSeconds int64) int64 {
