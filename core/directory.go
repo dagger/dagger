@@ -2,7 +2,6 @@ package core
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1473,16 +1472,48 @@ func (dir *Directory) WithNewFile(ctx context.Context, parent dagql.ObjectResult
 	return nil
 }
 
-func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcache.ImmutableRef, dirPath string, patch []byte) (bkcache.ImmutableRef, error) {
-	if len(patch) == 0 {
-		if parentRef != nil {
-			query, err := CurrentQuery(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return query.SnapshotManager().GetBySnapshotID(ctx, parentRef.SnapshotID(), bkcache.NoUpdateLastUsed)
+func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcache.ImmutableRef, dirPath string, patch dagql.ObjectResult[*File]) (bkcache.ImmutableRef, error) {
+	reopenParent := func() (bkcache.ImmutableRef, error) {
+		if parentRef == nil {
+			return nil, nil
 		}
-		return nil, nil
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return query.SnapshotManager().GetBySnapshotID(ctx, parentRef.SnapshotID(), bkcache.NoUpdateLastUsed)
+	}
+
+	patchSnapshot, err := patch.Self().Snapshot.GetOrEval(ctx, patch.Result)
+	if err != nil {
+		return nil, err
+	}
+	if patchSnapshot == nil {
+		return reopenParent()
+	}
+	patchPath, err := patch.Self().File.GetOrEval(ctx, patch.Result)
+	if err != nil {
+		return nil, err
+	}
+
+	patchIsEmpty := false
+	err = MountRef(ctx, patchSnapshot, func(patchRoot string, _ *mount.Mount) error {
+		resolvedPatchPath, err := containerdfs.RootPath(patchRoot, patchPath)
+		if err != nil {
+			return err
+		}
+		info, err := os.Stat(resolvedPatchPath)
+		if err != nil {
+			return fmt.Errorf("stat patch file: %w", err)
+		}
+		patchIsEmpty = info.Size() == 0
+		return nil
+	}, mountRefAsReadOnly)
+	if err != nil {
+		return nil, err
+	}
+	if patchIsEmpty {
+		return reopenParent()
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -1499,12 +1530,23 @@ func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcach
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) (rerr error) {
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, dirPath)
 		if err != nil {
 			return err
 		}
-		return applyGitPatch(ctx, resolvedDir, bytes.NewReader(patch), stdio)
+		return MountRef(ctx, patchSnapshot, func(patchRoot string, _ *mount.Mount) error {
+			resolvedPatchPath, err := containerdfs.RootPath(patchRoot, patchPath)
+			if err != nil {
+				return err
+			}
+			patchFile, err := os.Open(resolvedPatchPath)
+			if err != nil {
+				return fmt.Errorf("open patch file: %w", err)
+			}
+			defer patchFile.Close()
+			return applyGitPatch(ctx, resolvedDir, patchFile, stdio)
+		}, mountRefAsReadOnly)
 	})
 	if err != nil {
 		return nil, err
@@ -1594,14 +1636,7 @@ func (dir *Directory) applyPatchFileResult(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return err
 	}
-	patchBytes, err := patch.Self().Contents(ctx, patch, nil, nil)
-	if err != nil {
-		if !errors.Is(err, errEmptyResultRef) {
-			return err
-		}
-		patchBytes = nil
-	}
-	snap, err := dir.applyPatchToSnapshot(ctx, parentRef, parentDir, patchBytes)
+	snap, err := dir.applyPatchToSnapshot(ctx, parentRef, parentDir, patch)
 	if err != nil {
 		return err
 	}
