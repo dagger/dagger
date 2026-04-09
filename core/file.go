@@ -93,7 +93,17 @@ func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
 		return nil
 	}
 	return func(ctx context.Context) error {
-		return file.Lazy.Evaluate(ctx, file)
+		// Successful lazy evaluation materializes the file into a plain value.
+		// Clearing Lazy keeps Lazy != nil as a truthful signal that the file
+		// still has deferred work.
+		lazy := file.Lazy
+		if err := lazy.Evaluate(ctx, file); err != nil {
+			return err
+		}
+		if file.Lazy == lazy {
+			file.Lazy = nil
+		}
+		return nil
 	}
 }
 

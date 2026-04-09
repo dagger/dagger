@@ -99,7 +99,17 @@ func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
 		return nil
 	}
 	return func(ctx context.Context) error {
-		return dir.Lazy.Evaluate(ctx, dir)
+		// Successful lazy evaluation materializes the directory into a plain
+		// value. Clearing Lazy keeps Lazy != nil as a truthful signal that the
+		// directory still has deferred work.
+		lazy := dir.Lazy
+		if err := lazy.Evaluate(ctx, dir); err != nil {
+			return err
+		}
+		if dir.Lazy == lazy {
+			dir.Lazy = nil
+		}
+		return nil
 	}
 }
 
