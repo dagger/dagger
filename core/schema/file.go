@@ -37,7 +37,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("size", s.size).
 			Doc(`Retrieves the size of the file, in bytes.`),
-		dagql.Func("name", s.name).
+		dagql.NodeFunc("name", s.name).
 			Doc(`Retrieves the name of the file.`),
 		dagql.NodeFunc("stat", s.stat).
 			Doc(`Return file status`),
@@ -225,7 +225,7 @@ func (s *fileSchema) withName(ctx context.Context, parent dagql.ObjectResult[*co
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
 	if parentPath, ok := parent.Self().File.Peek(); ok {
-		file.File.setValue(filepath.Join(filepath.Dir(parentPath), args.Name))
+		file.File.SetValue(filepath.Join(filepath.Dir(parentPath), args.Name))
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
@@ -268,7 +268,7 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
 	if parentPath, ok := parent.Self().File.Peek(); ok {
-		file.File.setValue(parentPath)
+		file.File.SetValue(parentPath)
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
@@ -324,7 +324,7 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
 	if parentPath, ok := parent.Self().File.Peek(); ok {
-		f.File.setValue(parentPath)
+		f.File.SetValue(parentPath)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
@@ -355,7 +355,7 @@ func (s *fileSchema) chown(
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
 	if parentPath, ok := parent.Self().File.Peek(); ok {
-		f.File.setValue(parentPath)
+		f.File.SetValue(parentPath)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }

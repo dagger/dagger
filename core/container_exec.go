@@ -90,8 +90,6 @@ type ContainerExecState struct {
 	Opts               ContainerExecOpts
 	ExecMD             *engineutil.ExecutionMetadata
 	ExtractModuleError bool
-
-	Container *Container
 }
 
 type ContainerExecLazy struct {
@@ -109,7 +107,7 @@ func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) err
 	if lazy == nil || lazy.State == nil {
 		return nil
 	}
-	return lazy.State.Evaluate(ctx)
+	return lazy.State.Evaluate(ctx, ctr)
 }
 
 func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
@@ -596,32 +594,21 @@ func prepareMounts(
 		return nil
 	}
 
-	dagCache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return materialized, err
-	}
-
 	rootState := &execMountState{
 		Dest:        pb.RootMount,
 		Selector:    "/",
 		MountType:   pb.MountType_BIND,
 		ApplyOutput: rootOutput,
 	}
-	if container.FS != nil && container.FS.self() != nil {
-		if container.FS.isResultBacked() {
-			if err := dagCache.Evaluate(ctx, *container.FS.Result); err != nil {
-				return materialized, fmt.Errorf("evaluate rootfs source: %w", err)
+	if container.FS != nil {
+		if rootfs, ok := container.FS.Peek(); ok && rootfs != nil {
+			if selector, ok := rootfs.Dir.Peek(); ok && selector != "" {
+				rootState.Selector = selector
+			}
+			if ref, ok := rootfs.Snapshot.Peek(); ok && ref != nil {
+				rootState.SourceRef = ref
 			}
 		}
-		rootState.Selector = container.FS.self().Dir
-		if rootState.Selector == "" {
-			rootState.Selector = "/"
-		}
-		ref, err := container.FS.self().getSnapshot()
-		if err != nil {
-			return materialized, fmt.Errorf("failed to get rootfs snapshot: %w", err)
-		}
-		rootState.SourceRef = ref
 	}
 	if err := materializeState(rootState); err != nil {
 		return materialized, err
@@ -634,7 +621,9 @@ func prepareMounts(
 		ApplyOutput: metaOutput,
 	}
 	if container.MetaSnapshot != nil {
-		metaState.SourceRef = container.MetaSnapshot
+		if metaRef, ok := container.MetaSnapshot.Peek(); ok && metaRef != nil {
+			metaState.SourceRef = metaRef
+		}
 	}
 	if err := materializeState(metaState); err != nil {
 		return materialized, err
@@ -649,34 +638,30 @@ func prepareMounts(
 
 		switch {
 		case ctrMount.DirectorySource != nil:
-			if ctrMount.DirectorySource.self() == nil {
+			dir, ok := ctrMount.DirectorySource.Peek()
+			if !ok || dir == nil {
 				return materialized, fmt.Errorf("mount %d has nil directory source", i)
 			}
-			if ctrMount.DirectorySource.isResultBacked() {
-				if err := dagCache.Evaluate(ctx, *ctrMount.DirectorySource.Result); err != nil {
-					return materialized, fmt.Errorf("evaluate directory source for mount %d: %w", i, err)
-				}
+			if selector, ok := dir.Dir.Peek(); ok {
+				mountState.Selector = selector
 			}
-			mountState.Selector = ctrMount.DirectorySource.self().Dir
-			ref, err := ctrMount.DirectorySource.self().getSnapshot()
-			if err != nil {
-				return materialized, fmt.Errorf("failed to get directory snapshot for mount %d: %w", i, err)
+			ref, ok := dir.Snapshot.Peek()
+			if !ok {
+				return materialized, fmt.Errorf("failed to get directory snapshot for mount %d", i)
 			}
 			mountState.SourceRef = ref
 
 		case ctrMount.FileSource != nil:
-			if ctrMount.FileSource.self() == nil {
+			file, ok := ctrMount.FileSource.Peek()
+			if !ok || file == nil {
 				return materialized, fmt.Errorf("mount %d has nil file source", i)
 			}
-			if ctrMount.FileSource.isResultBacked() {
-				if err := dagCache.Evaluate(ctx, *ctrMount.FileSource.Result); err != nil {
-					return materialized, fmt.Errorf("evaluate file source for mount %d: %w", i, err)
-				}
+			if selector, ok := file.File.Peek(); ok {
+				mountState.Selector = selector
 			}
-			mountState.Selector = ctrMount.FileSource.self().File
-			ref, err := ctrMount.FileSource.self().getSnapshot()
-			if err != nil {
-				return materialized, fmt.Errorf("failed to get file snapshot for mount %d: %w", i, err)
+			ref, ok := file.Snapshot.Peek()
+			if !ok {
+				return materialized, fmt.Errorf("failed to get file snapshot for mount %d", i)
 			}
 			mountState.SourceRef = ref
 
@@ -995,24 +980,11 @@ func (container *Container) WithExec(
 		Opts:               opts,
 		ExecMD:             execMD,
 		ExtractModuleError: extractModuleError,
-		Container:          container,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
-	container.MetaSnapshot = nil
-
-	rootfsOutput := &Directory{
-		Dir:      "/",
-		Platform: container.Platform,
-		Services: slices.Clone(container.Services),
-		Lazy:     &DirectoryFromContainerLazy{Container: container},
-	}
-	if container.FS != nil && container.FS.self() != nil {
-		rootfsOutput.Dir = container.FS.self().Dir
-		rootfsOutput.Platform = container.FS.self().Platform
-		rootfsOutput.Services = slices.Clone(container.FS.self().Services)
-	}
-	container.FS = newContainerDirectoryValueSource(rootfsOutput)
+	container.MetaSnapshot = new(LazyAccessor[bkcache.ImmutableRef, *Container])
+	container.FS = new(LazyAccessor[*Directory, *Container])
 
 	for i, ctrMount := range container.Mounts {
 		if ctrMount.Readonly {
@@ -1020,37 +992,17 @@ func (container *Container) WithExec(
 		}
 		switch {
 		case ctrMount.DirectorySource != nil:
-			if ctrMount.DirectorySource.self() == nil {
-				return fmt.Errorf("mount %d has nil directory source", i)
-			}
-			dirMnt := ctrMount.DirectorySource.self()
-			outputDir := &Directory{
-				Dir:      dirMnt.Dir,
-				Platform: dirMnt.Platform,
-				Services: slices.Clone(dirMnt.Services),
-				Lazy:     &DirectoryFromContainerLazy{Container: container},
-			}
-			ctrMount.DirectorySource = newContainerDirectoryValueSource(outputDir)
+			ctrMount.DirectorySource = new(LazyAccessor[*Directory, *Container])
 			container.Mounts[i] = ctrMount
 		case ctrMount.FileSource != nil:
-			if ctrMount.FileSource.self() == nil {
-				return fmt.Errorf("mount %d has nil file source", i)
-			}
-			fileMnt := ctrMount.FileSource.self()
-			outputFile := &File{
-				File:     fileMnt.File,
-				Platform: fileMnt.Platform,
-				Services: slices.Clone(fileMnt.Services),
-				Lazy:     &FileFromContainerLazy{Container: container},
-			}
-			ctrMount.FileSource = newContainerFileValueSource(outputFile)
+			ctrMount.FileSource = new(LazyAccessor[*File, *Container])
 			container.Mounts[i] = ctrMount
 		}
 	}
 	return nil
 }
 
-func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
+func (state *ContainerExecState) Evaluate(ctx context.Context, container *Container) (rerr error) {
 	if state == nil {
 		return nil
 	}
@@ -1068,7 +1020,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 		if parent == nil {
 			return fmt.Errorf("exec parent is nil")
 		}
-		container := state.Container
 		if container == nil {
 			return fmt.Errorf("exec output container is nil")
 		}
@@ -1113,32 +1064,93 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 			return fmt.Errorf("missing buildkit worker")
 		}
 
-		rootfsOutput := container.FS.Value
 		rootOutputBinding := func(ref bkcache.ImmutableRef) error {
-			if rootfsOutput == nil {
-				return fmt.Errorf("exec rootfs output is nil")
+			dirPath := "/"
+			platform := container.Platform
+			services := slices.Clone(container.Services)
+			if inputRootFS != nil {
+				if rootfs, ok := inputRootFS.Peek(); ok && rootfs != nil {
+					if path, ok := rootfs.Dir.Peek(); ok && path != "" {
+						dirPath = path
+					}
+					platform = rootfs.Platform
+					services = slices.Clone(rootfs.Services)
+				}
 			}
-			return rootfsOutput.setSnapshot(ref)
+			output := &Directory{
+				Platform: platform,
+				Services: services,
+				Dir:      new(LazyAccessor[string, *Directory]),
+				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+			}
+			output.Dir.setValue(dirPath)
+			output.Snapshot.setValue(ref)
+			if container.FS == nil {
+				container.FS = new(LazyAccessor[*Directory, *Container])
+			}
+			container.FS.setValue(output)
+			return nil
 		}
 		metaOutputBinding := func(ref bkcache.ImmutableRef) error {
-			container.MetaSnapshot = ref
+			if container.MetaSnapshot == nil {
+				container.MetaSnapshot = new(LazyAccessor[bkcache.ImmutableRef, *Container])
+			}
+			container.MetaSnapshot.setValue(ref)
 			return nil
 		}
 		mountOutputBindings := make([]func(bkcache.ImmutableRef) error, len(container.Mounts))
-		for i, ctrMount := range container.Mounts {
+		for i, ctrMount := range inputMounts {
 			if ctrMount.Readonly {
 				continue
 			}
 			switch {
-			case ctrMount.DirectorySource != nil && ctrMount.DirectorySource.Value != nil:
-				outputDir := ctrMount.DirectorySource.Value
-				mountOutputBindings[i] = func(ref bkcache.ImmutableRef) error {
-					return outputDir.setSnapshot(ref)
+			case ctrMount.DirectorySource != nil:
+				inputDir, ok := ctrMount.DirectorySource.Peek()
+				if !ok || inputDir == nil {
+					return fmt.Errorf("exec directory mount %d is missing materialized input", i)
 				}
-			case ctrMount.FileSource != nil && ctrMount.FileSource.Value != nil:
-				outputFile := ctrMount.FileSource.Value
+				dirPath, _ := inputDir.Dir.Peek()
+				platform := inputDir.Platform
+				services := slices.Clone(inputDir.Services)
+				idx := i
 				mountOutputBindings[i] = func(ref bkcache.ImmutableRef) error {
-					return outputFile.setSnapshot(ref)
+					output := &Directory{
+						Platform: platform,
+						Services: slices.Clone(services),
+						Dir:      new(LazyAccessor[string, *Directory]),
+						Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+					}
+					output.Dir.setValue(dirPath)
+					output.Snapshot.setValue(ref)
+					if container.Mounts[idx].DirectorySource == nil {
+						container.Mounts[idx].DirectorySource = new(LazyAccessor[*Directory, *Container])
+					}
+					container.Mounts[idx].DirectorySource.setValue(output)
+					return nil
+				}
+			case ctrMount.FileSource != nil:
+				inputFile, ok := ctrMount.FileSource.Peek()
+				if !ok || inputFile == nil {
+					return fmt.Errorf("exec file mount %d is missing materialized input", i)
+				}
+				filePath, _ := inputFile.File.Peek()
+				platform := inputFile.Platform
+				services := slices.Clone(inputFile.Services)
+				idx := i
+				mountOutputBindings[i] = func(ref bkcache.ImmutableRef) error {
+					output := &File{
+						Platform: platform,
+						Services: slices.Clone(services),
+						File:     new(LazyAccessor[string, *File]),
+						Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+					}
+					output.File.setValue(filePath)
+					output.Snapshot.setValue(ref)
+					if container.Mounts[idx].FileSource == nil {
+						container.Mounts[idx].FileSource = new(LazyAccessor[*File, *Container])
+					}
+					container.Mounts[idx].FileSource.setValue(output)
+					return nil
 				}
 			}
 		}
@@ -1338,21 +1350,17 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 			MountType:   pb.MountType_BIND,
 			ApplyOutput: rootOutputBinding,
 		}
-		if inputRootFS != nil && inputRootFS.self() != nil {
-			if inputRootFS.isResultBacked() {
-				if err := dagCache.Evaluate(ctx, *inputRootFS.Result); err != nil {
-					return failPrepare(fmt.Errorf("evaluate rootfs source: %w", err))
+		if inputRootFS != nil {
+			if rootfs, ok := inputRootFS.Peek(); ok && rootfs != nil {
+				if selector, ok := rootfs.Dir.Peek(); ok && selector != "" {
+					rootState.Selector = selector
 				}
+				ref, ok := rootfs.Snapshot.Peek()
+				if !ok {
+					return failPrepare(fmt.Errorf("parent rootfs should already be materialized after parent evaluation"))
+				}
+				rootState.SourceRef = ref
 			}
-			rootState.Selector = inputRootFS.self().Dir
-			if rootState.Selector == "" {
-				rootState.Selector = "/"
-			}
-			ref, err := inputRootFS.self().getSnapshot()
-			if err != nil {
-				return failPrepare(fmt.Errorf("parent rootfs should already be materialized after parent evaluation: %w", err))
-			}
-			rootState.SourceRef = ref
 		}
 		if err := materializeState(rootState); err != nil {
 			return failPrepare(err)
@@ -1377,34 +1385,30 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 
 			switch {
 			case ctrMount.DirectorySource != nil:
-				if ctrMount.DirectorySource.self() == nil {
+				dir, ok := ctrMount.DirectorySource.Peek()
+				if !ok || dir == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil directory source", i))
 				}
-				if ctrMount.DirectorySource.isResultBacked() {
-					if err := dagCache.Evaluate(ctx, *ctrMount.DirectorySource.Result); err != nil {
-						return failPrepare(fmt.Errorf("evaluate directory source for mount %d: %w", i, err))
-					}
+				if selector, ok := dir.Dir.Peek(); ok {
+					mountState.Selector = selector
 				}
-				mountState.Selector = ctrMount.DirectorySource.self().Dir
-				ref, err := ctrMount.DirectorySource.self().getSnapshot()
-				if err != nil {
-					return failPrepare(fmt.Errorf("parent directory mount %d should already be materialized after parent evaluation: %w", i, err))
+				ref, ok := dir.Snapshot.Peek()
+				if !ok {
+					return failPrepare(fmt.Errorf("parent directory mount %d should already be materialized after parent evaluation", i))
 				}
 				mountState.SourceRef = ref
 
 			case ctrMount.FileSource != nil:
-				if ctrMount.FileSource.self() == nil {
+				file, ok := ctrMount.FileSource.Peek()
+				if !ok || file == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil file source", i))
 				}
-				if ctrMount.FileSource.isResultBacked() {
-					if err := dagCache.Evaluate(ctx, *ctrMount.FileSource.Result); err != nil {
-						return failPrepare(fmt.Errorf("evaluate file source for mount %d: %w", i, err))
-					}
+				if selector, ok := file.File.Peek(); ok {
+					mountState.Selector = selector
 				}
-				mountState.Selector = ctrMount.FileSource.self().File
-				ref, err := ctrMount.FileSource.self().getSnapshot()
-				if err != nil {
-					return failPrepare(fmt.Errorf("parent file mount %d should already be materialized after parent evaluation: %w", i, err))
+				ref, ok := file.Snapshot.Peek()
+				if !ok {
+					return failPrepare(fmt.Errorf("parent file mount %d should already be materialized after parent evaluation", i))
 				}
 				mountState.SourceRef = ref
 
@@ -1667,7 +1671,10 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 						return
 					}
 					trackResolvedRef(terminalMetaRef)
-					terminalContainer.MetaSnapshot = terminalMetaRef
+					if terminalContainer.MetaSnapshot == nil {
+						terminalContainer.MetaSnapshot = new(LazyAccessor[bkcache.ImmutableRef, *Container])
+					}
+					terminalContainer.MetaSnapshot.setValue(terminalMetaRef)
 					untrackResolvedRef(terminalMetaRef)
 					terminalContainerNeedsRelease = true
 				}
@@ -1680,19 +1687,29 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 					if rootRef != nil {
 						rootDirPath := "/"
 						rootPlatform := terminalContainer.Platform
-						rootServices := terminalContainer.Services
-						if inputRootFS != nil && inputRootFS.self() != nil {
-							rootDirPath = inputRootFS.self().Dir
-							rootPlatform = inputRootFS.self().Platform
-							rootServices = inputRootFS.self().Services
+						rootServices := slices.Clone(terminalContainer.Services)
+						if inputRootFS != nil {
+							if rootfs, ok := inputRootFS.Peek(); ok && rootfs != nil {
+								if path, ok := rootfs.Dir.Peek(); ok && path != "" {
+									rootDirPath = path
+								}
+								rootPlatform = rootfs.Platform
+								rootServices = slices.Clone(rootfs.Services)
+							}
 						}
-						rootDir, err := NewDirectoryWithSnapshot(rootDirPath, rootPlatform, rootServices, rootRef)
-						if err != nil {
-							rerr = fmt.Errorf("rebuild failed rootfs for terminal: %w", err)
-							return
+						rootDir := &Directory{
+							Platform: rootPlatform,
+							Services: rootServices,
+							Dir:      new(LazyAccessor[string, *Directory]),
+							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 						}
+						rootDir.Dir.setValue(rootDirPath)
+						rootDir.Snapshot.setValue(rootRef)
 						untrackResolvedRef(rootRef)
-						terminalContainer.setBareRootFS(rootDir)
+						if terminalContainer.FS == nil {
+							terminalContainer.FS = new(LazyAccessor[*Directory, *Container])
+						}
+						terminalContainer.FS.setValue(rootDir)
 						terminalContainerNeedsRelease = true
 					}
 				}
@@ -1710,34 +1727,46 @@ func (state *ContainerExecState) Evaluate(ctx context.Context) (rerr error) {
 						continue
 					}
 					switch {
-					case ctrMount.DirectorySource != nil && ctrMount.DirectorySource.self() != nil && !ctrMount.Readonly:
-						outputDir, err := NewDirectoryWithSnapshot(
-							ctrMount.DirectorySource.self().Dir,
-							ctrMount.DirectorySource.self().Platform,
-							ctrMount.DirectorySource.self().Services,
-							mountRef,
-						)
-						if err != nil {
-							rerr = fmt.Errorf("rebuild failed directory mount %d for terminal: %w", i, err)
-							return
+					case ctrMount.DirectorySource != nil && !ctrMount.Readonly:
+						inputDir, ok := ctrMount.DirectorySource.Peek()
+						if !ok || inputDir == nil {
+							continue
 						}
+						dirPath, _ := inputDir.Dir.Peek()
+						outputDir := &Directory{
+							Platform: inputDir.Platform,
+							Services: slices.Clone(inputDir.Services),
+							Dir:      new(LazyAccessor[string, *Directory]),
+							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+						}
+						outputDir.Dir.setValue(dirPath)
+						outputDir.Snapshot.setValue(mountRef)
 						untrackResolvedRef(mountRef)
-						ctrMount.DirectorySource = newContainerDirectoryValueSource(outputDir)
+						if ctrMount.DirectorySource == nil {
+							ctrMount.DirectorySource = new(LazyAccessor[*Directory, *Container])
+						}
+						ctrMount.DirectorySource.setValue(outputDir)
 						terminalContainer.Mounts[i] = ctrMount
 						terminalContainerNeedsRelease = true
-					case ctrMount.FileSource != nil && ctrMount.FileSource.self() != nil && !ctrMount.Readonly:
-						outputFile, err := NewFileWithSnapshot(
-							ctrMount.FileSource.self().File,
-							ctrMount.FileSource.self().Platform,
-							ctrMount.FileSource.self().Services,
-							mountRef,
-						)
-						if err != nil {
-							rerr = fmt.Errorf("rebuild failed file mount %d for terminal: %w", i, err)
-							return
+					case ctrMount.FileSource != nil && !ctrMount.Readonly:
+						inputFile, ok := ctrMount.FileSource.Peek()
+						if !ok || inputFile == nil {
+							continue
 						}
+						filePath, _ := inputFile.File.Peek()
+						outputFile := &File{
+							Platform: inputFile.Platform,
+							Services: slices.Clone(inputFile.Services),
+							File:     new(LazyAccessor[string, *File]),
+							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+						}
+						outputFile.File.setValue(filePath)
+						outputFile.Snapshot.setValue(mountRef)
 						untrackResolvedRef(mountRef)
-						ctrMount.FileSource = newContainerFileValueSource(outputFile)
+						if ctrMount.FileSource == nil {
+							ctrMount.FileSource = new(LazyAccessor[*File, *Container])
+						}
+						ctrMount.FileSource.setValue(outputFile)
 						terminalContainer.Mounts[i] = ctrMount
 						terminalContainerNeedsRelease = true
 					}
@@ -1866,23 +1895,22 @@ func decodePersistedContainerExecLazy(
 		Opts:               persisted.Opts,
 		ExecMD:             persisted.ExecMD,
 		ExtractModuleError: persisted.ExtractModuleError,
-		Container:          container,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
-	container.MetaSnapshot = nil
-	if container.FS != nil && container.FS.Value != nil && decodedRootFS.Kind == persistedContainerValueFormOutputPending {
-		container.FS.Value.Lazy = &DirectoryFromContainerLazy{Container: container}
+	container.MetaSnapshot = new(LazyAccessor[bkcache.ImmutableRef, *Container])
+	if decodedRootFS.Kind == persistedContainerValueFormPending {
+		container.FS = new(LazyAccessor[*Directory, *Container])
 	}
 	for i, decodedMount := range decodedMounts {
-		if container.Mounts[i].Readonly || decodedMount.Kind != persistedContainerValueFormOutputPending {
+		if container.Mounts[i].Readonly || decodedMount.Kind != persistedContainerValueFormPending {
 			continue
 		}
 		switch {
-		case container.Mounts[i].DirectorySource != nil && container.Mounts[i].DirectorySource.Value != nil:
-			container.Mounts[i].DirectorySource.Value.Lazy = &DirectoryFromContainerLazy{Container: container}
-		case container.Mounts[i].FileSource != nil && container.Mounts[i].FileSource.Value != nil:
-			container.Mounts[i].FileSource.Value.Lazy = &FileFromContainerLazy{Container: container}
+		case container.Mounts[i].DirectorySource != nil:
+			container.Mounts[i].DirectorySource = new(LazyAccessor[*Directory, *Container])
+		case container.Mounts[i].FileSource != nil:
+			container.Mounts[i].FileSource = new(LazyAccessor[*File, *Container])
 		}
 	}
 	return nil
@@ -1932,25 +1960,40 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 	if container.MetaSnapshot == nil {
 		return "", ErrNoCommand
 	}
+	metaSnapshot, ok := container.MetaSnapshot.Peek()
+	if !ok || metaSnapshot == nil {
+		return "", ErrNoCommand
+	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return "", err
 	}
-	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, container.MetaSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, metaSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
 	if err != nil {
 		return "", err
 	}
-	file, err := NewFileWithSnapshot(filePath, container.Platform, container.Services, reopened)
-	if err != nil {
-		_ = reopened.Release(context.WithoutCancel(ctx))
-		return "", err
+	file := &File{
+		Platform: container.Platform,
+		Services: slices.Clone(container.Services),
+		File:     new(LazyAccessor[string, *File]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
+	file.File.setValue(filePath)
+	file.Snapshot.setValue(reopened)
 	defer func() {
 		_ = file.OnRelease(context.WithoutCancel(ctx))
 	}()
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	fileRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, file)
+	if err != nil {
+		return "", err
+	}
 
-	content, err := file.Contents(ctx, nil, nil)
+	content, err := file.Contents(ctx, fileRes, nil, nil)
 	if err != nil {
 		if errors.Is(err, errEmptyResultRef) {
 			return "", ErrNoCommand

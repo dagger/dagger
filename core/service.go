@@ -1038,9 +1038,13 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, err
 	}
 
-	ref, err := source.Self().getSnapshot()
+	ref, err := source.Self().Snapshot.GetOrEval(ctx, source.Result)
 	if err != nil {
 		return res, false, fmt.Errorf("failed to get ref for source directory: %w", err)
+	}
+	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return res, false, fmt.Errorf("failed to get path for source directory: %w", err)
 	}
 
 	bk, err := query.Engine(ctx)
@@ -1061,7 +1065,7 @@ func (svc *Service) runAndSnapshotChanges(
 	}()
 
 	err = MountRef(ctx, mutableRef, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, source.Self().Dir)
+		resolvedDir, err := containerdfs.RootPath(root, sourceDirPath)
 		if err != nil {
 			return err
 		}
@@ -1112,7 +1116,7 @@ func (svc *Service) runAndSnapshotChanges(
 
 	// Mount the mutable ref of their changes over the target path.
 	err = MountRef(ctx, abandonedRef, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, source.Self().Dir)
+		resolvedDir, err := containerdfs.RootPath(root, sourceDirPath)
 		if err != nil {
 			return err
 		}
@@ -1131,11 +1135,14 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("get dagql server: %w", err)
 	}
 
-	snapshot, err := NewDirectoryWithSnapshot(source.Self().Dir, source.Self().Platform, source.Self().Services, immutableRef)
-	if err != nil {
-		_ = immutableRef.Release(ctx)
-		return res, false, err
+	snapshot := &Directory{
+		Platform: source.Self().Platform,
+		Services: slices.Clone(source.Self().Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
+	snapshot.Dir.setValue(sourceDirPath)
+	snapshot.Snapshot.setValue(immutableRef)
 
 	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
 	if err != nil {

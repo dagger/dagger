@@ -582,7 +582,15 @@ func (llm *LLM) WithPrompt(
 
 // WithPromptFile is like WithPrompt but reads the prompt from a file
 func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
-	contents, err := file.Contents(ctx, nil, nil)
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fileRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, file)
+	if err != nil {
+		return nil, err
+	}
+	contents, err := file.Contents(ctx, fileRes, nil, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -103,3 +103,9 @@ func (a *LazyAccessor[V, T]) setValue(v V) {
 	a.value = v
 	a.isSet = true
 }
+
+// SetValue is for constructors and lazy evaluation implementations that need to
+// pre-seed or materialize an accessor explicitly.
+func (a *LazyAccessor[V, T]) SetValue(v V) {
+	a.setValue(v)
+}

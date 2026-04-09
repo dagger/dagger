@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -29,6 +30,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type containerSchema struct{}
@@ -178,10 +180,49 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		// llbtodagger can faithfully apply Docker image config metadata fields that do not yet
 		// have public SDK methods.
 		dagql.NodeFunc("__withImageConfigMetadata", func(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithImageConfigMetadataArgs) (*core.Container, error) {
-			ctr, err := core.NewContainerChild(ctx, parent)
+			clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 			if err != nil {
 				return nil, err
 			}
+			clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+			if err != nil {
+				return nil, err
+			}
+			clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+			if err != nil {
+				return nil, err
+			}
+			var childLazy core.Lazy[*core.Container]
+			if parent.Self().Lazy != nil {
+				childLazy = &core.ContainerCloneStateLazy{
+					LazyState: core.NewLazyState(),
+					Parent:    parent,
+				}
+			}
+			ctr := &core.Container{
+				FS:                 clonedFS,
+				MetaSnapshot:       clonedMeta,
+				Config:             parent.Self().Config,
+				EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+				Mounts:             clonedMounts,
+				Platform:           parent.Self().Platform,
+				Annotations:        slices.Clone(parent.Self().Annotations),
+				Secrets:            slices.Clone(parent.Self().Secrets),
+				Sockets:            slices.Clone(parent.Self().Sockets),
+				ImageRef:           parent.Self().ImageRef,
+				Ports:              slices.Clone(parent.Self().Ports),
+				Services:           slices.Clone(parent.Self().Services),
+				DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+				SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+				DefaultArgs:        parent.Self().DefaultArgs,
+				Lazy:               childLazy,
+			}
+			ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+			ctr.Config.Env = slices.Clone(ctr.Config.Env)
+			ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+			ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+			ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+			ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 			return s.withImageConfigMetadata(ctx, ctr, args)
 		}).
 			Doc(`(Internal-only) Set Docker image config metadata fields not yet exposed as public container APIs.`).
@@ -235,10 +276,49 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withDockerHealthcheck", func(ctx context.Context, parent dagql.ObjectResult[*core.Container], args WithHealthcheckArgs) (*core.Container, error) {
-			ctr, err := core.NewContainerChild(ctx, parent)
+			clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 			if err != nil {
 				return nil, err
 			}
+			clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+			if err != nil {
+				return nil, err
+			}
+			clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+			if err != nil {
+				return nil, err
+			}
+			var childLazy core.Lazy[*core.Container]
+			if parent.Self().Lazy != nil {
+				childLazy = &core.ContainerCloneStateLazy{
+					LazyState: core.NewLazyState(),
+					Parent:    parent,
+				}
+			}
+			ctr := &core.Container{
+				FS:                 clonedFS,
+				MetaSnapshot:       clonedMeta,
+				Config:             parent.Self().Config,
+				EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+				Mounts:             clonedMounts,
+				Platform:           parent.Self().Platform,
+				Annotations:        slices.Clone(parent.Self().Annotations),
+				Secrets:            slices.Clone(parent.Self().Secrets),
+				Sockets:            slices.Clone(parent.Self().Sockets),
+				ImageRef:           parent.Self().ImageRef,
+				Ports:              slices.Clone(parent.Self().Ports),
+				Services:           slices.Clone(parent.Self().Services),
+				DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+				SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+				DefaultArgs:        parent.Self().DefaultArgs,
+				Lazy:               childLazy,
+			}
+			ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+			ctr.Config.Env = slices.Clone(ctr.Config.Env)
+			ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+			ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+			ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+			ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 			return s.withHealthcheck(ctx, ctr, args)
 		}).
 			Doc(`Retrieves this container with the specificed docker healtcheck command set.`).
@@ -253,10 +333,49 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withoutDockerHealthcheck", func(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (*core.Container, error) {
-			ctr, err := core.NewContainerChild(ctx, parent)
+			clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 			if err != nil {
 				return nil, err
 			}
+			clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+			if err != nil {
+				return nil, err
+			}
+			clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+			if err != nil {
+				return nil, err
+			}
+			var childLazy core.Lazy[*core.Container]
+			if parent.Self().Lazy != nil {
+				childLazy = &core.ContainerCloneStateLazy{
+					LazyState: core.NewLazyState(),
+					Parent:    parent,
+				}
+			}
+			ctr := &core.Container{
+				FS:                 clonedFS,
+				MetaSnapshot:       clonedMeta,
+				Config:             parent.Self().Config,
+				EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+				Mounts:             clonedMounts,
+				Platform:           parent.Self().Platform,
+				Annotations:        slices.Clone(parent.Self().Annotations),
+				Secrets:            slices.Clone(parent.Self().Secrets),
+				Sockets:            slices.Clone(parent.Self().Sockets),
+				ImageRef:           parent.Self().ImageRef,
+				Ports:              slices.Clone(parent.Self().Ports),
+				Services:           slices.Clone(parent.Self().Services),
+				DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+				SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+				DefaultArgs:        parent.Self().DefaultArgs,
+				Lazy:               childLazy,
+			}
+			ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+			ctr.Config.Env = slices.Clone(ctr.Config.Env)
+			ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+			ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+			ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+			ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 			return s.withoutHealthcheck(ctx, ctr, args)
 		}).
 			Doc(`Retrieves this container without a configured docker healtcheck command.`),
@@ -924,11 +1043,37 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		ctr, err := core.NewContainerChildWithoutFS(ctx, parent)
+		clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
 		if err != nil {
 			return inst, err
 		}
-		ctr.ImageRef = ""
+		clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+		if err != nil {
+			return inst, err
+		}
+		ctr := &core.Container{
+			FS:                 new(core.LazyAccessor[*core.Directory, *core.Container]),
+			MetaSnapshot:       clonedMeta,
+			Config:             parent.Self().Config,
+			EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+			Mounts:             clonedMounts,
+			Platform:           parent.Self().Platform,
+			Annotations:        slices.Clone(parent.Self().Annotations),
+			Secrets:            slices.Clone(parent.Self().Secrets),
+			Sockets:            slices.Clone(parent.Self().Sockets),
+			ImageRef:           "",
+			Ports:              slices.Clone(parent.Self().Ports),
+			Services:           slices.Clone(parent.Self().Services),
+			DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+			SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+			DefaultArgs:        parent.Self().DefaultArgs,
+		}
+		ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+		ctr.Config.Env = slices.Clone(ctr.Config.Env)
+		ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+		ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+		ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+		ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 
 		refStr := refName.String()
 		_, _, cfgBytes, err := rslvr.ResolveImageConfig(ctx, refStr, serverresolver.ResolveImageConfigOpts{
@@ -947,14 +1092,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		ctr.Config = core.MergeImageConfig(ctr.Config, imgSpec.Config)
 		ctr.ImageRef = refStr
 		ctr.Platform = core.Platform(platforms.Normalize(imgSpec.Platform))
-
-		rootfsDir := &core.Directory{
-			Dir:      "/",
-			Platform: ctr.Platform,
-			Services: ctr.Services,
-			Lazy:     &core.DirectoryFromContainerLazy{Container: ctr},
-		}
-		ctr.FS = &core.ContainerDirectorySource{Value: rootfsDir}
 		ctr.Lazy = &core.ContainerFromImageRefLazy{
 			LazyState:    core.NewLazyState(),
 			CanonicalRef: refStr,
@@ -1066,7 +1203,7 @@ func (s *containerSchema) build(
 
 	return parent.Self().Build(
 		ctx,
-		contextDir.Self(),
+		contextDir,
 		buildctxDirID,
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
@@ -1091,11 +1228,43 @@ func (s *containerSchema) withRootfs(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithRootFS(ctx, dir)
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	ctr := &core.Container{
+		FS:                 new(core.LazyAccessor[*core.Directory, *core.Container]),
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           "",
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy: &core.ContainerWithRootFSLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Source:    dir,
+		},
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
+	return ctr, nil
 }
 
 type containerPipelineArgs struct {
@@ -1116,14 +1285,16 @@ func (s *containerSchema) rootfs(ctx context.Context, parent dagql.ObjectResult[
 	}
 
 	dir := &core.Directory{
-		Dir:      "/",
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
 		Lazy: &core.ContainerRootFSLazy{
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
 		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
+	dir.Dir.SetValue("/")
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
@@ -1153,13 +1324,6 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
-	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return inst, err
 	}
 
 	if args.SkipEntrypoint != nil {
@@ -1201,10 +1365,41 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		md = args.ExecMD.Self
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return inst, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return inst, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return inst, err
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, false)
 	if err != nil {
 		return inst, err
@@ -1338,14 +1533,47 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return inst, err
 	}
-	ctr, err = ctr.WithSymlink(ctx, parent, srv, target, linkName)
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
 	if err != nil {
 		return inst, err
 	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return inst, err
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy: &core.ContainerWithSymlinkLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Target:    target,
+			LinkPath:  linkName,
+		},
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
@@ -1354,18 +1582,96 @@ type containerGpuArgs struct {
 }
 
 func (s *containerSchema) withGPU(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerGpuArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.WithGPU(ctx, args.ContainerGPUOpts)
 }
 
 func (s *containerSchema) withAllGPUs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.WithGPU(ctx, core.ContainerGPUOpts{Devices: []string{"all"}})
 }
 
@@ -1375,10 +1681,49 @@ type containerWithEntrypointArgs struct {
 }
 
 func (s *containerSchema) withEntrypoint(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithEntrypointArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Entrypoint = args.Args
 		if !args.KeepDefaultArgs {
@@ -1393,10 +1738,49 @@ type containerWithoutEntrypointArgs struct {
 }
 
 func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutEntrypointArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Entrypoint = nil
 		if !args.KeepDefaultArgs {
@@ -1420,10 +1804,49 @@ type containerWithDefaultArgs struct {
 }
 
 func (s *containerSchema) withDefaultArgs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDefaultArgs) (*core.Container, error) {
-	c, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	c := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	c.Config.ExposedPorts = maps.Clone(c.Config.ExposedPorts)
+	c.Config.Env = slices.Clone(c.Config.Env)
+	c.Config.Entrypoint = slices.Clone(c.Config.Entrypoint)
+	c.Config.Cmd = slices.Clone(c.Config.Cmd)
+	c.Config.Volumes = maps.Clone(c.Config.Volumes)
+	c.Config.Labels = maps.Clone(c.Config.Labels)
 	c.DefaultArgs = true
 	return c.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		if args.Args == nil {
@@ -1437,10 +1860,49 @@ func (s *containerSchema) withDefaultArgs(ctx context.Context, parent dagql.Obje
 }
 
 func (s *containerSchema) withoutDefaultArgs(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (*core.Container, error) {
-	c, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	c := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	c.Config.ExposedPorts = maps.Clone(c.Config.ExposedPorts)
+	c.Config.Env = slices.Clone(c.Config.Env)
+	c.Config.Entrypoint = slices.Clone(c.Config.Entrypoint)
+	c.Config.Cmd = slices.Clone(c.Config.Cmd)
+	c.Config.Volumes = maps.Clone(c.Config.Volumes)
+	c.Config.Labels = maps.Clone(c.Config.Labels)
 	c.DefaultArgs = false
 	return c.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Cmd = nil
@@ -1462,10 +1924,49 @@ type containerWithUserArgs struct {
 }
 
 func (s *containerSchema) withUser(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithUserArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.User = args.Name
 		return cfg
@@ -1473,10 +1974,49 @@ func (s *containerSchema) withUser(ctx context.Context, parent dagql.ObjectResul
 }
 
 func (s *containerSchema) withoutUser(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.User = ""
 		return cfg
@@ -1503,10 +2043,49 @@ func (s *containerSchema) withWorkdir(ctx context.Context, parent dagql.ObjectRe
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.WorkingDir = absPath(cfg.WorkingDir, path)
 		return cfg
@@ -1514,10 +2093,49 @@ func (s *containerSchema) withWorkdir(ctx context.Context, parent dagql.ObjectRe
 }
 
 func (s *containerSchema) withoutWorkdir(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.WorkingDir = ""
 		return cfg
@@ -1540,10 +2158,49 @@ type containerWithVariableArgs struct {
 }
 
 func (s *containerSchema) withEnvVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithVariableArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		value := args.Value
 
@@ -1580,10 +2237,49 @@ func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent dagql
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		for _, v := range vars {
 			cfg.Env = core.AddEnv(cfg.Env, v.Name, v.Value)
@@ -1597,10 +2293,49 @@ type containerWithSystemEnvArgs struct {
 }
 
 func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithSystemEnvArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	ctr.SystemEnvNames = append(ctr.SystemEnvNames, args.Name)
 	return ctr, nil
 }
@@ -1659,10 +2394,49 @@ type containerWithoutVariableArgs struct {
 }
 
 func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutVariableArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		newEnv := []string{}
 
@@ -1781,15 +2555,6 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
-	if ownerNeedsLookup(args.Owner) {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return nil, err
-		}
-	}
 
 	dir, err := args.Source.Load(ctx, srv)
 	if err != nil {
@@ -1801,11 +2566,55 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithMountedDirectory(ctx, parent, path, dir, args.Owner, args.ReadOnly)
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           "",
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy: &core.ContainerWithMountedDirectoryLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Target:    absPath(parent.Self().Config.WorkingDir, path),
+			Source:    dir,
+			Owner:     args.Owner,
+			Readonly:  args.ReadOnly,
+		},
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
+	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+		Target:          absPath(parent.Self().Config.WorkingDir, path),
+		Readonly:        args.ReadOnly,
+		DirectorySource: new(core.LazyAccessor[*core.Directory, *core.Container]),
+	})
+	return ctr, nil
 }
 
 type containerWithAnnotationArgs struct {
@@ -1814,10 +2623,49 @@ type containerWithAnnotationArgs struct {
 }
 
 func (s *containerSchema) withAnnotation(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithAnnotationArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.WithAnnotation(ctx, args.Name, args.Value)
 }
 
@@ -1826,10 +2674,49 @@ type containerWithoutAnnotationArgs struct {
 }
 
 func (s *containerSchema) withoutAnnotation(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutAnnotationArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
 	return ctr.WithoutAnnotation(ctx, args.Name)
 }
 
@@ -1925,15 +2812,6 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
-	if ownerNeedsLookup(args.Owner) {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return nil, err
-		}
-	}
 
 	file, err := args.Source.Load(ctx, srv)
 	if err != nil {
@@ -1945,11 +2823,25 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithMountedFile(ctx, parent, path, file, args.Owner, false)
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	ctr.Lazy = &core.ContainerWithMountedFileLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Source:    file,
+		Owner:     args.Owner,
+		Readonly:  false,
+	}
+	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+		Target:     target,
+		Readonly:   false,
+		FileSource: new(core.LazyAccessor[*core.File, *core.Container]),
+	})
+	return ctr, nil
 }
 
 type containerWithMountedCacheArgs struct {
@@ -2071,11 +2963,24 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.Obj
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithMountedCache(ctx, path, cache)
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	ctr.Lazy = &core.ContainerWithMountedCacheLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Cache:     cache,
+	}
+	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+		Target: target,
+		CacheSource: &core.CacheMountSource{
+			Volume: cache,
+		},
+	})
+	return ctr, nil
 }
 
 type containerWithMountedTempArgs struct {
@@ -2090,11 +2995,24 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithMountedTemp(ctx, path, args.Size.Value.Int())
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	ctr.Lazy = &core.ContainerWithMountedTempLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Size:      args.Size.Value.Int(),
+	}
+	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+		Target: target,
+		TmpfsSource: &core.TmpfsMountSource{
+			Size: args.Size.Value.Int(),
+		},
+	})
+	return ctr, nil
 }
 
 type containerWithoutMountArgs struct {
@@ -2108,11 +3026,20 @@ func (s *containerSchema) withoutMount(ctx context.Context, parent dagql.ObjectR
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithoutMount(ctx, path)
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	if _, err := ctr.WithoutMount(ctx, target); err != nil {
+		return nil, err
+	}
+	ctr.Lazy = &core.ContainerWithoutMountLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+	}
+	return ctr, nil
 }
 
 func (s *containerSchema) mounts(ctx context.Context, parent *core.Container, _ struct{}) (dagql.Array[dagql.String], error) {
@@ -2129,7 +3056,7 @@ type containerWithLabelArgs struct {
 }
 
 func (s *containerSchema) withLabel(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithLabelArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2147,7 +3074,7 @@ type containerWithoutLabelArgs struct {
 }
 
 func (s *containerSchema) withoutLabel(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutLabelArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2295,7 +3222,6 @@ func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResu
 	resolvedPath := absPath(parent.Self().Config.WorkingDir, path)
 
 	dir := &core.Directory{
-		Dir:      resolvedPath,
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
 		Lazy: &core.ContainerDirectoryLazy{
@@ -2303,7 +3229,10 @@ func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResu
 			Parent:    parent,
 			Path:      path,
 		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
+	dir.Dir.SetValue(resolvedPath)
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
@@ -2325,7 +3254,6 @@ func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	resolvedPath := absPath(parent.Self().Config.WorkingDir, path)
 
 	file := &core.File{
-		File:     resolvedPath,
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
 		Lazy: &core.ContainerFileLazy{
@@ -2333,7 +3261,10 @@ func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 			Parent:    parent,
 			Path:      path,
 		},
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
+	file.File.SetValue(resolvedPath)
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
@@ -2364,6 +3295,53 @@ func ownerNeedsLookup(owner string) bool {
 		}
 	}
 	return false
+}
+
+func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult[*core.Container]) (*core.Container, error) {
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
+	if err != nil {
+		return nil, err
+	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	var childLazy core.Lazy[*core.Container]
+	if parent.Self().Lazy != nil {
+		childLazy = &core.ContainerCloneStateLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+		}
+	}
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             parent.Self().Config,
+		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           parent.Self().Platform,
+		Annotations:        slices.Clone(parent.Self().Annotations),
+		Secrets:            slices.Clone(parent.Self().Secrets),
+		Sockets:            slices.Clone(parent.Self().Sockets),
+		ImageRef:           parent.Self().ImageRef,
+		Ports:              slices.Clone(parent.Self().Ports),
+		Services:           slices.Clone(parent.Self().Services),
+		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		DefaultArgs:        parent.Self().DefaultArgs,
+		Lazy:               childLazy,
+	}
+	ctr.Config.ExposedPorts = maps.Clone(ctr.Config.ExposedPorts)
+	ctr.Config.Env = slices.Clone(ctr.Config.Env)
+	ctr.Config.Entrypoint = slices.Clone(ctr.Config.Entrypoint)
+	ctr.Config.Cmd = slices.Clone(ctr.Config.Cmd)
+	ctr.Config.Volumes = maps.Clone(ctr.Config.Volumes)
+	ctr.Config.Labels = maps.Clone(ctr.Config.Labels)
+	return ctr, nil
 }
 
 func expandEnvVar(ctx context.Context, parent *core.Container, input string, expand bool) (string, error) {
@@ -2415,7 +3393,7 @@ func (s *containerSchema) withSecretVariable(ctx context.Context, parent dagql.O
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2427,7 +3405,7 @@ type containerWithoutSecretVariableArgs struct {
 }
 
 func (s *containerSchema) withoutSecretVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutSecretVariableArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2447,15 +3425,6 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
-	if ownerNeedsLookup(args.Owner) {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return nil, err
-		}
-	}
 
 	secret, err := args.Source.Load(ctx, srv)
 	if err != nil {
@@ -2467,11 +3436,20 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithMountedSecret(ctx, parent, path, secret, args.Owner, fs.FileMode(args.Mode))
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	ctr.Lazy = &core.ContainerWithMountedSecretLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Source:    secret,
+		Owner:     args.Owner,
+		Mode:      fs.FileMode(args.Mode),
+	}
+	return ctr, nil
 }
 
 type containerWithDirectoryArgs struct {
@@ -2481,16 +3459,6 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (*core.Container, error) {
-	if ownerNeedsLookup(args.Owner) {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return nil, err
-		}
-	}
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -2506,18 +3474,19 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithDirectory(
-		ctx,
-		parent,
-		path,
-		dir,
-		args.CopyFilter,
-		args.Owner,
-	)
+	ctr.Lazy = &core.ContainerWithDirectoryLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      path,
+		Source:    dir,
+		Filter:    args.CopyFilter,
+		Owner:     args.Owner,
+	}
+	return ctr, nil
 }
 
 type containerWithFileArgs struct {
@@ -2530,15 +3499,6 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
-	}
-	if ownerNeedsLookup(args.Owner) {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return inst, err
-		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return inst, err
-		}
 	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
@@ -2557,21 +3517,17 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
-	ctr, err = ctr.WithFile(
-		ctx,
-		parent,
-		srv,
-		path,
-		file,
-		perms,
-		args.Owner,
-	)
-	if err != nil {
-		return inst, err
+	ctr.Lazy = &core.ContainerWithFileLazy{
+		LazyState:   core.NewLazyState(),
+		Parent:      parent,
+		Path:        path,
+		Source:      file,
+		Permissions: perms,
+		Owner:       args.Owner,
 	}
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -2588,15 +3544,6 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
-	}
-	if ownerNeedsLookup(args.Owner) {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return inst, err
-		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return inst, err
-		}
 	}
 
 	files := []dagql.ObjectResult[*core.File]{}
@@ -2620,11 +3567,15 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 	}
 	current := parent
 	for _, file := range files {
+		filePath, err := file.Self().File.GetOrEval(ctx, file.Result)
+		if err != nil {
+			return inst, err
+		}
 		fileID, err := file.ID()
 		if err != nil {
 			return inst, err
 		}
-		filePath := filepath.Join(path, filepath.Base(file.Self().File))
+		filePath = filepath.Join(path, filepath.Base(filePath))
 		selectArgs := []dagql.NamedInput{
 			{Name: "path", Value: dagql.String(filePath)},
 			{Name: "source", Value: dagql.NewID[*core.File](fileID)},
@@ -2663,13 +3614,14 @@ func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
-	ctr, err = ctr.WithoutPaths(ctx, parent, srv, path)
-	if err != nil {
-		return inst, err
+	ctr.Lazy = &core.ContainerWithoutPathLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      path,
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
@@ -2690,13 +3642,14 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
-	ctr, err = ctr.WithoutPaths(ctx, parent, srv, path)
-	if err != nil {
-		return inst, err
+	ctr.Lazy = &core.ContainerWithoutPathLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      path,
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
@@ -2749,28 +3702,41 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
-	if ownerNeedsLookup(args.Owner) {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return inst, err
-		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return inst, err
-		}
-	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return inst, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	_, fileName := filepath.Split(filepath.Clean(path))
+	var newFile dagql.ObjectResult[*core.File]
+	fileArgs := []dagql.NamedInput{
+		{Name: "name", Value: dagql.String(fileName)},
+		{Name: "contents", Value: dagql.String(args.Contents)},
+	}
+	if args.Permissions != 0 {
+		fileArgs = append(fileArgs, dagql.NamedInput{
+			Name:  "permissions",
+			Value: dagql.Opt(dagql.Int(args.Permissions)),
+		})
+	}
+	if err := srv.Select(ctx, srv.Root(), &newFile, dagql.Selector{
+		Field: "file",
+		Args:  fileArgs,
+	}); err != nil {
+		return inst, fmt.Errorf("failed to create new file %s: %w", path, err)
+	}
+
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
-	ctr, err = ctr.WithNewFile(ctx, parent, path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
-	if err != nil {
-		return inst, err
+	ctr.Lazy = &core.ContainerWithFileLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      path,
+		Source:    newFile,
+		Owner:     args.Owner,
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -2788,23 +3754,36 @@ func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
-	if ownerNeedsLookup(args.Owner) {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return inst, err
-		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return inst, err
-		}
+
+	_, fileName := filepath.Split(filepath.Clean(args.Path))
+	var newFile dagql.ObjectResult[*core.File]
+	fileArgs := []dagql.NamedInput{
+		{Name: "name", Value: dagql.String(fileName)},
+		{Name: "contents", Value: dagql.String(args.Contents)},
+	}
+	if args.Permissions != 0 {
+		fileArgs = append(fileArgs, dagql.NamedInput{
+			Name:  "permissions",
+			Value: dagql.Opt(dagql.Int(args.Permissions)),
+		})
+	}
+	if err := srv.Select(ctx, srv.Root(), &newFile, dagql.Selector{
+		Field: "file",
+		Args:  fileArgs,
+	}); err != nil {
+		return inst, fmt.Errorf("failed to create new file %s: %w", args.Path, err)
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
-	ctr, err = ctr.WithNewFile(ctx, parent, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
-	if err != nil {
-		return inst, err
+	ctr.Lazy = &core.ContainerWithFileLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      args.Path,
+		Source:    newFile,
+		Owner:     args.Owner,
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -2822,15 +3801,6 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
-	if ownerNeedsLookup(args.Owner) {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return nil, err
-		}
-	}
 
 	socket, err := args.Source.Load(ctx, srv)
 	if err != nil {
@@ -2842,11 +3812,19 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithUnixSocketFromParent(ctx, parent, path, socket, args.Owner)
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	ctr.Lazy = &core.ContainerWithUnixSocketLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Source:    socket,
+		Owner:     args.Owner,
+	}
+	return ctr, nil
 }
 
 type containerWithoutUnixSocketArgs struct {
@@ -2860,11 +3838,17 @@ func (s *containerSchema) withoutUnixSocket(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithoutUnixSocket(ctx, path)
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	ctr.Lazy = &core.ContainerWithoutUnixSocketLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+	}
+	return ctr, nil
 }
 
 func (s *containerSchema) platform(ctx context.Context, parent *core.Container, args struct{}) (core.Platform, error) {
@@ -3095,17 +4079,17 @@ func (s *containerSchema) import_(ctx context.Context, parent dagql.ObjectResult
 		return nil, err
 	}
 
-	r, err := source.Self().Open(ctx)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
-
-	ctr, err := core.NewContainerChild(ctx, parent)
-	if err != nil {
-		return nil, err
+	ctr.Lazy = &core.ContainerImportLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Source:    source,
+		Tag:       args.Tag,
 	}
-	return ctr.Import(ctx, r, args.Tag)
+	return ctr, nil
 }
 
 type containerWithRegistryAuthArgs struct {
@@ -3185,7 +4169,7 @@ func (s *containerSchema) withServiceBinding(ctx context.Context, parent dagql.O
 		return nil, err
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3200,7 +4184,7 @@ type containerWithExposedPortArgs struct {
 }
 
 func (s *containerSchema) withExposedPort(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithExposedPortArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3218,7 +4202,7 @@ type containerWithoutExposedPortArgs struct {
 }
 
 func (s *containerSchema) withoutExposedPort(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutExposedPortArgs) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3267,7 +4251,7 @@ func (s *containerSchema) withDefaultTerminalCmd(
 	parent dagql.ObjectResult[*core.Container],
 	args containerWithDefaultTerminalCmdArgs,
 ) (*core.Container, error) {
-	ctr, err := core.NewContainerChild(ctx, parent)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}

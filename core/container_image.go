@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/mount"
@@ -98,14 +99,18 @@ func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *
 		if err != nil {
 			return fmt.Errorf("import image %q: %w", lazy.CanonicalRef, err)
 		}
-		if container.FS == nil || container.FS.self() == nil {
-			_ = rootfs.Release(context.WithoutCancel(ctx))
-			return fmt.Errorf("missing rootfs directory for image import")
+		rootfsDir := &Directory{
+			Platform: container.Platform,
+			Services: slices.Clone(container.Services),
+			Dir:      new(LazyAccessor[string, *Directory]),
+			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 		}
-		if err := container.FS.self().setSnapshot(rootfs); err != nil {
-			_ = rootfs.Release(context.WithoutCancel(ctx))
-			return err
+		rootfsDir.Dir.setValue("/")
+		rootfsDir.Snapshot.setValue(rootfs)
+		if container.FS == nil {
+			container.FS = new(LazyAccessor[*Directory, *Container])
 		}
+		container.FS.setValue(rootfsDir)
 		container.Lazy = nil
 		return nil
 	})
@@ -186,12 +191,18 @@ func (container *Container) FromOCIStore(
 	container.Config = loaded.Config.Config
 	container.ImageRef = imageRef
 
-	rootfsDir, err := NewDirectoryWithSnapshot("/", rootPlatform, container.Services, rootfs)
-	if err != nil {
-		_ = rootfs.Release(context.WithoutCancel(ctx))
-		return nil, err
+	rootfsDir := &Directory{
+		Platform: rootPlatform,
+		Services: slices.Clone(container.Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	container.setBareRootFS(rootfsDir)
+	rootfsDir.Dir.setValue("/")
+	rootfsDir.Snapshot.setValue(rootfs)
+	if container.FS == nil {
+		container.FS = new(LazyAccessor[*Directory, *Container])
+	}
+	container.FS.setValue(rootfsDir)
 	return container, nil
 }
 
@@ -258,11 +269,13 @@ func (container *Container) AsTarball(
 		return nil, err
 	}
 	bkref = nil
-	f, err = NewFileWithSnapshot(filePath, query.Platform(), nil, snap)
-	if err != nil {
-		_ = snap.Release(context.WithoutCancel(ctx))
-		return nil, err
+	f = &File{
+		Platform: query.Platform(),
+		File:     new(LazyAccessor[string, *File]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
+	f.File.setValue(filePath)
+	f.Snapshot.setValue(snap)
 	return f, nil
 }
 

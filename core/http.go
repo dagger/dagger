@@ -407,11 +407,13 @@ func (state *HTTPState) fileResult(
 	if err != nil {
 		return nil, err
 	}
-	file, err := NewFileWithSnapshot(name, query.Platform(), nil, snap)
-	if err != nil {
-		_ = snap.Release(context.WithoutCancel(ctx))
-		return nil, err
+	file := &File{
+		Platform: query.Platform(),
+		File:     new(LazyAccessor[string, *File]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
+	file.File.setValue(name)
+	file.Snapshot.setValue(snap)
 	return &HTTPFetchResult{
 		File:          file,
 		ContentDigest: state.ContentDigest,
@@ -495,11 +497,13 @@ func FetchHTTPFile(
 	}
 	bkref = nil
 
-	file, err := NewFileWithSnapshot(opts.Filename, query.Platform(), nil, snap)
-	if err != nil {
-		_ = snap.Release(context.WithoutCancel(ctx))
-		return nil, err
+	file := &File{
+		Platform: query.Platform(),
+		File:     new(LazyAccessor[string, *File]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
+	file.File.setValue(opts.Filename)
+	file.Snapshot.setValue(snap)
 
 	return &HTTPFetchResult{
 		File:          file,

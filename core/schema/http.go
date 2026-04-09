@@ -212,8 +212,9 @@ func (s *httpSchema) newHTTPFileResult(
 	permissions int,
 	checksum dagql.Optional[dagql.String],
 ) (inst dagql.ObjectResult[*core.File], err error) {
+	filePath, _ := fetched.File.File.Peek()
 	outputDigest := hashutil.HashStrings(
-		fetched.File.File,
+		filePath,
 		fmt.Sprint(permissions),
 		fetched.ContentDigest.String(),
 		fetched.LastModified,

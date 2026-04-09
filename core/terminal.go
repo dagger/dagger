@@ -20,7 +20,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 const (
@@ -39,19 +38,17 @@ func cloneContainerForTerminal(ctx context.Context, query *Query, ctr *Container
 	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
 	cp.Config.Labels = maps.Clone(cp.Config.Labels)
 	cp.Lazy = nil
-	if cp.MetaSnapshot != nil {
-		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, cp.MetaSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
-		if err != nil {
-			return nil, err
-		}
-		cp.MetaSnapshot = reopened
-	}
+	_ = query
 	var err error
 	cp.FS, err = cloneTerminalDirectorySource(ctx, query, ctr.FS)
 	if err != nil {
 		return nil, err
 	}
 	cp.Mounts, err = cloneTerminalMounts(ctx, query, ctr.Mounts)
+	if err != nil {
+		return nil, err
+	}
+	cp.MetaSnapshot, err = CloneContainerMetaSnapshot(ctx, ctr.MetaSnapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -83,98 +80,24 @@ func cloneTerminalMounts(ctx context.Context, query *Query, mounts ContainerMoun
 	return cp, nil
 }
 
-func cloneTerminalDirectorySource(ctx context.Context, query *Query, src *ContainerDirectorySource) (*ContainerDirectorySource, error) {
-	if src == nil {
-		return nil, nil
-	}
-	if src.isResultBacked() {
-		return newContainerDirectoryResultSource(*src.Result), nil
-	}
-	if src.Value == nil {
-		return nil, nil
-	}
-	dir, err := cloneTerminalDirectory(ctx, query, src.Value)
-	if err != nil {
-		return nil, err
-	}
-	return newContainerDirectoryValueSource(dir), nil
+func cloneTerminalDirectorySource(ctx context.Context, query *Query, src *LazyAccessor[*Directory, *Container]) (*LazyAccessor[*Directory, *Container], error) {
+	_ = query
+	return CloneContainerDirectoryAccessor(ctx, src)
 }
 
-func cloneTerminalFileSource(ctx context.Context, query *Query, src *ContainerFileSource) (*ContainerFileSource, error) {
-	if src == nil {
-		return nil, nil
-	}
-	if src.isResultBacked() {
-		return newContainerFileResultSource(*src.Result), nil
-	}
-	if src.Value == nil {
-		return nil, nil
-	}
-	file, err := cloneTerminalFile(ctx, query, src.Value)
-	if err != nil {
-		return nil, err
-	}
-	return newContainerFileValueSource(file), nil
+func cloneTerminalFileSource(ctx context.Context, query *Query, src *LazyAccessor[*File, *Container]) (*LazyAccessor[*File, *Container], error) {
+	_ = query
+	return CloneContainerFileAccessor(ctx, src)
 }
 
 func cloneTerminalDirectory(ctx context.Context, query *Query, dir *Directory) (*Directory, error) {
-	if dir == nil {
-		return nil, nil
-	}
-	cp := &Directory{
-		Dir:      dir.Dir,
-		Platform: dir.Platform,
-		Services: slices.Clone(dir.Services),
-	}
-	dir.snapshotMu.RLock()
-	ready := dir.snapshotReady
-	source := dir.snapshotSource
-	snapshot := dir.Snapshot
-	dir.snapshotMu.RUnlock()
-	if snapshot != nil {
-		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
-		if err != nil {
-			return nil, err
-		}
-		cp.Snapshot = reopened
-		cp.snapshotReady = true
-		return cp, nil
-	}
-	if ready {
-		cp.snapshotReady = true
-		cp.snapshotSource = source
-	}
-	return cp, nil
+	_ = query
+	return cloneDetachedDirectoryForContainerResult(ctx, dir)
 }
 
 func cloneTerminalFile(ctx context.Context, query *Query, file *File) (*File, error) {
-	if file == nil {
-		return nil, nil
-	}
-	cp := &File{
-		File:     file.File,
-		Platform: file.Platform,
-		Services: slices.Clone(file.Services),
-	}
-	file.snapshotMu.RLock()
-	ready := file.snapshotReady
-	source := file.snapshotSource
-	snapshot := file.Snapshot
-	file.snapshotMu.RUnlock()
-	if snapshot != nil {
-		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
-		if err != nil {
-			return nil, err
-		}
-		cp.Snapshot = reopened
-		cp.snapshotReady = true
-		return cp, nil
-	}
-	if ready {
-		cp.snapshotReady = true
-		cp.snapshotSource = source
-	}
-	return cp, nil
+	_ = query
+	return cloneDetachedFileForContainerResult(ctx, file)
 }
 
 func newSyntheticTerminalContainerResult(

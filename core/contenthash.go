@@ -31,7 +31,7 @@ func MakeDirectoryContentHashed(
 	}
 	dirPath := ""
 	if dirInst.Self() != nil {
-		dirPath = dirInst.Self().Dir
+		dirPath, _ = dirInst.Self().Dir.Peek()
 	}
 	dagql.TraceEGraphDebug(ctx, "directory_content_hash_computed", "phase", "runtime", "path", dirPath, "content_digest", dgst)
 
@@ -74,7 +74,7 @@ func GetContentHashFromDirectory(
 		}
 	}
 
-	snapshot, err := dirInst.Self().getSnapshot()
+	snapshot, err := dirInst.Self().Snapshot.GetOrEval(ctx, dirInst.Result)
 	if err != nil {
 		return "", fmt.Errorf("failed to get directory snapshot: %w", err)
 	}
@@ -82,7 +82,10 @@ func GetContentHashFromDirectory(
 		return "", fmt.Errorf("failed to get directory snapshot: nil")
 	}
 
-	dirPath := dirInst.Self().Dir
+	dirPath, err := dirInst.Self().Dir.GetOrEval(ctx, dirInst.Result)
+	if err != nil {
+		return "", fmt.Errorf("failed to get directory path: %w", err)
+	}
 	if !strings.HasSuffix(dirPath, "/") {
 		// omit directory name from the hash
 		dirPath += "/"
@@ -91,7 +94,7 @@ func GetContentHashFromDirectory(
 	if err != nil {
 		return "", fmt.Errorf("failed to get content hash: %w", err)
 	}
-	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", dirInst.Self().Dir, "snapshot_ref_id", snapshot.SnapshotID(), "content_digest", dgst)
+	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", dirPath, "snapshot_ref_id", snapshot.SnapshotID(), "content_digest", dgst)
 
 	return dgst, nil
 }
@@ -113,7 +116,7 @@ func GetContentHashFromFile(
 		}
 	}
 
-	snapshot, err := fileInst.Self().getSnapshot()
+	snapshot, err := fileInst.Self().Snapshot.GetOrEval(ctx, fileInst.Result)
 	if err != nil {
 		return "", fmt.Errorf("failed to get file snapshot: %w", err)
 	}
@@ -121,7 +124,11 @@ func GetContentHashFromFile(
 		return "", fmt.Errorf("failed to get file snapshot: nil")
 	}
 
-	dgst, err := getContentHashFromRef(ctx, snapshot, fileInst.Self().File)
+	filePath, err := fileInst.Self().File.GetOrEval(ctx, fileInst.Result)
+	if err != nil {
+		return "", fmt.Errorf("failed to get file path: %w", err)
+	}
+	dgst, err := getContentHashFromRef(ctx, snapshot, filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to get content hash: %w", err)
 	}

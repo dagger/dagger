@@ -49,7 +49,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("description").Doc("Description of the sub-pipeline."),
 				dagql.Arg("labels").Doc("Labels to apply to the sub-pipeline."),
 			),
-		dagql.Func("name", s.name).
+		dagql.NodeFunc("name", s.name).
 			View(AllVersion). // name returns different results in different versions
 			Doc(`Returns the name of the directory.`),
 		dagql.NodeFunc("entries", s.entries).
@@ -419,8 +419,8 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
-	dir.Dir.setValue("/")
-	dir.Snapshot.setValue(finalRef)
+	dir.Dir.SetValue("/")
+	dir.Snapshot.SetValue(finalRef)
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
@@ -478,7 +478,7 @@ func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.Obj
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -526,7 +526,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
@@ -592,7 +592,7 @@ func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, par
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -650,7 +650,7 @@ func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.Objec
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -732,7 +732,7 @@ func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResu
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -763,7 +763,7 @@ func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.Object
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -842,7 +842,7 @@ func (s *directorySchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
@@ -893,7 +893,7 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -969,7 +969,7 @@ func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -996,7 +996,7 @@ func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1023,7 +1023,7 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1131,7 +1131,7 @@ func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*c
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
-	dir.Dir.setValue("/")
+	dir.Dir.SetValue("/")
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1236,7 +1236,7 @@ func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectRe
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1653,7 +1653,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 
 	return ctr.Build(
 		ctx,
-		parent.Self(),
+		parent,
 		buildctxDirID,
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
@@ -1752,7 +1752,7 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1792,7 +1792,7 @@ func (s *directorySchema) chown(
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.setValue(parentDir)
+		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }

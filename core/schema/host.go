@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/filesync"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type hostSchema struct{}
@@ -311,11 +312,13 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 	dagql.TraceEGraphDebug(ctx, "host_directory_snapshot", "phase", "runtime", "path", args.Path, "abs_root_copy_path", absRootCopyPath, "relative_path_from_root", relPathFromRoot, "no_cache", args.NoCache, "cache_buster", snapshotOpts.CacheBuster != "", "content_digest", contentDgst, "snapshot_ref_id", ref.SnapshotID(), "include_patterns", includePatterns, "exclude_patterns", excludePatterns, "follow_paths", followPaths, "gitignore", args.Gitignore)
 
-	dir, err := core.NewDirectoryWithSnapshot("/", query.Platform(), nil, ref)
-	if err != nil {
-		_ = ref.Release(context.WithoutCancel(ctx))
-		return inst, fmt.Errorf("failed to create host directory: %w", err)
+	dir := &core.Directory{
+		Platform: query.Platform(),
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
+	dir.Dir.SetValue("/")
+	dir.Snapshot.SetValue(ref)
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {

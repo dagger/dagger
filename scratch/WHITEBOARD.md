@@ -702,3 +702,730 @@
   * All non-evaluating file paths use `Peek()` only.
   * No materialized file state can survive with a nil snapshot.
   * The immediate directory/file seam (`Subfile`, `Directory.WithFile`, `directory.file`, `directory.withFiles`) is updated to the new file accessor model.
+
+### Container
+* **Target object shape**
+  * Hard-cut container internal filesystem state to be **all value-backed**.
+  * Hard-cut `core.Container` to:
+    ```go
+    type Container struct {
+    	FS           *LazyAccessor[*Directory, *Container]
+    	MetaSnapshot *LazyAccessor[bkcache.ImmutableRef, *Container]
+    
+    	Config             dockerspec.DockerOCIImageConfig
+    	EnabledGPUs        []string
+    	Mounts             ContainerMounts
+    	Platform           Platform
+    	Annotations        []containerutil.ContainerAnnotation
+    	Secrets            []ContainerSecret
+    	Sockets            []ContainerSocket
+    	ImageRef           string
+    	Ports              []Port
+    	Services           ServiceBindings
+    	DefaultTerminalCmd DefaultTerminalCmdOpts
+    	SystemEnvNames     []string
+    	DefaultArgs        bool
+    
+    	Lazy Lazy[*Container]
+    }
+    
+    type ContainerMount struct {
+    	Target   string
+    	Readonly bool
+    
+    	DirectorySource *LazyAccessor[*Directory, *Container]
+    	FileSource      *LazyAccessor[*File, *Container]
+    	CacheSource     *CacheMountSource
+    	TmpfsSource     *TmpfsMountSource
+    }
+    ```
+  * There is no internal `dagql.ObjectResult[*Directory]` / `dagql.ObjectResult[*File]` duality anymore for rootfs or file/directory mounts.
+  * There are no `ContainerDirectorySource` / `ContainerFileSource` wrappers anymore.
+  * Delete:
+    * `ContainerDirectorySource`
+    * `ContainerFileSource`
+    * `newContainerDirectoryResultSource`
+    * `newContainerDirectoryValueSource`
+    * `newContainerFileResultSource`
+    * `newContainerFileValueSource`
+    * `isResultBacked`
+    * `DirectoryFromContainerLazy`
+    * `FileFromContainerLazy`
+    * `markDirectoryFromContainerLazy`
+    * `cloneBareDirectoryForContainerChild`
+    * `cloneBareFileForContainerChild`
+    * `NewContainerChild`
+    * `NewContainerChildWithoutFS`
+    * `newContainerChild`
+    * `setBareRootFS`
+    * all container-side uses of child source/backpointer state
+  * Keep `cloneDetachedDirectoryForContainerResult` / `cloneDetachedFileForContainerResult`, but rewrite them to the accessor model. These are ownership-safety helpers used in many places and are justified.
+
+* **Core design rules**
+  * `FS` and `MetaSnapshot` are the top-level lazy-sensitive container fields, so they are behind accessors.
+  * Mounted directory/file entries are also behind accessors on the mount entry itself.
+  * There is one simple rule for container internals:
+    * if a rootfs/mounted directory/file value exists, it is owned by the container and is a plain materialized `Directory` / `File`
+    * if it does not exist yet, the corresponding accessor is simply unset
+  * `Directory` / `File` objects embedded inside container rootfs/mount state are plain directory/file objects again.
+    * Once such an embedded directory/file exists:
+      * `Lazy == nil`
+      * its `Dir` / `File` accessor is set
+      * its `Snapshot` accessor is set
+    * The only lazy directory/file objects in the container slice after this cut are standalone selection results like `container.rootfs`, `container.directory(path)`, and `container.file(path)`.
+  * Pending runtime filesystem state lives only on the top-level `container.Lazy`.
+    * We do **not** translate pending state into internal result-vs-value unions.
+    * We do **not** translate pending state into child backpointer lazies.
+    * We do **not** store container/source provenance on embedded directory/file objects.
+  * External dagql results still matter, but only as inputs to top-level lazy ops.
+    * Example: `ContainerWithDirectoryLazy` stores a parent container result and a source directory result.
+    * Example: `ContainerWithMountedDirectoryLazy` stores a parent container result and a source directory result.
+    * Once the lazy op evaluates, the resulting internal state is plain value-backed.
+  * `Container.LazyEvalFunc` should simplify, not get more complex.
+    * It should evaluate the top-level `container.Lazy`
+    * It should not recursively walk embedded directory/file child lazies anymore
+    * Embedded container-owned values are materialized by the container lazy itself
+  * All mount-affecting operations should be lazy for coherence and to avoid split behavior.
+    * This includes directory/file mounts, cache/tmpfs mounts, mounted secrets, sockets, and unmounting.
+    * The lazy part for secret/socket mounts is owner resolution against the parent container, not the mount entry shape itself.
+  * Prune/cache-usage accounting does not need the old result-backed internal model.
+    * We already dedupe usage by underlying snapshot identity via `CacheUsageIdentities()` / `PersistedSnapshotRefLinks()`.
+    * That is good enough for this cut.
+
+* **Why the all-value-backed model is better**
+  * It removes the hardest part of the current container slice to reason about: the internal result-vs-value duality.
+  * It removes the main reason we kept trying to reconstruct provenance from child state during cloning and persistence.
+  * It avoids the circular-ownership weirdness around `withExec` outputs that comes from trying to keep those outputs result-backed.
+  * It makes `prepareMounts`, terminal cloning, and persistence conceptually much simpler:
+    * after top-level lazy evaluation, container internals just have owned values
+  * It makes config-only children easier to reason about:
+    * they do not clone arbitrary parent lazy ops by type
+    * they either preserve already-materialized state eagerly or use a single generic “clone parent materialized state later” lazy
+
+* **Representative code shape**
+  * Pending `from(...)` rootfs:
+    ```go
+    ctr := &Container{
+    	FS:           new(LazyAccessor[*Directory, *Container]),
+    	MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+    	Platform:     platform,
+    	Lazy:         &ContainerFromImageRefLazy{...},
+    }
+    ```
+  * Materializing that rootfs during evaluation:
+    ```go
+    rootfs := &Directory{
+    	Platform: container.Platform,
+    	Services: slices.Clone(container.Services),
+    	Dir:      new(LazyAccessor[string, *Directory]),
+    	Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+    }
+    rootfs.Dir.setValue("/")
+    rootfs.Snapshot.setValue(importedRef)
+    rootfs.Lazy = nil
+    
+    container.FS.setValue(rootfs)
+    ```
+  * Pending mounted directory slot:
+    ```go
+    ctr.Mounts = ctr.Mounts.With(ContainerMount{
+    	Target:          target,
+    	Readonly:        readOnly,
+    	DirectorySource: new(LazyAccessor[*Directory, *Container]),
+    })
+    ctr.Lazy = &ContainerWithMountedDirectoryLazy{
+    	LazyState: NewLazyState(),
+    	Parent:    parent,
+    	Target:    target,
+    	Source:    src,
+    	Owner:     owner,
+    	Readonly:  readOnly,
+    }
+    ```
+  * Config-only child preserving pending filesystem state:
+    ```go
+    var childLazy Lazy[*Container]
+    if parent.Self().Lazy != nil {
+    	childLazy = &ContainerCloneStateLazy{
+    		LazyState: NewLazyState(),
+    		Parent:    parent,
+    	}
+    }
+    ctr := &Container{
+    	FS:                 clonedFS,
+    	MetaSnapshot:       clonedMeta,
+    	Mounts:             clonedMounts,
+    	Config:             cloneContainerConfig(parent.Self().Config),
+    	EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+    	Platform:           parent.Self().Platform,
+    	Annotations:        slices.Clone(parent.Self().Annotations),
+    	Secrets:            slices.Clone(parent.Self().Secrets),
+    	Sockets:            slices.Clone(parent.Self().Sockets),
+    	ImageRef:           parent.Self().ImageRef,
+    	Ports:              slices.Clone(parent.Self().Ports),
+    	Services:           slices.Clone(parent.Self().Services),
+    	DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+    	SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+    	DefaultArgs:        parent.Self().DefaultArgs,
+    	Lazy:               childLazy,
+    }
+    ```
+
+#### core/container.go
+* **Type / lifecycle surface**
+  * `type Container`:
+    * `FS` becomes `*LazyAccessor[*Directory, *Container]`
+    * `MetaSnapshot` becomes `*LazyAccessor[bkcache.ImmutableRef, *Container]`
+  * `type ContainerMount`:
+    * `DirectorySource` becomes `*LazyAccessor[*Directory, *Container]`
+    * `FileSource` becomes `*LazyAccessor[*File, *Container]`
+    * `CacheSource` and `TmpfsSource` stay as-is
+  * `OnRelease`:
+    * use `MetaSnapshot.Peek()` only
+    * use `FS.Peek()` and mount `DirectorySource.Peek()` / `FileSource.Peek()` only
+    * release only already-materialized value-backed children; never evaluate
+  * `LazyEvalFunc`:
+    * only evaluate `container.Lazy`
+    * remove the old recursive scan over rootfs/mount child `LazyEvalFunc()`
+  * `Evaluate` / `Sync`:
+    * stay thin wrappers over `LazyEvalFunc`
+  * `AttachDependencyResults`:
+    * top-level container lazy attaches its own parent/source results
+    * cache volume mount results are still attached directly
+    * do not recurse into embedded directory/file values looking for hidden source state
+
+* **Container child cloning**
+  * Delete the giant `NewContainerChild` / `NewContainerChildWithoutFS` / `newContainerChild` helper family.
+  * Replace it with explicit container construction in schema plus narrow helpers for the dense reused pieces:
+    ```go
+    func cloneContainerMetaSnapshot(ctx context.Context, src *LazyAccessor[bkcache.ImmutableRef, *Container]) (*LazyAccessor[bkcache.ImmutableRef, *Container], error)
+    func cloneContainerDirectoryAccessor(ctx context.Context, src *LazyAccessor[*Directory, *Container]) (*LazyAccessor[*Directory, *Container], error)
+    func cloneContainerFileAccessor(ctx context.Context, src *LazyAccessor[*File, *Container]) (*LazyAccessor[*File, *Container], error)
+    func cloneContainerMounts(ctx context.Context, mounts ContainerMounts) (ContainerMounts, error)
+    func materializeContainerStateFromParent(ctx context.Context, dst *Container, parent dagql.ObjectResult[*Container]) error
+    ```
+  * The clone helpers exist specifically to:
+    * reopen already-materialized rootfs/mount/meta snapshots and clone-detach them into the child
+    * preserve unset accessors as unset
+    * keep the dense snapshot-reopen logic out of dozens of schema resolvers
+  * `materializeContainerStateFromParent` is justified because every top-level filesystem/mount lazy op needs the same dense starting step:
+    * evaluate the parent container result
+    * clone the parent’s materialized rootfs/mount/meta state into the child
+    * leave the child ready for the specific mutation the lazy op is about to apply
+
+* **Config-only children**
+  * Add:
+    ```go
+    type ContainerCloneStateLazy struct {
+    	LazyState
+    	Parent dagql.ObjectResult[*Container]
+    }
+    ```
+  * `ContainerCloneStateLazy.Evaluate`:
+    * evaluate the parent container result
+    * clone the parent’s now-materialized `FS`, `Mounts`, and `MetaSnapshot` into the child
+    * clear itself
+  * This is the crucial simplification over the earlier design:
+    * config-only children do **not** clone arbitrary parent lazy ops by type
+    * they just say “my filesystem state should become a clone of my parent’s evaluated filesystem state”
+  * This solves the `withExec(...).withEnvVariable(...)` problem cleanly, because the config-only child no longer risks changing the semantics of the already-pending exec lazy itself.
+
+* **Persistence / cache usage**
+  * `PersistedSnapshotRefLinks`, `CacheUsageIdentities`, and `CacheUsageSize`:
+    * use `MetaSnapshot.Peek()` only
+    * use `FS.Peek()` / mount accessor `Peek()` only
+    * once a value-backed child shell is obtained, use the child `Snapshot.Peek()` only
+  * `EncodePersistedObject`:
+    * keep top-level `ready` vs `lazy` forms
+    * internal rootfs/mount directory/file state is never encoded as object refs anymore
+    * rootfs encoding is:
+      * ready container => materialized `FS` payload, or absent for canonical scratch
+      * lazy container => top-level lazy payload; decode recreates the pending rootfs accessor shape
+    * mount payloads should have an explicit mount `kind` enum:
+      * `directory`
+      * `file`
+      * `cache`
+      * `tmpfs`
+    * for `directory` / `file` mount kinds, the mount-local payload is:
+      * present `value` => materialized embedded `Directory` / `File`
+      * absent `value` => pending slot
+    * cache mounts still encode their cache volume result ref
+    * keep the current “services/secrets/sockets unsupported” restriction for now
+  * `DecodePersistedObject`:
+    * reconstruct `FS` / mount accessors
+    * materialized form => decode child object and `setValue(...)`
+    * pending form => allocate accessor but leave it unset
+    * lazy form => decode top-level container lazy and rebuild the expected pending internal slot structure
+  * Delete:
+    * `persistedContainerDirectorySourceWithCall`
+    * `persistedContainerFileSourceWithCall`
+    * `persistedContainerParentResultIDFromDirectorySource`
+    * `persistedContainerParentResultIDFromFileSource`
+    * the `containerSourceParentResultID` hack
+    * any code that walks child `snapshotSource` chains to rediscover container provenance
+
+* **Filesystem access / mutation**
+  * Structural placeholders added in schema for pre-eval visibility are just that: placeholders.
+    * Filesystem/mount mutation lazies should not try to preserve and fill those placeholders in place.
+    * Instead, their evaluation sequence is:
+      * evaluate the parent container result
+      * clone the parent’s fully materialized `FS`, `Mounts`, and `MetaSnapshot` into the child
+      * re-apply the specific mutation the lazy op represents
+    * This means a placeholder mount added in schema may be overwritten during eval and then recreated as the real materialized mount entry. That is expected and keeps `materializeContainerStateFromParent` simple.
+  * `RootFS`:
+    * stop being an internal result-vs-value union escape hatch
+    * if still used after the cut, keep it only as an accessor-aware helper over the new all-value-backed model
+    * if no longer used, delete it
+  * `WithRootFS`:
+    * stop eagerly storing a result-backed rootfs
+    * replace with a top-level `ContainerWithRootFSLazy{Parent, Source}` that materializes a value-backed rootfs during eval
+    * if the helper is no longer used after callsite updates, delete it rather than preserving it as a special-case API
+  * `WithDirectory`, `WithFile`, `WithoutPaths`, and `WithSymlink`:
+    * stay top-level container lazy ops
+    * evaluate parent and source results as needed
+    * materialize the parent’s internal state into the child
+    * then mutate the child’s **value-backed** rootfs or mounted directory/file directly
+    * if an existing directory/file helper requires a dagql result wrapper, create a current-call result around the materialized child value explicitly for that purpose
+  * `WithMountedDirectory`, `WithMountedFile`, `WithMountedCache`, `WithMountedTemp`, `WithMountedSecret`, `WithUnixSocketFromParent`, `WithoutMount`, and `WithoutUnixSocket`:
+    * all become top-level lazy ops for coherence
+    * they materialize parent state into the child during eval and then update the child’s mount/secret/socket state
+  * `WithFiles`:
+    * stop reading raw `file.Self().File`
+    * use the file accessor model to obtain the basename
+  * `Directory` and `File` selection:
+    * no result-backed branch
+    * rootfs/mount paths read from value accessors after evaluating the container result
+    * returned values are clone-detached and wrapped as current-call results
+  * `Exists` / `Stat`:
+    * operate on the current container’s value-backed internal state after evaluating the container result
+  * `Build`:
+    * update to directory accessors (`dockerfileDir.Snapshot.GetOrEval`, `dockerfileDir.Dir.GetOrEval`)
+    * delete the old `getSnapshot` / raw `Dir` path reads
+  * `FromCanonicalRef`:
+    * if `FS` does not exist yet, allocate it
+    * materialize a normal accessor-based rootfs `Directory`
+    * set it via `FS.setValue(...)`
+  * `getVariantRefs`:
+    * stop manually calling child `Lazy.Evaluate`
+    * operate on the accessorized rootfs value after evaluating the container result
+
+#### core/container_exec.go
+* **Top-level exec lazy stays, but simplify it**
+  * Hard-cut `ContainerExecLazy` so it directly carries its fields and uses the `Evaluate(ctx, ctr)` target argument.
+  * Remove the internal `Container *Container` backpointer from exec lazy state.
+  * Keep the persisted payload shape logically the same.
+
+* **WithExec output modeling**
+  * `WithExec` must stop installing `DirectoryFromContainerLazy` / `FileFromContainerLazy` on output children.
+  * Instead:
+    * set `container.Lazy = &ContainerExecLazy{...}`
+    * clear `ImageRef`
+    * clear the top-level `MetaSnapshot` accessor
+    * replace `FS` with a fresh unset accessor
+    * replace every writable directory/file mount accessor with a fresh unset accessor
+    * keep readonly mounts as cloned materialized values
+  * No fake child output shell is created just to remember future output.
+  * The top-level exec lazy is the thing that owns the obligation to materialize those children later.
+
+* **Exec evaluation**
+  * `ContainerExecLazy.Evaluate`:
+    * materialize parent state into the child first
+    * prepare mounts from the parent’s materialized internal values
+    * when output refs are committed, create fully materialized `Directory` / `File` values and set them on the child accessors
+    * write `MetaSnapshot` through its accessor
+  * `prepareMounts`:
+    * stop reading raw `Dir` / `File` strings and `getSnapshot()`
+    * just read the parent container’s value-backed rootfs/mount children through accessors after parent evaluation
+  * `decodePersistedContainerExecLazy`:
+    * rebuild `FS` and writable mount accessors as unset pending slots
+    * do not install any child backpointer lazy
+  * `metaFileContents`:
+    * explicit file construction with `File` / `Snapshot` accessors and reopened snapshot
+    * no `NewFileWithSnapshot`
+
+* **Terminal / exec-error recovery inside exec**
+  * The terminal/exec-error rebuild path currently uses deleted helpers and old child raw fields.
+  * Update it to:
+    * rebuild rootfs/mount outputs with explicit accessor-based `Directory` / `File` construction
+    * use the new all-value-backed internal model
+    * keep the overall behavior the same
+
+#### core/container_image.go
+* `ContainerFromImageRefLazy.Evaluate`:
+  * if `FS` does not already exist, allocate it
+  * import the image
+  * materialize a normal accessor-based rootfs `Directory`
+  * set it via `FS.setValue(...)`
+  * clear `container.Lazy`
+* `FromCanonicalRef`:
+  * same pattern as above for setting the rootfs snapshot
+* `AsTarball`:
+  * replace `NewFileWithSnapshot` with explicit accessor-based file construction
+
+#### core/terminal.go
+* Keep the terminal clone helpers because they are genuinely reused and dense, but rewrite them to the new model:
+  * `cloneContainerForTerminal`
+  * `cloneTerminalMounts`
+  * `cloneTerminalDirectory`
+  * `cloneTerminalFile`
+* They must:
+  * clone accessors honestly
+  * clone-detach already-materialized value children through directory/file accessors
+  * preserve unset accessors as unset
+  * never read or write deleted `snapshotMu` / `snapshotReady` / `snapshotSource` state
+
+#### core/schema/container.go
+* **Container constructor and child-selection resolvers**
+  * `container(...)`:
+    * return a `Container` with `FS` and `MetaSnapshot` accessors allocated
+    * both start unset for scratch/no-exec
+  * `from(...)`:
+    * explicitly copy non-filesystem container state from the parent
+    * do not call `NewContainerChildWithoutFS`
+    * allocate `FS` / `MetaSnapshot`
+    * leave `FS` unset
+    * attach `ContainerFromImageRefLazy`
+  * `rootfs(...)`:
+    * return an explicit accessorized `Directory` with `ContainerRootFSLazy`
+  * `directory(...)`:
+    * return an explicit accessorized `Directory` with `ContainerDirectoryLazy`
+    * pre-seed `Dir` to the resolved absolute container path
+  * `file(...)`:
+    * return an explicit accessorized `File` with `ContainerFileLazy`
+    * pre-seed `File` to the resolved absolute container path
+
+* **Worked example: config-only `withEnvVariable`**
+  * This is the representative example for config-only mutations.
+  * Schema-side shape:
+    ```go
+    func (s *containerSchema) withEnvVariable(
+    	ctx context.Context,
+    	parent dagql.ObjectResult[*core.Container],
+    	args containerWithVariableArgs,
+    ) (*core.Container, error) {
+    	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
+    	if err != nil {
+    		return nil, err
+    	}
+    	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+    	if err != nil {
+    		return nil, err
+    	}
+    	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+    	if err != nil {
+    		return nil, err
+    	}
+    
+    	var childLazy core.Lazy[*core.Container]
+    	if parent.Self().Lazy != nil {
+    		childLazy = &core.ContainerCloneStateLazy{
+    			LazyState: core.NewLazyState(),
+    			Parent:    parent,
+    		}
+    	}
+    
+    	ctr := &core.Container{
+    		FS:                 clonedFS,
+    		MetaSnapshot:       clonedMeta,
+    		Config:             cloneContainerConfig(parent.Self().Config),
+    		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+    		Mounts:             clonedMounts,
+    		Platform:           parent.Self().Platform,
+    		Annotations:        slices.Clone(parent.Self().Annotations),
+    		Secrets:            slices.Clone(parent.Self().Secrets),
+    		Sockets:            slices.Clone(parent.Self().Sockets),
+    		ImageRef:           parent.Self().ImageRef,
+    		Ports:              slices.Clone(parent.Self().Ports),
+    		Services:           slices.Clone(parent.Self().Services),
+    		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+    		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+    		DefaultArgs:        parent.Self().DefaultArgs,
+    		Lazy:               childLazy,
+    	}
+    
+    	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+    		value := args.Value
+    		if args.Expand {
+    			value = os.Expand(value, func(k string) string {
+    				v, _ := core.LookupEnv(cfg.Env, k)
+    				return v
+    			})
+    		}
+    		cfg.Env = core.AddEnv(cfg.Env, args.Name, value)
+    		return cfg
+    	})
+    }
+    ```
+  * The important point is that this does **not** create a new filesystem lazy op.
+    * it preserves already-known structure eagerly
+    * it uses `ContainerCloneStateLazy` only when the parent still has pending runtime filesystem work
+    * it only mutates config eagerly
+
+* **Resolvers that mutate filesystem/mount state**
+  * `withRootfs`
+  * `withDirectory`
+  * `withFile`
+  * `withFiles`
+  * `withNewFile`
+  * `withoutDirectory`
+  * `withoutFile`
+  * `withoutFiles`
+  * `withSymlink`
+  * `withMountedDirectory`
+  * `withMountedFile`
+  * `withMountedCache`
+  * `withMountedTemp`
+  * `withMountedSecret`
+  * `withUnixSocket`
+  * `withoutMount`
+  * `withoutUnixSocket`
+  * all of these should:
+    * explicitly copy non-fs container metadata inline
+    * use the narrow clone helpers for already-known structure
+    * install a dedicated top-level lazy op for the actual filesystem/mount mutation
+    * move any owner lookup into lazy evaluation
+    * exception: `withMountedCache` may still resolve a name-based owner during dynamic-input rewriting so the `cacheVolume(...)` identity is canonicalized against the parent container
+  * `withFiles(...)` specifically must stop reading raw `file.Self().File` and use the file accessor model for basename selection.
+
+* **Worked example: always-lazy `withMountedDirectory`**
+  * This is the representative example for filesystem/mount mutations.
+  * Schema-side shape:
+    ```go
+    func (s *containerSchema) withMountedDirectory(
+    	ctx context.Context,
+    	parent dagql.ObjectResult[*core.Container],
+    	args containerWithMountedDirectoryArgs,
+    ) (*core.Container, error) {
+    	srv, err := core.CurrentDagqlServer(ctx)
+    	if err != nil {
+    		return nil, fmt.Errorf("failed to get server: %w", err)
+    	}
+    	dir, err := args.Source.Load(ctx, srv)
+    	if err != nil {
+    		return nil, err
+    	}
+    	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
+    	if err != nil {
+    		return nil, err
+    	}
+    	target := absPath(parent.Self().Config.WorkingDir, path)
+    
+    	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
+    	if err != nil {
+    		return nil, err
+    	}
+    	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
+    	if err != nil {
+    		return nil, err
+    	}
+    	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+    	if err != nil {
+    		return nil, err
+    	}
+    
+    	ctr := &core.Container{
+    		FS:                 clonedFS,
+    		MetaSnapshot:       clonedMeta,
+    		Config:             cloneContainerConfig(parent.Self().Config),
+    		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
+    		Mounts:             clonedMounts,
+    		Platform:           parent.Self().Platform,
+    		Annotations:        slices.Clone(parent.Self().Annotations),
+    		Secrets:            slices.Clone(parent.Self().Secrets),
+    		Sockets:            slices.Clone(parent.Self().Sockets),
+    		ImageRef:           "",
+    		Ports:              slices.Clone(parent.Self().Ports),
+    		Services:           slices.Clone(parent.Self().Services),
+    		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
+    		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+    		DefaultArgs:        parent.Self().DefaultArgs,
+    		Lazy: &core.ContainerWithMountedDirectoryLazy{
+    			LazyState: core.NewLazyState(),
+    			Parent:    parent,
+    			Target:    target,
+    			Source:    dir,
+    			Owner:     args.Owner,
+    			Readonly:  args.ReadOnly,
+    		},
+    	}
+    
+    	// Pre-seed the mount target so path-based APIs like mounts()/locatePath()
+    	// can already see that the mount exists, even though the mounted child
+    	// directory is not materialized until lazy evaluation.
+    	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+    		Target:          target,
+    		Readonly:        args.ReadOnly,
+    		DirectorySource: new(core.LazyAccessor[*core.Directory, *core.Container]),
+    	})
+    
+    	return ctr, nil
+    }
+    ```
+  * Core-side lazy evaluation shape:
+    ```go
+    type ContainerWithMountedDirectoryLazy struct {
+    	LazyState
+    	Parent   dagql.ObjectResult[*Container]
+    	Target   string
+    	Source   dagql.ObjectResult[*Directory]
+    	Owner    string
+    	Readonly bool
+    }
+    
+    func (lazy *ContainerWithMountedDirectoryLazy) Evaluate(ctx context.Context, ctr *Container) error {
+    	return lazy.LazyState.Evaluate(ctx, "Container.withMountedDirectory", func(ctx context.Context) error {
+    		if err := materializeContainerStateFromParent(ctx, ctr, lazy.Parent); err != nil {
+    			return err
+    		}
+    
+    		cache, err := dagql.EngineCache(ctx)
+    		if err != nil {
+    			return err
+    		}
+    		if err := cache.Evaluate(ctx, lazy.Source); err != nil {
+    			return err
+    		}
+    
+    		src := lazy.Source
+    		if lazy.Owner != "" {
+    			resolvedOwner, err := ctr.ResolveOwnership(ctx, lazy.Parent, lazy.Owner)
+    			if err != nil {
+    				return err
+    			}
+    			if resolvedOwner != "" {
+    				src, err = ctr.chownDir(ctx, lazy.Parent, src, resolvedOwner)
+    				if err != nil {
+    					return err
+    				}
+    				if err := cache.Evaluate(ctx, src); err != nil {
+    					return err
+    				}
+    			}
+    		}
+    
+    		srcDirPath, err := src.Self().Dir.GetOrEval(ctx, src.Result)
+    		if err != nil {
+    			return err
+    		}
+    		srcDirRef, err := src.Self().Snapshot.GetOrEval(ctx, src.Result)
+    		if err != nil {
+    			return err
+    		}
+    
+    		query, err := CurrentQuery(ctx)
+    		if err != nil {
+    			return err
+    		}
+    		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, srcDirRef.SnapshotID(), bkcache.NoUpdateLastUsed)
+    		if err != nil {
+    			return err
+    		}
+    
+    		materialized := &Directory{
+    			Platform: src.Self().Platform,
+    			Services: slices.Clone(src.Self().Services),
+    			Dir:      new(LazyAccessor[string, *Directory]),
+    			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+    		}
+    		materialized.Dir.setValue(srcDirPath)
+    		materialized.Snapshot.setValue(reopened)
+    		materialized.Lazy = nil
+    
+    		for i := range ctr.Mounts {
+    			if ctr.Mounts[i].Target != lazy.Target || ctr.Mounts[i].DirectorySource == nil {
+    				continue
+    			}
+    			ctr.Mounts[i].Readonly = lazy.Readonly
+    			ctr.Mounts[i].DirectorySource.setValue(materialized)
+    			break
+    		}
+    
+    		ctr.Lazy = nil
+    		return nil
+    	})
+    }
+    ```
+  * The important point is that this lazy op materializes a plain embedded `Directory` value into the already-present mount accessor slot.
+    * it does **not** install a child backpointer lazy
+    * it does **not** stash source provenance on the child
+    * owner lookup happens during eval, not in schema
+    * exception: `withMountedCache` keeps its dynamic-input owner canonicalization in schema so cache identity stays keyed on the parent container's resolved numeric owner
+
+* **Resolvers that mutate only config / metadata / bindings**
+  * `__withImageConfigMetadata`
+  * `withEntrypoint`
+  * `withoutEntrypoint`
+  * `withDefaultArgs`
+  * `withoutDefaultArgs`
+  * `withUser`
+  * `withoutUser`
+  * `withWorkdir`
+  * `withoutWorkdir`
+  * `withEnvVariable`
+  * `withEnvFileVariables`
+  * `__withSystemEnvVariable`
+  * `withoutEnvVariable`
+  * `withLabel`
+  * `withoutLabel`
+  * `withDockerHealthcheck`
+  * `withoutDockerHealthcheck`
+  * `withAnnotation`
+  * `withoutAnnotation`
+  * `withServiceBinding`
+  * `withExposedPort`
+  * `withoutExposedPort`
+  * `withDefaultTerminalCmd`
+  * `experimentalWithGPU`
+  * `experimentalWithAllGPUs`
+  * these use the explicit container copy pattern plus `ContainerCloneStateLazy` when the parent still has pending runtime filesystem work
+
+* **Exec / output / reader resolvers**
+  * `withExec`:
+    * does **not** eagerly evaluate the parent
+    * explicitly copies non-filesystem container state and clones already-known structure
+    * then installs `ContainerExecLazy`
+    * the actual parent evaluation happens inside exec lazy evaluation
+  * `stdout`, `stderr`, `combinedOutput`, `exitCode`:
+    * behavior stays the same, but the underlying container methods now rely on accessors
+  * `exists`, `stat`, `publish`, `export`, `asTarball`, `import`:
+    * update to the new all-value-backed internal model where needed
+
+#### Immediate adjacent files in the bubble
+* The container cut must keep these aligned too:
+  * [core/container_image.go](/home/sipsma/repo/github.com/sipsma/dagger/core/container_image.go)
+  * [core/terminal.go](/home/sipsma/repo/github.com/sipsma/dagger/core/terminal.go)
+  * [core/service.go](/home/sipsma/repo/github.com/sipsma/dagger/core/service.go)
+    * because `prepareMounts` is shared
+* Those are part of the immediate container bubble even though the main implementation focus is:
+  * [core/container.go](/home/sipsma/repo/github.com/sipsma/dagger/core/container.go)
+  * [core/container_exec.go](/home/sipsma/repo/github.com/sipsma/dagger/core/container_exec.go)
+  * [core/schema/container.go](/home/sipsma/repo/github.com/sipsma/dagger/core/schema/container.go)
+
+* **Done criterion for the container cut**
+  * The container slice and its immediate adjacents have no remaining references to:
+    * `ContainerDirectorySource`
+    * `ContainerFileSource`
+    * `DirectoryFromContainerLazy`
+    * `FileFromContainerLazy`
+    * `DirectoryFromSourceLazy`
+    * `FileFromSourceLazy`
+    * `snapshotMu`
+    * `snapshotReady`
+    * `snapshotSource`
+    * `getSnapshot`
+    * `setSnapshot`
+    * `setSnapshotSource`
+    * `NewDirectoryWithSnapshot`
+    * `NewFileWithSnapshot`
+    * `NewContainerChild`
+    * `NewContainerChildWithoutFS`
+    * `markDirectoryFromContainerLazy`
+    * `containerSourceParentResultID`
+    * internal result-vs-value branching for rootfs and mounted directory/file state
+  * Pending runtime filesystem state lives only on the top-level container lazy.
+  * Internal rootfs and mounted directory/file state is always value-backed.
+  * Embedded rootfs/mount `Directory` / `File` values are fully materialized plain objects with `Lazy == nil`.
+  * `ContainerCloneStateLazy` is the only mechanism config-only children use to preserve pending runtime filesystem work from the parent.
+  * `Container.LazyEvalFunc` no longer recursively walks child directory/file lazies.
+  * `withExec` output rootfs and writable mount values are materialized by container eval into plain accessors, not pre-created as child backpointer lazies.
+  * Container, directory, file, container-image, terminal, and the shared exec-mount preparation path all agree on the same all-value-backed model.

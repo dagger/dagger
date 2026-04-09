@@ -62,7 +62,7 @@ func (r *DangRuntime) eval(
 	gqlClient := graphql.NewClient(fmt.Sprintf("http://%s/query", l.Addr()), nil)
 
 	var intro introspection.Response
-	f, err := schemaFile.Self().Open(ctx)
+	f, err := schemaFile.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: schemaFile})
 	if err != nil {
 		return nil, fmt.Errorf("open schema file: %w", err)
 	}
@@ -84,7 +84,7 @@ func (r *DangRuntime) eval(
 
 	modCtx := r.modSource.Self().ContextDirectory
 	var env dang.EvalEnv
-	err = modCtx.Self().Mount(ctx, func(path string) error {
+	err = modCtx.Self().Mount(ctx, modCtx, func(path string) error {
 		modSrcDir := filepath.Join(path, r.modSource.Self().SourceSubpath)
 		env, err = dang.RunDir(ctx, modSrcDir, false)
 		if err != nil {

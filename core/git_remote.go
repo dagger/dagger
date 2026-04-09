@@ -580,11 +580,13 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		if err != nil {
 			return nil, err
 		}
-		dir, err := NewDirectoryWithSnapshot("/", query.Platform(), nil, snap)
-		if err != nil {
-			_ = snap.Release(context.WithoutCancel(ctx))
-			return nil, err
+		dir := &Directory{
+			Platform: query.Platform(),
+			Dir:      new(LazyAccessor[string, *Directory]),
+			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 		}
+		dir.Dir.setValue("/")
+		dir.Snapshot.setValue(snap)
 		return dir, nil
 	}
 
@@ -645,10 +647,13 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if err := md.setGitSnapshot(cacheKey); err != nil {
 		return nil, err
 	}
-	dir, err := NewDirectoryWithSnapshot("/", query.Platform(), nil, snap)
-	if err != nil {
-		return nil, err
+	dir := &Directory{
+		Platform: query.Platform(),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
+	dir.Dir.setValue("/")
+	dir.Snapshot.setValue(snap)
 	return dir, nil
 }
 

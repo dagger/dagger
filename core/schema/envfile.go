@@ -178,7 +178,7 @@ func (s envfileSchema) asEnvFile(ctx context.Context, parent dagql.ObjectResult[
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return dagql.ObjectResult[*core.EnvFile]{}, err
 	}
-	contents, err := parent.Self().Contents(ctx, nil, nil)
+	contents, err := parent.Self().Contents(ctx, parent, nil, nil)
 	if err != nil {
 		return dagql.ObjectResult[*core.EnvFile]{}, err
 	}

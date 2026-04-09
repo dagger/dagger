@@ -17,7 +17,7 @@ type currentTypeDefsTestServer struct {
 
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
-	root := &core.Query{}
+	root := core.NewRoot(nil)
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, baseCache)
@@ -25,7 +25,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 		ClientID:  "coremod-typedefs-client",
 		SessionID: "coremod-typedefs-session",
 	})
-	coreSchemaBase, err := NewCoreSchemaBase(ctx)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, nil)
 	require.NoError(t, err)
 	dag, err := coreSchemaBase.Fork(ctx, root, "")
 	require.NoError(t, err)
@@ -151,11 +151,9 @@ func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
 		ClientID:  "current-typedefs-client",
 		SessionID: "current-typedefs-session",
 	})
-	coreSchemaBase, err := NewCoreSchemaBase(ctx)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, nil)
 	require.NoError(t, err)
-	coreMod := coreSchemaBase.CoreMod("")
-	coreModDeps := core.NewSchemaBuilder(nil, []core.Mod{coreMod})
-	root := core.NewRoot(&currentTypeDefsTestServer{deps: coreModDeps}, nil)
+	root := core.NewRoot(nil)
 	dag, err := coreSchemaBase.Fork(ctx, root, "")
 	require.NoError(t, err)
 
@@ -216,11 +214,9 @@ func TestCurrentTypeDefsReturnAllTypesAfterSessionRelease(t *testing.T) {
 		ClientID:  "current-typedefs-release-client-a",
 		SessionID: "current-typedefs-release-session-a",
 	})
-	coreSchemaBase, err := NewCoreSchemaBase(ctxSessionA)
+	coreSchemaBase, err := NewCoreSchemaBase(ctxSessionA, nil)
 	require.NoError(t, err)
-	coreMod := coreSchemaBase.CoreMod("")
-	coreModDeps := core.NewSchemaBuilder(nil, []core.Mod{coreMod})
-	root := core.NewRoot(&currentTypeDefsTestServer{deps: coreModDeps}, nil)
+	root := core.NewRoot(nil)
 	dagA, err := coreSchemaBase.Fork(ctxSessionA, root, "")
 	require.NoError(t, err)
 

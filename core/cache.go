@@ -295,11 +295,14 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		if err := dagCache.Evaluate(ctx, source); err != nil {
 			return fmt.Errorf("evaluate cache source directory: %w", err)
 		}
-		sourceSelector = source.Self().Dir
+		sourceSelector, err = source.Self().Dir.GetOrEval(ctx, source.Result)
+		if err != nil {
+			return fmt.Errorf("failed to get cache source selector: %w", err)
+		}
 		if sourceSelector == "" {
 			sourceSelector = "/"
 		}
-		sourceRef, err = source.Self().getSnapshot()
+		sourceRef, err = source.Self().Snapshot.GetOrEval(ctx, source.Result)
 		if err != nil {
 			return fmt.Errorf("failed to get cache source snapshot: %w", err)
 		}

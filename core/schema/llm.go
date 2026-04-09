@@ -246,7 +246,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 	if err := cache.Evaluate(ctx, file); err != nil {
 		return nil, err
 	}
-	prompt, err := file.Self().Contents(ctx, nil, nil)
+	prompt, err := file.Self().Contents(ctx, file, nil, nil)
 	if err != nil {
 		return nil, err
 	}

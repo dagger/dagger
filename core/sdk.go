@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
+	"slices"
 
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
@@ -211,10 +213,41 @@ func (r *ContainerRuntime) Call(
 		return nil, "", fmt.Errorf("mount function metadir: %w", err)
 	}
 
-	execCtr, err := NewContainerChild(hideCtx, ctr)
+	clonedFS, err := CloneContainerDirectoryAccessor(hideCtx, ctr.Self().FS)
 	if err != nil {
-		return nil, "", fmt.Errorf("clone exec container: %w", err)
+		return nil, "", fmt.Errorf("clone exec rootfs: %w", err)
 	}
+	clonedMounts, err := CloneContainerMounts(hideCtx, ctr.Self().Mounts)
+	if err != nil {
+		return nil, "", fmt.Errorf("clone exec mounts: %w", err)
+	}
+	clonedMeta, err := CloneContainerMetaSnapshot(hideCtx, ctr.Self().MetaSnapshot)
+	if err != nil {
+		return nil, "", fmt.Errorf("clone exec meta snapshot: %w", err)
+	}
+	execCtr := &Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             ctr.Self().Config,
+		EnabledGPUs:        slices.Clone(ctr.Self().EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           ctr.Self().Platform,
+		Annotations:        slices.Clone(ctr.Self().Annotations),
+		Secrets:            slices.Clone(ctr.Self().Secrets),
+		Sockets:            slices.Clone(ctr.Self().Sockets),
+		ImageRef:           ctr.Self().ImageRef,
+		Ports:              slices.Clone(ctr.Self().Ports),
+		Services:           slices.Clone(ctr.Self().Services),
+		DefaultTerminalCmd: ctr.Self().DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(ctr.Self().SystemEnvNames),
+		DefaultArgs:        ctr.Self().DefaultArgs,
+	}
+	execCtr.Config.ExposedPorts = maps.Clone(execCtr.Config.ExposedPorts)
+	execCtr.Config.Env = slices.Clone(execCtr.Config.Env)
+	execCtr.Config.Entrypoint = slices.Clone(execCtr.Config.Entrypoint)
+	execCtr.Config.Cmd = slices.Clone(execCtr.Config.Cmd)
+	execCtr.Config.Volumes = maps.Clone(execCtr.Config.Volumes)
+	execCtr.Config.Labels = maps.Clone(execCtr.Config.Labels)
 
 	err = execCtr.WithExec(hideCtx, ctr, ContainerExecOpts{
 		Args:                          []string{},
@@ -289,23 +322,25 @@ func (r *ContainerRuntime) Call(
 		if ctrMount.Target != modMetaDirPath {
 			continue
 		}
-		if ctrMount.DirectorySource == nil || ctrMount.DirectorySource.self() == nil {
+		if ctrMount.DirectorySource == nil {
 			return nil, "", fmt.Errorf("function output directory mount %s is missing directory source", modMetaDirPath)
 		}
-		outputDir = ctrMount.DirectorySource.self()
+		mountedDir, ok := ctrMount.DirectorySource.Peek()
+		if !ok || mountedDir == nil {
+			return nil, "", fmt.Errorf("function output directory mount %s is missing materialized directory", modMetaDirPath)
+		}
+		outputDir = mountedDir
 		break
 	}
 	if outputDir == nil {
 		return nil, "", fmt.Errorf("function output directory mount %s not found", modMetaDirPath)
 	}
 
-	snapshot, err := outputDir.getSnapshot()
-	if err != nil {
-		return nil, "", fmt.Errorf("get function output snapshot: %w", err)
-	}
+	snapshot, _ := outputDir.Snapshot.Peek()
 	if snapshot == nil {
 		return nil, "", fmt.Errorf("function output snapshot is nil")
 	}
+	outputDirPath, _ := outputDir.Dir.Peek()
 
 	root, _, release, err := MountRefCloser(ctx, snapshot, mountRefAsReadOnly)
 	if err != nil {
@@ -313,7 +348,7 @@ func (r *ContainerRuntime) Call(
 	}
 	defer release()
 
-	outputPath, err := containerdfs.RootPath(root, path.Join(outputDir.Dir, modMetaOutputPath))
+	outputPath, err := containerdfs.RootPath(root, path.Join(outputDirPath, modMetaOutputPath))
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve function output file path: %w", err)
 	}
