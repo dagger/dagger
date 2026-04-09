@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 func installTypeDefTestClasses(srv *dagql.Server) {
@@ -43,7 +44,7 @@ func installTypeDefTestClasses(srv *dagql.Server) {
 			Description      string `default:""`
 			SourceModuleName dagql.Optional[dagql.String]
 		}) (*TypeDef, error) {
-			scalar, err := dagql.NewObjectResultForCurrentCall(ctx, srv, &ScalarTypeDef{
+			scalar, err := newTypeDefTestObjectResultForCurrentCall(ctx, srv, &ScalarTypeDef{
 				Name:             args.Name,
 				OriginalName:     args.Name,
 				Description:      args.Description,
@@ -61,7 +62,7 @@ func installTypeDefTestClasses(srv *dagql.Server) {
 			if err != nil {
 				return nil, err
 			}
-			list, err := dagql.NewObjectResultForCurrentCall(ctx, srv, &ListTypeDef{
+			list, err := newTypeDefTestObjectResultForCurrentCall(ctx, srv, &ListTypeDef{
 				ElementTypeDef: elem,
 			})
 			if err != nil {
@@ -85,7 +86,7 @@ func installTypeDefTestClasses(srv *dagql.Server) {
 				}
 				obj.SourceMap = dagql.NonNull(sourceMap)
 			}
-			objRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, obj)
+			objRes, err := newTypeDefTestObjectResultForCurrentCall(ctx, srv, obj)
 			if err != nil {
 				return nil, err
 			}
@@ -106,7 +107,7 @@ func installTypeDefTestClasses(srv *dagql.Server) {
 				}
 				iface.SourceMap = dagql.NonNull(sourceMap)
 			}
-			ifaceRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, iface)
+			ifaceRes, err := newTypeDefTestObjectResultForCurrentCall(ctx, srv, iface)
 			if err != nil {
 				return nil, err
 			}
@@ -128,13 +129,34 @@ func installTypeDefTestClasses(srv *dagql.Server) {
 			}
 			enum := NewEnumTypeDef(args.Name, args.Description, sourceMap)
 			enum.SourceModuleName = string(args.SourceModuleName.Value)
-			enumRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, enum)
+			enumRes, err := newTypeDefTestObjectResultForCurrentCall(ctx, srv, enum)
 			if err != nil {
 				return nil, err
 			}
 			return def.WithEnum(enumRes), nil
 		}),
 	}.Install(srv)
+}
+
+func newTypeDefTestObjectResultForCurrentCall[T dagql.Typed](ctx context.Context, srv *dagql.Server, self T) (dagql.ObjectResult[T], error) {
+	curCall := dagql.CurrentCall(ctx)
+	if curCall == nil {
+		return dagql.NewObjectResultForCall(self, srv, moduleObjectTestSyntheticCall("typedefTest"+self.Type().Name(), self))
+	}
+	return dagql.NewObjectResultForCall(self, srv, &dagql.ResultCall{
+		Kind:           curCall.Kind,
+		Type:           dagql.NewResultCallType(self.Type()),
+		Field:          curCall.Field,
+		SyntheticOp:    curCall.SyntheticOp,
+		View:           curCall.View,
+		Nth:            curCall.Nth,
+		EffectIDs:      append([]string(nil), curCall.EffectIDs...),
+		ExtraDigests:   append([]call.ExtraDigest(nil), curCall.ExtraDigests...),
+		Receiver:       curCall.Receiver,
+		Module:         curCall.Module,
+		Args:           append([]*dagql.ResultCallArg(nil), curCall.Args...),
+		ImplicitInputs: append([]*dagql.ResultCallArg(nil), curCall.ImplicitInputs...),
+	})
 }
 
 func newTypeDefTestDag(t *testing.T) *dagql.Server {

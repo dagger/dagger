@@ -51,35 +51,6 @@ func installModuleObjectHandleTestObjClass(srv *dagql.Server) {
 	srv.InstallObject(class)
 }
 
-type moduleObjectSemanticIfaceChild struct {
-	Value string
-}
-
-func (*moduleObjectSemanticIfaceChild) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Child",
-		NonNull:   true,
-	}
-}
-
-func installModuleObjectSemanticIfaceChildClass(srv *dagql.Server) {
-	class := dagql.NewClass(srv, dagql.ClassOpts[*moduleObjectSemanticIfaceChild]{
-		Typed: &moduleObjectSemanticIfaceChild{},
-	})
-	class.Install(
-		dagql.Field[*moduleObjectSemanticIfaceChild]{
-			Spec: &dagql.FieldSpec{
-				Name: "value",
-				Type: dagql.String(""),
-			},
-			Func: func(ctx context.Context, self dagql.ObjectResult[*moduleObjectSemanticIfaceChild], _ map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
-				return dagql.NewResultForCurrentCall(ctx, dagql.String(self.Self().Value))
-			},
-		},
-	)
-	srv.InstallObject(class)
-}
-
 func moduleObjectTestSyntheticCall(op string, typ dagql.Typed) *dagql.ResultCall {
 	return &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
@@ -90,6 +61,12 @@ func moduleObjectTestSyntheticCall(op string, typ dagql.Typed) *dagql.ResultCall
 
 func installModuleObjectTestModuleClass(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ModuleSource]{Typed: &ModuleSource{}}))
+	dagql.Fields[*Module]{
+		dagql.Func("_implementationScoped", func(_ context.Context, self *Module, _ struct{}) (*Module, error) {
+			return self, nil
+		}),
+	}.Install(srv)
 }
 
 func (s *moduleObjectTestServer) Cache(context.Context) (*dagql.Cache, error) {
@@ -692,7 +669,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
 	assert.NilError(t, err)
 
-	buildModule := func(dag *dagql.Server) (*Module, *ObjectTypeDef) {
+	buildModule := func(dag *dagql.Server) (*Module, *ObjectTypeDef, *ObjectTypeDef) {
 		ifaceDef := NewInterfaceTypeDef("Iface", "")
 		ifaceDefRes := newTypeDefDetachedResult(t, dag, "semanticIfaceDef", ifaceDef)
 		childObjDef := NewObjectTypeDef("Child", "", nil)
@@ -713,7 +690,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 				newTypeDefDetachedResult(t, dag, "semanticIfaceTopTypeDef", (&TypeDef{}).WithInterfaceTypeDef(ifaceDefRes)),
 			},
 		}
-		return mod, parentObjDef
+		return mod, childObjDef, parentObjDef
 	}
 
 	producerCache := baseCache
@@ -732,24 +709,36 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 		SessionID: "semantic-producer-session",
 	})
 	producerCtx = dagql.ContextWithCache(producerCtx, producerCache)
-	mod, parentObjDef := buildModule(producerDag)
+	mod, childObjDef, parentObjDef := buildModule(producerDag)
 	mod.Deps = NewSchemaBuilder(producerRoot, nil)
 	installModuleObjectTestModuleClass(producerDag)
-	installModuleObjectSemanticIfaceChildClass(producerDag)
 
-	producerModRes, err := dagql.NewObjectResultForCall(mod, producerDag, moduleObjectTestSyntheticCall("semanticHandleProducerModule", mod))
+	producerSourceRes, err := dagql.NewObjectResultForCall(&ModuleSource{
+		Kind: ModuleSourceKindDir,
+	}, producerDag, moduleObjectTestSyntheticCall("semanticHandleProducerSource", &ModuleSource{}))
 	assert.NilError(t, err)
-	mod.Deps = NewSchemaBuilder(producerRoot, []Mod{NewUserMod(producerModRes)})
-	producerSrv.defaultDeps = mod.Deps
+	mod.Source = dagql.NonNull(producerSourceRes)
 
-	childCall := moduleObjectTestSyntheticCall("semanticHandleChild", &moduleObjectSemanticIfaceChild{})
-	childDetached, err := dagql.NewObjectResultForCall(&moduleObjectSemanticIfaceChild{
-		Value: "hello",
-	}, producerDag, childCall)
+	producerModDetached, err := dagql.NewObjectResultForCall(mod, producerDag, moduleObjectTestSyntheticCall("semanticHandleProducerModule", mod))
 	assert.NilError(t, err)
-	childAttachedAny, err := producerCache.AttachResult(producerCtx, "semantic-producer-session", producerDag, childDetached)
+	producerModAny, err := producerCache.AttachResult(producerCtx, "semantic-producer-session", producerDag, producerModDetached)
 	assert.NilError(t, err)
-	childAttached, ok := childAttachedAny.(dagql.ObjectResult[*moduleObjectSemanticIfaceChild])
+	producerModRes, ok := producerModAny.(dagql.ObjectResult[*Module])
+	assert.Assert(t, ok)
+	producerSrv.defaultDeps = NewSchemaBuilder(producerRoot, []Mod{NewUserMod(producerModRes)})
+	producerDepDag, err := producerSrv.defaultDeps.Schema(producerCtx)
+	assert.NilError(t, err)
+
+	childCall := moduleObjectTestSyntheticCall("semanticHandleChild", &ModuleObject{TypeDef: childObjDef})
+	childDetached, err := dagql.NewResultForCall(&ModuleObject{
+		Module:  producerModRes,
+		TypeDef: childObjDef,
+		Fields:  map[string]any{},
+	}, childCall)
+	assert.NilError(t, err)
+	childAttachedAny, err := producerCache.AttachResult(producerCtx, "semantic-producer-session", producerDepDag, childDetached)
+	assert.NilError(t, err)
+	childAttached, ok := childAttachedAny.(dagql.ObjectResult[*ModuleObject])
 	assert.Assert(t, ok)
 	childID, err := childAttached.ID()
 	assert.NilError(t, err)
@@ -768,7 +757,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	_, err = producerCache.GetOrInitCall(
 		producerCtx,
 		"semantic-producer-session",
-		producerDag,
+		producerDepDag,
 		&dagql.CallRequest{
 			ResultCall:    parentCall,
 			IsPersistable: true,
@@ -796,15 +785,26 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	})
 	consumerCtx = dagql.ContextWithCache(consumerCtx, consumerCache)
 	installModuleObjectTestModuleClass(consumerDag)
-	installModuleObjectSemanticIfaceChildClass(consumerDag)
-	consumerMod, _ := buildModule(consumerDag)
-	consumerModRes, err := dagql.NewObjectResultForCall(consumerMod, consumerDag, moduleObjectTestSyntheticCall("semanticHandleConsumerModule", consumerMod))
+	consumerMod, _, _ := buildModule(consumerDag)
+	consumerMod.Deps = NewSchemaBuilder(consumerRoot, nil)
+	consumerSourceRes, err := dagql.NewObjectResultForCall(&ModuleSource{
+		Kind: ModuleSourceKindDir,
+	}, consumerDag, moduleObjectTestSyntheticCall("semanticHandleConsumerSource", &ModuleSource{}))
 	assert.NilError(t, err)
-	consumerMod.Deps = NewSchemaBuilder(consumerRoot, []Mod{NewUserMod(consumerModRes)})
-	consumerSrv.defaultDeps = consumerMod.Deps
+	consumerMod.Source = dagql.NonNull(consumerSourceRes)
+
+	consumerModDetached, err := dagql.NewObjectResultForCall(consumerMod, consumerDag, moduleObjectTestSyntheticCall("semanticHandleConsumerModule", consumerMod))
+	assert.NilError(t, err)
+	consumerModAny, err := consumerCache.AttachResult(consumerCtx, "semantic-consumer-session", consumerDag, consumerModDetached)
+	assert.NilError(t, err)
+	consumerModRes, ok := consumerModAny.(dagql.ObjectResult[*Module])
+	assert.Assert(t, ok)
+	consumerSrv.defaultDeps = NewSchemaBuilder(consumerRoot, []Mod{NewUserMod(consumerModRes)})
+	consumerDepDag, err := consumerSrv.defaultDeps.Schema(consumerCtx)
+	assert.NilError(t, err)
 
 	var retainedID call.ID
 	assert.NilError(t, retainedID.Decode(childEnc))
-	_, err = consumerDag.Load(consumerCtx, &retainedID)
+	_, err = consumerDepDag.Load(consumerCtx, &retainedID)
 	assert.NilError(t, err)
 }

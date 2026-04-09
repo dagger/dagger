@@ -19,7 +19,6 @@ import (
 	"github.com/containerd/containerd/v2/pkg/rootfs"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	cacheconfig "github.com/dagger/dagger/internal/buildkit/cache/config"

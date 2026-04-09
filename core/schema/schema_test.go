@@ -17,7 +17,6 @@ type currentTypeDefsTestServer struct {
 
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
-	root := core.NewRoot(nil)
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, baseCache)
@@ -25,12 +24,15 @@ func TestCoreModTypeDefs(t *testing.T) {
 		ClientID:  "coremod-typedefs-client",
 		SessionID: "coremod-typedefs-session",
 	})
-	coreSchemaBase, err := NewCoreSchemaBase(ctx, nil)
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
 	require.NoError(t, err)
 	dag, err := coreSchemaBase.Fork(ctx, root, "")
 	require.NoError(t, err)
 	coreMod := coreSchemaBase.CoreMod("")
 	coreModDeps := core.NewSchemaBuilder(root, []core.Mod{coreMod})
+	srv.deps = coreModDeps
 	typeDefs, err := coreModDeps.TypeDefs(ctx, dag)
 	require.NoError(t, err)
 
@@ -151,9 +153,13 @@ func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
 		ClientID:  "current-typedefs-client",
 		SessionID: "current-typedefs-session",
 	})
-	coreSchemaBase, err := NewCoreSchemaBase(ctx, nil)
+	srv := &currentTypeDefsTestServer{}
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
 	require.NoError(t, err)
-	root := core.NewRoot(nil)
+	coreMod := coreSchemaBase.CoreMod("")
+	root := core.NewRoot(srv)
+	coreModDeps := core.NewSchemaBuilder(root, []core.Mod{coreMod})
+	srv.deps = coreModDeps
 	dag, err := coreSchemaBase.Fork(ctx, root, "")
 	require.NoError(t, err)
 
@@ -214,9 +220,13 @@ func TestCurrentTypeDefsReturnAllTypesAfterSessionRelease(t *testing.T) {
 		ClientID:  "current-typedefs-release-client-a",
 		SessionID: "current-typedefs-release-session-a",
 	})
-	coreSchemaBase, err := NewCoreSchemaBase(ctxSessionA, nil)
+	srv := &currentTypeDefsTestServer{}
+	coreSchemaBase, err := NewCoreSchemaBase(ctxSessionA, srv)
 	require.NoError(t, err)
-	root := core.NewRoot(nil)
+	coreMod := coreSchemaBase.CoreMod("")
+	root := core.NewRoot(srv)
+	coreModDeps := core.NewSchemaBuilder(root, []core.Mod{coreMod})
+	srv.deps = coreModDeps
 	dagA, err := coreSchemaBase.Fork(ctxSessionA, root, "")
 	require.NoError(t, err)
 

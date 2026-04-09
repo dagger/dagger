@@ -30,9 +30,11 @@ func (s *cacheVolumeTestQueryServer) SnapshotManager() bkcache.SnapshotManager {
 type cacheVolumeTestSnapshotManager struct {
 	immutableBySnapshotID map[string]bkcache.ImmutableRef
 	mutableBySnapshotID   map[string]bkcache.MutableRef
+	newResult             bkcache.MutableRef
 
 	getBySnapshotIDCalls        []string
 	getMutableBySnapshotIDCalls []string
+	newCalls                    []bkcache.ImmutableRef
 }
 
 func (*cacheVolumeTestSnapshotManager) Search(context.Context, string, bool) ([]bkcache.RefMetadata, error) {
@@ -57,8 +59,12 @@ func (m *cacheVolumeTestSnapshotManager) GetBySnapshotID(ctx context.Context, sn
 	return ref, nil
 }
 
-func (*cacheVolumeTestSnapshotManager) New(context.Context, bkcache.ImmutableRef, ...bkcache.RefOption) (bkcache.MutableRef, error) {
-	panic("unexpected New call")
+func (m *cacheVolumeTestSnapshotManager) New(_ context.Context, parent bkcache.ImmutableRef, _ ...bkcache.RefOption) (bkcache.MutableRef, error) {
+	m.newCalls = append(m.newCalls, parent)
+	if m.newResult == nil {
+		return nil, context.Canceled
+	}
+	return m.newResult, nil
 }
 
 func (*cacheVolumeTestSnapshotManager) GetMutable(context.Context, string, ...bkcache.RefOption) (bkcache.MutableRef, error) {
@@ -249,16 +255,22 @@ func (*cacheVolumeTestMutableRef) InvalidateSize(context.Context) error {
 	return nil
 }
 
-func TestCacheVolumeClosedStateUsageIdentityUsesSnapshotID(t *testing.T) {
+func TestCacheVolumeUsageIdentityUsesLiveSnapshotID(t *testing.T) {
 	t.Parallel()
 
+	ref := &cacheVolumeTestMutableRef{
+		cacheVolumeTestImmutableRef: cacheVolumeTestImmutableRef{
+			id:         "mutable-1",
+			snapshotID: "snapshot-123",
+		},
+	}
 	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
-	cache.snapshotID = "snapshot-123"
+	cache.snapshot = ref
 
 	require.Equal(t, []string{"snapshot-123"}, cache.CacheUsageIdentities())
 }
 
-func TestCacheVolumeClosedStateUsageSizeReopensBySnapshotID(t *testing.T) {
+func TestCacheVolumeUsageSizeUsesLiveSnapshotID(t *testing.T) {
 	t.Parallel()
 
 	ref := &cacheVolumeTestImmutableRef{
@@ -266,27 +278,13 @@ func TestCacheVolumeClosedStateUsageSizeReopensBySnapshotID(t *testing.T) {
 		snapshotID: "snapshot-123",
 		size:       42,
 	}
-	manager := &cacheVolumeTestSnapshotManager{
-		immutableBySnapshotID: map[string]bkcache.ImmutableRef{
-			"snapshot-123": ref,
-		},
-	}
-	query := &Query{
-		Server: &cacheVolumeTestQueryServer{
-			mockServer:   &mockServer{},
-			cacheManager: manager,
-		},
-	}
-	ctx := ContextWithQuery(context.Background(), query)
-
 	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
-	cache.snapshotID = "snapshot-123"
+	cache.snapshot = &cacheVolumeTestMutableRef{cacheVolumeTestImmutableRef: *ref}
 
-	size, ok, err := cache.CacheUsageSize(ctx, "snapshot-123")
+	size, ok, err := cache.CacheUsageSize(context.Background(), "snapshot-123")
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, int64(42), size)
-	require.Equal(t, []string{"snapshot-123"}, manager.getBySnapshotIDCalls)
 }
 
 func TestCacheVolumeEncodeDecodePersistsSourceID(t *testing.T) {
@@ -323,7 +321,7 @@ func TestCacheVolumeEncodeDecodePersistsSourceID(t *testing.T) {
 	require.Equal(t, raw.SourceID, encodedSource)
 }
 
-func TestCacheVolumeInitializeSnapshotReopensStoredMutableBySnapshotID(t *testing.T) {
+func TestCacheVolumeInitializeSnapshotCreatesMutableSnapshot(t *testing.T) {
 	t.Parallel()
 
 	ref := &cacheVolumeTestMutableRef{
@@ -333,9 +331,7 @@ func TestCacheVolumeInitializeSnapshotReopensStoredMutableBySnapshotID(t *testin
 		},
 	}
 	manager := &cacheVolumeTestSnapshotManager{
-		mutableBySnapshotID: map[string]bkcache.MutableRef{
-			"snapshot-123": ref,
-		},
+		newResult: ref,
 	}
 	query := &Query{
 		Server: &cacheVolumeTestQueryServer{
@@ -346,11 +342,12 @@ func TestCacheVolumeInitializeSnapshotReopensStoredMutableBySnapshotID(t *testin
 	ctx := ContextWithQuery(context.Background(), query)
 
 	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
-	cache.snapshotID = "snapshot-123"
 
 	require.NoError(t, cache.InitializeSnapshot(ctx))
-	require.Equal(t, []string{"snapshot-123"}, manager.getMutableBySnapshotIDCalls)
+	require.Len(t, manager.newCalls, 1)
+	require.Nil(t, manager.newCalls[0])
 	require.Equal(t, ref, cache.getSnapshot())
+	require.Equal(t, "/", cache.getSnapshotSelector())
 }
 
 var _ bkcache.ImmutableRef = (*cacheVolumeTestImmutableRef)(nil)
