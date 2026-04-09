@@ -301,6 +301,10 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 		spanDt.parentID = dagui.SpanID{SpanID: span.Parent().SpanID()}
 
 		spanDt.ready = true
+
+		if logs := fe.db.DrainResolvedLogs(spanID); len(logs) > 0 {
+			fe.appendLogs(spanID, logs)
+		}
 	}
 	return nil
 }
@@ -338,12 +342,23 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 		}
 
 		spanID := fe.db.LogTargetSpanID(record)
-		spanDt, ok := fe.data[spanID]
-		if !ok {
-			spanDt = &spanData{}
-			fe.data[spanID] = spanDt
+		if !spanID.IsValid() {
+			continue
 		}
 
+		fe.appendLogs(spanID, []sdklog.Record{record})
+	}
+	return nil
+}
+
+func (fe *frontendPlain) appendLogs(spanID dagui.SpanID, records []sdklog.Record) {
+	spanDt, ok := fe.data[spanID]
+	if !ok {
+		spanDt = &spanData{}
+		fe.data[spanID] = spanDt
+	}
+
+	for _, record := range records {
 		body := record.Body().AsString()
 		if body == "" {
 			// NOTE: likely just indicates EOF (stdio.eof=true attr); either way we
@@ -375,7 +390,6 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 			spanDt.logsPending = !hasNewline
 		}
 	}
-	return nil
 }
 
 func (fe *frontendPlain) ForceFlush(context.Context) error {

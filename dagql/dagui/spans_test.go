@@ -1,6 +1,7 @@
 package dagui
 
 import (
+	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -222,11 +223,10 @@ func TestLogTargetSpanIDUsesCreatorFromSameTrace(t *testing.T) {
 	}
 }
 
-func TestLogTargetSpanIDFallsBackWithoutMatchingTraceCreator(t *testing.T) {
+func TestLogTargetSpanIDWaitsForMatchingTraceCreator(t *testing.T) {
 	db := NewDB()
 
 	outputDig := "xxh3:service-output"
-	fallbackID := trace.SpanID{9}
 
 	db.ImportSnapshots([]SpanSnapshot{
 		{
@@ -241,14 +241,64 @@ func TestLogTargetSpanIDFallsBackWithoutMatchingTraceCreator(t *testing.T) {
 
 	record := newTestLogRecord(
 		trace.TraceID{2},
-		fallbackID,
+		trace.SpanID{9},
 		"hello",
 		otellog.String(telemetry.DagDigestAttr, outputDig),
 	)
 
 	spanID := db.LogTargetSpanID(record)
-	if spanID != (SpanID{SpanID: fallbackID}) {
-		t.Fatalf("expected fallback span, got %s", spanID)
+	if spanID.IsValid() {
+		t.Fatalf("expected unresolved span target, got %s", spanID)
+	}
+}
+
+func TestPendingDigestLogsResolveWhenCreatorArrives(t *testing.T) {
+	db := NewDB()
+
+	traceID := trace.TraceID{2}
+	outputDig := "xxh3:service-output"
+	creatorID := SpanID{SpanID: trace.SpanID{3}}
+
+	record := newTestLogRecord(
+		traceID,
+		trace.SpanID{9},
+		"hello",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
+		t.Fatalf("export logs: %v", err)
+	}
+
+	if got := db.DrainResolvedLogs(creatorID); len(got) != 0 {
+		t.Fatalf("expected no resolved logs before creator, got %d", len(got))
+	}
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         creatorID,
+			TraceID:    TraceID{TraceID: traceID},
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: "xxh3:live-call",
+			Output:     outputDig,
+		},
+	})
+
+	resolved := db.DrainResolvedLogs(creatorID)
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved log, got %d", len(resolved))
+	}
+	if resolved[0].Body().AsString() != "hello" {
+		t.Fatalf("expected resolved log body %q, got %q", "hello", resolved[0].Body().AsString())
+	}
+
+	creator := db.Spans.Map[creatorID]
+	if creator == nil {
+		t.Fatal("expected creator span")
+	}
+	if !creator.HasLogs {
+		t.Fatal("expected creator span to have logs")
 	}
 }
 

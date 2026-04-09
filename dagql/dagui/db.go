@@ -59,6 +59,8 @@ type DB struct {
 	seenSpans map[SpanID]struct{}
 
 	pendingResumeOutputs map[resumeOutputKey]SpanSet
+	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
+	resolvedLogsBySpan   map[SpanID][]sdklog.Record
 }
 
 type resumeOutputKey struct {
@@ -86,6 +88,8 @@ func NewDB() *DB {
 		seenSpans:    make(map[SpanID]struct{}),
 
 		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
+		pendingLogsByOutput:  make(map[resumeOutputKey][]sdklog.Record),
+		resolvedLogsBySpan:   make(map[SpanID][]sdklog.Record),
 	}
 }
 
@@ -247,7 +251,11 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// eof; ignore
 			continue
 		}
-		spanID := db.LogTargetSpanID(log)
+		spanID, pendingKey := db.routeLog(log)
+		if pendingKey != nil {
+			db.pendingLogsByOutput[*pendingKey] = append(db.pendingLogsByOutput[*pendingKey], log)
+			continue
+		}
 		if spanID == db.PrimarySpan {
 			// buffer raw logs so we can replay them later
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
@@ -734,6 +742,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.CreatorSpans[span.Output].Add(span)
 
 		db.resolvePendingResumeOutputs(span.Output, span.TraceID)
+		db.resolvePendingLogs(span.Output, span.TraceID)
 	}
 
 	db.maybeResumeOutput(span)
@@ -819,7 +828,36 @@ func (db *DB) resolvePendingResumeOutputs(output string, traceID TraceID) {
 	}
 }
 
-func (db *DB) LogTargetSpanID(record sdklog.Record) SpanID {
+func (db *DB) resolvePendingLogs(output string, traceID TraceID) {
+	key := resumeOutputKey{
+		TraceID: traceID,
+		Output:  output,
+	}
+	pending, ok := db.pendingLogsByOutput[key]
+	if !ok {
+		return
+	}
+	creator := db.creatorSpanForDigestInTrace(output, traceID.TraceID)
+	if creator == nil {
+		return
+	}
+	delete(db.pendingLogsByOutput, key)
+	for _, record := range pending {
+		if creator.ID == db.PrimarySpan {
+			db.PrimaryLogs[creator.ID] = append(db.PrimaryLogs[creator.ID], record)
+		}
+		db.initSpan(creator.ID).HasLogs = true
+		db.resolvedLogsBySpan[creator.ID] = append(db.resolvedLogsBySpan[creator.ID], record)
+	}
+}
+
+func (db *DB) DrainResolvedLogs(spanID SpanID) []sdklog.Record {
+	logs := db.resolvedLogsBySpan[spanID]
+	delete(db.resolvedLogsBySpan, spanID)
+	return logs
+}
+
+func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 	fallback := SpanID{SpanID: record.SpanID()}
 
 	var targetDig string
@@ -832,14 +870,23 @@ func (db *DB) LogTargetSpanID(record sdklog.Record) SpanID {
 	})
 
 	if targetDig == "" {
-		return fallback
+		return fallback, nil
 	}
 
 	if creator := db.creatorSpanForDigestInTrace(targetDig, record.TraceID()); creator != nil {
-		return creator.ID
+		return creator.ID, nil
 	}
 
-	return fallback
+	key := resumeOutputKey{
+		TraceID: TraceID{TraceID: record.TraceID()},
+		Output:  targetDig,
+	}
+	return SpanID{}, &key
+}
+
+func (db *DB) LogTargetSpanID(record sdklog.Record) SpanID {
+	spanID, _ := db.routeLog(record)
+	return spanID
 }
 
 func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {

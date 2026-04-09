@@ -1023,6 +1023,9 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
+			if fe.logs.flushResolvedLogsForSpan(id) {
+				fe.updateSpanTreesForLogs(id)
+			}
 			if sr, ok := fe.spanTrees[id]; ok {
 				sr.Update()
 			}
@@ -1033,6 +1036,33 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 		fe.Update()
 	})
 	return nil
+}
+
+func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
+	if !spanID.IsValid() {
+		return
+	}
+	if sr, ok := fe.spanTrees[spanID]; ok {
+		sr.Update()
+	}
+	if _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
+		for id := spanID; ; {
+			span := fe.db.Spans.Map[id]
+			if span == nil || span.Boundary || span.Encapsulate || span.Internal {
+				break
+			}
+			if span.RollUpLogs {
+				if sr, ok := fe.spanTrees[id]; ok {
+					sr.Update()
+				}
+				break
+			}
+			if !span.ParentID.IsValid() {
+				break
+			}
+			id = span.ParentID
+		}
+	}
 }
 
 func (fe *frontendPretty) Shutdown(ctx context.Context) error {
@@ -1057,31 +1087,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 	fe.dispatch(func() {
 		for _, log := range logsCopy {
 			spanID := fe.db.LogTargetSpanID(log)
-			if !spanID.IsValid() {
-				continue
-			}
-			if sr, ok := fe.spanTrees[spanID]; ok {
-				sr.Update()
-			}
-			// Also mark roll-up parent spans dirty
-			if _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
-				for id := spanID; ; {
-					span := fe.db.Spans.Map[id]
-					if span == nil || span.Boundary || span.Encapsulate || span.Internal {
-						break
-					}
-					if span.RollUpLogs {
-						if sr, ok := fe.spanTrees[id]; ok {
-							sr.Update()
-						}
-						break
-					}
-					if !span.ParentID.IsValid() {
-						break
-					}
-					id = span.ParentID
-				}
-			}
+			fe.updateSpanTreesForLogs(spanID)
 		}
 		fe.db.LogExporter().Export(context.Background(), logsCopy)
 		fe.logs.Export(context.Background(), logsCopy)
@@ -3321,6 +3327,9 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 
 		spanID := l.DB.LogTargetSpanID(log)
+		if !spanID.IsValid() {
+			continue
+		}
 		if eof && spanID.IsValid() {
 			l.SawEOF[spanID] = true
 			continue
@@ -3347,6 +3356,15 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 	}
 	return nil
+}
+
+func (l *prettyLogs) flushResolvedLogsForSpan(spanID dagui.SpanID) bool {
+	logs := l.DB.DrainResolvedLogs(spanID)
+	if len(logs) == 0 {
+		return false
+	}
+	_ = l.Export(context.Background(), logs)
+	return true
 }
 
 // extractSpanContext extracts a meaningful context label from a span
