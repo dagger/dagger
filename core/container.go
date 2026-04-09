@@ -4720,25 +4720,18 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
 	}
-	loadedContainerRes, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load container from converted ID: %w", err)
-	}
-	loadedContainer := loadedContainerRes.Self()
-	if loadedContainer == nil {
-		return nil, fmt.Errorf("failed to load container from converted ID: nil container")
-	}
-	loadedContainerCopy := *loadedContainer
-	loadedContainerCopy.Secrets = slices.Clone(loadedContainerCopy.Secrets)
-	loadedContainer = &loadedContainerCopy
-	loadedContainer.Secrets = append(loadedContainer.Secrets, returnedSecretMounts...)
+		loadedContainerRes, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load container from converted ID: %w", err)
+		}
+		builtContainer := new(Container)
+		if err := materializeContainerStateFromParent(ctx, builtContainer, loadedContainerRes); err != nil {
+			return nil, fmt.Errorf("failed to clone built container state: %w", err)
+		}
+		builtContainer.Secrets = append(builtContainer.Secrets, returnedSecretMounts...)
 
-	if err := loadedContainer.Sync(ctx); err != nil {
-		return nil, fmt.Errorf("failed to sync loaded container: %w", err)
+		return builtContainer, nil
 	}
-
-	return loadedContainer, nil
-}
 
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResult[*Directory]) (*Container, error) {
