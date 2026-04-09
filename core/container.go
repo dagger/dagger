@@ -4049,15 +4049,15 @@ func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs
 		defer func() {
 			_ = tarball.OnRelease(context.WithoutCancel(ctx))
 		}()
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return nil, err
+		filePath, ok := tarball.File.Peek()
+		if !ok {
+			return nil, fmt.Errorf("container export tarball file path: unset")
 		}
-		tarballRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, tarball)
-		if err != nil {
-			return nil, err
+		snapshot, ok := tarball.Snapshot.Peek()
+		if !ok {
+			return nil, fmt.Errorf("container export tarball snapshot: unset")
 		}
-		if err := tarball.Export(ctx, tarballRes, opts.Dest, false); err != nil {
+		if err := ExportFile(ctx, snapshot, filePath, opts.Dest, false); err != nil {
 			return nil, err
 		}
 		return nil, nil

@@ -1181,7 +1181,7 @@ func (file *File) Open(ctx context.Context, self dagql.ObjectResult[*File]) (io.
 	}, nil
 }
 
-func (file *File) Export(ctx context.Context, self dagql.ObjectResult[*File], dest string, allowParentDirPath bool) (rerr error) {
+func ExportFile(ctx context.Context, snapshot bkcache.ImmutableRef, filePath, dest string, allowParentDirPath bool) (rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -1191,17 +1191,9 @@ func (file *File) Export(ctx context.Context, self dagql.ObjectResult[*File], de
 		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 
-	filePath, err := file.File.GetOrEval(ctx, self.Result)
-	if err != nil {
-		return err
-	}
 	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", filepath.Base(filePath), dest))
 	defer telemetry.EndWithCause(vtx, &rerr)
 
-	snapshot, err := file.Snapshot.GetOrEval(ctx, self.Result)
-	if err != nil {
-		return fmt.Errorf("failed to evaluate file: %w", err)
-	}
 	if snapshot == nil {
 		return errEmptyResultRef
 	}

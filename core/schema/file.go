@@ -275,7 +275,15 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 }
 
 func (s *fileSchema) export(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileExportArgs) (dagql.String, error) {
-	err := parent.Self().Export(ctx, parent, args.Path, args.AllowParentDirPath)
+	filePath, err := parent.Self().File.GetOrEval(ctx, parent.Result)
+	if err != nil {
+		return "", err
+	}
+	snapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
+	if err != nil {
+		return "", fmt.Errorf("failed to evaluate file: %w", err)
+	}
+	err = core.ExportFile(ctx, snapshot, filePath, args.Path, args.AllowParentDirPath)
 	if err != nil {
 		return "", err
 	}
