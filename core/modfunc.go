@@ -1054,7 +1054,6 @@ func (fn *ModuleFunction) loadContextualArg(
 	// Legacy compat: resolve +defaultPath from workspace root for migrated
 	// blueprints/toolchains instead of the module's own source directory.
 	if fn.mod.Self().LegacyDefaultPath {
-		console(ctx, "WARNING: module %q uses legacy-default-path; port to workspace API and remove this flag", fn.mod.Self().Name())
 		return fn.loadLegacyDefaultPathArg(ctx, dag, arg)
 	}
 

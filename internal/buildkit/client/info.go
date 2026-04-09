@@ -2,13 +2,10 @@ package client
 
 import (
 	"context"
-	"time"
 
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
-	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/pkg/errors"
-	"google.golang.org/grpc/codes"
 )
 
 type Info struct {
@@ -26,32 +23,15 @@ type SystemInfo struct {
 	NumCPU int `json:"numCPU"`
 }
 
-func (c *Client) WaitInfo(ctx context.Context) (*Info, error) {
-	for {
-		res, err := c.ControlClient().Info(ctx, &controlapi.InfoRequest{})
-		if err == nil {
-			return &Info{
-				BuildkitVersion: fromAPIBuildkitVersion(res.BuildkitVersion),
-				SystemInfo:      fromAPISystemInfo(res.SystemInfo),
-			}, nil
-		}
-
-		switch code := grpcerrors.Code(err); code {
-		case codes.Unavailable:
-		case codes.Unimplemented:
-			// only buildkit v0.11+ supports the info api, which was used starting dagger v0.3.8.
-			return nil, errors.Wrap(err, "version is too old, please upgrade dagger engine")
-		default:
-			return nil, errors.Wrap(err, "failed to call info")
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, context.Cause(ctx)
-		case <-time.After(time.Second):
-		}
-		c.conn.ResetConnectBackoff()
+func (c *Client) Info(ctx context.Context) (*Info, error) {
+	res, err := c.ControlClient().Info(ctx, &controlapi.InfoRequest{})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to call info")
 	}
+	return &Info{
+		BuildkitVersion: fromAPIBuildkitVersion(res.BuildkitVersion),
+		SystemInfo:      fromAPISystemInfo(res.SystemInfo),
+	}, nil
 }
 
 func fromAPIBuildkitVersion(in *apitypes.BuildkitVersion) BuildkitVersion {

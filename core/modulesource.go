@@ -1000,6 +1000,7 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 			Field: "directory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(envFileDir)},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(envFileName)}},
 			},
 		},
 		dagql.Selector{

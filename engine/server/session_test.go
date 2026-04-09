@@ -3,10 +3,13 @@ package server
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
@@ -14,16 +17,17 @@ import (
 func TestPendingLegacyModule(t *testing.T) {
 	t.Parallel()
 
-	resolveConfigLocalRef := func(configDir, relPath string) string {
-		return configDir + "/" + relPath
+	ws := &workspace.Workspace{Root: "/repo", Path: "."}
+	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
+		return "/resolved/" + relPath
 	}
 
 	t.Run("preserves remote pin", func(t *testing.T) {
 		t.Parallel()
 
 		mod := pendingLegacyModule(
-			"/repo",
-			resolveConfigLocalRef,
+			ws,
+			resolveLocalRef,
 			"go",
 			"github.com/acme/go-toolchain@main",
 			"abc123",
@@ -49,8 +53,8 @@ func TestPendingLegacyModule(t *testing.T) {
 		t.Parallel()
 
 		mod := pendingLegacyModule(
-			"/repo",
-			resolveConfigLocalRef,
+			ws,
+			resolveLocalRef,
 			"blueprint",
 			"../blueprint",
 			"",
@@ -59,48 +63,87 @@ func TestPendingLegacyModule(t *testing.T) {
 			nil,
 		)
 
-		require.Equal(t, "/repo/../blueprint", mod.Ref)
+		require.Equal(t, "/resolved/../blueprint", mod.Ref)
 		require.Empty(t, mod.RefPin)
 		require.Equal(t, "blueprint", mod.Name)
 		require.True(t, mod.Entrypoint)
 		require.True(t, mod.LegacyDefaultPath)
 		require.Nil(t, mod.ConfigDefaults)
 	})
+}
 
-	t.Run("resolves local refs relative to config dir", func(t *testing.T) {
-		t.Parallel()
+// TestModuleResolutionFromSubdirectory verifies that module source paths from
+// dagger.json are resolved relative to the config file location, not the
+// client's working directory. When a client connects from sdk/go/, a module
+// with source "modules/changelog" should resolve to /repo/modules/changelog,
+// not /repo/sdk/go/modules/changelog.
+func TestModuleResolutionFromSubdirectory(t *testing.T) {
+	t.Parallel()
 
-		mod := pendingLegacyModule(
-			"/app",
-			resolveConfigLocalRef,
-			"changelog",
-			"toolchains/changelog",
-			"",
-			false,
-			nil,
-			nil,
-		)
+	// Filesystem layout:
+	//   /repo/.git                  (git root)
+	//   /repo/dagger.json           (config declaring a module)
+	//   /repo/sdk/go/               (client CWD)
 
-		require.Equal(t, "/app/toolchains/changelog", mod.Ref)
+	existingFiles := map[string]bool{
+		"/repo/.git":        true,
+		"/repo/dagger.json": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
 	})
 
-	t.Run("does not resolve local refs from workspace subdir", func(t *testing.T) {
-		t.Parallel()
+	// The "toolchains" field is the current config mechanism for declaring
+	// workspace modules in dagger.json.
+	daggerJSON := `{
+		"name": "myproject",
+		"toolchains": [
+			{"name": "changelog", "source": "modules/changelog"}
+		]
+	}`
 
-		mod := pendingLegacyModule(
-			"/app",
-			resolveConfigLocalRef,
-			"cli",
-			"toolchains/cli-dev",
-			"",
-			false,
-			nil,
-			nil,
-		)
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Clean(path) == "/repo/dagger.json" {
+			return []byte(daggerJSON), nil
+		}
+		return nil, os.ErrNotExist
+	}
 
-		require.Equal(t, "/app/toolchains/cli-dev", mod.Ref)
-		require.NotEqual(t, "/app/core/integration/toolchains/cli-dev", mod.Ref)
+	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
+		return filepath.Join(ws.Root, ws.Path, relPath)
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
 	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspace(ctx, client,
+		statFS,
+		readFile,
+		"/repo/sdk/go", // CWD is a subdirectory
+		resolveLocalRef,
+		nil,
+		true, // isLocal
+	)
+	require.NoError(t, err)
+
+	// Module source must resolve relative to dagger.json (/repo),
+	// not relative to CWD (/repo/sdk/go).
+	require.Len(t, client.pendingModules, 2) // declared module + implicit module
+	require.Equal(t, "/repo/modules/changelog", client.pendingModules[0].Ref)
+	require.Equal(t, "changelog", client.pendingModules[0].Name)
 }
 
 func TestIsSameModuleReference(t *testing.T) {

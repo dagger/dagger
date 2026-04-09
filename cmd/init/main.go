@@ -297,5 +297,6 @@ func mainSession() error {
 		return err
 	}
 	sessionSrv.Run(ctx)
+
 	return nil
 }

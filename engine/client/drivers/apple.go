@@ -161,7 +161,7 @@ func (apple) ContainerIsRunning(ctx context.Context, name string) (bool, error) 
 	return false, nil
 }
 
-func (apple) ContainerLs(ctx context.Context) ([]container, error) {
+func (apple) ContainerLs(ctx context.Context) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "container", "ls", "-a", "--format", "json")
 	stdout, _, err := traceexec.ExecOutput(ctx, cmd)
 	if err != nil {
@@ -178,13 +178,9 @@ func (apple) ContainerLs(ctx context.Context) ([]container, error) {
 		return nil, err
 	}
 
-	var ids []container
+	var ids []string
 	for _, res := range result {
-		ids = append(ids, container{
-			name: res.Configuration.ID,
-			// TODO: fetch the state from --format, See docker.ContainerLs().
-			running: false,
-		})
+		ids = append(ids, res.Configuration.ID)
 	}
 	return ids, nil
 }
