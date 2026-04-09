@@ -374,6 +374,7 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 				"__fieldTypeDef",
 				"__fieldTypeDefExact",
 				"__enumMemberTypeDef",
+				"__enumValueTypeDef",
 				"__listTypeDef",
 				"__objectTypeDef",
 				"__interfaceTypeDef",

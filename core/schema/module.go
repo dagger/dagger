@@ -40,6 +40,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("__fieldTypeDef", s.fieldTypeDef),
 		dagql.Func("__fieldTypeDefExact", s.internalFieldTypeDef),
 		dagql.Func("__enumMemberTypeDef", s.enumMemberTypeDef),
+		dagql.Func("__enumValueTypeDef", s.enumValueTypeDef),
 		dagql.Func("__listTypeDef", s.listTypeDef),
 		dagql.Func("__objectTypeDef", s.objectTypeDef),
 		dagql.Func("__interfaceTypeDef", s.interfaceTypeDef),
@@ -659,6 +660,20 @@ func (s *moduleSchema) enumMemberTypeDef(ctx context.Context, _ *core.Query, arg
 	return core.NewEnumMemberTypeDef(args.Name, args.Value, args.Description, args.Deprecated, sourceMap), nil
 }
 
+func (s *moduleSchema) enumValueTypeDef(ctx context.Context, _ *core.Query, args struct {
+	Name        string
+	Value       string `default:""`
+	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
+	Deprecated  *string
+}) (*core.EnumMemberTypeDef, error) {
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return core.NewEnumValueTypeDef(args.Name, args.Value, args.Description, args.Deprecated, sourceMap), nil
+}
+
 func (s *moduleSchema) listTypeDef(ctx context.Context, _ *core.Query, args struct {
 	ElementTypeDef core.TypeDefID
 }) (*core.ListTypeDef, error) {
@@ -1053,7 +1068,7 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	}
 	var member dagql.ObjectResult[*core.EnumMemberTypeDef]
 	if err := dag.Select(ctx, dag.Root(), &member, dagql.Selector{
-		Field: "__enumMemberTypeDef",
+		Field: "__enumValueTypeDef",
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(args.Value)},
 			{Name: "value", Value: dagql.String(args.Value)},
@@ -1091,12 +1106,16 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 	}
 
 	if !supportEnumMembers(ctx) {
+		legacyValue := args.Value
+		if legacyValue == "" {
+			legacyValue = args.Name
+		}
 		var member dagql.ObjectResult[*core.EnumMemberTypeDef]
 		if err := dag.Select(ctx, dag.Root(), &member, dagql.Selector{
-			Field: "__enumMemberTypeDef",
+			Field: "__enumValueTypeDef",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.String(args.Name)},
-				{Name: "value", Value: dagql.String(args.Name)},
+				{Name: "value", Value: dagql.String(legacyValue)},
 				{Name: "description", Value: dagql.String(args.Description)},
 				{Name: "sourceMap", Value: optID(sourceMap)},
 				{Name: "deprecated", Value: optString(args.Deprecated)},
