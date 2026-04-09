@@ -1045,7 +1045,40 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			return err
 		}
 
-		execMD, err := container.execMeta(ctx, state.Opts, state.ExecMD)
+		opts := state.Opts
+		expandedArgs := make([]string, len(opts.Args))
+		for i, arg := range opts.Args {
+			expandedArg, err := expandContainerInput(container, arg, opts.Expand)
+			if err != nil {
+				return err
+			}
+			expandedArgs[i] = expandedArg
+		}
+		opts.Args = expandedArgs
+
+		if opts.RedirectStdout != "" {
+			path, err := resolveContainerInputPath(container, opts.RedirectStdout, opts.Expand)
+			if err != nil {
+				return err
+			}
+			opts.RedirectStdout = path
+		}
+		if opts.RedirectStderr != "" {
+			path, err := resolveContainerInputPath(container, opts.RedirectStderr, opts.Expand)
+			if err != nil {
+				return err
+			}
+			opts.RedirectStderr = path
+		}
+		if opts.RedirectStdin != "" {
+			path, err := resolveContainerInputPath(container, opts.RedirectStdin, opts.Expand)
+			if err != nil {
+				return err
+			}
+			opts.RedirectStdin = path
+		}
+
+		execMD, err := container.execMeta(ctx, opts, state.ExecMD)
 		if err != nil {
 			return err
 		}
@@ -1053,7 +1086,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 
 		cache := query.SnapshotManager()
 
-		metaSpec, err := container.metaSpec(ctx, state.Opts)
+		metaSpec, err := container.metaSpec(ctx, opts)
 		if err != nil {
 			return err
 		}
@@ -1841,8 +1874,8 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 
 		execWorker := opWorker.ExecWorker(causeCtx, *execMD)
 		procInfo := executor.ProcessInfo{Meta: meta}
-		if state.Opts.Stdin != "" {
-			procInfo.Stdin = io.NopCloser(strings.NewReader(state.Opts.Stdin))
+		if opts.Stdin != "" {
+			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
 		}
 		_, execErr := execWorker.Run(ctx, "", rootMount, execMounts, procInfo, nil)
 

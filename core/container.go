@@ -28,6 +28,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
 	dockerfileparser "github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/parser"
+	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
 	"github.com/dagger/dagger/util/containerutil"
 	"github.com/dagger/dagger/util/llbtodagger"
@@ -109,9 +110,169 @@ type Container struct {
 	Lazy Lazy[*Container]
 }
 
-type ContainerCloneStateLazy struct {
+type ContainerWithEntrypointLazy struct {
+	LazyState
+	Parent          dagql.ObjectResult[*Container]
+	Args            []string
+	KeepDefaultArgs bool
+}
+
+type ContainerWithoutEntrypointLazy struct {
+	LazyState
+	Parent          dagql.ObjectResult[*Container]
+	KeepDefaultArgs bool
+}
+
+type ContainerWithDefaultArgsLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
+	Args   []string
+}
+
+type ContainerWithoutDefaultArgsLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+}
+
+type ContainerWithUserLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+}
+
+type ContainerWithoutUserLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+}
+
+type ContainerWithWorkdirLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Path   string
+	Expand bool
+}
+
+type ContainerWithoutWorkdirLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+}
+
+type ContainerWithEnvVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+	Value  string
+	Expand bool
+}
+
+type ContainerWithEnvFileVariablesLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Source dagql.ObjectResult[*EnvFile]
+}
+
+type ContainerWithSystemEnvVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+}
+
+type ContainerWithoutEnvVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+}
+
+type ContainerWithLabelLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+	Value  string
+}
+
+type ContainerWithoutLabelLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+}
+
+type ContainerWithImageConfigMetadataLazy struct {
+	LazyState
+	Parent      dagql.ObjectResult[*Container]
+	Healthcheck *dockerspec.HealthcheckConfig
+	OnBuild     []string
+	Shell       []string
+	Volumes     []string
+	StopSignal  string
+}
+
+type ContainerWithHealthcheckLazy struct {
+	LazyState
+	Parent      dagql.ObjectResult[*Container]
+	Healthcheck dockerspec.HealthcheckConfig
+}
+
+type ContainerWithoutHealthcheckLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+}
+
+type ContainerSetGPUsLazy struct {
+	LazyState
+	Parent  dagql.ObjectResult[*Container]
+	Devices []string
+}
+
+type ContainerWithAnnotationLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+	Value  string
+}
+
+type ContainerWithoutAnnotationLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+}
+
+type ContainerWithSecretVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+	Secret dagql.ObjectResult[*Secret]
+}
+
+type ContainerWithoutSecretVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+}
+
+type ContainerWithServiceBindingLazy struct {
+	LazyState
+	Parent  dagql.ObjectResult[*Container]
+	Service dagql.ObjectResult[*Service]
+	Alias   string
+}
+
+type ContainerWithExposedPortLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Port   Port
+}
+
+type ContainerWithoutExposedPortLazy struct {
+	LazyState
+	Parent   dagql.ObjectResult[*Container]
+	Port     int
+	Protocol NetworkProtocol
+}
+
+type ContainerWithDefaultTerminalCmdLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Opts   DefaultTerminalCmdOpts
 }
 
 type ContainerRootFSLazy struct {
@@ -334,13 +495,151 @@ const (
 	persistedContainerFormLazy  = "lazy"
 )
 
-type persistedContainerCloneStateLazy struct {
+type persistedContainerWithEntrypointLazy struct {
+	ParentResultID  uint64   `json:"parentResultID"`
+	Args            []string `json:"args,omitempty"`
+	KeepDefaultArgs bool     `json:"keepDefaultArgs,omitempty"`
+}
+
+type persistedContainerWithoutEntrypointLazy struct {
+	ParentResultID  uint64 `json:"parentResultID"`
+	KeepDefaultArgs bool   `json:"keepDefaultArgs,omitempty"`
+}
+
+type persistedContainerWithDefaultArgsLazy struct {
+	ParentResultID uint64   `json:"parentResultID"`
+	Args           []string `json:"args,omitempty"`
+}
+
+type persistedContainerWithoutDefaultArgsLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 }
 
-type persistedContainerFromLazy struct {
+type persistedContainerWithUserLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
-	CanonicalRef   string `json:"canonicalRef"`
+	Name           string `json:"name"`
+}
+
+type persistedContainerWithoutUserLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+}
+
+type persistedContainerWithWorkdirLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Path           string `json:"path"`
+	Expand         bool   `json:"expand,omitempty"`
+}
+
+type persistedContainerWithoutWorkdirLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+}
+
+type persistedContainerWithEnvVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+	Value          string `json:"value"`
+	Expand         bool   `json:"expand,omitempty"`
+}
+
+type persistedContainerWithEnvFileVariablesLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	SourceResultID uint64 `json:"sourceResultID"`
+}
+
+type persistedContainerWithSystemEnvVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+}
+
+type persistedContainerWithoutEnvVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+}
+
+type persistedContainerWithLabelLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+	Value          string `json:"value"`
+}
+
+type persistedContainerWithoutLabelLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+}
+
+type persistedContainerWithImageConfigMetadataLazy struct {
+	ParentResultID uint64                        `json:"parentResultID"`
+	Healthcheck    *dockerspec.HealthcheckConfig `json:"healthcheck,omitempty"`
+	OnBuild        []string                      `json:"onBuild,omitempty"`
+	Shell          []string                      `json:"shell,omitempty"`
+	Volumes        []string                      `json:"volumes,omitempty"`
+	StopSignal     string                        `json:"stopSignal,omitempty"`
+}
+
+type persistedContainerWithHealthcheckLazy struct {
+	ParentResultID uint64                       `json:"parentResultID"`
+	Healthcheck    dockerspec.HealthcheckConfig `json:"healthcheck"`
+}
+
+type persistedContainerWithoutHealthcheckLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+}
+
+type persistedContainerSetGPUsLazy struct {
+	ParentResultID uint64   `json:"parentResultID"`
+	Devices        []string `json:"devices,omitempty"`
+}
+
+type persistedContainerWithAnnotationLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+	Value          string `json:"value"`
+}
+
+type persistedContainerWithoutAnnotationLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+}
+
+type persistedContainerWithSecretVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+	SecretResultID uint64 `json:"secretResultID"`
+}
+
+type persistedContainerWithoutSecretVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+}
+
+type persistedContainerWithServiceBindingLazy struct {
+	ParentResultID  uint64 `json:"parentResultID"`
+	ServiceResultID uint64 `json:"serviceResultID"`
+	Alias           string `json:"alias,omitempty"`
+}
+
+type persistedContainerWithExposedPortLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Port           Port   `json:"port"`
+}
+
+type persistedContainerWithoutExposedPortLazy struct {
+	ParentResultID uint64          `json:"parentResultID"`
+	Port           int             `json:"port"`
+	Protocol       NetworkProtocol `json:"protocol"`
+}
+
+type persistedContainerWithDefaultTerminalCmdLazy struct {
+	ParentResultID uint64                 `json:"parentResultID"`
+	Opts           DefaultTerminalCmdOpts `json:"opts"`
+}
+
+type persistedContainerFromLazy struct {
+	ParentResultID uint64                          `json:"parentResultID"`
+	CanonicalRef   string                          `json:"canonicalRef"`
+	Config         dockerspec.DockerOCIImageConfig `json:"config"`
+	ImageRef       string                          `json:"imageRef,omitempty"`
+	Platform       Platform                        `json:"platform"`
 }
 
 type persistedContainerWithRootFSLazy struct {
@@ -599,6 +898,24 @@ func CloneContainerMounts(ctx context.Context, mounts ContainerMounts) (Containe
 	return cp, nil
 }
 
+func CloneContainerImageConfig(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+	cp := cfg
+	cp.ExposedPorts = maps.Clone(cp.ExposedPorts)
+	cp.Env = slices.Clone(cp.Env)
+	cp.Entrypoint = slices.Clone(cp.Entrypoint)
+	cp.Cmd = slices.Clone(cp.Cmd)
+	cp.Volumes = maps.Clone(cp.Volumes)
+	cp.Labels = maps.Clone(cp.Labels)
+	if cp.Healthcheck != nil {
+		cloned := *cp.Healthcheck
+		cloned.Test = slices.Clone(cloned.Test)
+		cp.Healthcheck = &cloned
+	}
+	cp.OnBuild = slices.Clone(cp.OnBuild)
+	cp.Shell = slices.Clone(cp.Shell)
+	return cp
+}
+
 func materializeContainerStateFromParent(ctx context.Context, dst *Container, parent dagql.ObjectResult[*Container]) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
@@ -621,13 +938,7 @@ func materializeContainerStateFromParent(ctx context.Context, dst *Container, pa
 		return err
 	}
 
-	dst.Config = parent.Self().Config
-	dst.Config.ExposedPorts = maps.Clone(dst.Config.ExposedPorts)
-	dst.Config.Env = slices.Clone(dst.Config.Env)
-	dst.Config.Entrypoint = slices.Clone(dst.Config.Entrypoint)
-	dst.Config.Cmd = slices.Clone(dst.Config.Cmd)
-	dst.Config.Volumes = maps.Clone(dst.Config.Volumes)
-	dst.Config.Labels = maps.Clone(dst.Config.Labels)
+	dst.Config = CloneContainerImageConfig(parent.Self().Config)
 	dst.EnabledGPUs = slices.Clone(parent.Self().EnabledGPUs)
 	dst.FS = clonedFS
 	dst.Mounts = clonedMounts
@@ -1287,6 +1598,18 @@ func attachSocketResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), r
 	return typed, nil
 }
 
+func attachServiceResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res dagql.ObjectResult[*Service], label string) (dagql.ObjectResult[*Service], error) {
+	attached, err := attach(res)
+	if err != nil {
+		return dagql.ObjectResult[*Service]{}, fmt.Errorf("%s: %w", label, err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*Service])
+	if !ok {
+		return dagql.ObjectResult[*Service]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
+	}
+	return typed, nil
+}
+
 func attachCacheVolumeResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res dagql.ObjectResult[*CacheVolume], label string) (dagql.ObjectResult[*CacheVolume], error) {
 	attached, err := attach(res)
 	if err != nil {
@@ -1295,6 +1618,18 @@ func attachCacheVolumeResult(attach func(dagql.AnyResult) (dagql.AnyResult, erro
 	typed, ok := attached.(dagql.ObjectResult[*CacheVolume])
 	if !ok {
 		return dagql.ObjectResult[*CacheVolume]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
+	}
+	return typed, nil
+}
+
+func attachEnvFileResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res dagql.ObjectResult[*EnvFile], label string) (dagql.ObjectResult[*EnvFile], error) {
+	attached, err := attach(res)
+	if err != nil {
+		return dagql.ObjectResult[*EnvFile]{}, fmt.Errorf("%s: %w", label, err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*EnvFile])
+	if !ok {
+		return dagql.ObjectResult[*EnvFile]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
 	}
 	return typed, nil
 }
@@ -1360,18 +1695,65 @@ func targetParentDirectoryForContainerPath(ctx context.Context, parent dagql.Obj
 	}
 }
 
-func (lazy *ContainerCloneStateLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.cloneState", func(ctx context.Context) error {
+func expandContainerInput(container *Container, input string, expand bool) (string, error) {
+	if !expand {
+		return input, nil
+	}
+
+	secretEnvs := []string{}
+	for _, secret := range container.Secrets {
+		secretEnvs = append(secretEnvs, secret.EnvName)
+	}
+
+	var secretEnvFoundError error
+	expanded := os.Expand(input, func(k string) string {
+		if slices.Contains(secretEnvs, k) {
+			secretEnvFoundError = fmt.Errorf("expand cannot be used with secret env variable %q", k)
+			return ""
+		}
+
+		v, _ := LookupEnv(container.Config.Env, k)
+		return v
+	})
+	if secretEnvFoundError != nil {
+		return "", secretEnvFoundError
+	}
+	return expanded, nil
+}
+
+func resolveContainerInputPath(container *Container, rawPath string, expand bool) (string, error) {
+	path, err := expandContainerInput(container, rawPath, expand)
+	if err != nil {
+		return "", err
+	}
+	return absPath(container.Config.WorkingDir, path), nil
+}
+
+func (lazy *ContainerWithEntrypointLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withEntrypoint", func(ctx context.Context) error {
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.Entrypoint = slices.Clone(lazy.Args)
+			if !lazy.KeepDefaultArgs {
+				cfg.Cmd = nil
+			}
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		if !lazy.KeepDefaultArgs {
+			container.DefaultArgs = false
 		}
 		container.Lazy = nil
 		return nil
 	})
 }
 
-func (lazy *ContainerCloneStateLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	parent, err := attachContainerResult(attach, lazy.Parent, "attach container cloneState parent")
+func (lazy *ContainerWithEntrypointLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withEntrypoint parent")
 	if err != nil {
 		return nil, err
 	}
@@ -1379,13 +1761,999 @@ func (lazy *ContainerCloneStateLazy) AttachDependencies(ctx context.Context, att
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerCloneStateLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container cloneState parent")
+func (lazy *ContainerWithEntrypointLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withEntrypoint parent")
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(persistedContainerCloneStateLazy{
+	return json.Marshal(persistedContainerWithEntrypointLazy{
+		ParentResultID:  parentID,
+		Args:            slices.Clone(lazy.Args),
+		KeepDefaultArgs: lazy.KeepDefaultArgs,
+	})
+}
+
+func (lazy *ContainerWithoutEntrypointLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutEntrypoint", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.Entrypoint = nil
+			if !lazy.KeepDefaultArgs {
+				cfg.Cmd = nil
+			}
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		if !lazy.KeepDefaultArgs {
+			container.DefaultArgs = false
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutEntrypointLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutEntrypoint parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutEntrypointLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutEntrypoint parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutEntrypointLazy{
+		ParentResultID:  parentID,
+		KeepDefaultArgs: lazy.KeepDefaultArgs,
+	})
+}
+
+func (lazy *ContainerWithDefaultArgsLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withDefaultArgs", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.DefaultArgs = true
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			if lazy.Args == nil {
+				cfg.Cmd = []string{}
+			} else {
+				cfg.Cmd = slices.Clone(lazy.Args)
+			}
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithDefaultArgsLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withDefaultArgs parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithDefaultArgsLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withDefaultArgs parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithDefaultArgsLazy{
 		ParentResultID: parentID,
+		Args:           slices.Clone(lazy.Args),
+	})
+}
+
+func (lazy *ContainerWithoutDefaultArgsLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutDefaultArgs", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.DefaultArgs = false
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.Cmd = nil
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutDefaultArgsLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutDefaultArgs parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutDefaultArgsLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutDefaultArgs parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutDefaultArgsLazy{
+		ParentResultID: parentID,
+	})
+}
+
+func (lazy *ContainerWithUserLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withUser", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.User = lazy.Name
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithUserLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withUser parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithUserLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withUser parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithUserLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+	})
+}
+
+func (lazy *ContainerWithoutUserLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutUser", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.User = ""
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutUserLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutUser parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutUserLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutUser parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutUserLazy{
+		ParentResultID: parentID,
+	})
+}
+
+func (lazy *ContainerWithWorkdirLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withWorkdir", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		resolvedPath, err := resolveContainerInputPath(container, lazy.Path, lazy.Expand)
+		if err != nil {
+			return err
+		}
+		_, err = container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.WorkingDir = resolvedPath
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithWorkdirLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withWorkdir parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithWorkdirLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withWorkdir parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithWorkdirLazy{
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+		Expand:         lazy.Expand,
+	})
+}
+
+func (lazy *ContainerWithoutWorkdirLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutWorkdir", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.WorkingDir = ""
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutWorkdirLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutWorkdir parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutWorkdirLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutWorkdir parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutWorkdirLazy{
+		ParentResultID: parentID,
+	})
+}
+
+func (lazy *ContainerWithEnvVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withEnvVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		value, err := expandContainerInput(container, lazy.Value, lazy.Expand)
+		if err != nil {
+			return err
+		}
+		_, err = container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.Env = AddEnv(cfg.Env, lazy.Name, value)
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithEnvVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withEnvVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithEnvVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withEnvVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithEnvVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+		Value:          lazy.Value,
+		Expand:         lazy.Expand,
+	})
+}
+
+func (lazy *ContainerWithEnvFileVariablesLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withEnvFileVariables", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Source); err != nil {
+			return err
+		}
+		vars, err := lazy.Source.Self().Variables(ctx, false)
+		if err != nil {
+			return err
+		}
+		_, err = container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			for _, v := range vars {
+				cfg.Env = AddEnv(cfg.Env, v.Name, v.Value)
+			}
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithEnvFileVariablesLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withEnvFileVariables parent")
+	if err != nil {
+		return nil, err
+	}
+	source, err := attachEnvFileResult(attach, lazy.Source, "attach container withEnvFileVariables source")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Source = source
+	return []dagql.AnyResult{parent, source}, nil
+}
+
+func (lazy *ContainerWithEnvFileVariablesLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withEnvFileVariables parent")
+	if err != nil {
+		return nil, err
+	}
+	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withEnvFileVariables source")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithEnvFileVariablesLazy{
+		ParentResultID: parentID,
+		SourceResultID: sourceID,
+	})
+}
+
+func (lazy *ContainerWithSystemEnvVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withSystemEnvVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.SystemEnvNames = append(container.SystemEnvNames, lazy.Name)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithSystemEnvVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withSystemEnvVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithSystemEnvVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withSystemEnvVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithSystemEnvVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+	})
+}
+
+func (lazy *ContainerWithoutEnvVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutEnvVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			newEnv := []string{}
+			WalkEnv(cfg.Env, func(k, _, env string) {
+				if !shell.EqualEnvKeys(k, lazy.Name) {
+					newEnv = append(newEnv, env)
+				}
+			})
+			cfg.Env = newEnv
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutEnvVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutEnvVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutEnvVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutEnvVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutEnvVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+	})
+}
+
+func (lazy *ContainerWithLabelLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withLabel", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			if cfg.Labels == nil {
+				cfg.Labels = make(map[string]string)
+			}
+			cfg.Labels[lazy.Name] = lazy.Value
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithLabelLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withLabel parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithLabelLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withLabel parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithLabelLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+		Value:          lazy.Value,
+	})
+}
+
+func (lazy *ContainerWithoutLabelLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutLabel", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			delete(cfg.Labels, lazy.Name)
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutLabelLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutLabel parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutLabelLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutLabel parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutLabelLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+	})
+}
+
+func (lazy *ContainerWithImageConfigMetadataLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withImageConfigMetadata", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			if lazy.Healthcheck != nil {
+				healthcheck := *lazy.Healthcheck
+				if lazy.Healthcheck.Test != nil {
+					healthcheck.Test = slices.Clone(lazy.Healthcheck.Test)
+				}
+				cfg.Healthcheck = &healthcheck
+			}
+			if lazy.OnBuild != nil {
+				cfg.OnBuild = slices.Clone(lazy.OnBuild)
+			}
+			if lazy.Shell != nil {
+				cfg.Shell = slices.Clone(lazy.Shell)
+			}
+			if lazy.Volumes != nil {
+				volumes := make(map[string]struct{}, len(lazy.Volumes))
+				for _, volume := range lazy.Volumes {
+					volumes[volume] = struct{}{}
+				}
+				cfg.Volumes = volumes
+			}
+			if lazy.StopSignal != "" {
+				cfg.StopSignal = lazy.StopSignal
+			}
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithImageConfigMetadataLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withImageConfigMetadata parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithImageConfigMetadataLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withImageConfigMetadata parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithImageConfigMetadataLazy{
+		ParentResultID: parentID,
+		Healthcheck:    lazy.Healthcheck,
+		OnBuild:        slices.Clone(lazy.OnBuild),
+		Shell:          slices.Clone(lazy.Shell),
+		Volumes:        slices.Clone(lazy.Volumes),
+		StopSignal:     lazy.StopSignal,
+	})
+}
+
+func (lazy *ContainerWithHealthcheckLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withHealthcheck", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		healthcheck := lazy.Healthcheck
+		if lazy.Healthcheck.Test != nil {
+			healthcheck.Test = slices.Clone(lazy.Healthcheck.Test)
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.Healthcheck = &healthcheck
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithHealthcheckLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withHealthcheck parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithHealthcheckLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withHealthcheck parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithHealthcheckLazy{
+		ParentResultID: parentID,
+		Healthcheck:    lazy.Healthcheck,
+	})
+}
+
+func (lazy *ContainerWithoutHealthcheckLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutHealthcheck", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+			cfg.Healthcheck = nil
+			return cfg
+		})
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutHealthcheckLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutHealthcheck parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutHealthcheckLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutHealthcheck parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutHealthcheckLazy{
+		ParentResultID: parentID,
+	})
+}
+
+func (lazy *ContainerSetGPUsLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.setGPUs", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithGPU(ctx, ContainerGPUOpts{Devices: slices.Clone(lazy.Devices)}); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerSetGPUsLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container setGPUs parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerSetGPUsLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container setGPUs parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerSetGPUsLazy{
+		ParentResultID: parentID,
+		Devices:        slices.Clone(lazy.Devices),
+	})
+}
+
+func (lazy *ContainerWithAnnotationLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withAnnotation", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithAnnotation(ctx, lazy.Name, lazy.Value); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithAnnotationLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withAnnotation parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithAnnotationLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withAnnotation parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithAnnotationLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+		Value:          lazy.Value,
+	})
+}
+
+func (lazy *ContainerWithoutAnnotationLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutAnnotation", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithoutAnnotation(ctx, lazy.Name); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutAnnotationLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutAnnotation parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutAnnotationLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutAnnotation parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutAnnotationLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+	})
+}
+
+func (lazy *ContainerWithSecretVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withSecretVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithSecretVariable(ctx, lazy.Name, lazy.Secret); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithSecretVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withSecretVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	secret, err := attachSecretResult(attach, lazy.Secret, "attach container withSecretVariable secret")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Secret = secret
+	return []dagql.AnyResult{parent, secret}, nil
+}
+
+func (lazy *ContainerWithSecretVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withSecretVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	secretID, err := encodePersistedObjectRef(cache, lazy.Secret, "container withSecretVariable secret")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithSecretVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+		SecretResultID: secretID,
+	})
+}
+
+func (lazy *ContainerWithoutSecretVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutSecretVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithoutSecretVariable(ctx, lazy.Name); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutSecretVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutSecretVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutSecretVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutSecretVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutSecretVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+	})
+}
+
+func (lazy *ContainerWithServiceBindingLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withServiceBinding", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithServiceBinding(ctx, lazy.Service, lazy.Alias); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithServiceBindingLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withServiceBinding parent")
+	if err != nil {
+		return nil, err
+	}
+	service, err := attachServiceResult(attach, lazy.Service, "attach container withServiceBinding service")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Service = service
+	return []dagql.AnyResult{parent, service}, nil
+}
+
+func (lazy *ContainerWithServiceBindingLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withServiceBinding parent")
+	if err != nil {
+		return nil, err
+	}
+	serviceID, err := encodePersistedObjectRef(cache, lazy.Service, "container withServiceBinding service")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithServiceBindingLazy{
+		ParentResultID:  parentID,
+		ServiceResultID: serviceID,
+		Alias:           lazy.Alias,
+	})
+}
+
+func (lazy *ContainerWithExposedPortLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withExposedPort", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithExposedPort(lazy.Port); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithExposedPortLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withExposedPort parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithExposedPortLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withExposedPort parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithExposedPortLazy{
+		ParentResultID: parentID,
+		Port:           lazy.Port,
+	})
+}
+
+func (lazy *ContainerWithoutExposedPortLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutExposedPort", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithoutExposedPort(lazy.Port, lazy.Protocol); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutExposedPortLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutExposedPort parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutExposedPortLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutExposedPort parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutExposedPortLazy{
+		ParentResultID: parentID,
+		Port:           lazy.Port,
+		Protocol:       lazy.Protocol,
+	})
+}
+
+func (lazy *ContainerWithDefaultTerminalCmdLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withDefaultTerminalCmd", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.DefaultTerminalCmd = lazy.Opts
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithDefaultTerminalCmdLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withDefaultTerminalCmd parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithDefaultTerminalCmdLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withDefaultTerminalCmd parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithDefaultTerminalCmdLazy{
+		ParentResultID: parentID,
+		Opts:           lazy.Opts,
 	})
 }
 
@@ -2343,38 +3711,415 @@ func decodePersistedContainerLazy(
 	decodedMounts []decodedContainerMount,
 ) error {
 	switch call.Field {
-	case "__withImageConfigMetadata",
-		"withAnnotation",
-		"withoutAnnotation",
-		"withWorkdir",
-		"withoutWorkdir",
-		"withEnvVariable",
-		"withEnvFileVariables",
-		"__withSystemEnvVariable",
-		"withoutEnvVariable",
-		"withSecretVariable",
-		"withoutSecretVariable",
-		"withLabel",
-		"withoutLabel",
-		"withDockerHealthcheck",
-		"withoutDockerHealthcheck",
-		"withServiceBinding",
-		"withExposedPort",
-		"withoutExposedPort",
-		"withDefaultTerminalCmd",
-		"experimentalWithGPU",
-		"experimentalWithAllGPUs":
-		var persisted persistedContainerCloneStateLazy
+	case "withEntrypoint":
+		var persisted persistedContainerWithEntrypointLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container cloneState lazy payload: %w", err)
+			return fmt.Errorf("decode persisted container withEntrypoint lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container cloneState parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withEntrypoint parent")
 		if err != nil {
 			return err
 		}
-		container.Lazy = &ContainerCloneStateLazy{
+		container.Lazy = &ContainerWithEntrypointLazy{
+			LazyState:       NewLazyState(),
+			Parent:          parent,
+			Args:            persisted.Args,
+			KeepDefaultArgs: persisted.KeepDefaultArgs,
+		}
+		return nil
+	case "withoutEntrypoint":
+		var persisted persistedContainerWithoutEntrypointLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutEntrypoint lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutEntrypoint parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutEntrypointLazy{
+			LazyState:       NewLazyState(),
+			Parent:          parent,
+			KeepDefaultArgs: persisted.KeepDefaultArgs,
+		}
+		return nil
+	case "withDefaultArgs":
+		var persisted persistedContainerWithDefaultArgsLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withDefaultArgs lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withDefaultArgs parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithDefaultArgsLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
+			Args:      persisted.Args,
+		}
+		return nil
+	case "withoutDefaultArgs":
+		var persisted persistedContainerWithoutDefaultArgsLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutDefaultArgs lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutDefaultArgs parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutDefaultArgsLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+		}
+		return nil
+	case "withUser":
+		var persisted persistedContainerWithUserLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withUser lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withUser parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithUserLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+		}
+		return nil
+	case "withoutUser":
+		var persisted persistedContainerWithoutUserLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutUser lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutUser parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutUserLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+		}
+		return nil
+	case "withWorkdir":
+		var persisted persistedContainerWithWorkdirLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withWorkdir lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withWorkdir parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithWorkdirLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Path:      persisted.Path,
+			Expand:    persisted.Expand,
+		}
+		return nil
+	case "withoutWorkdir":
+		var persisted persistedContainerWithoutWorkdirLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutWorkdir lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutWorkdir parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutWorkdirLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+		}
+		return nil
+	case "withEnvVariable":
+		var persisted persistedContainerWithEnvVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withEnvVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withEnvVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithEnvVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+			Value:     persisted.Value,
+			Expand:    persisted.Expand,
+		}
+		return nil
+	case "withEnvFileVariables":
+		var persisted persistedContainerWithEnvFileVariablesLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withEnvFileVariables lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withEnvFileVariables parent")
+		if err != nil {
+			return err
+		}
+		source, err := loadPersistedObjectResultByResultID[*EnvFile](ctx, dag, persisted.SourceResultID, "container withEnvFileVariables source")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithEnvFileVariablesLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Source:    source,
+		}
+		return nil
+	case "__withSystemEnvVariable":
+		var persisted persistedContainerWithSystemEnvVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withSystemEnvVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withSystemEnvVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithSystemEnvVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+		}
+		return nil
+	case "withoutEnvVariable":
+		var persisted persistedContainerWithoutEnvVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutEnvVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutEnvVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutEnvVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+		}
+		return nil
+	case "withLabel":
+		var persisted persistedContainerWithLabelLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withLabel lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withLabel parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithLabelLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+			Value:     persisted.Value,
+		}
+		return nil
+	case "withoutLabel":
+		var persisted persistedContainerWithoutLabelLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutLabel lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutLabel parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutLabelLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+		}
+		return nil
+	case "__withImageConfigMetadata":
+		var persisted persistedContainerWithImageConfigMetadataLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withImageConfigMetadata lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withImageConfigMetadata parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithImageConfigMetadataLazy{
+			LazyState:   NewLazyState(),
+			Parent:      parent,
+			Healthcheck: persisted.Healthcheck,
+			OnBuild:     persisted.OnBuild,
+			Shell:       persisted.Shell,
+			Volumes:     persisted.Volumes,
+			StopSignal:  persisted.StopSignal,
+		}
+		return nil
+	case "withDockerHealthcheck":
+		var persisted persistedContainerWithHealthcheckLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withHealthcheck lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withHealthcheck parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithHealthcheckLazy{
+			LazyState:   NewLazyState(),
+			Parent:      parent,
+			Healthcheck: persisted.Healthcheck,
+		}
+		return nil
+	case "withoutDockerHealthcheck":
+		var persisted persistedContainerWithoutHealthcheckLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutHealthcheck lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutHealthcheck parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutHealthcheckLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+		}
+		return nil
+	case "experimentalWithGPU", "experimentalWithAllGPUs":
+		var persisted persistedContainerSetGPUsLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container setGPUs lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container setGPUs parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerSetGPUsLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Devices:   persisted.Devices,
+		}
+		return nil
+	case "withAnnotation":
+		var persisted persistedContainerWithAnnotationLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withAnnotation lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withAnnotation parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithAnnotationLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+			Value:     persisted.Value,
+		}
+		return nil
+	case "withoutAnnotation":
+		var persisted persistedContainerWithoutAnnotationLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutAnnotation lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutAnnotation parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutAnnotationLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+		}
+		return nil
+	case "withSecretVariable":
+		var persisted persistedContainerWithSecretVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withSecretVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withSecretVariable parent")
+		if err != nil {
+			return err
+		}
+		secret, err := loadPersistedObjectResultByResultID[*Secret](ctx, dag, persisted.SecretResultID, "container withSecretVariable secret")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithSecretVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+			Secret:    secret,
+		}
+		return nil
+	case "withoutSecretVariable":
+		var persisted persistedContainerWithoutSecretVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutSecretVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutSecretVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutSecretVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+		}
+		return nil
+	case "withServiceBinding":
+		var persisted persistedContainerWithServiceBindingLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withServiceBinding lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withServiceBinding parent")
+		if err != nil {
+			return err
+		}
+		svc, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, persisted.ServiceResultID, "container withServiceBinding service")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithServiceBindingLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Service:   svc,
+			Alias:     persisted.Alias,
+		}
+		return nil
+	case "withExposedPort":
+		var persisted persistedContainerWithExposedPortLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withExposedPort lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withExposedPort parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithExposedPortLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Port:      persisted.Port,
+		}
+		return nil
+	case "withoutExposedPort":
+		var persisted persistedContainerWithoutExposedPortLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutExposedPort lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutExposedPort parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutExposedPortLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Port:      persisted.Port,
+			Protocol:  persisted.Protocol,
+		}
+		return nil
+	case "withDefaultTerminalCmd":
+		var persisted persistedContainerWithDefaultTerminalCmdLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withDefaultTerminalCmd lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withDefaultTerminalCmd parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithDefaultTerminalCmdLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Opts:      persisted.Opts,
 		}
 		return nil
 	case "from":
@@ -2390,6 +4135,9 @@ func decodePersistedContainerLazy(
 			Parent:       parent,
 			LazyState:    NewLazyState(),
 			CanonicalRef: persisted.CanonicalRef,
+			Config:       persisted.Config,
+			ImageRef:     persisted.ImageRef,
+			Platform:     persisted.Platform,
 			ResolveMode:  serverresolver.ResolveModeDefault,
 		}
 		return nil
@@ -4133,6 +5881,7 @@ func (container *Container) WithExposedPort(port Port) (*Container, error) {
 
 	ociPort := fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network())
 	container.Config.ExposedPorts[ociPort] = struct{}{}
+	container.ImageRef = ""
 
 	return container, nil
 }
@@ -4151,6 +5900,7 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 
 	container.Ports = filtered
 	container.Config.ExposedPorts = filteredOCI
+	container.ImageRef = ""
 
 	return container, nil
 }

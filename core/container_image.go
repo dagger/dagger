@@ -35,6 +35,9 @@ type ContainerFromImageRefLazy struct {
 	LazyState
 	Parent       dagql.ObjectResult[*Container]
 	CanonicalRef string
+	Config       dockerspec.DockerOCIImageConfig
+	ImageRef     string
+	Platform     Platform
 	ResolveMode  serverresolver.ResolveMode
 }
 
@@ -73,6 +76,9 @@ func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
+		container.Config = CloneContainerImageConfig(lazy.Config)
+		container.ImageRef = lazy.ImageRef
+		container.Platform = lazy.Platform
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
@@ -82,7 +88,7 @@ func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *
 			return err
 		}
 		pulled, err := rslvr.Pull(ctx, lazy.CanonicalRef, serverresolver.PullOpts{
-			Platform:    container.Platform.Spec(),
+			Platform:    lazy.Platform.Spec(),
 			ResolveMode: lazy.ResolveMode,
 		})
 		if err != nil {
@@ -137,6 +143,9 @@ func (lazy *ContainerFromImageRefLazy) EncodePersisted(ctx context.Context, cach
 	return json.Marshal(persistedContainerFromLazy{
 		ParentResultID: parentID,
 		CanonicalRef:   lazy.CanonicalRef,
+		Config:         CloneContainerImageConfig(lazy.Config),
+		ImageRef:       lazy.ImageRef,
+		Platform:       lazy.Platform,
 	})
 }
 

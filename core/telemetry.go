@@ -3,12 +3,13 @@ package core
 import (
 	"context"
 	"fmt"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/trace"
 	"path"
 	"slices"
 	"strings"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -375,7 +376,8 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 				"__interfaceTypeDef",
 				"__inputTypeDef",
 				"__scalarTypeDef",
-				"__enumTypeDef":
+				"__enumTypeDef",
+				"__function":
 				return true, immediateReceiver
 			default:
 				return false, immediateReceiver

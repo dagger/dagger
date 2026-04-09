@@ -151,7 +151,6 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	if err != nil {
 		return inst, err
 	}
-
 	var cur dagql.AnyObjectResult = parent
 	var withExecCall *dagql.ResultCall
 	var postExecCalls []*dagql.ResultCall
@@ -245,10 +244,19 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		rebuilt = next
 	}
 
+	expandedArgs := make([]string, len(withExecArgs.Args))
+	for i, arg := range withExecArgs.Args {
+		expandedArg, err := expandEnvVar(ctx, rebuilt.Self(), arg, withExecArgs.Expand)
+		if err != nil {
+			return inst, err
+		}
+		expandedArgs[i] = expandedArg
+	}
+
 	// create a service based on that withExec, but run it against the rebuilt
 	// container state after replaying the post-withExec container mutations.
 	svc, err := rebuilt.Self().AsService(ctx, rebuilt, core.ContainerAsServiceArgs{
-		Args:                          withExecArgs.Args,
+		Args:                          expandedArgs,
 		UseEntrypoint:                 withExecArgs.UseEntrypoint,
 		ExperimentalPrivilegedNesting: withExecArgs.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      withExecArgs.InsecureRootCapabilities,
@@ -264,6 +272,14 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent dagql.ObjectResult[*core.Container], args core.ContainerAsServiceArgs) (*core.Service, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return nil, err
+	}
+
 	expandedArgs := make([]string, len(args.Args))
 	for i, arg := range args.Args {
 		expandedArg, err := expandEnvVar(ctx, parent.Self(), arg, args.Expand)
@@ -472,6 +488,13 @@ func (s *serviceSchema) terminal(ctx context.Context, parent dagql.ObjectResult[
 	if ctr.Self() == nil {
 		return res, fmt.Errorf("terminal not supported on non-container services")
 	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return res, err
+	}
+	if err := cache.Evaluate(ctx, ctr); err != nil {
+		return res, err
+	}
 
 	if len(args.Cmd) == 0 {
 		args.Cmd = ctr.Self().DefaultTerminalCmd.Args
@@ -480,7 +503,7 @@ func (s *serviceSchema) terminal(ctx context.Context, parent dagql.ObjectResult[
 		args.Cmd = []string{"sh"}
 	}
 
-	err := parent.Self().Terminal(ctx, parent, &args.ExecTerminalArgs)
+	err = parent.Self().Terminal(ctx, parent, &args.ExecTerminalArgs)
 	if err != nil {
 		return res, err
 	}
