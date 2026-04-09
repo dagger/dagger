@@ -3442,6 +3442,29 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	var secretOwner *core.Ownership
+	if args.Owner != "" {
+		ownership, err := ctr.ResolveOwnership(ctx, parent, args.Owner)
+		if err != nil {
+			return nil, err
+		}
+		uid, gid, _ := strings.Cut(ownership, ":")
+		uidInt, err := strconv.Atoi(uid)
+		if err != nil {
+			return nil, err
+		}
+		gidInt, err := strconv.Atoi(gid)
+		if err != nil {
+			return nil, err
+		}
+		secretOwner = &core.Ownership{UID: uidInt, GID: gidInt}
+	}
+	ctr.Secrets = append(ctr.Secrets, core.ContainerSecret{
+		Secret:    secret,
+		MountPath: target,
+		Owner:     secretOwner,
+		Mode:      fs.FileMode(args.Mode),
+	})
 	ctr.Lazy = &core.ContainerWithMountedSecretLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
