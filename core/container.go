@@ -40,7 +40,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 )
 
@@ -1536,35 +1535,45 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 				dir.Lazy = nil
 				return nil
 			}
-
-			detachedMountRoot, err := cloneDetachedDirectoryForContainerResult(ctx, mountedDir)
-			if err != nil {
-				return err
-			}
-			detachedRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, detachedMountRoot)
-			if err != nil {
-				return err
-			}
-			md, err := engine.ClientMetadataFromContext(ctx)
-			if err != nil {
-				return err
-			}
-			attachedAny, err := cache.AttachResult(ctx, md.SessionID, srv, detachedRes)
-			if err != nil {
-				return err
-			}
-			mountRoot, ok := attachedAny.(dagql.ObjectResult[*Directory])
+			mountedDirPath, ok := mountedDir.Dir.Peek()
 			if !ok {
-				return fmt.Errorf("container directory lazy: unexpected attached mount root result %T", attachedAny)
+				return fmt.Errorf("container directory lazy: missing mounted directory path for %s", mnt.Target)
 			}
-			if err := srv.Select(ctx, mountRoot, &resolved, dagql.Selector{
-				Field: "directory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(subpath)},
-				},
+			mountedSnapshot, ok := mountedDir.Snapshot.Peek()
+			if !ok || mountedSnapshot == nil {
+				return fmt.Errorf("container directory lazy: missing mounted directory snapshot for %s", mnt.Target)
+			}
+			finalDir := path.Join(mountedDirPath, subpath)
+			if err := MountRef(ctx, mountedSnapshot, func(root string, _ *mount.Mount) error {
+				resolvedPath, err := containerdfs.RootPath(root, finalDir)
+				if err != nil {
+					return err
+				}
+				info, err := os.Lstat(resolvedPath)
+				if err != nil {
+					return TrimErrPathPrefix(err, root)
+				}
+				if !info.IsDir() {
+					return notADirectoryError{fmt.Errorf("path %s is a file, not a directory", lazy.Path)}
+				}
+				return nil
 			}); err != nil {
+				return RestoreErrPath(err, subpath)
+			}
+			query, err := CurrentQuery(ctx)
+			if err != nil {
 				return err
 			}
+			reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, mountedSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+			if err != nil {
+				return err
+			}
+			dir.Platform = mountedDir.Platform
+			dir.Services = slices.Clone(mountedDir.Services)
+			dir.Dir.setValue(finalDir)
+			dir.Snapshot.setValue(reopened)
+			dir.Lazy = nil
+			return nil
 		case mnt.FileSource != nil:
 			return notADirectoryError{fmt.Errorf("path %s is a file, not a directory", lazy.Path)}
 		default:
@@ -1654,34 +1663,45 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 			if !ok || mountedDir == nil {
 				return fmt.Errorf("container file lazy: missing mounted directory source for %s", mnt.Target)
 			}
-			detachedMountRoot, err := cloneDetachedDirectoryForContainerResult(ctx, mountedDir)
-			if err != nil {
-				return err
-			}
-			detachedRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, detachedMountRoot)
-			if err != nil {
-				return err
-			}
-			md, err := engine.ClientMetadataFromContext(ctx)
-			if err != nil {
-				return err
-			}
-			attachedAny, err := cache.AttachResult(ctx, md.SessionID, srv, detachedRes)
-			if err != nil {
-				return err
-			}
-			mountRoot, ok := attachedAny.(dagql.ObjectResult[*Directory])
+			mountedDirPath, ok := mountedDir.Dir.Peek()
 			if !ok {
-				return fmt.Errorf("container file lazy: unexpected attached mount root result %T", attachedAny)
+				return fmt.Errorf("container file lazy: missing mounted directory path for %s", mnt.Target)
 			}
-			if err := srv.Select(ctx, mountRoot, &resolved, dagql.Selector{
-				Field: "file",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(subpath)},
-				},
+			mountedSnapshot, ok := mountedDir.Snapshot.Peek()
+			if !ok || mountedSnapshot == nil {
+				return fmt.Errorf("container file lazy: missing mounted directory snapshot for %s", mnt.Target)
+			}
+			finalFile := path.Join(mountedDirPath, subpath)
+			if err := MountRef(ctx, mountedSnapshot, func(root string, _ *mount.Mount) error {
+				resolvedPath, err := containerdfs.RootPath(root, finalFile)
+				if err != nil {
+					return err
+				}
+				info, err := os.Lstat(resolvedPath)
+				if err != nil {
+					return TrimErrPathPrefix(err, root)
+				}
+				if info.IsDir() {
+					return notAFileError{fmt.Errorf("path %s is a directory, not a file", lazy.Path)}
+				}
+				return nil
 			}); err != nil {
+				return RestoreErrPath(err, subpath)
+			}
+			query, err := CurrentQuery(ctx)
+			if err != nil {
 				return err
 			}
+			reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, mountedSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+			if err != nil {
+				return err
+			}
+			file.Platform = mountedDir.Platform
+			file.Services = slices.Clone(mountedDir.Services)
+			file.File.setValue(finalFile)
+			file.Snapshot.setValue(reopened)
+			file.Lazy = nil
+			return nil
 		case mnt.FileSource != nil:
 			mountedFile, ok := mnt.FileSource.Peek()
 			if !ok || mountedFile == nil {
