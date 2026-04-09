@@ -27,9 +27,7 @@ import (
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
-	"github.com/jedevc/diffparser"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -404,7 +402,9 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	return nil
 }
 
-func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (string, error) {
+func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
+	// Try to return the raw patch so the LLM can see the actual diff.
+	// Fall back to a structured summary for large changesets.
 	var rawPatch string
 	if err := srv.Select(ctx, changes, &rawPatch, dagql.Selector{
 		View:  srv.View,
@@ -412,52 +412,28 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 	}, dagql.Selector{
 		View:  srv.View,
 		Field: "contents",
+	}); err == nil && rawPatch != "" && strings.Count(rawPatch, "\n") <= 100 {
+		return rawPatch
+	}
+
+	const summaryWidth = 80
+
+	var stats []*DiffStat
+	if err := srv.Select(ctx, changes, &stats, dagql.Selector{
+		View:  srv.View,
+		Field: "diffStats",
 	}); err != nil {
-		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err), nil
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
 	}
-	if rawPatch == "" {
-		// No changes; don't say anything, since saying "No changes" could be
-		// confusing depending on other context (like logs from a `git show`)
-		return "", nil
+
+	entries := make([]patchpreview.Entry, len(stats))
+	for i, s := range stats {
+		entries[i] = patchpreview.Entry{Path: s.Path, Kind: string(s.Kind), Added: s.AddedLines, Removed: s.RemovedLines}
+		if s.OldPath != nil {
+			entries[i].OldPath = *s.OldPath
+		}
 	}
-	if strings.Count(rawPatch, "\n") > 100 {
-		// If the patch is too large, show a summary instead
-		var addedPaths, removedPaths []string
-		if err := srv.Select(ctx, changes, &addedPaths, dagql.Selector{
-			View:  srv.View,
-			Field: "addedPaths",
-		}); err != nil {
-			return fmt.Sprintf("WARNING: failed to fetch added paths: %s", err), nil
-		}
-		if err := srv.Select(ctx, changes, &removedPaths, dagql.Selector{
-			View:  srv.View,
-			Field: "removedPaths",
-		}); err != nil {
-			return fmt.Sprintf("WARNING: failed to fetch removed paths: %s", err), nil
-		}
-		addedDirectories := slices.DeleteFunc(addedPaths, func(s string) bool {
-			return !strings.HasSuffix(s, "/")
-		})
-		removedDirectories := slices.DeleteFunc(removedPaths, func(s string) bool {
-			return !strings.HasSuffix(s, "/")
-		})
-		patch, err := diffparser.Parse(rawPatch)
-		if err != nil {
-			return "", fmt.Errorf("parse patch: %w", err)
-		}
-		preview := &patchpreview.PatchPreview{
-			Patch:       patch,
-			AddedDirs:   addedDirectories,
-			RemovedDirs: removedDirectories,
-		}
-		var res strings.Builder
-		llmOut := termenv.NewOutput(&res, termenv.WithProfile(termenv.Ascii))
-		if err := preview.Summarize(llmOut, 80); err != nil {
-			return fmt.Sprintf("WARNING: failed to render patch summary: %s", err), nil
-		}
-		return res.String(), nil
-	}
-	return rawPatch, nil
+	return patchpreview.SummarizeString(entries, summaryWidth)
 }
 
 func toAny(v any) (res map[string]any, rerr error) {
@@ -803,7 +779,7 @@ func (m *MCP) call(ctx context.Context,
 		if err := m.updateEnvWorkspace(ctx, newWS); err != nil {
 			return "", err
 		}
-		return m.summarizePatch(ctx, srv, changes)
+		return m.summarizePatch(ctx, srv, changes), nil
 	}
 
 	if autoConstruct != nil {

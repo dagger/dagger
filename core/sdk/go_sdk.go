@@ -30,7 +30,7 @@ const (
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
 	// CURRENT commit: v0.20.3
-	goSDKLibVersion = "9fc3f2f9bef863b0d4a8cab58ee012300f4e608f"
+	goSDKLibVersion = "2a26072dca0a4c8fdd23a9e2891174889597ebb6"
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")

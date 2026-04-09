@@ -273,8 +273,8 @@ func (t *RustSdkDev) releaseContainer(
 
 // Bump the Rust SDK's engine dependency version.
 func (t *RustSdkDev) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
-	versionStr := `pub const DAGGER_ENGINE_VERSION: &'static str = "([0-9\.-a-zA-Z]+)";`
-	versionStrf := `pub const DAGGER_ENGINE_VERSION: &'static str = "%s";`
+	versionStr := `pub const DAGGER_ENGINE_VERSION: &str = "([0-9\.-a-zA-Z]+)";`
+	versionStrf := `pub const DAGGER_ENGINE_VERSION: &str = "%s";`
 	version = strings.TrimPrefix(version, "v")
 
 	versionContents, err := t.Workspace.File(rustVersionFilePath).Contents(ctx)

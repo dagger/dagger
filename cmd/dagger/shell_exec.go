@@ -796,6 +796,30 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 						return newPath, false, nil
 					}
 				}
+			default:
+				// If the object type doesn't have custom flag support,
+				// a plain string can't be used — it needs an object ID
+				// from a constructor (e.g. via command substitution).
+				if GetCustomFlagValue(argType.AsObject.Name) == nil {
+					return "", false, fmt.Errorf(
+						"argument %q expects a %s object, not a string literal; "+
+							"use a constructor via command substitution, e.g. $(%s ...)",
+						arg.FlagName(),
+						argType.AsObject.Name,
+						cliName(argType.AsObject.Name),
+					)
+				}
+			}
+		}
+		if argType.AsInput != nil {
+			if GetCustomFlagValue(argType.AsInput.Name) == nil {
+				return "", false, fmt.Errorf(
+					"argument %q expects a %s input object, not a string literal; "+
+						"use a constructor via command substitution, e.g. $(%s ...)",
+					arg.FlagName(),
+					argType.AsInput.Name,
+					cliName(argType.AsInput.Name),
+				)
 			}
 		}
 		return value, false, nil

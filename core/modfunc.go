@@ -195,7 +195,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 		var defaultInput *FunctionCallArgValue
 		if hasUserDefault {
 			// 1. User-defined user default
-			userDefaultInput, err := userDefault.CallInput()
+			userDefaultInput, err := userDefault.CallInput(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -398,6 +398,29 @@ func (ud *UserDefault) IsList() bool {
 	return ud.Arg.TypeDef.Self().Kind == TypeDefKindList
 }
 
+func (ud *UserDefault) CallInput(ctx context.Context) (*FunctionCallArgValue, error) {
+	if !ud.IsObject() &&
+		(!ud.IsList() ||
+			!ud.Arg.TypeDef.Self().AsList.Valid ||
+			ud.Arg.TypeDef.Self().AsList.Value.Self() == nil ||
+			ud.Arg.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self() == nil ||
+			ud.Arg.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self().Kind != TypeDefKindObject) {
+		return ud.UserDefaultPrimitive.CallInput()
+	}
+	value, err := ud.Value(ctx)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, ud.errorf(err, "marshal object default")
+	}
+	return &FunctionCallArgValue{
+		Name:  ud.Arg.Name,
+		Value: encoded,
+	}, nil
+}
+
 func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	if !ud.IsObject() && !ud.IsList() {
 		return ud.UserDefaultPrimitive.Value()
@@ -592,9 +615,17 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
 
+	// The decoded args map includes schema defaults, but the call ID only
+	// contains arguments the caller explicitly provided. Use the call ID so
+	// .env user defaults can still override schema defaults like Python "= None".
+	explicitArgs := map[string]bool{}
+	for _, idArg := range req.Args {
+		explicitArgs[idArg.Name] = true
+	}
+
 	for _, argMetadataRes := range fn.metadata.Args {
 		argMetadata := argMetadataRes.Self()
-		if args[argMetadata.Name] != nil {
+		if explicitArgs[argMetadata.Name] {
 			// was explicitly set by the user, skip
 			continue
 		}

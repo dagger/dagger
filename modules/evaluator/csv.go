@@ -111,7 +111,7 @@ func (m *Evaluator) Compare(
 			attribute.String(telemetry.UIMessageAttr, "received"),
 			attribute.String(telemetry.UIActorEmojiAttr, "📝"),
 		))
-	defer telemetry.End(span, func() error { return nil }) //nolint:staticcheck
+	defer telemetry.EndWithCause(span, nil)
 
 	stdio := telemetry.SpanStdio(ctx, "", log.String(telemetry.ContentTypeAttr, "text/markdown"))
 

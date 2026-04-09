@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -17,6 +18,7 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	telemetry "github.com/dagger/otel-go"
@@ -55,10 +57,59 @@ type ChangesetPaths struct {
 	Modified   []string
 	Removed    []string
 	AllRemoved []string
+	Renamed    map[string]string // newPath → oldPath (also included in Added/Removed)
+}
+
+type DiffStatKind string
+
+var DiffStatKindEnum = dagql.NewEnum[DiffStatKind]()
+
+var (
+	DiffStatKindAdded = DiffStatKindEnum.Register("ADDED",
+		`A file or directory was added.`)
+	DiffStatKindModified = DiffStatKindEnum.Register("MODIFIED",
+		`A file was modified.`)
+	DiffStatKindRemoved = DiffStatKindEnum.Register("REMOVED",
+		`A file or directory was removed.`)
+	DiffStatKindRenamed = DiffStatKindEnum.Register("RENAMED",
+		`A file was renamed.`)
+)
+
+func (DiffStatKind) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "DiffStatKind",
+		NonNull:   true,
+	}
+}
+
+func (DiffStatKind) TypeDescription() string {
+	return "The type of change for a diff stat entry."
+}
+
+func (DiffStatKind) Decoder() dagql.InputDecoder {
+	return DiffStatKindEnum
+}
+
+func (k DiffStatKind) ToLiteral() call.Literal {
+	return DiffStatKindEnum.Literal(k)
+}
+
+type DiffStat struct {
+	Path         string       `field:"true" doc:"Path of the changed file or directory."`
+	OldPath      *string      `field:"true" doc:"Previous path of the file, set only for renames."`
+	Kind         DiffStatKind `field:"true" doc:"Type of change."`
+	AddedLines   int          `field:"true" doc:"Number of added lines for this path."`
+	RemovedLines int          `field:"true" doc:"Number of removed lines for this path."`
+}
+
+func (*DiffStat) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "DiffStat",
+		NonNull:   true,
+	}
 }
 
 // ComputePaths computes the added, modified, and removed paths using git diff.
-// This must be called from a dagql resolver context where buildkit session is available.
 func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
 	ch.pathsOnce.Do(func() {
 		ch.cachedPaths, ch.pathsErr = ch.computePathsOnce(ctx)
@@ -80,36 +131,49 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 	}
 
 	var result *ChangesetPaths
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		fileChanges, err := compareDirectories(ctx, beforeDir, afterDir)
-		if err != nil {
-			return err
-		}
-
-		beforeDirs, err := listSubdirectories(beforeDir)
-		if err != nil {
-			return fmt.Errorf("list before directories: %w", err)
-		}
-		afterDirs, err := listSubdirectories(afterDir)
-		if err != nil {
-			return fmt.Errorf("list after directories: %w", err)
-		}
-		addedDirs, removedDirs := diffStringSlices(beforeDirs, afterDirs)
-
-		allRemoved := slices.Concat(fileChanges.Removed, removedDirs)
-
-		result = &ChangesetPaths{
-			Added:      slices.Concat(fileChanges.Added, addedDirs),
-			Modified:   fileChanges.Modified,
-			Removed:    collapseChildPaths(allRemoved),
-			AllRemoved: allRemoved,
-		}
-		return nil
+	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) (err error) {
+		result, err = computeChangesetPaths(ctx, beforeDir, afterDir)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*ChangesetPaths, error) {
+	fc, err := compareDirectories(ctx, beforeDir, afterDir)
+	if err != nil {
+		return nil, err
+	}
+
+	beforeDirs, err := listSubdirectories(beforeDir)
+	if err != nil {
+		return nil, fmt.Errorf("list before directories: %w", err)
+	}
+	afterDirs, err := listSubdirectories(afterDir)
+	if err != nil {
+		return nil, fmt.Errorf("list after directories: %w", err)
+	}
+	addedDirs, removedDirs := diffStringSlices(beforeDirs, afterDirs)
+
+	// Expand renames into Added/Removed so addedPaths/removedPaths stay complete.
+	renamedNew := make([]string, 0, len(fc.Renamed))
+	renamedOld := make([]string, 0, len(fc.Renamed))
+	for newPath, oldPath := range fc.Renamed {
+		renamedNew = append(renamedNew, newPath)
+		renamedOld = append(renamedOld, oldPath)
+	}
+
+	allRemoved := slices.Concat(fc.Removed, renamedOld, removedDirs)
+
+	return &ChangesetPaths{
+		Added:      slices.Concat(fc.Added, renamedNew, addedDirs),
+		Modified:   fc.Modified,
+		Removed:    collapseChildPaths(allRemoved),
+		AllRemoved: allRemoved,
+		Renamed:    fc.Renamed,
+	}, nil
 }
 
 // withMountedDirs mounts the before and after directories and calls fn with their paths.
@@ -336,6 +400,71 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return isEmpty, nil
+}
+
+func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
+	var paths *ChangesetPaths
+	var statsByPath map[string]lineChanges
+	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+		computedPaths, err := computeChangesetPaths(ctx, beforeDir, afterDir)
+		if err != nil {
+			return fmt.Errorf("compute paths: %w", err)
+		}
+		paths = computedPaths
+
+		statsByPath, err = compareDirectoriesNumStat(ctx, beforeDir, afterDir)
+		if err != nil {
+			slog.Debug("changeset numstat failed; returning path-only diff stat entries", "error", err)
+			statsByPath = nil
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	addEntry := func(path string, kind DiffStatKind) *DiffStat {
+		entry := &DiffStat{Path: path, Kind: kind}
+		if stat, ok := statsByPath[path]; ok {
+			entry.AddedLines = stat.Added
+			entry.RemovedLines = stat.Removed
+		}
+		return entry
+	}
+
+	// Build a set of old renamed paths so we can skip them in Removed
+	// (they'll appear as KindRenamed via their new path in Added).
+	renamedOld := make(map[string]bool, len(paths.Renamed))
+	for _, oldPath := range paths.Renamed {
+		renamedOld[oldPath] = true
+	}
+
+	var entries []*DiffStat
+	for _, path := range paths.Added {
+		if oldPath, isRenamed := paths.Renamed[path]; isRenamed {
+			entry := addEntry(path, DiffStatKindRenamed)
+			entry.OldPath = &oldPath
+			entries = append(entries, entry)
+		} else {
+			entries = append(entries, addEntry(path, DiffStatKindAdded))
+		}
+	}
+	for _, path := range paths.Modified {
+		entries = append(entries, addEntry(path, DiffStatKindModified))
+	}
+	// Use AllRemoved (uncollapsed) so that patchpreview.foldRemovedDirs can
+	// fold child files into their parent directory with summed line counts.
+	for _, path := range paths.AllRemoved {
+		if renamedOld[path] {
+			continue
+		}
+		entries = append(entries, addEntry(path, DiffStatKindRemoved))
+	}
+
+	slices.SortFunc(entries, func(a, b *DiffStat) int {
+		return strings.Compare(a.Path, b.Path)
+	})
+	return entries, nil
 }
 
 func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -838,7 +839,7 @@ func (lazy *DirectoryWithDirectoryDockerfileCompatLazy) EncodePersisted(ctx cont
 
 func (lazy *DirectoryWithPatchFileLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return lazy.LazyState.Evaluate(ctx, "Directory.withPatchFile", func(ctx context.Context) error {
-		return dir.WithPatchFile(ctx, lazy.Parent, lazy.Patch)
+		return dir.applyPatchFileResult(ctx, lazy.Parent, lazy.Patch)
 	})
 }
 
@@ -1503,15 +1504,7 @@ func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcach
 		if err != nil {
 			return err
 		}
-		apply := exec.Command("git", "apply", "--allow-empty", "-")
-		apply.Dir = resolvedDir
-		apply.Stdin = bytes.NewReader(patch)
-		apply.Stdout = stdio.Stdout
-		apply.Stderr = stdio.Stderr
-		if err := apply.Run(); err != nil {
-			return errors.New("failed to apply patch")
-		}
-		return nil
+		return applyGitPatch(ctx, resolvedDir, bytes.NewReader(patch), stdio)
 	})
 	if err != nil {
 		return nil, err
@@ -1584,7 +1577,7 @@ func (dir *Directory) withoutPathsFromSnapshot(ctx context.Context, parentSnapsh
 	return snapshot, anyPathsRemoved, nil
 }
 
-func (dir *Directory) WithPatchFile(ctx context.Context, parent dagql.ObjectResult[*Directory], patch dagql.ObjectResult[*File]) error {
+func (dir *Directory) applyPatchFileResult(ctx context.Context, parent dagql.ObjectResult[*Directory], patch dagql.ObjectResult[*File]) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
@@ -1622,6 +1615,21 @@ func (dir *Directory) WithPatchFile(ctx context.Context, parent dagql.ObjectResu
 		return nil
 	}
 	dir.Snapshot.setValue(snap)
+	return nil
+}
+
+func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telemetry.SpanStreams) error {
+	apply := exec.CommandContext(ctx, "git", "apply", "--allow-empty", "-")
+	apply.Dir = dir
+	apply.Stdin = patch
+	apply.Stdout = stdio.Stdout
+	apply.Stderr = stdio.Stderr
+	if err := apply.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("git apply: %w", err)
+	}
 	return nil
 }
 

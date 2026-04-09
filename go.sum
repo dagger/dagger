@@ -480,8 +480,6 @@ github.com/jackpal/gateway v1.1.1 h1:UXXXkJGIHFsStms9ZBgGpoaFEJP7oJtFn5vplIT68E8
 github.com/jackpal/gateway v1.1.1/go.mod h1:Tl1vZVtUaXx5j6P5HFmv45alhEi4yHHLfT4PRbB7eyw=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 h1:BQSFePA1RWJOlocH6Fxy8MmwDt+yVQYULKfN0RoTN8A=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99/go.mod h1:1lJo3i6rXxKeerYnT8Nvf0QmHCRC1n8sfWVwXF2Frvo=
-github.com/jedevc/diffparser v0.0.0-20251006145221-cebbf07eb779 h1:88fBBXpzozc3V6ilxqKN5muurFOfGu80PRli5j1fpOw=
-github.com/jedevc/diffparser v0.0.0-20251006145221-cebbf07eb779/go.mod h1:/GGb0oNu9XkRKCi6MEDGVbqtImXltEXHIMXXlG5sJGc=
 github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f h1:AA4TqL5MbBQZRC1V+/0pjHXGbZIuYsR8YFWNRTVuh6o=
 github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f/go.mod h1:CadMq008qMk2051tDUQFFrWqm1qRFPX4rNUfR0guDr0=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=

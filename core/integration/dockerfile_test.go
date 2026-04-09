@@ -645,6 +645,32 @@ CMD echo "stage2"
 		require.NotContains(t, output, "stage2\n")
 	})
 
+	t.Run("with heredoc", func(ctx context.Context, t *testctx.T) {
+		dockerfile := `FROM ` + alpineImage + `
+RUN <<EOF
+#!/bin/sh
+echo "hello from heredoc" > /heredoc-output
+EOF
+CMD cat /heredoc-output
+`
+
+		t.Run("builtin frontend", func(ctx context.Context, t *testctx.T) {
+			dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+			stdout, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "hello from heredoc")
+		})
+
+		t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
+			dir := baseDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
+
+			stdout, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "hello from heredoc")
+		})
+	})
+
 	t.Run("with build secrets", func(ctx context.Context, t *testctx.T) {
 		sec := c.SetSecret("my-secret", "barbar")
 

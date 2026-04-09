@@ -448,9 +448,11 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		case mnt.Destination == MetaMountDestPath:
 			metaMount = &mnt
 
-		case mnt.Destination == BuildkitQemuEmulatorMountPoint:
-			// buildkit puts the qemu emulator under /dev, which we aren't mounting now, so just
-			// leave it be
+		case mnt.Destination == BuildkitQemuEmulatorMountPoint,
+			strings.HasPrefix(mnt.Destination, "/dev/pipes/"):
+			// Keep specific sub-mounts of /dev in the OCI spec so that runc processes
+			// them after the /dev tmpfs mount. The qemu emulator is at
+			// /dev/.buildkit_qemu_emulator and /dev/pipes/ is used by heredoc processing.
 			filteredMounts = append(filteredMounts, mnt)
 
 		case containerfs.IsSpecialMountType(mnt.Type):

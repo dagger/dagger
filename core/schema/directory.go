@@ -320,6 +320,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
+	dagql.Fields[*core.DiffStat]{}.Install(srv)
 
 	dagql.Fields[*core.Changeset]{
 		Syncer[*core.Changeset]().
@@ -346,6 +347,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("removedPaths", s.changesetRemovedPaths).
 			IsPersistable().
 			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
+		dagql.NodeFunc("diffStats", s.changesetDiffStats).
+			IsPersistable().
+			Doc(`Structured per-path diff statistics (kind and line counts) for this changeset.`),
 		dagql.NodeFunc("withChangeset", s.changesetWithChangeset).
 			IsPersistable().
 			Doc(`Add changes to an existing changeset`,
@@ -376,6 +380,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	ChangesetMergeConflictEnum.Install(srv)
 	ChangesetsMergeConflictEnum.Install(srv)
+	core.DiffStatKindEnum.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -1348,6 +1353,13 @@ func (s *directorySchema) changesetRemovedPaths(ctx context.Context, parent dagq
 		return nil, err
 	}
 	return dagql.NewStringArray(paths.Removed...), nil
+}
+
+type changesetDiffStatsArgs struct {
+}
+
+func (s *directorySchema) changesetDiffStats(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], _ changesetDiffStatsArgs) (dagql.Array[*core.DiffStat], error) {
+	return parent.Self().DiffStats(ctx)
 }
 
 type dirExportArgs struct {

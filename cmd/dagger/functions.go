@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -872,29 +873,22 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 		return nil
 	}
 
-	var summary strings.Builder
-	var noChanges bool
-	if err := (func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "analyzing changes")
-		defer telemetry.EndWithCause(span, &rerr)
-
-		preview, err := idtui.PreviewPatch(ctx, changeset)
-		if err != nil {
-			return err
-		}
-		noChanges = preview == nil
-		if noChanges {
-			slog.Info("no changes to apply")
-			return nil
-		}
-		return preview.Summarize(idtui.NewOutput(&summary), 80)
-	})(); err != nil {
+	analyzeCtx, analyzeSpan := Tracer().Start(ctx, "analyzing changes")
+	entries, err := idtui.PreviewPatch(analyzeCtx, dag, changeset)
+	telemetry.EndWithCause(analyzeSpan, &err)
+	if err != nil {
 		return err
 	}
-
-	if noChanges {
+	if len(entries) == 0 {
+		slog.Info("no changes to apply")
 		return nil
 	}
+
+	summaryWidth := min(getViewWidth(), 80)
+
+	var descBuf strings.Builder
+	patchpreview.Summarize(idtui.NewOutput(&descBuf), entries, summaryWidth)
+	description := descBuf.String()
 
 	if !autoApply {
 		var confirm bool
@@ -902,7 +896,7 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Apply changes?").
-					Description(summary.String()).
+					Description(description).
 					Affirmative("Apply").
 					Negative("Discard").
 					Value(&confirm),

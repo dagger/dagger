@@ -97,7 +97,6 @@ require (
 	github.com/in-toto/in-toto-golang v0.10.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jackpal/gateway v1.1.1
-	github.com/jedevc/diffparser v0.0.0-20251006145221-cebbf07eb779
 	github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f
 	github.com/joho/godotenv v1.5.1
 	github.com/juju/ansiterm v1.0.0
