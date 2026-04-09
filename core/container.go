@@ -522,10 +522,10 @@ func cloneDetachedFileForContainerResult(ctx context.Context, src *File) (*File,
 }
 
 func CloneContainerMetaSnapshot(ctx context.Context, src *LazyAccessor[bkcache.ImmutableRef, *Container]) (*LazyAccessor[bkcache.ImmutableRef, *Container], error) {
-	cp := new(LazyAccessor[bkcache.ImmutableRef, *Container])
 	if src == nil {
-		return cp, nil
+		return nil, nil
 	}
+	cp := new(LazyAccessor[bkcache.ImmutableRef, *Container])
 	snapshot, ok := src.Peek()
 	if !ok || snapshot == nil {
 		return cp, nil
@@ -544,10 +544,10 @@ func CloneContainerMetaSnapshot(ctx context.Context, src *LazyAccessor[bkcache.I
 }
 
 func CloneContainerDirectoryAccessor(ctx context.Context, src *LazyAccessor[*Directory, *Container]) (*LazyAccessor[*Directory, *Container], error) {
-	cp := new(LazyAccessor[*Directory, *Container])
 	if src == nil {
-		return cp, nil
+		return nil, nil
 	}
+	cp := new(LazyAccessor[*Directory, *Container])
 	dir, ok := src.Peek()
 	if !ok || dir == nil {
 		return cp, nil
@@ -561,10 +561,10 @@ func CloneContainerDirectoryAccessor(ctx context.Context, src *LazyAccessor[*Dir
 }
 
 func CloneContainerFileAccessor(ctx context.Context, src *LazyAccessor[*File, *Container]) (*LazyAccessor[*File, *Container], error) {
-	cp := new(LazyAccessor[*File, *Container])
 	if src == nil {
-		return cp, nil
+		return nil, nil
 	}
+	cp := new(LazyAccessor[*File, *Container])
 	file, ok := src.Peek()
 	if !ok || file == nil {
 		return cp, nil
