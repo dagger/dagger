@@ -36,6 +36,7 @@ type MigrationPlan struct {
 	MigratedModuleConfigPath string
 	SourceCopyPath           string
 	SourceCopyDest           string
+	PruneOldSourceToOutputs  bool
 	RemoveOldSource          bool
 	MigrationReportData      []byte
 	LockData                 []byte
@@ -73,16 +74,20 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 		plan.MigratedModuleConfigPath = filepath.Join(LockDirName, modulePath, ModuleConfigFileName)
 
 		if hasNonLocalSource {
-			plan.SourceCopyPath = cfg.Source
+			sourcePath := filepath.Clean(cfg.Source)
+			plan.SourceCopyPath = sourcePath
 			plan.SourceCopyDest = filepath.Join(LockDirName, modulePath)
 
 			newFullPath := filepath.Join(LockDirName, modulePath)
-			if strings.HasPrefix(newFullPath+"/", cfg.Source+"/") {
+			switch {
+			case sourcePath == LockDirName:
+				plan.PruneOldSourceToOutputs = true
+			case strings.HasPrefix(newFullPath+"/", sourcePath+"/"):
 				slog.Warn("old source dir is ancestor of new location; skipping cleanup",
 					"oldSource", cfg.Source, "newLocation", newFullPath)
 				plan.Warnings = append(plan.Warnings,
 					fmt.Sprintf("old source dir %q is ancestor of new location; skipped cleanup", cfg.Source))
-			} else {
+			default:
 				plan.RemoveOldSource = true
 			}
 		}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -118,6 +119,44 @@ type Myapp {
 		require.NoError(t, err)
 		assertModuleResolveLockEntry(t, []byte(lockOut), source, workspace.PolicyFloat)
 	})
+
+	t.Run("dot dagger source is pruned to workspace outputs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "./.dagger/"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile(".dagger/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from dot dagger source"
+  }
+}
+`).
+				WithNewFile(".dagger/go.mod", "module example.com/myapp\n").
+				WithNewFile(".dagger/modules/stale/old.txt", "legacy root content")
+		}).With(daggerExec("migrate", "-y"))
+
+		_, err := ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/go.mod"}).Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/main.dang"}).Sync(ctx)
+		require.Error(t, err, "legacy root source file should be pruned")
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/go.mod"}).Sync(ctx)
+		require.Error(t, err, "legacy root source metadata should be pruned")
+
+		_, err = ctr.WithExec([]string{"test", "-d", ".dagger/modules/stale"}).Sync(ctx)
+		require.Error(t, err, "pre-existing workspace-root modules subtree should be pruned")
+	})
 }
 
 // TestWorkspaceMigrateUserFeedback should cover the user-facing output of
@@ -200,6 +239,31 @@ type Myapp {
 		output := stdout + stderr
 		require.Contains(t, output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
 		require.Contains(t, output, "If you apply this migration, review .dagger/migration-report.md.")
+		require.Equal(t, 1, strings.Count(output, "Migrated to workspace format"))
+		require.Equal(t, 1, strings.Count(output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md"))
+		require.Equal(t, 1, strings.Count(output, "If you apply this migration, review .dagger/migration-report.md."))
+	})
+
+	t.Run("dot dagger source does not warn about skipped cleanup", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": ".dagger"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile(".dagger/main.dang", `
+type Myapp {
+  pub greet: String! { "hi" }
+}
+`)
+		})
+
+		migrate := ctr.With(daggerExec("migrate", "-y"))
+		stdout, err := migrate.Stdout(ctx)
+		require.NoError(t, err)
+		stderr, err := migrate.Stderr(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, stdout+stderr, `Warning: old source dir ".dagger" is ancestor of new location; skipped cleanup`)
 	})
 }
 

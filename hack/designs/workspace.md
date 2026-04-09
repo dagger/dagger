@@ -401,6 +401,13 @@ Steps:
    .dagger/*                        →  .dagger/modules/<name>/
    dagger.json (project root)       →  .dagger/modules/<name>/dagger.json
    ```
+   Special case: when `source = ".dagger"`, the old source directory is also the new workspace root. In this case migration must not leave the legacy `.dagger/` tree intact, and it also cannot delete `.dagger/` wholesale because the migrated module now lives under `.dagger/modules/<name>/`. Instead it prunes `.dagger/` down to the workspace-owned outputs created by migration:
+   - `.dagger/config.toml`
+   - `.dagger/lock` if written
+   - `.dagger/migration-report.md` if written
+   - `.dagger/modules/<name>/`
+
+   This prune step preserves only those exact paths, not an arbitrary pre-existing `.dagger/modules/` subtree.
 
 2. **Update the moved `dagger.json`:**
    - Remove `source` field (now always `.`)

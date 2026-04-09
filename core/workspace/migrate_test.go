@@ -105,6 +105,22 @@ func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
 	require.Contains(t, reportData, `"function": [`)
 }
 
+func TestPlanMigrationPrunesDotDaggerSourceToWorkspaceOutputs(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": "./.dagger/"
+}`)
+
+	require.Equal(t, LockDirName, plan.SourceCopyPath)
+	require.Equal(t, filepath.Join(LockDirName, "modules", "myapp"), plan.SourceCopyDest)
+	require.True(t, plan.PruneOldSourceToOutputs)
+	require.False(t, plan.RemoveOldSource)
+	require.NotContains(t, plan.Warnings, `old source dir ".dagger" is ancestor of new location; skipped cleanup`)
+}
+
 func TestPlanMigrationFailsOnConflictingLegacyPins(t *testing.T) {
 	t.Parallel()
 

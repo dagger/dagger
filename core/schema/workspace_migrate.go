@@ -180,14 +180,6 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 			if err != nil {
 				return fmt.Errorf("migration copy source directory: %w", err)
 			}
-			if plan.RemoveOldSource {
-				updatedDir, err = workspaceMigrationSelectDirectory(copyCtx, updatedDir, "withoutDirectory", []dagql.NamedInput{
-					{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyPath)))},
-				})
-				if err != nil {
-					return fmt.Errorf("migration remove old source directory: %w", err)
-				}
-			}
 			return nil
 		}(); err != nil {
 			return nil, err
@@ -217,6 +209,33 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	if len(lockBytes) > 0 {
 		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, filepath.Join(workspace.LockDirName, workspace.LockFileName), lockBytes, "write workspace lock")
 		if err != nil {
+			return nil, err
+		}
+	}
+
+	if plan.SourceCopyPath != "" {
+		if err := func() (rerr error) {
+			cleanupCtx, span := core.Tracer(ctx).Start(ctx, "cleanup migrated source directory")
+			defer telemetry.EndWithCause(span, &rerr)
+
+			switch {
+			case plan.PruneOldSourceToOutputs:
+				var err error
+				updatedDir, err = workspaceMigrationPruneSourceRoot(cleanupCtx, updatedDir, plan, lockBytes)
+				if err != nil {
+					return fmt.Errorf("migration prune old source directory: %w", err)
+				}
+			case plan.RemoveOldSource:
+				var err error
+				updatedDir, err = workspaceMigrationSelectDirectory(cleanupCtx, updatedDir, "withoutDirectory", []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyPath)))},
+				})
+				if err != nil {
+					return fmt.Errorf("migration remove old source directory: %w", err)
+				}
+			}
+			return nil
+		}(); err != nil {
 			return nil, err
 		}
 	}
@@ -315,6 +334,90 @@ func workspaceMigrationConsole(ctx context.Context, msg string, args ...any) {
 		msg += "\n"
 	}
 	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
+}
+
+func workspaceMigrationScratchDirectory(ctx context.Context) (dir dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dir, err
+	}
+	if err := srv.Select(ctx, srv.Root(), &dir, dagql.Selector{Field: "directory"}); err != nil {
+		return dir, err
+	}
+	return dir, nil
+}
+
+func workspaceMigrationPruneSourceRoot(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+	plan *workspace.MigrationPlan,
+	lockBytes []byte,
+) (updated dagql.ObjectResult[*core.Directory], err error) {
+	if plan == nil {
+		return dir, fmt.Errorf("migration plan is required")
+	}
+
+	prunedSourceDir, err := workspaceMigrationScratchDirectory(ctx)
+	if err != nil {
+		return dir, err
+	}
+
+	moduleRelPath, err := filepath.Rel(plan.SourceCopyPath, plan.SourceCopyDest)
+	if err != nil {
+		return dir, fmt.Errorf("migration module path: %w", err)
+	}
+	moduleRelPath = filepath.Clean(moduleRelPath)
+	if moduleRelPath == ".." || strings.HasPrefix(moduleRelPath, ".."+string(filepath.Separator)) {
+		return dir, fmt.Errorf("migration module path %q escapes source root %q", plan.SourceCopyDest, plan.SourceCopyPath)
+	}
+
+	migratedModuleDir, err := workspaceMigrationSelectDirectory(ctx, dir, "directory", []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyDest)))},
+	})
+	if err != nil {
+		return dir, fmt.Errorf("load migrated module directory: %w", err)
+	}
+	prunedSourceDir, err = workspaceMigrationSelectDirectory(ctx, prunedSourceDir, "withDirectory", []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(moduleRelPath)))},
+		{Name: "source", Value: dagql.NewID[*core.Directory](migratedModuleDir.ID())},
+	})
+	if err != nil {
+		return dir, fmt.Errorf("preserve migrated module directory: %w", err)
+	}
+
+	prunedSourceDir, err = withWorkspaceMigrationFile(ctx, prunedSourceDir, workspace.ConfigFileName, plan.WorkspaceConfigData, "write pruned workspace config")
+	if err != nil {
+		return dir, err
+	}
+	if len(plan.MigrationReportData) > 0 {
+		reportPath := filepath.Base(plan.MigrationReportPath)
+		prunedSourceDir, err = withWorkspaceMigrationFile(ctx, prunedSourceDir, reportPath, plan.MigrationReportData, "write pruned migration report")
+		if err != nil {
+			return dir, err
+		}
+	}
+	if len(lockBytes) > 0 {
+		prunedSourceDir, err = withWorkspaceMigrationFile(ctx, prunedSourceDir, workspace.LockFileName, lockBytes, "write pruned workspace lock")
+		if err != nil {
+			return dir, err
+		}
+	}
+
+	updated, err = workspaceMigrationSelectDirectory(ctx, dir, "withoutDirectory", []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyPath)))},
+	})
+	if err != nil {
+		return dir, err
+	}
+	updated, err = workspaceMigrationSelectDirectory(ctx, updated, "withDirectory", []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyPath)))},
+		{Name: "source", Value: dagql.NewID[*core.Directory](prunedSourceDir.ID())},
+	})
+	if err != nil {
+		return dir, err
+	}
+
+	return updated, nil
 }
 
 func workspaceMigrationProjectRootPath(ws *core.Workspace, plan *workspace.MigrationPlan) (string, error) {

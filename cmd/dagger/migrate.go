@@ -32,7 +32,20 @@ var migrateCmd = &cobra.Command{
 		}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 
-			changes := dag.CurrentWorkspace().Migrate().Changes()
+			migration := dag.CurrentWorkspace().Migrate()
+			migrationID, err := migration.ID(ctx)
+			if err != nil {
+				return fmt.Errorf("migration failed: %w", err)
+			}
+			migration = dag.LoadWorkspaceMigrationFromID(migrationID)
+
+			changes := migration.Changes()
+			changesID, err := changes.ID(ctx)
+			if err != nil {
+				return fmt.Errorf("migration failed: %w", err)
+			}
+			changes = dag.LoadChangesetFromID(changesID)
+
 			isEmpty, err := changes.IsEmpty(ctx)
 			if err != nil {
 				return fmt.Errorf("migration failed: %w", err)
