@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -620,9 +621,27 @@ func materializeContainerStateFromParent(ctx context.Context, dst *Container, pa
 		return err
 	}
 
+	dst.Config = parent.Self().Config
+	dst.Config.ExposedPorts = maps.Clone(dst.Config.ExposedPorts)
+	dst.Config.Env = slices.Clone(dst.Config.Env)
+	dst.Config.Entrypoint = slices.Clone(dst.Config.Entrypoint)
+	dst.Config.Cmd = slices.Clone(dst.Config.Cmd)
+	dst.Config.Volumes = maps.Clone(dst.Config.Volumes)
+	dst.Config.Labels = maps.Clone(dst.Config.Labels)
+	dst.EnabledGPUs = slices.Clone(parent.Self().EnabledGPUs)
 	dst.FS = clonedFS
 	dst.Mounts = clonedMounts
 	dst.MetaSnapshot = clonedMeta
+	dst.Platform = parent.Self().Platform
+	dst.Annotations = slices.Clone(parent.Self().Annotations)
+	dst.Secrets = slices.Clone(parent.Self().Secrets)
+	dst.Sockets = slices.Clone(parent.Self().Sockets)
+	dst.ImageRef = parent.Self().ImageRef
+	dst.Ports = slices.Clone(parent.Self().Ports)
+	dst.Services = slices.Clone(parent.Self().Services)
+	dst.DefaultTerminalCmd = parent.Self().DefaultTerminalCmd
+	dst.SystemEnvNames = slices.Clone(parent.Self().SystemEnvNames)
+	dst.DefaultArgs = parent.Self().DefaultArgs
 	return nil
 }
 
