@@ -1558,7 +1558,7 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 				}
 				return nil
 			}); err != nil {
-				return RestoreErrPath(err, subpath)
+				return RestoreErrPath(err, lazy.Path)
 			}
 			query, err := CurrentQuery(ctx)
 			if err != nil {
@@ -1686,7 +1686,7 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 				}
 				return nil
 			}); err != nil {
-				return RestoreErrPath(err, subpath)
+				return RestoreErrPath(err, lazy.Path)
 			}
 			query, err := CurrentQuery(ctx)
 			if err != nil {
