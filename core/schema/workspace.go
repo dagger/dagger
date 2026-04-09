@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -55,6 +54,46 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.`),
 			),
+		dagql.Func("init", s.workspaceInit).
+			DoNotCache("Mutates workspace on host").
+			Doc("Initialize a new workspace, creating .dagger/config.toml."),
+		dagql.Func("install", s.install).
+			DoNotCache("Mutates workspace config on host").
+			Doc("Install a module into the workspace, writing config.toml to the host.").
+			Args(
+				dagql.Arg("ref").Doc("Module reference to install."),
+				dagql.Arg("name").Doc("Override name for the installed module entry."),
+			),
+		dagql.Func("moduleInit", s.moduleInit).
+			DoNotCache("Mutates workspace config and host filesystem").
+			Doc("Create a new module owned by the workspace and auto-install it in config.toml.").
+			Args(
+				dagql.Arg("name").Doc("Name of the new module."),
+				dagql.Arg("sdk").Doc("SDK to use for the new module."),
+				dagql.Arg("source").Doc("Source subpath within the new module."),
+				dagql.Arg("include").Doc("Additional include patterns for the module."),
+				dagql.Arg("blueprint").Doc("Blueprint module reference to apply to the new module."),
+				dagql.Arg("selfCalls").Doc("Enable the self-calls experimental feature for the new module."),
+			),
+		dagql.Func("configRead", s.configRead).
+			DoNotCache("Reads live config from host").
+			Doc("Read a configuration value from config.toml.",
+				"If key is empty, returns the full config.",
+				"If key points to a scalar, returns the value.",
+				"If key points to a table, returns flattened dotted-key output.").
+			Args(
+				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
+			),
+		dagql.Func("configWrite", s.configWrite).
+			DoNotCache("Mutates workspace config on host").
+			Doc("Write a configuration value to config.toml.").
+			Args(
+				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source)."),
+				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
+			),
+		dagql.Func("moduleList", s.moduleList).
+			DoNotCache("Reads live config from host").
+			Doc("List modules defined in the workspace configuration."),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
@@ -65,11 +104,26 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
+		dagql.NodeFunc("refreshModules", DagOpChangesetWrapper(srv, s.refreshModules)).
+			Doc("Refresh lock entries for selected workspace-config modules.",
+				"This layers selective workspace refresh on top of the lockfile base.").
+			Args(
+				dagql.Arg("moduleNames").Doc("Workspace module names to refresh."),
+			).
+			Experimental("Experimental selective workspace lock refresh API."),
 		dagql.NodeFunc("update", DagOpChangesetWrapper(srv, s.update)).
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
 			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),
+		dagql.Func("migrate", s.migrate).
+			DoNotCache("Plans workspace migration against live host filesystem").
+			Doc("Plan the explicit migration needed for the current workspace.",
+				"The returned plan has an empty changeset and no steps when no migration is needed."),
 	}.Install(srv)
+
+	dagql.Fields[*core.WorkspaceModule]{}.Install(srv)
+	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
+	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
 }
 
 func (s *workspaceSchema) currentWorkspace(
@@ -279,55 +333,14 @@ func (s *workspaceSchema) update(
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("workspace lockfile does not exist")
+		return core.NewEmptyChangeset(ctx)
 	}
 
 	if err := core.UpdateWorkspaceLock(workspaceCtx, query, lock); err != nil {
 		return nil, fmt.Errorf("update workspace lock: %w", err)
 	}
 
-	lockBytes, err := lock.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("marshal workspace lock: %w", err)
-	}
-
-	baseDir, err := s.resolveRootfs(ctx, ws, resolveWorkspacePath(".", ws.Path), core.CopyFilter{}, false)
-	if err != nil {
-		return nil, err
-	}
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var updatedDir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, baseDir, &updatedDir,
-		dagql.Selector{
-			Field: "withNewFile",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(path.Join(workspace.LockDirName, workspace.LockFileName))},
-				{Name: "contents", Value: dagql.String(lockBytes)},
-				{Name: "permissions", Value: dagql.Int(0o644)},
-			},
-		},
-	); err != nil {
-		return nil, fmt.Errorf("workspace update lockfile: %w", err)
-	}
-
-	var changes dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, updatedDir, &changes,
-		dagql.Selector{
-			Field: "changes",
-			Args: []dagql.NamedInput{
-				{Name: "from", Value: dagql.NewID[*core.Directory](baseDir.ID())},
-			},
-		},
-	); err != nil {
-		return nil, fmt.Errorf("workspace update changeset: %w", err)
-	}
-
-	return changes.Self(), nil
+	return s.workspaceLockChangeset(ctx, ws, lock)
 }
 
 // resolveWorkspacePath resolves a workspace API path into a boundary-relative path:

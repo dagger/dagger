@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -185,6 +186,8 @@ func (mod *Module) ContentDigestCacheKey() string {
 	).String()
 }
 
+var ErrModuleContentDigestCacheMiss = errors.New("module not found from content digest")
+
 // GetModuleFromContentDigest loads a module based on the same content+provenance key used
 // in ModuleSource.asModule. We sometimes can't directly load a Module because the current
 // caching logic will result in that Module being re-loaded by clients (due to it being
@@ -202,7 +205,7 @@ func GetModuleFromContentDigest(
 	}
 	cacheKey := hashutil.HashStrings(dgst, md.SessionID).String()
 	cacheRes, err := dag.Cache.GetOrInitArbitrary(ctx, cacheKey, func(ctx context.Context) (any, error) {
-		return nil, fmt.Errorf("module not found: %s", modName)
+		return nil, fmt.Errorf("%w: %s", ErrModuleContentDigestCacheMiss, modName)
 	})
 	if err != nil {
 		return inst, err

@@ -2,9 +2,12 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,4 +61,68 @@ func TestModuleLocaLSource(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLegacyWorkspaceFieldHandling(t *testing.T) {
+	t.Parallel()
+
+	local := &core.ModuleSource{
+		Kind: core.ModuleSourceKindLocal,
+		Local: &core.LocalModuleSource{
+			ContextDirectoryPath: "/work/repo-b",
+		},
+		OriginalRefString: ".",
+		SourceRootSubpath: ".",
+		ConfigBlueprint: &modules.ModuleConfigDependency{
+			Name:   "bp",
+			Source: "./blueprint",
+		},
+		ConfigToolchains: []*modules.ModuleConfigDependency{{
+			Name:   "go",
+			Source: "./toolchains/go",
+		}},
+	}
+
+	require.True(t, local.UsesLegacyWorkspaceFields())
+	require.Equal(t, []string{"blueprint", "toolchains"}, local.LegacyWorkspaceFieldNames())
+
+	stripped := local.StripLegacyWorkspaceFields()
+	require.Nil(t, stripped.ConfigBlueprint)
+	require.Nil(t, stripped.ConfigToolchains)
+	require.False(t, stripped.UsesLegacyWorkspaceFields())
+
+	directErr := local.DirectLegacyWorkspaceLoadError()
+	require.EqualError(t,
+		directErr,
+		"This module must be migrated to a workspace. Run 'dagger -W .'",
+	)
+	var ext dagql.ExtendedError
+	require.True(t, errors.As(directErr, &ext))
+	require.Equal(t, map[string]any{
+		"_quiet":    true,
+		"_message":  "This module must be migrated to a workspace. Run 'dagger -W .'",
+		"_exitCode": 1,
+	}, ext.Extensions())
+	require.EqualError(t,
+		local.NestedLegacyWorkspaceLoadError(),
+		"workspace module source \"/work/repo-b\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint, toolchains\"\n\nrun `dagger migrate` in \"/work/repo-b\", then update this source to point at one of the migrated modules under \"/work/repo-b/.dagger/modules\"",
+	)
+
+	remote := &core.ModuleSource{
+		Kind: core.ModuleSourceKindGit,
+		Git: &core.GitModuleSource{
+			CloneRef: "https://github.com/acme/repo-b",
+			Version:  "main",
+		},
+		SourceRootSubpath: ".",
+		ConfigBlueprint: &modules.ModuleConfigDependency{
+			Name:   "bp",
+			Source: "./blueprint",
+		},
+	}
+
+	require.EqualError(t,
+		remote.NestedLegacyWorkspaceLoadError(),
+		"workspace module source \"https://github.com/acme/repo-b@main\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint\"\n\nuse a migrated ref that points at one of its real modules. If you control that repo, migrate it first",
+	)
 }

@@ -965,6 +965,7 @@ func (srv *Server) getOrInitClient(
 		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
 			client.clientMetadata.ExtraModules = opts.ExtraModules
 			client.pendingExtraModules = opts.ExtraModules
+			client.pendingModules = suppressPendingCWDModules(client.pendingModules)
 		}
 	}
 
@@ -1480,23 +1481,6 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 				return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
 			}
 		}
-
-		// Also serve toolchains so their functions are available in the
-		// client schema (e.g. when `dagger shell` `.cd`s into a module).
-		if src := mod.GetSource(); src != nil {
-			for _, tcSrc := range src.Toolchains {
-				if tcSrc.Self() == nil {
-					continue
-				}
-				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc)
-				if err != nil {
-					return fmt.Errorf("error resolving toolchain module: %w", err)
-				}
-				if err := srv.serveModule(client, tcMod, core.InstallOpts{}); err != nil {
-					return fmt.Errorf("error serving toolchain %s: %w", tcMod.Name(), err)
-				}
-			}
-		}
 	}
 	return nil
 }
@@ -1647,7 +1631,7 @@ func (srv *Server) loadWorkspaceLockStateLocked(
 	if err != nil {
 		return nil, err
 	}
-	lock, _, err := readWorkspaceLockState(workspaceCtx, bk, ws)
+	lock, err := readWorkspaceLockState(workspaceCtx, bk, ws)
 	if err != nil {
 		return nil, err
 	}
@@ -1699,25 +1683,25 @@ func workspaceLockPath(ws *core.Workspace) (string, error) {
 
 func readWorkspaceLockState(ctx context.Context, bk interface {
 	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
-}, ws *core.Workspace) (*workspace.Lock, bool, error) {
+}, ws *core.Workspace) (*workspace.Lock, error) {
 	lockPath, err := workspaceLockPath(ws)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	data, err := bk.ReadCallerHostFile(ctx, lockPath)
 	if err != nil {
 		if isWorkspaceLockNotFound(err) {
-			return workspace.NewLock(), false, nil
+			return workspace.NewLock(), nil
 		}
-		return nil, false, fmt.Errorf("reading lock: %w", err)
+		return nil, fmt.Errorf("reading lock: %w", err)
 	}
 
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
-		return nil, false, fmt.Errorf("parsing lock: %w", err)
+		return nil, fmt.Errorf("parsing lock: %w", err)
 	}
-	return lock, true, nil
+	return lock, nil
 }
 
 func isWorkspaceLockNotFound(err error) bool {
@@ -1791,7 +1775,7 @@ func (srv *Server) flushWorkspaceLocks(ctx context.Context, client *daggerClient
 		workspaceCtx, bk, err := srv.workspaceOwnerAccess(ctx, sess, export.ws)
 		if err == nil {
 			var latest *workspace.Lock
-			latest, _, err = readWorkspaceLockState(workspaceCtx, bk, export.ws)
+			latest, err = readWorkspaceLockState(workspaceCtx, bk, export.ws)
 			if err == nil {
 				err = latest.Merge(export.delta)
 			}

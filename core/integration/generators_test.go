@@ -184,7 +184,7 @@ func (GeneratorsSuite) TestGeneratorsAsToolchain(ctx context.Context, t *testctx
 			modGen = modGen.
 				WithWorkdir("app").
 				With(daggerExec("init")).
-				With(daggerExec("toolchain", "install", "../"+tc.path))
+				With(daggerExec("install", "../"+tc.path))
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.

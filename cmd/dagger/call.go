@@ -36,7 +36,7 @@ var callCoreCmd = &FuncCommand{
 }
 
 var callModCmd = &FuncCommand{
-	Name:  "call [options]",
+	Name:  "call [options] [function]...",
 	Short: "Call one or more functions, interconnected into a pipeline",
 	Annotations: map[string]string{
 		printTraceLinkKey: "true",
@@ -50,6 +50,12 @@ var funcListCmd = &cobra.Command{
 
 This is similar to ´dagger call --help´, but only focused on showing the
 available functions.
+
+Examples:
+  dagger functions                           # List top-level functions in current workspace
+  dagger functions container                 # List functions on container
+  dagger -W github.com/acme/ws functions     # List top-level functions in explicit workspace
+  dagger -W github.com/acme/ws functions container from
 `,
 		"´",
 		"`",
@@ -65,9 +71,15 @@ available functions.
 			}
 			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
-			for _, field := range args {
+			for i, field := range args {
 				// Lookup the next function in the specified pipeline
 				nextFunc, err := GetSupportedFunction(mod, o, field)
+				if err != nil && i == 0 {
+					if sibling := findSiblingEntrypoint(mod, field); sibling != nil {
+						nextFunc = sibling
+						err = nil
+					}
+				}
 				if err != nil {
 					return err
 				}
@@ -89,14 +101,57 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			return functionListRun(o, cmd.OutOrStdout(), cmd.ErrOrStderr())
+			// Only filter core functions when listing the Query root in
+			// workspace mode (multiple modules as sub-commands). When a
+			// main module is set (single module or -m), or when navigating
+			// into a module type, show all functions.
+			filterCore := len(args) == 0 &&
+				mod.MainObject.AsObject != nil &&
+				mod.MainObject.AsObject.Name == "Query"
+
+			var siblingFns []*modFunction
+			if len(args) == 0 &&
+				mod.MainObject.AsObject != nil &&
+				mod.MainObject.AsObject.Name != "Query" {
+				siblingFns = mod.siblingModuleEntrypoints()
+			}
+			return functionListRun(o, cmd.OutOrStdout(), cmd.ErrOrStderr(), filterCore, siblingFns)
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer) error {
+func findSiblingEntrypoint(mod *moduleDef, name string) *modFunction {
+	for _, fn := range mod.siblingModuleEntrypoints() {
+		if fn.Name == name || fn.CmdName() == name {
+			mod.LoadFunctionTypeDefs(fn)
+			return fn
+		}
+	}
+	return nil
+}
+
+func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer, filterCore bool, siblingFns []*modFunction) error {
 	fns, skipped := GetSupportedFunctions(o)
 
+	// At the Query root, filter out core API constructors - only show module
+	// constructors. When navigating into a module type, show all functions.
+	if filterCore {
+		filtered := make([]*modFunction, 0, len(fns))
+		for _, fn := range fns {
+			if fn.SourceModuleName == "" {
+				continue
+			}
+			// Hide loadXxxFromID plumbing functions.
+			if strings.HasPrefix(fn.Name, "load") && strings.HasSuffix(fn.Name, "FromID") {
+				continue
+			}
+			filtered = append(filtered, fn)
+		}
+		fns = filtered
+		skipped = nil // don't show core "skipped" noise either
+	}
+
+	fns = append(fns, siblingFns...)
 	if len(fns) == 0 {
 		fmt.Fprintln(errWriter, "No functions found.")
 		return nil
@@ -112,9 +167,18 @@ func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer) 
 		return fns[i].Name < fns[j].Name
 	})
 	for _, fn := range fns {
+		desc := fn.Short()
+		// When listing module constructors at the Query root, the constructor
+		// function itself usually has no description. Fall back to the return
+		// type's object description (the module type's doc comment).
+		if desc == "-" && fn.ReturnType != nil && fn.ReturnType.AsObject != nil {
+			if objDesc := shortDescription(fn.ReturnType.AsObject.Description); objDesc != "-" {
+				desc = objDesc
+			}
+		}
 		fmt.Fprintf(tw, "%s\t%s\n",
 			fn.CmdName(),
-			fn.Short(),
+			desc,
 		)
 	}
 	if len(skipped) > 0 {

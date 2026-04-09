@@ -33,7 +33,7 @@ type ReleaseTest struct {
 func (r *ReleaseTest) NewModule(ctx context.Context) error {
 	ctr := r.Container.WithWorkdir("/work/module")
 
-	ctr, err := ctr.WithExec([]string{"dagger", "init", "--name=my-module", "--sdk=go", "--source=."}).Sync(ctx)
+	ctr, err := ctr.WithExec([]string{"dagger", "module", "init", "--name=my-module", "--sdk=go", "--source=."}).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initialize a new module: %w", err)
 	}

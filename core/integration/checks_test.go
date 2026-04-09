@@ -155,13 +155,13 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 		{"java", "hello-with-checks-java"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			// install hello-with-checks as toolchain
+			// install hello-with-checks into the workspace
 			modGen, err := checksTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
 				With(daggerExec("init")).
-				With(daggerExec("toolchain", "install", "../"+tc.path))
+				With(daggerExec("install", "../"+tc.path))
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).

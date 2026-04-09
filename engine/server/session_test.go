@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/stretchr/testify/require"
@@ -69,6 +71,45 @@ func TestPendingLegacyModule(t *testing.T) {
 		require.True(t, mod.LegacyDefaultPath)
 		require.Nil(t, mod.ConfigDefaults)
 	})
+}
+
+func TestWorkspaceConfigPendingModules(t *testing.T) {
+	t.Parallel()
+
+	ws := &workspace.Workspace{Root: "/repo", Path: "."}
+	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
+		return "/resolved/" + filepath.Clean(relPath)
+	}
+
+	pending := workspaceConfigPendingModules(ws, &workspace.Config{
+		DefaultsFromDotEnv: true,
+		Modules: map[string]workspace.ModuleEntry{
+			"zeta": {
+				Source:     "github.com/acme/zeta@main",
+				Entrypoint: true,
+				Config:     map[string]any{"message": "hello"},
+			},
+			"alpha": {
+				Source: "modules/alpha",
+			},
+		},
+	}, resolveLocalRef)
+	require.Len(t, pending, 2)
+
+	require.Equal(t, "alpha", pending[0].Name)
+	require.Equal(t, "/resolved/.dagger/modules/alpha", pending[0].Ref)
+	require.Empty(t, pending[0].RefPin)
+	require.False(t, pending[0].Entrypoint)
+	require.True(t, pending[0].DisableFindUp)
+	require.True(t, pending[0].DefaultsFromDotEnv)
+
+	require.Equal(t, "zeta", pending[1].Name)
+	require.Equal(t, "github.com/acme/zeta@main", pending[1].Ref)
+	require.Empty(t, pending[1].RefPin)
+	require.True(t, pending[1].Entrypoint)
+	require.True(t, pending[1].DisableFindUp)
+	require.True(t, pending[1].DefaultsFromDotEnv)
+	require.Equal(t, map[string]any{"message": "hello"}, pending[1].ConfigDefaults)
 }
 
 func TestIsSameModuleReference(t *testing.T) {
@@ -194,6 +235,45 @@ func TestWorkspaceBindingMode(t *testing.T) {
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingInherit, mode)
 		require.Equal(t, "", workspaceRef)
+	})
+}
+
+func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "main-client",
+	})
+
+	t.Run("initialized workspace", func(t *testing.T) {
+		t.Parallel()
+
+		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+			Root:        "/repo",
+			Path:        "services/payment",
+			Initialized: true,
+		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		require.NoError(t, err)
+		require.Equal(t, "file:///repo/services/payment", ws.Address)
+		require.Equal(t, "services/payment", ws.Path)
+		require.True(t, ws.Initialized)
+		require.True(t, ws.HasConfig)
+		require.Equal(t, filepath.Join("services/payment", workspace.LockDirName, workspace.ConfigFileName), ws.ConfigPath)
+		require.Equal(t, "/repo", ws.HostPath())
+	})
+
+	t.Run("uninitialized workspace", func(t *testing.T) {
+		t.Parallel()
+
+		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+			Root: "/repo",
+			Path: ".",
+		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		require.NoError(t, err)
+		require.False(t, ws.Initialized)
+		require.False(t, ws.HasConfig)
+		require.Empty(t, ws.ConfigPath)
 	})
 }
 
@@ -344,10 +424,10 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 	)
 
 	require.Len(t, loads, 4)
-	require.False(t, loads[0].extra)
-	require.False(t, loads[1].extra)
-	require.True(t, loads[2].extra)
-	require.True(t, loads[3].extra)
+	require.Equal(t, moduleLoadKindAmbient, loads[0].mod.Kind)
+	require.Equal(t, moduleLoadKindAmbient, loads[1].mod.Kind)
+	require.Equal(t, moduleLoadKindExtra, loads[2].mod.Kind)
+	require.Equal(t, moduleLoadKindExtra, loads[3].mod.Kind)
 
 	require.Equal(t, "github.com/acme/a", loads[0].mod.Ref)
 	require.Equal(t, "github.com/acme/b", loads[1].mod.Ref)
@@ -374,10 +454,179 @@ func TestModuleLoadErr(t *testing.T) {
 	require.ErrorContains(t, normal, `loading module "github.com/acme/mod": boom`)
 
 	extra := moduleLoadErr(moduleLoadRequest{
-		mod:   pendingModule{Ref: "github.com/acme/extra"},
-		extra: true,
+		mod: pendingModule{
+			Kind: moduleLoadKindExtra,
+			Ref:  "github.com/acme/extra",
+		},
 	}, err)
 	require.ErrorContains(t, extra, `loading extra module "github.com/acme/extra": boom`)
+}
+
+func TestDedupeResolvedModuleLoads(t *testing.T) {
+	t.Parallel()
+
+	loads := []moduleLoadRequest{
+		{
+			mod: pendingModule{
+				Kind:       moduleLoadKindAmbient,
+				Ref:        "github.com/acme/app",
+				Name:       "app",
+				Entrypoint: false,
+			},
+		},
+		{
+			mod: pendingModule{
+				Kind:       moduleLoadKindExtra,
+				Ref:        "github.com/acme/app",
+				Name:       "app",
+				Entrypoint: true,
+			},
+		},
+		{
+			mod: pendingModule{
+				Kind:       moduleLoadKindAmbient,
+				Ref:        "github.com/acme/other",
+				Name:       "other",
+				Entrypoint: false,
+			},
+		},
+	}
+	resolved := []resolvedModuleLoad{
+		{primary: &core.Module{NameField: "app"}, primaryEntrypoint: false},
+		{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
+		{primary: &core.Module{NameField: "other"}, primaryEntrypoint: false},
+	}
+
+	dedupLoads, dedupResolved := dedupeResolvedModuleLoads(loads, resolved)
+	require.Len(t, dedupLoads, 2)
+
+	require.Equal(t, moduleLoadKindExtra, dedupLoads[0].mod.Kind)
+	require.True(t, dedupResolved[0].primaryEntrypoint)
+
+	require.Equal(t, moduleLoadKindAmbient, dedupLoads[1].mod.Kind)
+	require.False(t, dedupResolved[1].primaryEntrypoint)
+}
+
+func TestArbitrateResolvedModuleLoads(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cwd beats ambient", func(t *testing.T) {
+		t.Parallel()
+
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindCWD, Ref: "github.com/acme/local", Name: "local", Entrypoint: true}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
+			{primary: &core.Module{NameField: "local"}, primaryEntrypoint: true},
+		}
+
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.NoError(t, err)
+		require.False(t, resolved[0].primaryEntrypoint)
+		require.True(t, resolved[1].primaryEntrypoint)
+	})
+
+	t.Run("extra beats ambient", func(t *testing.T) {
+		t.Parallel()
+
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra", Name: "extra", Entrypoint: true}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
+			{primary: &core.Module{NameField: "extra"}, primaryEntrypoint: true},
+		}
+
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.NoError(t, err)
+		require.False(t, resolved[0].primaryEntrypoint)
+		require.True(t, resolved[1].primaryEntrypoint)
+	})
+
+	t.Run("multiple ambient entrypoints are invalid", func(t *testing.T) {
+		t.Parallel()
+
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/other", Name: "other", Entrypoint: true}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: &core.Module{NameField: "app"}, primaryEntrypoint: true},
+			{primary: &core.Module{NameField: "other"}, primaryEntrypoint: true},
+		}
+
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.EqualError(t, err, "invalid workspace configuration: multiple distinct ambient entrypoint modules: app, other")
+	})
+
+	t.Run("multiple extra entrypoints are invalid", func(t *testing.T) {
+		t.Parallel()
+
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra1", Name: "extra1", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra2", Name: "extra2", Entrypoint: true}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: &core.Module{NameField: "extra1"}, primaryEntrypoint: true},
+			{primary: &core.Module{NameField: "extra2"}, primaryEntrypoint: true},
+		}
+
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.EqualError(t, err, "invalid extra-module request: multiple distinct extra-module entrypoints: extra1, extra2")
+	})
+}
+
+func TestSuppressPendingCWDModules(t *testing.T) {
+	t.Parallel()
+
+	mods := []pendingModule{
+		{
+			Kind: moduleLoadKindAmbient,
+			Ref:  "github.com/acme/app",
+		},
+		{
+			Kind: moduleLoadKindCWD,
+			Ref:  "github.com/acme/local",
+		},
+		{
+			Kind: moduleLoadKindExtra,
+			Ref:  "github.com/acme/extra",
+		},
+	}
+
+	filtered := suppressPendingCWDModules(mods)
+	require.Len(t, filtered, 2)
+	require.Equal(t, moduleLoadKindAmbient, filtered[0].Kind)
+	require.Equal(t, moduleLoadKindExtra, filtered[1].Kind)
+}
+
+func TestSuppressCWDModuleForCompatWorkspace(t *testing.T) {
+	t.Parallel()
+
+	t.Run("suppresses cwd module at compat root", func(t *testing.T) {
+		t.Parallel()
+
+		require.True(t, suppressCWDModuleForCompatWorkspace(&workspace.CompatWorkspace{
+			ProjectRoot: "/repo",
+		}, "/repo"))
+	})
+
+	t.Run("does not suppress nested cwd module", func(t *testing.T) {
+		t.Parallel()
+
+		require.False(t, suppressCWDModuleForCompatWorkspace(&workspace.CompatWorkspace{
+			ProjectRoot: "/repo",
+		}, "/repo/modules/foo"))
+	})
+
+	t.Run("does not suppress without compat workspace", func(t *testing.T) {
+		t.Parallel()
+
+		require.False(t, suppressCWDModuleForCompatWorkspace(nil, "/repo"))
+	})
 }
 
 func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {

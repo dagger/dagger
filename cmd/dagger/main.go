@@ -54,7 +54,8 @@ var (
 		Title: "Execution Commands",
 	}
 
-	workdir string
+	workdir      string
+	workspaceRef string
 
 	silent                   bool
 	verbose                  int
@@ -144,13 +145,15 @@ func init() {
 		configCmd,
 		checksCmd,
 		generateCmd,
-		moduleInitCmd,
+		initCmd,
+		workspaceCmd,
+		migrateCmd,
+		moduleCmd,
 		moduleDepInstallCmd,
 		moduleUnInstallCmd,
 		moduleUpdateCmd,
 		moduleDevelopCmd,
 		modulePublishCmd,
-		toolchainCmd,
 		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
@@ -161,6 +164,7 @@ func init() {
 		mcpCmd,
 	)
 
+	rootCmd.AddGroup(workspaceGroup)
 	rootCmd.AddGroup(moduleGroup)
 	rootCmd.AddGroup(execGroup)
 
@@ -224,14 +228,17 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
-		normalized, err := NormalizeWorkdir(workdir)
+		resolvedWorkdir, err := NormalizeWorkdir(workdir)
 		if err != nil {
 			return err
 		}
-		if err := os.Chdir(normalized); err != nil {
+		if err := os.Chdir(resolvedWorkdir); err != nil {
 			return fmt.Errorf("change workdir: %w", err)
 		}
-		workdir = normalized
+		workdir = resolvedWorkdir
+		if err := validateWorkspaceFlagPolicy(cmd, args); err != nil {
+			return err
+		}
 
 		labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
 		t := analytics.New(analytics.DefaultConfig(labels))
@@ -333,7 +340,8 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
-	flags.StringVar(&workdir, "workdir", ".", "Set the working directory")
+	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
+	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace to load (local path or git ref)")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
@@ -360,10 +368,10 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.Lookup("scale-out").Hidden = true
 
 	for _, fl := range []string{
-		"workdir",
 		"dot-output",
 		"dot-focus-field",
 		"dot-show-internal",
+		"workdir",
 	} {
 		if err := flags.MarkHidden(fl); err != nil {
 			fmt.Fprintln(stdout, "Error hiding flag: "+fl, err)
@@ -390,6 +398,76 @@ func parseGlobalFlags() {
 		fmt.Fprintln(stderr, err)
 		os.Exit(1)
 	}
+}
+
+func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[workspaceFlagPolicyAnnotation] = policy
+}
+
+func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
+	if workspaceRef == "" {
+		return nil
+	}
+
+	switch workspaceFlagPolicy(cmd, args) {
+	case workspaceFlagPolicyDisallow:
+		return fmt.Errorf("--workspace is not supported for %q", cmd.CommandPath())
+	case workspaceFlagPolicyLocalOnly:
+		if isObviouslyRemoteWorkspaceRef(workspaceRef) {
+			return fmt.Errorf("--workspace must be a local path for %q", cmd.CommandPath())
+		}
+	}
+
+	return nil
+}
+
+func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
+	if isWorkspaceConfigCommand(cmd) && len(args) == 2 {
+		return workspaceFlagPolicyLocalOnly
+	}
+
+	for c := cmd; c != nil; c = c.Parent() {
+		if policy := c.Annotations[workspaceFlagPolicyAnnotation]; policy != "" {
+			return policy
+		}
+	}
+
+	return ""
+}
+
+func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
+	switch commandName(cmd) {
+	case "config", "workspace config":
+		return true
+	default:
+		return false
+	}
+}
+
+func isObviouslyRemoteWorkspaceRef(ref string) bool {
+	if ref == "" {
+		return false
+	}
+	if strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "../") || strings.HasPrefix(ref, "/") {
+		return false
+	}
+	if strings.Contains(ref, "://") || strings.HasPrefix(ref, "git@") {
+		return true
+	}
+
+	if abs, err := pathutil.Abs(ref); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			return false
+		} else if !os.IsNotExist(err) {
+			return false
+		}
+	}
+
+	head, _, hasSlash := strings.Cut(ref, "/")
+	return hasSlash && strings.Contains(head, ".")
 }
 
 func Tracer() trace.Tracer {
@@ -421,6 +499,12 @@ func Resource(ctx context.Context) *resource.Resource {
 const InstrumentationLibrary = "dagger.io/cli"
 
 var opts dagui.FrontendOpts
+
+const (
+	workspaceFlagPolicyAnnotation = "workspaceFlagPolicy"
+	workspaceFlagPolicyDisallow   = "disallow"
+	workspaceFlagPolicyLocalOnly  = "local-only"
+)
 
 func main() {
 	parseGlobalFlags()

@@ -22,10 +22,10 @@ The `.git` extension for the repository is optional for HTTP refs or explicit SS
 
 ## Installation
 
-You can call Dagger Functions from any other Dagger module in your own Dagger module simply by adding it as a module dependency with `dagger install`, as in the following example:
+You can call Dagger Functions from any other Dagger module in your own Dagger module simply by adding it as a module dependency with `dagger module install`, as in the following example:
 
 ```shell
-dagger install github.com/shykes/daggerverse/hello@v0.3.0
+dagger module install github.com/shykes/daggerverse/hello@v0.3.0
 ```
 
 This module will be added to your `dagger.json`:
@@ -40,7 +40,7 @@ This module will be added to your `dagger.json`:
 ]
 ```
 
-When you add a dependency to your module with `dagger install`, the dependent module will be added to the code-generation routines and can be accessed from your own module's code.
+When you add a dependency to your module with `dagger module install`, the dependent module will be added to the code-generation routines and can be accessed from your own module's code.
 
 The entrypoint to accessing dependent modules from your own module's code is `dag`, the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
 
@@ -103,7 +103,7 @@ Here is a more complex example. It is a Dagger Function that utilizes a module f
 First, install the module:
 
 ```shell
-dagger install github.com/kpenfound/dagger-modules/golang@v0.2.0
+dagger module install github.com/kpenfound/dagger-modules/golang@v0.2.0
 ```
 
 Next, create a new Dagger Function:
@@ -160,7 +160,7 @@ dagger call example --build-src=https://github.com/golang/example#master:/hello 
 You can also use local modules as dependencies, as long as they are in the same git repository. For example:
 
 ```shell
-dagger install ./path/to/module
+dagger module install ./path/to/module
 ```
 
 :::note
@@ -174,9 +174,9 @@ You can also install private modules from remote repositories, as long as you ha
 When installing a private module, you can use either the normal ref style (preferred if possible, since it allows any available authentication method to be used), or explicitly specify the protocol. For example, the following commands all install the same private module:
 
 ```shell
-dagger install github.com/username/private-repo/module
-dagger install https://github.com/username/private-repo/module
-dagger install ssh://git@github.com/username/private-repo/module
+dagger module install github.com/username/private-repo/module
+dagger module install https://github.com/username/private-repo/module
+dagger module install ssh://git@github.com/username/private-repo/module
 ```
 
 ## Uninstallation
@@ -192,17 +192,17 @@ dagger uninstall github.com/shykes/daggerverse/hello
 
 ## Update
 
-To update a dependency in your Dagger module to the latest version (or the version specified), use the `dagger update` command. The target module must be local.
+To update a dependency in your Dagger module to the latest version (or the version specified), use the `dagger module update` command. The target module must be local.
 
 The commands below are equivalent:
 
 ```shell
-dagger update hello
-dagger update github.com/shykes/daggerverse/hello
+dagger module update hello
+dagger module update github.com/shykes/daggerverse/hello
 ```
 
 :::note
 Given a dependency like `github.com/path/name@branch/tag`:
-- `dagger update github.com/path/name` updates the dependency to the latest commit of the branch/tag.
-- `dagger update github.com/path/name@version` updates the dependency to the latest commit for the `version` branch/tag.
+- `dagger module update github.com/path/name` updates the dependency to the latest commit of the branch/tag.
+- `dagger module update github.com/path/name@version` updates the dependency to the latest commit for the `version` branch/tag.
 :::

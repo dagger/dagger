@@ -70,6 +70,10 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
+	if params.Workspace == nil && workspaceRef != "" {
+		ref := workspaceRef
+		params.Workspace = &ref
+	}
 	if !moduleNoURL {
 		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
 			params.Module = modRef
@@ -212,10 +216,14 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 
 	// Direct command stdout/stderr to span stdio via OpenTelemetry.
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	oldOut := rootCmd.OutOrStdout()
+	oldErr := rootCmd.ErrOrStderr()
 	rootCmd.SetOut(stdio.Stdout)
 	rootCmd.SetErr(stdio.Stderr)
 
 	return ctx, func(rerr error) {
+		rootCmd.SetOut(oldOut)
+		rootCmd.SetErr(oldErr)
 		stdio.Close()
 		telemetry.EndWithCause(span, &rerr)
 		telemetry.Close()

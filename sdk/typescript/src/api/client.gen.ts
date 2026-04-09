@@ -2727,6 +2727,13 @@ export type WorkspaceChecksOpts = {
   include?: string[]
 }
 
+export type WorkspaceConfigReadOpts = {
+  /**
+   * Dotted key path (e.g. modules.greeter.source). Empty for full config.
+   */
+  key?: string
+}
+
 export type WorkspaceDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -2758,10 +2765,68 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
+export type WorkspaceInstallOpts = {
+  /**
+   * Override name for the installed module entry.
+   */
+  name?: string
+}
+
+export type WorkspaceModuleInitOpts = {
+  /**
+   * SDK to use for the new module.
+   */
+  sdk?: string
+
+  /**
+   * Source subpath within the new module.
+   */
+  source?: string
+
+  /**
+   * Additional include patterns for the module.
+   */
+  include?: string[]
+
+  /**
+   * Blueprint module reference to apply to the new module.
+   */
+  blueprint?: string
+
+  /**
+   * Enable the self-calls experimental feature for the new module.
+   */
+  selfCalls?: boolean
+}
+
+export type WorkspaceRefreshModulesOpts = {
+  /**
+   * Workspace module names to refresh.
+   */
+  moduleNames?: string[]
+}
+
 /**
  * The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
  */
 export type WorkspaceID = string & { __WorkspaceID: never }
+
+/**
+ * The `WorkspaceMigrationID` scalar type represents an identifier for an object of type WorkspaceMigration.
+ */
+export type WorkspaceMigrationID = string & { __WorkspaceMigrationID: never }
+
+/**
+ * The `WorkspaceMigrationStepID` scalar type represents an identifier for an object of type WorkspaceMigrationStep.
+ */
+export type WorkspaceMigrationStepID = string & {
+  __WorkspaceMigrationStepID: never
+}
+
+/**
+ * The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
+ */
+export type WorkspaceModuleID = string & { __WorkspaceModuleID: never }
 
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
@@ -3161,6 +3226,30 @@ export class Binding extends BaseClient {
   asWorkspace = (): Workspace => {
     const ctx = this._ctx.select("asWorkspace")
     return new Workspace(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceMigration
+   */
+  asWorkspaceMigration = (): WorkspaceMigration => {
+    const ctx = this._ctx.select("asWorkspaceMigration")
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceMigrationStep
+   */
+  asWorkspaceMigrationStep = (): WorkspaceMigrationStep => {
+    const ctx = this._ctx.select("asWorkspaceMigrationStep")
+    return new WorkspaceMigrationStep(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceModule
+   */
+  asWorkspaceModule = (): WorkspaceModule => {
+    const ctx = this._ctx.select("asWorkspaceModule")
+    return new WorkspaceModule(ctx)
   }
 
   /**
@@ -7273,6 +7362,105 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type WorkspaceMigration in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceMigration value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceMigrationInput = (
+    name: string,
+    value: WorkspaceMigration,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceMigration output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceMigrationOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceMigrationStep in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceMigrationStep value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceMigrationStepInput = (
+    name: string,
+    value: WorkspaceMigrationStep,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationStepInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceMigrationStep output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceMigrationStepOutput = (
+    name: string,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationStepOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceModule in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceModule value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceModuleInput = (
+    name: string,
+    value: WorkspaceModule,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceModule output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceModuleOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
    * Declare a desired Workspace output to be assigned in the environment
    * @param name The name of the binding
    * @param description A description of the desired value of the binding
@@ -10873,6 +11061,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The blueprint referenced by the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
    */
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
@@ -11219,6 +11408,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The toolchains referenced by the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
    */
   toolchains = async (): Promise<ModuleSource[]> => {
     type toolchains = {
@@ -11260,6 +11450,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Set a blueprint for the module source.
    * @param blueprint The blueprint module to set.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withBlueprint = (blueprint: ModuleSource): ModuleSource => {
     const ctx = this._ctx.select("withBlueprint", { blueprint })
@@ -11344,6 +11535,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Add toolchains to the module source.
    * @param toolchains The toolchain modules to add.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withToolchains = (toolchains: ModuleSource[]): ModuleSource => {
     const ctx = this._ctx.select("withToolchains", { toolchains })
@@ -11352,6 +11544,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Update the blueprint module to the latest version.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withUpdateBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withUpdateBlueprint")
@@ -11370,6 +11563,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Update one or more toolchains.
    * @param toolchains The toolchains to update.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withUpdateToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateToolchains", { toolchains })
@@ -11387,6 +11581,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Remove the current blueprint from the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withoutBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withoutBlueprint")
@@ -11425,6 +11620,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Remove the provided toolchains from the module source.
    * @param toolchains The toolchains to remove.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
    */
   withoutToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutToolchains", { toolchains })
@@ -12470,6 +12666,34 @@ export class Client extends BaseClient {
   loadWorkspaceFromID = (id: WorkspaceID): Workspace => {
     const ctx = this._ctx.select("loadWorkspaceFromID", { id })
     return new Workspace(ctx)
+  }
+
+  /**
+   * Load a WorkspaceMigration from its ID.
+   */
+  loadWorkspaceMigrationFromID = (
+    id: WorkspaceMigrationID,
+  ): WorkspaceMigration => {
+    const ctx = this._ctx.select("loadWorkspaceMigrationFromID", { id })
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Load a WorkspaceMigrationStep from its ID.
+   */
+  loadWorkspaceMigrationStepFromID = (
+    id: WorkspaceMigrationStepID,
+  ): WorkspaceMigrationStep => {
+    const ctx = this._ctx.select("loadWorkspaceMigrationStepFromID", { id })
+    return new WorkspaceMigrationStep(ctx)
+  }
+
+  /**
+   * Load a WorkspaceModule from its ID.
+   */
+  loadWorkspaceModuleFromID = (id: WorkspaceModuleID): WorkspaceModule => {
+    const ctx = this._ctx.select("loadWorkspaceModuleFromID", { id })
+    return new WorkspaceModule(ctx)
   }
 
   /**
@@ -13777,9 +14001,14 @@ export class Workspace extends BaseClient {
   private readonly _address?: string = undefined
   private readonly _clientId?: string = undefined
   private readonly _configPath?: string = undefined
+  private readonly _configRead?: string = undefined
+  private readonly _configWrite?: string = undefined
   private readonly _findUp?: string = undefined
   private readonly _hasConfig?: boolean = undefined
+  private readonly _init?: string = undefined
   private readonly _initialized?: boolean = undefined
+  private readonly _install?: string = undefined
+  private readonly _moduleInit?: string = undefined
   private readonly _path?: string = undefined
 
   /**
@@ -13791,9 +14020,14 @@ export class Workspace extends BaseClient {
     _address?: string,
     _clientId?: string,
     _configPath?: string,
+    _configRead?: string,
+    _configWrite?: string,
     _findUp?: string,
     _hasConfig?: boolean,
+    _init?: string,
     _initialized?: boolean,
+    _install?: string,
+    _moduleInit?: string,
     _path?: string,
   ) {
     super(ctx)
@@ -13802,9 +14036,14 @@ export class Workspace extends BaseClient {
     this._address = _address
     this._clientId = _clientId
     this._configPath = _configPath
+    this._configRead = _configRead
+    this._configWrite = _configWrite
     this._findUp = _findUp
     this._hasConfig = _hasConfig
+    this._init = _init
     this._initialized = _initialized
+    this._install = _install
+    this._moduleInit = _moduleInit
     this._path = _path
   }
 
@@ -13871,6 +14110,45 @@ export class Workspace extends BaseClient {
     }
 
     const ctx = this._ctx.select("configPath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Read a configuration value from config.toml.
+   *
+   * If key is empty, returns the full config.
+   *
+   * If key points to a scalar, returns the value.
+   *
+   * If key points to a table, returns flattened dotted-key output.
+   * @param opts.key Dotted key path (e.g. modules.greeter.source). Empty for full config.
+   */
+  configRead = async (opts?: WorkspaceConfigReadOpts): Promise<string> => {
+    if (this._configRead) {
+      return this._configRead
+    }
+
+    const ctx = this._ctx.select("configRead", { ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Write a configuration value to config.toml.
+   * @param key Dotted key path (e.g. modules.greeter.source).
+   * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+   */
+  configWrite = async (key: string, value: string): Promise<string> => {
+    if (this._configWrite) {
+      return this._configWrite
+    }
+
+    const ctx = this._ctx.select("configWrite", { key, value })
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -13953,6 +14231,21 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Initialize a new workspace, creating .dagger/config.toml.
+   */
+  init = async (): Promise<string> => {
+    if (this._init) {
+      return this._init
+    }
+
+    const ctx = this._ctx.select("init")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Whether .dagger/config.toml exists.
    */
   initialized = async (): Promise<boolean> => {
@@ -13965,6 +14258,77 @@ export class Workspace extends BaseClient {
     const response: Awaited<boolean> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Install a module into the workspace, writing config.toml to the host.
+   * @param ref Module reference to install.
+   * @param opts.name Override name for the installed module entry.
+   */
+  install = async (
+    ref: string,
+    opts?: WorkspaceInstallOpts,
+  ): Promise<string> => {
+    if (this._install) {
+      return this._install
+    }
+
+    const ctx = this._ctx.select("install", { ref, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Plan the explicit migration needed for the current workspace.
+   *
+   * The returned plan has an empty changeset and no steps when no migration is needed.
+   */
+  migrate = (): WorkspaceMigration => {
+    const ctx = this._ctx.select("migrate")
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Create a new module owned by the workspace and auto-install it in config.toml.
+   * @param name Name of the new module.
+   * @param opts.sdk SDK to use for the new module.
+   * @param opts.source Source subpath within the new module.
+   * @param opts.include Additional include patterns for the module.
+   * @param opts.blueprint Blueprint module reference to apply to the new module.
+   * @param opts.selfCalls Enable the self-calls experimental feature for the new module.
+   */
+  moduleInit = async (
+    name: string,
+    opts?: WorkspaceModuleInitOpts,
+  ): Promise<string> => {
+    if (this._moduleInit) {
+      return this._moduleInit
+    }
+
+    const ctx = this._ctx.select("moduleInit", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List modules defined in the workspace configuration.
+   */
+  moduleList = async (): Promise<WorkspaceModule[]> => {
+    type moduleList = {
+      id: WorkspaceModuleID
+    }
+
+    const ctx = this._ctx.select("moduleList").select("id")
+
+    const response: Awaited<moduleList[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadWorkspaceModuleFromID(r.id),
+    )
   }
 
   /**
@@ -13983,6 +14347,18 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Refresh lock entries for selected workspace-config modules.
+   *
+   * This layers selective workspace refresh on top of the lockfile base.
+   * @param opts.moduleNames Workspace module names to refresh.
+   * @experimental
+   */
+  refreshModules = (opts?: WorkspaceRefreshModulesOpts): Changeset => {
+    const ctx = this._ctx.select("refreshModules", { ...opts })
+    return new Changeset(ctx)
+  }
+
+  /**
    * Refresh workspace-managed state and return the resulting changeset.
    *
    * Currently this refreshes existing lockfile entries only.
@@ -13991,6 +14367,239 @@ export class Workspace extends BaseClient {
   update = (): Changeset => {
     const ctx = this._ctx.select("update")
     return new Changeset(ctx)
+  }
+}
+
+/**
+ * A planned workspace migration.
+ */
+export class WorkspaceMigration extends BaseClient {
+  private readonly _id?: WorkspaceMigrationID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: WorkspaceMigrationID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this WorkspaceMigration.
+   */
+  id = async (): Promise<WorkspaceMigrationID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<WorkspaceMigrationID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Filesystem changes for the full migration plan.
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Logical migration steps, each identified by a stable code.
+   */
+  steps = async (): Promise<WorkspaceMigrationStep[]> => {
+    type steps = {
+      id: WorkspaceMigrationStepID
+    }
+
+    const ctx = this._ctx.select("steps").select("id")
+
+    const response: Awaited<steps[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadWorkspaceMigrationStepFromID(r.id),
+    )
+  }
+}
+
+/**
+ * A single logical part of a workspace migration.
+ */
+export class WorkspaceMigrationStep extends BaseClient {
+  private readonly _id?: WorkspaceMigrationStepID = undefined
+  private readonly _code?: string = undefined
+  private readonly _description?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: WorkspaceMigrationStepID,
+    _code?: string,
+    _description?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._code = _code
+    this._description = _description
+  }
+
+  /**
+   * A unique identifier for this WorkspaceMigrationStep.
+   */
+  id = async (): Promise<WorkspaceMigrationStepID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<WorkspaceMigrationStepID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Filesystem changes for this step.
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Stable code identifying this logical migration step.
+   */
+  code = async (): Promise<string> => {
+    if (this._code) {
+      return this._code
+    }
+
+    const ctx = this._ctx.select("code")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Generic summary of this step's purpose and impact.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Non-fatal warnings raised while planning this step.
+   */
+  warnings = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("warnings")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A module entry in the workspace configuration.
+ */
+export class WorkspaceModule extends BaseClient {
+  private readonly _id?: WorkspaceModuleID = undefined
+  private readonly _entrypoint?: boolean = undefined
+  private readonly _name?: string = undefined
+  private readonly _source?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: WorkspaceModuleID,
+    _entrypoint?: boolean,
+    _name?: string,
+    _source?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._entrypoint = _entrypoint
+    this._name = _name
+    this._source = _source
+  }
+
+  /**
+   * A unique identifier for this WorkspaceModule.
+   */
+  id = async (): Promise<WorkspaceModuleID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<WorkspaceModuleID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the module is the workspace entrypoint (functions aliased to Query root).
+   */
+  entrypoint = async (): Promise<boolean> => {
+    if (this._entrypoint) {
+      return this._entrypoint
+    }
+
+    const ctx = this._ctx.select("entrypoint")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module source path.
+   */
+  source = async (): Promise<string> => {
+    if (this._source) {
+      return this._source
+    }
+
+    const ctx = this._ctx.select("source")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

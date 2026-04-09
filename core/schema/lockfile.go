@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -126,13 +125,7 @@ func resolveLookupFromLock(
 }
 
 func lockHostPath(ws *core.Workspace) (string, error) {
-	if ws == nil {
-		return "", fmt.Errorf("workspace is required")
-	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace has no host path")
-	}
-	return filepath.Join(ws.HostPath(), ws.Path, workspace.LockDirName, workspace.LockFileName), nil
+	return workspaceHostPath(ws, workspace.LockDirName, workspace.LockFileName)
 }
 
 func readWorkspaceLock(ctx context.Context, bk interface {
@@ -180,22 +173,61 @@ func exportLockToHost(ctx context.Context, bk *buildkit.Client, ws *core.Workspa
 		return err
 	}
 
-	tmpFile, err := os.CreateTemp("", "workspace-lock-*")
+	return exportWorkspaceFileToHost(ctx, bk, lockPath, lockBytes)
+}
+
+func ExportLockToHost(ctx context.Context, bk *buildkit.Client, ws *core.Workspace, lock *workspace.Lock) error {
+	return exportLockToHost(ctx, bk, ws, lock)
+}
+
+func resolveModuleSourceLookupResult(
+	ctx context.Context,
+	query *core.Query,
+	source string,
+	policy workspace.LockPolicy,
+) (workspace.LookupResult, error) {
+	ctx = lookupRefreshContext(ctx)
+
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.Write(lockBytes); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
+		return workspace.LookupResult{}, fmt.Errorf("buildkit client: %w", err)
 	}
 
-	if err := bk.LocalFileExport(ctx, tmpFile.Name(), workspace.LockFileName, lockPath, true); err != nil {
-		return fmt.Errorf("export lock: %w", err)
+	parsedRef, err := core.ParseRefString(ctx, core.NewCallerStatFS(bk), source, "")
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("parse module source %q: %w", source, err)
 	}
-	return nil
+	if parsedRef.Kind != core.ModuleSourceKindGit {
+		return workspace.LookupResult{}, fmt.Errorf("module source %q is not a git source", source)
+	}
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("query server: %w", err)
+	}
+
+	gitRef, err := parsedRef.Git.GitRef(ctx, dag, "")
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("resolve module source %q: %w", source, err)
+	}
+
+	if policy == "" {
+		policy = moduleResolveLockPolicy(gitRef.Self().Ref)
+	}
+
+	return workspace.LookupResult{
+		Value:  gitRef.Self().Ref.SHA,
+		Policy: policy,
+	}, nil
+}
+
+func lookupRefreshContext(ctx context.Context) context.Context {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return ctx
+	}
+
+	refreshed := *clientMetadata
+	refreshed.LockMode = string(workspace.LockModeDisabled)
+	return engine.ContextWithClientMetadata(ctx, &refreshed)
 }

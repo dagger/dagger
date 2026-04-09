@@ -8,7 +8,7 @@ description: "Set up your IDE (GoLand, Visual Studio Code, Zed) to work with Dag
 
 Dagger uses GraphQL as its low-level language-agnostic API query language, and each Dagger SDK generates native code-bindings for all dependencies from this API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
 
-The `dagger init` command bootstraps a Dagger module template in the selected programming language, while `dagger develop` sets up or updates all the resources needed to develop a module. After running this command, follow the steps below to have your IDE recognize the Dagger module.
+The `dagger module init` command bootstraps a Dagger module template in the selected programming language, while `dagger develop` sets up or updates all the resources needed to develop a module. After running these commands, follow the steps below to have your IDE recognize the Dagger module.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -198,7 +198,7 @@ It can also create and manage the project environment, but may not support `uv.l
 
 When opening the generated `dagger/src/index.ts` in an IDE, most IDEs will automatically recognize the `@dagger.io/dagger` package, so long as the `tsconfig.json` file has a path configured on it.
 
-For Dagger modules initialized using `dagger init`, the default template is already configured this way:
+For Dagger modules initialized using `dagger module init`, the default template is already configured this way:
 
 ```json
     "experimentalDecorators": true,
@@ -218,7 +218,7 @@ Most popular IDEs support source-maps, either natively or with an external plugi
 <TabItem value="php" label="PHP">
 To get your IDE to recognize a Dagger PHP module, ensure your `composer.json` has a path configured to the generated `dagger/dagger` package. This is located in the `sdk` directory of your module.
 
-For Dagger modules initialized using `dagger init`, the default template is already configured this way:
+For Dagger modules initialized using `dagger module init`, the default template is already configured this way:
 
 ```json
 "repositories": [

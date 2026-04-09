@@ -1001,6 +1001,10 @@ func (fe *frontendPretty) doQuit() {
 // FinalRender is called after the program has finished running and prints the
 // final output after the TUI has exited.
 func (fe *frontendPretty) FinalRender(w io.Writer) error {
+	if exitCode, ok := renderQuietError(w, fe.err); ok {
+		return ExitError{OriginalCode: exitCode, Original: fe.err}
+	}
+
 	// Hint for future rendering that this is the final, non-interactive render
 	// (so don't show key hints etc.)
 	fe.finalRender = true

@@ -154,139 +154,70 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 }
 
 func (CLISuite) TestDaggerInitLICENSE(ctx context.Context, t *testctx.T) {
-	t.Run("bootstraps Apache-2.0 LICENSE file if none found", func(ctx context.Context, t *testctx.T) {
+	t.Run("does not create LICENSE file on init with sdk", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go"))
-
-		content, err := modGen.File("LICENSE").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, content, "Apache License, Version 2.0")
-	})
-
-	t.Run("do not bootstrap LICENSE file if license is set empty", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=empty-license", "--sdk=go", "--license="))
 
 		files, err := modGen.Directory(".").Entries(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, files, "LICENSE")
 	})
 
-	t.Run("do not bootstrap LICENSE file if no sdk is specified", func(ctx context.Context, t *testctx.T) {
+	t.Run("license=false is a no-op", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=no-license", "--source=."))
+			With(daggerExec("init", "--name=empty-license", "--sdk=go", "--license=false"))
 
 		files, err := modGen.Directory(".").Entries(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, files, "LICENSE")
-
-		t.Run("do not bootstrap LICENSE file if no sdk is specified", func(ctx context.Context, t *testctx.T) {
-			modGen := modGen.With(daggerExec("develop", "--source=dagger"))
-
-			files, err := modGen.Directory(".").Entries(ctx)
-			require.NoError(t, err)
-			require.NotContains(t, files, "LICENSE")
-		})
-
-		t.Run("do not bootstrap LICENSE file if license is empty", func(ctx context.Context, t *testctx.T) {
-			modGen := modGen.With(daggerExec("develop", "--source=dagger", `--license=""`))
-
-			files, err := modGen.Directory(".").Entries(ctx)
-			require.NoError(t, err)
-			require.NotContains(t, files, "LICENSE")
-		})
-
-		t.Run("bootstrap a license after sdk is set on dagger develop", func(ctx context.Context, t *testctx.T) {
-			modGen := modGen.With(daggerExec("develop", "--sdk=go"))
-
-			content, err := modGen.File("LICENSE").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, content, "Apache License, Version 2.0")
-		})
-
-		t.Run("bootstrap custom LICENSE file if sdk and license are specified", func(ctx context.Context, t *testctx.T) {
-			modGen := modGen.With(daggerExec("develop", "--sdk=go", `--license=MIT`))
-
-			content, err := modGen.File("LICENSE").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, content, "MIT License")
-		})
 	})
 
-	t.Run("creates LICENSE file in the directory specified by arg", func(ctx context.Context, t *testctx.T) {
+	t.Run("license=true fails with deprecation error", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go", "./mymod"))
+			With(daggerExec("init", "--name=no-license", "--sdk=go", "--license=true"))
 
-		content, err := modGen.File("mymod/LICENSE").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, content, "Apache License, Version 2.0")
+		_, err := modGen.Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "--license is deprecated and no longer generates a LICENSE file; create one manually")
 	})
 
-	t.Run("does not bootstrap LICENSE file if it exists in the parent context", func(ctx context.Context, t *testctx.T) {
+	t.Run("license values other than false also fail with deprecation error", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := goGitBase(t, c).
+		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("/work/LICENSE", "doesnt matter").
-			WithWorkdir("/work/sub").
-			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go"))
+			With(daggerExec("init", "--name=no-license", "--sdk=go", "--license=MIT"))
 
-		// Check that the license file is not generated in the sub directory.
-		files, err := modGen.Directory("/work/sub").Entries(ctx)
+		_, err := modGen.Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "--license is deprecated and no longer generates a LICENSE file; create one manually")
+	})
+
+	t.Run("does not create LICENSE file on develop with sdk", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=no-license", "--source=.")).
+			With(daggerExec("develop", "--sdk=go"))
+
+		files, err := modGen.Directory(".").Entries(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, files, "LICENSE")
-
-		// Check that the parent directory actually has a LICENSE file.
-		files, err = modGen.Directory("/work").Entries(ctx)
-		require.NoError(t, err)
-		require.Contains(t, files, "LICENSE")
-	})
-
-	t.Run("does not bootstrap LICENSE file if it exists in an arbitrary parent dir", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("/work/LICENSE", "doesnt matter").
-			WithWorkdir("/work/sub").
-			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go"))
-
-		content, err := modGen.File("LICENSE").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, content, "Apache License, Version 2.0")
-	})
-
-	t.Run("bootstraps a LICENSE file when requested, even if it exists in the parent dir", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("/work/LICENSE", "doesnt matter").
-			WithWorkdir("/work/sub").
-			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go", "--license=MIT"))
-
-		content, err := modGen.File("LICENSE").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, content, "MIT License")
 	})
 }
 
@@ -363,7 +294,7 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 				modGen := goGitBase(t, c).
 					With(daggerExec("init", "--name=bare", "--source=."))
 
-				// TODO: use dagger config to set this once support is added there
+				// TODO: make this configurable
 				modCfgContents, err := modGen.File("dagger.json").Contents(ctx)
 				require.NoError(t, err)
 				modCfg := &modules.ModuleConfig{}
@@ -1852,20 +1783,6 @@ func (m *Hello) Hello() string {
 	require.NoError(t, err)
 	require.NotContains(t, daggerJSON, `"sdk"`)
 
-	t.Run("shell help does not segfault and stdlib functions are shown", func(ctx context.Context, t *testctx.T) {
-		out, err := testCtr.With(daggerShell(".help")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "container") // stdlib
-		require.Contains(t, out, "directory") // stdlib
-		require.Contains(t, out, "Use \".help <command> | <function>\" for more information.")
-	})
-
-	t.Run("core types are still available and working", func(ctx context.Context, t *testctx.T) {
-		out, err := testCtr.With(daggerShell("container | from alpine | with-exec echo Hello | stdout")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Hello\n", out)
-	})
-
 	t.Run("functions with no SDK show just the headers", func(ctx context.Context, t *testctx.T) {
 		out, err := testCtr.With(daggerExec("functions")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1890,11 +1807,5 @@ func (m *Hello) Hello() string {
 	t.Run("call a module without sdk", func(ctx context.Context, t *testctx.T) {
 		_, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerExec("call")).Stdout(ctx)
 		require.NoError(t, err)
-	})
-
-	t.Run("no-sdk module can load module with sdk", func(ctx context.Context, t *testctx.T) {
-		out, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerShell("hello | hello")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hi", out)
 	})
 }
