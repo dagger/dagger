@@ -300,6 +300,52 @@ func (m *Test) ContextGitRef(
 		require.Equal(t, randomA, randomB, "withExec output should survive engine restart for equivalent host-mounted input")
 	})
 
+	t.Run("container withExec output on host mounted file survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-container-host-file-state-" + identity.NewID()
+
+		hostDirA := t.TempDir()
+		hostFileA := filepath.Join(hostDirA, "input.txt")
+		require.NoError(t, os.WriteFile(hostFileA, []byte("same-content\n"), 0o600))
+		hostDirB := t.TempDir()
+		hostFileB := filepath.Join(hostDirB, "input.txt")
+		require.NoError(t, os.WriteFile(hostFileB, []byte("same-content\n"), 0o600))
+
+		runChain := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client, hostPath string) string {
+			t.Helper()
+			workDir := engineClient.
+				Container().
+				From(alpineImage).
+				WithMountedFile("/src/input.txt", engineClient.Host().File(hostPath)).
+				WithExec([]string{"sh", "-ec", "mkdir -p /work && cp /src/input.txt /work/input.txt && head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt"}).
+				Directory("/work")
+
+			entries, err := workDir.Entries(ctx)
+			require.NoError(t, err)
+			require.Contains(t, entries, "input.txt")
+			require.Contains(t, entries, "random.txt")
+
+			randomContents, err := workDir.File("random.txt").Contents(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(randomContents)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		randomA := runChain(ctx, t, engineClientA, hostFileA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		randomB := runChain(ctx, t, engineClientB, hostFileB)
+		require.Equal(t, randomA, randomB, "withExec output should survive engine restart for equivalent host-mounted file input")
+	})
+
 	t.Run("git repository and ref survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-git-restart-state-" + identity.NewID()

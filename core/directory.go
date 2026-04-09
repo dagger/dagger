@@ -221,7 +221,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	return nil, fmt.Errorf("%w: encode persisted directory: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
 }
 
-func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage, snapshotRole string) (*Directory, error) {
 	var persisted persistedDirectoryPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted directory payload: %w", err)
@@ -238,7 +238,7 @@ func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	}
 	switch persisted.Form {
 	case persistedDirectoryFormSnapshot:
-		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "directory", "snapshot")
+		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "directory", snapshotRole)
 		if err != nil {
 			return nil, err
 		}
@@ -257,6 +257,10 @@ func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	default:
 		return nil, fmt.Errorf("decode persisted directory payload: unsupported form %q", persisted.Form)
 	}
+}
+
+func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	return decodePersistedDirectoryWithSnapshotRole(ctx, dag, resultID, call, payload, "snapshot")
 }
 
 func loadCanonicalScratchDirectory(ctx context.Context) (string, bkcache.ImmutableRef, error) {

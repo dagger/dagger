@@ -213,7 +213,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 	return nil, fmt.Errorf("%w: encode persisted file: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
 }
 
-func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func decodePersistedFileWithSnapshotRole(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage, snapshotRole string) (*File, error) {
 	var persisted persistedFilePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted file payload: %w", err)
@@ -230,7 +230,7 @@ func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resul
 	}
 	switch persisted.Form {
 	case persistedFileFormSnapshot:
-		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "file", "snapshot")
+		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "file", snapshotRole)
 		if err != nil {
 			return nil, err
 		}
@@ -249,6 +249,10 @@ func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resul
 	default:
 		return nil, fmt.Errorf("decode persisted file payload: unsupported form %q", persisted.Form)
 	}
+}
+
+func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	return decodePersistedFileWithSnapshotRole(ctx, dag, resultID, call, payload, "snapshot")
 }
 
 type FileWithReplacedLazy struct {

@@ -1255,13 +1255,9 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 	case persistedContainerValueFormPending:
 		return decodedContainerDirectoryValue{Dir: nil, Kind: wrapped.Form}, nil
 	case persistedContainerValueFormMaterialized:
-		typed, err := new(Directory).DecodePersistedObject(ctx, dag, resultID, nil, wrapped.Value)
+		dir, err := decodePersistedDirectoryWithSnapshotRole(ctx, dag, resultID, nil, wrapped.Value, role)
 		if err != nil {
 			return decodedContainerDirectoryValue{}, err
-		}
-		dir, ok := typed.(*Directory)
-		if !ok {
-			return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory value: unexpected typed value %T", typed)
 		}
 		return decodedContainerDirectoryValue{Dir: dir, Kind: wrapped.Form}, nil
 	default:
@@ -1283,13 +1279,9 @@ func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, r
 	case persistedContainerValueFormPending:
 		return decodedContainerFileValue{File: nil, Kind: wrapped.Form}, nil
 	case persistedContainerValueFormMaterialized:
-		typed, err := new(File).DecodePersistedObject(ctx, dag, resultID, nil, wrapped.Value)
+		file, err := decodePersistedFileWithSnapshotRole(ctx, dag, resultID, nil, wrapped.Value, role)
 		if err != nil {
 			return decodedContainerFileValue{}, err
-		}
-		file, ok := typed.(*File)
-		if !ok {
-			return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file value: unexpected typed value %T", typed)
 		}
 		return decodedContainerFileValue{File: file, Kind: wrapped.Form}, nil
 	default:
