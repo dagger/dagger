@@ -110,41 +110,13 @@ dagger version
 
 <TabItem value="Nix">
 
-Dagger is available via [Nix](https://nixos.org) in two ways:
+Install Dagger using `nix profile`:
 
-#### Flake (recommended)
-
-```nix
-{
-  inputs = {
-    nixpkgs.url = "nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-    dagger.url = "github:dagger/nix";
-    dagger.inputs.nixpkgs.follows = "nixpkgs";
-  };
-
-  outputs = { self, nixpkgs, flake-utils, dagger, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs { inherit system; };
-      in {
-        devShells.default = pkgs.mkShell {
-          buildInputs = [ dagger.packages.${system}.dagger ];
-        };
-      });
-}
+```shell
+nix profile install github:dagger/nix#dagger
 ```
 
-#### NUR (Nix User Repository)
-
-```nix
-{
-  nixpkgs.config.allowUnfree = true;
-  packages.dagger = import (builtins.fetchTarball "https://github.com/dagger/nix/archive/main.tar.gz") {};
-}
-```
-
-For more information, see the [dagger/nix GitHub repository](https://github.com/dagger/nix).
+For alternative installation methods, see the [dagger/nix GitHub repository](https://github.com/dagger/nix).
 
 </TabItem>
 </Tabs>
