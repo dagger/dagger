@@ -338,7 +338,8 @@ type persistedContainerCloneStateLazy struct {
 }
 
 type persistedContainerFromLazy struct {
-	CanonicalRef string `json:"canonicalRef"`
+	ParentResultID uint64 `json:"parentResultID"`
+	CanonicalRef   string `json:"canonicalRef"`
 }
 
 type persistedContainerWithRootFSLazy struct {
@@ -2362,7 +2363,12 @@ func decodePersistedContainerLazy(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return fmt.Errorf("decode persisted container from lazy payload: %w", err)
 		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container from parent")
+		if err != nil {
+			return err
+		}
 		container.Lazy = &ContainerFromImageRefLazy{
+			Parent:       parent,
 			LazyState:    NewLazyState(),
 			CanonicalRef: persisted.CanonicalRef,
 			ResolveMode:  serverresolver.ResolveModeDefault,

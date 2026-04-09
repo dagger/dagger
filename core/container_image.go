@@ -33,6 +33,7 @@ type LoadedImportedImage struct {
 
 type ContainerFromImageRefLazy struct {
 	LazyState
+	Parent       dagql.ObjectResult[*Container]
 	CanonicalRef string
 	ResolveMode  serverresolver.ResolveMode
 }
@@ -69,6 +70,9 @@ func (r dockerfileImageMetaResolver) ResolveImageConfig(
 
 func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.from", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
@@ -116,12 +120,24 @@ func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *
 	})
 }
 
-func (*ContainerFromImageRefLazy) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	return nil, nil
+func (lazy *ContainerFromImageRefLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container from parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerFromImageRefLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
-	return json.Marshal(persistedContainerFromLazy{CanonicalRef: lazy.CanonicalRef})
+func (lazy *ContainerFromImageRefLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container from parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerFromLazy{
+		ParentResultID: parentID,
+		CanonicalRef:   lazy.CanonicalRef,
+	})
 }
 
 func (container *Container) Import(

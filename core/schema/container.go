@@ -1093,6 +1093,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		ctr.ImageRef = refStr
 		ctr.Platform = core.Platform(platforms.Normalize(imgSpec.Platform))
 		ctr.Lazy = &core.ContainerFromImageRefLazy{
+			Parent:       parent,
 			LazyState:    core.NewLazyState(),
 			CanonicalRef: refStr,
 			ResolveMode:  serverresolver.ResolveModeDefault,
