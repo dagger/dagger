@@ -3818,6 +3818,43 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	var socketOwner *core.Ownership
+	if args.Owner != "" {
+		ownership, err := ctr.ResolveOwnership(ctx, parent, args.Owner)
+		if err != nil {
+			return nil, err
+		}
+		uid, gid, _ := strings.Cut(ownership, ":")
+		uidInt, err := strconv.Atoi(uid)
+		if err != nil {
+			return nil, err
+		}
+		gidInt, err := strconv.Atoi(gid)
+		if err != nil {
+			return nil, err
+		}
+		socketOwner = &core.Ownership{UID: uidInt, GID: gidInt}
+	}
+	replaced := false
+	for i, sock := range ctr.Sockets {
+		if sock.ContainerPath != target {
+			continue
+		}
+		ctr.Sockets[i] = core.ContainerSocket{
+			Source:        socket,
+			ContainerPath: target,
+			Owner:         socketOwner,
+		}
+		replaced = true
+		break
+	}
+	if !replaced {
+		ctr.Sockets = append(ctr.Sockets, core.ContainerSocket{
+			Source:        socket,
+			ContainerPath: target,
+			Owner:         socketOwner,
+		})
+	}
 	ctr.Lazy = &core.ContainerWithUnixSocketLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -3844,6 +3881,13 @@ func (s *containerSchema) withoutUnixSocket(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	for i, sock := range ctr.Sockets {
+		if sock.ContainerPath != target {
+			continue
+		}
+		ctr.Sockets = slices.Delete(ctr.Sockets, i, i+1)
+		break
+	}
 	ctr.Lazy = &core.ContainerWithoutUnixSocketLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
