@@ -1270,7 +1270,7 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 
 // Render implements tuist.Component. It produces the full TUI output as lines.
 func (fe *frontendPretty) Render(ctx tuist.Context) {
-	if fe.backgrounded || fe.quitting {
+	if !fe.finalRender && (fe.backgrounded || fe.quitting) {
 		return
 	}
 
