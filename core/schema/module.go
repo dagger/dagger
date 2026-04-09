@@ -36,7 +36,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("__function", s.internalFunction),
 		dagql.Func("__functionArg", s.functionArg),
+		dagql.Func("__functionArgExact", s.internalFunctionArg),
 		dagql.Func("__fieldTypeDef", s.fieldTypeDef),
+		dagql.Func("__fieldTypeDefExact", s.internalFieldTypeDef),
 		dagql.Func("__enumMemberTypeDef", s.enumMemberTypeDef),
 		dagql.Func("__listTypeDef", s.listTypeDef),
 		dagql.Func("__objectTypeDef", s.objectTypeDef),
@@ -532,6 +534,59 @@ func (s *moduleSchema) functionArg(ctx context.Context, _ *core.Query, args stru
 	return arg, nil
 }
 
+func (s *moduleSchema) internalFunctionArg(ctx context.Context, _ *core.Query, args struct {
+	Name           string
+	TypeDef        core.TypeDefID
+	Description    string    `default:""`
+	DefaultValue   core.JSON `default:""`
+	DefaultPath    string    `default:""`
+	DefaultAddress string    `default:""`
+	Ignore         []string  `default:"[]"`
+	SourceMap      dagql.Optional[core.SourceMapID]
+	Deprecated     *string
+}) (*core.FunctionArg, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode arg type: %w", err)
+	}
+	if args.DefaultPath != "" || args.DefaultAddress != "" {
+		typeDef, err = s.withOptional(ctx, dag, typeDef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to optionalize arg type: %w", err)
+		}
+	}
+	arg := &core.FunctionArg{
+		Name:           args.Name,
+		Description:    args.Description,
+		TypeDef:        typeDef,
+		DefaultValue:   args.DefaultValue,
+		DefaultPath:    args.DefaultPath,
+		DefaultAddress: args.DefaultAddress,
+		Ignore:         args.Ignore,
+		Deprecated:     args.Deprecated,
+		OriginalName:   args.Name,
+	}
+	if arg.IsWorkspace() {
+		typeDef, err = s.withOptional(ctx, dag, arg.TypeDef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to optionalize workspace arg type: %w", err)
+		}
+		arg.TypeDef = typeDef
+	}
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	if sourceMap.Self() != nil {
+		arg.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return arg, nil
+}
+
 func (s *moduleSchema) fieldTypeDef(ctx context.Context, _ *core.Query, args struct {
 	Name        string
 	TypeDef     core.TypeDefID
@@ -548,6 +603,38 @@ func (s *moduleSchema) fieldTypeDef(ctx context.Context, _ *core.Query, args str
 		return nil, fmt.Errorf("failed to decode field type: %w", err)
 	}
 	field := core.NewFieldTypeDef(args.Name, typeDef, args.Description, args.Deprecated)
+	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	if sourceMap.Self() != nil {
+		field.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return field, nil
+}
+
+func (s *moduleSchema) internalFieldTypeDef(ctx context.Context, _ *core.Query, args struct {
+	Name        string
+	TypeDef     core.TypeDefID
+	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
+	Deprecated  *string
+}) (*core.FieldTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode field type: %w", err)
+	}
+	field := &core.FieldTypeDef{
+		Name:         args.Name,
+		Description:  args.Description,
+		TypeDef:      typeDef,
+		Deprecated:   args.Deprecated,
+		OriginalName: args.Name,
+	}
 	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
@@ -2249,7 +2336,7 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 			}
 			var fnArg dagql.ObjectResult[*core.FunctionArg]
 			if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{
-				Field: "__functionArg",
+				Field: "__functionArgExact",
 				Args: []dagql.NamedInput{
 					{Name: "name", Value: dagql.String(introspectionArg.Name)},
 					{Name: "typeDef", Value: argTypeID},

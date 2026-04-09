@@ -415,7 +415,7 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 					}
 					var fnArg dagql.ObjectResult[*core.FunctionArg]
 					if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{
-						Field: "__functionArg",
+						Field: "__functionArgExact",
 						Args: []dagql.NamedInput{
 							{Name: "name", Value: dagql.String(introspectionArg.Name)},
 							{Name: "typeDef", Value: argTypeID},
@@ -489,7 +489,7 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 				}
 				var field dagql.ObjectResult[*core.FieldTypeDef]
 				if err := dag.Select(ctx, dag.Root(), &field, dagql.Selector{
-					Field: "__fieldTypeDef",
+					Field: "__fieldTypeDefExact",
 					Args: []dagql.NamedInput{
 						{Name: "name", Value: dagql.String(introspectionField.Name)},
 						{Name: "typeDef", Value: fieldTypeID},

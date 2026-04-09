@@ -671,18 +671,22 @@ func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 	return reply, nil
 }
 
-func (llm *LLM) messagesWithSystemPrompt() []*ModelMessage {
+func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*ModelMessage, error) {
 	var systemPrompt string
 	if !llm.disableDefaultSystemPrompt {
-		systemPrompt = llm.mcp.DefaultSystemPrompt()
+		var err error
+		systemPrompt, err = llm.mcp.DefaultSystemPrompt(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if systemPrompt != "" {
 		return append([]*ModelMessage{{
 			Role:    "system",
 			Content: systemPrompt,
-		}}, llm.messages...)
+		}}, llm.messages...), nil
 	}
-	return llm.messages
+	return llm.messages, nil
 }
 
 type ModelFinishedError struct {
@@ -828,7 +832,10 @@ func (llm *LLM) loop(ctx context.Context) error {
 			return err
 		}
 
-		messagesToSend := llm.messagesWithSystemPrompt()
+		messagesToSend, err := llm.messagesWithSystemPrompt(ctx)
+		if err != nil {
+			return err
+		}
 
 		var newMessages []*ModelMessage
 		for _, msg := range slices.Backward(messagesToSend) {

@@ -227,9 +227,14 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("open pipe error: %w", err)
 	}
 
+	instructions, err := llm.mcp.DefaultSystemPrompt(ctx)
+	if err != nil {
+		return err
+	}
+
 	s := mcpServer{
 		mcpserver.NewMCPServer("Dagger", "0.0.1",
-			mcpserver.WithInstructions(llm.mcp.DefaultSystemPrompt())),
+			mcpserver.WithInstructions(instructions)),
 		dag,
 		llm.mcp,
 		rwc,
