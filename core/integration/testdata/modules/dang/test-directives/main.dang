@@ -1,0 +1,51 @@
+"""
+Test module for directive argument handling in Dagger SDK.
+
+Tests both named and positional argument syntax for directives.
+"""
+type TestDirectives {
+  """
+  Test @defaultPath with positional argument syntax.
+  The source directory defaults to "/" using positional arg.
+  """
+  pub withPositionalDefaultPath(source: Directory! @defaultPath("/")): String! {
+    "got source"
+  }
+
+  """
+  Test @defaultPath with named argument syntax.
+  The source directory defaults to "/" using named arg.
+  """
+  pub withNamedDefaultPath(
+    source: Directory! @defaultPath(path: "/"),
+  ): String! {
+    "got source"
+  }
+
+  """
+  Test @ignorePatterns with positional argument syntax.
+  """
+  pub withPositionalIgnore(
+    source: Directory! @defaultPath("/") @ignorePatterns(["*.tmp", "*.log"]),
+  ): String! {
+    "got source"
+  }
+
+  """
+  Test @ignorePatterns with named argument syntax.
+  """
+  pub withNamedIgnore(
+    source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: ["*.tmp", "*.log"]),
+  ): String! {
+    "got source"
+  }
+
+  """
+  Test mixing positional and named across multiple directives.
+  """
+  pub withMixedSyntax(
+    source: Directory! @defaultPath("/") @ignorePatterns(patterns: ["*.tmp"]),
+  ): String! {
+    "got source"
+  }
+}
