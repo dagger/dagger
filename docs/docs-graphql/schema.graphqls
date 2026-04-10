@@ -3717,7 +3717,7 @@ The `GeneratedCodeID` scalar type represents an identifier for an object of type
 scalar GeneratedCodeID
 
 type Generator {
-  """The generated changeset"""
+  """The generated changeset from the last run"""
   changes: Changeset!
 
   """Whether the generator complete"""
@@ -3729,7 +3729,7 @@ type Generator {
   """A unique identifier for this Generator."""
   id: GeneratorID!
 
-  """Wether changeset from the generator execution is empty or not"""
+  """Whether changeset from the last generator run is empty or not"""
   isEmpty: Boolean!
 
   """Return the fully qualified name of the generator"""
@@ -3747,7 +3747,7 @@ type Generator {
 
 type GeneratorGroup {
   """
-  The combined changes from the generators execution
+  The combined changes from the last run of the generators
 
   If any conflict occurs, for instance if the same file is modified by multiple
   generators, or if a file is both modified and deleted, an error is raised and
@@ -3763,7 +3763,7 @@ type GeneratorGroup {
   """A unique identifier for this GeneratorGroup."""
   id: GeneratorGroupID!
 
-  """Whether the generated changeset is empty or not"""
+  """Whether the generated changeset from the last run is empty or not"""
   isEmpty: Boolean!
 
   """Return a list of individual generators and their details"""
@@ -6064,5 +6064,3 @@ type Workspace {
 The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 """
 scalar WorkspaceID
-
-

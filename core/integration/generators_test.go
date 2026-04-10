@@ -289,3 +289,55 @@ func (GeneratorsSuite) TestToolchainIgnoreGenerators(ctx context.Context, t *tes
 	require.NoError(t, err)
 	require.False(t, exists)
 }
+
+func (GeneratorsSuite) TestGeneratorResultFieldsRequireRun(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen, err := generatorsTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.WithWorkdir("hello-with-generators")
+
+	t.Run("group isEmpty requires run", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.
+			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){isEmpty}}}`)).
+			Stdout(ctx)
+		requireErrOut(t, err, "must be run before querying isEmpty")
+	})
+
+	t.Run("group changes requires run", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.
+			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){changes{isEmpty}}}}`)).
+			Stdout(ctx)
+		requireErrOut(t, err, "must be run before querying changes")
+	})
+
+	t.Run("single generator isEmpty requires run", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.
+			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){list{isEmpty}}}}`)).
+			Stdout(ctx)
+		requireErrOut(t, err, "must be run before querying isEmpty")
+	})
+
+	t.Run("single generator changes requires run", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.
+			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){list{changes{isEmpty}}}}}`)).
+			Stdout(ctx)
+		requireErrOut(t, err, "must be run before querying changes")
+	})
+
+	t.Run("group result fields work after run", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){run{isEmpty changes{isEmpty}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"currentWorkspace":{"generators":{"run":{"isEmpty":false,"changes":{"isEmpty":false}}}}}`, out)
+	})
+
+	t.Run("single generator result fields work after run", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){list{run{isEmpty changes{isEmpty}}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"currentWorkspace":{"generators":{"list":[{"run":{"isEmpty":false,"changes":{"isEmpty":false}}}]}}}`, out)
+	})
+}
