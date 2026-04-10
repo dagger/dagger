@@ -17,6 +17,8 @@ func (s upSchema) Install(srv *dagql.Server) {
 			Doc("Return a list of individual services and their details"),
 		dagql.Func("run", s.run).
 			Doc("Execute all selected service functions"),
+		dagql.Func("asServices", s.asServices).
+			Doc("Return the Services produced by each selected service function, in the same order as list"),
 	}.Install(srv)
 
 	dagql.Fields[*core.Up]{
@@ -30,6 +32,8 @@ func (s upSchema) Install(srv *dagql.Server) {
 			Doc("The original module in which the service has been defined"),
 		dagql.Func("run", s.runSingleUp).
 			Doc("Execute the service function"),
+		dagql.Func("asService", s.asService).
+			Doc("Return the Service produced by this service function"),
 	}.Install(srv)
 }
 
@@ -59,4 +63,12 @@ func (s upSchema) run(ctx context.Context, parent *core.UpGroup, args struct{}) 
 
 func (s upSchema) runSingleUp(ctx context.Context, parent *core.Up, args struct{}) (*core.Up, error) {
 	return parent.Run(ctx)
+}
+
+func (s upSchema) asService(ctx context.Context, parent *core.Up, args struct{}) (dagql.ObjectResult[*core.Service], error) {
+	return parent.AsService(ctx)
+}
+
+func (s upSchema) asServices(ctx context.Context, parent *core.UpGroup, args struct{}) ([]dagql.ObjectResult[*core.Service], error) {
+	return parent.AsServices(ctx)
 }

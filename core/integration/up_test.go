@@ -107,6 +107,44 @@ func (UpSuite) TestUpEnvServices(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "infra:database")
 }
 
+func (UpSuite) TestUpAsService(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := upTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.WithWorkdir("hello-with-services")
+
+	// Calls a helper that iterates over dag.CurrentEnv().Services().List()
+	// and converts each Up via .AsService().Hostname() — exercising the new
+	// Up.asService schema field. The helper errors out if any hostname is
+	// empty and otherwise returns the service names, which are deterministic.
+	out, err := modGen.
+		With(daggerExec("call", "current-env-up-as-service-names")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "web")
+	require.Contains(t, out, "redis")
+	require.Contains(t, out, "infra:database")
+}
+
+func (UpSuite) TestUpGroupAsServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := upTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.WithWorkdir("hello-with-services")
+
+	// Calls a helper that invokes dag.CurrentEnv().Services().AsServices()
+	// to materialize the full UpGroup to a []*Service in one call, then
+	// verifies each produces a non-empty hostname — exercising the new
+	// UpGroup.asServices schema field.
+	out, err := modGen.
+		With(daggerExec("call", "current-env-group-as-service-names")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "web")
+	require.Contains(t, out, "redis")
+	require.Contains(t, out, "infra:database")
+}
+
 func (UpSuite) TestUpPortCollision(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)

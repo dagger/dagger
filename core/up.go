@@ -240,3 +240,30 @@ func (u *Up) Run(ctx context.Context) (*Up, error) {
 	<-ctx.Done()
 	return u, nil
 }
+
+// AsService evaluates the underlying +up-tagged module function and returns
+// the Service it produces. The returned ObjectResult carries the dagql ID of
+// the original user function, so downstream calls (hostname, start, up, ...)
+// share cache identity with direct invocations of that function.
+func (u *Up) AsService(ctx context.Context) (dagql.ObjectResult[*Service], error) {
+	var svcResult dagql.ObjectResult[*Service]
+	if err := u.Node.DagqlValue(ctx, &svcResult); err != nil {
+		return svcResult, fmt.Errorf("%q: evaluate service: %w", u.Name(), err)
+	}
+	return svcResult, nil
+}
+
+// AsServices evaluates each Up in the group and returns the Services they
+// produce, in the same order as List(). Fails fast on the first evaluation
+// error.
+func (ug *UpGroup) AsServices(ctx context.Context) ([]dagql.ObjectResult[*Service], error) {
+	services := make([]dagql.ObjectResult[*Service], 0, len(ug.Ups))
+	for _, up := range ug.Ups {
+		svc, err := up.AsService(ctx)
+		if err != nil {
+			return nil, err
+		}
+		services = append(services, svc)
+	}
+	return services, nil
+}
