@@ -69,6 +69,14 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 			require.Contains(t, out, "failing-container")
 			require.Contains(t, out, "test:lint")
 			require.Contains(t, out, "test:unit")
+			// The current module is a main workspace module, so its
+			// checks must appear unprefixed — not "<module-name>:<check>".
+			require.NotContains(t, out, tc.path+":passing-check")
+			require.NotContains(t, out, tc.path+":failing-check")
+			require.NotContains(t, out, tc.path+":passing-container")
+			require.NotContains(t, out, tc.path+":failing-container")
+			require.NotContains(t, out, tc.path+":test:lint")
+			require.NotContains(t, out, tc.path+":test:unit")
 			// run a specific passing check
 			out, err = modGen.
 				With(daggerExec("--progress=report", "check", "passing*")).
@@ -120,6 +128,10 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.Contains(t, out, "passing-check")
 			require.Contains(t, out, "failing-check")
+			// A blueprint is a main workspace module, so its checks must
+			// appear unprefixed — not "<blueprint-name>:<check>".
+			require.NotContains(t, out, tc.path+":passing-check")
+			require.NotContains(t, out, tc.path+":failing-check")
 			// run a specific passing check
 			out, err = modGen.
 				With(daggerExec("--progress=report", "check", "passing-check")).
