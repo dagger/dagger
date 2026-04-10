@@ -25,31 +25,7 @@ type ExecError struct {
 }
 
 func (e *ExecError) Error() string {
-	if e == nil {
-		return "exec error"
-	}
-	if e.Err == nil {
-		return "exec error"
-	}
-
-	msg := e.Err.Error()
-	stdout := strings.TrimSpace(e.Stdout)
-	stderr := strings.TrimSpace(e.Stderr)
-	if stdout == "" && stderr == "" {
-		return msg
-	}
-
-	var b strings.Builder
-	b.WriteString(msg)
-	if stdout != "" {
-		b.WriteString("\nStdout:\n")
-		b.WriteString(stdout)
-	}
-	if stderr != "" {
-		b.WriteString("\nStderr:\n")
-		b.WriteString(stderr)
-	}
-	return b.String()
+	return e.Err.Error()
 }
 
 func (e *ExecError) Unwrap() error {
