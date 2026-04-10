@@ -3073,11 +3073,22 @@ func (c *Cache) wait(
 		c.callsMu.Lock()
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
+		releaseHandoff := lastWaiter && oc.handoffHoldActive
 		if lastWaiter {
 			delete(c.ongoingCalls, oc.callConcurrencyKeys)
 			oc.cancel(canceledErr)
 		}
 		c.callsMu.Unlock()
+		if releaseHandoff && oc.res != nil {
+			c.egraphMu.Lock()
+			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
+			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+			c.egraphMu.Unlock()
+			oc.handoffHoldActive = false
+			if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
+				return nil, errors.Join(canceledErr, relErr)
+			}
+		}
 		return nil, canceledErr
 	}
 
