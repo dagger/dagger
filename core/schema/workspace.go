@@ -422,6 +422,10 @@ func (s *workspaceSchema) generators(
 		return nil, err
 	}
 
+	ignoreGenerators := toolchainIgnorePatterns(mods, func(cfg *modules.ModuleConfigDependency) []string {
+		return cfg.IgnoreGenerators
+	})
+
 	moduleGenerators := make([]struct {
 		mod   *core.Module
 		group *core.GeneratorGroup
@@ -456,6 +460,19 @@ func (s *workspaceSchema) generators(
 		)
 		if err != nil {
 			return nil, err
+		}
+		if exclude := ignoreGenerators[entry.mod.Name()]; len(exclude) > 0 {
+			filtered, err = filterNodesByExclude(
+				ctx,
+				filtered,
+				exclude,
+				func(generator *core.Generator) *core.ModTreeNode { return generator.Node },
+				func(generator *core.Generator) string { return generator.Name() },
+				"generator",
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 		allGenerators = append(allGenerators, filtered...)
 	}
