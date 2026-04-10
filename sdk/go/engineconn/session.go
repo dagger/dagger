@@ -68,13 +68,14 @@ type flagValue struct {
 	value string
 }
 
-func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ EngineConn, rerr error) {
+func cliSessionArgs(cfg *Config) []string {
 	args := []string{"session"}
 
 	version := getSDKVersion()
 
 	flagsAndValues := []flagValue{
 		{"--workdir", cfg.Workdir},
+		{"--workspace", cfg.Workspace},
 		{"--label", "dagger.io/sdk.name:go"},
 		{"--label", fmt.Sprintf("dagger.io/sdk.version:%s", version)},
 	}
@@ -95,6 +96,12 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	if cfg.Verbosity > 0 {
 		args = append(args, "-"+strings.Repeat("v", cfg.Verbosity))
 	}
+
+	return args
+}
+
+func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ EngineConn, rerr error) {
+	args := cliSessionArgs(cfg)
 
 	env := os.Environ()
 
