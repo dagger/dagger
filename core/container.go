@@ -2083,14 +2083,14 @@ func (lazy *ContainerWithEnvVariableLazy) EncodePersisted(ctx context.Context, c
 
 func (lazy *ContainerWithEnvFileVariablesLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withEnvFileVariables", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
 		}
-		if err := cache.Evaluate(ctx, lazy.Source); err != nil {
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
 		vars, err := lazy.Source.Self().Variables(ctx, false)
@@ -2809,10 +2809,17 @@ func (*ContainerRootFSLazy) EncodePersisted(context.Context, dagql.PersistedObje
 
 func (lazy *ContainerWithRootFSLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withRootfs", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		_, err := container.WithRootFS(ctx, lazy.Source)
+		_, err = container.WithRootFS(ctx, lazy.Source)
 		if err != nil {
 			return err
 		}
@@ -3148,10 +3155,17 @@ func (*ContainerFileLazy) EncodePersisted(context.Context, dagql.PersistedObject
 
 func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withDirectory", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		_, err := container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner)
+		_, err = container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner)
 		if err != nil {
 			return err
 		}
@@ -3194,10 +3208,17 @@ func (lazy *ContainerWithDirectoryLazy) EncodePersisted(ctx context.Context, cac
 
 func (lazy *ContainerWithFileLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withFile", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		_, err := container.WithFile(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Permissions, lazy.Owner)
+		_, err = container.WithFile(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Permissions, lazy.Owner)
 		if err != nil {
 			return err
 		}
@@ -3240,10 +3261,17 @@ func (lazy *ContainerWithFileLazy) EncodePersisted(ctx context.Context, cache da
 
 func (lazy *ContainerWithMountedDirectoryLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withMountedDirectory", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		_, err := container.WithMountedDirectory(ctx, lazy.Parent, lazy.Target, lazy.Source, lazy.Owner, lazy.Readonly)
+		_, err = container.WithMountedDirectory(ctx, lazy.Parent, lazy.Target, lazy.Source, lazy.Owner, lazy.Readonly)
 		if err != nil {
 			return err
 		}
@@ -3286,10 +3314,17 @@ func (lazy *ContainerWithMountedDirectoryLazy) EncodePersisted(ctx context.Conte
 
 func (lazy *ContainerWithMountedFileLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withMountedFile", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		_, err := container.WithMountedFile(ctx, lazy.Parent, lazy.Target, lazy.Source, lazy.Owner, lazy.Readonly)
+		_, err = container.WithMountedFile(ctx, lazy.Parent, lazy.Target, lazy.Source, lazy.Owner, lazy.Readonly)
 		if err != nil {
 			return err
 		}
@@ -3639,14 +3674,14 @@ func (lazy *ContainerWithoutUnixSocketLazy) EncodePersisted(ctx context.Context,
 
 func (lazy *ContainerImportLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.import", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
 		}
-		if err := cache.Evaluate(ctx, lazy.Source); err != nil {
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
 		r, err := lazy.Source.Self().Open(ctx, lazy.Source)
@@ -4712,18 +4747,18 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
 	}
-		loadedContainerRes, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load container from converted ID: %w", err)
-		}
-		builtContainer := new(Container)
-		if err := materializeContainerStateFromParent(ctx, builtContainer, loadedContainerRes); err != nil {
-			return nil, fmt.Errorf("failed to clone built container state: %w", err)
-		}
-		builtContainer.Secrets = append(builtContainer.Secrets, returnedSecretMounts...)
-
-		return builtContainer, nil
+	loadedContainerRes, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load container from converted ID: %w", err)
 	}
+	builtContainer := new(Container)
+	if err := materializeContainerStateFromParent(ctx, builtContainer, loadedContainerRes); err != nil {
+		return nil, fmt.Errorf("failed to clone built container state: %w", err)
+	}
+	builtContainer.Secrets = append(builtContainer.Secrets, returnedSecretMounts...)
+
+	return builtContainer, nil
+}
 
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResult[*Directory]) (*Container, error) {

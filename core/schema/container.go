@@ -3059,13 +3059,21 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	files := []dagql.ObjectResult[*core.File]{}
-	for _, id := range args.Sources {
-		file, err := id.Load(ctx, srv)
-		if err != nil {
-			return inst, err
-		}
-		files = append(files, file)
+	files, err := dagql.LoadIDResults(ctx, srv, args.Sources)
+	if err != nil {
+		return inst, err
+	}
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	evals := make([]dagql.AnyResult, len(files))
+	for i, file := range files {
+		evals[i] = file
+	}
+	if err := cache.Evaluate(ctx, evals...); err != nil {
+		return inst, err
 	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)

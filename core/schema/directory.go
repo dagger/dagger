@@ -926,12 +926,25 @@ func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 
+	files, err := dagql.LoadIDResults(ctx, srv, args.Sources)
+	if err != nil {
+		return inst, err
+	}
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	evals := make([]dagql.AnyResult, len(files))
+	for i, file := range files {
+		evals[i] = file
+	}
+	if err := cache.Evaluate(ctx, evals...); err != nil {
+		return inst, err
+	}
+
 	inst = parent
-	for _, id := range args.Sources {
-		file, err := id.Load(ctx, srv)
-		if err != nil {
-			return inst, err
-		}
+	for _, file := range files {
 		fileID, err := file.ID()
 		if err != nil {
 			return inst, err
