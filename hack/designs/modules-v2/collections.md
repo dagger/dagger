@@ -1,7 +1,5 @@
 # Collections
 
-## Status: Designed; prior prototype exists (`collections` branch, predates current ordering)
-
 Depends on: [Execution Plans](./plans.md)
 
 ## Table of Contents

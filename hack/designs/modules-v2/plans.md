@@ -1,7 +1,5 @@
 # Execution Plans
 
-## Status: Designed
-
 Depends on: [Artifacts](./artifacts.md)
 
 ## Table of Contents

@@ -1,6 +1,8 @@
 # Workspace
 
-## Status: API + plumbing shipped; configuration in progress
+THIS DOCUMENT IS NOT AUTHORITATIVE. SEE https://github.com/dagger/dagger#workspaces:hack/designs/workspaces.md
+
+BELOW ARE UNVERIFIED NOTES, TO BE RECONCILED WITH THE PRIMARY DESIGN DOC.
 
 ## Summary
 

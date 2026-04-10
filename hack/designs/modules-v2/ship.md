@@ -1,7 +1,5 @@
 # Ship
 
-## Status: Designed
-
 Depends on: [Artifacts](./artifacts.md), [Execution Plans](./plans.md)
 
 ## Table of Contents

@@ -1,9 +1,5 @@
 # Lockfile: Lookup Resolution
 
-## Status: In Progress
-
-Depends on: Workspace API (done)
-
 ## Workspace Relationship
 
 The lockfile is read from the bound workspace's `.dagger/lock`. See

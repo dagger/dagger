@@ -1,9 +1,5 @@
 # Artifacts
 
-## Status: Designed
-
-Depends on: Workspace plumbing (done)
-
 ## Table of Contents
 
 - [What Problem Does This Solve?](#what-problem-does-this-solve)
