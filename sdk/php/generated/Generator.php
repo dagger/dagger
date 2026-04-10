@@ -11,7 +11,7 @@ namespace Dagger;
 class Generator extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The generated changeset
+     * The generated changeset from the last run
      */
     public function changes(): Changeset
     {
@@ -47,7 +47,7 @@ class Generator extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Wether changeset from the generator execution is empty or not
+     * Whether changeset from the last generator run is empty or not
      */
     public function isEmpty(): bool
     {

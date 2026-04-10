@@ -8321,7 +8321,7 @@ func (r *Generator) WithGraphQLQuery(q *querybuilder.Selection) *Generator {
 	}
 }
 
-// The generated changeset
+// The generated changeset from the last run
 func (r *Generator) Changes() *Changeset {
 	q := r.query.Select("changes")
 
@@ -8396,7 +8396,7 @@ func (r *Generator) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Wether changeset from the generator execution is empty or not
+// Whether changeset from the last generator run is empty or not
 func (r *Generator) IsEmpty(ctx context.Context) (bool, error) {
 	if r.isEmpty != nil {
 		return *r.isEmpty, nil
@@ -8479,7 +8479,7 @@ type GeneratorGroupChangesOpts struct {
 	OnConflict ChangesetsMergeConflict
 }
 
-// The combined changes from the generators execution
+// The combined changes from the last run of the generators
 //
 // If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
 //
@@ -8538,7 +8538,7 @@ func (r *GeneratorGroup) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Whether the generated changeset is empty or not
+// Whether the generated changeset from the last run is empty or not
 func (r *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
 	if r.isEmpty != nil {
 		return *r.isEmpty, nil
