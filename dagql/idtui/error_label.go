@@ -26,13 +26,15 @@ func (e *ErrorLabel) SetError(err error) {
 	e.Update()
 }
 
-func (e *ErrorLabel) Render(ctx tuist.Context) {
+func (e *ErrorLabel) Render(ctx tuist.Context) tuist.RenderResult {
 	if e.err == nil {
-		return
+		return tuist.RenderResult{}
 	}
 	style := lipgloss.NewStyle().
 		Foreground(lipgloss.Red).
 		Width(ctx.Width)
 	rendered := style.Render("Error: " + e.err.Error())
-	ctx.Lines(strings.Split(rendered, "\n")...)
+	return tuist.RenderResult{
+		Lines: strings.Split(rendered, "\n"),
+	}
 }

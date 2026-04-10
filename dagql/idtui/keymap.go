@@ -40,9 +40,9 @@ type KeymapBar struct {
 	PressedKeyAt time.Time
 }
 
-func (kb *KeymapBar) Render(ctx tuist.Context) {
+func (kb *KeymapBar) Render(ctx tuist.Context) tuist.RenderResult {
 	if kb.Keys == nil {
-		return
+		return tuist.RenderResult{}
 	}
 
 	outBuf := new(strings.Builder)
@@ -59,9 +59,11 @@ func (kb *KeymapBar) Render(ctx tuist.Context) {
 
 	view := outBuf.String()
 	if view == "" {
-		return
+		return tuist.RenderResult{}
 	}
-	ctx.Line(view)
+	return tuist.RenderResult{
+		Lines: []string{view},
+	}
 }
 
 // RenderKeymap renders key bindings into a writer and returns the visible width.

@@ -31,7 +31,7 @@ func newNotificationBubble(fe *frontendPretty, section SidebarSection) *Notifica
 	}
 }
 
-func (n *NotificationBubble) Render(ctx tuist.Context) {
+func (n *NotificationBubble) Render(ctx tuist.Context) tuist.RenderResult {
 	width := ctx.Width
 	if width < 10 {
 		width = 30
@@ -46,13 +46,16 @@ func (n *NotificationBubble) Render(ctx tuist.Context) {
 	// Get content
 	content := n.section.Body(innerWidth - 2) // -2 for 1-char padding each side
 	if content == "" {
-		return
+		return tuist.RenderResult{}
 	}
 
 	contentLines := strings.Split(strings.TrimRight(content, "\n"), "\n")
 
+	// Build the box
+	lines := make([]string, 0, len(contentLines)+2)
+
 	// Top border: ╭─ Title ─── keymap ──╮
-	ctx.Line(n.buildTopBorder(profile, borderFg, innerWidth))
+	lines = append(lines, n.buildTopBorder(profile, borderFg, innerWidth))
 
 	// Content lines with side borders and background
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(profile))
@@ -63,14 +66,16 @@ func (n *NotificationBubble) Render(ctx tuist.Context) {
 	for _, line := range contentLines {
 		// Apply background to the full inner width
 		padded := bgStyle.Render(" " + line)
-		ctx.Line(leftBorder + padded + rightBorder)
+		lines = append(lines, leftBorder+padded+rightBorder)
 	}
 
 	// Bottom border: ╰───────────────────╯
 	bottomBorder := out.String(
 		CornerBottomLeft + strings.Repeat(HorizBar, innerWidth) + CornerBottoRight,
 	).Foreground(borderFg).String()
-	ctx.Line(bottomBorder)
+	lines = append(lines, bottomBorder)
+
+	return tuist.RenderResult{Lines: lines}
 }
 
 func (n *NotificationBubble) buildTopBorder(profile termenv.Profile, borderFg termenv.Color, innerWidth int) string {
