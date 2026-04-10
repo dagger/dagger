@@ -26,8 +26,8 @@ Replaces CheckGroup. Transition path: CheckGroup → Execution Plans.
 
 This document builds on the artifact model from [artifacts.md](./artifacts.md):
 
-- top-level module objects are artifact rows
-- collection items are artifact rows
+- top-level module objects are artifacts
+- collection items are artifacts
 - ordinary nested objects are structural glue
 
 Action discovery walks that structural glue and produces **artifact-relative**

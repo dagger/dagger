@@ -27,8 +27,8 @@ talking about nested structure:
 - `foo | bar` in `dagger shell`
 - `foo().bar()` in dang
 
-Artifacts fixes that by giving the platform a small set of real object rows it
-can select, inspect, and later act on.
+Artifacts fixes that by giving the platform a small set of real objects it can
+select, inspect, and later act on.
 
 In this design:
 
@@ -37,12 +37,12 @@ In this design:
 - ordinary nested objects are not artifacts
 
 Nested non-collection structure still matters. It just shows up as action paths
-inside an artifact, not as separate artifact rows.
+inside an artifact, not as separate artifacts.
 
 ## Core Model
 
 `Workspace.artifacts` is a filterable, introspection-driven view over the
-workspace's artifact rows.
+workspace's artifacts.
 
 Artifacts owns:
 
@@ -50,11 +50,11 @@ Artifacts owns:
 - artifact scopes
 - artifact dimensions
 - artifact coordinate rows
-- structural verb projections over artifact rows
+- structural verb projections over artifacts
 
 Artifacts does **not** own action discovery or execution plans. Those are
 defined in [plans.md](./plans.md). This document only defines enough verb-scope
-behavior to decide which artifact rows stay in scope for a verb.
+behavior to decide which artifacts stay in scope for a verb.
 
 The client model is table-shaped:
 
@@ -78,7 +78,7 @@ An object occurrence is an eligible artifact if and only if it is:
 1. a **top-level module object**, or
 2. a **collection item**
 
-There are no other artifact rows.
+There are no other artifacts.
 
 ### Top-Level Module Objects
 
@@ -104,7 +104,7 @@ module release {
 }
 ```
 
-Here the eligible artifact rows are:
+Here the eligible artifacts are:
 
 ```console
 go
@@ -125,7 +125,7 @@ module release {
 }
 ```
 
-then both are eligible artifact rows, and they both belong to module
+then both are eligible artifacts, and they both belong to module
 `release`.
 
 ### Collection Items
@@ -151,7 +151,7 @@ type GoTests @collection {
 ```
 
 If the current subset contains `TestFoo` and `TestBar`, then those items are
-artifact rows:
+artifacts:
 
 ```console
 go-test=TestFoo
@@ -168,7 +168,7 @@ They may still matter for:
 - action naming
 - collection traversal
 
-But they do not become artifact rows and they do not create non-collection
+But they do not become artifacts and they do not create non-collection
 dimensions.
 
 Example:
@@ -188,11 +188,11 @@ type Tests {
 
 Here:
 
-- `Go` is an artifact row if it is a top-level module object
+- `Go` is an artifact if it is a top-level module object
 - `Tests` is structural glue
 - `tests:run-bun` and `tests:run-nodejs` are action paths on `Go`
 
-`Tests` is not an artifact row.
+`Tests` is not an artifact.
 
 ## Dimensions And Coordinates
 
@@ -210,7 +210,7 @@ exists in the object graph.
 
 `type` is the generic built-in artifact classifier.
 
-- Every artifact row has a non-null `type`.
+- Every artifact has a non-null `type`.
 - The value is the CLI-cased artifact type name.
 
 Examples:
@@ -289,11 +289,11 @@ Artifacts has two scope kinds:
 
 It only answers:
 
-- which artifact rows stay in scope for this verb?
+- which artifacts stay in scope for this verb?
 
 ### Reachable Verb Handlers
 
-An artifact row is in verb scope `V` if its underlying object can reach at
+An artifact is in verb scope `V` if its underlying object can reach at
 least one handler for `V` within its own artifact boundary.
 
 Reachability for one artifact works like this:
@@ -534,7 +534,7 @@ type Artifacts {
   filterCoordinates(dimension: String!, values: [String!]!): Artifacts!
 
   """
-  Keep only artifact rows that can reach at least one handler for the given
+  Keep only artifacts that can reach at least one handler for the given
   verb within their own artifact boundary.
   Does not add the verb as a dimension.
   """
@@ -547,7 +547,7 @@ type Artifacts {
   """
   dimensions: [ArtifactDimension!]!
 
-  """Artifact rows matching the current filters."""
+  """Artifacts matching the current filters."""
   items: [Artifact!]!
 }
 
@@ -573,7 +573,7 @@ enum Verb {
   UP
 }
 
-"""One artifact row in the workspace."""
+"""One artifact in the workspace."""
 type Artifact {
   """
   Ordered coordinate row for this artifact.
@@ -927,10 +927,10 @@ without becoming rows or dimensions.
 
 ## Locked Decisions
 
-- Eligible artifact rows are only:
+- Eligible artifacts are only:
   - top-level module objects
   - collection items
-- Ordinary nested objects are structural glue. They are not artifact rows and
+- Ordinary nested objects are structural glue. They are not artifacts and
   do not create non-collection dimensions.
 - `type` is the generic built-in artifact dimension.
 - There is no synthesized non-collection dimension algebra.
