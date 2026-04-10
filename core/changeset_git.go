@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -29,8 +30,7 @@ type lineChanges struct {
 // -z uses NUL delimiters so filenames with spaces/newlines are handled correctly.
 func compareDirectories(ctx context.Context, oldDir, newDir string) (fileChanges, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--name-status", "-z", oldDir, newDir)
-	// Avoid inheriting a caller cwd with a broken worktree .git file.
-	cmd.Dir = oldDir
+	disableGitRepoDiscovery(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		// git diff exits 1 when differences exist, which is not an error here.
@@ -45,8 +45,7 @@ func compareDirectories(ctx context.Context, oldDir, newDir string) (fileChanges
 // compareDirectoriesNumStat returns per-file line-change counts between two directories.
 func compareDirectoriesNumStat(ctx context.Context, oldDir, newDir string) (map[string]lineChanges, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--numstat", "-z", oldDir, newDir)
-	// Avoid inheriting a caller cwd with a broken worktree .git file.
-	cmd.Dir = oldDir
+	disableGitRepoDiscovery(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -60,8 +59,7 @@ func compareDirectoriesNumStat(ctx context.Context, oldDir, newDir string) (map[
 // directoriesAreIdentical returns true if both directories have identical content.
 func directoriesAreIdentical(ctx context.Context, dir1, dir2 string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--quiet", dir1, dir2)
-	// Avoid inheriting a caller cwd with a broken worktree .git file.
-	cmd.Dir = dir1
+	disableGitRepoDiscovery(cmd)
 	err := cmd.Run()
 	if err == nil {
 		return true, nil
@@ -71,6 +69,26 @@ func directoriesAreIdentical(ctx context.Context, dir1, dir2 string) (bool, erro
 		return false, nil
 	}
 	return false, err
+}
+
+// disableGitRepoDiscovery prevents git's repository-discovery walk from
+// latching onto a dangling `.git` pointer in cwd or in the mounted source
+// directories.
+//
+// Source directories loaded from a git worktree carry a `.git` FILE at
+// their root — a one-line pointer to an absolute "gitdir:" path on the
+// original host. When buildkit mounts such a ref, that gitdir is
+// unreachable from inside the sandbox, so git bails out with
+// "fatal: not a git repository: <host path>". `--no-index` does not help
+// on its own: git runs repository discovery before it parses flags, so the
+// broken pointer kills the command before --no-index is even considered.
+//
+// Setting GIT_DIR short-circuits discovery entirely — git takes the value
+// verbatim and skips the walk. `git diff --no-index` never actually reads
+// from the git dir, so any sentinel works; /dev/null is a self-documenting
+// "intentionally unusable" choice.
+func disableGitRepoDiscovery(cmd *exec.Cmd) {
+	cmd.Env = append(os.Environ(), "GIT_DIR=/dev/null")
 }
 
 func parseGitOutput(out []byte, oldDir, newDir string) fileChanges {
