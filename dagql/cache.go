@@ -1177,6 +1177,10 @@ type sharedResult struct {
 	// session edges, persisted edges, and result dependency edges.
 	incomingOwnershipCount int64
 
+	attachDepsMu     sync.Mutex
+	attachDepsWaitCh chan struct{}
+	attachDepsErr    error
+
 	lazyMu           sync.Mutex
 	lazyEval         LazyEvalFunc
 	lazyEvalComplete bool
@@ -3187,6 +3191,17 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if req == nil || req.ResultCall == nil {
 		return fmt.Errorf("call request is nil")
 	}
+	finishAttachDeps := func(err error) {
+		if resWasCacheBacked || oc.res == nil {
+			return
+		}
+		oc.res.attachDepsMu.Lock()
+		if oc.res.attachDepsWaitCh != nil {
+			oc.res.attachDepsErr = err
+			close(oc.res.attachDepsWaitCh)
+		}
+		oc.res.attachDepsMu.Unlock()
+	}
 
 	// Materialize shared result for this completed call.
 	oc.res = &sharedResult{}
@@ -3465,6 +3480,12 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	c.incrementIncomingOwnershipLocked(ctx, oc.res)
 	oc.handoffHoldActive = true
+	if !resWasCacheBacked {
+		oc.res.attachDepsMu.Lock()
+		oc.res.attachDepsWaitCh = make(chan struct{})
+		oc.res.attachDepsErr = nil
+		oc.res.attachDepsMu.Unlock()
+	}
 	c.egraphMu.Unlock()
 
 	if err := c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
@@ -3473,7 +3494,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
 		c.egraphMu.Unlock()
 		oc.handoffHoldActive = false
-		return errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+		attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+		finishAttachDeps(attachErr)
+		return attachErr
 	}
 	if err := c.syncResultSnapshotLeases(ctx, oc.res); err != nil {
 		c.egraphMu.Lock()
@@ -3481,9 +3504,12 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
 		c.egraphMu.Unlock()
 		oc.handoffHoldActive = false
-		return errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+		attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+		finishAttachDeps(attachErr)
+		return attachErr
 	}
 	c.registerLazyEvaluation(oc.res, oc.val)
+	finishAttachDeps(nil)
 
 	return nil
 }

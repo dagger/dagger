@@ -549,6 +549,22 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	if res == nil {
 		return hit, nil
 	}
+	res.attachDepsMu.Lock()
+	attachDepsWaitCh := res.attachDepsWaitCh
+	res.attachDepsMu.Unlock()
+	if attachDepsWaitCh != nil {
+		select {
+		case <-attachDepsWaitCh:
+		case <-ctx.Done():
+			return nil, context.Cause(ctx)
+		}
+		res.attachDepsMu.Lock()
+		attachDepsErr := res.attachDepsErr
+		res.attachDepsMu.Unlock()
+		if attachDepsErr != nil {
+			return nil, fmt.Errorf("wait for dependency attachment: %w", attachDepsErr)
+		}
+	}
 
 	state := res.loadPayloadState()
 	if state.isObject && state.hasValue && state.self == nil {
