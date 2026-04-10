@@ -168,7 +168,7 @@ func (s *workspaceSchema) resolveRootfs(
 	if len(filter.Include) > 0 || len(filter.Exclude) > 0 {
 		withDirArgs := []dagql.NamedInput{
 			{Name: "path", Value: dagql.NewString("/")},
-			{Name: "directory", Value: dagql.NewID[*core.Directory](ctxDir.ID())},
+			{Name: "source", Value: dagql.NewID[*core.Directory](ctxDir.ID())},
 		}
 		if len(filter.Include) > 0 {
 			includes := make(dagql.ArrayInput[dagql.String], len(filter.Include))
