@@ -16,7 +16,8 @@ Depends on: [Artifacts](./artifacts.md)
 ## Summary
 
 Execution Plans introduces a generic `Action`/`Plan` substrate for verb
-orchestration. A Plan is a DAG of Actions with "after" edges. `dagger check`
+orchestration. A Plan is a DAG of Actions with "after" edges. Each Action
+implements one verb (defined in [artifacts.md](./artifacts.md)). `dagger check`
 and `dagger generate` compile to inspectable plans in this unit. Later docs
 such as [Ship](./ship.md) extend the same substrate with additional
 verb-specific construction rules.
@@ -36,16 +37,11 @@ function paths such as `["lint"]`, `["tests", "run-bun"]`, or
 ## Schema
 
 ```graphql
-enum ActionKind {
-  CHECK
-  GENERATE
-  SHIP
-  UP
-}
+# `Verb` and `Artifacts.filterVerb(...)` are defined in artifacts.md.
 
 extend type Artifacts {
   """
-  Keep only artifacts that expose the given action kind at the exact
+  Keep only artifacts that expose the given verb at the exact
   artifact-relative function path.
 
   `functionPath` must be exact. Globbing, shorthand, and compatibility syntax
@@ -57,7 +53,7 @@ extend type Artifacts {
   Preserves the current scope's dimension order and narrows only the selected
   artifacts.
   """
-  filterAction(kind: ActionKind!, functionPath: [String!]!): Artifacts!
+  filterAction(verb: Verb!, functionPath: [String!]!): Artifacts!
 
   """Compile a check execution plan for the selected artifact set."""
   check: Plan!
@@ -69,24 +65,24 @@ extend type Artifacts {
 extend type Artifact {
   """
   Reachable local action occurrences on this artifact.
-  If `actionKinds` is provided, only include those kinds.
+  If `verbs` is provided, only include actions of those verbs.
   """
-  actions(actionKinds: [ActionKind!]): [Action!]!
+  actions(verbs: [Verb!]): [Action!]!
 
   """Create one exact action targeting this single artifact."""
-  action(kind: ActionKind!, functionPath: [String!]!): Action!
+  action(verb: Verb!, functionPath: [String!]!): Action!
 }
 
 """
-A callable action: one action kind, one target scope, one exact function path,
+A callable action: one verb, one target scope, one exact function path,
 and one compiled execution mode.
 Actions are the building blocks of execution plans.
 """
 type Action {
   """
-  Semantic interpretation mode for this action.
+  The verb this action implements.
   """
-  actionKind: ActionKind!
+  verb: Verb!
 
   """
   Exact artifact scope targeted by this action.
@@ -150,10 +146,10 @@ type Plan {
 ## Design Decisions
 
 - **Plan = DAG of Actions.** Each action is
-  `(actionKind, target, functionPath, collectionBatched)` with "after" edges.
+  `(verb, target, functionPath, collectionBatched)` with "after" edges.
   Parallel is implicit — actions with no pending dependencies run concurrently.
-- **Action kind is part of identity.** The same function path may be callable
-  under different action kinds, and those are different actions.
+- **Verb is part of identity.** The same function path may be callable
+  under different verbs, and those are different actions.
 - **Function paths are artifact-relative.** The action model is `(artifact,
   functionPath)`, not one global path grammar.
 - **Function paths are exact.** Globbing and shorthand are resolved before
@@ -182,6 +178,9 @@ An Action bridges artifacts and functions:
 - `Artifact.action(CHECK, ["tests", "run-bun"])` → nested action on one artifact
 - `Artifact.actions([CHECK])` → local reachable check actions on one artifact
 
+Each action implements one verb. Verbs are defined in
+[artifacts.md](./artifacts.md).
+
 Actions are the building blocks of Plans. A Plan is a DAG of Actions with
 "after" edges.
 
@@ -201,9 +200,9 @@ It does not walk through:
 - cross-artifact references
 - the next artifact boundary
 
-Whenever that walk reaches a direct non-traversal function with one or more
-supported action kinds, that function becomes a reachable action for each
-applicable kind.
+Whenever that walk reaches a direct non-traversal function annotated with one
+or more supported verbs, that function becomes a reachable action for each
+applicable verb.
 
 The function path is the exact segment path from the artifact root to that
 function.
@@ -253,19 +252,19 @@ $ dagger check --type=go go:lint
 
 ### Enumeration
 
-`Artifact.actions(actionKinds)` returns all reachable local action occurrences
+`Artifact.actions(verbs)` returns all reachable local action occurrences
 on that artifact.
 
 These are **unbatched** occurrences:
 
-- one `Action` row per exact `(actionKind, target, functionPath)` occurrence
+- one `Action` row per exact `(verb, target, functionPath)` occurrence
 - `target.items` has length 1
 - `collectionBatched` is always `false`
 
 Set-level behavior is expressed by compiling a `Plan` from an `Artifacts`
 scope, then inspecting `Plan.nodes`.
 
-`Artifacts.filterAction(kind, functionPath)` is an exact structural predicate
+`Artifacts.filterAction(verb, functionPath)` is an exact structural predicate
 used before plan compilation. It narrows artifacts only; it does not create
 actions.
 
@@ -402,16 +401,16 @@ Plan compilation has six parts:
    become `filterDimension` / `filterCoordinates` chains on `Artifacts`.
 2. **Function selector resolution.** Any user-facing function selector syntax
    is resolved to exact `functionPath` arrays.
-3. **Verb narrowing.** `Artifacts.filterVerb(...)` keeps only artifacts that
-   expose at least one reachable action of the selected kind.
+3. **Verb narrowing.** `Artifacts.filterVerb(verb)` keeps only artifacts that
+   expose at least one reachable action for the selected verb.
 4. **Exact action narrowing.** For each exact `functionPath`, the compiler may
-   further narrow with `Artifacts.filterAction(kind, functionPath)`.
+   further narrow with `Artifacts.filterAction(verb, functionPath)`.
 5. **Action discovery and batching.** The engine reads
-   `Artifact.actions([kind])` from the retained artifacts, then turns retained
+   `Artifact.actions([verb])` from the retained artifacts, then turns retained
    reachable handlers into concrete `Action`s. Rollup through structural glue
    and batch-vs-item decisions are resolved here.
 6. **Deduplication and ordering.** Duplicate compiled actions are collapsed by exact
-   identity: `(actionKind, target, functionPath, collectionBatched)`.
+   identity: `(verb, target, functionPath, collectionBatched)`.
    `target` equality here means the same dimension order and the same row set,
    not pointer identity.
    Ordering may come from explicit user composition (`withAfter`) or from the
@@ -489,7 +488,7 @@ compilation and displays the DAG without executing it.
 - **Function paths are artifact-relative and exact.** There is no separate
   canonical workspace-global action path in this design.
 - **Action identity is exact and compiled.** One `Action` is identified by
-  `(actionKind, target, functionPath, collectionBatched)`.
+  `(verb, target, functionPath, collectionBatched)`.
 - **Plan edges are semantically static.** DagQL IDs are only the reference
   mechanism for already-compiled edges; they are not late-bound selectors.
 - **`dagger check -l` is table-capable.** It prints plain paths for one
