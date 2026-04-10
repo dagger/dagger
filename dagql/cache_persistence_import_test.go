@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
+	"github.com/opencontainers/go-digest"
 	"gotest.tools/v3/assert"
 )
 
@@ -17,12 +18,36 @@ func newPersistCodecImportTestServer(cache *Cache) *Server {
 		panic(err)
 	}
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
+	Fields[*persistCodecObj]{
+		Func("name", func(ctx context.Context, self *persistCodecObj, _ struct{}) (String, error) {
+			return String(self.Name), nil
+		}),
+	}.Install(srv)
 	Fields[*persistCodecRoot]{
 		NodeFunc("obj", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistCodecObj], error) {
-			return NewObjectResultForCurrentCall(ctx, srv, &persistCodecObj{Name: "x"})
+			return newPersistCodecImportTestResult(ctx, srv)
 		}).IsPersistable(),
+		NodeFunc("objCanonical", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistCodecObj], error) {
+			return newPersistCodecImportTestResult(ctx, srv)
+		}).IsPersistable(),
+		NodeFunc("objInner", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistCodecObj], error) {
+			return newPersistCodecImportTestResult(ctx, srv)
+		}),
+		NodeFunc("objAlias", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistCodecObj], error) {
+			var obj ObjectResult[*persistCodecObj]
+			err := srv.Select(ctx, srv.root, &obj, Selector{Field: "objInner"})
+			return obj, err
+		}),
 	}.Install(srv)
 	return srv
+}
+
+func newPersistCodecImportTestResult(ctx context.Context, srv *Server) (ObjectResult[*persistCodecObj], error) {
+	obj, err := NewObjectResultForCurrentCall(ctx, srv, &persistCodecObj{Name: "x"})
+	if err != nil {
+		return ObjectResult[*persistCodecObj]{}, err
+	}
+	return obj.WithContentDigest(ctx, digest.FromString("persist-codec-shared-object"))
 }
 
 func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
@@ -164,6 +189,58 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	assert.Assert(t, err != nil)
 	assert.Equal(t, 0, initCalls)
 	assert.Assert(t, strings.Contains(err.Error(), "decode persisted hit payload"))
+}
+
+func TestCachePersistenceImportedObjectAliasSupportsChainedSelect(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	srvA := newPersistCodecImportTestServer(cacheA)
+
+	rootCtxA := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-import-object-alias-root",
+	})
+	rootCtxA = ContextWithCache(rootCtxA, cacheA)
+	rootCtxA = srvToContext(rootCtxA, srvA)
+
+	var seed ObjectResult[*persistCodecObj]
+	err = srvA.Select(rootCtxA, srvA.root, &seed, Selector{Field: "objCanonical"})
+	assert.NilError(t, err)
+
+	cacheTestReleaseSession(t, cacheA, rootCtxA)
+	assert.NilError(t, cacheA.persistCurrentState(ctx))
+	assert.NilError(t, cacheA.Close(context.Background()))
+
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cacheB.Close(context.Background()))
+	}()
+	srvB := newPersistCodecImportTestServer(cacheB)
+
+	rootCtxB := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-import-object-alias-root",
+	})
+	rootCtxB = ContextWithCache(rootCtxB, cacheB)
+	rootCtxB = srvToContext(rootCtxB, srvB)
+
+	var name String
+	err = srvB.Select(rootCtxB, srvB.root, &name,
+		Selector{Field: "objAlias"},
+		Selector{Field: "name"},
+	)
+	assert.NilError(t, err)
+	assert.Equal(t, String("x"), name)
+
+	cacheTestReleaseSession(t, cacheB, rootCtxB)
 }
 
 func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {

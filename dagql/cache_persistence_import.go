@@ -551,6 +551,9 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	}
 
 	state := res.loadPayloadState()
+	if state.isObject && state.hasValue && state.self == nil {
+		return nil, fmt.Errorf("ensure persisted hit value loaded: invalid object payload state for result %d (hasValue=true, self=nil)", res.id)
+	}
 	if state.hasValue || state.persistedEnvelope == nil {
 		if !state.isObject {
 			c.registerLazyEvaluation(res, hit)
@@ -567,7 +570,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	call := res.loadResultCall()
 	dag := resolverServer(resolver)
 	if call == nil {
-		return hit, nil
+		return nil, fmt.Errorf("decode persisted hit payload: missing authoritative call for object result %d", res.id)
 	}
 	decodeCtx := ContextWithCall(ctx, call)
 	if dag == nil {
@@ -577,6 +580,9 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	if err != nil {
 		c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
 		return nil, fmt.Errorf("decode persisted hit payload: %w", err)
+	}
+	if decoded == nil || decoded.Unwrap() == nil {
+		return nil, fmt.Errorf("decode persisted hit payload: decoded nil payload for object result %d", res.id)
 	}
 
 	res.payloadMu.Lock()

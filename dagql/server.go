@@ -1198,7 +1198,6 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		// Only do this if we haven't been explicitly told not to (internal=false).
 		ctx = withInternal(ctx)
 	}
-
 	var res AnyResult = self
 	for i, sel := range sels {
 		nth := sel.Nth
@@ -1207,15 +1206,49 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		if nth != 0 {
 			sel.Nth = 0
 		}
-
 		var err error
 		res, err = self.Select(ctx, s, sel)
 		if err != nil {
 			return err
 		}
 
-		if res == nil || res.Unwrap() == nil {
+		if res == nil {
 			// null result; nothing to do
+			return nil
+		}
+		unwrap := res.Unwrap()
+		if unwrap == nil {
+			if shared := res.cacheSharedResult(); shared != nil {
+				state := shared.loadPayloadState()
+				if state.isObject {
+					typeName := sharedResultObjectTypeName(shared, state)
+					return fmt.Errorf(
+						"select %s returned unresolved object-typed result %q (shared result %d: hasValue=%t, persistedEnvelope=%t)",
+						sel.Field,
+						typeName,
+						shared.id,
+						state.hasValue,
+						state.persistedEnvelope != nil,
+					)
+				}
+			}
+			if _, ok := res.(AnyObjectResult); ok {
+				typeName := ""
+				if shared := res.cacheSharedResult(); shared != nil {
+					payload := shared.loadPayloadState()
+					typeName = sharedResultObjectTypeName(shared, payload)
+					return fmt.Errorf(
+						"select %s returned unresolved object result %q (shared result %d: hasValue=%t, persistedEnvelope=%t)",
+						sel.Field,
+						typeName,
+						shared.id,
+						payload.hasValue,
+						payload.persistedEnvelope != nil,
+					)
+				}
+				return fmt.Errorf("select %s returned unresolved object result %q", sel.Field, typeName)
+			}
+			// null scalar result; nothing to do
 			return nil
 		}
 

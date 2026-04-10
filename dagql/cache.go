@@ -1297,6 +1297,16 @@ func wrapSharedResultWithResolver(res *sharedResult, hitCache bool, resolver Typ
 		return ret, nil
 	}
 	typeName := sharedResultObjectTypeName(res, state)
+	if state.self == nil {
+		switch {
+		case state.persistedEnvelope != nil:
+			return nil, fmt.Errorf("reconstruct object result %q: persisted payload has not been decoded", typeName)
+		case state.hasValue:
+			return nil, fmt.Errorf("reconstruct object result %q: invalid payload state (hasValue=true, self=nil)", typeName)
+		default:
+			return nil, fmt.Errorf("reconstruct object result %q: missing typed payload", typeName)
+		}
+	}
 	if typeName == "" {
 		return nil, fmt.Errorf("reconstruct object result: missing type name")
 	}
@@ -1557,13 +1567,10 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	}
 	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
 
-	if !oc.res.loadPayloadState().hasValue {
-		return Result[Typed]{shared: oc.res}, nil
-	}
-
-	attached, err := wrapSharedResultWithResolver(oc.res, false, resolver)
+	attachedRes := Result[Typed]{shared: oc.res}
+	attached, err := c.ensurePersistedHitValueLoaded(ctx, resolver, attachedRes)
 	if err != nil {
-		return nil, fmt.Errorf("attach dependency result: %w", err)
+		return nil, fmt.Errorf("attach dependency result: normalize attached result: %w", err)
 	}
 	attachedShared := attached.cacheSharedResult()
 	if attachedShared == nil || attachedShared.id == 0 {
@@ -3169,12 +3176,9 @@ func (c *Cache) wait(
 		}
 	}
 
-	if !retRes.shared.loadPayloadState().hasValue {
-		return retRes, nil
-	}
-	retResAny, err := wrapSharedResultWithResolver(oc.res, false, resolver)
+	retResAny, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
-		return nil, fmt.Errorf("wait: reconstruct result: %w", err)
+		return nil, fmt.Errorf("wait: normalize returned result: %w", err)
 	}
 	return retResAny, nil
 }
