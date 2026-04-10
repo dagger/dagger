@@ -2514,31 +2514,37 @@ func (c *Cache) Close(ctx context.Context) error {
 
 func (c *Cache) Size() int {
 	c.callsMu.Lock()
-	defer c.callsMu.Unlock()
+	ongoingCalls := len(c.ongoingCalls)
+	ongoingArbitrary := len(c.ongoingArbitraryCalls)
+	completedArbitrary := len(c.completedArbitraryCalls)
+	c.callsMu.Unlock()
+
 	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	completedCalls := len(c.resultOutputEqClasses)
+	c.egraphMu.RUnlock()
 
 	// TODO: Re-implement size accounting directly from egraph state instead of
 	// relying on mixed index-oriented counters.
-	total := len(c.ongoingCalls)
-	total += len(c.resultOutputEqClasses)
-	total += len(c.ongoingArbitraryCalls)
-	total += len(c.completedArbitraryCalls)
+	total := ongoingCalls
+	total += completedCalls
+	total += ongoingArbitrary
+	total += completedArbitrary
 	return total
 }
 
 func (c *Cache) EntryStats() CacheEntryStats {
 	c.callsMu.Lock()
-	defer c.callsMu.Unlock()
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	stats := CacheEntryStats{
+		OngoingCalls:       len(c.ongoingCalls),
+		OngoingArbitrary:   len(c.ongoingArbitraryCalls),
+		CompletedArbitrary: len(c.completedArbitraryCalls),
+	}
+	c.callsMu.Unlock()
 
-	var stats CacheEntryStats
-	stats.OngoingCalls = len(c.ongoingCalls)
+	c.egraphMu.RLock()
 	stats.CompletedCalls = len(c.resultOutputEqClasses)
 	stats.RetainedCalls = len(c.persistedEdgesByResult)
-	stats.OngoingArbitrary = len(c.ongoingArbitraryCalls)
-	stats.CompletedArbitrary = len(c.completedArbitraryCalls)
+	c.egraphMu.RUnlock()
 
 	return stats
 }
