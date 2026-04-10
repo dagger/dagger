@@ -39,12 +39,6 @@ func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.
 			if err != nil {
 				return nil, err
 			}
-			// strip function bodies since we don't need them and don't need to waste time in packages.Load with type checking them
-			for _, decl := range astFile.Decls {
-				if fn, ok := decl.(*ast.FuncDecl); ok {
-					fn.Body = nil
-				}
-			}
 			return astFile, nil
 		},
 		// Print some debug logs with timing information to stdout
