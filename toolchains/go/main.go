@@ -13,7 +13,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/modules/go/internal/dagger"
+	"mod-golang/internal/dagger"
 	"github.com/dagger/dagger/util/parallel"
 )
 

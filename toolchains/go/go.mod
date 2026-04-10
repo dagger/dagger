@@ -1,4 +1,4 @@
-module github.com/dagger/dagger/modules/go
+module mod-golang
 
 go 1.25.6
 
