@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Adversarial Review"
+  short_description: "Adversarial review for design docs and RFCs."
+  default_prompt: "Perform an adversarial design review focused on implementation readiness, cross-doc coherence, edge cases, and user-facing clarity."

@@ -32,23 +32,34 @@ This document builds on the artifact model from [artifacts.md](./artifacts.md):
 - ordinary nested objects are structural glue
 
 Action discovery walks that structural glue and produces **artifact-relative**
-action paths such as `lint`, `tests:run-bun`, or `tests:generate-fixtures`.
+function paths such as `["lint"]`, `["tests", "run-bun"]`, or
+`["tests", "generate-fixtures"]`.
 
 ## Schema
 
 ```graphql
+enum ActionKind {
+  CHECK
+  GENERATE
+  SHIP
+  UP
+}
+
 extend type Artifacts {
   """
-  Reachable action occurrences on the current artifact set.
-  One row per `(artifact, path)` occurrence.
-  """
-  actions: [Action!]!
+  Keep only artifacts that expose the given action kind at the exact
+  artifact-relative function path.
 
+  `functionPath` must be exact. Globbing, shorthand, and compatibility syntax
+  are not allowed here.
+
+  This only filters artifacts. It does not compile actions, resolve batching,
+  or add dependencies.
+
+  Preserves the current scope's dimension order and narrows only the selected
+  artifacts.
   """
-  Create an action targeting all in-scope artifacts that expose this
-  artifact-relative path.
-  """
-  action(path: String!): Action!
+  filterAction(kind: ActionKind!, functionPath: [String!]!): Artifacts!
 
   """Compile a check execution plan for the selected artifact set."""
   check: Plan!
@@ -58,40 +69,50 @@ extend type Artifacts {
 }
 
 extend type Artifact {
-  """Reachable actions on this artifact, named by artifact-relative path."""
-  actions: [Action!]!
+  """
+  Reachable local action occurrences on this artifact.
+  If `actionKinds` is provided, only include those kinds.
+  """
+  actions(actionKinds: [ActionKind!]): [Action!]!
 
-  """Create an action targeting this single artifact."""
-  action(path: String!): Action!
+  """Create one exact action targeting this single artifact."""
+  action(kind: ActionKind!, functionPath: [String!]!): Action!
 }
 
 """
-A callable action: one or more artifacts plus one reachable handler path.
+A callable action: one action kind, one target scope, one exact function path,
+and one compiled execution mode.
 Actions are the building blocks of execution plans.
 """
 type Action {
   """
-  The artifacts this action targets.
-
-  - `Artifact.actions` and `Artifacts.actions` return unbatched occurrences, so
-    this list has length 1 there.
-  - `Artifacts.action(path)` may batch several selected artifacts that expose
-    the same path.
-  - Plan compilation may also batch actions when the verb allows it.
+  Semantic interpretation mode for this action.
   """
-  artifacts: [Artifact!]!
+  actionKind: ActionKind!
 
   """
-  Artifact-relative colon-separated path.
-  Examples: `lint`, `tests:run-bun`.
+  Exact artifact scope targeted by this action.
+  Preserves the source scope's dimension order and narrows only the selected
+  artifacts.
   """
-  path: String!
+  target: Artifacts!
 
-  """Leaf function name at the end of `path`."""
-  functionName: String!
+  """
+  Exact artifact-relative function path.
+  Each element is one path segment.
+  Examples: `["lint"]`, `["tests", "run-bun"]`.
+  """
+  functionPath: [String!]!
 
-  """Type definition of the leaf function, for introspection."""
-  function: Function
+  """
+  True if this action invokes a collection batch function once for the selected
+  subset represented by `target`, rather than invoking the same function once
+  per selected artifact.
+
+  If true, `target` must contain artifacts from exactly one collection
+  occurrence.
+  """
+  collectionBatched: Boolean!
 
   """Actions that must complete before this one runs."""
   after: [ActionID!]!
@@ -130,11 +151,20 @@ type Plan {
 
 ## Design Decisions
 
-- **Plan = DAG of Actions.** Each action is `(artifacts, path)` with "after"
-  edges. Parallel is implicit — actions with no pending dependencies run
-  concurrently.
-- **Action paths are artifact-relative.** The action model is `(artifact,
-  path)`, not one global path grammar.
+- **Plan = DAG of Actions.** Each action is
+  `(actionKind, target, functionPath, collectionBatched)` with "after" edges.
+  Parallel is implicit — actions with no pending dependencies run concurrently.
+- **Action kind is part of identity.** The same function path may be callable
+  under different action kinds, and those are different actions.
+- **Function paths are artifact-relative.** The action model is `(artifact,
+  functionPath)`, not one global path grammar.
+- **Function paths are exact.** Globbing and shorthand are resolved before
+  `Action` objects are created.
+- **Set-level behavior starts at `Artifacts.check` / `Artifacts.generate`.**
+  There is no set-level `action(...)` or `actions(...)` convenience API in this
+  design.
+- **Batching is compiled.** Batch-vs-item execution is resolved before plan
+  nodes are created. Executors do not infer it.
 - **Always compiled.** `dagger check` and `dagger generate` always compile a
   Plan, then execute it. `--plan` stops before execution and displays the plan.
 - **Engine compiles, CLI displays.** The engine owns plan compilation
@@ -150,10 +180,9 @@ type Plan {
 
 An Action bridges artifacts and functions:
 
-- `Artifact.action("lint")` → one action on one artifact
-- `Artifact.action("tests:run-bun")` → nested action on one artifact
-- `Artifacts.action("lint")` → one action over every selected artifact that
-  exposes `lint`
+- `Artifact.action(CHECK, ["lint"])` → one action on one artifact
+- `Artifact.action(CHECK, ["tests", "run-bun"])` → nested action on one artifact
+- `Artifact.actions([CHECK])` → local reachable check actions on one artifact
 
 Actions are the building blocks of Plans. A Plan is a DAG of Actions with
 "after" edges.
@@ -174,10 +203,11 @@ It does not walk through:
 - cross-artifact references
 - the next artifact boundary
 
-Whenever that walk reaches a direct non-traversal function with the relevant
-verb annotation, that function becomes a reachable action.
+Whenever that walk reaches a direct non-traversal function with one or more
+supported action kinds, that function becomes a reachable action for each
+applicable kind.
 
-The action path is the colon-separated path from the artifact root to that
+The function path is the exact segment path from the artifact root to that
 function.
 
 Example:
@@ -203,7 +233,14 @@ lint
 tests:run-bun
 ```
 
-The artifact root name itself is **not** part of the action path. So this is
+In structured form:
+
+```text
+["lint"]
+["tests", "run-bun"]
+```
+
+The artifact root name itself is **not** part of `functionPath`. So this is
 the normal form:
 
 ```console
@@ -218,18 +255,21 @@ $ dagger check --type=go go:lint
 
 ### Enumeration
 
-`Artifact.actions` returns all reachable action occurrences on that artifact.
-
-`Artifacts.actions` returns all reachable action occurrences across the
-selected artifact set.
+`Artifact.actions(actionKinds)` returns all reachable local action occurrences
+on that artifact.
 
 These are **unbatched** occurrences:
 
-- one `Action` row per `(artifact, path)` occurrence
-- `action.artifacts` therefore has length 1 for these two enumeration APIs
+- one `Action` row per exact `(actionKind, target, functionPath)` occurrence
+- `target.items` has length 1
+- `collectionBatched` is always `false`
 
-By contrast, `Artifacts.action(path)` may batch several selected artifacts that
-expose the same path.
+Set-level behavior is expressed by compiling a `Plan` from an `Artifacts`
+scope, then inspecting `Plan.nodes`.
+
+`Artifacts.filterAction(kind, functionPath)` is an exact structural predicate
+used before plan compilation. It narrows artifacts only; it does not create
+actions.
 
 ### Examples
 
@@ -239,7 +279,7 @@ One artifact:
 workspace.artifacts
   .filterCoordinates("type", ["go"])
   .items[0]
-  .actions
+  .actions([CHECK])
 ```
 
 might produce:
@@ -250,41 +290,40 @@ tests:run-bun
 tests:run-nodejs
 ```
 
-Several selected artifacts:
+Exact action filtering:
 
 ```text
 workspace.artifacts
   .filterCoordinates("type", ["go-test"])
-  .actions
+  .filterAction(CHECK, ["run"])
+```
+
+keeps only the selected `go-test` artifacts that expose exact check action
+`["run"]`.
+
+Compiled listing:
+
+```text
+workspace.artifacts
+  .filterCoordinates("type", ["go-test"])
+  .check
+  .nodes
 ```
 
 might produce:
 
 ```console
-(TestFoo, run)
-(TestBar, run)
+(CHECK, TestFoo, ["run"], false)
+(CHECK, TestBar, ["run"], false)
 ```
-
-Batched action lookup:
-
-```text
-workspace.artifacts
-  .filterCoordinates("type", ["go-test"])
-  .action("run")
-```
-
-means:
-
-- keep the currently selected `go-test` rows
-- retain only the rows that expose `run`
-- create one Action targeting that retained set
 
 ### CLI Listing
 
-`dagger check -l` and `dagger generate -l` list action occurrences.
+`dagger check -l` and `dagger generate -l` list compiled plan nodes, not raw
+action discovery.
 
-If all listed actions belong to one artifact row, the CLI prints plain
-artifact-relative action paths:
+If all listed actions belong to one artifact, the CLI prints plain
+artifact-relative function paths:
 
 ```console
 $ dagger check --type=go -l
@@ -292,9 +331,9 @@ lint
 tests:run-bun
 ```
 
-If several artifact rows are in play, the CLI prints a table:
+If several artifacts are in play, the CLI prints a table:
 
-- one column per artifact dimension needed to distinguish the listed rows
+- one column per artifact dimension needed to distinguish the listed artifacts
 - one `ACTION` column
 
 Example with only `type` varying:
@@ -308,7 +347,7 @@ js     lint
 js     tests:run-bun
 ```
 
-Example with collection rows:
+Example with collection artifacts:
 
 ```console
 $ dagger check --type=go-test -l
@@ -327,20 +366,20 @@ GO MODULE   GO TEST   ACTION
 ```
 
 Do not print dimensions that are constant or entirely null across the listed
-rows.
+artifacts.
 
 ### Compatibility Input
 
 For compatibility, the CLI may also accept:
 
 ```console
-<type>:<action-path>
+<type>:<function-selector>
 ```
 
 as shorthand for:
 
 ```console
---type=<type> <action-path>
+--type=<type> <function-selector>
 ```
 
 Examples:
@@ -353,17 +392,30 @@ $ dagger check go-test:run
 This is input sugar only. The primary listing format is the plain path or the
 table format above.
 
+If compatibility syntax supports globbing or shorthand, those selectors are
+resolved to exact `functionPath` arrays before `Action` objects are created.
+
 ## Plan Construction
 
-Plan compilation has three parts:
+Plan compilation has six parts:
 
 1. **Selection.** User-provided filters such as `--type=go` or
    `--type=go-test --go-test=TestFoo`
-   become `filterDimension` chains on `Artifacts`.
-2. **Action discovery.** The engine turns the retained reachable handlers for
-   the selected verb into concrete Actions. Rollup through structural glue and
-   batch-vs-item decisions are resolved here.
-3. **Action ordering.** The engine adds `after` edges between Actions.
+   become `filterDimension` / `filterCoordinates` chains on `Artifacts`.
+2. **Function selector resolution.** Any user-facing function selector syntax
+   is resolved to exact `functionPath` arrays.
+3. **Verb narrowing.** `Artifacts.filterVerb(...)` keeps only artifacts that
+   expose at least one reachable action of the selected kind.
+4. **Exact action narrowing.** For each exact `functionPath`, the compiler may
+   further narrow with `Artifacts.filterAction(kind, functionPath)`.
+5. **Action discovery and batching.** The engine reads
+   `Artifact.actions([kind])` from the retained artifacts, then turns retained
+   reachable handlers into concrete `Action`s. Rollup through structural glue
+   and batch-vs-item decisions are resolved here.
+6. **Deduplication and ordering.** Duplicate compiled actions are collapsed by exact
+   identity: `(actionKind, target, functionPath, collectionBatched)`.
+   `target` equality here means the same dimension order and the same row set,
+   not pointer identity.
    Ordering may come from explicit user composition (`withAfter`) or from the
    construction rules of the compiled verb.
 
@@ -376,13 +428,40 @@ This document defines automatic construction rules only for `check` and
 
 The most recursive verb in this unit.
 
-- Include local check handlers on artifact A.
-- Recursively include `check(B)` for each artifact B referenced by A.
-- If A references B, run `check(B)` before local check handlers on A.
-- If collection-aware batch behavior exists for the current scope, prefer it
-  over expanding to one item-level `check` per item.
+`scope.check` compiles from the current `Artifacts` scope. The compiler:
+
+1. starts from `scope.filterVerb(CHECK)`
+2. reads the retained artifacts with `.items`
+3. discovers local check occurrences with `artifact.actions([CHECK])`
+4. groups occurrences by exact `functionPath`
+5. resolves collection batching for each grouped path
+6. recursively compiles referenced checks
+7. adds `after` edges from referenced checks to local checks
+8. deduplicates exact compiled actions
+
+If the selected artifacts for a candidate `functionPath` belong to one
+collection occurrence and that collection exposes the same check handler on its
+batch type, compile one `collectionBatched = true` action.
+
+Otherwise, compile item-level actions with `collectionBatched = false`.
 
 This makes aggregate artifacts useful by default.
+
+Example:
+
+```text
+workspace.artifacts
+  .filterDimension("go-test")
+  .check
+  .run
+```
+
+If the selected `go-test` artifacts are `TestFoo` and `TestBar`:
+
+- with `GoTests.batch.run`, the plan may contain one compiled action with
+  `functionPath = ["run"]` and `collectionBatched = true`
+- without `GoTests.batch.run`, the plan contains one compiled action per test
+  with `functionPath = ["run"]` and `collectionBatched = false`
 
 ### `generate`
 
@@ -405,7 +484,15 @@ compilation and displays the DAG without executing it.
 - **`Action.withAfter` is part of the public API.** The engine uses it
   internally during plan compilation, and users can use it to build custom
   plans.
-- **Action paths are artifact-relative.** There is no separate canonical
-  workspace-global action path in this design.
+- **Action and Plan stay separate.** `Action` is one compiled execution unit;
+  `Plan` is a DAG of `Action`s.
+- **Artifact-local discovery only.** Reachable action discovery is exposed on
+  `Artifact.actions(...)`, not on `Artifacts`.
+- **Function paths are artifact-relative and exact.** There is no separate
+  canonical workspace-global action path in this design.
+- **Action identity is exact and compiled.** One `Action` is identified by
+  `(actionKind, target, functionPath, collectionBatched)`.
+- **Plan edges are semantically static.** DagQL IDs are only the reference
+  mechanism for already-compiled edges; they are not late-bound selectors.
 - **`dagger check -l` is table-capable.** It prints plain paths for one
-  artifact row and a minimal distinguishing table for several rows.
+  artifact and a minimal distinguishing table for several artifacts.

@@ -507,30 +507,6 @@ $ dagger check --type=go-test --go-test=TestFoo run
 $ dagger check --go-test=TestFoo run
 ```
 
-### Compatibility Input
-
-For compatibility, the CLI may also accept:
-
-```console
-<type>:<action-path>
-```
-
-as shorthand for:
-
-```console
---type=<type> <action-path>
-```
-
-Examples:
-
-```console
-$ dagger check go:lint
-$ dagger check go-test:run
-```
-
-These are input aliases only. The CLI does not need to print this notation in
-its primary output.
-
 ## Schema
 
 ```graphql
