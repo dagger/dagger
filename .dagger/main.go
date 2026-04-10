@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-
-	"github.com/dagger/dagger/util/patchpreview"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -26,11 +24,7 @@ func (dev *DaggerDev) Generated(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		preview, err := patchpreview.SummarizeString(ctx, rawPatch, changes)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(os.Stderr, preview)
+		fmt.Fprintln(os.Stderr, rawPatch)
 		return errors.New("generated files are not up-to-date")
 	}
 	return nil

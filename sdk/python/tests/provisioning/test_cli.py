@@ -1,3 +1,4 @@
+import io
 import sys
 
 import httpx
@@ -54,6 +55,42 @@ def test_cli_exec_errors(config_args: dict, call_kwargs: dict, fp: FakeProcess):
         ),
     ):
         ...
+
+
+def test_log_output_stringio(fp: FakeProcess):
+    """Test that in-memory streams like StringIO work as log_output."""
+    buffer = io.StringIO()
+    fp.register(
+        ["dagger", "session", fp.any()],
+        stdout=['{"port":50004,"session_token":"abc"}', ""],
+        stderr=["some log output\n", ""],
+    )
+    with session.start_cli_session_sync(
+        dagger.Config(log_output=buffer),
+        "dagger",
+    ) as conn:
+        assert conn.port == 50004
+        assert conn.session_token == "abc"
+
+
+def test_log_output_with_real_file_descriptor(fp: FakeProcess):
+    """Test that streams with fileno() (like sys.stderr) still work."""
+    fp.register(
+        ["dagger", "session", fp.any()],
+        stdout=['{"port":50004,"session_token":"abc"}', ""],
+    )
+    with session.start_cli_session_sync(
+        dagger.Config(log_output=sys.stderr),
+        "dagger",
+    ) as conn:
+        assert conn.port == 50004
+        assert conn.session_token == "abc"
+
+
+def test_has_fileno():
+    """Test _has_fileno helper function."""
+    assert not session._has_fileno(io.StringIO())
+    assert session._has_fileno(sys.stderr)
 
 
 def test_stderr(fp: FakeProcess):

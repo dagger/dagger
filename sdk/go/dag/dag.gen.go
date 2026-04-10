@@ -266,6 +266,12 @@ func LoadCurrentModuleFromID(id dagger.CurrentModuleID) *dagger.CurrentModule {
 	return client.LoadCurrentModuleFromID(id)
 }
 
+// Load a DiffStat from its ID.
+func LoadDiffStatFromID(id dagger.DiffStatID) *dagger.DiffStat {
+	client := initClient()
+	return client.LoadDiffStatFromID(id)
+}
+
 // Load a Directory from its ID.
 func LoadDirectoryFromID(id dagger.DirectoryID) *dagger.Directory {
 	client := initClient()

@@ -281,4 +281,4 @@ Users of modules that were created prior to v0.19.4 will initially retain that d
 
 Once the author has annotated functions with the desired cache configuration (or has determined that the default cache policy is appropriate for each function), they can delete that line from `dagger.json` to opt-in to the new function caching features.
 
-The reason for this is that some functions may require a specific TTL, "session" or "never" caching in order to behave as expected. For example, if a function pulls data from an external network service, it may not be desireable for it to have the default TTL of 7 days in the case where that data changes more frequently than once a week.
+The reason for this is that some functions may require a specific TTL, "session" or "never" caching in order to behave as expected. For example, if a function pulls data from an external network service, it may not be desirable for it to have the default TTL of 7 days in the case where that data changes more frequently than once a week.

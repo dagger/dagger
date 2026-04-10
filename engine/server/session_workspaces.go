@@ -496,11 +496,23 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// --- Gather all modules to load ---
 	var pending []pendingModule
 
+	// resolveConfigRef resolves module source paths declared in dagger.json
+	// relative to the config file location rather than the client's CWD.
+	// When a client connects from a subdirectory, ws.Path points there,
+	// but module sources in the config are relative to the config itself.
+	resolveConfigRef := resolveLocalRef
+	if hasModuleConfig && isLocal {
+		configDir := moduleDir
+		resolveConfigRef = func(_ *workspace.Workspace, relPath string) string {
+			return filepath.Join(configDir, relPath)
+		}
+	}
+
 	// (1a) Legacy toolchains (from compat mode, extracted above)
 	for _, tc := range legacyToolchains {
 		pending = append(pending, pendingLegacyModule(
 			ws,
-			resolveLocalRef,
+			resolveConfigRef,
 			tc.Name,
 			tc.Source,
 			tc.Pin,
@@ -514,7 +526,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if legacyBlueprint != nil {
 		blueprint := pendingLegacyModule(
 			ws,
-			resolveLocalRef,
+			resolveConfigRef,
 			legacyBlueprint.Name,
 			legacyBlueprint.Source,
 			legacyBlueprint.Pin,

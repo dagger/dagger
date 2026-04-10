@@ -946,6 +946,73 @@ export type CurrentModuleWorkdirOpts = {
  */
 export type CurrentModuleID = string & { __CurrentModuleID: never }
 
+/**
+ * The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
+ */
+export type DiffStatID = string & { __DiffStatID: never }
+
+/**
+ * The type of change for a diff stat entry.
+ */
+export enum DiffStatKind {
+  /**
+   * A file or directory was added.
+   */
+  Added = "ADDED",
+
+  /**
+   * A file was modified.
+   */
+  Modified = "MODIFIED",
+
+  /**
+   * A file or directory was removed.
+   */
+  Removed = "REMOVED",
+
+  /**
+   * A file was renamed.
+   */
+  Renamed = "RENAMED",
+}
+
+/**
+ * Utility function to convert a DiffStatKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function DiffStatKindValueToName(value: DiffStatKind): string {
+  switch (value) {
+    case DiffStatKind.Added:
+      return "ADDED"
+    case DiffStatKind.Modified:
+      return "MODIFIED"
+    case DiffStatKind.Removed:
+      return "REMOVED"
+    case DiffStatKind.Renamed:
+      return "RENAMED"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a DiffStatKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function DiffStatKindNameToValue(name: string): DiffStatKind {
+  switch (name) {
+    case "ADDED":
+      return DiffStatKind.Added
+    case "MODIFIED":
+      return DiffStatKind.Modified
+    case "REMOVED":
+      return DiffStatKind.Removed
+    case "RENAMED":
+      return DiffStatKind.Renamed
+    default:
+      return name as DiffStatKind
+  }
+}
 export type DirectoryAsModuleOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
@@ -3047,6 +3114,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type DiffStat
+   */
+  asDiffStat = (): DiffStat => {
+    const ctx = this._ctx.select("asDiffStat")
+    return new DiffStat(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type Directory
    */
   asDirectory = (): Directory => {
@@ -3404,6 +3479,21 @@ export class Changeset extends BaseClient {
   before = (): Directory => {
     const ctx = this._ctx.select("before")
     return new Directory(ctx)
+  }
+
+  /**
+   * Structured per-path diff statistics (kind and line counts) for this changeset.
+   */
+  diffStats = async (): Promise<DiffStat[]> => {
+    type diffStats = {
+      id: DiffStatID
+    }
+
+    const ctx = this._ctx.select("diffStats").select("id")
+
+    const response: Awaited<diffStats[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadDiffStatFromID(r.id))
   }
 
   /**
@@ -5289,6 +5379,127 @@ export class CurrentModule extends BaseClient {
   }
 }
 
+export class DiffStat extends BaseClient {
+  private readonly _id?: DiffStatID = undefined
+  private readonly _addedLines?: number = undefined
+  private readonly _kind?: DiffStatKind = undefined
+  private readonly _oldPath?: string = undefined
+  private readonly _path?: string = undefined
+  private readonly _removedLines?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: DiffStatID,
+    _addedLines?: number,
+    _kind?: DiffStatKind,
+    _oldPath?: string,
+    _path?: string,
+    _removedLines?: number,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._addedLines = _addedLines
+    this._kind = _kind
+    this._oldPath = _oldPath
+    this._path = _path
+    this._removedLines = _removedLines
+  }
+
+  /**
+   * A unique identifier for this DiffStat.
+   */
+  id = async (): Promise<DiffStatID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<DiffStatID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Number of added lines for this path.
+   */
+  addedLines = async (): Promise<number> => {
+    if (this._addedLines) {
+      return this._addedLines
+    }
+
+    const ctx = this._ctx.select("addedLines")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Type of change.
+   */
+  kind = async (): Promise<DiffStatKind> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<DiffStatKind> = await ctx.execute()
+
+    return DiffStatKindNameToValue(response)
+  }
+
+  /**
+   * Previous path of the file, set only for renames.
+   */
+  oldPath = async (): Promise<string> => {
+    if (this._oldPath) {
+      return this._oldPath
+    }
+
+    const ctx = this._ctx.select("oldPath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Path of the changed file or directory.
+   */
+  path = async (): Promise<string> => {
+    if (this._path) {
+      return this._path
+    }
+
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Number of removed lines for this path.
+   */
+  removedLines = async (): Promise<number> => {
+    if (this._removedLines) {
+      return this._removedLines
+    }
+
+    const ctx = this._ctx.select("removedLines")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+}
+
 /**
  * A directory.
  */
@@ -6792,6 +7003,35 @@ export class Env extends BaseClient {
    */
   withCurrentModule = (): Env => {
     const ctx = this._ctx.select("withCurrentModule")
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type DiffStat in the environment
+   * @param name The name of the binding
+   * @param value The DiffStat value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withDiffStatInput = (
+    name: string,
+    value: DiffStat,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withDiffStatInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired DiffStat output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withDiffStatOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withDiffStatOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -12260,6 +12500,14 @@ export class Client extends BaseClient {
   loadCurrentModuleFromID = (id: CurrentModuleID): CurrentModule => {
     const ctx = this._ctx.select("loadCurrentModuleFromID", { id })
     return new CurrentModule(ctx)
+  }
+
+  /**
+   * Load a DiffStat from its ID.
+   */
+  loadDiffStatFromID = (id: DiffStatID): DiffStat => {
+    const ctx = this._ctx.select("loadDiffStatFromID", { id })
+    return new DiffStat(ctx)
   }
 
   /**

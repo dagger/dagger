@@ -74,6 +74,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type DiffStat
+     */
+    public function asDiffStat(): DiffStat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asDiffStat');
+        return new \Dagger\DiffStat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Directory
      */
     public function asDirectory(): Directory

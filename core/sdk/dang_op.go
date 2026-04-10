@@ -459,19 +459,11 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 		})
 	}
 
-	// Apply @check and @generate directives on the function.
-	for _, directive := range mod.GetDirectives(name) {
-		switch directive.Name {
-		case "check":
-			sels = append(sels, dagql.Selector{
-				Field: "withCheck",
-			})
-		case "generate":
-			sels = append(sels, dagql.Selector{
-				Field: "withGenerator",
-			})
-		}
+	dirSels, err := functionDirectiveSelectors(ctx, env, mod.GetDirectives(name))
+	if err != nil {
+		return res, fmt.Errorf("directives for %s: %w", name, err)
 	}
+	sels = append(sels, dirSels...)
 
 	args := fn.Arg().(*dang.RecordType)
 	for _, arg := range args.Fields {
@@ -504,50 +496,9 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 			argArgs = append(argArgs, dagql.NamedInput{Name: "description", Value: dagql.String(doc)})
 		}
 
-		for _, argDirs := range args.Directives {
-			if argDirs.Key != arg.Key {
-				continue
-			}
-			for _, dir := range argDirs.Value {
-				switch dir.Name {
-				case "defaultPath":
-					for _, arg := range dir.Args {
-						if arg.Key == "path" { // TODO: positional
-							val, err := evalConstantValue(arg.Value)
-							if err != nil {
-								return res, fmt.Errorf("failed to evaluate directive argument %s.%s.%s: %w", arg.Key, dir.Name, arg.Key, err)
-							}
-							if path, ok := val.(string); ok {
-								argArgs = append(argArgs, dagql.NamedInput{Name: "defaultPath", Value: dagql.String(path)})
-							}
-						}
-					}
-				case "ignorePatterns":
-					for _, arg := range dir.Args {
-						if arg.Key == "patterns" {
-							val, err := evalConstantValue(arg.Value)
-							if err != nil {
-								return res, fmt.Errorf("failed to evaluate directive argument %s.%s.%s: %w", arg.Key, dir.Name, arg.Key, err)
-							}
-							if ignore, ok := val.([]any); ok {
-								var ignorePatterns []string
-								for _, pattern := range ignore {
-									if str, ok := pattern.(string); ok {
-										ignorePatterns = append(ignorePatterns, str)
-									} else {
-										return res, fmt.Errorf("invalid ignore argument %s: %T (expected string)", arg.Key, pattern)
-									}
-								}
-								if len(ignorePatterns) > 0 {
-									argArgs = append(argArgs, dagql.NamedInput{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignorePatterns...))})
-								}
-							} else {
-								return res, fmt.Errorf("invalid ignore directive for argument %s: %T (expected []any)", arg.Key, ignore)
-							}
-						}
-					}
-				}
-			}
+		argArgs, err = applyArgDirectives(ctx, env, argArgs, arg.Key, args.Directives)
+		if err != nil {
+			return res, err
 		}
 
 		sels = append(sels, dagql.Selector{
@@ -563,29 +514,147 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 	return res, nil
 }
 
-// evalConstantValue converts AST nodes to Go values for directive arguments
-func evalConstantValue(node dang.Node) (any, error) {
-	switch n := node.(type) {
-	case *dang.String:
-		return n.Value, nil
-	case *dang.Int:
-		return n.Value, nil
-	case *dang.Boolean:
-		return n.Value, nil
-	case *dang.List:
-		var elements []any
-		for _, elem := range n.Elements {
-			if evalElem, err := evalConstantValue(elem); err == nil {
-				elements = append(elements, evalElem)
-			} else {
-				return nil, fmt.Errorf("failed to evaluate list element: %w", err)
+// functionDirectiveSelectors converts function-level directives (@check,
+// @generate, @up, @cache) into dagql selectors.
+func functionDirectiveSelectors(ctx context.Context, env dang.EvalEnv, directives []*dang.DirectiveApplication) ([]dagql.Selector, error) {
+	var sels []dagql.Selector
+	for _, directive := range directives {
+		switch directive.Name {
+		case "check":
+			sels = append(sels, dagql.Selector{Field: "withCheck"})
+		case "generate":
+			sels = append(sels, dagql.Selector{Field: "withGenerator"})
+		case "up":
+			sels = append(sels, dagql.Selector{Field: "withUp"})
+		case "cache":
+			sel, err := cacheDirectiveSelector(ctx, env, directive)
+			if err != nil {
+				return nil, err
+			}
+			sels = append(sels, sel)
+		}
+	}
+	return sels, nil
+}
+
+// cacheDirectiveSelector converts a @cache directive into a withCachePolicy selector.
+func cacheDirectiveSelector(ctx context.Context, env dang.EvalEnv, directive *dang.DirectiveApplication) (dagql.Selector, error) {
+	var policy core.FunctionCachePolicy
+	var ttl string
+	for _, arg := range directive.Args {
+		val, err := evalDirectiveArg(ctx, env, arg.Value)
+		if err != nil {
+			return dagql.Selector{}, fmt.Errorf("failed to evaluate @cache argument %s: %w", arg.Key, err)
+		}
+		switch arg.Key {
+		case "policy":
+			if s, ok := val.(string); ok {
+				policy = core.FunctionCachePolicy(s)
+			}
+		case "ttl":
+			if s, ok := val.(string); ok {
+				ttl = s
 			}
 		}
+	}
+	if policy == "" {
+		policy = core.FunctionCachePolicyDefault
+	}
+	args := []dagql.NamedInput{
+		{Name: "policy", Value: policy},
+	}
+	if ttl != "" {
+		args = append(args, dagql.NamedInput{Name: "timeToLive", Value: dagql.Opt(dagql.String(ttl))})
+	}
+	return dagql.Selector{Field: "withCachePolicy", Args: args}, nil
+}
+
+// applyArgDirectives processes argument-level directives (@defaultPath,
+// @ignorePatterns) and appends the resulting inputs to argArgs.
+func applyArgDirectives(ctx context.Context, env dang.EvalEnv, argArgs []dagql.NamedInput, argName string, allDirs []dang.Keyed[[]*dang.DirectiveApplication]) ([]dagql.NamedInput, error) {
+	for _, argDirs := range allDirs {
+		if argDirs.Key != argName {
+			continue
+		}
+		for _, dir := range argDirs.Value {
+			switch dir.Name {
+			case "defaultPath":
+				for _, a := range dir.Args {
+					if a.Key == "path" { // TODO: positional
+						val, err := evalDirectiveArg(ctx, env, a.Value)
+						if err != nil {
+							return nil, fmt.Errorf("@defaultPath.path for %s: %w", argName, err)
+						}
+						if path, ok := val.(string); ok {
+							argArgs = append(argArgs, dagql.NamedInput{Name: "defaultPath", Value: dagql.String(path)})
+						}
+					}
+				}
+			case "ignorePatterns":
+				for _, a := range dir.Args {
+					if a.Key == "patterns" {
+						val, err := evalDirectiveArg(ctx, env, a.Value)
+						if err != nil {
+							return nil, fmt.Errorf("@ignorePatterns.patterns for %s: %w", argName, err)
+						}
+						ignore, ok := val.([]any)
+						if !ok {
+							return nil, fmt.Errorf("@ignorePatterns for %s: expected []any, got %T", argName, val)
+						}
+						var patterns []string
+						for _, p := range ignore {
+							str, ok := p.(string)
+							if !ok {
+								return nil, fmt.Errorf("@ignorePatterns for %s: expected string element, got %T", argName, p)
+							}
+							patterns = append(patterns, str)
+						}
+						if len(patterns) > 0 {
+							argArgs = append(argArgs, dagql.NamedInput{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(patterns...))})
+						}
+					}
+				}
+			}
+		}
+	}
+	return argArgs, nil
+}
+
+// evalDirectiveArg evaluates a directive argument AST node through the Dang
+// runtime and converts the resulting Value to a plain Go value.
+func evalDirectiveArg(ctx context.Context, env dang.EvalEnv, node dang.Node) (any, error) {
+	val, err := dang.EvalNode(ctx, env, node)
+	if err != nil {
+		return nil, err
+	}
+	return dangValToGo(val)
+}
+
+// dangValToGo converts a Dang Value to a plain Go value.
+func dangValToGo(val dang.Value) (any, error) {
+	switch v := val.(type) {
+	case dang.StringValue:
+		return v.Val, nil
+	case dang.IntValue:
+		return v.Val, nil
+	case dang.BoolValue:
+		return v.Val, nil
+	case dang.EnumValue:
+		return v.Val, nil
+	case dang.ListValue:
+		elements := make([]any, len(v.Elements))
+		for i, elem := range v.Elements {
+			g, err := dangValToGo(elem)
+			if err != nil {
+				return nil, fmt.Errorf("list element %d: %w", i, err)
+			}
+			elements[i] = g
+		}
 		return elements, nil
+	case dang.NullValue:
+		return nil, nil
 	default:
-		// For more complex nodes, we could try full evaluation
-		// but for now, directive arguments should be simple literals
-		return nil, fmt.Errorf("unsupported directive argument type: %T", node)
+		return nil, fmt.Errorf("unsupported directive argument value type: %T", val)
 	}
 }
 

@@ -104,7 +104,7 @@ func TestProvision(t *testing.T) {
 	f.Close()
 
 	run := func() error {
-		c, err := Connect(ctx, WithLogOutput(os.Stderr))
+		c, err := Connect(ctx, WithLogOutput(os.Stderr), WithSkipWorkspaceModules())
 		if err != nil {
 			return fmt.Errorf("failed to connect: %w", err)
 		}

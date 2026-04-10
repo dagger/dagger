@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -68,6 +70,80 @@ func TestPendingLegacyModule(t *testing.T) {
 		require.True(t, mod.LegacyDefaultPath)
 		require.Nil(t, mod.ConfigDefaults)
 	})
+}
+
+// TestModuleResolutionFromSubdirectory verifies that module source paths from
+// dagger.json are resolved relative to the config file location, not the
+// client's working directory. When a client connects from sdk/go/, a module
+// with source "modules/changelog" should resolve to /repo/modules/changelog,
+// not /repo/sdk/go/modules/changelog.
+func TestModuleResolutionFromSubdirectory(t *testing.T) {
+	t.Parallel()
+
+	// Filesystem layout:
+	//   /repo/.git                  (git root)
+	//   /repo/dagger.json           (config declaring a module)
+	//   /repo/sdk/go/               (client CWD)
+
+	existingFiles := map[string]bool{
+		"/repo/.git":        true,
+		"/repo/dagger.json": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
+	})
+
+	// The "toolchains" field is the current config mechanism for declaring
+	// workspace modules in dagger.json.
+	daggerJSON := `{
+		"name": "myproject",
+		"toolchains": [
+			{"name": "changelog", "source": "modules/changelog"}
+		]
+	}`
+
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Clean(path) == "/repo/dagger.json" {
+			return []byte(daggerJSON), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
+		return filepath.Join(ws.Root, ws.Path, relPath)
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspace(ctx, client,
+		statFS,
+		readFile,
+		"/repo/sdk/go", // CWD is a subdirectory
+		resolveLocalRef,
+		nil,
+		true, // isLocal
+	)
+	require.NoError(t, err)
+
+	// Module source must resolve relative to dagger.json (/repo),
+	// not relative to CWD (/repo/sdk/go).
+	require.Len(t, client.pendingModules, 2) // declared module + implicit module
+	require.Equal(t, "/repo/modules/changelog", client.pendingModules[0].Ref)
+	require.Equal(t, "changelog", client.pendingModules[0].Name)
 }
 
 func TestIsSameModuleReference(t *testing.T) {

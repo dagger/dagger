@@ -37,6 +37,17 @@ func WithWorkdir(path string) ClientOpt {
 	})
 }
 
+// WithWorkspace sets the workspace binding for the engine session.
+//
+// The ref may be either a local path or a remote git ref.
+//
+// This only has effect when connecting via the CLI.
+func WithWorkspace(ref string) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.Workspace = ref
+	})
+}
+
 // WithLogOutput sets the progress writer
 func WithLogOutput(writer io.Writer) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {

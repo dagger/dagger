@@ -21,6 +21,7 @@ func (m *PortCollision) Web() *dagger.Service {
 func (m *PortCollision) WebDuplicate() *dagger.Service {
 	return dag.Container().
 		From("nginx:alpine").
+		WithEnvVariable("DUPLICATE", "true").
 		WithExposedPort(8080).
 		AsService()
 }
