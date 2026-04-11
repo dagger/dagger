@@ -360,7 +360,7 @@ func (s *workspaceSchema) checks(
 	},
 ) (*core.CheckGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
-	mods, err := currentWorkspacePrimaryModules(ctx)
+	mods, err := currentWorkspacePrimaryModules(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +417,7 @@ func (s *workspaceSchema) generators(
 	},
 ) (*core.GeneratorGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
-	mods, err := currentWorkspacePrimaryModules(ctx)
+	mods, err := currentWorkspacePrimaryModules(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -489,7 +489,7 @@ func (s *workspaceSchema) services(
 	},
 ) (*core.UpGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
-	mods, err := currentWorkspacePrimaryModules(ctx)
+	mods, err := currentWorkspacePrimaryModules(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +647,14 @@ func matchWorkspaceIncludePath(
 	return false, nil
 }
 
-func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, error) {
+func currentWorkspacePrimaryModules(ctx context.Context, ws *core.Workspace) ([]*core.Module, error) {
+	var err error
+	if ws != nil {
+		ctx, err = withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
+	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
