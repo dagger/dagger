@@ -221,3 +221,71 @@ func (GeneratorsSuite) TestGeneratorsAsToolchain(ctx context.Context, t *testctx
 		})
 	}
 }
+
+func (GeneratorsSuite) TestToolchainIgnoreGenerators(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen, err := generatorsTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.
+		WithWorkdir("app").
+		With(daggerExec("init")).
+		With(daggerExec("toolchain", "install", "../hello-with-generators"))
+
+	out, err := modGen.
+		With(daggerExec("generate", "-l")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello-with-generators:generate-files")
+	require.Contains(t, out, "hello-with-generators:generate-other-files")
+	require.Contains(t, out, "hello-with-generators:other-generators:gen-things")
+
+	modGen = modGen.WithNewFile("dagger.json", `{
+  "name": "app",
+  "engineVersion": "v0.20.5",
+  "toolchains": [
+    {
+      "name": "hello-with-generators",
+      "source": "../hello-with-generators",
+      "ignoreGenerators": [
+        "generate-other-files",
+        "other-generators:*"
+      ]
+    }
+  ]
+}`)
+
+	out, err = modGen.
+		With(daggerExec("generate", "-l")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello-with-generators:generate-files")
+	require.NotContains(t, out, "hello-with-generators:generate-other-files")
+	require.NotContains(t, out, "hello-with-generators:other-generators:gen-things")
+
+	modGen = modGen.
+		With(daggerExec("generate", "hello-with-generators:generate-*", "-y", "--progress=plain"))
+	out, err = modGen.
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello-with-generators:generate-files")
+	require.NotContains(t, out, "hello-with-generators:generate-other-files")
+
+	exists, err := modGen.Exists(ctx, "foo")
+	require.NoError(t, err)
+	require.True(t, exists)
+	exists, err = modGen.Exists(ctx, "bar")
+	require.NoError(t, err)
+	require.False(t, exists)
+
+	modGen = modGen.
+		With(daggerExec("generate", "hello-with-generators:other-generators:*", "-y", "--progress=plain"))
+	out, err = modGen.
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, out, "hello-with-generators:other-generators:gen-things")
+
+	exists, err = modGen.Exists(ctx, "meta-gen")
+	require.NoError(t, err)
+	require.False(t, exists)
+}

@@ -442,6 +442,10 @@ func (s *workspaceSchema) generators(
 		return nil, err
 	}
 
+	ignoreGenerators := toolchainIgnorePatterns(mods, func(cfg *modules.ModuleConfigDependency) []string {
+		return cfg.IgnoreGenerators
+	})
+
 	moduleGenerators := make([]workspaceGeneratorModule, 0, len(mods))
 	for _, mod := range mods {
 		generatorGroup, err := core.NewGeneratorGroup(ctx, mod, nil)
@@ -480,6 +484,16 @@ func (s *workspaceSchema) generators(
 		})
 	}
 
+	rawIgnoreGeneratorsBySource := make(map[string][]string, len(moduleGenerators))
+	for _, entry := range moduleGenerators {
+		if entry.isWrapper {
+			continue
+		}
+		if exclude := ignoreGenerators[entry.name]; len(exclude) > 0 {
+			rawIgnoreGeneratorsBySource[entry.sourceDigest] = append(rawIgnoreGeneratorsBySource[entry.sourceDigest], exclude...)
+		}
+	}
+
 	moduleGenerators = selectVisibleGeneratorModules(moduleGenerators)
 
 	var allGenerators []*core.Generator
@@ -494,6 +508,25 @@ func (s *workspaceSchema) generators(
 		)
 		if err != nil {
 			return nil, err
+		}
+		exclude := ignoreGenerators[entry.name]
+		if entry.isWrapper {
+			// Keep ignore behavior attached to the raw toolchain alias even when the
+			// workspace view hides that alias behind a wrapper module.
+			exclude = append(exclude, rawIgnoreGeneratorsBySource[entry.sourceDigest]...)
+		}
+		if len(exclude) > 0 {
+			filtered, err = filterNodesByExclude(
+				ctx,
+				filtered,
+				exclude,
+				func(generator *core.Generator) *core.ModTreeNode { return generator.Node },
+				func(generator *core.Generator) string { return generator.Name() },
+				"generator",
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 		allGenerators = append(allGenerators, filtered...)
 	}
