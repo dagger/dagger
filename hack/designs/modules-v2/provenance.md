@@ -275,10 +275,31 @@ Later implementations may narrow that conservative selector with `include` and
 Known selectors come from:
 
 - stored `Directory` and `File` values
+- stored `Workspace` values
 - the source files of the Dagger module that defines the artifact
 
-Artifact provenance is the union of all reachable stored field values. This
-walk is transitive through nested stored objects.
+Artifact provenance is the union of all reachable stored, materialized values.
+
+Traversal starts at the artifact's stored fields, then recurses through:
+
+- stored objects
+- stored lists
+- present optional values
+
+The leaf values that contribute provenance are:
+
+- `Directory`
+- `File`
+- `Workspace`
+
+In the initial implementation:
+
+- `Directory` and `File` contribute their recorded selectors
+- `Workspace` contributes one conservative `WORKSPACE_READ` selector rooted at
+  `/`
+
+Duplicate selectors do not change the result. Traversal must terminate. The
+exact cycle-handling strategy is an implementation detail.
 
 `union(other)` follows these rules:
 
@@ -288,9 +309,19 @@ walk is transitive through nested stored objects.
 - conservative selectors stay conservative
 - equivalent selectors with the same `kind` may be deduplicated when practical
 
-Implementation sketch:
+Example:
 
-The engine walks stored fields. It also walks nested stored objects.
+```text
+Artifact A
+  inputs = [ws.file("a.txt"), ws.file("b.txt")]
+  cfg = ws.file("config.yml")?
+  ws = currentWorkspace
+```
+
+This artifact gets selectors for `a.txt`, `b.txt`, `config.yml`, and a
+conservative `WORKSPACE_READ` selector rooted at `/`.
+
+Implementation sketch:
 
 ```go
 func CollectStoredProvenance(v any) WorkspaceProvenance {
@@ -299,12 +330,31 @@ func CollectStoredProvenance(v any) WorkspaceProvenance {
 		return x.Provenance
 	case *File:
 		return x.Provenance
+	case *Workspace:
+		return WorkspaceProvenance{
+			Selectors: []WorkspaceSelector{{
+				Path:         "/",
+				Conservative: true,
+				Kind:         WorkspaceRead,
+			}},
+		}
 	case ObjectWithFields:
 		var out WorkspaceProvenance
 		for _, f := range x.MaterializedFields() {
 			out = out.Union(CollectStoredProvenance(f.Value))
 		}
 		return out
+	case StoredList:
+		var out WorkspaceProvenance
+		for _, item := range x.Elements() {
+			out = out.Union(CollectStoredProvenance(item))
+		}
+		return out
+	case OptionalValue:
+		if !x.HasValue() {
+			return WorkspaceProvenance{}
+		}
+		return CollectStoredProvenance(x.Value())
 	default:
 		return WorkspaceProvenance{}
 	}
