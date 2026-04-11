@@ -471,7 +471,16 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	for parent := range span.Parents {
 		// don't propagate failure, to respect encapsulation
 		// don't propagate activity, since these are direct parents
-		if propagate(parent, false, false) {
+		changed := propagate(parent, false, false)
+
+		// If a child only starts after its parent already completed, treat it as
+		// a resumed continuation of that parent for failure purposes.
+		lateContinuation := !parent.IsRunning() && span.StartTime.After(parent.EndTime)
+		if lateContinuation && span.IsFailedOrCausedFailure() {
+			changed = parent.FailedLinks.Add(span) || changed
+		}
+
+		if changed {
 			span.db.update(parent)
 		}
 	}

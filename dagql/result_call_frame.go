@@ -902,13 +902,6 @@ func (frame *ResultCall) selfDigestAndInputRefs(c *Cache) (digest.Digest, []Resu
 	return digest.Digest(h.DigestAndClose()), inputRefs, nil
 }
 
-func (frame *ResultCall) AllEffectIDs() ([]string, error) {
-	// FIXME: effect IDs are currently broken and only feed telemetry. Re-implement
-	// them properly before restoring recursive effect traversal over result-call
-	// refs and inputs.
-	return []string{}, nil
-}
-
 func (ref ResultCallStructuralInputRef) Validate() error {
 	switch {
 	case ref.Result != nil && ref.Digest != "":

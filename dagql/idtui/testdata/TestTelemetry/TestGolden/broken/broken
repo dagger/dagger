@@ -13,9 +13,11 @@ Expected stderr:
 
 $ broken: Broken! X.Xs CACHED
 ✘ .broken: Void X.Xs ERROR
-✘ go SDK: load runtime X.Xs ERROR
-# dagger/broken
-./main.go:6:6: undefined: ctx
-! 5x exit code: 1
+╰╴✘ load sdk runtime X.Xs ERROR
+  ! 4x exit code: 1
+  ╰╴✘ go SDK: load runtime X.Xs ERROR
+    ┃ # dagger/broken
+    ┃ ./main.go:6:6: undefined: ctx
+    ! 5x exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
