@@ -148,38 +148,33 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 		return pkgerrors.Wrapf(err, "create owner lease %s", leaseID)
 	}
 
-	for currentSnapshotID := snapshotID; currentSnapshotID != ""; {
-		info, err := cm.Snapshotter.Stat(ctx, currentSnapshotID)
-		if err != nil {
-			if cerrdefs.IsNotFound(err) {
-				return pkgerrors.Wrap(errNotFound, currentSnapshotID)
-			}
-			return pkgerrors.Wrapf(err, "stat snapshot %s for owner lease %s", currentSnapshotID, leaseID)
+	if _, err := cm.Snapshotter.Stat(ctx, snapshotID); err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return pkgerrors.Wrap(errNotFound, snapshotID)
 		}
-
-		if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
-			ID:   currentSnapshotID,
-			Type: "snapshots/" + cm.Snapshotter.Name(),
-		}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-			return pkgerrors.Wrapf(err, "attach snapshot %s to owner lease %s", currentSnapshotID, leaseID)
-		}
-
-		for dgst := range cm.snapshotContentDigests[currentSnapshotID] {
-			if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
-				ID:   dgst.String(),
-				Type: "content",
-			}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-				return pkgerrors.Wrapf(err, "attach content %s to owner lease %s", dgst, leaseID)
-			}
-		}
-
-		if cm.snapshotOwnerLeases[currentSnapshotID] == nil {
-			cm.snapshotOwnerLeases[currentSnapshotID] = make(map[string]struct{})
-		}
-		cm.snapshotOwnerLeases[currentSnapshotID][leaseID] = struct{}{}
-
-		currentSnapshotID = info.Parent
+		return pkgerrors.Wrapf(err, "stat snapshot %s for owner lease %s", snapshotID, leaseID)
 	}
+
+	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
+		ID:   snapshotID,
+		Type: "snapshots/" + cm.Snapshotter.Name(),
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return pkgerrors.Wrapf(err, "attach snapshot %s to owner lease %s", snapshotID, leaseID)
+	}
+
+	for dgst := range cm.snapshotContentDigests[snapshotID] {
+		if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
+			ID:   dgst.String(),
+			Type: "content",
+		}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+			return pkgerrors.Wrapf(err, "attach content %s to owner lease %s", dgst, leaseID)
+		}
+	}
+
+	if cm.snapshotOwnerLeases[snapshotID] == nil {
+		cm.snapshotOwnerLeases[snapshotID] = make(map[string]struct{})
+	}
+	cm.snapshotOwnerLeases[snapshotID][leaseID] = struct{}{}
 
 	return nil
 }
