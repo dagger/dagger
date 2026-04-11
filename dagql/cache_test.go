@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
@@ -30,6 +31,35 @@ import (
 type cacheTestOnReleaseInt struct {
 	Int
 	onRelease func(context.Context) error
+}
+
+type cacheTestLeaseProvider struct {
+	nextLeaseID atomic.Int32
+	releases    atomic.Int32
+}
+
+func (p *cacheTestLeaseProvider) WithOperationLease(ctx context.Context) (context.Context, func(context.Context) error, error) {
+	leaseID := fmt.Sprintf("shared-%d", p.nextLeaseID.Add(1))
+	return leases.WithLease(ctx, leaseID), func(context.Context) error {
+		p.releases.Add(1)
+		return nil
+	}, nil
+}
+
+type cacheTestLeaseCheckedInt struct {
+	Int
+	onAttach func(context.Context) error
+}
+
+func (v cacheTestLeaseCheckedInt) AttachDependencyResults(
+	ctx context.Context,
+	_ AnyResult,
+	_ func(AnyResult) (AnyResult, error),
+) ([]AnyResult, error) {
+	if v.onAttach == nil {
+		return nil, nil
+	}
+	return nil, v.onAttach(ctx)
 }
 
 func (v cacheTestOnReleaseInt) OnRelease(ctx context.Context) error {
@@ -689,6 +719,53 @@ func TestCacheEvaluate(t *testing.T) {
 		assert.NilError(t, c.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
 	})
 
+	t.Run("reacquires dedicated lease instead of reusing request lease", func(t *testing.T) {
+		t.Parallel()
+		ctx := cacheTestContext(t.Context())
+		leaseProvider := &cacheTestLeaseProvider{}
+		ctx = ContextWithOperationLeaseProvider(ctx, leaseProvider)
+		ctx = leases.WithLease(ctx, "request-1")
+		cacheIface, err := NewCache(ctx, "", nil, nil)
+		assert.NilError(t, err)
+		ctx = ContextWithCache(ctx, cacheIface)
+		srv := cacheTestServer(t, cacheIface)
+
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-shared-lease",
+		}
+
+		var seenLease string
+		resAny, err := cacheIface.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+				Value: 1,
+				lazyEval: func(ctx context.Context) error {
+					leaseID, ok := leases.FromContext(ctx)
+					if !ok || leaseID == "" {
+						return fmt.Errorf("lazy evaluation missing operation lease")
+					}
+					if leaseID == "request-1" {
+						return fmt.Errorf("lazy evaluation reused request lease %q", leaseID)
+					}
+					if !strings.HasPrefix(leaseID, "shared-") {
+						return fmt.Errorf("lazy evaluation did not use shared lease: %q", leaseID)
+					}
+					seenLease = leaseID
+					return nil
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+
+		assert.NilError(t, cacheIface.Evaluate(ctx, resAny))
+		assert.Assert(t, strings.HasPrefix(seenLease, "shared-"))
+		assert.Assert(t, leaseProvider.nextLeaseID.Load() > 0)
+		assert.Equal(t, leaseProvider.nextLeaseID.Load(), leaseProvider.releases.Load())
+
+		assert.NilError(t, cacheIface.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
+	})
+
 	t.Run("declared dependency", func(t *testing.T) {
 		t.Parallel()
 		ctx, c, srv := newEvalEnv(t)
@@ -1158,6 +1235,130 @@ func TestCacheContextCancel(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for errCh1")
 		}
+	})
+
+	t.Run("shared call keeps dedicated lease across completion", func(t *testing.T) {
+		t.Parallel()
+		baseCtx := cacheTestContext(t.Context())
+		leaseProvider := &cacheTestLeaseProvider{}
+		baseCtx = ContextWithOperationLeaseProvider(baseCtx, leaseProvider)
+		cacheIface, err := NewCache(baseCtx, "", nil, nil)
+		assert.NilError(t, err)
+
+		reqCall := cacheTestIntCall("shared-lease")
+		callConcKeys := callConcurrencyKeys{
+			callKey:        cacheTestCallDigest(reqCall).String(),
+			concurrencyKey: "shared-lease",
+		}
+
+		ctx1Base := engine.ContextWithClientMetadata(leases.WithLease(baseCtx, "request-1"), &engine.ClientMetadata{
+			ClientID:  "request-1-client",
+			SessionID: "request-1-session",
+		})
+		ctx1, cancel1 := context.WithCancel(ctx1Base)
+		t.Cleanup(cancel1)
+		ctx2 := engine.ContextWithClientMetadata(leases.WithLease(baseCtx, "request-2"), &engine.ClientMetadata{
+			ClientID:  "request-2-client",
+			SessionID: "request-2-session",
+		})
+
+		started := make(chan struct{})
+		allowReturn := make(chan struct{})
+		errCh1 := make(chan error, 1)
+		go func() {
+			_, err := cacheIface.GetOrInitCall(ctx1, "request-1-session", noopTypeResolver{}, &CallRequest{
+				ResultCall:     reqCall,
+				ConcurrencyKey: "shared-lease",
+			}, func(ctx context.Context) (AnyResult, error) {
+				leaseID, ok := leases.FromContext(ctx)
+				if !ok || leaseID == "" {
+					return nil, fmt.Errorf("shared call missing operation lease")
+				}
+				if leaseID == "request-1" || leaseID == "request-2" {
+					return nil, fmt.Errorf("shared call reused request lease %q", leaseID)
+				}
+				close(started)
+				<-allowReturn
+				return cacheTestDetachedResult(reqCall, cacheTestLeaseCheckedInt{
+					Int: NewInt(1),
+					onAttach: func(ctx context.Context) error {
+						attachLeaseID, ok := leases.FromContext(ctx)
+						if !ok || attachLeaseID == "" {
+							return fmt.Errorf("attach dependency results missing operation lease")
+						}
+						if attachLeaseID != leaseID {
+							return fmt.Errorf("attach dependency results lease mismatch: got %q want %q", attachLeaseID, leaseID)
+						}
+						if attachLeaseID == "request-1" || attachLeaseID == "request-2" {
+							return fmt.Errorf("attach dependency results reused request lease %q", attachLeaseID)
+						}
+						return nil
+					},
+				}), nil
+			})
+			errCh1 <- err
+		}()
+
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for shared call start")
+		}
+
+		errCh2 := make(chan error, 1)
+		resCh2 := make(chan AnyResult, 1)
+		go func() {
+			res, err := cacheIface.GetOrInitCall(ctx2, "request-2-session", noopTypeResolver{}, &CallRequest{
+				ResultCall:     reqCall,
+				ConcurrencyKey: "shared-lease",
+			}, func(context.Context) (AnyResult, error) {
+				return nil, fmt.Errorf("unexpected initializer call")
+			})
+			resCh2 <- res
+			errCh2 <- err
+		}()
+
+		waiterJoined := false
+		waiterDeadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(waiterDeadline) {
+			cacheIface.callsMu.Lock()
+			oc := cacheIface.ongoingCalls[callConcKeys]
+			waiters := 0
+			if oc != nil {
+				waiters = oc.waiters
+			}
+			cacheIface.callsMu.Unlock()
+			if waiters == 2 {
+				waiterJoined = true
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		assert.Assert(t, waiterJoined, "expected second waiter to join shared call")
+
+		cancel1()
+		select {
+		case err := <-errCh1:
+			assert.Assert(t, is.ErrorIs(err, context.Canceled))
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for first waiter cancellation")
+		}
+
+		close(allowReturn)
+		select {
+		case err := <-errCh2:
+			assert.NilError(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for second waiter result")
+		}
+		select {
+		case <-resCh2:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for second waiter value")
+		}
+
+		assert.Equal(t, int32(1), leaseProvider.nextLeaseID.Load())
+		assert.Equal(t, int32(1), leaseProvider.releases.Load())
 	})
 
 	t.Run("last waiter canceled fn returns value still releases", func(t *testing.T) {

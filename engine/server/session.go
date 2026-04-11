@@ -566,7 +566,7 @@ func (srv *Server) initializeDaggerClient(
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
-		if _, ok := leases.FromContext(ctx); ok {
+		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
 			return ctx, func(context.Context) error { return nil }, nil
 		}
 		return leaseutil.WithLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)
@@ -1216,7 +1216,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
 
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
-		if _, ok := leases.FromContext(ctx); ok {
+		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
 			return ctx, func(context.Context) error { return nil }, nil
 		}
 		return leaseutil.WithLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)

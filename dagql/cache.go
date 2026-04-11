@@ -1329,13 +1329,27 @@ type ongoingCall struct {
 	handoffHoldActive       bool
 	initCompletedResultErr  error
 
-	waitCh  chan struct{}
-	cancel  context.CancelCauseFunc
-	waiters int
-	err     error
-	val     AnyResult
+	waitCh                     chan struct{}
+	cancel                     context.CancelCauseFunc
+	waiters                    int
+	err                        error
+	val                        AnyResult
+	sharedWorkCtx              context.Context
+	releaseSharedWorkLeaseFn   func(context.Context) error
+	releaseSharedWorkLeaseOnce sync.Once
 
 	res *sharedResult
+}
+
+func (oc *ongoingCall) releaseSharedWorkLease(ctx context.Context) error {
+	if oc == nil || oc.releaseSharedWorkLeaseFn == nil {
+		return nil
+	}
+	var err error
+	oc.releaseSharedWorkLeaseOnce.Do(func() {
+		err = oc.releaseSharedWorkLeaseFn(ctx)
+	})
+	return err
 }
 
 // newDetachedResult creates a non-cache-backed Result from an explicit call frame and value.
@@ -2446,7 +2460,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			}
 		}
 
-		leaseCtx, release, leaseErr := withOperationLease(callbackCtx)
+		leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
 		if leaseErr != nil {
 			shared.lazyMu.Lock()
 			shared.lazyEvalErr = fmt.Errorf("acquire operation lease: %w", leaseErr)
@@ -2915,13 +2929,20 @@ func (c *Cache) getOrInitCall(
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
 	callCtx := context.WithValue(ctx, cacheContextKey{callKey}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	sharedWorkCtx, releaseSharedWorkLease, err := withOperationLease(withoutOperationLease(callCtx))
+	if err != nil {
+		c.callsMu.Unlock()
+		return nil, fmt.Errorf("acquire shared operation lease: %w", err)
+	}
 	oc := &ongoingCall{
-		callConcurrencyKeys: callConcKeys,
-		isPersistable:       req.IsPersistable,
-		ttlSeconds:          req.TTL,
-		waitCh:              make(chan struct{}),
-		cancel:              cancel,
-		waiters:             1,
+		callConcurrencyKeys:      callConcKeys,
+		isPersistable:            req.IsPersistable,
+		ttlSeconds:               req.TTL,
+		waitCh:                   make(chan struct{}),
+		cancel:                   cancel,
+		waiters:                  1,
+		sharedWorkCtx:            sharedWorkCtx,
+		releaseSharedWorkLeaseFn: releaseSharedWorkLease,
 	}
 
 	if req.ConcurrencyKey != "" {
@@ -2930,9 +2951,16 @@ func (c *Cache) getOrInitCall(
 
 	go func() {
 		defer close(oc.waitCh)
-		val, err := fn(callCtx)
+		val, err := fn(oc.sharedWorkCtx)
 		oc.err = err
 		oc.val = val
+
+		c.callsMu.Lock()
+		noWaiters := oc.waiters == 0
+		c.callsMu.Unlock()
+		if err != nil || noWaiters {
+			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
+		}
 	}()
 
 	c.callsMu.Unlock()
@@ -3132,7 +3160,10 @@ func (c *Cache) wait(
 	}
 
 	oc.initCompletedResultOnce.Do(func() {
-		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(ctx), resolver, oc, req, sessionID)
+		defer func() {
+			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
+		}()
+		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(oc.sharedWorkCtx), resolver, oc, req, sessionID)
 		c.callsMu.Lock()
 		delete(c.ongoingCalls, oc.callConcurrencyKeys)
 		c.callsMu.Unlock()

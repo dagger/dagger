@@ -22,8 +22,16 @@ func ContextWithOperationLeaseProvider(ctx context.Context, provider OperationLe
 	return context.WithValue(ctx, operationLeaseProviderKey{}, provider)
 }
 
+func withoutOperationLease(ctx context.Context) context.Context {
+	leaseID, ok := leases.FromContext(ctx)
+	if !ok || leaseID == "" {
+		return ctx
+	}
+	return leases.WithLease(ctx, "")
+}
+
 func withOperationLease(ctx context.Context) (context.Context, func(context.Context) error, error) {
-	if _, ok := leases.FromContext(ctx); ok {
+	if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
 		return ctx, func(context.Context) error { return nil }, nil
 	}
 	provider, _ := ctx.Value(operationLeaseProviderKey{}).(OperationLeaseProvider)
