@@ -4,9 +4,10 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+
+	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -14,18 +15,13 @@ type DaggerDev struct{}
 
 // Verify that generated code is up to date
 // +check
-func (dev *DaggerDev) Generated(ctx context.Context) error {
-	generated := dag.CurrentModule().Generators().Run()
-	if empty, err := generated.IsEmpty(ctx); err != nil {
+func (dev *DaggerDev) Generated(ctx context.Context, ws *dagger.Workspace) error {
+	generated := ws.Generators().Run()
+	changes := generated.Changes()
+	rawPatch, err := changes.AsPatch().Contents(ctx)
+	if err != nil {
 		return err
-	} else if !empty {
-		changes := generated.Changes()
-		rawPatch, err := changes.AsPatch().Contents(ctx)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(os.Stderr, rawPatch)
-		return errors.New("generated files are not up-to-date")
 	}
+	fmt.Fprintln(os.Stderr, rawPatch)
 	return nil
 }
