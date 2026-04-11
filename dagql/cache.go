@@ -1185,6 +1185,10 @@ type sharedResult struct {
 	attachDepsWaitCh chan struct{}
 	attachDepsErr    error
 
+	persistDecodeMu     sync.Mutex
+	persistDecodeWaitCh chan struct{}
+	persistDecodeErr    error
+
 	lazyMu           sync.Mutex
 	lazyEval         LazyEvalFunc
 	lazyEvalComplete bool

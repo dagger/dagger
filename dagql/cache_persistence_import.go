@@ -562,68 +562,108 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		}
 	}
 
-	state := res.loadPayloadState()
-	if state.isObject && state.hasValue && state.self == nil {
-		return nil, fmt.Errorf("ensure persisted hit value loaded: invalid object payload state for result %d (hasValue=true, self=nil)", res.id)
-	}
-	if state.hasValue || state.persistedEnvelope == nil {
-		if !state.isObject {
-			c.registerLazyEvaluation(res, hit)
-			return hit, nil
+	for {
+		state := res.loadPayloadState()
+		if state.isObject && state.hasValue && state.self == nil {
+			return nil, fmt.Errorf("ensure persisted hit value loaded: invalid object payload state for result %d (hasValue=true, self=nil)", res.id)
 		}
-		objRes, err := wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
-		if err != nil {
-			return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
-		}
-		c.registerLazyEvaluation(res, objRes)
-		return objRes, nil
-	}
-
-	call := res.loadResultCall()
-	dag := resolverServer(resolver)
-	if call == nil {
-		return nil, fmt.Errorf("decode persisted hit payload: missing authoritative call for object result %d", res.id)
-	}
-	decodeCtx := ContextWithCall(ctx, call)
-	if dag == nil {
-		return nil, fmt.Errorf("decode persisted hit payload: type resolver %T does not provide dagql server", resolver)
-	}
-	decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
-	if err != nil {
-		c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
-		return nil, fmt.Errorf("decode persisted hit payload: %w", err)
-	}
-	if decoded == nil || decoded.Unwrap() == nil {
-		return nil, fmt.Errorf("decode persisted hit payload: decoded nil payload for object result %d", res.id)
-	}
-
-	res.payloadMu.Lock()
-	if !res.hasValue && res.persistedEnvelope != nil {
-		res.self = decoded.Unwrap()
-		res.hasValue = true
-		decodedShared := decoded.cacheSharedResult()
-		if decodedShared != nil {
-			res.sessionResourceHandle = decodedShared.sessionResourceHandle
-			if decodedShared.requiredSessionResources != nil {
-				res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
-			} else if decodedShared.sessionResourceHandle == "" {
-				res.requiredSessionResources = nil
+		if state.hasValue || state.persistedEnvelope == nil {
+			if !state.isObject {
+				c.registerLazyEvaluation(res, hit)
+				return hit, nil
 			}
+			objRes, err := wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
+			if err != nil {
+				return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
+			}
+			c.registerLazyEvaluation(res, objRes)
+			return objRes, nil
 		}
-		res.persistedEnvelope = nil
-		c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
+
+		res.persistDecodeMu.Lock()
+		if res.persistDecodeWaitCh != nil {
+			waitCh := res.persistDecodeWaitCh
+			res.persistDecodeMu.Unlock()
+
+			select {
+			case <-waitCh:
+			case <-ctx.Done():
+				return nil, context.Cause(ctx)
+			}
+
+			res.persistDecodeMu.Lock()
+			decodeErr := res.persistDecodeErr
+			res.persistDecodeMu.Unlock()
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
+			continue
+		}
+
+		res.persistDecodeWaitCh = make(chan struct{})
+		res.persistDecodeErr = nil
+		res.persistDecodeMu.Unlock()
+
+		finishPersistDecode := func(err error) {
+			res.persistDecodeMu.Lock()
+			res.persistDecodeErr = err
+			waitCh := res.persistDecodeWaitCh
+			res.persistDecodeWaitCh = nil
+			res.persistDecodeMu.Unlock()
+			close(waitCh)
+		}
+
+		call := res.loadResultCall()
+		if call == nil {
+			err := fmt.Errorf("decode persisted hit payload: missing authoritative call for object result %d", res.id)
+			finishPersistDecode(err)
+			return nil, err
+		}
+		dag := resolverServer(resolver)
+		if dag == nil {
+			err := fmt.Errorf("decode persisted hit payload: type resolver %T does not provide dagql server", resolver)
+			finishPersistDecode(err)
+			return nil, err
+		}
+		decodeCtx := ContextWithCall(ctx, call)
+		decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
+		if err != nil {
+			c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
+			err = fmt.Errorf("decode persisted hit payload: %w", err)
+			finishPersistDecode(err)
+			return nil, err
+		}
+		if decoded == nil || decoded.Unwrap() == nil {
+			err := fmt.Errorf("decode persisted hit payload: decoded nil payload for object result %d", res.id)
+			finishPersistDecode(err)
+			return nil, err
+		}
+
+		res.payloadMu.Lock()
+		if !res.hasValue && res.persistedEnvelope != nil {
+			res.self = decoded.Unwrap()
+			res.hasValue = true
+			decodedShared := decoded.cacheSharedResult()
+			if decodedShared != nil {
+				res.sessionResourceHandle = decodedShared.sessionResourceHandle
+				if decodedShared.requiredSessionResources != nil {
+					res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
+				} else if decodedShared.sessionResourceHandle == "" {
+					res.requiredSessionResources = nil
+				}
+			}
+			res.persistedEnvelope = nil
+			c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
+		}
+		res.payloadMu.Unlock()
+		if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
+			res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), onReleaser.OnRelease)
+		}
+		if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
+			err = fmt.Errorf("sync persisted hit owner leases: %w", err)
+			finishPersistDecode(err)
+			return nil, err
+		}
+		finishPersistDecode(nil)
 	}
-	res.payloadMu.Unlock()
-	if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
-		res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), onReleaser.OnRelease)
-	}
-	if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
-		return nil, fmt.Errorf("sync persisted hit owner leases: %w", err)
-	}
-	wrapped, err := wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
-	if err != nil {
-		return nil, err
-	}
-	c.registerLazyEvaluation(res, wrapped)
-	return wrapped, nil
 }
