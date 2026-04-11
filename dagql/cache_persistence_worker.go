@@ -448,14 +448,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 }
 
 func (c *Cache) snapshotOwnerLinksForResultLocked(res *sharedResult) []PersistedSnapshotRefLink {
-	if res == nil {
-		return nil
-	}
-	typedLinks := snapshotOwnerLinksFromTyped(res.loadPayloadState().self)
-	if len(typedLinks) > 0 {
-		return typedLinks
-	}
-	if len(res.snapshotOwnerLinks) == 0 {
+	if res == nil || len(res.snapshotOwnerLinks) == 0 {
 		return nil
 	}
 	links := make([]PersistedSnapshotRefLink, len(res.snapshotOwnerLinks))

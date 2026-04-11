@@ -492,10 +492,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 		c.egraphMu.RUnlock()
 		for _, res := range results {
-			links, ok := c.authoritativeSnapshotLinksForResult(res)
-			if !ok {
-				continue
-			}
+			links := desiredSnapshotLinksForResult(res)
 			seen := make(map[snapshotOwnerKey]struct{}, len(links))
 			for _, link := range links {
 				key := snapshotOwnerKey{Role: link.Role, Slot: link.Slot}

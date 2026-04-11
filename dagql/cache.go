@@ -728,33 +728,24 @@ type snapshotOwnerKey struct {
 	Slot string
 }
 
-func (c *Cache) authoritativeSnapshotLinksForResult(res *sharedResult) ([]PersistedSnapshotRefLink, bool) {
+func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink {
 	if res == nil {
-		return nil, false
+		return nil
 	}
 
 	state := res.loadPayloadState()
 	if state.hasValue && state.self != nil {
-		linker, ok := any(state.self).(PersistedSnapshotRefLinkProvider)
-		if ok {
-			links := linker.PersistedSnapshotRefLinks()
-			if len(links) == 0 {
-				return nil, true
-			}
-			cpy := make([]PersistedSnapshotRefLink, len(links))
-			copy(cpy, links)
-			return cpy, true
-		}
+		return snapshotOwnerLinksFromTyped(state.self)
 	}
 
 	res.payloadMu.RLock()
 	defer res.payloadMu.RUnlock()
 	if len(res.snapshotOwnerLinks) == 0 {
-		return nil, false
+		return nil
 	}
 	links := make([]PersistedSnapshotRefLink, len(res.snapshotOwnerLinks))
 	copy(links, res.snapshotOwnerLinks)
-	return links, true
+	return links
 }
 
 func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
@@ -763,10 +754,9 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 	}
 
 	return func(ctx context.Context) error {
-		links, ok := c.authoritativeSnapshotLinksForResult(res)
-		if !ok {
-			return nil
-		}
+		res.payloadMu.RLock()
+		links := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
+		res.payloadMu.RUnlock()
 
 		seen := make(map[snapshotOwnerKey]struct{}, len(links))
 		var rerr error
@@ -790,10 +780,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		return nil
 	}
 
-	links, ok := c.authoritativeSnapshotLinksForResult(res)
-	if !ok {
-		return nil
-	}
+	links := desiredSnapshotLinksForResult(res)
 
 	res.payloadMu.RLock()
 	oldLinks := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
@@ -806,7 +793,18 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		oldByKey[snapshotOwnerKey{Role: link.Role, Slot: link.Slot}] = link
 	}
 	for _, link := range links {
-		newByKey[snapshotOwnerKey{Role: link.Role, Slot: link.Slot}] = link
+		key := snapshotOwnerKey{Role: link.Role, Slot: link.Slot}
+		if prev, found := newByKey[key]; found && prev.RefKey != link.RefKey {
+			return fmt.Errorf(
+				"sync result %d snapshot owner leases: conflicting desired links for %q/%q: %q vs %q",
+				res.id,
+				key.Role,
+				key.Slot,
+				prev.RefKey,
+				link.RefKey,
+			)
+		}
+		newByKey[key] = link
 	}
 	for key, oldLink := range oldByKey {
 		newLink, ok := newByKey[key]
@@ -834,10 +832,24 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	}
 
 	res.payloadMu.Lock()
-	res.snapshotOwnerLinks = append([]PersistedSnapshotRefLink(nil), links...)
+	res.snapshotOwnerLinks = make([]PersistedSnapshotRefLink, 0, len(newByKey))
+	for _, link := range newByKey {
+		res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, link)
+	}
 	res.payloadMu.Unlock()
 
 	return nil
+}
+
+func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult) error {
+	if c == nil || res == nil {
+		return nil
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return nil
+	}
+	return c.syncResultSnapshotLeases(ctx, shared)
 }
 
 func (c *Cache) desiredImportedOwnerLeaseIDs(ctx context.Context) (map[string]struct{}, error) {
@@ -856,10 +868,7 @@ func (c *Cache) desiredImportedOwnerLeaseIDs(ctx context.Context) (map[string]st
 
 	desired := make(map[string]struct{})
 	for _, res := range results {
-		links, ok := c.authoritativeSnapshotLinksForResult(res)
-		if !ok {
-			continue
-		}
+		links := desiredSnapshotLinksForResult(res)
 		for _, link := range links {
 			desired[resultSnapshotLeaseID(res.id, link.Role, link.Slot)] = struct{}{}
 		}
@@ -1153,9 +1162,9 @@ type sharedResult struct {
 	// transitive set of handle requirements for cache-hit validation.
 	sessionResourceHandle    SessionResourceHandle
 	requiredSessionResources *set.TreeSet[SessionResourceHandle]
-	// snapshotOwnerLinks are the current authoritative direct snapshot-owner
-	// links for this result. Imported rows seed them during startup, and typed
-	// self payload can replace them after decode/materialization. They are not
+	// snapshotOwnerLinks are the exact direct snapshot-owner links currently
+	// attached for this result. They are the single source of truth for owner
+	// lease cleanup, debug output, and persistence export. They are not
 	// child-result deps.
 	snapshotOwnerLinks []PersistedSnapshotRefLink
 

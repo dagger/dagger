@@ -146,6 +146,10 @@ func (s *httpSchema) httpStateResolve(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("engine cache: %w", err)
+	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("current query: %w", err)
@@ -153,6 +157,9 @@ func (s *httpSchema) httpStateResolve(ctx context.Context, parent dagql.ObjectRe
 	fetched, err := parent.Self().Resolve(ctx, query, args.Checksum, args.Permissions, args.Name)
 	if err != nil {
 		return inst, err
+	}
+	if err := cache.SyncResultSnapshotOwnerLeases(ctx, parent); err != nil {
+		return inst, fmt.Errorf("sync http state snapshot owner leases: %w", err)
 	}
 	return s.newHTTPFileResult(ctx, srv, fetched, args.Permissions, args.Checksum)
 }
