@@ -1,7 +1,5 @@
 # Provenance
 
-## Status: Designed (high level)
-
 Depends on: [Artifacts](./artifacts.md)
 
 ## Table of Contents
@@ -21,30 +19,41 @@ Depends on: [Artifacts](./artifacts.md)
 
 ## Summary
 
-Provenance starts with `workspace.directory()` and `workspace.file()`. This
-design adds a public `Artifact.provenance` value, plus two convenience filters
-on `Artifacts`:
+Provenance starts with `workspace.directory()` and `workspace.file()`. Each
+artifact also carries provenance for the source files of the Dagger module that
+defines it.
 
-- `filterAffectedByPath(...)`
-- `filterAffectedByDiff(...)`
+This design adds:
 
-These filters run on artifacts before plan compilation.
+- `Artifact.provenance`
+- `Artifact.affectedByPath(...)`
+- `Artifact.affectedByDiff(...)`
+- `Artifacts.filterAffectedByPath(...)`
+- `Artifacts.filterAffectedByDiff(...)`
+
+By default, matching uses all provenance kinds. Callers can opt in to narrower
+matching by passing `kinds`.
 
 ## Source of Provenance
 
-This design tracks workspace reads only:
+This design tracks artifact inputs that can be expressed as workspace path
+selectors:
 
 - `workspace.directory(...)`
 - `workspace.file(...)`
+- the source files of the Dagger module that defines the artifact
 
 It does not try to model:
 
 - general lineage
-- module ownership
+- ownership beyond the defining module
 - raw git metadata itself
 
-When these APIs return a `Directory` or `File`, they attach a workspace
-selector to that value.
+When `workspace.directory()` or `workspace.file()` returns a `Directory` or
+`File`, it attaches a selector with kind `WORKSPACE_READ`.
+
+When artifact provenance is collected, the defining module adds selectors with
+kind `MODULE_SOURCE`.
 
 Implementation sketch:
 
@@ -52,11 +61,19 @@ When the engine returns a workspace-backed `Directory` or `File`, it stores an
 exact `WorkspaceSelector` on that value.
 
 ```go
+type WorkspaceProvenanceKind string
+
+const (
+	WorkspaceRead WorkspaceProvenanceKind = "WORKSPACE_READ"
+	ModuleSource  WorkspaceProvenanceKind = "MODULE_SOURCE"
+)
+
 type WorkspaceSelector struct {
 	Path         WorkspacePath
 	Include      []string
 	Exclude      []string
 	Conservative bool
+	Kind         WorkspaceProvenanceKind
 }
 
 type WorkspaceProvenance struct {
@@ -71,6 +88,7 @@ func (ws *Workspace) Directory(path WorkspacePath, opts DirOpts) *Directory {
 				Include:      opts.Include,
 				Exclude:      opts.Exclude,
 				Conservative: false,
+				Kind:         WorkspaceRead,
 			}},
 		},
 	}
@@ -82,6 +100,7 @@ func (ws *Workspace) File(path WorkspacePath) *File {
 			Selectors: []WorkspaceSelector{{
 				Path:         path,
 				Conservative: false,
+				Kind:         WorkspaceRead,
 			}},
 		},
 	}
@@ -100,6 +119,7 @@ Each selector has:
 - optional `include`
 - optional `exclude`
 - a `conservative` flag
+- a `kind`
 
 Empty provenance is:
 
@@ -108,6 +128,18 @@ selectors = []
 ```
 
 Selectors are returned in deterministic normalized order.
+
+`kind` tells why the selector exists:
+
+- `WORKSPACE_READ`: came from `workspace.directory()`, `workspace.file()`, or
+  conservative workspace access on the artifact
+- `MODULE_SOURCE`: came from the source files of the Dagger module that defines
+  the artifact
+
+`Directory` and `File` values only carry `WORKSPACE_READ` selectors.
+`MODULE_SOURCE` selectors are added when artifact provenance is collected.
+
+In the initial implementation, `MODULE_SOURCE` selectors are exact.
 
 If `conservative = false`, the selector is exact.
 
@@ -118,12 +150,13 @@ If `conservative = true`, the selector is a safe upper bound. It means:
 
 ## Workspace-Wide Provenance
 
-A selector rooted at `/` means workspace-wide provenance.
+A selector rooted at `/` with kind `WORKSPACE_READ` means workspace-wide
+provenance.
 
 Simple case:
 
 ```text
-{ path = /, include = [], exclude = [], conservative = true }
+{ path = /, include = [], exclude = [], conservative = true, kind = WORKSPACE_READ }
 ```
 
 This means:
@@ -135,7 +168,7 @@ But workspace-wide provenance can still be narrowed.
 Example:
 
 ```text
-{ path = /, include = [], exclude = [third_party/**, docs/**], conservative = true }
+{ path = /, include = [], exclude = [third_party/**, docs/**], conservative = true, kind = WORKSPACE_READ }
 ```
 
 This means:
@@ -151,8 +184,8 @@ An artifact becomes workspace-wide if either is true:
 - it stores `Workspace` in a field
 - it exposes any public function that accepts `Workspace`
 
-The baseline representation is a conservative selector rooted at `/`. Later
-analysis may narrow it with `include` and `exclude`.
+The baseline representation is a conservative `WORKSPACE_READ` selector rooted
+at `/`. Later analysis may narrow it with `include` and `exclude`.
 
 This tradeoff is intentional.
 
@@ -180,8 +213,8 @@ This artifact may have both:
 
 ```text
 selectors = [
-  { path = docs, include = [], exclude = [], conservative = false },
-  { path = /, include = [], exclude = [], conservative = true }
+  { path = docs, include = [], exclude = [], conservative = false, kind = WORKSPACE_READ },
+  { path = /, include = [], exclude = [], conservative = true, kind = WORKSPACE_READ }
 ]
 ```
 
@@ -197,7 +230,7 @@ be narrower than the whole repo.
 Example:
 
 ```text
-{ path = /, include = [apps/**], exclude = [apps/legacy/**], conservative = true }
+{ path = /, include = [apps/**], exclude = [apps/legacy/**], conservative = true, kind = WORKSPACE_READ }
 ```
 
 But the exact author-facing or runtime mechanism for producing that narrower
@@ -211,16 +244,18 @@ the artifact:
 - stores `Workspace` in a field
 - or exposes any public function that accepts `Workspace`
 
-The baseline selector is rooted at `/`.
+The baseline selector is rooted at `/` and has kind `WORKSPACE_READ`.
 
 ```go
 func CollectArtifactProvenance(obj ObjectWithSchema) WorkspaceProvenance {
 	prov := CollectStoredProvenance(obj)
+	prov = prov.Union(CollectModuleSourceProvenance(obj.DefiningModule()))
 	if obj.HasStoredWorkspaceField() || obj.HasPublicWorkspaceArgFunction() {
 		prov = prov.Union(WorkspaceProvenance{
 			Selectors: []WorkspaceSelector{{
 				Path:         "/",
 				Conservative: true,
+				Kind:         WorkspaceRead,
 			}},
 		})
 	}
@@ -228,12 +263,19 @@ func CollectArtifactProvenance(obj ObjectWithSchema) WorkspaceProvenance {
 }
 ```
 
+In the initial implementation, `CollectModuleSourceProvenance` can return one
+exact `MODULE_SOURCE` selector rooted at the defining module's source
+directory.
+
 Later implementations may narrow that conservative selector with `include` and
 `exclude`.
 
 ## Tracking and Union
 
-Known selectors come from stored `Directory` and `File` values.
+Known selectors come from:
+
+- stored `Directory` and `File` values
+- the source files of the Dagger module that defines the artifact
 
 Artifact provenance is the union of all reachable stored field values. This
 walk is transitive through nested stored objects.
@@ -241,9 +283,10 @@ walk is transitive through nested stored objects.
 `union(other)` follows these rules:
 
 - result selectors are the semantic union of both selector lists
+- selectors keep their `kind`
 - exact selectors stay exact
 - conservative selectors stay conservative
-- equivalent selectors may be deduplicated when practical
+- equivalent selectors with the same `kind` may be deduplicated when practical
 
 Implementation sketch:
 
@@ -272,18 +315,32 @@ func CollectStoredProvenance(v any) WorkspaceProvenance {
 
 Matching is exact with respect to the selector model.
 
-`affectedByPath(path)` returns `true` if any selector's effective selected
-region overlaps `path`.
+Selector filtering uses the same `include` / `exclude` semantics as existing
+`CopyFilter` APIs such as `Workspace.directory(...)`, `Host.directory(...)`,
+and `Directory.filter(...)`.
 
-`affectedByDiff(changes)` returns `true` if any selector's effective selected
-region overlaps the changed-path region from the core `Changeset`.
+The rules are:
 
-The important rule is simple:
+- `include` and `exclude` are evaluated relative to selector `path`
+- empty `include` means "everything under `path`"
+- `exclude` is applied after `include`
+- if both match, `exclude` wins
+- `affectedByPath(path, kinds = [])` uses subtree overlap, not exact string
+  equality
+- `affectedByDiff(changes, kinds = [])` uses the same overlap rule over the
+  changed paths in the core `Changeset`
+- if `kinds` is empty or omitted, all kinds are used
 
-- match against the final selected region
-- not just against the selector root path
+Examples:
 
-So `include` and `exclude` affect the result.
+- selector `{ path = docs, include = [], exclude = [] }` matches
+  `affectedByPath("docs")` and `affectedByPath("docs/intro.md")`
+- selector `{ path = docs/intro.md, include = [], exclude = [] }` matches
+  `affectedByPath("docs")` and `affectedByPath("docs/intro.md")`, but not
+  `affectedByPath("docs/other.md")`
+- selector `{ path = docs, include = ["**/*.md"], exclude = ["generated/**"] }`
+  matches `affectedByPath("docs/intro.md")`, but not
+  `affectedByPath("docs/generated/api.md")`
 
 `conservative` does not change the matching rule. It only changes the meaning of
 the selector:
@@ -295,12 +352,15 @@ the selector:
 
 `Artifact.provenance` is the inspectable source of truth.
 
+`Artifact.affectedByPath(...)` and `Artifact.affectedByDiff(...)` are the main
+matching surface. By default, they match across all selector kinds.
+
 The two `Artifacts` filters are convenience wrappers:
 
-- `filterAffectedByPath(path)` keeps rows where
-  `artifact.provenance.affectedByPath(path)` is `true`
-- `filterAffectedByDiff(changes)` keeps rows where
-  `artifact.provenance.affectedByDiff(changes)` is `true`
+- `filterAffectedByPath(path, kinds)` keeps rows where
+  `artifact.affectedByPath(path, kinds)` is `true`
+- `filterAffectedByDiff(changes, kinds)` keeps rows where
+  `artifact.affectedByDiff(changes, kinds)` is `true`
 
 These filters:
 
@@ -319,18 +379,18 @@ changing the artifact-level no-false-negative rule.
 
 Implementation sketch:
 
-The `Artifacts` filters lower directly to `Artifact.provenance`.
+The `Artifacts` filters lower directly to `Artifact.affectedBy...`.
 
 ```go
-func (s *Artifacts) FilterAffectedByPath(path WorkspacePath) *Artifacts {
+func (s *Artifacts) FilterAffectedByPath(path WorkspacePath, kinds []WorkspaceProvenanceKind) *Artifacts {
 	return s.FilterRows(func(a ArtifactRow) bool {
-		return a.Provenance.AffectedByPath(path)
+		return a.AffectedByPath(path, kinds)
 	})
 }
 
-func (s *Artifacts) FilterAffectedByDiff(changes Changeset) *Artifacts {
+func (s *Artifacts) FilterAffectedByDiff(changes Changeset, kinds []WorkspaceProvenanceKind) *Artifacts {
 	return s.FilterRows(func(a ArtifactRow) bool {
-		return a.Provenance.AffectedByDiff(changes)
+		return a.AffectedByDiff(changes, kinds)
 	})
 }
 ```
@@ -350,10 +410,16 @@ In large workspaces, this can waste a lot of time.
 
 An optional optimization is to keep a lockfile-backed provenance index.
 
+Terms:
+
+- actual provenance: the files that really affect the artifact
+- recorded provenance: the `WorkspaceProvenance` recorded by the engine when the
+  artifact is loaded
+- persisted provenance: a cached copy of recorded provenance from an earlier run
+
 The idea is:
 
 - store the last known `WorkspaceProvenance` for an artifact
-- store invalidation data for the Dagger module that defines that artifact
 - use it only for negative pruning
 - if the stored provenance says the artifact is definitely unaffected, skip
   loading it
@@ -361,17 +427,22 @@ The idea is:
 
 This index is advisory. It is not the source of truth.
 
-Safety rule:
+Safety rules:
 
 - every artifact that is actually loaded must recompute its provenance and
   rewrite its stored entry
-- any change to the Dagger module that defines an artifact must invalidate that
-  artifact
+- any construction-time input that can change whether an artifact is affected
+  must become a selector in recorded provenance
+- if exact recording is not possible, the engine must record a conservative
+  selector instead
 
-So negative pruning is only allowed if both are true:
+By default, cached matching uses all selector kinds. That includes
+`WORKSPACE_READ` and `MODULE_SOURCE`.
 
-- the cached `WorkspaceProvenance` is unaffected by the current diff
-- the Dagger module that defines the artifact is unchanged
+If those rules hold:
+
+- recorded provenance is correct when it is written
+- persisted provenance is correct until it is invalidated
 
 This creates a self-healing loop.
 
@@ -396,12 +467,21 @@ In the example above:
 If that rule does not hold, stale provenance entries can cause false
 negatives.
 
-The module-source rule closes another blind spot:
+Module source is covered by the same lookup. If the defining Dagger module
+changed, its `MODULE_SOURCE` selectors should match and the artifact should
+load.
 
-- an artifact can change because its Dagger module changed, even if no workspace
-  path in its old `WorkspaceProvenance` changed
-- so the pruning lookup must also consult the defining module's source
-- if the defining module changed, the artifact must load and refresh its entry
+This does not replace artifact enumeration.
+
+If a Dagger module changed, the engine must still load that module enough to
+enumerate its current artifacts. Cached provenance can skip constructing known
+unaffected artifacts. It cannot be the only source of truth for which artifacts
+exist.
+
+Persisted provenance also needs a semantics version.
+
+If provenance recording or matching logic changes, all persisted entries from
+the older semantics version must be treated as invalid.
 
 This optimization is most useful in CI.
 
@@ -416,18 +496,27 @@ provenance layer, the same idea can be extended to actions.
 Implementation sketch:
 
 ```go
+const ProvenanceSemanticsVersion = 1
+
+type PersistedArtifactProvenance struct {
+	SemanticsVersion int
+	Provenance       WorkspaceProvenance
+}
+
 func ShouldLoadArtifact(a ArtifactKey, changes Changeset) bool {
-	if ModuleSourceChanged(a, changes) {
-		return true
-	}
-	if cached, ok := LoadCachedProvenance(a); ok && !cached.AffectedByDiff(changes) {
+	if cached, ok := LoadCachedProvenance(a); ok &&
+		cached.SemanticsVersion == ProvenanceSemanticsVersion &&
+		!cached.Provenance.AffectedByDiff(changes, nil) {
 		return false
 	}
 	return true
 }
 
 func OnArtifactLoaded(a ArtifactKey, obj ObjectWithSchema) {
-	StoreCachedProvenance(a, CollectArtifactProvenance(obj))
+	StoreCachedProvenance(a, PersistedArtifactProvenance{
+		SemanticsVersion: ProvenanceSemanticsVersion,
+		Provenance:       CollectArtifactProvenance(obj),
+	})
 }
 ```
 
@@ -437,8 +526,16 @@ entry.
 ## Schema
 
 ```graphql
+enum WorkspaceProvenanceKind {
+  """Selector came from `workspace.directory()` or `workspace.file()`."""
+  WORKSPACE_READ
+
+  """Selector came from the source files of the Dagger module that defines the artifact."""
+  MODULE_SOURCE
+}
+
 """
-One workspace selector captured from a workspace read.
+One provenance selector over workspace paths.
 """
 type WorkspaceSelector {
   """
@@ -447,12 +544,20 @@ type WorkspaceSelector {
   path: WorkspacePath!
 
   """
-  Optional include globs. Empty means "include everything under path".
+  Optional include globs.
+
+  Uses the same semantics as existing `CopyFilter` APIs.
+  Patterns are evaluated relative to `path`.
+  Empty means "include everything under path".
   """
   include: [String!]!
 
   """
-  Optional exclude globs. Applied after include.
+  Optional exclude globs.
+
+  Uses the same semantics as existing `CopyFilter` APIs.
+  Patterns are evaluated relative to `path`.
+  Applied after `include`. If both match, `exclude` wins.
   """
   exclude: [String!]!
 
@@ -463,32 +568,51 @@ type WorkspaceSelector {
   actual smaller file set may only be known later.
   """
   conservative: Boolean!
+
+  """
+  Why this selector exists.
+  """
+  kind: WorkspaceProvenanceKind!
 }
 
 """
-Workspace provenance for one value or artifact.
+Provenance over workspace paths for one value or artifact.
 """
 type WorkspaceProvenance {
   """
   Known workspace selectors that contributed to this provenance.
 
-  A selector rooted at `/` represents workspace-wide provenance. It may still
-  be narrowed by `include` and `exclude`.
+  A selector rooted at `/` with kind `WORKSPACE_READ` represents workspace-wide
+  provenance. It may still be narrowed by `include` and `exclude`.
   """
   selectors: [WorkspaceSelector!]!
 
   """
-  Returns true if any selector's effective selected region, after `include` and
+  Returns true if any selector in the chosen kinds, after `include` and
   `exclude` are applied, overlaps the given path.
+
+  Matching uses subtree overlap, not exact string equality.
+
+  Empty `kinds` means all kinds.
   """
-  affectedByPath(path: WorkspacePath!): Boolean!
+  affectedByPath(
+    path: WorkspacePath!
+    kinds: [WorkspaceProvenanceKind!] = []
+  ): Boolean!
 
   """
-  Returns true if any selector's effective selected region, after `include` and
+  Returns true if any selector in the chosen kinds, after `include` and
   `exclude` are applied, overlaps the changed-path region from the core
   `Changeset`.
+
+  Uses the same overlap rule as `affectedByPath`.
+
+  Empty `kinds` means all kinds.
   """
-  affectedByDiff(changes: Changeset!): Boolean!
+  affectedByDiff(
+    changes: Changeset!
+    kinds: [WorkspaceProvenanceKind!] = []
+  ): Boolean!
 
   """
   Returns the semantic union of this provenance and `other`.
@@ -498,29 +622,55 @@ type WorkspaceProvenance {
 
 extend type Artifact {
   """
-  Non-null workspace provenance for this artifact.
+  Non-null provenance for this artifact.
 
   Empty provenance is `selectors = []`.
   """
   provenance: WorkspaceProvenance!
+
+  """
+  Returns true if this artifact is affected by the given path.
+
+  Empty `kinds` means all kinds.
+  """
+  affectedByPath(
+    path: WorkspacePath!
+    kinds: [WorkspaceProvenanceKind!] = []
+  ): Boolean!
+
+  """
+  Returns true if this artifact is affected by the given diff.
+
+  Empty `kinds` means all kinds.
+  """
+  affectedByDiff(
+    changes: Changeset!
+    kinds: [WorkspaceProvenanceKind!] = []
+  ): Boolean!
 }
 
 extend type Artifacts {
   """
-  Keeps rows where `artifact.provenance.affectedByPath(path)` is true.
+  Keeps rows where `artifact.affectedByPath(path, kinds)` is true.
 
   Preserves the current scope and dimensions. Narrows only the row set.
   Composes with other `Artifacts` filters by `AND`.
   """
-  filterAffectedByPath(path: WorkspacePath!): Artifacts!
+  filterAffectedByPath(
+    path: WorkspacePath!
+    kinds: [WorkspaceProvenanceKind!] = []
+  ): Artifacts!
 
   """
-  Keeps rows where `artifact.provenance.affectedByDiff(changes)` is true.
+  Keeps rows where `artifact.affectedByDiff(changes, kinds)` is true.
 
   Preserves the current scope and dimensions. Narrows only the row set.
   Composes with other `Artifacts` filters by `AND`.
   """
-  filterAffectedByDiff(changes: Changeset!): Artifacts!
+  filterAffectedByDiff(
+    changes: Changeset!
+    kinds: [WorkspaceProvenanceKind!] = []
+  ): Artifacts!
 }
 ```
 
@@ -532,7 +682,7 @@ Suppose an artifact has:
 
 ```text
 selectors = [
-  { path = docs, include = **/*.md, exclude = docs/generated/**, conservative = false }
+  { path = docs, include = **/*.md, exclude = docs/generated/**, conservative = false, kind = WORKSPACE_READ }
 ]
 ```
 
@@ -565,6 +715,29 @@ So:
 - `affectedByPath("config")` is `true`
 - `affectedByPath("scripts")` is `false`
 
+### Module Source Selector
+
+```text
+Artifact A
+  defined by module at ci/go-toolchain
+  src = ws.directory("docs")
+```
+
+This artifact may have both:
+
+```text
+selectors = [
+  { path = docs, include = [], exclude = [], conservative = false, kind = WORKSPACE_READ },
+  { path = ci/go-toolchain, include = [], exclude = [], conservative = false, kind = MODULE_SOURCE }
+]
+```
+
+Then:
+
+- `affectedByPath("ci/go-toolchain")` is `true`
+- `affectedByPath("ci/go-toolchain", kinds = [WORKSPACE_READ])` is `false`
+- `affectedByPath("ci/go-toolchain", kinds = [MODULE_SOURCE])` is `true`
+
 ### Simple Workspace-Wide Provenance
 
 ```text
@@ -576,7 +749,7 @@ This artifact may be affected by any workspace path:
 
 ```text
 selectors = [
-  { path = /, include = [], exclude = [], conservative = true }
+  { path = /, include = [], exclude = [], conservative = true, kind = WORKSPACE_READ }
 ]
 ```
 
@@ -589,7 +762,7 @@ So:
 
 ```text
 selectors = [
-  { path = /, include = [], exclude = [third_party/**, docs/**], conservative = true }
+  { path = /, include = [], exclude = [third_party/**, docs/**], conservative = true, kind = WORKSPACE_READ }
 ]
 ```
 
@@ -611,8 +784,8 @@ This artifact may have both:
 
 ```text
 selectors = [
-  { path = docs, include = [], exclude = [], conservative = false },
-  { path = /, include = [], exclude = [third_party/**], conservative = true }
+  { path = docs, include = [], exclude = [], conservative = false, kind = WORKSPACE_READ },
+  { path = /, include = [], exclude = [third_party/**], conservative = true, kind = WORKSPACE_READ }
 ]
 ```
 
@@ -621,10 +794,14 @@ conservative selector is still useful for broad pruning.
 
 ## Caching Semantics
 
-Conservative provenance and workspace-sensitive caching should line up.
+Conservative `WORKSPACE_READ` selectors and workspace-sensitive caching should
+line up.
 
-If an artifact has a conservative selector, caching should treat that artifact as
-workspace-sensitive within that selector's region.
+If an artifact has a conservative `WORKSPACE_READ` selector, caching should
+treat that artifact as workspace-sensitive within that selector's region.
+
+`MODULE_SOURCE` selectors should invalidate the artifact when the defining
+module's source changes.
 
 Provenance does not replace the engine's content-addressed execution model. It
 exists for selection, inspection, and UX.
