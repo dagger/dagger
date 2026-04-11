@@ -389,6 +389,14 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 			Kind:    persistedResultKindNull,
 		}, nil
 	}
+	if snapshot.self == nil {
+		return PersistedResultEnvelope{
+			Version:               2,
+			Kind:                  persistedResultKindNull,
+			ResultID:              uint64(snapshot.resultID),
+			SessionResourceHandle: snapshot.sessionResourceHandle,
+		}, nil
+	}
 	if snapshot.frame == nil {
 		if snapshot.self == nil || snapshot.self.Type() == nil || snapshot.self.Type().Name() != "Query" {
 			return PersistedResultEnvelope{}, fmt.Errorf("result has no call frame and no persisted envelope")

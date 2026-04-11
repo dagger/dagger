@@ -3,6 +3,7 @@ package snapshots
 import (
 	"context"
 	stderrors "errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -190,19 +191,29 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 		return nil
 	}
 
+	cm.mu.Lock()
+	affectedSnapshotIDs := make([]string, 0)
+	for snapshotID, leaseIDs := range cm.snapshotOwnerLeases {
+		if _, ok := leaseIDs[leaseID]; ok {
+			affectedSnapshotIDs = append(affectedSnapshotIDs, snapshotID)
+		}
+	}
+	cm.mu.Unlock()
+	slices.Sort(affectedSnapshotIDs)
+
 	err := cm.LeaseManager.Delete(ctx, leases.Lease{ID: leaseID})
 	if err != nil && !cerrdefs.IsNotFound(err) {
 		return pkgerrors.Wrapf(err, "delete owner lease %s", leaseID)
 	}
 
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
 	for snapshotID, leaseIDs := range cm.snapshotOwnerLeases {
 		delete(leaseIDs, leaseID)
 		if len(leaseIDs) == 0 {
 			delete(cm.snapshotOwnerLeases, snapshotID)
 		}
 	}
+	cm.mu.Unlock()
 
 	return nil
 }

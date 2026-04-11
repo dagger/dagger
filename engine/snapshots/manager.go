@@ -188,6 +188,17 @@ func (cm *snapshotManager) getRecord(ctx context.Context, id string, opts ...Ref
 		if rec.isDead() {
 			return nil, errors.Wrapf(errNotFound, "failed to get dead record %s", id)
 		}
+		if !rec.mutable {
+			if _, err := cm.Snapshotter.Stat(ctx, rec.md.getSnapshotID()); err != nil {
+				if !cerrdefs.IsNotFound(err) {
+					return nil, errors.Wrapf(err, "failed to check immutable ref snapshot %s", rec.md.getSnapshotID())
+				}
+				if err := rec.remove(ctx); err != nil {
+					return nil, errors.Wrap(err, "failed to remove immutable rec with missing snapshot")
+				}
+				return nil, errors.Wrap(errNotFound, rec.md.getSnapshotID())
+			}
+		}
 		return rec, nil
 	}
 
@@ -233,6 +244,16 @@ func (cm *snapshotManager) getRecord(ctx context.Context, id string, opts ...Ref
 				return nil, err
 			}
 			return nil, errors.Wrapf(errNotFound, "failed to get record %s with dirty volatile overlay", id)
+		}
+	} else {
+		if _, err := cm.Snapshotter.Stat(ctx, rec.md.getSnapshotID()); err != nil {
+			if !cerrdefs.IsNotFound(err) {
+				return nil, errors.Wrapf(err, "failed to check immutable ref snapshot %s", rec.md.getSnapshotID())
+			}
+			if err := rec.remove(ctx); err != nil {
+				return nil, errors.Wrap(err, "failed to remove immutable rec with missing snapshot")
+			}
+			return nil, errors.Wrap(errNotFound, rec.md.getSnapshotID())
 		}
 	}
 

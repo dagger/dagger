@@ -800,6 +800,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		}
 		newByKey[key] = link
 	}
+
 	for key, oldLink := range oldByKey {
 		newLink, ok := newByKey[key]
 		if !ok || newLink.RefKey != oldLink.RefKey {

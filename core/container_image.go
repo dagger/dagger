@@ -202,7 +202,6 @@ func (container *Container) FromOCIStore(
 	}
 	container.Config = loaded.Config.Config
 	container.ImageRef = imageRef
-
 	rootfsDir := &Directory{
 		Platform: rootPlatform,
 		Services: slices.Clone(container.Services),

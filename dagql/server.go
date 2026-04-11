@@ -676,7 +676,7 @@ func (s *Server) loadNthValue(
 	return res, nil
 }
 
-func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr error) {
 	ctx = srvToContext(ctx, s)
 	if id == nil {
 		return nil, fmt.Errorf("load type: nil ID")
@@ -684,6 +684,18 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	if c := s.canonical; c != nil {
 		return c.LoadType(ctx, id)
 	}
+
+	leaseCtx, release, err := withOperationLease(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: acquire operation lease: %w", id.Display(), err)
+	}
+	ctx = leaseCtx
+	defer func() {
+		if releaseErr := release(context.WithoutCancel(ctx)); releaseErr != nil && rerr == nil {
+			rerr = releaseErr
+		}
+	}()
+
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: current client metadata: %w", id.Display(), err)
@@ -1182,7 +1194,7 @@ func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyO
 
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
-func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
+func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) (rerr error) {
 	ctx = srvToContext(ctx, s)
 	if isNonInternal(ctx) {
 		// We only want "non internal" to apply to the immediate call, so flip it
@@ -1198,6 +1210,18 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		// Only do this if we haven't been explicitly told not to (internal=false).
 		ctx = withInternal(ctx)
 	}
+
+	leaseCtx, release, err := withOperationLease(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire operation lease: %w", err)
+	}
+	ctx = leaseCtx
+	defer func() {
+		if releaseErr := release(context.WithoutCancel(ctx)); releaseErr != nil && rerr == nil {
+			rerr = releaseErr
+		}
+	}()
+
 	var res AnyResult = self
 	for i, sel := range sels {
 		nth := sel.Nth
