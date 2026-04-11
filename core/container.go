@@ -438,6 +438,20 @@ type persistedContainerMountPayload struct {
 	TmpfsSize           int             `json:"tmpfsSize,omitempty"`
 }
 
+type persistedContainerSecretPayload struct {
+	SecretResultID uint64      `json:"secretResultID"`
+	EnvName        string      `json:"envName,omitempty"`
+	MountPath      string      `json:"mountPath,omitempty"`
+	Owner          *Ownership  `json:"owner,omitempty"`
+	Mode           fs.FileMode `json:"mode,omitempty"`
+}
+
+type persistedContainerSocketPayload struct {
+	SourceResultID uint64     `json:"sourceResultID"`
+	ContainerPath  string     `json:"containerPath"`
+	Owner          *Ownership `json:"owner,omitempty"`
+}
+
 const (
 	persistedContainerValueFormMaterialized = "materialized"
 	persistedContainerValueFormPending      = "pending"
@@ -480,6 +494,8 @@ type persistedContainerPayload struct {
 	Config             dockerspec.DockerOCIImageConfig     `json:"config"`
 	EnabledGPUs        []string                            `json:"enabledGPUs,omitempty"`
 	Mounts             []persistedContainerMountPayload    `json:"mounts,omitempty"`
+	Secrets            []persistedContainerSecretPayload   `json:"secrets,omitempty"`
+	Sockets            []persistedContainerSocketPayload   `json:"sockets,omitempty"`
 	Platform           Platform                            `json:"platform"`
 	Annotations        []containerutil.ContainerAnnotation `json:"annotations,omitempty"`
 	ImageRef           string                              `json:"imageRef,omitempty"`
@@ -996,7 +1012,7 @@ func (container *Container) AttachDependencyResults(
 	}
 
 	lazy := container.Lazy
-	owned := make([]dagql.AnyResult, 0, len(container.Mounts))
+	owned := make([]dagql.AnyResult, 0, len(container.Mounts)+len(container.Secrets)+len(container.Sockets))
 	for i := range container.Mounts {
 		mnt := &container.Mounts[i]
 		switch {
@@ -1012,6 +1028,38 @@ func (container *Container) AttachDependencyResults(
 			mnt.CacheSource.Volume = typed
 			owned = append(owned, typed)
 		}
+	}
+	for i := range container.Secrets {
+		secret := &container.Secrets[i]
+		if secret.Secret.Self() == nil {
+			continue
+		}
+		attached, err := attach(secret.Secret)
+		if err != nil {
+			return nil, fmt.Errorf("attach container secret %q: %w", secret.EnvName, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Secret])
+		if !ok {
+			return nil, fmt.Errorf("attach container secret %q: unexpected result %T", secret.EnvName, attached)
+		}
+		secret.Secret = typed
+		owned = append(owned, typed)
+	}
+	for i := range container.Sockets {
+		socket := &container.Sockets[i]
+		if socket.Source.Self() == nil {
+			continue
+		}
+		attached, err := attach(socket.Source)
+		if err != nil {
+			return nil, fmt.Errorf("attach container socket %q: %w", socket.ContainerPath, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Socket])
+		if !ok {
+			return nil, fmt.Errorf("attach container socket %q: unexpected result %T", socket.ContainerPath, attached)
+		}
+		socket.Source = typed
+		owned = append(owned, typed)
 	}
 
 	if lazy != nil {
@@ -1294,15 +1342,9 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		return nil, fmt.Errorf("encode persisted container: nil container")
 	}
 	// FIXME: remove this restriction immediately after the first cut by adding
-	// explicit structural persistence for services, secrets, and sockets.
+	// explicit structural persistence for services.
 	if len(container.Services) > 0 {
 		return nil, fmt.Errorf("encode persisted container: services are not yet supported")
-	}
-	if len(container.Secrets) > 0 {
-		return nil, fmt.Errorf("encode persisted container: secrets are not yet supported")
-	}
-	if len(container.Sockets) > 0 {
-		return nil, fmt.Errorf("encode persisted container: sockets are not yet supported")
 	}
 
 	payload := persistedContainerPayload{
@@ -1310,6 +1352,8 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		Config:             container.Config,
 		EnabledGPUs:        slices.Clone(container.EnabledGPUs),
 		Mounts:             make([]persistedContainerMountPayload, 0, len(container.Mounts)),
+		Secrets:            make([]persistedContainerSecretPayload, 0, len(container.Secrets)),
+		Sockets:            make([]persistedContainerSocketPayload, 0, len(container.Sockets)),
 		Platform:           container.Platform,
 		Annotations:        slices.Clone(container.Annotations),
 		ImageRef:           container.ImageRef,
@@ -1375,6 +1419,30 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 			return nil, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
 		}
 		payload.Mounts = append(payload.Mounts, encoded)
+	}
+	for _, secret := range container.Secrets {
+		secretID, err := encodePersistedObjectRef(cache, secret.Secret, "container secret")
+		if err != nil {
+			return nil, err
+		}
+		payload.Secrets = append(payload.Secrets, persistedContainerSecretPayload{
+			SecretResultID: secretID,
+			EnvName:        secret.EnvName,
+			MountPath:      secret.MountPath,
+			Owner:          secret.Owner,
+			Mode:           secret.Mode,
+		})
+	}
+	for _, socket := range container.Sockets {
+		sourceID, err := encodePersistedObjectRef(cache, socket.Source, "container socket")
+		if err != nil {
+			return nil, err
+		}
+		payload.Sockets = append(payload.Sockets, persistedContainerSocketPayload{
+			SourceResultID: sourceID,
+			ContainerPath:  socket.ContainerPath,
+			Owner:          socket.Owner,
+		})
 	}
 
 	enc, err := json.Marshal(payload)
@@ -1453,6 +1521,32 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		mounts = append(mounts, mnt)
 		decodedMounts = append(decodedMounts, decodedMount)
 	}
+	secrets := make([]ContainerSecret, 0, len(persisted.Secrets))
+	for _, persistedSecret := range persisted.Secrets {
+		secret, err := loadPersistedObjectResultByResultID[*Secret](ctx, dag, persistedSecret.SecretResultID, "container secret")
+		if err != nil {
+			return nil, err
+		}
+		secrets = append(secrets, ContainerSecret{
+			Secret:    secret,
+			EnvName:   persistedSecret.EnvName,
+			MountPath: persistedSecret.MountPath,
+			Owner:     persistedSecret.Owner,
+			Mode:      persistedSecret.Mode,
+		})
+	}
+	sockets := make([]ContainerSocket, 0, len(persisted.Sockets))
+	for _, persistedSocket := range persisted.Sockets {
+		source, err := loadPersistedObjectResultByResultID[*Socket](ctx, dag, persistedSocket.SourceResultID, "container socket")
+		if err != nil {
+			return nil, err
+		}
+		sockets = append(sockets, ContainerSocket{
+			Source:        source,
+			ContainerPath: persistedSocket.ContainerPath,
+			Owner:         persistedSocket.Owner,
+		})
+	}
 
 	metaAccessor := new(LazyAccessor[bkcache.ImmutableRef, *Container])
 	links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "container")
@@ -1479,6 +1573,8 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		MetaSnapshot:       metaAccessor,
 		Platform:           persisted.Platform,
 		Annotations:        slices.Clone(persisted.Annotations),
+		Secrets:            secrets,
+		Sockets:            sockets,
 		ImageRef:           persisted.ImageRef,
 		Ports:              slices.Clone(persisted.Ports),
 		DefaultTerminalCmd: persisted.DefaultTerminalCmd,
