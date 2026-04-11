@@ -1551,6 +1551,17 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		return nil, fmt.Errorf("cannot resolve selector path with nth")
 	}
 
+	leaseCtx, release, err := withOperationLease(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquire operation lease: %w", err)
+	}
+	ctx = leaseCtx
+	defer func() {
+		if releaseErr := release(context.WithoutCancel(ctx)); releaseErr != nil && rerr == nil {
+			rerr = releaseErr
+		}
+	}()
+
 	val, err := self.Select(ctx, s, sel.Selector)
 	if err != nil {
 		return nil, err

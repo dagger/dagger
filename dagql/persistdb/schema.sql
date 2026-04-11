@@ -73,8 +73,7 @@ CREATE TABLE IF NOT EXISTS result_snapshot_links (
     result_id INTEGER NOT NULL,
     ref_key TEXT NOT NULL,
     role TEXT NOT NULL,
-    slot TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY(result_id, ref_key, role, slot),
+    PRIMARY KEY(result_id, ref_key, role),
     FOREIGN KEY(result_id) REFERENCES results(id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 

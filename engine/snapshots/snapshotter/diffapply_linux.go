@@ -95,10 +95,10 @@ func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest Mountable, diffs
 }
 
 type change struct {
-	kind       continuityfs.ChangeKind
-	subPath    string
-	srcPath    string
-	srcStat    *syscall.Stat_t
+	kind        continuityfs.ChangeKind
+	subPath     string
+	srcPath     string
+	srcStat     *syscall.Stat_t
 	linkSubPath string
 }
 
@@ -780,13 +780,16 @@ func opaqueXattr(userxattr bool) string {
 func needsUserXAttr(ctx context.Context, sn Snapshotter, lm leases.Manager) (bool, error) {
 	key := identity.NewID()
 
-	ctx, done, err := leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
-	if err != nil {
-		return false, errors.Wrap(err, "failed to create lease for checking user xattr")
+	if _, ok := leases.FromContext(ctx); !ok {
+		leaseCtx, done, err := leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
+		if err != nil {
+			return false, errors.Wrap(err, "failed to create lease for checking user xattr")
+		}
+		defer done(context.TODO())
+		ctx = leaseCtx
 	}
-	defer done(context.TODO())
 
-	err = sn.Prepare(ctx, key, "")
+	err := sn.Prepare(ctx, key, "")
 	if err != nil {
 		return false, err
 	}

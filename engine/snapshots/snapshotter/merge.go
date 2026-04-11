@@ -98,11 +98,14 @@ func (sn *mergeSnapshotter) Merge(ctx context.Context, key string, diffs []Diff,
 		diffs = diffs[baseIndex:]
 	}
 
-	ctx, done, err := leaseutil.WithLease(ctx, sn.lm, leaseutil.MakeTemporary)
-	if err != nil {
-		return errors.Wrap(err, "failed to create temporary lease for view mounts during merge")
+	if _, ok := leases.FromContext(ctx); !ok {
+		leaseCtx, done, err := leaseutil.WithLease(ctx, sn.lm, leaseutil.MakeTemporary)
+		if err != nil {
+			return errors.Wrap(err, "failed to create temporary lease for view mounts during merge")
+		}
+		defer done(context.TODO())
+		ctx = leaseCtx
 	}
-	defer done(context.TODO())
 
 	prepareKey := identity.NewID()
 	if err := sn.Prepare(ctx, prepareKey, baseKey); err != nil {

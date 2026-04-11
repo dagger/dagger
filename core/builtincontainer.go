@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -15,12 +14,6 @@ func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string)
 	if err != nil {
 		return nil, err
 	}
-
-	ctx, release, err := leaseutil.WithLease(ctx, query.LeaseManager(), leaseutil.MakeTemporary)
-	if err != nil {
-		return nil, err
-	}
-	defer release(context.WithoutCancel(ctx))
 
 	manifestDigest := digest.Digest(blobDigest)
 	info, err := query.BuiltinOCIStore().Info(ctx, manifestDigest)

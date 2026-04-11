@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/distribution/reference"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -729,11 +728,6 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 			return inst, fmt.Errorf("failed to resolve host image manifest: %w", err)
 		}
 
-		ctx, release, err := leaseutil.WithLease(ctx, query.LeaseManager(), leaseutil.MakeTemporary)
-		if err != nil {
-			return inst, err
-		}
-		defer release(context.WithoutCancel(ctx))
 		err = contentutil.CopyChain(ctx, query.OCIStore(), imageReader.ContentStore, *target)
 		if err != nil {
 			return inst, fmt.Errorf("failed to copy image content: %w", err)

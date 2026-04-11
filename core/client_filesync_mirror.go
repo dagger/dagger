@@ -61,7 +61,6 @@ func (m *ClientFilesyncMirror) PersistedSnapshotRefLinks() []dagql.PersistedSnap
 	return []dagql.PersistedSnapshotRefLink{{
 		RefKey: m.snapshot.SnapshotID(),
 		Role:   "snapshot",
-		Slot:   "/",
 	}}
 }
 

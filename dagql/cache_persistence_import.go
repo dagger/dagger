@@ -353,9 +353,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, PersistedSnapshotRefLink{
 				RefKey: row.RefKey,
 				Role:   row.Role,
-				Slot:   row.Slot,
 			})
-			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role, row.Slot)
+			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role)
 		}
 
 		for _, res := range c.resultsByID {
@@ -495,14 +494,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			links := desiredSnapshotLinksForResult(res)
 			seen := make(map[snapshotOwnerKey]struct{}, len(links))
 			for _, link := range links {
-				key := snapshotOwnerKey{Role: link.Role, Slot: link.Slot}
+				key := snapshotOwnerKey{Role: link.Role}
 				if _, alreadySeen := seen[key]; alreadySeen {
 					continue
 				}
 				seen[key] = struct{}{}
 				if err := c.snapshotManager.AttachLease(
 					ctx,
-					resultSnapshotLeaseID(res.id, link.Role, link.Slot),
+					resultSnapshotLeaseID(res.id, link.Role),
 					link.RefKey,
 				); err != nil {
 					return fmt.Errorf("attach imported result %d owner lease %q: %w", res.id, key.Role, err)

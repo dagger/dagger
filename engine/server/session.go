@@ -16,6 +16,7 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
@@ -564,6 +565,12 @@ func (srv *Server) initializeDaggerClient(
 
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
+	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
+		if _, ok := leases.FromContext(ctx); ok {
+			return ctx, func(context.Context) error { return nil }, nil
+		}
+		return leaseutil.WithLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)
+	}))
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
@@ -1207,6 +1214,13 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// install a logger+meter provider that records to the client's DB
 	ctx = telemetry.WithLoggerProvider(ctx, client.loggerProvider)
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
+
+	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
+		if _, ok := leases.FromContext(ctx); ok {
+			return ctx, func(context.Context) error { return nil }, nil
+		}
+		return leaseutil.WithLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)
+	}))
 
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)

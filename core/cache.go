@@ -114,15 +114,10 @@ func (cache *CacheVolume) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotR
 	if cache.snapshot == nil {
 		return nil
 	}
-	slot := cache.selector
-	if slot == "" {
-		slot = "/"
-	}
 	return []dagql.PersistedSnapshotRefLink{
 		{
 			RefKey: cache.snapshot.SnapshotID(),
 			Role:   "snapshot",
-			Slot:   slot,
 		},
 	}
 }
@@ -133,6 +128,7 @@ type persistedCacheVolumePayload struct {
 	SourceID  string           `json:"sourceID,omitempty"`
 	Sharing   CacheSharingMode `json:"sharing,omitempty"`
 	Owner     string           `json:"owner,omitempty"`
+	Selector  string           `json:"selector,omitempty"`
 }
 
 func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCache dagql.PersistedObjectCache) (json.RawMessage, error) {
@@ -155,6 +151,7 @@ func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCa
 		SourceID:  sourceID,
 		Sharing:   cache.Sharing,
 		Owner:     cache.Owner,
+		Selector:  cache.getSnapshotSelector(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal persisted cache volume payload: %w", err)
@@ -207,7 +204,7 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 			return nil, fmt.Errorf("reopen persisted cache volume snapshot %q: %w", link.RefKey, err)
 		}
 		cache.snapshot = ref
-		cache.selector = link.Slot
+		cache.selector = persisted.Selector
 		if cache.selector == "" {
 			cache.selector = "/"
 		}

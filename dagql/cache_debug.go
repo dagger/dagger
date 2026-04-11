@@ -721,9 +721,9 @@ func (c *Cache) traceImportResultLoaded(ctx context.Context, importRunID string,
 	})
 }
 
-func (c *Cache) traceImportResultSnapshotLinkLoaded(ctx context.Context, importRunID string, resID sharedResultID, refKey, role, slot string) {
+func (c *Cache) traceImportResultSnapshotLinkLoaded(ctx context.Context, importRunID string, resID sharedResultID, refKey, role string) {
 	c.traceLazy(ctx, "import_result_snapshot_link_loaded", func() []any {
-		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "ref_key", refKey, "role", role, "slot", slot}
+		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "ref_key", refKey, "role", role}
 	})
 }
 
@@ -950,15 +950,10 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 				return -1
 			case a.Role > b.Role:
 				return 1
-			case a.Slot < b.Slot:
-				return -1
-			case a.Slot > b.Slot:
-				return 1
 			default:
 				return 0
 			}
 		})
-
 		state := res.loadPayloadState()
 		typeName := sharedResultObjectTypeName(res, state)
 		if typeName == "" && state.self != nil && state.self.Type() != nil {
@@ -1212,15 +1207,10 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					return -1
 				case a.Role > b.Role:
 					return 1
-				case a.Slot < b.Slot:
-					return -1
-				case a.Slot > b.Slot:
-					return 1
 				default:
 					return 0
 				}
 			})
-
 			state := res.loadPayloadState()
 			typeName := sharedResultObjectTypeName(res, state)
 			if typeName == "" && state.self != nil && state.self.Type() != nil {

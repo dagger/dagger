@@ -205,7 +205,6 @@ func addApplySnapshotDiffTestImmutable(t *testing.T, cm *snapshotManager, snapsh
 	return &immutableRef{
 		cm:          cm,
 		refMetadata: refMetadata{snapshotID: snapshotID, md: md},
-		leaseID:     "lease-" + snapshotID,
 	}
 }
 

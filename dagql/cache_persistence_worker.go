@@ -118,10 +118,6 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 				return -1
 			case a.Role > b.Role:
 				return 1
-			case a.Slot < b.Slot:
-				return -1
-			case a.Slot > b.Slot:
-				return 1
 			default:
 				return 0
 			}
@@ -132,7 +128,6 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 				ResultID: int64(resultID),
 				RefKey:   link.RefKey,
 				Role:     link.Role,
-				Slot:     link.Slot,
 			})
 		}
 
@@ -356,7 +351,7 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 		for _, row := range result.resultSnapshotLinks {
 			if err := q.InsertMirrorResultSnapshotLink(ctx, row); err != nil {
 				_ = tx.Rollback()
-				return fmt.Errorf("insert result_snapshot_link (%d,%s,%s,%s): %w", row.ResultID, row.RefKey, row.Role, row.Slot, err)
+				return fmt.Errorf("insert result_snapshot_link (%d,%s,%s): %w", row.ResultID, row.RefKey, row.Role, err)
 			}
 		}
 	}

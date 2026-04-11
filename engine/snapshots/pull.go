@@ -96,7 +96,7 @@ func (cm *snapshotManager) ImportImage(
 		}
 		seen[desc.Digest] = struct{}{}
 
-		if err := cm.linkContentToRefLease(ctx, current, desc); err != nil {
+		if err := cm.linkContentToContextLease(ctx, desc); err != nil {
 			return nil, err
 		}
 		if err := cm.recordSnapshotContent(current.SnapshotID(), desc); err != nil {
@@ -297,7 +297,7 @@ func (cm *snapshotManager) importImageLayer(
 		return nil, err
 	}
 
-	if err := cm.linkContentToRefLease(ctx, ref, desc); err != nil {
+	if err := cm.linkContentToContextLease(ctx, desc); err != nil {
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
@@ -314,19 +314,19 @@ func (cm *snapshotManager) importImageLayer(
 	return ref, nil
 }
 
-func (cm *snapshotManager) linkContentToRefLease(ctx context.Context, ref ImmutableRef, desc ocispecs.Descriptor) error {
-	if ref == nil || desc.Digest == "" {
+func (cm *snapshotManager) linkContentToContextLease(ctx context.Context, desc ocispecs.Descriptor) error {
+	if desc.Digest == "" {
 		return nil
 	}
-	leaseRef, ok := ref.(*immutableRef)
+	leaseID, ok := leases.FromContext(ctx)
 	if !ok {
-		return fmt.Errorf("attach content %s to ref lease: unexpected ref type %T", desc.Digest, ref)
+		return nil
 	}
-	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseRef.leaseID}, leases.Resource{
+	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
 		ID:   desc.Digest.String(),
 		Type: "content",
 	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-		return errors.Wrapf(err, "attach content %s to lease %s", desc.Digest, leaseRef.leaseID)
+		return errors.Wrapf(err, "attach content %s to lease %s", desc.Digest, leaseID)
 	}
 	return nil
 }
@@ -347,10 +347,11 @@ func (cm *snapshotManager) recordSnapshotContent(snapshotID string, desc ocispec
 	cm.mu.Unlock()
 
 	for _, leaseID := range leaseIDs {
-		if err := cm.LeaseManager.AddResource(context.WithoutCancel(context.TODO()), leases.Lease{ID: leaseID}, leases.Resource{
+		err := cm.LeaseManager.AddResource(context.WithoutCancel(context.TODO()), leases.Lease{ID: leaseID}, leases.Resource{
 			ID:   desc.Digest.String(),
 			Type: "content",
-		}); err != nil && !cerrdefs.IsAlreadyExists(err) && !cerrdefs.IsNotFound(err) {
+		})
+		if err != nil && !cerrdefs.IsAlreadyExists(err) && !cerrdefs.IsNotFound(err) {
 			return errors.Wrapf(err, "attach content %s to owner lease %s", desc.Digest, leaseID)
 		}
 	}

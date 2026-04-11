@@ -104,7 +104,6 @@ func (state *HTTPState) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRef
 	return []dagql.PersistedSnapshotRefLink{{
 		RefKey: snapshotID,
 		Role:   "snapshot",
-		Slot:   "/",
 	}}
 }
 
@@ -375,7 +374,6 @@ func (state *HTTPState) fileResult(
 	newRef, err := query.SnapshotManager().New(
 		ctx,
 		state.snapshot,
-		nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("http state resolve %s", name)),
 	)

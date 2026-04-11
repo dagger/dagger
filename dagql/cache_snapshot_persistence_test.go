@@ -244,11 +244,11 @@ func TestCachePersistenceImportHydratesSnapshotMetadataAndSyncsOwnerLeases(t *te
 	assert.Equal(t, 0, len(snapshotManagerB.loadedRows.ImportedByDiff))
 
 	assert.Equal(t, 1, len(snapshotManagerB.attachCalls))
-	assert.Equal(t, resultSnapshotLeaseID(resultID, "snapshot", ""), snapshotManagerB.attachCalls[0].LeaseID)
+	assert.Equal(t, resultSnapshotLeaseID(resultID, "snapshot"), snapshotManagerB.attachCalls[0].LeaseID)
 	assert.Equal(t, "snapshot-a", snapshotManagerB.attachCalls[0].SnapshotID)
 
 	assert.Assert(t, snapshotManagerB.deleteStaleCallSeen)
-	_, keepFound := snapshotManagerB.deleteStaleKeep[resultSnapshotLeaseID(resultID, "snapshot", "")]
+	_, keepFound := snapshotManagerB.deleteStaleKeep[resultSnapshotLeaseID(resultID, "snapshot")]
 	assert.Assert(t, keepFound)
 }
 

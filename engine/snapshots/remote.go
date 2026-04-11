@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
@@ -16,12 +17,14 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 		return &ExportChain{}, nil
 	}
 
-	leaseCtx, done, err := leaseutil.WithLease(ctx, sr.cm.LeaseManager, leaseutil.MakeTemporary)
-	if err != nil {
-		return nil, err
+	if _, ok := leases.FromContext(ctx); !ok {
+		leaseCtx, done, err := leaseutil.WithLease(ctx, sr.cm.LeaseManager, leaseutil.MakeTemporary)
+		if err != nil {
+			return nil, err
+		}
+		defer done(context.WithoutCancel(leaseCtx))
+		ctx = leaseCtx
 	}
-	defer done(context.WithoutCancel(leaseCtx))
-	ctx = leaseCtx
 
 	snapshotIDs := []string{}
 	for snapshotID := sr.SnapshotID(); snapshotID != ""; {

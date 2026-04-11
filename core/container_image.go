@@ -20,7 +20,6 @@ import (
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -155,18 +154,6 @@ func (container *Container) Import(
 	tag string,
 ) (*Container, error) {
 	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var release func(context.Context) error
-	defer func() {
-		if release != nil {
-			release(context.WithoutCancel(ctx))
-		}
-	}()
-
-	ctx, release, err = leaseutil.WithLease(ctx, query.LeaseManager(), leaseutil.MakeTemporary)
 	if err != nil {
 		return nil, err
 	}

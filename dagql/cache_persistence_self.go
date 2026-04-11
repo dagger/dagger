@@ -344,7 +344,6 @@ func decodeBuiltinPersistedScalar(typeName string, raw any) (Typed, error) {
 type PersistedSnapshotRefLink struct {
 	RefKey string
 	Role   string
-	Slot   string
 }
 
 // PersistedSnapshotRefLinkProvider is the shared interface used by persistable

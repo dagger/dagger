@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
@@ -17,10 +16,6 @@ import (
 
 func NewSnapshotter(name string, sn snapshots.Snapshotter, ns string) snapshotter.Snapshotter {
 	return &fromContainerd{name: name, Snapshotter: &nsSnapshotter{ns: ns, Snapshotter: sn}}
-}
-
-func NSSnapshotter(ns string, sn snapshots.Snapshotter) snapshots.Snapshotter {
-	return &nsSnapshotter{ns: ns, Snapshotter: sn}
 }
 
 type nsSnapshotter struct {
@@ -173,7 +168,6 @@ func (cs *containerdSnapshotter) View(ctx context.Context, key, parent string, o
 }
 
 type staticMountable struct {
-	count  int32
 	id     string
 	mounts []mount.Mount
 }
@@ -187,13 +181,7 @@ func (cm *staticMountable) Mount() ([]mount.Mount, func() error, error) {
 		mounts = setRedirectDir(mounts, redirectDirOption)
 	}
 
-	atomic.AddInt32(&cm.count, 1)
 	return mounts, func() error {
-		if atomic.AddInt32(&cm.count, -1) < 0 {
-			if v := os.Getenv("BUILDKIT_DEBUG_PANIC_ON_ERROR"); v == "1" {
-				panic("release of released mount " + cm.id)
-			}
-		}
 		return nil
 	}, nil
 }

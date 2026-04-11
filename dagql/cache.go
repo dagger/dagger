@@ -81,7 +81,7 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
-const cachePersistenceSchemaVersion = "12"
+const cachePersistenceSchemaVersion = "13"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
@@ -698,16 +698,8 @@ func runOnReleaseFuncs(ctx context.Context, onReleases []OnReleaseFunc) error {
 	return rerr
 }
 
-func resultSnapshotLeaseID(resultID sharedResultID, role, slot string) string {
-	if slot == "" {
-		return fmt.Sprintf("dagql/result/%d/%s", resultID, url.PathEscape(role))
-	}
-	return fmt.Sprintf(
-		"dagql/result/%d/%s/%s",
-		resultID,
-		url.PathEscape(role),
-		url.PathEscape(slot),
-	)
+func resultSnapshotLeaseID(resultID sharedResultID, role string) string {
+	return fmt.Sprintf("dagql/result/%d/%s", resultID, url.PathEscape(role))
 }
 
 func joinOnRelease(a, b OnReleaseFunc) OnReleaseFunc {
@@ -725,7 +717,6 @@ func joinOnRelease(a, b OnReleaseFunc) OnReleaseFunc {
 
 type snapshotOwnerKey struct {
 	Role string
-	Slot string
 }
 
 func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink {
@@ -749,11 +740,15 @@ func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink
 }
 
 func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
-	if c == nil || c.snapshotManager == nil || res == nil || res.id == 0 {
+	if c == nil || c.snapshotManager == nil || res == nil {
 		return nil
 	}
 
 	return func(ctx context.Context) error {
+		if res.id == 0 {
+			return nil
+		}
+
 		res.payloadMu.RLock()
 		links := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
 		res.payloadMu.RUnlock()
@@ -761,14 +756,14 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 		seen := make(map[snapshotOwnerKey]struct{}, len(links))
 		var rerr error
 		for _, link := range links {
-			key := snapshotOwnerKey{Role: link.Role, Slot: link.Slot}
+			key := snapshotOwnerKey{Role: link.Role}
 			if _, alreadySeen := seen[key]; alreadySeen {
 				continue
 			}
 			seen[key] = struct{}{}
 			rerr = errors.Join(rerr, c.snapshotManager.RemoveLease(
 				ctx,
-				resultSnapshotLeaseID(res.id, link.Role, link.Slot),
+				resultSnapshotLeaseID(res.id, link.Role),
 			))
 		}
 		return rerr
@@ -790,16 +785,15 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
 
 	for _, link := range oldLinks {
-		oldByKey[snapshotOwnerKey{Role: link.Role, Slot: link.Slot}] = link
+		oldByKey[snapshotOwnerKey{Role: link.Role}] = link
 	}
 	for _, link := range links {
-		key := snapshotOwnerKey{Role: link.Role, Slot: link.Slot}
+		key := snapshotOwnerKey{Role: link.Role}
 		if prev, found := newByKey[key]; found && prev.RefKey != link.RefKey {
 			return fmt.Errorf(
-				"sync result %d snapshot owner leases: conflicting desired links for %q/%q: %q vs %q",
+				"sync result %d snapshot owner leases: conflicting desired links for %q: %q vs %q",
 				res.id,
 				key.Role,
-				key.Slot,
 				prev.RefKey,
 				link.RefKey,
 			)
@@ -811,7 +805,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		if !ok || newLink.RefKey != oldLink.RefKey {
 			if err := c.snapshotManager.RemoveLease(
 				ctx,
-				resultSnapshotLeaseID(res.id, key.Role, key.Slot),
+				resultSnapshotLeaseID(res.id, key.Role),
 			); err != nil {
 				return err
 			}
@@ -823,7 +817,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		if !ok || oldLink.RefKey != newLink.RefKey {
 			if err := c.snapshotManager.AttachLease(
 				ctx,
-				resultSnapshotLeaseID(res.id, key.Role, key.Slot),
+				resultSnapshotLeaseID(res.id, key.Role),
 				newLink.RefKey,
 			); err != nil {
 				return err
@@ -870,7 +864,7 @@ func (c *Cache) desiredImportedOwnerLeaseIDs(ctx context.Context) (map[string]st
 	for _, res := range results {
 		links := desiredSnapshotLinksForResult(res)
 		for _, link := range links {
-			desired[resultSnapshotLeaseID(res.id, link.Role, link.Slot)] = struct{}{}
+			desired[resultSnapshotLeaseID(res.id, link.Role)] = struct{}{}
 		}
 	}
 
@@ -2451,6 +2445,22 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			}
 		}
 
+		leaseCtx, release, leaseErr := withOperationLease(callbackCtx)
+		if leaseErr != nil {
+			shared.lazyMu.Lock()
+			shared.lazyEvalErr = fmt.Errorf("acquire operation lease: %w", leaseErr)
+			clearState := shared.lazyEvalWaiters == 0 && shared.lazyEvalWaitCh == waitCh
+			if clearState {
+				shared.lazyEvalWaitCh = nil
+				shared.lazyEvalCancel = nil
+				shared.lazyEvalErr = nil
+			}
+			shared.lazyMu.Unlock()
+			close(waitCh)
+			return
+		}
+		callbackCtx = leaseCtx
+
 		var err error
 		if resumeSpan != nil {
 			defer telemetry.EndWithCause(resumeSpan, &err)
@@ -2458,6 +2468,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		err = lazyEval(callbackCtx)
 		if err == nil {
 			err = c.syncResultSnapshotLeases(callbackCtx, shared)
+		}
+		if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
+			err = releaseErr
 		}
 
 		shared.lazyMu.Lock()

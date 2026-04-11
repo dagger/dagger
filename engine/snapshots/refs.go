@@ -234,12 +234,11 @@ func (cr *cacheRecord) hasDirtyVolatile(ctx context.Context) (_ bool, rerr error
 }
 
 // call when holding the manager lock
-func (cr *cacheRecord) remove(ctx context.Context, removeSnapshot bool) (rerr error) {
+func (cr *cacheRecord) remove(ctx context.Context) (rerr error) {
 	defer func() {
 		l := bklog.G(ctx).WithFields(map[string]any{
-			"id":             cr.md.ID(),
-			"removeSnapshot": removeSnapshot,
-			"stack":          bklog.TraceLevelOnlyStack(),
+			"id":    cr.md.ID(),
+			"stack": bklog.TraceLevelOnlyStack(),
 		})
 		if rerr != nil {
 			l = l.WithError(rerr)
@@ -247,13 +246,6 @@ func (cr *cacheRecord) remove(ctx context.Context, removeSnapshot bool) (rerr er
 		l.Trace("removed cache record")
 	}()
 	delete(cr.cm.records, cr.md.ID())
-	if removeSnapshot {
-		if err := cr.cm.LeaseManager.Delete(ctx, leases.Lease{
-			ID: cr.md.ID(),
-		}); err != nil && !cerrdefs.IsNotFound(err) {
-			return errors.Wrapf(err, "failed to delete lease for %s", cr.md.ID())
-		}
-	}
 	cr.cm.metadataStore.clear(cr.md.ID())
 	return nil
 }
@@ -261,7 +253,7 @@ func (cr *cacheRecord) remove(ctx context.Context, removeSnapshot bool) (rerr er
 type immutableRef struct {
 	cm *snapshotManager
 	refMetadata
-	leaseID         string
+	released        bool
 	mu              sync.Mutex
 	mountCache      snapshot.Mountable
 	triggerLastUsed bool
@@ -271,11 +263,11 @@ type immutableRef struct {
 // hold ref lock before calling
 func (sr *immutableRef) traceLogFields() logrus.Fields {
 	m := map[string]any{
-		"id":      sr.ID(),
-		"refID":   fmt.Sprintf("%p", sr),
-		"leaseID": sr.leaseID,
-		"mutable": false,
-		"stack":   bklog.TraceLevelOnlyStack(),
+		"id":       sr.ID(),
+		"refID":    fmt.Sprintf("%p", sr),
+		"released": sr.released,
+		"mutable":  false,
+		"stack":    bklog.TraceLevelOnlyStack(),
 	}
 	return m
 }
@@ -287,7 +279,7 @@ func (sr *immutableRef) Size(ctx context.Context) (int64, error) {
 type mutableRef struct {
 	cm *snapshotManager
 	refMetadata
-	leaseID         string
+	released        bool
 	mu              sync.Mutex
 	mountCache      snapshot.Mountable
 	triggerLastUsed bool
@@ -297,11 +289,11 @@ type mutableRef struct {
 // hold ref lock before calling
 func (sr *mutableRef) traceLogFields() logrus.Fields {
 	m := map[string]any{
-		"id":      sr.ID(),
-		"refID":   fmt.Sprintf("%p", sr),
-		"leaseID": sr.leaseID,
-		"mutable": true,
-		"stack":   bklog.TraceLevelOnlyStack(),
+		"id":       sr.ID(),
+		"refID":    fmt.Sprintf("%p", sr),
+		"released": sr.released,
+		"mutable":  true,
+		"stack":    bklog.TraceLevelOnlyStack(),
 	}
 	return m
 }
@@ -612,7 +604,7 @@ func fieldsFromLabels(labels map[string]string) (fields []string) {
 }
 
 func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Mountable, rerr error) {
-	if sr.leaseID == "" {
+	if sr.released {
 		return nil, errors.Wrapf(errInvalid, "invalid immutable ref %p", sr)
 	}
 	sr.mu.Lock()
@@ -683,16 +675,16 @@ func (sr *immutableRef) release(ctx context.Context) (rerr error) {
 		}
 		l.Trace("released cache ref")
 	}()
+	if sr.released {
+		return nil
+	}
 	if sr.updateLastUsedNow() {
 		if err := sr.md.updateLastUsed(); err != nil {
 			return err
 		}
 	}
 	sr.mountCache = nil
-	if err := sr.cm.LeaseManager.Delete(ctx, leases.Lease{ID: sr.leaseID}); err != nil && !cerrdefs.IsNotFound(err) {
-		return err
-	}
-	sr.leaseID = ""
+	sr.released = true
 	return nil
 }
 
@@ -700,8 +692,8 @@ func (sr *mutableRef) shouldUpdateLastUsed() bool {
 	return sr.triggerLastUsed
 }
 
-func (sr *mutableRef) commit() (_ *immutableRef, rerr error) {
-	if sr.leaseID == "" {
+func (sr *mutableRef) commit(ctx context.Context) (_ *immutableRef, rerr error) {
+	if sr.released {
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
 	rec, ok := sr.cm.records[sr.snapshotID]
@@ -712,37 +704,7 @@ func (sr *mutableRef) commit() (_ *immutableRef, rerr error) {
 	id := identity.NewID()
 	md := sr.cm.ensureMetadata(id)
 	committed := &cacheRecord{cm: sr.cm, md: md}
-
-	l, err := sr.cm.LeaseManager.Create(context.TODO(), func(l *leases.Lease) error {
-		l.ID = id
-		l.Labels = map[string]string{
-			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-		return nil
-	})
-	if err != nil {
-		if !errors.Is(err, cerrdefs.ErrAlreadyExists) {
-			return nil, errors.Wrap(err, "failed to create lease")
-		}
-		l.ID = id
-	}
-	defer func() {
-		if rerr != nil {
-			ctx := context.WithoutCancel(context.TODO())
-			if err := sr.cm.LeaseManager.Delete(ctx, leases.Lease{ID: l.ID}); err != nil && !cerrdefs.IsNotFound(err) {
-				bklog.G(ctx).WithError(err).Warn("failed to clean up immutable lease after commit failure")
-			}
-		}
-	}()
-
-	if err := sr.cm.LeaseManager.AddResource(context.TODO(), leases.Lease{ID: id}, leases.Resource{
-		ID:   id,
-		Type: "snapshots/" + sr.cm.Snapshotter.Name(),
-	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-		return nil, errors.Wrapf(err, "failed to add snapshot %s to lease", id)
-	}
-
-	if err := sr.cm.Snapshotter.Commit(context.TODO(), id, sr.SnapshotID()); err != nil {
+	if err := sr.cm.Snapshotter.Commit(ctx, id, sr.SnapshotID()); err != nil {
 		return nil, errors.Wrapf(err, "failed to commit %s to immutable %s", sr.SnapshotID(), id)
 	}
 
@@ -791,19 +753,15 @@ func (sr *mutableRef) commit() (_ *immutableRef, rerr error) {
 		return nil, err
 	}
 
-	if err := sr.cm.LeaseManager.Delete(context.WithoutCancel(context.TODO()), leases.Lease{ID: sr.leaseID}); err != nil && !cerrdefs.IsNotFound(err) {
-		return nil, err
-	}
-	if err := rec.remove(context.WithoutCancel(context.TODO()), false); err != nil {
+	if err := rec.remove(context.WithoutCancel(ctx)); err != nil {
 		return nil, err
 	}
 	sr.mountCache = nil
-	sr.leaseID = ""
+	sr.released = true
 
 	ref := &immutableRef{
 		cm:              sr.cm,
 		refMetadata:     refMetadata{snapshotID: committed.md.getSnapshotID(), md: committed.md},
-		leaseID:         id,
 		triggerLastUsed: true,
 	}
 	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
@@ -811,7 +769,7 @@ func (sr *mutableRef) commit() (_ *immutableRef, rerr error) {
 }
 
 func (sr *mutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Mountable, rerr error) {
-	if sr.leaseID == "" {
+	if sr.released {
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
 	sr.mu.Lock()
@@ -843,7 +801,7 @@ func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	return sr.commit()
+	return sr.commit(ctx)
 }
 
 func (sr *mutableRef) Release(ctx context.Context) error {
@@ -857,8 +815,8 @@ func (sr *mutableRef) Release(ctx context.Context) error {
 }
 
 func (sr *mutableRef) release(ctx context.Context) (rerr error) {
-	if sr.leaseID == "" {
-		return errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
+	if sr.released {
+		return nil
 	}
 	rec, ok := sr.cm.records[sr.snapshotID]
 	if !ok || !rec.mutable {
@@ -871,13 +829,10 @@ func (sr *mutableRef) release(ctx context.Context) (rerr error) {
 		}
 		l.Trace("released cache ref")
 	}()
-	if err := sr.cm.LeaseManager.Delete(ctx, leases.Lease{ID: sr.leaseID}); err != nil && !cerrdefs.IsNotFound(err) {
-		return err
-	}
-	sr.leaseID = ""
 	sr.mountCache = nil
+	sr.released = true
 	rec.locked = false
-	return rec.remove(ctx, false)
+	return rec.remove(ctx)
 }
 
 func setReadonly(mounts snapshot.Mountable) snapshot.Mountable {

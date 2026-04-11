@@ -12,6 +12,8 @@ import (
 	pkgerrors "github.com/pkg/errors"
 )
 
+const dagqlResultLeasePrefix = "dagql/result/"
+
 type PersistentMetadataRows struct {
 	SnapshotContent []SnapshotContentRow
 	ImportedByBlob  []ImportedLayerBlobRow
@@ -138,35 +140,39 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	if _, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+	_, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
 		l.ID = leaseID
 		l.Labels = map[string]string{
 			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
 		}
 		return nil
-	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+	})
+	if err != nil && !cerrdefs.IsAlreadyExists(err) {
 		return pkgerrors.Wrapf(err, "create owner lease %s", leaseID)
 	}
 
-	if _, err := cm.Snapshotter.Stat(ctx, snapshotID); err != nil {
+	_, err = cm.Snapshotter.Stat(ctx, snapshotID)
+	if err != nil {
 		if cerrdefs.IsNotFound(err) {
 			return pkgerrors.Wrap(errNotFound, snapshotID)
 		}
 		return pkgerrors.Wrapf(err, "stat snapshot %s for owner lease %s", snapshotID, leaseID)
 	}
 
-	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
+	err = cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
 		ID:   snapshotID,
 		Type: "snapshots/" + cm.Snapshotter.Name(),
-	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+	})
+	if err != nil && !cerrdefs.IsAlreadyExists(err) {
 		return pkgerrors.Wrapf(err, "attach snapshot %s to owner lease %s", snapshotID, leaseID)
 	}
 
 	for dgst := range cm.snapshotContentDigests[snapshotID] {
-		if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
+		err = cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
 			ID:   dgst.String(),
 			Type: "content",
-		}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		})
+		if err != nil && !cerrdefs.IsAlreadyExists(err) {
 			return pkgerrors.Wrapf(err, "attach content %s to owner lease %s", dgst, leaseID)
 		}
 	}
@@ -209,7 +215,7 @@ func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, kee
 
 	var rerr error
 	for _, lease := range leasesList {
-		if !strings.HasPrefix(lease.ID, "dagql/result/") {
+		if !strings.HasPrefix(lease.ID, dagqlResultLeasePrefix) {
 			continue
 		}
 		if _, ok := keep[lease.ID]; ok {

@@ -173,14 +173,9 @@ func (cm *snapshotManager) get(ctx context.Context, id string, opts ...RefOption
 	if rec.mutable {
 		return nil, errors.Wrapf(errInvalid, "%s is mutable", id)
 	}
-	leaseID, err := cm.newHandleLease(ctx, rec.md.getSnapshotID())
-	if err != nil {
-		return nil, err
-	}
 	ref := &immutableRef{
 		cm:              cm,
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
-		leaseID:         leaseID,
 		triggerLastUsed: triggerUpdate,
 	}
 	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
@@ -209,7 +204,7 @@ func (cm *snapshotManager) getRecord(ctx context.Context, id string, opts ...Ref
 
 	// the record was deleted but we crashed before data on disk was removed
 	if md.getDeleted() {
-		if err := rec.remove(ctx, true); err != nil {
+		if err := rec.remove(ctx); err != nil {
 			return nil, err
 		}
 		return nil, errors.Wrapf(errNotFound, "failed to get deleted record %s", id)
@@ -222,7 +217,7 @@ func (cm *snapshotManager) getRecord(ctx context.Context, id string, opts ...Ref
 				return nil, errors.Wrap(err, "failed to check mutable ref snapshot")
 			}
 			// the snapshot doesn't exist, clear this record
-			if err := rec.remove(ctx, true); err != nil {
+			if err := rec.remove(ctx); err != nil {
 				return nil, errors.Wrap(err, "failed to remove mutable rec with missing snapshot")
 			}
 			return nil, errors.Wrap(errNotFound, rec.ID())
@@ -234,7 +229,7 @@ func (cm *snapshotManager) getRecord(ctx context.Context, id string, opts ...Ref
 			return nil, err
 		}
 		if dirtyVolatile {
-			if err := rec.remove(ctx, true); err != nil {
+			if err := rec.remove(ctx); err != nil {
 				return nil, err
 			}
 			return nil, errors.Wrapf(errNotFound, "failed to get record %s with dirty volatile overlay", id)
@@ -261,36 +256,7 @@ func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefO
 		parentSnapshotID = s.SnapshotID()
 	}
 
-	l, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-		l.ID = id
-		l.Labels = map[string]string{
-			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create lease")
-	}
-
-	defer func() {
-		if err != nil {
-			ctx := context.WithoutCancel(ctx)
-			if err := cm.LeaseManager.Delete(ctx, leases.Lease{
-				ID: l.ID,
-			}); err != nil {
-				bklog.G(ctx).Errorf("failed to remove lease: %+v", err)
-			}
-		}
-	}()
-
 	snapshotID := id
-	if err := cm.LeaseManager.AddResource(ctx, l, leases.Resource{
-		ID:   snapshotID,
-		Type: "snapshots/" + cm.Snapshotter.Name(),
-	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-		return nil, errors.Wrapf(err, "failed to add snapshot %s to lease", snapshotID)
-	}
-
 	err = cm.Snapshotter.Prepare(ctx, snapshotID, parentSnapshotID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to prepare %v as %s", parentSnapshotID, snapshotID)
@@ -322,7 +288,6 @@ func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefO
 	ref := &mutableRef{
 		cm:              cm,
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
-		leaseID:         l.ID,
 		triggerLastUsed: true,
 	}
 	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
@@ -345,15 +310,10 @@ func (cm *snapshotManager) GetMutable(ctx context.Context, id string, opts ...Re
 	if rec.locked {
 		return nil, errors.Wrapf(ErrLocked, "%s is locked", id)
 	}
-	leaseID, err := cm.newHandleLease(ctx, rec.md.getSnapshotID())
-	if err != nil {
-		return nil, err
-	}
 	rec.locked = true
 	ref := &mutableRef{
 		cm:              cm,
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
-		leaseID:         leaseID,
 		triggerLastUsed: true,
 	}
 	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
@@ -377,15 +337,10 @@ func (cm *snapshotManager) GetMutableBySnapshotID(ctx context.Context, snapshotI
 	if rec.locked {
 		return nil, errors.Wrapf(ErrLocked, "%s is locked", snapshotID)
 	}
-	leaseID, err := cm.newHandleLease(ctx, rec.md.getSnapshotID())
-	if err != nil {
-		return nil, err
-	}
 	rec.locked = true
 	ref := &mutableRef{
 		cm:              cm,
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
-		leaseID:         leaseID,
 		triggerLastUsed: true,
 	}
 	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
@@ -425,27 +380,6 @@ func (cm *snapshotManager) rehydrateSnapshotMetadataLocked(ctx context.Context, 
 	return nil
 }
 
-func (cm *snapshotManager) newHandleLease(ctx context.Context, snapshotID string) (string, error) {
-	leaseID := identity.NewID()
-	if _, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-		l.ID = leaseID
-		l.Labels = map[string]string{
-			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-		return nil
-	}); err != nil {
-		return "", errors.Wrap(err, "failed to create handle lease")
-	}
-	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
-		ID:   snapshotID,
-		Type: "snapshots/" + cm.Snapshotter.Name(),
-	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-		_ = cm.LeaseManager.Delete(context.WithoutCancel(ctx), leases.Lease{ID: leaseID})
-		return "", errors.Wrapf(err, "failed to add snapshot %s to handle lease", snapshotID)
-	}
-	return leaseID, nil
-}
-
 func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper ImmutableRef, opts ...RefOption) (ir ImmutableRef, rerr error) {
 	switch {
 	case lower == nil && upper == nil:
@@ -456,32 +390,6 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 
 	id := identity.NewID()
 	snapshotID := id
-
-	l, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-		l.ID = id
-		l.Labels = map[string]string{
-			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create lease")
-	}
-	defer func() {
-		if rerr != nil {
-			ctx := context.WithoutCancel(ctx)
-			if err := cm.LeaseManager.Delete(ctx, leases.Lease{ID: l.ID}); err != nil {
-				bklog.G(ctx).Errorf("failed to remove lease: %+v", err)
-			}
-		}
-	}()
-
-	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: id}, leases.Resource{
-		ID:   snapshotID,
-		Type: "snapshots/" + cm.Snapshotter.Name(),
-	}); err != nil {
-		return nil, err
-	}
 
 	var diffs []snapshot.Diff
 	if upper == nil || lower.SnapshotID() != upper.SnapshotID() {
@@ -526,7 +434,6 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 	ref := &immutableRef{
 		cm:              cm,
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
-		leaseID:         l.ID,
 		triggerLastUsed: true,
 	}
 	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
@@ -550,32 +457,6 @@ func (cm *snapshotManager) Merge(ctx context.Context, parents []ImmutableRef, op
 
 	id := identity.NewID()
 	snapshotID := id
-
-	l, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-		l.ID = id
-		l.Labels = map[string]string{
-			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create lease")
-	}
-	defer func() {
-		if rerr != nil {
-			ctx := context.WithoutCancel(ctx)
-			if err := cm.LeaseManager.Delete(ctx, leases.Lease{ID: l.ID}); err != nil {
-				bklog.G(ctx).Errorf("failed to remove lease: %+v", err)
-			}
-		}
-	}()
-
-	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: id}, leases.Resource{
-		ID:   snapshotID,
-		Type: "snapshots/" + cm.Snapshotter.Name(),
-	}); err != nil {
-		return nil, err
-	}
 
 	diffs := make([]snapshot.Diff, 0, len(normalized))
 	for _, parent := range normalized {
@@ -613,7 +494,6 @@ func (cm *snapshotManager) Merge(ctx context.Context, parents []ImmutableRef, op
 	ref := &immutableRef{
 		cm:              cm,
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
-		leaseID:         l.ID,
 		triggerLastUsed: true,
 	}
 	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")

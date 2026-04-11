@@ -80,7 +80,6 @@ func newSnapshotter(
 		sn, snErr = native.NewSnapshotter(rootDir)
 	case "overlayfs": // not "overlay", for consistency with containerd snapshotter plugin ID.
 		opts := []overlay.Opt{
-			overlay.AsynchronousRemove,
 			overlay.WithMetaStore(mdStore),
 		}
 		if overlayVolatileSupported(rootDir) {
