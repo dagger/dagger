@@ -30,6 +30,8 @@ type pruneSnapshotResult struct {
 	deps                     []sharedResultID
 	usageIdentities          []string
 	entry                    CacheUsageEntry
+	callLabel                string
+	callFrame                *ResultCall
 	hasPersistedEdge         bool
 	persistedEdgeUnpruneable bool
 	expiresAtUnix            int64
@@ -104,6 +106,25 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			}
 			compactedNeeded = true
 			policyApplied++
+			if ok {
+				digest := ""
+				args := []string(nil)
+				if snapRes.callFrame != nil {
+					callFrame := snapRes.callFrame.clone()
+					if dig, err := callFrame.deriveRecipeDigest(c); err == nil {
+						digest = dig.String()
+					}
+					args = pruneLogCallArgs(callFrame.Args)
+				}
+				slog.Info("dagql pruned result",
+					"resultID", planEntry.candidate.resultID,
+					"call", snapRes.callLabel,
+					"digest", digest,
+					"args", args,
+					"description", snapRes.entry.Description,
+					"measuredSizeBytes", snapRes.entry.SizeBytes,
+					"reclaimedBytes", planEntry.reclaimBytes)
+			}
 			selectedEntry := planEntry.candidate.entry
 			selectedEntry.SizeBytes = planEntry.reclaimBytes
 			report.Entries = append(report.Entries, selectedEntry)
@@ -207,6 +228,39 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 		}
 		slices.Sort(deps)
 
+		callFrame := res.loadResultCall()
+		fieldName := ""
+		receiverTypeName := ""
+		callLabel := ""
+		if callFrame != nil {
+			frame := callFrame
+			if identityField, err := resultCallIdentityField(frame); err == nil {
+				fieldName = identityField
+			}
+			if frame.Receiver != nil {
+				if receiverRes := c.resultsByID[sharedResultID(frame.Receiver.ResultID)]; receiverRes != nil {
+					receiverFrame := receiverRes.loadResultCall()
+					switch {
+					case receiverFrame != nil && receiverFrame.Type != nil && receiverFrame.Type.NamedType != "":
+						receiverTypeName = receiverFrame.Type.NamedType
+					default:
+						receiverState := receiverRes.loadPayloadState()
+						receiverTypeName = sharedResultObjectTypeName(receiverRes, receiverState)
+					}
+				}
+			}
+			switch {
+			case receiverTypeName != "" && fieldName != "":
+				callLabel = receiverTypeName + "." + fieldName
+			case fieldName != "":
+				if frame.Kind == ResultCallKindField {
+					callLabel = "Query." + fieldName
+				} else {
+					callLabel = fieldName
+				}
+			}
+		}
+
 		edge, hasPersistedEdge := c.persistedEdgesByResult[resID]
 		snapshot.results[resID] = pruneSnapshotResult{
 			resultID:        resID,
@@ -222,6 +276,8 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 				MostRecentUseTimeUnixNano: lastUsedAt,
 				ActivelyUsed:              activelyUsed,
 			},
+			callLabel:                callLabel,
+			callFrame:                callFrame,
 			hasPersistedEdge:         hasPersistedEdge,
 			persistedEdgeUnpruneable: edge.unpruneable,
 			expiresAtUnix:            edge.expiresAtUnix,
@@ -443,6 +499,113 @@ func entryRecentlyUsed(entry CacheUsageEntry, cutoffUnixNano int64) bool {
 	return mostRecentUse >= cutoffUnixNano
 }
 
+func pruneLogCallArgs(args []*ResultCallArg) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	formatted := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == nil {
+			continue
+		}
+		formatted = append(formatted, arg.Name+"="+pruneLogLiteralValue(arg, arg.Value, 3))
+	}
+	if len(formatted) == 0 {
+		return nil
+	}
+	return formatted
+}
+
+func pruneLogLiteralValue(arg *ResultCallArg, lit *ResultCallLiteral, depth int) string {
+	if arg != nil && arg.IsSensitive {
+		return "<sensitive>"
+	}
+	if depth <= 0 {
+		return "<max-depth>"
+	}
+	if lit == nil {
+		return "null"
+	}
+	switch lit.Kind {
+	case ResultCallLiteralKindNull:
+		return "null"
+	case ResultCallLiteralKindBool:
+		if lit.BoolValue {
+			return "true"
+		}
+		return "false"
+	case ResultCallLiteralKindInt:
+		return strconv.FormatInt(lit.IntValue, 10)
+	case ResultCallLiteralKindFloat:
+		return strconv.FormatFloat(lit.FloatValue, 'g', -1, 64)
+	case ResultCallLiteralKindString:
+		return strconv.Quote(pruneLogTruncateString(lit.StringValue, 120))
+	case ResultCallLiteralKindEnum:
+		return lit.EnumValue
+	case ResultCallLiteralKindDigestedString:
+		if lit.DigestedStringDigest == "" {
+			return "digest:<missing>"
+		}
+		return "digest:" + lit.DigestedStringDigest.String()
+	case ResultCallLiteralKindResultRef:
+		switch {
+		case lit.ResultRef == nil:
+			return "result:<missing>"
+		case lit.ResultRef.ResultID != 0:
+			return "result:" + strconv.FormatUint(lit.ResultRef.ResultID, 10)
+		case lit.ResultRef.Call != nil:
+			if field, err := resultCallIdentityField(lit.ResultRef.Call); err == nil && field != "" {
+				return "inline:" + field
+			}
+			return "inline_call"
+		default:
+			return "result:<missing>"
+		}
+	case ResultCallLiteralKindList:
+		limit := len(lit.ListItems)
+		if limit > 5 {
+			limit = 5
+		}
+		items := make([]string, 0, limit+1)
+		for i := 0; i < limit; i++ {
+			items = append(items, pruneLogLiteralValue(nil, lit.ListItems[i], depth-1))
+		}
+		if len(lit.ListItems) > limit {
+			items = append(items, fmt.Sprintf("...(+%d)", len(lit.ListItems)-limit))
+		}
+		return "[" + strings.Join(items, ", ") + "]"
+	case ResultCallLiteralKindObject:
+		limit := len(lit.ObjectFields)
+		if limit > 5 {
+			limit = 5
+		}
+		fields := make([]string, 0, limit+1)
+		for i := 0; i < limit; i++ {
+			field := lit.ObjectFields[i]
+			if field == nil {
+				continue
+			}
+			fields = append(fields, field.Name+":"+pruneLogLiteralValue(field, field.Value, depth-1))
+		}
+		if len(lit.ObjectFields) > limit {
+			fields = append(fields, fmt.Sprintf("...(+%d)", len(lit.ObjectFields)-limit))
+		}
+		return "{" + strings.Join(fields, ", ") + "}"
+	default:
+		return "<unknown>"
+	}
+}
+
+func pruneLogTruncateString(s string, maxLen int) string {
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
+}
+
 func pruneTargetBytes(policy CachePrunePolicy, usedBytes int64) (int64, bool) {
 	target := int64(0)
 	thresholdTriggered := false
@@ -465,10 +628,6 @@ func pruneTargetBytes(policy CachePrunePolicy, usedBytes int64) (int64, bool) {
 	if policy.MaxUsedSpace > 0 && usedBytes > policy.MaxUsedSpace {
 		thresholdTriggered = true
 		addKeepTarget(max(policy.MaxUsedSpace, policy.ReservedSpace))
-	}
-	if policy.ReservedSpace > 0 && usedBytes > policy.ReservedSpace {
-		thresholdTriggered = true
-		addKeepTarget(policy.ReservedSpace)
 	}
 	if policy.MinFreeSpace > 0 && policy.CurrentFreeSpace < policy.MinFreeSpace {
 		thresholdTriggered = true

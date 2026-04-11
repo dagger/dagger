@@ -159,11 +159,11 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 		target string
 	}{
 		{
-			// test creates 2gb, this is over keepStorage, so gc kicks in
-			name:          "keep",
-			blocks:        1,
-			reservedSpace: fmt.Sprint(1024 * 1024 * 1024), // 1GB
-			target:        fmt.Sprint(1024 * 1024 * 1024), // 1GB
+			// test creates 2gb, this is over maxUsedSpace, so gc kicks in
+			name:         "keep",
+			blocks:       1,
+			maxUsedSpace: fmt.Sprint(1024 * 1024 * 1024), // 1GB
+			target:       fmt.Sprint(1024 * 1024 * 1024), // 1GB
 		},
 		{
 			// test creates 2gb, this means we have no free storage, so gc kicks in
