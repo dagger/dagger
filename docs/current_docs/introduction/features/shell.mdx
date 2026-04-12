@@ -50,12 +50,14 @@ Dagger Shell uses the Bash syntax as a frontend, but its behavior is quite diffe
 - Instead of using the local host as an execution environment, you use containerized runtimes
 - Instead of being mixed with regular commands, shell builtins are prefixed with `.` (similar to SQLite)
 
-Besides these differences, all the features of the Bash syntax are available in Dagger Shell, including:
+Besides these differences, Dagger Shell accepts POSIX shell syntax and supports many familiar shell features, including:
 
 - **Shell variables**: `container=$(container | from alpine)`
 - **Shell functions**: `container() { container | from alpine; }`
 - **Job control**: `frontend | test & backend | test & .wait`
 - **Quoting**: single quotes and double quotes have the same meaning as in Bash
+
+Note that Dagger Shell uses a POSIX-compliant parser under the hood; Bash-specific extensions (such as variable slicing `${X:1}` or the `[` builtin) are not supported.
 
 ## Input modes
 
