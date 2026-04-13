@@ -4785,7 +4785,7 @@
 			"t": "M",
 			"n": "Dagger\\Generator::changes",
 			"p": "Dagger/Generator.html#method_changes",
-			"d": "<p>The generated changeset</p>"
+			"d": "<p>The generated changeset from the last run</p>"
 		},
 		{
 			"t": "M",
@@ -4809,7 +4809,7 @@
 			"t": "M",
 			"n": "Dagger\\Generator::isEmpty",
 			"p": "Dagger/Generator.html#method_isEmpty",
-			"d": "<p>Wether changeset from the generator execution is empty or not</p>"
+			"d": "<p>Whether changeset from the last generator run is empty or not</p>"
 		},
 		{
 			"t": "M",
@@ -4839,7 +4839,7 @@
 			"t": "M",
 			"n": "Dagger\\GeneratorGroup::changes",
 			"p": "Dagger/GeneratorGroup.html#method_changes",
-			"d": "<p>The combined changes from the generators execution</p>"
+			"d": "<p>The combined changes from the last run of the generators</p>"
 		},
 		{
 			"t": "M",
@@ -4851,7 +4851,7 @@
 			"t": "M",
 			"n": "Dagger\\GeneratorGroup::isEmpty",
 			"p": "Dagger/GeneratorGroup.html#method_isEmpty",
-			"d": "<p>Whether the generated changeset is empty or not</p>"
+			"d": "<p>Whether the generated changeset from the last run is empty or not</p>"
 		},
 		{
 			"t": "M",

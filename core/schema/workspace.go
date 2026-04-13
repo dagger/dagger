@@ -350,6 +350,12 @@ func (s *workspaceSchema) checks(
 	},
 ) (*core.CheckGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -437,6 +443,12 @@ func (s *workspaceSchema) generators(
 	},
 ) (*core.GeneratorGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -543,6 +555,12 @@ func (s *workspaceSchema) services(
 	},
 ) (*core.UpGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
