@@ -12,8 +12,9 @@ import (
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	telemetry "github.com/dagger/otel-go"
 
-	"github.com/containerd/platforms"
 	"mod-golang/internal/dagger"
+
+	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/util/parallel"
 )
 
