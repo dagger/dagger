@@ -163,7 +163,11 @@ func (m *Dep) ListFiles(ctx context.Context, dir *dagger.Directory) ([]string, e
 		_, err = hostDaggerExec(ctx, t, depModDir, "init", "--source=.", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
-		// Write the main module's code with matching return type
+		// Initialize the main module before customizing the code
+		_, err = hostDaggerExec(ctx, t, rootDir, "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		// Overwrite the main module's code with matching return type once init is done
 		err = os.WriteFile(filepath.Join(rootDir, "main.go"), []byte(`package main
 
 import (
@@ -177,10 +181,6 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory) ([]string, error) 
     return dag.Dep().ListFiles(ctx, dir)
 }
 `), 0644)
-		require.NoError(t, err)
-
-		// Initialize the main module
-		_, err = hostDaggerExec(ctx, t, rootDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		// Install the dependent module using relative path

@@ -53,6 +53,9 @@ func (InterfaceSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", `package main
+
+import "context"
+
 type Test struct {}
 
 type BadIface interface {
