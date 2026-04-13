@@ -135,16 +135,24 @@ func (b *SchemaBuilder) Mods() []Mod {
 	return mods
 }
 
-// PrimaryMods returns only the modules whose constructors should appear
-// on the Query root (i.e. those not installed with SkipConstructor).
-func (b *SchemaBuilder) PrimaryMods() []Mod {
+// PrimaryMods returns the modules whose constructors should appear on
+// the Query root (i.e. those not installed with SkipConstructor), along
+// with the set of names of "main" modules — those whose main-object
+// methods are proxied onto the Query root (i.e. installed with
+// Entrypoint). Toolchain modules are not main modules.
+func (b *SchemaBuilder) PrimaryMods() ([]Mod, map[string]bool) {
 	var mods []Mod
+	proxiedMods := map[string]bool{}
 	for _, e := range b.entries {
-		if !e.opts.SkipConstructor {
-			mods = append(mods, e.mod)
+		if e.opts.SkipConstructor {
+			continue
+		}
+		mods = append(mods, e.mod)
+		if e.opts.Entrypoint {
+			proxiedMods[e.mod.Name()] = true
 		}
 	}
-	return mods
+	return mods, proxiedMods
 }
 
 // Server builds and caches the dagql server for all modules. When any

@@ -360,7 +360,7 @@ func (s *workspaceSchema) checks(
 	},
 ) (*core.CheckGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
-	mods, err := currentWorkspacePrimaryModules(ctx)
+	mods, proxiedMods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +377,7 @@ func (s *workspaceSchema) checks(
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Name(), err)
 		}
-		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Name())
+		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Name(), proxiedMods)
 		filtered, err := filterNodesByInclude(
 			ctx,
 			checkGroup.Checks,
@@ -417,7 +417,7 @@ func (s *workspaceSchema) generators(
 	},
 ) (*core.GeneratorGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
-	mods, err := currentWorkspacePrimaryModules(ctx)
+	mods, proxiedMods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +451,7 @@ func (s *workspaceSchema) generators(
 	var allGenerators []*core.Generator
 	allowSingleModuleCompat := generatorModuleCount == 1
 	for _, entry := range moduleGenerators {
-		reparentWorkspaceTreeRoot(entry.group.Node, entry.mod.Name())
+		reparentWorkspaceTreeRoot(entry.group.Node, entry.mod.Name(), proxiedMods)
 		filtered, err := filterGeneratorsByInclude(
 			ctx,
 			entry.group.Generators,
@@ -489,7 +489,7 @@ func (s *workspaceSchema) services(
 	},
 ) (*core.UpGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
-	mods, err := currentWorkspacePrimaryModules(ctx)
+	mods, proxiedMods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -504,7 +504,7 @@ func (s *workspaceSchema) services(
 		if err != nil {
 			return nil, fmt.Errorf("services from module %q: %w", mod.Name(), err)
 		}
-		reparentWorkspaceTreeRoot(upGroup.Node, mod.Name())
+		reparentWorkspaceTreeRoot(upGroup.Node, mod.Name(), proxiedMods)
 		filtered, err := filterNodesByInclude(
 			ctx,
 			upGroup.Ups,
@@ -647,18 +647,25 @@ func matchWorkspaceIncludePath(
 	return false, nil
 }
 
-func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, error) {
+// currentWorkspacePrimaryModules returns the user modules loaded in the
+// current workspace along with the set of "main" module names. Main
+// modules (the workspace root module or a blueprint) expose their
+// checks, generators, and services at the workspace root without a
+// module-name prefix; non-proxied modules (toolchains) are prefixed with
+// their module name.
+func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, map[string]bool, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	served, err := query.Server.CurrentServedDeps(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("current served deps: %w", err)
+		return nil, nil, fmt.Errorf("current served deps: %w", err)
 	}
 
-	mods := make([]*core.Module, 0, len(served.PrimaryMods()))
-	for _, mod := range served.PrimaryMods() {
+	primary, proxiedMods := served.PrimaryMods()
+	mods := make([]*core.Module, 0, len(primary))
+	for _, mod := range primary {
 		userMod, ok := mod.(*core.Module)
 		if !ok {
 			continue
@@ -668,7 +675,7 @@ func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, error)
 		}
 		mods = append(mods, userMod)
 	}
-	return mods, nil
+	return mods, proxiedMods, nil
 }
 
 // toolchainIgnorePatterns builds a map of toolchain module name → ignore
@@ -730,8 +737,12 @@ func filterNodesByExclude[T any](
 	return filtered, nil
 }
 
-func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string) {
-	if root == nil {
+// reparentWorkspaceTreeRoot wraps the module's tree root with a synthetic
+// parent named modName so check/generator/service paths are prefixed with
+// the module name (e.g. "go:lint"). Proxied workspace modules are skipped so
+// their paths remain unprefixed at the workspace root.
+func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string, proxiedMods map[string]bool) {
+	if root == nil || proxiedMods[modName] {
 		return
 	}
 	root.Parent = &core.ModTreeNode{}
