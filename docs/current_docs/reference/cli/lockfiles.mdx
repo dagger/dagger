@@ -1,0 +1,122 @@
+---
+title: "Lockfiles"
+description: "How Dagger lock modes and lock policies work."
+slug: /reference/cli/lockfiles
+---
+
+Lockfiles let Dagger remember the exact result of selected lookups, so later runs can either reuse that recorded result or intentionally refresh it.
+
+There are two separate concepts:
+
+- A lock **mode** answers: "Where should this run read lookup results from?"
+- A lock **policy** answers: "When live resolution is allowed, should this entry stay fixed or be refreshed?"
+
+## Lock modes
+
+Lock mode is set for a run, typically with `--lock`.
+
+```bash
+dagger --lock=pinned call ...
+```
+
+Available modes:
+
+| Mode | Meaning |
+| --- | --- |
+| `disabled` | Ignore the lockfile completely. |
+| `live` | Resolve everything live and record the result. |
+| `pinned` | Reuse pinned entries, resolve everything else live, and record the result. |
+| `frozen` | Resolve only from the lockfile and fail on misses. |
+
+The easiest way to think about lock modes is:
+
+- `disabled`: feature off
+- `live`: refresh while running
+- `pinned`: prefer stable pins, refresh the rest
+- `frozen`: require a complete lockfile
+
+Typical uses:
+
+- `disabled`: opt out for this run
+- `live`: bootstrap or intentionally refresh while running a workflow
+- `pinned`: day-to-day development and most CI
+- `frozen`: reproducible, hermetic, or offline runs
+
+## Lock policies
+
+Lock policy is stored on each lock entry.
+
+Available policies:
+
+| Policy | Meaning |
+| --- | --- |
+| `pin` | Prefer the recorded value when the lock mode allows it. |
+| `float` | Prefer live resolution when the lock mode allows it. |
+
+The easiest way to think about lock policies is:
+
+- `pin`: stay on this exact resolved result
+- `float`: keep following the live reference when possible
+
+## How mode and policy work together
+
+Mode is chosen by the caller for the current run. Policy is remembered in the lockfile for each entry.
+
+That means:
+
+- mode controls the behavior of this run
+- policy controls whether an existing entry should be preferred or refreshed when live resolution is allowed
+
+For example, if a lock entry has policy `pin`:
+
+- `disabled` ignores it
+- `live` resolves live and rewrites it
+- `pinned` reuses it
+- `frozen` reuses it
+
+If a lock entry has policy `float`:
+
+- `disabled` ignores it
+- `live` resolves live and rewrites it
+- `pinned` resolves live and rewrites it
+- `frozen` reuses the recorded value as-is
+
+If an entry is missing:
+
+- `disabled` resolves live and does not write
+- `live` resolves live and writes
+- `pinned` resolves live and writes
+- `frozen` fails
+
+## Updating lockfiles
+
+Use `dagger lock update` when you want to rewrite lock entries on purpose.
+
+```bash
+dagger lock update
+```
+
+That refreshes entries already recorded in `.dagger/lock` using the current environment's normal ambient authentication.
+
+To refresh or discover entries encountered by a specific command, run that command with `--lock=live`:
+
+```bash
+dagger --lock=live call release
+dagger --lock=live query --doc query.graphql
+```
+
+It is your responsibility to run lock updates in an environment that can authenticate to any private registries or repositories those lookups require.
+
+## Lock-aware operations
+
+These operations currently record and resolve lock entries:
+
+| Operation | Inputs | Default policy |
+| --- | --- | --- |
+| `container.from` | `[imageRef, platform]` | `pin` |
+| `git.head` | `[remoteURL]` | `float` |
+| `git.branch` | `[remoteURL, branchName]` | `float` |
+| `git.tag` | `[remoteURL, tagName]` | `pin` |
+| `git.ref` | `[remoteURL, refName]` | `pin` for tags, `float` otherwise |
+
+`git.commit` is already pinned by its input and does not create lock entries.
