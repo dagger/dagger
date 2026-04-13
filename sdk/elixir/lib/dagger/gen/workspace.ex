@@ -201,6 +201,26 @@ defmodule Dagger.Workspace do
       client: workspace.client
     }
   end
+
+  @doc """
+  Refresh workspace-managed state and return the resulting changeset.
+
+  Currently this refreshes existing lockfile entries only.
+
+  > #### Experimental {: .warning}
+  >
+  > "Experimental workspace update API currently refreshes existing lockfile entries only."
+  """
+  @spec update(t()) :: Dagger.Changeset.t()
+  def update(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("update")
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Workspace do

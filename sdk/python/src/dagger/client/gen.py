@@ -15328,6 +15328,19 @@ class Workspace(Type):
         _ctx = self._select("services", _args)
         return UpGroup(_ctx)
 
+    def update(self) -> Changeset:
+        """Refresh workspace-managed state and return the resulting changeset.
+
+        Currently this refreshes existing lockfile entries only.
+
+        .. caution::
+            Experimental: Experimental workspace update API currently
+            refreshes existing lockfile entries only.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("update", _args)
+        return Changeset(_ctx)
+
 
 class Client(Query):
     """The Dagger client.

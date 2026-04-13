@@ -8,6 +8,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -21,6 +22,10 @@ import (
 	"github.com/moby/locker"
 	"google.golang.org/grpc"
 )
+
+type currentTypeDefsTestServer struct {
+	deps *core.SchemaBuilder
+}
 
 func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool, bool) error {
 	return nil
@@ -144,3 +149,11 @@ func (s *currentTypeDefsTestServer) CloudEngineClient(context.Context, string, s
 }
 
 func (s *currentTypeDefsTestServer) CleanMountNS() *os.File { return nil }
+
+func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context) (*workspace.Lock, bool, error) {
+	return nil, false, nil
+}
+
+func (s *currentTypeDefsTestServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspace.LookupResult) error {
+	return nil
+}

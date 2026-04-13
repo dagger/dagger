@@ -30,7 +30,7 @@ func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error
 		return nil, err
 	}
 	if client.workspace == nil {
-		return nil, fmt.Errorf("workspace not loaded")
+		return nil, fmt.Errorf("%w: workspace not loaded", core.ErrNoCurrentWorkspace)
 	}
 	return client.workspace, nil
 }
