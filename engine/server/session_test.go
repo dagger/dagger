@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
