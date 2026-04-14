@@ -14,9 +14,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.6`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.20.6/
 
 ### Dependencies
+
 - Bump Engine to v0.20.6 by @tiborvass in https://github.com/dagger/dagger/pull/12990
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -29,9 +31,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.5`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.20.5/
 
 ### Dependencies
+
 - Bump Engine to v0.20.5 by @tiborvass in https://github.com/dagger/dagger/pull/12946
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -44,9 +48,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.4`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.20.4/
 
 ### Dependencies
+
 - Bump Engine to v0.20.4 by @tiborvass in https://github.com/dagger/dagger/pull/12930
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -59,9 +65,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.3`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.20.3/
 
 ### Dependencies
+
 - Bump Engine to v0.20.3 by @marcosnils in https://github.com/dagger/dagger/pull/12033
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -74,9 +82,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.2`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.20.2/
 
 ### Dependencies
+
 - Bump Engine to v0.20.2 by @marcosnils in https://github.com/dagger/dagger/pull/12029
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -89,9 +99,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.1`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.20.1/
 
 ### Dependencies
+
 - Bump Engine to v0.20.1 by @TomChv in https://github.com/dagger/dagger/pull/11968
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -104,13 +116,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.0`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.20.0/
 
 ### Dependencies
+
 - Bump Engine to v0.20.0 by @vito in https://github.com/dagger/dagger/pull/11920
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @vito
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -123,9 +139,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.11`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.11/
 
 ### Dependencies
+
 - Bump Engine to v0.19.11 by @sipsma in https://github.com/dagger/dagger/pull/11808
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -138,9 +156,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.10`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.10/
 
 ### Dependencies
+
 - Bump Engine to v0.19.10 by @sipsma in https://github.com/dagger/dagger/pull/11693
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -153,9 +173,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.9`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.9/
 
 ### Dependencies
+
 - Bump Engine to v0.19.9 by @sipsma in https://github.com/dagger/dagger/pull/11646
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -168,9 +190,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.8`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.8/
 
 ### Dependencies
+
 - Bump Engine to v0.19.8 by @grouville in https://github.com/dagger/dagger/pull/11524
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -183,9 +207,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.7`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.7/
 
 ### Dependencies
+
 - Bump Engine to v0.19.7 by @tiborvass in https://github.com/dagger/dagger/pull/11457
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -198,13 +224,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.6`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.6/
 
 ### Dependencies
+
 - Bump Engine to v0.19.6 by @marcosnils in https://github.com/dagger/dagger/pull/11372
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @marcosnils
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -217,13 +247,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.5`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.5/
 
 ### Dependencies
+
 - Bump Engine to v0.19.5 by @sipsma in https://github.com/dagger/dagger/pull/11362
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @sipsma
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -236,13 +270,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.4`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.4/
 
 ### Dependencies
+
 - Bump Engine to v0.19.4 by @sipsma in https://github.com/dagger/dagger/pull/11333
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @sipsma
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -255,9 +293,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.3`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.3/
 
 ### Dependencies
+
 - Bump Engine to v0.19.3 by @marcosnils in https://github.com/dagger/dagger/pull/11286
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -270,9 +310,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.2`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.2/
 
 ### Dependencies
+
 - Bump Engine to v0.19.2 by @TomChv in https://github.com/dagger/dagger/pull/11202
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -285,9 +327,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.1`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.1/
 
 ### Dependencies
+
 - Bump Engine to v0.19.1 by @grouville in https://github.com/dagger/dagger/pull/11196
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -300,9 +344,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.0`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.19.0/
 
 ### Dependencies
+
 - Bump Engine to v0.19.0 by @matipan in https://github.com/dagger/dagger/pull/11147
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -315,9 +361,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.19`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.19/
 
 ### Dependencies
+
 - Bump Engine to v0.18.19 by @jedevc in https://github.com/dagger/dagger/pull/11089
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -330,9 +378,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.18`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.18/
 
 ### Dependencies
+
 - Bump Engine to v0.18.18 by @jedevc in https://github.com/dagger/dagger/pull/11062
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -345,11 +395,13 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.17`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.17/
 
 ### Dependencies
+
 - Updated `gql` dependency to 4.0 by @helderco in https://github.com/dagger/dagger/pull/10976 \
   **Potential breaking change:** Users that constrained the `gql[httpx]` dependency before Dagger v0.18.15 due to a breaking change in that package's latest major version are advised to remove the constraint from v0.18.15+.
 - Bump Engine to v0.18.17 by @jedevc in https://github.com/dagger/dagger/pull/10986
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -362,9 +414,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.16`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.16/
 
 ### Dependencies
+
 - Bump Engine to v0.18.16 by @jedevc in https://github.com/dagger/dagger/pull/10910
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -377,35 +431,42 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.15`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.15/
 
 ### 🔥 Breaking Changes
+
 - Improved error handling and reporting in Python modules with clearer error messages and better debugging support by @helderco in https://github.com/dagger/dagger/pull/10532 \
   The root logger is now setup with a handler that will ultimately show as stderr output in visualization (TUI/Cloud) for the "warning" log level and above.
   
   There’s a possible breaking change if a non async function returns a coroutine. Marked as breaking out of caution as it should have low impact. This would work previously but it’s now validated to avoid confusion as it’s expected to be a mistake and not intentional. An `async` needs to be added to the function’s signature, and an `await` on the call that returns the coroutine (value returned by an async function).
 
 ### Changed
+
 - Default Python version in Dagger modules changed to 3.13 and build backend to uv_build by @helderco in https://github.com/dagger/dagger/pull/10825 \
   The new Python version will only be used in new modules or older modules without
   a pinned Python version.
   
   To upgrade an existing module, update the minimum required Python version in
   `pyproject.toml`:
+
   ```toml
   requires-python = ">=3.13"
   ```
-  Or make sure it's set to `">=3.12"` to remain on Python 3.12. 
+
+  Or make sure it's set to `">=3.12"` to remain on Python 3.12.
   
-  See the [Runtime container](https://docs.dagger.io/api/module-structure#runtime-container) 
+  See the [Runtime container](https://docs.dagger.io/api/module-structure#runtime-container)
   documentation for more information.
 
 ### Fixed
+
 - codegen: fixed invalid function argument default values that contain single quotes by @helderco in https://github.com/dagger/dagger/pull/10778
 - Fix wrong enum value aliases in client bindings by @jedevc in https://github.com/dagger/dagger/pull/10802
 - Update constraints for gql to prevent fetching incompatible version by @jedevc in https://github.com/dagger/dagger/pull/10888
 
 ### Dependencies
+
 - Bump Engine to v0.18.15 by @sipsma in https://github.com/dagger/dagger/pull/10901
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -418,9 +479,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.14`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.14/
 
 ### Dependencies
+
 - Bump Engine to v0.18.14 by @vito in https://github.com/dagger/dagger/pull/10763
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -433,9 +496,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.13`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.13/
 
 ### Dependencies
+
 - Bump Engine to v0.18.13 by @sipsma in https://github.com/dagger/dagger/pull/10758
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -448,9 +513,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.12`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.12/
 
 ### Dependencies
+
 - Bump Engine to v0.18.12 by @sipsma in https://github.com/dagger/dagger/pull/10650
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -463,15 +530,19 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.11`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.11/
 
 ### Added
+
 - Both the enum name and the enum value are exposed to the engine by @jedevc in https://github.com/dagger/dagger/pull/9518
 
 ### Deprecated
+
 - Deprecated `dagger.Enum` in favor of using enum member docstrings for the descriptions by @helderco in https://github.com/dagger/dagger/pull/10600
 
 ### Dependencies
+
 - Bump Engine to v0.18.11 by @jedevc in https://github.com/dagger/dagger/pull/10639
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -484,9 +555,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.10`. [See what changed in th
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.10/
 
 ### Dependencies
+
 - Bump Engine to v0.18.10 by @jedevc in https://github.com/dagger/dagger/pull/10559
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -499,12 +572,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.9`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.9/
 
 ### Fixed
+
 - Fixed incorrect client bindings for `Service.start` and `Service.stop` by @helderco in https://github.com/dagger/dagger/pull/10451
 
 ### Dependencies
+
 - Bump Engine to v0.18.9 by @jedevc in https://github.com/dagger/dagger/pull/10482
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -517,9 +593,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.8`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.8/
 
 ### Dependencies
+
 - Bump Engine to v0.18.8 by @cwlbraa in https://github.com/dagger/dagger/pull/10405
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -532,12 +610,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.7`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.7/
 
 ### Fixed
+
 - Fixed regression where Dagger module functions named `sync` would generate an incorrect client binding by @helderco in https://github.com/dagger/dagger/pull/10381
 
 ### Dependencies
+
 - Bump Engine to v0.18.7 by @jedevc in https://github.com/dagger/dagger/pull/10389
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -550,9 +631,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.6`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.6/
 
 ### Dependencies
+
 - Bump Engine to v0.18.6 by @sipsma in https://github.com/dagger/dagger/pull/10337
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -565,12 +648,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.5`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.5/
 
 ### Fixed
+
 - Fixed regression for older modules still using `requirements.lock`, not vendoring the client library appropriately by @helderco in https://github.com/dagger/dagger/pull/10252
 
 ### Dependencies
+
 - Bump Engine to v0.18.5 by @sipsma in https://github.com/dagger/dagger/pull/10274
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -583,6 +669,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.4`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.4/
 
 ### Added
+
 - Support defining interfaces in Python modules by @helderco in https://github.com/dagger/dagger/pull/8097 \
   To define an interface, create a typing.Protocol class (PEP 0544), decorated with `@dagger.interface`:
   
@@ -592,12 +679,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.4`. [See what changed in tha
       @dagger.function
       async def quack(self) -> str: ...
   ```
+
   Learn more about Dagger interfaces in https://docs.dagger.io/api/interfaces
 
 ### Dependencies
+
 - Bump Engine to v0.18.4 by @jedevc in https://github.com/dagger/dagger/pull/10235
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -610,9 +700,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.3`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.3/
 
 ### Dependencies
+
 - Bump Engine to v0.18.3 by @jedevc in https://github.com/dagger/dagger/pull/10149
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -625,9 +717,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.2`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.2/
 
 ### Dependencies
+
 - Bump Engine to v0.18.2 by @marcosnils in https://github.com/dagger/dagger/pull/10072
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -640,9 +734,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.1`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.1/
 
 ### Dependencies
+
 - Bump Engine to v0.18.1 by @vito in https://github.com/dagger/dagger/pull/10041
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -655,9 +751,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.0`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.18.0/
 
 ### Dependencies
+
 - Bump Engine to v0.18.0 by @sipsma in https://github.com/dagger/dagger/pull/10028
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -670,9 +768,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.17.2`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.17.2/
 
 ### Dependencies
+
 - Bump Engine to v0.17.2 by @jedevc in https://github.com/dagger/dagger/pull/9989
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -685,9 +785,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.17.1`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.17.1/
 
 ### Dependencies
+
 - Bump Engine to v0.17.1 by @cwlbraa in https://github.com/dagger/dagger/pull/9957
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -700,9 +802,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.17.0`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.17.0/
 
 ### Dependencies
+
 - Bump Engine to v0.17.0 by @jedevc in https://github.com/dagger/dagger/pull/9918
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -715,9 +819,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.3`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.16.3/
 
 ### Dependencies
+
 - Bump Engine to v0.16.3 by @jedevc in https://github.com/dagger/dagger/pull/9849
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -730,9 +836,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.2`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.16.2/
 
 ### Dependencies
+
 - Bump Engine to v0.16.2 by @jedevc in https://github.com/dagger/dagger/pull/9728
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -745,9 +853,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.1`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.16.1/
 
 ### Dependencies
+
 - Bump Engine to v0.16.1 by @sipsma in https://github.com/dagger/dagger/pull/9634
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -760,9 +870,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.0`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.16.0/
 
 ### Dependencies
+
 - Bump Engine to v0.16.0 by @sipsma in https://github.com/dagger/dagger/pull/9629
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -775,9 +887,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.4`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.15.4/
 
 ### Dependencies
+
 - Bump Engine to v0.15.4 by @jedevc in https://github.com/dagger/dagger/pull/9562
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -790,9 +904,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.3`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.15.3/
 
 ### Dependencies
+
 - Bump Engine to v0.15.3 by @jedevc in https://github.com/dagger/dagger/pull/9469
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -805,9 +921,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.2`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.15.2/
 
 ### Dependencies
+
 - Bump Engine to v0.15.2 by @jedevc in https://github.com/dagger/dagger/pull/9383
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -820,9 +938,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.1`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.15.1/
 
 ### Dependencies
+
 - Bump Engine to v0.15.1 by @cwlbraa in https://github.com/dagger/dagger/pull/9183
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -835,18 +955,22 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.0`. [See what changed in tha
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.15.0/
 
 ### 🔥 Breaking Changes
+
 - `str(ExecErr)` no longer contains the values of `stdout` or `stderr` by @vito in https://github.com/dagger/dagger/pull/9033 \
   When comparing error values for expected output, use the more specific values.
 - Removed the deprecated `index-url` and `index-extral-url` settings under `[tool.uv]` by @helderco in https://github.com/dagger/dagger/pull/9127 \
   These settings were deprecated in Dagger [v0.14.0](https://github.com/dagger/dagger/releases?q=tag%3Asdk%2Fpython%2Fv0) since uv [v0.4.23](https://github.com/astral-sh/uv/releases/tag/0.4.23) replaced them with the `[[tool.uv.index]]` table. See [Package indexes](https://docs.astral.sh/uv/configuration/indexes/) for the full documentation.
 
 ### Fixed
+
 - Fixed dagger init generating the wrong package name when using a module name that includes a number by @helderco in https://github.com/dagger/dagger/pull/9000
 
 ### Dependencies
+
 - Bump Engine to v0.15.0 by @jedevc in https://github.com/dagger/dagger/pull/9158
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -858,12 +982,13 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.14.0`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.14.0/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.14.0/
 
-
 ### Changed
+
 - New modules will get a package name based on the module name instead of being hardcoded to "main" by @helderco in https://github.com/dagger/dagger/pull/8709 \
   Existing modules should work the same because "main" is used as a fallback. There's also a new setting (using a Python entry point) to precisely tell Dagger where the main object should be imported from.
   
   For example:
+
   ```toml
   # pyproject.toml
   
@@ -872,13 +997,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.14.0`. [See what changed in tha
   ```
 
 ### Deprecated
+
 - In modules, the `index-url` and `index-extra-url` settings in `[tool.uv]` are now deprecated in favor of the new `[[tool.uv.index]]` setting by @helderco in https://github.com/dagger/dagger/pull/8772
   
-
 ### Dependencies
+
 - Bump Engine to v0.14.0 by @sipsma in https://github.com/dagger/dagger/pull/8900
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -890,11 +1017,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.7`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.13.7/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.13.7/
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.7 by @jedevc in https://github.com/dagger/dagger/pull/8829
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -906,15 +1034,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.6`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.13.6/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.13.6/
 
-
 ### Removed
+
 - Removed deprecated `Arg` and top-level functions by @helderco in https://github.com/dagger/dagger/pull/8708 \
   Use `Name` and object methods instead.
 
 ### Dependencies
+
 - Bump Engine to v0.13.6 by @jedevc in https://github.com/dagger/dagger/pull/8770
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -926,11 +1056,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.5`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.13.5/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.13.5/
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.5 by @sipsma in https://github.com/dagger/dagger/pull/8679
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -942,10 +1073,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.4`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.13.4/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.13.4/
 
-
 ### Added
+
 - Set `UV_INDEX_URL` and `UV_EXTRA_INDEX_URL` environment variables globally, if defined in `pyproject.toml` by @ClifHouck in https://github.com/dagger/dagger/pull/8431 \
   Example usage:
+
   ```toml
   [tool.uv]
   index-url = "https://test.pypi.org/simple"
@@ -954,9 +1086,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.4`. [See what changed in tha
   See the documentation for [`index-url`](https://docs.astral.sh/uv/reference/settings/#index-url) and [`extra-index-url`](https://docs.astral.sh/uv/reference/settings/#extra-index-url) to learn more.
 
 ### Dependencies
+
 - Bump Engine to v0.13.4 by @jedevc in https://github.com/dagger/dagger/pull/8661
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -968,11 +1102,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.3`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.13.3/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.13.3/
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.3 by @vito in https://github.com/dagger/dagger/pull/8523
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -984,11 +1119,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.2`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.13.2/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.13.2/
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.2 by @vito in https://github.com/dagger/dagger/pull/8514
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1000,14 +1136,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.1`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.13.1/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.13.1/
 
-
 ### Fixed
+
 - Fixed error message interpolation in Modules by @helderco in https://github.com/dagger/dagger/pull/8477
 
 ### Dependencies
+
 - Bump Engine to v0.13.1 by @sipsma in https://github.com/dagger/dagger/pull/8488
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1019,8 +1157,8 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.0`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.13.0/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.13.0/
 
-
 ### Changed
+
 - Use `uv.lock` by default in new Dagger Modules by @helderco in https://github.com/dagger/dagger/pull/8311 \
   Simpler workflow with uv:
 
@@ -1051,17 +1189,22 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.0`. [See what changed in tha
   To pin to Python 3.11 in a module, either change `requires-python = ">=3.11"` in `pyproject.toml` or create a `.python-version` file with `3.11` as the content.
 
 ### Fixed
+
 - Fix adding documentation to a constructor-only argument (`dataclasses.InitVar`) by @helderco in https://github.com/dagger/dagger/pull/8357 \
   Note that `InitVar` should be the outer most type in order to be processed correctly by `dataclasses.dataclass()`:
+
   ```python
   >>> url: dataclasses.InitVar[Annotated[str, Doc("Some URL")]]
   ```
+
 - Fix `dagger.Ignore` when used in object attributes (dataclass field) by @helderco in https://github.com/dagger/dagger/pull/8359
 
 ### Dependencies
+
 - Bump Engine to v0.13.0 by @jedevc in https://github.com/dagger/dagger/pull/8408
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1073,11 +1216,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.7`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.12.7/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.12.7/
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.7 by @jedevc in https://github.com/dagger/dagger/pull/8299
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1089,8 +1233,8 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.6`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.12.6/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.12.6/
 
-
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1102,8 +1246,8 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.5`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.12.5/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.12.5/
 
-
 ### Deprecated
+
 - `Arg` has been renamed to `Name` by @helderco in https://github.com/dagger/dagger/pull/8109 \
   For code that currently uses `Arg` to avoid a naming conflict with a reserved
   keyword, it can be removed since the SDK will strip the last `_` in an
@@ -1111,6 +1255,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.5`. [See what changed in tha
   `Arg` to `Name`.
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1122,15 +1267,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.4`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.12.4/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.12.4/
 
-
 ### Deprecated
+
 - Top-level functions are deprecated in Modules by @helderco in https://github.com/dagger/dagger/pull/8074 \
   Dagger Functions (decorated with `@dagger.function`) that are not a part of an object will be unsupported in a future release. Move the Function to an instance method of a @dagger.object_type decorated class.
 
 ### Dependencies
+
 - update uv to 0.2.32 in modules by @helderco in https://github.com/dagger/dagger/pull/8072
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1142,15 +1289,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.3`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.12.3/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.12.3/
 
-
 ### Added
+
 - normalize names in a module to avoid escape hatch for reserved keywords by @helderco in https://github.com/dagger/dagger/pull/8014
 
 ### Dependencies
+
 - update uv to 0.2.27 in modules by @helderco in https://github.com/dagger/dagger/pull/8013
 - Bump Engine to v0.12.3 by @github-actions in https://github.com/dagger/dagger/pull/8039
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1162,11 +1311,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.2`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.12.2/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.12.2/
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.2 by @github-actions in https://github.com/dagger/dagger/pull/8006
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1178,11 +1328,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.1`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.12.1/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.12.1/
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.1 by @github-actions in https://github.com/dagger/dagger/pull/7978
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1194,23 +1345,27 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.0`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.12.0/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.12.0/
 
-
 ### 🔥 Breaking Changes
+
 - Don't return `Void` by @helderco in https://github.com/dagger/dagger/pull/7773
 
 ### Changed
+
 - Improvements in the runtime module by @helderco in https://github.com/dagger/dagger/pull/7880
 - Added global setting for uv to use the system's certificate store for TLS by @helderco in https://github.com/dagger/dagger/pull/7880
 - No longer installing dependencies in `dagger develop` to avoid a chicken and egg situation by @helderco in https://github.com/dagger/dagger/pull/7880
 - Experimental uv.lock support for better project management workflow (in preview) by @helderco in https://github.com/dagger/dagger/pull/7880
 
 ### Fixed
+
 - Restore telemetry initialization in modules by @helderco in https://github.com/dagger/dagger/pull/7811
 
 ### Dependencies
+
 - Bump Engine to v0.12.0 by @github-actions in https://github.com/dagger/dagger/pull/7903
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1222,11 +1377,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.9`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.9/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.9/
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.9 by @github-actions in https://github.com/dagger/dagger/pull/7746
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1238,14 +1394,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.8`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.8/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.8/
 
-
 ### Fixed
+
 - Incorrect code generation for some `Self` arguments by @helderco in https://github.com/dagger/dagger/pull/7654
 
 ### Dependencies
+
 - Bump Engine to v0.11.8 by @github-actions in https://github.com/dagger/dagger/pull/7690
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1257,11 +1415,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.7`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.7/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.7/
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.7 by @github-actions in https://github.com/dagger/dagger/pull/7615
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1273,11 +1432,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.6`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.6/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.6/
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.6 by @github-actions in https://github.com/dagger/dagger/pull/7516
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1289,11 +1449,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.5`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.5/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.5/
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.5 by @github-actions in https://github.com/dagger/dagger/pull/7482
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1305,11 +1466,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.4`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.4/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.4/
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.4 by @github-actions in https://github.com/dagger/dagger/pull/7345
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1321,11 +1483,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.3`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.3/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.3/
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.3 by @github-actions in https://github.com/dagger/dagger/pull/7318
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1337,14 +1500,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.2`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.2/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.2/
 
-
 ### Fixed
+
 - Fix unnecessary telemetry initialization by @helderco in https://github.com/dagger/dagger/pull/7167
 
 ### Dependencies
+
 - Bump Engine to v0.11.2 by @github-actions in https://github.com/dagger/dagger/pull/7204
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1356,17 +1521,20 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.1`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.1/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.1/
 
-
 ### Added
+
 - Support custom OpenTelemetry spans by @helderco in https://github.com/dagger/dagger/pull/7015
 
 ### Fixed
+
 - Fix lock file updates in existing modules by @helderco in https://github.com/dagger/dagger/pull/7064
 
 ### Dependencies
+
 - Bump Engine to v0.11.1 by @github-actions in https://github.com/dagger/dagger/pull/7100
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1378,17 +1546,20 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.0`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.11.0/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.11.0/
 
-
 ### Changed
+
 - Improve performance in the Python runtime module by @helderco in https://github.com/dagger/dagger/pull/6884
 
 ### Fixed
+
 - Fixed a few typing issues in the generated client by @helderco in https://github.com/dagger/dagger/pull/6998
 
 ### Dependencies
+
 - Bump Engine to v0.11.0 by @github-actions in https://github.com/dagger/dagger/pull/7016
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1400,11 +1571,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.3`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.10.3/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.10.3/
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.3 by @github-actions in https://github.com/dagger/dagger/pull/6936
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1416,11 +1588,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.2`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.10.2/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.10.2/
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.2 by @github-actions in https://github.com/dagger/dagger/pull/6871
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1432,11 +1605,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.1`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.10.1/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.10.1/
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.1 by @github-actions in https://github.com/dagger/dagger/pull/6826
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1448,11 +1622,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.0`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.10.0/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.10.0/
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.0 by @github-actions in https://github.com/dagger/dagger/pull/6758
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1464,14 +1639,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.11`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.9.11/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.11/
 
-
 ### Fixed
+
 - Fix type hinting in PyCharm by @jpnauta in https://github.com/dagger/dagger/pull/6686
 
 ### Dependencies
+
 - Bump Engine to v0.9.11 by @github-actions in https://github.com/dagger/dagger/pull/6700
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1483,11 +1660,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.10`. [See what changed in tha
 🐍 https://pypi.org/project/dagger-io/v0.9.10/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.10/
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.10 by @github-actions in https://github.com/dagger/dagger/pull/6656
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1499,11 +1677,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.9`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.9.9/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.9/
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.9 by @github-actions in https://github.com/dagger/dagger/pull/6636
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1515,11 +1694,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.8`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.9.8/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.8/
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.8 by @github-actions in https://github.com/dagger/dagger/pull/6557
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1531,11 +1711,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.7`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.9.7/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.7/
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.7 by @github-actions in https://github.com/dagger/dagger/pull/6460
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1547,11 +1728,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.6`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.9.6/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.6/
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.6 by @github-actions in https://github.com/dagger/dagger/pull/6410
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1563,11 +1745,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.5`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.9.5/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.5/
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.5 by @github-actions in https://github.com/dagger/dagger/pull/6309
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1579,17 +1762,20 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.4`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.9.4/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.4/
 
-
 ### 🔥 Breaking Changes
+
 - Move global client to `dag` by @helderco in https://github.com/dagger/dagger/pull/6183
 
 ### Fixed
+
 - Fix codegen docstring ending in `"` by @helderco in https://github.com/dagger/dagger/pull/6104
 
 ### Dependencies
+
 - Bump Engine to v0.9.4 by @github-actions in https://github.com/dagger/dagger/pull/6239
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1601,11 +1787,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.3`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.9.3/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.3/
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.3 by @github-actions in https://github.com/dagger/dagger/pull/6061
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1634,11 +1821,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.1`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.9.1/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.1/
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.1 by @github-actions in https://github.com/dagger/dagger/pull/5969
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1672,11 +1860,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.8`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.8.8/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.8.8/
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.8 by @github-actions in https://github.com/dagger/dagger/pull/5877
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1688,11 +1877,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.7`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.8.7/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.8.7/
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.7 by @github-actions in https://github.com/dagger/dagger/pull/5799
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1704,11 +1894,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.6`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.8.6/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.8.6/
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.6 by @github-actions in https://github.com/dagger/dagger/pull/5795
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1720,14 +1911,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.5`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.8.5/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.8.5/
 
-
 ### Added
+
 - Experimental default client by @helderco in https://github.com/dagger/dagger/pull/5723
 
 ### Dependencies
+
 - Bump Engine to v0.8.5 by @github-actions in https://github.com/dagger/dagger/pull/5779
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1739,11 +1932,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.4`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.8.4/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.8.4/
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.4 by @github-actions in https://github.com/dagger/dagger/pull/5657
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1755,11 +1949,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.3`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.8.3/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.8.3/
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.3 by @github-actions in https://github.com/dagger/dagger/pull/5643
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1771,11 +1966,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.2`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.8.2/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.8.2/
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.2 by @github-actions in https://github.com/dagger/dagger/pull/5613
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1787,11 +1983,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.1`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.8.1/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.8.1/
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.1 by @github-actions in https://github.com/dagger/dagger/pull/5581
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1804,18 +2001,22 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.0`. [See what changed in that
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.8.0/
 
 ### 🔥 Breaking Changes
+
 - Enforce keyword usage for optional arguments by @helderco in https://github.com/dagger/dagger/pull/5508
 - Remove sync client by @helderco in https://github.com/dagger/dagger/pull/5514
 - Restructure internal packages and modules by @helderco in https://github.com/dagger/dagger/pull/5558
 
 ### Added
+
 - Add status updates during automatic provisioning by @helderco in https://github.com/dagger/dagger/pull/5522
 - Show warning on version mismatch between engine and SDK by @helderco in https://github.com/dagger/dagger/pull/5315
 
 ### Dependencies
+
 - Bump Engine to v0.8.0 by @github-actions in https://github.com/dagger/dagger/pull/5567
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1828,12 +2029,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.6.4`. [See what changed in that
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.6.4/
 
 ### Changed
+
 - Exposed explicit `with_` methods instead of generic in fewer types by @helderco in https://github.com/dagger/dagger/pull/5447
 
 ### Dependencies
+
 - Bump Engine to v0.6.4 by @github-actions in https://github.com/dagger/dagger/pull/5489
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1846,17 +2050,21 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.6.3`. [See what changed in that
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.6.3/
 
 ### Added
+
 - Python Project Commands: Create thin wrapper around strawberry by @helderco in https://github.com/dagger/dagger/pull/5300
 
 ### Fixed
+
 - Fix returning lists of objects by @helderco in https://github.com/dagger/dagger/pull/5375
 
 ### Dependencies
+
 - Update strawberry, make typer optional & remove rich by @helderco in https://github.com/dagger/dagger/pull/5351
 - Migrate back to hatch by @helderco in https://github.com/dagger/dagger/pull/5401
 - Bump Engine to v0.6.3 by @github-actions in https://github.com/dagger/dagger/pull/5407
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)

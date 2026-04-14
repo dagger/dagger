@@ -11,16 +11,19 @@ This doc focuses on protocol flow, engine sync behavior, and cache interactions 
 Client exposes two gRPC services per session:
 
 1. `FileSync` (source)
+
 - streams host filesystem stats/data to engine
 - supports stat-only and single-file fast paths
 - can mark gitignored entries in stats
 
 2. `FileSend` (target)
+
 - receives filesystem/file streams from engine for exports
 
 ### Protocol (`internal/fsutil`)
 
 Wire protocol uses packetized stat/data/request frames:
+
 - sender walks filesystem and emits stats
 - receiver requests file contents by stat index when needed
 - paths are normalized for cross-platform transfer semantics
@@ -30,6 +33,7 @@ Wire protocol uses packetized stat/data/request frames:
 ### Snapshot entry (`FileSyncer.Snapshot`)
 
 High-level flow:
+
 1. resolve client metadata and absolute input path via stat-only filesync
 2. get/create a `ClientFilesyncMirror`-owned mutable mirror snapshot
 3. sync parent dirs when needed
@@ -38,6 +42,7 @@ High-level flow:
 ### `remoteFS` (`engine/filesync/remotefs.go`)
 
 `remoteFS` reads from client stream:
+
 - exposes `Walk` and `ReadFile`
 - lazily requests file data
 - skips content requests for gitignored regular files
@@ -45,6 +50,7 @@ High-level flow:
 ### `localFS` (`engine/filesync/localfs.go`)
 
 `localFS` applies diff from remote stream into per-client mirror:
+
 - compares remote and local view
 - applies mkdir/symlink/hardlink/write/delete changes
 - computes content hash for resulting subtree
@@ -55,12 +61,14 @@ High-level flow:
 There are two distinct cache layers involved now:
 
 1. The dagql-level mirror object:
+
 - `core.ClientFilesyncMirror`
 - persistable for stable clients via `_clientFilesyncMirror`
 - keyed by stable client ID plus drive
 - owns the mutable snapshot that acts as the long-lived mirror backing store
 
 2. The in-package filesync change cache:
+
 - `engine/filesync/change_cache.go`
 - key: local path (string)
 - value: `*ChangeWithStat`
@@ -72,6 +80,7 @@ The dagql object owns the mirror snapshot's lifecycle. The in-package change cac
 ## Why the Change Cache Exists
 
 `localFS.Sync` uses change-cache entries to:
+
 - dedupe equivalent concurrent mutations on same path
 - detect mid-sync host mutations (conflict detection)
 - avoid false conflicts after sync completes by releasing all held entries
@@ -87,6 +96,7 @@ If a cached/applied change does not match expected change, sync fails with confl
 ## GitIgnore Behavior
 
 With gitignore-enabled import:
+
 - client marks entries as ignored in stats
 - server treats ignored paths as present-but-ignored
 - updates/deletes under ignored prefixes are skipped to keep mirror stable and avoid cross-sync interference
@@ -94,6 +104,7 @@ With gitignore-enabled import:
 ## Content Reuse
 
 After sync operations:
+
 - content hash is computed for subtree
 - if matching immutable ref already exists, reuse it
 - otherwise copy changed paths into new ref and commit
@@ -116,6 +127,7 @@ Either way, each actual import still returns an immutable directory/file snapsho
 ## Export Path (Engine -> Client)
 
 Exports use client `FileSend` service:
+
 - tree exports via fsutil receive
 - single-file/tar streams via chunked bytes
 

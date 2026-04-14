@@ -8,7 +8,6 @@ Therefore source code from the host is mounted into a build container, where car
 
 The resulting binary is then exported to the host machine.
 
-
 ## [Backend](./backend/src/main.rs)
 
 This CI pipeline is an example of how to use the Dagger SDK to automate the build of a backend service using **Axum** framework.
@@ -16,7 +15,7 @@ This CI pipeline is an example of how to use the Dagger SDK to automate the buil
 The pipeline demonstrates how to split a more complex pipeline into different functions and contains the following steps:
 
 1. **Building the Backend**
-2. **Creating the Production Image** 
+2. **Creating the Production Image**
 3. **Publishing the Image**
 
 **Clap** is used to configure the build.

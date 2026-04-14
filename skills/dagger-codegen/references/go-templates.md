@@ -61,11 +61,13 @@ Same as standalone client, minus `Connect()`/`Close()`.
 Go modules need two passes because generated code depends on user types.
 
 **Pass 0 (Partial):**
+
 - Generate skeleton `dagger.gen.go`
 - Create starter `main.go` if missing
 - `IsPartial() = true` → no main() yet
 
 **Pass 1 (Complete):**
+
 - Load Go package, introspect user types
 - Generate full `invoke()` dispatch
 - `IsPartial() = false`

@@ -10,6 +10,7 @@ Guidelines for writing design proposals for Dagger features.
 ## Before Writing
 
 **Always research first:**
+
 1. Check existing skills (dagger-codegen, cache-expert, etc.) for relevant context
 2. Look at related code in the Dagger codebase:
    - GraphQL schema: `core/schema/*.go`
@@ -81,6 +82,7 @@ One line.
 
 - Previous: [Part N-1](link)
 - Next: [Part N+1](link) or "Part N+1: Title (coming soon)"
+
 ```
 
 ## Style
@@ -156,5 +158,6 @@ gh api --method POST /gists/GIST_ID/comments -f body="## Changelog
 ## Related Skills
 
 Check for other Dagger skills that may help with research:
+
 - `dagger-codegen` - SDK codegen, templates, bindings
 - `cache-expert` - Caching internals, invalidation
