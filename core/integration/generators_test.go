@@ -114,7 +114,7 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 	}
 }
 
-func (GeneratorsSuite) TestGeneratorsAsBlueprint(ctx context.Context, t *testctx.T) {
+func (GeneratorsSuite) TestGeneratorsViaLegacyBlueprintInit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
 		name string
@@ -129,7 +129,7 @@ func (GeneratorsSuite) TestGeneratorsAsBlueprint(ctx context.Context, t *testctx
 			modGen, err := generatorsTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.WithWorkdir("app").
-				With(daggerExec("init", "--blueprint", "../"+tc.path))
+				With(daggerModuleExec("init", "--blueprint", "../"+tc.path))
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
@@ -167,7 +167,7 @@ func (GeneratorsSuite) TestGeneratorsAsBlueprint(ctx context.Context, t *testctx
 	}
 }
 
-func (GeneratorsSuite) TestGeneratorsAsToolchain(ctx context.Context, t *testctx.T) {
+func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
 		name string
@@ -183,8 +183,8 @@ func (GeneratorsSuite) TestGeneratorsAsToolchain(ctx context.Context, t *testctx
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				With(daggerExec("init")).
-				With(daggerExec("install", "../"+tc.path))
+				With(daggerWorkspaceExec("init")).
+				With(daggerWorkspaceInstall("../" + tc.path))
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.

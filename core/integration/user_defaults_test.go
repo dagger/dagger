@@ -66,7 +66,9 @@ func (UserDefaultsSuite) TestRemoteDirectory(ctx context.Context, t *testctx.T) 
 	require.Contains(t, output, "package main")
 }
 
-func (UserDefaultsSuite) TestLocalBlueprint(ctx context.Context, t *testctx.T) {
+// TestCompatBlueprintDefaults keeps coverage for legacy blueprint-driven
+// defaults resolution while workspace config becomes the current path.
+func (UserDefaultsSuite) TestCompatBlueprintDefaults(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile("./app/dagger.json", `{"name":"app", "blueprint": {"name":"defaults", "source":"../defaults"}}`)
@@ -136,7 +138,9 @@ DEFAULTS_MESSAGE_NAME=planete-outer
 	}
 }
 
-func (UserDefaultsSuite) TestLocalToolchain(ctx context.Context, t *testctx.T) {
+// TestCompatToolchainDefaults keeps coverage for legacy toolchain-driven
+// defaults resolution while workspace config becomes the current path.
+func (UserDefaultsSuite) TestCompatToolchainDefaults(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile("./app/dagger.json", `{"name":"app", "toolchains": [{"name":"defaults", "source":"../defaults"}]}`)

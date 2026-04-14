@@ -88,7 +88,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
@@ -116,7 +116,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
@@ -155,7 +155,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		initGitRepo(ctx, t, workdir)
 		initGitRepo(ctx, t, depDir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
 
@@ -187,9 +187,9 @@ entrypoint = true
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--name=app", "--sdk=go")
+		_, err = hostDaggerModuleExec(ctx, t, workdir, "init", "--name=app", "--sdk=go")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
@@ -223,7 +223,7 @@ entrypoint = true
 		require.NoError(t, os.MkdirAll(emptyDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
 		require.NoError(t, err)
 
 		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./empty")
@@ -274,7 +274,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t 
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
@@ -299,16 +299,16 @@ source = "../existing"
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--name=app", "--sdk=go", ".")
+		_, err = hostDaggerModuleExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go", ".")
+		_, err = hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "module", "update", "--mod=./app", "dep")
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "module", "update", "--mod=./app", "dep")
 		requireErrOut(t, err, `updating local dependencies is not supported`)
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
@@ -421,14 +421,14 @@ func (WorkspaceModulesSuite) TestModuleScopedDependencyCommands(ctx context.Cont
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "init")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--name=app", "--sdk=go", ".")
+		_, err = hostDaggerModuleExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--name=dep", "--sdk=go", ".")
+		_, err = hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
 		require.NoError(t, err)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
 		require.NoError(t, err)
 		require.Equal(t, `Installed module dependency "dep"`, strings.TrimSpace(string(out)))
 

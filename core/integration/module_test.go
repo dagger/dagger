@@ -8055,6 +8055,9 @@ func (m *Test) Str() string {
 	require.Equal(t, "yoyoyo", out)
 }
 
+// daggerExec preserves historical top-level module mutation syntax for older
+// integration coverage. New workspace-era tests should prefer daggerExecRaw or
+// the explicit module/workspace helpers below.
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	args = rewriteLegacyModuleCommandTestArgs(args)
 	return daggerExecRaw(args...)
@@ -8076,6 +8079,18 @@ func daggerExecFail(args ...string) dagger.WithContainerFunc {
 			Expect:                        dagger.ReturnTypeFailure,
 		})
 	}
+}
+
+func daggerModuleExec(args ...string) dagger.WithContainerFunc {
+	return daggerExecRaw(append([]string{"module"}, args...)...)
+}
+
+func daggerWorkspaceExec(args ...string) dagger.WithContainerFunc {
+	return daggerExecRaw(append([]string{"workspace"}, args...)...)
+}
+
+func daggerWorkspaceInstall(args ...string) dagger.WithContainerFunc {
+	return daggerExecRaw(append([]string{"install"}, args...)...)
 }
 
 func daggerNonNestedExec(args ...string) dagger.WithContainerFunc {
@@ -8200,7 +8215,9 @@ func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerF
 	return fileContents(cfgPath, string(cfgBytes))
 }
 
-// command for a dagger cli call direct on the host
+// hostDaggerCommand preserves the same legacy command rewriting as daggerExec.
+// New workspace-era tests should prefer hostDaggerCommandRaw or explicit
+// module/workspace helpers.
 func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
 	args = rewriteLegacyModuleCommandTestArgs(args)
 	return hostDaggerCommandRaw(ctx, t, workdir, args...)
@@ -8234,6 +8251,11 @@ func hostDaggerExecRaw(ctx context.Context, t testing.TB, workdir string, args .
 		err = fmt.Errorf("%s: %w", string(output), err)
 	}
 	return output, err
+}
+
+func hostDaggerModuleExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
+	t.Helper()
+	return hostDaggerExecRaw(ctx, t, workdir, append([]string{"module"}, args...)...)
 }
 
 // Most integration tests still express module mutation through the old top-level

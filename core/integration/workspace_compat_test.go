@@ -40,7 +40,7 @@ func (WorkspaceCompatSuite) TestLegacyBlueprintInit(ctx context.Context, t *test
 
 		modGen := legacyBlueprintTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--blueprint=../hello"))
+			With(daggerModuleExec("init", "--blueprint=../hello"))
 
 		out, err := modGen.
 			With(daggerExec("call", "message")).
@@ -86,7 +86,7 @@ func (WorkspaceCompatSuite) TestLegacyBlueprintInit(ctx context.Context, t *test
 				c := connect(ctx, t)
 				modGen := legacyBlueprintTestEnv(t, c).
 					WithWorkdir("app").
-					With(daggerExec("init", "--blueprint="+tc.blueprintPath))
+					With(daggerModuleExec("init", "--blueprint="+tc.blueprintPath))
 
 				out, err := modGen.
 					With(daggerExec("call", "hello")).
@@ -143,7 +143,7 @@ func (WorkspaceCompatSuite) TestCompatWarning(ctx context.Context, t *testctx.T)
 	blueprintDir := filepath.Join(workdir, "blueprint")
 	require.NoError(t, os.MkdirAll(blueprintDir, 0o755))
 
-	_, err := hostDaggerExec(ctx, t, blueprintDir, "module", "init", "--sdk=go", "--name=hello")
+	_, err := hostDaggerModuleExec(ctx, t, blueprintDir, "init", "--sdk=go", "--name=hello")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(blueprintDir, "main.go"), []byte(`package main
 
@@ -190,7 +190,7 @@ func (WorkspaceCompatSuite) TestLegacyWorkspaceDirectLoadErrors(ctx context.Cont
 
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
 		require.Error(t, err)
-		requireErrOut(t, err, "This module must be migrated to a workspace. Run 'dagger -W .'")
+		requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.\n\nTry: dagger -W .\n\nTo learn more: https://docs.dagger.io/reference/upgrade-to-workspaces")
 	})
 
 	t.Run("local workspace module source tells the user to migrate that project", func(ctx context.Context, t *testctx.T) {
