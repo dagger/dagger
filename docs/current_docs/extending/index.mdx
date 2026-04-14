@@ -1,47 +1,75 @@
 ---
 slug: /extending
-title: "Overview"
-description: "In addition to providing a set of core functions and types, the Dagger API can also be extended with custom Dagger Functions and custom types."
+title: "Developing Modules"
+description: "Write your own Dagger modules to automate tasks specific to your project, team, or the broader community."
 ---
 
-The Dagger API is extensible and shareable by design.
+# Developing Modules
 
-- You can extend the [Dagger API](../getting-started/api.mdx) by creating Dagger modules
-- You can also embed a [Dagger SDK](../getting-started/api/clients-sdk.mdx) directly into your application
+When pre-built modules don't cover your needs, you can write your own. A module is a package of functions — written in any supported SDK — that extends the Dagger API.
 
-Both approaches let you access Dagger features for container operations, secret management, and more.
+## When to develop a module
 
-## Modules
+**Install first.** Browse the [Daggerverse](https://daggerverse.dev) and check if someone has already built what you need. `dagger install` is always faster than writing code.
 
-In addition to providing a set of core functions and types, the Dagger API can be extended with custom Dagger Functions and custom types. This is achieved by creating (or installing) Dagger modules. You are encouraged to write your own Dagger modules and share them with others.
+**Then customize.** If an existing module is close but not quite right, you can often configure it via your workspace config rather than forking it.
 
-When a Dagger module is loaded, the Dagger API is [dynamically extended](../reference/api/internals.mdx#dynamic-api-extension) with new Dagger Functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions, plus the new Dagger Functions provided by that module.
+**Then build.** Write a module when:
 
-Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
+- Your workflow is specific to your project and no general module fits
+- You need to compose multiple tools in a way that's unique to your stack
+- You want to enforce team conventions (naming, structure, policies)
+- You want to share reusable automation with the community
 
-## Custom applications
+## The progression
 
-When using a Dagger SDK in your application:
+Most modules start small and grow:
 
-1. Install the SDK for your preferred language
-2. Initialize a Dagger client in your code
-3. Use Dagger API methods to implement your workflow
-4. Run your application with `dagger run`
+1. **Project module** — Lives in your repo, serves your team. Quick to write, doesn't need to be general.
+2. **Team module** — Shared across repos in your org. More polished API, configuration options.
+3. **Community module** — Published for anyone to use. Well-documented, versioned, tested.
 
-The following SDKs are available for embedding Dagger into your application:
+You don't have to aim for step 3. A project module that makes your team faster is valuable on its own.
 
-- [Go →](./custom-applications/go.mdx) Use the Dagger Go SDK to embed Dagger into your Go applications
-- [TypeScript →](./custom-applications/typescript.mdx) Use the Dagger TypeScript SDK to embed Dagger into your TypeScript applications
-- [Python →](./custom-applications/python.mdx) Use the Dagger Python SDK to embed Dagger into your Python applications
-- [PHP →](./custom-applications/php.mdx) Use the Dagger PHP SDK to embed Dagger into your PHP applications
+## Choose an SDK
 
-## Modules vs custom applications
+| SDK | Best for | Trade-off |
+|-----|----------|-----------|
+| **Dang** | Dagger-native workflows, fastest path | DSL — no external libraries |
+| **Go** | Performance, systems work, existing Go codebases | Verbose, requires codegen |
+| **Python** | Scripting, data workflows, existing Python tools | Runtime overhead |
+| **TypeScript** | Web toolchains, existing Node.js tools | Runtime overhead |
 
-Here is a quick summary of differences between these two approaches.
+**Dang** is Dagger's own DSL. It maps directly to the Dagger API with no codegen, making it the fastest way to write a module. If your module is primarily orchestrating containers and files, Dang is the right choice.
 
-| Capability | Dagger modules | Custom applications |
-|:---|---:|---:|
-| Pre-initialized Dagger API client | ✅ | 🚫 |
-| Direct host access | 🚫 | ✅ |
-| Direct third-party module access | ✅ | 🚫 |
-| Cross-language interoperability | ✅ | 🚫 |
+If you need to call external libraries (e.g., a Go parser, a Python ML library), use the corresponding SDK.
+
+## Get started
+
+```shell
+# Create a new module
+dagger module init --sdk=go my-module
+
+# Or with Dang
+dagger module init --sdk=dang my-module
+```
+
+This creates a module in `.dagger/modules/my-module/` with scaffolding for your chosen SDK.
+
+## Core guide
+
+The [core guide](./guide.mdx) walks through module development concepts using Dang. The patterns apply to all SDKs — Dang just keeps the focus on Dagger concepts without language noise.
+
+## SDK guides
+
+For language-specific setup, idioms, and patterns:
+
+- [Go SDK Guide](./custom-applications/go.mdx)
+- [Python SDK Guide](./custom-applications/python.mdx)
+- [TypeScript SDK Guide](./custom-applications/typescript.mdx)
+- [PHP SDK Guide](./custom-applications/php.mdx)
+
+## Reference
+
+- [Module Development Reference](./modules/modules.mdx) — Detailed reference for all module features
+- [Module Configuration Schema](https://docs.dagger.io/reference/dagger.schema.json) — `dagger.json` format

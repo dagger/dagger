@@ -366,7 +366,7 @@ func (src *ModuleSource) DirectLegacyWorkspaceLoadError() error {
 		ref = src.AsString()
 	}
 	return quietCLIError{
-		message: fmt.Sprintf("This module must be migrated to a workspace. Run 'dagger -W %s'", ref),
+		message: fmt.Sprintf("This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.\n\nTry: dagger -W %s\n\nTo learn more: https://docs.dagger.io/reference/upgrade-to-workspaces", ref),
 	}
 }
 

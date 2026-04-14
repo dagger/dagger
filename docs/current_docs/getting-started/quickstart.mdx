@@ -1,0 +1,100 @@
+---
+title: "Quickstart"
+slug: /quickstart
+description: "Get CI running in your project in 5 minutes"
+---
+
+# Quickstart
+
+In this quickstart, you'll add automated checks to a project and connect them to Dagger Cloud — no code required.
+
+## Requirements
+
+- [Dagger CLI installed](/getting-started/installation)
+- [Git](https://git-scm.com/downloads) and a container runtime ([Docker](https://docs.docker.com/engine/install/), [Podman](../reference/container-runtimes/podman.mdx), or similar)
+
+## Get the example project
+
+```shell
+git clone https://github.com/dagger/hello-dagger.git
+cd hello-dagger
+```
+
+## Install modules
+
+```shell
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+dagger install github.com/dagger/prettier
+```
+
+This creates a `.dagger/config.toml` workspace configuration and adds three modules — a linter, a test runner, and a code formatter.
+
+## Run checks
+
+```shell
+dagger check
+```
+
+All three modules run their checks concurrently. You should see each one pass.
+
+## Explore what's available
+
+```shell
+dagger functions
+```
+
+Each installed module exposes functions you can call directly:
+
+```shell
+dagger call eslint lint
+dagger call vitest test
+dagger call prettier check
+```
+
+## Connect to Dagger Cloud
+
+```shell
+dagger login
+```
+
+This creates a free [Dagger Cloud](https://dagger.io/cloud) account. Once authenticated, every `dagger check` emits a trace link you can open in your browser to visualize what happened.
+
+Run checks again:
+
+```shell
+dagger check
+```
+
+Click the trace link in the output to see a full breakdown of each step, timing, and cache behavior.
+
+## Run checks in the cloud
+
+```shell
+dagger check --cloud
+```
+
+Same checks, running on managed cloud infrastructure instead of your local machine.
+
+## Automate with Cloud Checks
+
+Connect Cloud Checks to your repository to run `dagger check` on every push — no CI YAML required.
+
+See [Dagger Cloud](/reference/configuration/cloud) to set this up.
+
+## Next steps
+
+**Try it on your own project:**
+
+```shell
+cd your-project
+dagger install github.com/dagger/intro
+dagger check
+```
+
+The `intro` module detects your project and guides you toward making checks green.
+
+**Learn more:**
+
+- [Core Concepts](/core-concepts) — Understand workspaces, modules, functions, and checks
+- [Developing Modules](/extending) — Write your own modules

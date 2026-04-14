@@ -1,0 +1,44 @@
+---
+title: "Checking Your Code"
+slug: /using-dagger/checking
+description: "Run automated checks to validate code quality, security, and standards"
+---
+
+# Checking Your Code
+
+```shell
+dagger check
+```
+
+Runs all checks in your workspace in parallel. Exits non-zero if any check fails. Results are identical on your laptop, in CI, and in the cloud.
+
+## List checks
+
+```shell
+dagger check -l
+```
+
+## Filter checks
+
+```shell
+dagger check eslint:*          # all checks from a module
+dagger check vitest:test       # a single check
+dagger check *:lint            # pattern across modules
+```
+
+## In CI
+
+```yaml
+# GitHub Actions
+- run: dagger check
+```
+
+## In the cloud
+
+Run checks on managed infrastructure:
+
+```shell
+dagger check --scale-out
+```
+
+Or automate checks on every push with [Cloud Checks](https://dagger.cloud) — no runners to configure. Set up with `dagger login`.

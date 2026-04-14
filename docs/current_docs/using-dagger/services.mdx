@@ -1,0 +1,23 @@
+---
+title: "Running Services"
+slug: /using-dagger/services
+description: "Start dev services and expose them locally"
+---
+
+# Running Services
+
+Start a service from any module function that returns a `Container` or `Service`:
+
+```shell
+dagger call dev-server up --ports 8080:8080
+```
+
+The service runs in a container and is tunneled to your local machine. Stop with Ctrl+C.
+
+## Port mapping
+
+```shell
+dagger call app up --ports 3000:8080              # map specific ports
+dagger call app up --ports 3000:8080 --ports 5432:5432  # multiple ports
+dagger call app up --random                        # auto-assign local ports
+```
