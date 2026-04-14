@@ -108,6 +108,22 @@ func TestWorkspaceAPIPath(t *testing.T) {
 	})
 }
 
+func TestWorkspaceFilterWithDirectoryArgs(t *testing.T) {
+	args := workspaceFilterWithDirectoryArgs(nil, core.CopyFilter{
+		Include: []string{"app/**"},
+		Exclude: []string{".git"},
+	})
+
+	require.Len(t, args, 4)
+	require.Equal(t, "path", args[0].Name)
+	require.Equal(t, "source", args[1].Name)
+	require.Equal(t, "include", args[2].Name)
+	require.Equal(t, "exclude", args[3].Name)
+	for _, arg := range args {
+		require.NotEqual(t, "directory", arg.Name)
+	}
+}
+
 func TestResolveWorkspaceRefreshModules(t *testing.T) {
 	t.Run("explicit selection keeps order and removes duplicates", func(t *testing.T) {
 		cfg := &workspace.Config{

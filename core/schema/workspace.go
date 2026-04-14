@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
 )
@@ -220,24 +221,7 @@ func (s *workspaceSchema) resolveRootfs(
 	}
 
 	if len(filter.Include) > 0 || len(filter.Exclude) > 0 {
-		withDirArgs := []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString("/")},
-			{Name: "directory", Value: dagql.NewID[*core.Directory](ctxDir.ID())},
-		}
-		if len(filter.Include) > 0 {
-			includes := make(dagql.ArrayInput[dagql.String], len(filter.Include))
-			for i, p := range filter.Include {
-				includes[i] = dagql.String(p)
-			}
-			withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "include", Value: includes})
-		}
-		if len(filter.Exclude) > 0 {
-			excludes := make(dagql.ArrayInput[dagql.String], len(filter.Exclude))
-			for i, p := range filter.Exclude {
-				excludes[i] = dagql.String(p)
-			}
-			withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
-		}
+		withDirArgs := workspaceFilterWithDirectoryArgs(ctxDir.ID(), filter)
 		err = srv.Select(ctx, srv.Root(), &ctxDir,
 			dagql.Selector{Field: "directory"},
 			dagql.Selector{Field: "withDirectory", Args: withDirArgs},
@@ -248,6 +232,28 @@ func (s *workspaceSchema) resolveRootfs(
 	}
 
 	return ctxDir, nil
+}
+
+func workspaceFilterWithDirectoryArgs(dirID *call.ID, filter core.CopyFilter) []dagql.NamedInput {
+	withDirArgs := []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString("/")},
+		{Name: "source", Value: dagql.NewID[*core.Directory](dirID)},
+	}
+	if len(filter.Include) > 0 {
+		includes := make(dagql.ArrayInput[dagql.String], len(filter.Include))
+		for i, p := range filter.Include {
+			includes[i] = dagql.String(p)
+		}
+		withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "include", Value: includes})
+	}
+	if len(filter.Exclude) > 0 {
+		excludes := make(dagql.ArrayInput[dagql.String], len(filter.Exclude))
+		for i, p := range filter.Exclude {
+			excludes[i] = dagql.String(p)
+		}
+		withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
+	}
+	return withDirArgs
 }
 
 func (s *workspaceSchema) directory(
