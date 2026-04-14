@@ -107,6 +107,64 @@ func TestWorkspaceAPIPath(t *testing.T) {
 	})
 }
 
+func TestWorkspaceDirectoryDagOpPath(t *testing.T) {
+	ctx := context.Background()
+
+	localWS := func(wsPath string) *core.Workspace {
+		ws := &core.Workspace{Path: wsPath}
+		ws.SetHostPath("/host/workspace")
+		return ws
+	}
+	remoteWS := func(wsPath string) *core.Workspace {
+		return &core.Workspace{Path: wsPath}
+	}
+
+	t.Run("local workspace always reports root", func(t *testing.T) {
+		got, err := workspaceDirectoryDagOpPath(ctx, localWS("."), workspaceDirectoryArgs{Path: "/sub"})
+		require.NoError(t, err)
+		require.Equal(t, "/", got)
+	})
+
+	t.Run("remote workspace with filter reports root", func(t *testing.T) {
+		got, err := workspaceDirectoryDagOpPath(ctx, remoteWS("."), workspaceDirectoryArgs{
+			Path:       "/sub",
+			CopyFilter: core.CopyFilter{Include: []string{"*.go"}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, "/", got)
+
+		got, err = workspaceDirectoryDagOpPath(ctx, remoteWS("."), workspaceDirectoryArgs{
+			Path:       "/sub",
+			CopyFilter: core.CopyFilter{Exclude: []string{"node_modules/"}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, "/", got)
+	})
+
+	t.Run("remote workspace at boundary root reports root", func(t *testing.T) {
+		got, err := workspaceDirectoryDagOpPath(ctx, remoteWS("."), workspaceDirectoryArgs{Path: "/"})
+		require.NoError(t, err)
+		require.Equal(t, "/", got)
+	})
+
+	// Regression: Workspace.directory on a remote workspace must report the
+	// requested subpath. Reporting "/" (the wrapper default) made the DagOp
+	// evaluate the full rootfs while the outer Directory's Dir stayed at "/",
+	// so consumers like WithDirectory and Entries saw the repo root instead of
+	// the subdirectory the caller asked for.
+	t.Run("remote workspace with absolute subpath reports subpath", func(t *testing.T) {
+		got, err := workspaceDirectoryDagOpPath(ctx, remoteWS("."), workspaceDirectoryArgs{Path: "/helm/dagger"})
+		require.NoError(t, err)
+		require.Equal(t, "/helm/dagger", got)
+	})
+
+	t.Run("remote workspace with relative path resolves from workspace dir", func(t *testing.T) {
+		got, err := workspaceDirectoryDagOpPath(ctx, remoteWS("services/payment"), workspaceDirectoryArgs{Path: "src"})
+		require.NoError(t, err)
+		require.Equal(t, "/services/payment/src", got)
+	})
+}
+
 func modTreeNode(parts ...string) *core.ModTreeNode {
 	parent := &core.ModTreeNode{}
 	for _, part := range parts {

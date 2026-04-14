@@ -30,6 +30,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			DagOpDirectoryWrapper(
 				srv, s.directory,
 				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
+				WithPathFn(workspaceDirectoryDagOpPath),
 			), dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
 				`Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.`).
@@ -267,6 +268,26 @@ func workspaceAPIPath(resolvedPath string) string {
 		return "/"
 	}
 	return "/" + strings.TrimPrefix(clean, "/")
+}
+
+// workspaceDirectoryDagOpPath tells DagOpDirectoryWrapper which path to record
+// as the resulting Directory's Dir.
+//
+// For remote workspaces with no filter, resolveRootfs returns the subpath via
+// Directory.Dir while the LLB still points at the full rootfs; we must carry
+// that subpath through the wrapper so downstream consumers (WithDirectory,
+// Entries, content hashing) see the right view. Local workspaces (which
+// resolve through host.directory) and filtered remote workspaces (which copy
+// via withDirectory) both produce LLB rooted at the requested content, so
+// "/" is correct.
+func workspaceDirectoryDagOpPath(_ context.Context, ws *core.Workspace, args workspaceDirectoryArgs) (string, error) {
+	if ws.HostPath() != "" {
+		return "/", nil
+	}
+	if len(args.Include) > 0 || len(args.Exclude) > 0 {
+		return "/", nil
+	}
+	return workspaceAPIPath(resolveWorkspacePath(args.Path, ws.Path)), nil
 }
 
 type workspaceFindUpArgs struct {
