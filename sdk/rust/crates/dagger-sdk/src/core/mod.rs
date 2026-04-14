@@ -12,4 +12,4 @@ pub mod session;
 
 mod version;
 
-pub const DAGGER_ENGINE_VERSION: &'static str = version::DAGGER_ENGINE_VERSION;
+pub const DAGGER_ENGINE_VERSION: &str = version::DAGGER_ENGINE_VERSION;

@@ -20,6 +20,7 @@ type EngineConn interface {
 
 type Config struct {
 	Workdir              string
+	Workspace            string
 	LogOutput            io.Writer
 	RunnerHost           string
 	Conn                 EngineConn
@@ -48,6 +49,9 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 	if ok {
 		if cfg.Workdir != "" {
 			return nil, fmt.Errorf("cannot configure workdir for existing session (please use --workdir or host.directory with absolute paths instead)")
+		}
+		if cfg.Workspace != "" {
+			return nil, fmt.Errorf("cannot configure workspace for existing session")
 		}
 		return conn, nil
 	}

@@ -254,6 +254,51 @@ func (ElixirSuite) TestConstructorArg(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "Hello, Elixir!", out)
 }
 
+func (ElixirSuite) TestEnumArg(ctx context.Context, t *testctx.T) {
+	t.Run("can use enum", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("echo-enum", "--value=FOO")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "FOO", out)
+	})
+
+	t.Run("default value in Elixir should be set", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("enum-value")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "FOO", out)
+	})
+
+	t.Run("can use enum with default", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("enum-value", "--value=GAR")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "GAR", out)
+	})
+
+	t.Run("wrong enum value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := elixirModule(t, c, "defaults").
+			With(daggerCall("enum-value", "--value=BAZ")).
+			Stdout(ctx)
+		requireErrOut(t, err, "invalid argument \"BAZ\" for \"--value\" flag: value should be one of BAR,FOO,GAR")
+		requireErrOut(t, err, "Run 'dagger call enum-value --help' for usage.")
+	})
+}
+
 // Ensure the module is working properly with the `Req` adapter.
 func (ElixirSuite) TestReqAdapter(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)

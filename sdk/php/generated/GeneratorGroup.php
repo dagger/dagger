@@ -11,7 +11,7 @@ namespace Dagger;
 class GeneratorGroup extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The combined changes from the generators execution
+     * The combined changes from the last run of the generators
      *
      * If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
      *
@@ -36,7 +36,7 @@ class GeneratorGroup extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Whether the generated changeset is empty or not
+     * Whether the generated changeset from the last run is empty or not
      */
     public function isEmpty(): bool
     {

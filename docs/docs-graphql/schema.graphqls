@@ -1,3 +1,14 @@
+"""Controls the caching behavior of a function."""
+directive @cache(
+  """The cache policy to use."""
+  policy: FunctionCachePolicy
+
+  """
+  The time-to-live for cached results, as a duration string (e.g. "5m", "1h30s"). Only valid with the Default policy.
+  """
+  ttl: String
+) on FIELD_DEFINITION
+
 """Indicates that this function is a check."""
 directive @check on FIELD_DEFINITION
 
@@ -26,6 +37,9 @@ directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
 
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
+
+"""Indicates that this function returns a service for dagger up."""
+directive @up on FIELD_DEFINITION
 
 """
 A standardized address to load containers, directories, secrets, and other
@@ -90,6 +104,9 @@ type Binding {
 
   """Retrieve the binding value, as type Container"""
   asContainer: Container!
+
+  """Retrieve the binding value, as type DiffStat"""
+  asDiffStat: DiffStat!
 
   """Retrieve the binding value, as type Directory"""
   asDirectory: Directory!
@@ -227,6 +244,11 @@ type Changeset {
 
   """The older/lower snapshot to compare against."""
   before: Directory!
+
+  """
+  Structured per-path diff statistics (kind and line counts) for this changeset.
+  """
+  diffStats: [DiffStat!]!
 
   """Applies the diff represented by this changeset to a path on the host."""
   export(
@@ -1691,6 +1713,46 @@ The `CurrentModuleID` scalar type represents an identifier for an object of type
 """
 scalar CurrentModuleID
 
+type DiffStat {
+  """Number of added lines for this path."""
+  addedLines: Int!
+
+  """A unique identifier for this DiffStat."""
+  id: DiffStatID!
+
+  """Type of change."""
+  kind: DiffStatKind!
+
+  """Previous path of the file, set only for renames."""
+  oldPath: String
+
+  """Path of the changed file or directory."""
+  path: String!
+
+  """Number of removed lines for this path."""
+  removedLines: Int!
+}
+
+"""
+The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
+"""
+scalar DiffStatID
+
+"""The type of change for a diff stat entry."""
+enum DiffStatKind {
+  """A file or directory was added."""
+  ADDED
+
+  """A file was modified."""
+  MODIFIED
+
+  """A file or directory was removed."""
+  REMOVED
+
+  """A file was renamed."""
+  RENAMED
+}
+
 """A directory."""
 type Directory {
   """Converts this directory to a local git repository"""
@@ -2517,6 +2579,27 @@ type Env {
   Contextual path arguments will be populated using the environment's workspace.
   """
   withCurrentModule: Env!
+
+  """Create or update a binding of type DiffStat in the environment"""
+  withDiffStatInput(
+    """The name of the binding"""
+    name: String!
+
+    """The DiffStat value to assign to the binding"""
+    value: DiffStatID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired DiffStat output to be assigned in the environment"""
+  withDiffStatOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
 
   """Create or update a binding of type Directory in the environment"""
   withDirectoryInput(
@@ -3634,7 +3717,7 @@ The `GeneratedCodeID` scalar type represents an identifier for an object of type
 scalar GeneratedCodeID
 
 type Generator {
-  """The generated changeset"""
+  """The generated changeset from the last run"""
   changes: Changeset!
 
   """Whether the generator complete"""
@@ -3646,7 +3729,7 @@ type Generator {
   """A unique identifier for this Generator."""
   id: GeneratorID!
 
-  """Wether changeset from the generator execution is empty or not"""
+  """Whether changeset from the last generator run is empty or not"""
   isEmpty: Boolean!
 
   """Return the fully qualified name of the generator"""
@@ -3664,7 +3747,7 @@ type Generator {
 
 type GeneratorGroup {
   """
-  The combined changes from the generators execution
+  The combined changes from the last run of the generators
 
   If any conflict occurs, for instance if the same file is modified by multiple
   generators, or if a file is both modified and deleted, an error is raised and
@@ -3680,7 +3763,7 @@ type GeneratorGroup {
   """A unique identifier for this GeneratorGroup."""
   id: GeneratorGroupID!
 
-  """Whether the generated changeset is empty or not"""
+  """Whether the generated changeset from the last run is empty or not"""
   isEmpty: Boolean!
 
   """Return a list of individual generators and their details"""
@@ -5025,6 +5108,9 @@ type Query {
 
   """Load a CurrentModule from its ID."""
   loadCurrentModuleFromID(id: CurrentModuleID!): CurrentModule!
+
+  """Load a DiffStat from its ID."""
+  loadDiffStatFromID(id: DiffStatID!): DiffStat!
 
   """Load a Directory from its ID."""
   loadDirectoryFromID(id: DirectoryID!): Directory!

@@ -433,6 +433,16 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Load a DiffStat from its ID.
+     */
+    public function loadDiffStatFromID(DiffStatId|DiffStat $id): DiffStat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDiffStatFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\DiffStat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Directory from its ID.
      */
     public function loadDirectoryFromID(DirectoryId|Directory $id): Directory

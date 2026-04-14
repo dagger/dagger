@@ -195,7 +195,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 		var defaultInput *FunctionCallArgValue
 		if hasUserDefault {
 			// 1. User-defined user default
-			userDefaultInput, err := userDefault.CallInput()
+			userDefaultInput, err := userDefault.CallInput(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -357,6 +357,24 @@ func (ud *UserDefault) IsObject() bool {
 
 func (ud *UserDefault) IsList() bool {
 	return ud.Arg.TypeDef.Kind == TypeDefKindList
+}
+
+func (ud *UserDefault) CallInput(ctx context.Context) (*FunctionCallArgValue, error) {
+	if !ud.IsObject() && (!ud.IsList() || ud.Arg.TypeDef.AsList.Value.ElementTypeDef.Kind != TypeDefKindObject) {
+		return ud.UserDefaultPrimitive.CallInput()
+	}
+	value, err := ud.Value(ctx)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, ud.errorf(err, "marshal object default")
+	}
+	return &FunctionCallArgValue{
+		Name:  ud.Arg.Name,
+		Value: encoded,
+	}, nil
 }
 
 func (ud *UserDefault) Value(ctx context.Context) (any, error) {
@@ -574,8 +592,17 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
 
+	// Build a set of args explicitly provided in the call (not schema defaults).
+	// The args map includes schema default values, but the call ID only has
+	// args the user actually set. We need this distinction so that .env user
+	// defaults can override schema defaults (e.g. Python's "= None").
+	explicitArgs := map[string]bool{}
+	for _, idArg := range req.CacheKey.ID.Args() {
+		explicitArgs[idArg.Name()] = true
+	}
+
 	for _, argMetadata := range fn.metadata.Args {
-		if args[argMetadata.Name] != nil {
+		if explicitArgs[argMetadata.Name] {
 			// was explicitly set by the user, skip
 			continue
 		}
@@ -1102,7 +1129,6 @@ func (fn *ModuleFunction) loadContextualArg(
 	// Legacy compat: resolve +defaultPath from workspace root for migrated
 	// blueprints/toolchains instead of the module's own source directory.
 	if fn.mod.LegacyDefaultPath {
-		console(ctx, "WARNING: module %q uses legacy-default-path; port to workspace API and remove this flag", fn.mod.Name())
 		return fn.loadLegacyDefaultPathArg(ctx, dag, arg)
 	}
 

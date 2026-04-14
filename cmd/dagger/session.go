@@ -24,6 +24,7 @@ var (
 	sessionLabels               = enginetel.NewLabelFlag()
 	sessionVersion              string
 	sessionSkipWorkspaceModules bool
+	sessionWorkspace            string
 )
 
 func sessionCmd() *cobra.Command {
@@ -38,6 +39,7 @@ func sessionCmd() *cobra.Command {
 	// This is not used by kept for backward compatibility.
 	// We don't want SDKs failing because this flag is not defined.
 	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'dagger.io/sdk.name:python' --label 'dagger.io/sdk.version:0.5.2' --label 'dagger.io/sdk.async:true')")
+	cmd.Flags().StringVarP(&sessionWorkspace, "workspace", "W", "", "select the workspace to load")
 	cmd.Flags().BoolVar(&sessionSkipWorkspaceModules, "skip-workspace-modules", false, "skip loading workspace modules")
 	return cmd
 }
@@ -83,11 +85,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	port := l.Addr().(*net.TCPAddr).Port
 
-	return withEngine(ctx, client.Params{
-		SecretToken:          sessionToken.String(),
-		Version:              sessionVersion,
-		SkipWorkspaceModules: sessionSkipWorkspaceModules,
-	}, func(ctx context.Context, sess *client.Client) error {
+	return withEngine(ctx, sessionClientParams(sessionToken.String()), func(ctx context.Context, sess *client.Client) error {
 		// Requests maintain their original trace context from the client, rather
 		// than appearing beneath the dagger session span, so in order to see any
 		// logs we need to reveal everything.
@@ -123,4 +121,16 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	})
+}
+
+func sessionClientParams(secretToken string) client.Params {
+	params := client.Params{
+		SecretToken:          secretToken,
+		Version:              sessionVersion,
+		SkipWorkspaceModules: sessionSkipWorkspaceModules,
+	}
+	if sessionWorkspace != "" {
+		params.Workspace = &sessionWorkspace
+	}
+	return params
 }

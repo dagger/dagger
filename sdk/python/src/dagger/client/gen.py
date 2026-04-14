@@ -56,6 +56,11 @@ class CurrentModuleID(Scalar):
     object of type CurrentModule."""
 
 
+class DiffStatID(Scalar):
+    """The `DiffStatID` scalar type represents an identifier for an object
+    of type DiffStat."""
+
+
 class DirectoryID(Scalar):
     """The `DirectoryID` scalar type represents an identifier for an
     object of type Directory."""
@@ -373,6 +378,22 @@ class ChangesetsMergeConflict(Enum):
 
     FAIL_EARLY = "FAIL_EARLY"
     """Fail before attempting merge if file-level conflicts are detected between any changesets"""
+
+
+class DiffStatKind(Enum):
+    """The type of change for a diff stat entry."""
+
+    ADDED = "ADDED"
+    """A file or directory was added."""
+
+    MODIFIED = "MODIFIED"
+    """A file was modified."""
+
+    REMOVED = "REMOVED"
+    """A file or directory was removed."""
+
+    RENAMED = "RENAMED"
+    """A file was renamed."""
 
 
 class ExistsType(Enum):
@@ -783,6 +804,12 @@ class Binding(Type):
         _ctx = self._select("asContainer", _args)
         return Container(_ctx)
 
+    def as_diff_stat(self) -> "DiffStat":
+        """Retrieve the binding value, as type DiffStat"""
+        _args: list[Arg] = []
+        _ctx = self._select("asDiffStat", _args)
+        return DiffStat(_ctx)
+
     def as_directory(self) -> "Directory":
         """Retrieve the binding value, as type Directory"""
         _args: list[Arg] = []
@@ -1109,6 +1136,14 @@ class Changeset(Type):
         _args: list[Arg] = []
         _ctx = self._select("before", _args)
         return Directory(_ctx)
+
+    async def diff_stats(self) -> list["DiffStat"]:
+        """Structured per-path diff statistics (kind and line counts) for this
+        changeset.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("diffStats", _args)
+        return await _ctx.execute_object_list(DiffStat)
 
     async def export(self, path: str) -> str:
         """Applies the diff represented by this changeset to a path on the host.
@@ -3856,6 +3891,136 @@ class CurrentModule(Type):
 
 
 @typecheck
+class DiffStat(Type):
+    async def added_lines(self) -> int:
+        """Number of added lines for this path.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedLines", _args)
+        return await _ctx.execute(int)
+
+    async def id(self) -> DiffStatID:
+        """A unique identifier for this DiffStat.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        DiffStatID
+            The `DiffStatID` scalar type represents an identifier for an
+            object of type DiffStat.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(DiffStatID)
+
+    async def kind(self) -> DiffStatKind:
+        """Type of change.
+
+        Returns
+        -------
+        DiffStatKind
+            The type of change for a diff stat entry.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(DiffStatKind)
+
+    async def old_path(self) -> str | None:
+        """Previous path of the file, set only for renames.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("oldPath", _args)
+        return await _ctx.execute(str | None)
+
+    async def path(self) -> str:
+        """Path of the changed file or directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
+
+    async def removed_lines(self) -> int:
+        """Number of removed lines for this path.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedLines", _args)
+        return await _ctx.execute(int)
+
+
+@typecheck
 class Directory(Type):
     """A directory."""
 
@@ -5890,6 +6055,48 @@ class Env(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("withCurrentModule", _args)
+        return Env(_ctx)
+
+    def with_diff_stat_input(
+        self,
+        name: str,
+        value: DiffStat,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type DiffStat in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The DiffStat value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDiffStatInput", _args)
+        return Env(_ctx)
+
+    def with_diff_stat_output(self, name: str, description: str) -> Self:
+        """Declare a desired DiffStat output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDiffStatOutput", _args)
         return Env(_ctx)
 
     def with_directory_input(
@@ -8557,7 +8764,7 @@ class GeneratedCode(Type):
 @typecheck
 class Generator(Type):
     def changes(self) -> Changeset:
-        """The generated changeset"""
+        """The generated changeset from the last run"""
         _args: list[Arg] = []
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
@@ -8627,7 +8834,7 @@ class Generator(Type):
         return await _ctx.execute(GeneratorID)
 
     async def is_empty(self) -> bool:
-        """Wether changeset from the generator execution is empty or not
+        """Whether changeset from the last generator run is empty or not
 
         Returns
         -------
@@ -8715,7 +8922,7 @@ class GeneratorGroup(Type):
         on_conflict: ChangesetsMergeConflict
         | None = ChangesetsMergeConflict.FAIL_EARLY,
     ) -> Changeset:
-        """The combined changes from the generators execution
+        """The combined changes from the last run of the generators
 
         If any conflict occurs, for instance if the same file is modified by
         multiple generators, or if a file is both modified and deleted, an
@@ -8760,7 +8967,7 @@ class GeneratorGroup(Type):
         return await _ctx.execute(GeneratorGroupID)
 
     async def is_empty(self) -> bool:
-        """Whether the generated changeset is empty or not
+        """Whether the generated changeset from the last run is empty or not
 
         Returns
         -------
@@ -12461,6 +12668,14 @@ class Query(Root):
         _ctx = self._select("loadCurrentModuleFromID", _args)
         return CurrentModule(_ctx)
 
+    def load_diff_stat_from_id(self, id: DiffStatID) -> DiffStat:
+        """Load a DiffStat from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadDiffStatFromID", _args)
+        return DiffStat(_ctx)
+
     def load_directory_from_id(self, id: DirectoryID) -> Directory:
         """Load a Directory from its ID."""
         _args = [
@@ -14908,6 +15123,9 @@ __all__ = [
     "ContainerID",
     "CurrentModule",
     "CurrentModuleID",
+    "DiffStat",
+    "DiffStatID",
+    "DiffStatKind",
     "Directory",
     "DirectoryID",
     "Engine",

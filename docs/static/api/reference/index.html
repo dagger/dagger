@@ -62,6 +62,7 @@
               <li><a href="#query-loadCloudFromID">loadCloudFromID</a></li>
               <li><a href="#query-loadContainerFromID">loadContainerFromID</a></li>
               <li><a href="#query-loadCurrentModuleFromID">loadCurrentModuleFromID</a></li>
+              <li><a href="#query-loadDiffStatFromID">loadDiffStatFromID</a></li>
               <li><a href="#query-loadDirectoryFromID">loadDirectoryFromID</a></li>
               <li><a href="#query-loadEngineCacheEntryFromID">loadEngineCacheEntryFromID</a></li>
               <li><a href="#query-loadEngineCacheEntrySetFromID">loadEngineCacheEntrySetFromID</a></li>
@@ -149,6 +150,9 @@
               <li><a href="#definition-ContainerID">ContainerID</a></li>
               <li><a href="#definition-CurrentModule">CurrentModule</a></li>
               <li><a href="#definition-CurrentModuleID">CurrentModuleID</a></li>
+              <li><a href="#definition-DiffStat">DiffStat</a></li>
+              <li><a href="#definition-DiffStatID">DiffStatID</a></li>
+              <li><a href="#definition-DiffStatKind">DiffStatKind</a></li>
               <li><a href="#definition-Directory">Directory</a></li>
               <li><a href="#definition-DirectoryID">DirectoryID</a></li>
               <li><a href="#definition-Engine">Engine</a></li>
@@ -2009,6 +2013,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-CurrentModuleID"><code>CurrentModuleID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadDiffStatFromID" class="operation operation-query" data-traverse-target="query-loadDiffStatFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadDiffStatFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a DiffStat from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-DiffStat"><code>DiffStat!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DiffStatID"><code>DiffStatID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -5315,6 +5372,10 @@
                         <td> Retrieve the binding value, as type Container </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asDiffStat" href="#Binding-asDiffStat"><code>asDiffStat</code></a> - <span class="property-type"><a href="#definition-DiffStat"><code>DiffStat!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type DiffStat </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asDirectory" href="#Binding-asDirectory"><code>asDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Directory </td>
                       </tr>
@@ -5638,6 +5699,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Changeset-before" href="#Changeset-before"><code>before</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> The older/lower snapshot to compare against. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-diffStats" href="#Changeset-diffStats"><code>diffStats</code></a> - <span class="property-type"><a href="#definition-DiffStat"><code>[DiffStat!]!</code></a></span> </td>
+                        <td> Structured per-path diff statistics (kind and line counts) for this changeset. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Changeset-export" href="#Changeset-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -7806,6 +7871,125 @@
               </div>
             </div>
           </section>
+          <section id="definition-DiffStat" class="definition definition-object" data-traverse-target="definition-DiffStat">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DiffStat</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-addedLines" href="#DiffStat-addedLines"><code>addedLines</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> Number of added lines for this path. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-id" href="#DiffStat-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DiffStatID"><code>DiffStatID!</code></a></span> </td>
+                        <td> A unique identifier for this DiffStat. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-kind" href="#DiffStat-kind"><code>kind</code></a> - <span class="property-type"><a href="#definition-DiffStatKind"><code>DiffStatKind!</code></a></span> </td>
+                        <td> Type of change. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-oldPath" href="#DiffStat-oldPath"><code>oldPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> Previous path of the file, set only for renames. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-path" href="#DiffStat-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Path of the changed file or directory. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-removedLines" href="#DiffStat-removedLines"><code>removedLines</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> Number of removed lines for this path. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DiffStatID" class="definition definition-scalar" data-traverse-target="definition-DiffStatID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DiffStatID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>DiffStatID</code> scalar type represents an identifier for an object of type DiffStat.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DiffStatKind" class="definition definition-enum" data-traverse-target="definition-DiffStatKind">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DiffStatKind</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The type of change for a diff stat entry.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>ADDED</code></p>
+                        </td>
+                        <td> A file or directory was added. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>MODIFIED</code></p>
+                        </td>
+                        <td> A file was modified. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>REMOVED</code></p>
+                        </td>
+                        <td> A file or directory was removed. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>RENAMED</code></p>
+                        </td>
+                        <td> A file was renamed. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"ADDED"</span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-Directory" class="definition definition-object" data-traverse-target="definition-Directory">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -9445,6 +9629,52 @@
                         <td>
                           <p>Installs the current module into the environment, exposing its functions to the model</p>
                           <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withDiffStatInput" href="#Env-withDiffStatInput"><code>withDiffStatInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type DiffStat in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-DiffStatID"><code>DiffStatID!</code></a></span></h6>
+                                <p>The DiffStat value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withDiffStatOutput" href="#Env-withDiffStatOutput"><code>withDiffStatOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired DiffStat output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
@@ -11956,7 +12186,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-changes" href="#Generator-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
-                        <td> The generated changeset </td>
+                        <td> The generated changeset from the last run </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-completed" href="#Generator-completed"><code>completed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
@@ -11972,7 +12202,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-isEmpty" href="#Generator-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Wether changeset from the generator execution is empty or not </td>
+                        <td> Whether changeset from the last generator run is empty or not </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-name" href="#Generator-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -12016,7 +12246,7 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-changes" href="#GeneratorGroup-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
                         <td>
-                          <p>The combined changes from the generators execution</p>
+                          <p>The combined changes from the last run of the generators</p>
                           <p>If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.</p>
                           <p>Set &#39;continueOnConflicts&#39; flag to force to merge the changes in a &#39;last write wins&#39; strategy.</p>
                         </td>
@@ -12040,7 +12270,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-isEmpty" href="#GeneratorGroup-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Whether the generated changeset is empty or not </td>
+                        <td> Whether the generated changeset from the last run is empty or not </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-list" href="#GeneratorGroup-list"><code>list</code></a> - <span class="property-type"><a href="#definition-Generator"><code>[Generator!]!</code></a></span> </td>

@@ -41,7 +41,7 @@ defmodule Dagger.Mod.Object.TypeDef do
     |> Dagger.TypeDef.with_optional(true)
   end
 
-  def define(_dag, type_def, module) do
+  def define(dag, type_def, module) do
     name = module.__name__()
 
     case module.__kind__() do
@@ -58,7 +58,7 @@ defmodule Dagger.Mod.Object.TypeDef do
         end
 
       :enum ->
-        Dagger.TypeDef.with_enum(type_def, name)
+        Dagger.Mod.Module.define_enum(dag, module)
     end
   end
 end
