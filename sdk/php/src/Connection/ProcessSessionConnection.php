@@ -23,6 +23,7 @@ class ProcessSessionConnection extends Connection implements LoggerAwareInterfac
 
     public function __construct(
         private readonly string $workDir,
+        private readonly bool $loadWorkspaceModules,
         private readonly CliDownloader $cliDownloader
     ) {
         $this->logger = new NullLogger();
@@ -48,6 +49,19 @@ class ProcessSessionConnection extends Connection implements LoggerAwareInterfac
             '--label',
             "dagger.io/sdk.version:{$sdkVersion}",
         ]);
+        if ($this->loadWorkspaceModules) {
+            $process = new Process([
+                $cliBinPath,
+                'session',
+                '--workdir',
+                $this->workDir,
+                '--label',
+                'dagger.io/sdk.name:php',
+                '--label',
+                "dagger.io/sdk.version:{$sdkVersion}",
+                '--load-workspace-modules',
+            ]);
+        }
 
         $process->setTimeout(null);
         $process->setInput(new InputStream());

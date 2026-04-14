@@ -16,6 +16,9 @@ pub struct Config {
     /// The maximum time in milliseconds for establishing a connection to the server.
     /// Defaults to 10 seconds.
     pub timeout_ms: u64,
+    #[builder(default = "false")]
+    /// Opt into loading workspace modules for this connection.
+    pub load_workspace_modules: bool,
     #[builder(default = "None")]
     /// The maximum time in milliseconds for executing a request.
     /// Defaults to no timeout.
@@ -38,6 +41,7 @@ impl Default for Config {
             workdir_path: None,
             config_path: None,
             timeout_ms: 10 * 1000,
+            load_workspace_modules: false,
             execute_timeout_ms: None,
             logger: None,
         }
@@ -56,6 +60,7 @@ impl Config {
             workdir_path,
             config_path,
             timeout_ms: timeout_ms.unwrap_or(10 * 1000),
+            load_workspace_modules: false,
             execute_timeout_ms,
             logger,
         }

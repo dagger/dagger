@@ -110,6 +110,8 @@ def run(cfg: Config, path: str) -> subprocess.Popen[str]:
         args.extend(["--workdir", str(Path(cfg.workdir).absolute())])
     if cfg.config_path:
         args.extend(["--project", str(Path(cfg.config_path).absolute())])
+    if cfg.load_workspace_modules:
+        args.append("--load-workspace-modules")
 
     # Determine stderr target. If the stream doesn't have a file descriptor
     # (e.g. StringIO), use a PIPE and forward via a background thread so that

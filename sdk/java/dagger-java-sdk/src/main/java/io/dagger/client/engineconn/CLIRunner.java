@@ -16,14 +16,17 @@ class CLIRunner implements Runnable {
   static final Logger LOG = LoggerFactory.getLogger(CLIRunner.class);
 
   private final String workingDir;
+  private final boolean loadWorkspaceModules;
   private FluentProcess process;
   private ConnectParams params;
   private boolean failed = false;
   private ExecutorService executorService;
   private final CLIDownloader cliDownloader;
 
-  public CLIRunner(String workingDir, CLIDownloader cliDownloader) throws IOException {
+  public CLIRunner(String workingDir, boolean loadWorkspaceModules, CLIDownloader cliDownloader)
+      throws IOException {
     this.workingDir = workingDir;
+    this.loadWorkspaceModules = loadWorkspaceModules;
     this.cliDownloader = cliDownloader;
   }
 
@@ -60,8 +63,9 @@ class CLIRunner implements Runnable {
   }
 
   public void start() throws IOException {
-    this.process =
-        FluentProcess.start(
+    var command =
+        new java.util.ArrayList<String>(
+            java.util.List.of(
                 getCLIPath(),
                 "session",
                 "--workdir",
@@ -69,8 +73,11 @@ class CLIRunner implements Runnable {
                 "--label",
                 "dagger.io/sdk.name:java",
                 "--label",
-                "dagger.io/sdk.version:" + Provisioning.getSDKVersion())
-            .withAllowedExitCodes(137);
+                "dagger.io/sdk.version:" + Provisioning.getSDKVersion()));
+    if (loadWorkspaceModules) {
+      command.add("--load-workspace-modules");
+    }
+    this.process = FluentProcess.start(command.toArray(new String[0])).withAllowedExitCodes(137);
     LOG.debug("Opening session: {}", process.toString());
     executorService = Executors.newSingleThreadExecutor(r -> new Thread(r, "dagger-runner"));
     executorService.execute(this);

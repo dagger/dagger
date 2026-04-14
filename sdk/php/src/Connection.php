@@ -12,7 +12,7 @@ abstract class Connection
 {
     protected ?Client $client;
 
-    public static function get(string $workingDir = ''): Connection
+    public static function get(string $workingDir = '', bool $loadWorkspaceModules = false): Connection
     {
         $connection = static::newEnvSession();
 
@@ -24,7 +24,7 @@ abstract class Connection
         }
 
         if (null === $connection) {
-            $connection = static::newProcessSession($workingDir, new CliDownloader());
+            $connection = static::newProcessSession($workingDir, $loadWorkspaceModules, new CliDownloader());
         }
 
         return $connection;
@@ -47,9 +47,9 @@ abstract class Connection
      * dagger modules will always have the environment variables set
      * so we don't need to download a CLI Client
      */
-    public static function newProcessSession(string $workDir, CliDownloader $cliDownloader): ProcessSessionConnection
+    public static function newProcessSession(string $workDir, bool $loadWorkspaceModules, CliDownloader $cliDownloader): ProcessSessionConnection
     {
-        return new ProcessSessionConnection($workDir, $cliDownloader);
+        return new ProcessSessionConnection($workDir, $loadWorkspaceModules, $cliDownloader);
     }
 
     protected static function createGraphQlClient(int $port, string $token): Client

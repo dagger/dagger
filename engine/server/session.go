@@ -177,10 +177,9 @@ type daggerClient struct {
 	// isn't available during initialization (the session attachables request
 	// is blocked on the same locks that initializeDaggerClient holds).
 
-	// Whether this client should detect its own workspace and auto-load
-	// workspace modules from that workspace.
-	// True for non-module clients (main client and nested non-module clients);
-	// false for module clients (they inherit workspace binding and skip auto-load).
+	// Whether this client should detect its own workspace binding.
+	// Non-module clients detect their own workspace; module clients inherit a
+	// parent workspace binding instead.
 	pendingWorkspaceLoad bool
 	workspaceMu          sync.Mutex
 	workspaceLoaded      bool
@@ -931,8 +930,8 @@ func (srv *Server) getOrInitClient(
 		if client.clientMetadata.AllowedLLMModules == nil {
 			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
 		}
-		if opts.SkipWorkspaceModules {
-			client.clientMetadata.SkipWorkspaceModules = true
+		if opts.LoadWorkspaceModules {
+			client.clientMetadata.LoadWorkspaceModules = true
 		}
 		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
 			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
@@ -1016,14 +1015,14 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
-	var skipWorkspaceModules bool
+	var loadWorkspaceModules bool
 	var eagerRuntime bool
 	var workspaceRef *string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
 		extraModules = md.ExtraModules
-		skipWorkspaceModules = md.SkipWorkspaceModules
+		loadWorkspaceModules = md.LoadWorkspaceModules
 		eagerRuntime = md.EagerRuntime
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
 			ref := declaredWorkspace
@@ -1043,7 +1042,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
 			AllowedLLMModules:    allowedLLMModules,
 			ExtraModules:         extraModules,
-			SkipWorkspaceModules: skipWorkspaceModules,
+			LoadWorkspaceModules: loadWorkspaceModules,
 			EagerRuntime:         eagerRuntime,
 			Workspace:            workspaceRef,
 		},
