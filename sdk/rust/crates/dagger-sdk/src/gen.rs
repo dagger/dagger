@@ -10266,7 +10266,7 @@ pub struct Generator {
     pub graphql_client: DynGraphQLClient,
 }
 impl Generator {
-    /// The generated changeset
+    /// The generated changeset from the last run
     pub fn changes(&self) -> Changeset {
         let query = self.selection.select("changes");
         Changeset {
@@ -10290,7 +10290,7 @@ impl Generator {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Wether changeset from the generator execution is empty or not
+    /// Whether changeset from the last generator run is empty or not
     pub async fn is_empty(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("isEmpty");
         query.execute(self.graphql_client.clone()).await
@@ -10337,7 +10337,7 @@ pub struct GeneratorGroupChangesOpts {
     pub on_conflict: Option<ChangesetsMergeConflict>,
 }
 impl GeneratorGroup {
-    /// The combined changes from the generators execution
+    /// The combined changes from the last run of the generators
     /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
     /// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
     ///
@@ -10352,7 +10352,7 @@ impl GeneratorGroup {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The combined changes from the generators execution
+    /// The combined changes from the last run of the generators
     /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
     /// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
     ///
@@ -10375,7 +10375,7 @@ impl GeneratorGroup {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Whether the generated changeset is empty or not
+    /// Whether the generated changeset from the last run is empty or not
     pub async fn is_empty(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("isEmpty");
         query.execute(self.graphql_client.clone()).await

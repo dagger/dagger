@@ -12405,7 +12405,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-changes" href="#Generator-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
-                        <td> The generated changeset </td>
+                        <td> The generated changeset from the last run </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-completed" href="#Generator-completed"><code>completed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
@@ -12421,7 +12421,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-isEmpty" href="#Generator-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Wether changeset from the generator execution is empty or not </td>
+                        <td> Whether changeset from the last generator run is empty or not </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-name" href="#Generator-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -12465,7 +12465,7 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-changes" href="#GeneratorGroup-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
                         <td>
-                          <p>The combined changes from the generators execution</p>
+                          <p>The combined changes from the last run of the generators</p>
                           <p>If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.</p>
                           <p>Set &#39;continueOnConflicts&#39; flag to force to merge the changes in a &#39;last write wins&#39; strategy.</p>
                         </td>
@@ -12489,7 +12489,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-isEmpty" href="#GeneratorGroup-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Whether the generated changeset is empty or not </td>
+                        <td> Whether the generated changeset from the last run is empty or not </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-list" href="#GeneratorGroup-list"><code>list</code></a> - <span class="property-type"><a href="#definition-Generator"><code>[Generator!]!</code></a></span> </td>

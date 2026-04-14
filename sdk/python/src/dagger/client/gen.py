@@ -8854,7 +8854,7 @@ class GeneratedCode(Type):
 @typecheck
 class Generator(Type):
     def changes(self) -> Changeset:
-        """The generated changeset"""
+        """The generated changeset from the last run"""
         _args: list[Arg] = []
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
@@ -8924,7 +8924,7 @@ class Generator(Type):
         return await _ctx.execute(GeneratorID)
 
     async def is_empty(self) -> bool:
-        """Wether changeset from the generator execution is empty or not
+        """Whether changeset from the last generator run is empty or not
 
         Returns
         -------
@@ -9012,7 +9012,7 @@ class GeneratorGroup(Type):
         on_conflict: ChangesetsMergeConflict
         | None = ChangesetsMergeConflict.FAIL_EARLY,
     ) -> Changeset:
-        """The combined changes from the generators execution
+        """The combined changes from the last run of the generators
 
         If any conflict occurs, for instance if the same file is modified by
         multiple generators, or if a file is both modified and deleted, an
@@ -9057,7 +9057,7 @@ class GeneratorGroup(Type):
         return await _ctx.execute(GeneratorGroupID)
 
     async def is_empty(self) -> bool:
-        """Whether the generated changeset is empty or not
+        """Whether the generated changeset from the last run is empty or not
 
         Returns
         -------

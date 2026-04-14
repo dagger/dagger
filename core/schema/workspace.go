@@ -360,6 +360,12 @@ func (s *workspaceSchema) checks(
 	},
 ) (*core.CheckGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -417,10 +423,20 @@ func (s *workspaceSchema) generators(
 	},
 ) (*core.GeneratorGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	ignoreGenerators := toolchainIgnorePatterns(mods, func(cfg *modules.ModuleConfigDependency) []string {
+		return cfg.IgnoreGenerators
+	})
 
 	moduleGenerators := make([]struct {
 		mod   *core.Module
@@ -457,6 +473,19 @@ func (s *workspaceSchema) generators(
 		if err != nil {
 			return nil, err
 		}
+		if exclude := ignoreGenerators[entry.mod.Name()]; len(exclude) > 0 {
+			filtered, err = filterNodesByExclude(
+				ctx,
+				filtered,
+				exclude,
+				func(generator *core.Generator) *core.ModTreeNode { return generator.Node },
+				func(generator *core.Generator) string { return generator.Name() },
+				"generator",
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
 		allGenerators = append(allGenerators, filtered...)
 	}
 
@@ -472,6 +501,12 @@ func (s *workspaceSchema) services(
 	},
 ) (*core.UpGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err

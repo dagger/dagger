@@ -9204,7 +9204,7 @@ export class Generator extends BaseClient {
   }
 
   /**
-   * The generated changeset
+   * The generated changeset from the last run
    */
   changes = (): Changeset => {
     const ctx = this._ctx.select("changes")
@@ -9242,7 +9242,7 @@ export class Generator extends BaseClient {
   }
 
   /**
-   * Wether changeset from the generator execution is empty or not
+   * Whether changeset from the last generator run is empty or not
    */
   isEmpty = async (): Promise<boolean> => {
     if (this._isEmpty) {
@@ -9338,7 +9338,7 @@ export class GeneratorGroup extends BaseClient {
   }
 
   /**
-   * The combined changes from the generators execution
+   * The combined changes from the last run of the generators
    *
    * If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
    *
@@ -9358,7 +9358,7 @@ export class GeneratorGroup extends BaseClient {
   }
 
   /**
-   * Whether the generated changeset is empty or not
+   * Whether the generated changeset from the last run is empty or not
    */
   isEmpty = async (): Promise<boolean> => {
     if (this._isEmpty) {

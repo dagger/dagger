@@ -19,7 +19,7 @@
             <dependency>
                 <groupId>io.opentelemetry</groupId>
                 <artifactId>opentelemetry-bom</artifactId>
-                <version>1.60.1</version>
+                <version>1.61.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

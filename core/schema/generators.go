@@ -20,10 +20,10 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 			Doc("Execute all selected generators"),
 
 		dagql.NodeFunc("isEmpty", DagOpWrapper(srv, s.groupIsEmpty)).
-			Doc("Whether the generated changeset is empty or not"),
+			Doc("Whether the generated changeset from the last run is empty or not"),
 
 		dagql.NodeFunc("changes", DagOpChangesetWrapper(srv, s.groupChanges)).
-			Doc(`The combined changes from the generators execution`,
+			Doc(`The combined changes from the last run of the generators`,
 				`If any conflict occurs, for instance if the same file is modified by multiple generators,
 				or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.`,
 				`Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.`).
@@ -45,11 +45,14 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 		dagql.Func("originalModule", s.originalModule).
 			Doc("The original module in which the generator has been defined"),
 
+		dagql.NodeFunc("changes", DagOpChangesetWrapper(srv, s.changes)).
+			Doc("The generated changeset from the last run"),
+
 		dagql.Func("run", s.runSingleGenerator).
 			Doc("Execute the generator"),
 
 		dagql.NodeFunc("isEmpty", s.isEmpty).
-			Doc("Wether changeset from the generator execution is empty or not"),
+			Doc("Whether changeset from the last generator run is empty or not"),
 	}.Install(srv)
 }
 
@@ -96,11 +99,23 @@ func (s generatorsSchema) originalModule(_ context.Context, parent *core.Generat
 	return parent.OriginalModule(), nil
 }
 
+type generatorChangesArgs struct {
+	DagOpInternalArgs
+}
+
+func (s generatorsSchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args generatorChangesArgs) (*core.Changeset, error) {
+	return parent.Self().RequireChanges("changes")
+}
+
 func (s generatorsSchema) runSingleGenerator(ctx context.Context, parent *core.Generator, args struct{}) (*core.Generator, error) {
 	return parent.Run(ctx)
 }
 
 func (s generatorsSchema) isEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args struct{}) (dagql.Boolean, error) {
+	if _, err := parent.Self().RequireChanges("isEmpty"); err != nil {
+		return false, err
+	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return false, err
