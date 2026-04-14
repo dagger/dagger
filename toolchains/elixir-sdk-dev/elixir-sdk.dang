@@ -176,7 +176,10 @@ type ElixirSdkDev {
   let withBase(src: Directory!): Container! {
     container
       .from(baseImage)
-      .withWorkdir("/sdk/elixir")
+      .withExec(["apk", "add", "git"])
+      .withWorkdir("/src")
+      .withExec(["git", "init"])
+      .withWorkdir("/src/sdk/elixir")
       .withDirectory(".", src)
       .withExec(["mix", "local.hex", "--force"])
       .withExec(["mix", "local.rebar", "--force"])
