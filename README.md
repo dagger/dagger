@@ -4,7 +4,7 @@ Dagger is a platform for automating software delivery. It can build, test and sh
 
 Dagger runs locally, in your CI server, or directly in the cloud.
 
-```
+```bash
 brew install dagger/tap/dagger
 ```
 

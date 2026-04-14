@@ -16,7 +16,7 @@ The intended workflow for reusable modules is to install them through the Dagger
 
 To initialise the module, call the following:
 
-```
+```bash
 dagger init --sdk="php" <path-to-module>
 ```
 
@@ -28,7 +28,7 @@ The `path-to-module` argument can be omitted and the module will be initialised 
 
 To set up the development environment, call the following:
 
-```
+```bash
 dagger develop -m <path-to-module>
 ```
 
@@ -40,7 +40,7 @@ The `-m` flag must be a git url or relative file path. The argument may be omitt
 
 You can find out what methods are available by calling the following:
 
-```
+```bash
 dagger functions -m <path-to-module>
 ```
 
@@ -203,7 +203,7 @@ final class MyModule
 
 We could then call tests like so:
 
-```
+```bash
 dagger call test --dir="path/to/dir"
 ```
 
@@ -230,7 +230,7 @@ final class MyModule
 
 We could then call tests like so:
 
-```
+```bash
 dagger call --dir="path/to/dir" test
 ```
 

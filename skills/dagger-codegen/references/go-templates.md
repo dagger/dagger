@@ -4,7 +4,7 @@
 
 ## Template Directory
 
-```
+```text
 cmd/codegen/generator/go/templates/src/
 ├── dagger.gen.go.tmpl              # Entry point
 ├── _dagger.gen.go/                 # Sub-templates

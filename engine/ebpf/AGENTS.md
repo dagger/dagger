@@ -15,7 +15,7 @@ This document explains how to add a new eBPF program to the Dagger engine and wi
 
 Use either `filetracer/` or `ovltracer/` as a template.
 
-```
+```text
 engine/ebpf/bpf/
   common.h                    # shared helpers + standard BPF includes
   vmlinux.h                   # CO-RE BTF header (checked in once)

@@ -1162,7 +1162,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.0`. [See what changed in tha
 - Use `uv.lock` by default in new Dagger Modules by @helderco in https://github.com/dagger/dagger/pull/8311 \
   Simpler workflow with uv:
 
-  ```
+  ```bash
   dagger init --sdk=python my-module
   cd my-module
   uv run vim .
@@ -1170,7 +1170,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.0`. [See what changed in tha
   
   To replace `uv.lock` with `requirements.lock`:
 
-  ```
+  ```bash
   uv export --no-dev --no-emit-workspace --no-emit-package=dagger-io -o requirements.lock
   uv remove dagger-io
   rm uv.lock
@@ -1178,7 +1178,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.0`. [See what changed in tha
   
   To migrate an existing module to `uv.lock`:
 
-  ```
+  ```bash
   dagger develop
   uv add --editable ./sdk
   uv run vim .

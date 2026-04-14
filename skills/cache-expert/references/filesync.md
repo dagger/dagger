@@ -16,7 +16,7 @@ Client exposes two gRPC services per session:
 - supports stat-only and single-file fast paths
 - can mark gitignored entries in stats
 
-2. `FileSend` (target)
+1. `FileSend` (target)
 
 - receives filesystem/file streams from engine for exports
 
@@ -67,7 +67,7 @@ There are two distinct cache layers involved now:
 - keyed by stable client ID plus drive
 - owns the mutable snapshot that acts as the long-lived mirror backing store
 
-2. The in-package filesync change cache:
+1. The in-package filesync change cache:
 
 - `engine/filesync/change_cache.go`
 - key: local path (string)

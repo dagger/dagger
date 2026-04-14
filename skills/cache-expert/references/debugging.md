@@ -187,13 +187,13 @@ Key metrics:
 Interpretation:
 
 1. If `connected_clients` is `0` but `dagql_cache_entries` stays non-zero, refs are retained.
-2. Use bucket metrics to localize leak class:
+1. Use bucket metrics to localize leak class:
 
 - `completed_calls` growth: call-result refs not released.
 - `ongoing_calls` growth: waiter/cancel path likely stuck.
 - `*_arbitrary_*` growth: opaque/arbitrary cache path leak.
 
-3. `dagger_dagql_cache_entries` is index-entry count, not unique-result count.
+1. `dagger_dagql_cache_entries` is index-entry count, not unique-result count.
    The same shared result may appear in multiple indexes.
 
 Practical scrape tip for nested-engine integration tests:

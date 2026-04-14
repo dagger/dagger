@@ -20,7 +20,7 @@ This project provides `dev` module to uses for developing the SDK.
 
 Uses for fetching introspection by using the command:
 
-```
+```bash
 dagger -m dev introspect export --path=./sdk/Dagger.SDK/introspection.json
 ```
 
@@ -28,6 +28,6 @@ dagger -m dev introspect export --path=./sdk/Dagger.SDK/introspection.json
 
 You can running all tests by:
 
-```
+```bash
 dagger -m dev test --source=.
 ```

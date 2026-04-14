@@ -78,7 +78,7 @@ If there is a clear next step based on the most recent work:
 
 ## Output Format
 
-```
+```text
 <analysis>
 [Your chronological analysis ensuring all points are covered thoroughly]
 </analysis>
