@@ -30,6 +30,7 @@ Installation
 
 Adopting Dagger
 ├── Quickstart
+├── Core Concepts (Workspaces, Modules, Functions, Checks)
 ├── Set Up Your Project
 ├── Secrets
 ├── Caching
@@ -38,7 +39,6 @@ Adopting Dagger
 └── Engine & Runtime
 
 Using Dagger
-├── Core Concepts (Workspaces, Modules, Functions, Checks)
 ├── Checking your code
 ├── Generating code
 ├── Shipping your code
@@ -81,15 +81,14 @@ Everything you do to make Dagger work for your team. Ranges from one-time gettin
 
 **Observability:** Tracing, debugging, TUI. Configuring OTel backends. Dagger Cloud Traces. Reading and understanding traces.
 
-**CI Integration:** GitHub Actions, GitLab, CircleCI, etc. Less central with Cloud Checks but still needed for self-hosted.
+**CI Integration:** The standard path is Cloud Checks — managed CI with no runners to configure. For teams evaluating incrementally or running alongside existing CI, there's "hybrid mode": call `dagger check` from any CI platform. Hybrid mode is presented as a temporary bridge, not a permanent architecture.
 
 **Engine & Runtime:** Engine configuration, custom runners, proxies, custom CAs. Configure-once infrastructure.
 
 ### Using Dagger
 
-Day-to-day usage organized by verbs — the actual things you do. Kept lean — just the verbs:
+Day-to-day usage organized by verbs — the actual things you do. Pure operations, no theory. Core Concepts lives in Adopting Dagger because "what are these things?" is an adopting question, not a using question.
 
-- **Core Concepts** — Workspaces, Modules, Functions, Checks. Concise explanation of the mental model.
 - **Checking your code** — `dagger check`. Local, cloud (`--cloud`), automated (Cloud Checks). Filtering, selecting.
 - **Generating code** — `dagger generate`. Changesets, review.
 - **Shipping your code** — `dagger ship`. Publishing, releasing, deploying.
@@ -101,11 +100,22 @@ Dagger Cloud is not a separate section — it's a capability woven into each ver
 
 Three-stage user journey: project-specific module → team-shared → general-purpose/reusable.
 
-**Core guide written in Dang** — Dagger's lightweight DSL. Dang maps directly to the Dagger API with no codegen, making it the right language for expressing Dagger-native patterns without language noise. Readable as pseudocode by Go/Python/TypeScript developers.
+**Two-phase SDK guide rollout:**
+
+**Phase 1 (current): Core guide is Dang-only.** This works because: (a) readers are told upfront that Dang illustrates concepts and patterns — they're expected to read their SDK guide after; (b) Dang snippets are readable enough to convey the shape of the code without being about the code itself. Dang is a core feature of the platform, not an incidental choice.
 
 This cleanly separates "what the Dagger core maintainers want you to know" (core guide in Dang) from "what the SDK maintainers want you to know" (per-SDK guides). Third-party SDKs can add their own guides without touching core docs.
 
-**Sections:**
+**Phase 2: All-in-one guides.** A suite of SDK-specific guides that bundle: (a) the core guide with language-specific examples replacing the Dang, and (b) the SDK-specific guide stitched into the same document. The result is a single monolithic guide per language that reads as if it were written natively for that SDK.
+
+Building an all-in-one guide requires two inputs: a **raw core guide** and an **eligible raw SDK guide**. "Eligible" means the SDK guide implements the structure and conventions necessary for the builder to cherry-pick snippets into the core guide's structure and stitch in the SDK-specific sections.
+
+Why this is better than multi-language tabs in the core guide:
+- **Single source of truth.** The core guide stays pure — one set of concepts, one set of examples. No N-way tab maintenance.
+- **Better end product.** An all-in-one guide is a complete document in your language, not a tabbed patchwork.
+- **Composable.** Adding a new SDK means writing one eligible SDK guide, not touching every example in the core guide.
+
+**Sections (core guide):**
 
 - **When to Develop a Module** — Should you write one, or install something? The spectrum from project-specific to general-purpose.
 - **Choosing an SDK** — Dang (no codegen, pure DSL, fastest path) vs Go/Python/TypeScript (full language power, existing libraries).
@@ -116,8 +126,6 @@ This cleanly separates "what the Dagger core maintainers want you to know" (core
 - **Configuration** — Constructor args with defaults. Workspace config (`config.*`). Progressive disclosure.
 - **Testing** — How to test modules. (Placeholder — content TBD.)
 - **SDK Guides** — Per-language guides (Go, Python, TypeScript, Dang). Each assumes the core guide has been read. Covers project setup, language-specific syntax/idioms, workarounds, and cookbook patterns.
-
-**V2 enhancement (follow-up):** LLM pipeline to generate SDK-flavored versions of the core guide, validated by CI.
 
 ### Reference
 
@@ -232,5 +240,5 @@ Everything else ships after merge.
 - Intro module (`github.com/dagger/intro`)
 - Use-case specific pages (e2e tests, etc.)
 - "Joining a team" onboarding path
-- LLM-generated SDK flavors of core guide (V2)
+- All-in-one SDK guides (phase 2 — requires eligible SDK guides + builder)
 - Module-bundled skills
