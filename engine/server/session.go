@@ -46,6 +46,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -1416,11 +1417,15 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 		// Also serve toolchains so their functions are available in the
 		// client schema (e.g. when `dagger shell` `.cd`s into a module).
 		if src := mod.GetSource(); src != nil {
-			for _, tcSrc := range src.Toolchains {
+			for i, tcSrc := range src.Toolchains {
 				if tcSrc.Self() == nil {
 					continue
 				}
-				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc)
+				var cfg *modules.ModuleConfigDependency
+				if i < len(src.ConfigToolchains) {
+					cfg = src.ConfigToolchains[i]
+				}
+				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pendingRelatedModule(src, tcSrc.Self(), cfg, false))
 				if err != nil {
 					return fmt.Errorf("error resolving toolchain module: %w", err)
 				}
