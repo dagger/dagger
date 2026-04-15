@@ -302,9 +302,9 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
 			if !ok {
 				continue
 			}
-			if arg.TypeDef.Kind == TypeDefKindObject {
-				// Object types (Secret, Directory, etc.): mark optional
-				// so --help shows it's not required
+			if _, isServiceRef := extractServiceRef(val); isServiceRef || arg.TypeDef.Kind == TypeDefKindObject {
+				// Service references and object types: mark optional
+				// so --help shows it's not required (resolved at call time)
 				arg.TypeDef.Optional = true
 			} else {
 				// Primitive types: set the JSON default value
@@ -435,8 +435,14 @@ func lookupFunctionArg(fn *Function, name string) (*FunctionArg, bool) {
 }
 
 func applyLegacyArgCustomization(arg *FunctionArg, cust *modules.ModuleConfigArgument) {
-	if jsonValue, ok := legacyArgDefaultValue(arg.TypeDef, cust.Default); ok {
-		arg.DefaultValue = jsonValue
+	// Service references (map values like {"from": "module:function"}) are resolved
+	// at call time via WorkspaceConfig, not as static default values.
+	if _, isServiceRef := extractServiceRef(cust.Default); isServiceRef {
+		arg.TypeDef = arg.TypeDef.WithOptional(true)
+	} else if s, ok := cust.Default.(string); ok {
+		if jsonValue, ok := legacyArgDefaultValue(arg.TypeDef, s); ok {
+			arg.DefaultValue = jsonValue
+		}
 	}
 	if cust.DefaultPath != "" {
 		arg.DefaultPath = cust.DefaultPath
