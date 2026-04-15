@@ -786,10 +786,18 @@ func pendingRelatedModule(
 	entrypoint bool,
 ) pendingModule {
 	mod := pendingModule{
-		Ref:               related.AsString(),
-		RefPin:            related.Pin(),
-		Entrypoint:        entrypoint,
-		LegacyDefaultPath: true,
+		Ref:        related.AsString(),
+		RefPin:     related.Pin(),
+		Entrypoint: entrypoint,
+		// LegacyDefaultPath is intentionally not set here. Related modules
+		// are loaded as siblings of an explicit -m entrypoint: their
+		// +defaultPath must resolve against that entrypoint's repo (the
+		// -m argument), not against the session's currentWorkspace — the
+		// latter is the user's CWD, which may be empty, partial, or a
+		// different checkout entirely. The default _contextDirectory
+		// resolution already uses the module's own source, which for a
+		// toolchain/blueprint declared as a subdir of the -m module
+		// shares the entrypoint's clone (or local context) root.
 	}
 	if cfg != nil {
 		if cfg.Name != "" {
