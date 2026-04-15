@@ -18,7 +18,6 @@ Depends on: [Artifacts](./artifacts.md), [Execution Plans](./plans.md)
 
 `ship` is an authored verb.
 Authors mark ship handlers with `+ship`.
-`filterVerb(SHIP)` only picks artifacts.
 `Artifacts.ship` turns the selected local `+ship` handlers into a Plan.
 
 By default, `ship(A)` runs after `check(A)`.
@@ -98,7 +97,7 @@ Example:
 ## Solution
 
 Add `ship` on top of Artifacts and Plans.
-`filterVerb(SHIP)` picks artifacts by structure.
+Artifact filters pick artifacts.
 `Artifacts.ship` compiles local `+ship` handlers into a Plan.
 By default, it adds `check(A) → ship(A)` for each selected artifact.
 Target choice and approval policy stay in a higher layer.
@@ -123,7 +122,8 @@ Example:
   or workspace config.
 - A function named `deploy` or `publish` does not join `ship` unless it is
   marked `+ship`.
-- `filterVerb(SHIP)` only filters. It does not compile or run anything.
+- Artifact filtering only picks artifacts. `Artifacts.ship` later compiles the
+  selected local `+ship` handlers into a plan.
 
 Example:
 
@@ -155,9 +155,8 @@ default ship UX.
 
 ## Schema
 
-`filterVerb(SHIP)` is part of the Artifacts selector surface defined in
-[artifacts.md](./artifacts.md).
-This document adds ship plan compilation:
+This document adds ship plan compilation on top of the Artifacts selector
+surface defined in [artifacts.md](./artifacts.md):
 
 ```graphql
 extend type Artifacts {
@@ -249,8 +248,8 @@ $ dagger ship --type=go --no-check
 
 The CLI is a thin layer over the engine API:
 
-- `dagger ship` → `workspace.artifacts.filterVerb(SHIP).ship()`
-- `dagger ship --no-check` → `workspace.artifacts.filterVerb(SHIP).ship(noCheck: true)`
+- `dagger ship` → `workspace.artifacts.ship()`
+- `dagger ship --no-check` → `workspace.artifacts.ship(noCheck: true)`
 
 ## Out Of Scope
 

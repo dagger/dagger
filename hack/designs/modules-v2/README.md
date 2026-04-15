@@ -51,8 +51,9 @@ graph TD
 Artifacts establishes the base selector model first: top-level module objects
 and later collection items become artifact rows; `type` is the built-in
 selector dimension. Execution Plans turns selected artifacts into inspectable
-DAGs of actions. Ship plugs in later as a verb-specific extension over that
-plan substrate. Collections plug in later as keyed dimension providers and
+DAGs of actions through one choke point, `Artifacts.plan(verb, include, exclude)`.
+Ship plugs in later as a verb-specific extension over that plan substrate.
+Collections plug in later as keyed dimension providers and
 batch/subset semantics on top of the Artifacts/Plans base. Provenance also
 builds on Artifacts, but it is orthogonal to Execution Plans, Ship, and
 Collections: it adds path/git filtering over effective artifact provenance
@@ -64,10 +65,10 @@ rather than new plan or collection semantics.
   scopes, built-in dimensions, and scope-relative coordinate rows.
 - **Provenance** extends `Artifacts` with path/change predicates over effective
   artifact provenance.
-- **Execution Plans** defines `Action`, `Plan`, plan construction, and plan
-  execution. This unit rolls out `check` and `generate`.
+- **Execution Plans** defines `Action`, `Plan`, `Artifacts.plan(...)`, plan
+  construction, and plan execution. This unit rolls out `check` and `generate`.
 - **Ship** extends `Artifacts` and `Execution Plans` with `+ship`,
-  `filterVerb(SHIP)`, and `Artifacts.ship`.
+  `Artifacts.ship`, and ship-specific plan construction rules.
 - **Collections** extends both layers: it adds new keyed selector dimensions
   and collection-aware lowering/batching on top of the Artifacts/Plans base.
 
@@ -88,8 +89,8 @@ Current implementation order:
 
 1. **Artifacts** — selector rows, built-in `type`, dimensions, coordinates,
    filtering, and `dagger list`.
-2. **Execution Plans** — action discovery, action paths, `dagger check`,
-   `dagger generate`, `-l`, and plan execution.
+2. **Execution Plans** — `Artifacts.plan(...)`, action discovery, action
+   paths, `dagger check`, `dagger generate`, `-l`, and plan execution.
 3. **Collections** — collection item rows, collection dimensions, collection
    filter aliases, subset/batch lowering, and collection-aware batching.
 

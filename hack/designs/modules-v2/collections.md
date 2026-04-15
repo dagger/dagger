@@ -350,7 +350,6 @@ Base Artifacts scope:
 
 ```text
 workspace.artifacts
-  .filterVerb(CHECK)
   .filterCoordinates("type", ["go-test"])
 ```
 
@@ -358,7 +357,6 @@ Expanded by a collection:
 
 ```text
 workspace.artifacts
-  .filterVerb(CHECK)
   .filterCoordinates("type", ["go-test"])
   .filterCoordinates("go-test", ["TestFoo"])
 ```
@@ -379,10 +377,9 @@ Example:
 
 ```text
 workspace.artifacts
-  .filterVerb(CHECK)
   .filterCoordinates("type", ["go-test"])
   .filterCoordinates("go-test", ["TestFoo", "TestBar"])
-  .check
+  .plan(verb: CHECK)
 ```
 
 Without collection-aware batch behavior, the plan may contain one action per
