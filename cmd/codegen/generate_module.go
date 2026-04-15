@@ -10,10 +10,12 @@ import (
 )
 
 var (
-	modulePath string
-	moduleName string
-	isInit     bool
-	libVersion string
+	modulePath     string
+	moduleName     string
+	isInit         bool
+	libVersion     string
+	legacyTypedefs bool
+	selfCalls      bool
 )
 
 var generateModuleCmd = &cobra.Command{
@@ -39,8 +41,10 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 	defer cfg.Close()
 
 	moduleConfig := &generator.ModuleGeneratorConfig{
-		IsInit:     isInit,
-		LibVersion: libVersion,
+		IsInit:         isInit,
+		LibVersion:     libVersion,
+		LegacyTypedefs: legacyTypedefs,
+		SelfCalls:      selfCalls,
 	}
 
 	moduleConfig.ModuleName = moduleName
@@ -78,4 +82,6 @@ func init() {
 
 	generateModuleCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 	generateModuleCmd.Flags().StringVar(&libVersion, "lib-version", "", "if set, use the given version of dagger.io/dagger in the generated client")
+	generateModuleCmd.Flags().BoolVar(&legacyTypedefs, "legacy-typedefs", false, "use the legacy packages.Load-based typedef extraction (requires -tags legacy_typedefs build)")
+	generateModuleCmd.Flags().BoolVar(&selfCalls, "self-calls", false, "include the module's own types in the generated bindings (requires SELF_CALLS experimental feature)")
 }

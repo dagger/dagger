@@ -36,6 +36,26 @@ func TestMerge(t *testing.T) {
 	}
 }
 
+func TestMergeIdempotent(t *testing.T) {
+	dir := filepath.Join("testdata", "single_object")
+	schema := loadSchema(t, filepath.Join(dir, "schema.json"))
+	modTypes := loadModuleTypes(t, filepath.Join(dir, "module_types.json"))
+
+	if err := schematool.Merge(schema, modTypes); err != nil {
+		t.Fatalf("first merge: %v", err)
+	}
+	// Second merge of the same mod types must be a no-op, not an
+	// error. The multi-pass codegen loop re-enters Merge with the
+	// same schema pointer, so Merge has to stay idempotent.
+	if err := schematool.Merge(schema, modTypes); err != nil {
+		t.Fatalf("second merge (should be idempotent): %v", err)
+	}
+
+	got := marshal(t, schema)
+	want := readFile(t, filepath.Join(dir, "expected.json"))
+	assertJSONEqual(t, got, want)
+}
+
 func TestMergeConflict(t *testing.T) {
 	dir := filepath.Join("testdata", "conflict")
 	schema := loadSchema(t, filepath.Join(dir, "schema.json"))
@@ -48,27 +68,6 @@ func TestMergeConflict(t *testing.T) {
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("error does not mention conflict: %v", err)
 	}
-}
-
-func TestMergeIdempotent(t *testing.T) {
-	dir := filepath.Join("testdata", "single_object")
-	schema := loadSchema(t, filepath.Join(dir, "schema.json"))
-	modTypes := loadModuleTypes(t, filepath.Join(dir, "module_types.json"))
-
-	if err := schematool.Merge(schema, modTypes); err != nil {
-		t.Fatalf("first merge: %v", err)
-	}
-	// Second merge of the same mod types must be a no-op, not an
-	// error. The multi-pass codegen loop feeds the same schema
-	// pointer into Merge on pass 0 and pass 1 when self-calls are
-	// enabled; only the first pass should actually mutate.
-	if err := schematool.Merge(schema, modTypes); err != nil {
-		t.Fatalf("second merge (should be idempotent): %v", err)
-	}
-
-	got := marshal(t, schema)
-	want := readFile(t, filepath.Join(dir, "expected.json"))
-	assertJSONEqual(t, got, want)
 }
 
 func TestDecodeModuleTypes_UnknownField(t *testing.T) {
