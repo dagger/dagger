@@ -18,7 +18,11 @@ type CI {
     """
     Which checks to run
     """
-    checks: [String!]! = ["**:*lint*"],
+    checks: [String!]! = [
+      "**:*lint*",
+      # Exercises a downstream SDK's provisioned CLI path without dragging in a large test matrix.
+      "typescript-sdk:test-nodejs-lts",
+    ],
   ): Void @check {
     let source = source.directory("/", gitignore: true)
     engineDev
