@@ -6375,6 +6375,11 @@ export class Dep {
 	}
 }
 
+// TODO(yves): once PR 1 lands on main, extend this test to assert that
+// dagger.gen.go contains self-call method bindings for the module's
+// own types (e.g. the main object). Phase-1 AST scan + schematool.Merge
+// should produce them automatically when SELF_CALLS is enabled.
+// Cross-ref: hack/designs/no-codegen-at-runtime-pr1-plan.md Task 5.4.
 func (ModuleSuite) TestSelfCalls(ctx context.Context, t *testctx.T) {
 	tcs := []struct {
 		sdk    string
@@ -6481,6 +6486,19 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 			})
 		})
 	}
+}
+
+// TestGoCodegenPhase1Parity compares dagger.gen.go output produced by the
+// new AST-based Go codegen path (Phase 1 via astscan + schematool) against
+// the legacy packages.Load path built with -tags legacy_typedefs.
+//
+// Skipped until PR 2 adds the dual-build harness that lets the test
+// swap between the two cmd/codegen binaries within a single run.
+//
+// Tracked in hack/designs/no-codegen-at-runtime-pr1-plan.md
+// (see Task 5.3 in the "Commit 5" section).
+func (ModuleSuite) TestGoCodegenPhase1Parity(ctx context.Context, t *testctx.T) {
+	t.Skip("rebuild-with-tag harness not yet implemented; tracked in PR 2")
 }
 
 func (ModuleSuite) TestModuleDeprecationIntrospection(ctx context.Context, t *testctx.T) {
