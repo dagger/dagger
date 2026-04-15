@@ -83,6 +83,9 @@ type ExecutionMetadata struct {
 	// search domains to install prior to the session's domain
 	ExtraSearchDomains []string
 
+	// LocalhostForwards proxy service ports to 127.0.0.1 inside the container.
+	LocalhostForwards []LocalhostForwardMD
+
 	RedirectStdinPath  string
 	RedirectStdoutPath string
 	RedirectStderrPath string
@@ -107,6 +110,14 @@ type ExecutionMetadata struct {
 	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
 	// to be at the specified version. Currently only used for integ testing.
 	ClientVersionOverride string
+}
+
+// LocalhostForwardMD describes a TCP port forward from 127.0.0.1 inside a
+// container to a service on the bridge network.
+type LocalhostForwardMD struct {
+	ServiceHostname string `json:"serviceHostname"`
+	Port            int    `json:"port"`        // port on 127.0.0.1
+	ServicePort     int    `json:"servicePort"` // port on the service
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
@@ -173,6 +184,7 @@ func (w *Worker) Run(
 	state := newExecState(id, &procInfo, rootMount, mounts, started)
 	return nil, w.run(ctx, state,
 		w.setupNetwork,
+		w.setupLocalhostForwards,
 		w.injectInit,
 		w.generateBaseSpec,
 		w.filterEnvs,

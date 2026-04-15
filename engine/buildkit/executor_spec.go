@@ -304,6 +304,87 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	return nil
 }
 
+func (w *Worker) setupLocalhostForwards(ctx context.Context, state *execState) error {
+	if w.execMD == nil || len(w.execMD.LocalhostForwards) == 0 {
+		return nil
+	}
+
+	extraSearchDomains := []string{}
+	extraSearchDomains = append(extraSearchDomains, w.execMD.ExtraSearchDomains...)
+	extraSearchDomains = append(extraSearchDomains, network.SessionDomain(w.execMD.SessionID))
+
+	for _, fwd := range w.execMD.LocalhostForwards {
+		// Resolve service hostname to IP, same as the host alias lookup in setupNetwork.
+		var serviceIP string
+		for _, domain := range append([]string{""}, extraSearchDomains...) {
+			qualified := fwd.ServiceHostname
+			if domain != "" {
+				qualified += "." + domain
+			}
+			ips, err := net.LookupIP(qualified)
+			if err == nil && len(ips) > 0 {
+				serviceIP = ips[0].String()
+				break
+			}
+		}
+		if serviceIP == "" {
+			return fmt.Errorf("resolve service %s for localhost forward: hostname not found", fwd.ServiceHostname)
+		}
+
+		upstream := fmt.Sprintf("%s:%d", serviceIP, fwd.ServicePort)
+
+		listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
+			return net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", fwd.Port))
+		})
+		if err != nil {
+			return fmt.Errorf("listen on 127.0.0.1:%d for localhost forward: %w", fwd.Port, err)
+		}
+
+		state.cleanups.Add(
+			fmt.Sprintf("close localhost forward :%d", fwd.Port),
+			func() error {
+				listener.Close()
+				return nil
+			},
+		)
+
+		go localhostForwardAccept(listener, upstream)
+	}
+
+	return nil
+}
+
+func localhostForwardAccept(listener net.Listener, upstream string) {
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			continue
+		}
+		go localhostForwardProxy(conn, upstream)
+	}
+}
+
+func localhostForwardProxy(downstream net.Conn, upstream string) {
+	defer downstream.Close()
+
+	upstreamConn, err := net.Dial("tcp", upstream)
+	if err != nil {
+		return
+	}
+	defer upstreamConn.Close()
+
+	done := make(chan struct{})
+	go func() {
+		io.Copy(upstreamConn, downstream)
+		close(done)
+	}()
+	io.Copy(downstream, upstreamConn)
+	<-done
+}
+
 type hostBindMount struct {
 	srcPath string
 }

@@ -1217,3 +1217,24 @@ func (bndp *ServiceBindings) Merge(other ServiceBindings) {
 
 	*bndp = merged
 }
+
+type LocalhostForwards []LocalhostForward
+
+type LocalhostForward struct {
+	Service     dagql.ObjectResult[*Service]
+	Hostname    string // service hostname to resolve
+	Port        int    // port on 127.0.0.1 inside container
+	ServicePort int    // port on the service
+}
+
+// Set adds or replaces a localhost forward. If a forward for the same port
+// already exists, it is replaced (last write wins, like WithEnvVariable).
+func (fwds *LocalhostForwards) Set(fwd LocalhostForward) {
+	for i, existing := range *fwds {
+		if existing.Port == fwd.Port {
+			(*fwds)[i] = fwd
+			return
+		}
+	}
+	*fwds = append(*fwds, fwd)
+}

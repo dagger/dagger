@@ -97,6 +97,9 @@ type Container struct {
 	// Services to start before running the container.
 	Services ServiceBindings
 
+	// LocalhostForwards forward service ports to 127.0.0.1 inside the container.
+	LocalhostForwards LocalhostForwards
+
 	// The args to invoke when using the terminal api on this container.
 	DefaultTerminalCmd DefaultTerminalCmdOpts
 
@@ -141,6 +144,7 @@ func (container *Container) Clone() *Container {
 	cp.Sockets = slices.Clone(cp.Sockets)
 	cp.Ports = slices.Clone(cp.Ports)
 	cp.Services = slices.Clone(cp.Services)
+	cp.LocalhostForwards = slices.Clone(cp.LocalhostForwards)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	return &cp
 }
@@ -2291,6 +2295,37 @@ func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Ob
 			Hostname: host,
 			Aliases:  aliases,
 		},
+	})
+
+	return container, nil
+}
+
+func (container *Container) WithLocalhostForward(ctx context.Context, port int, svc dagql.ObjectResult[*Service], servicePort int) (*Container, error) {
+	container = container.Clone()
+
+	host, err := svc.Self().Hostname(ctx, svc.ID())
+	if err != nil {
+		return nil, err
+	}
+
+	// Add to Services for lifecycle management (no alias = no /etc/hosts entry)
+	container.Services.Merge(ServiceBindings{
+		{
+			Service:  svc,
+			Hostname: host,
+		},
+	})
+
+	svcPort := servicePort
+	if svcPort == 0 {
+		svcPort = port
+	}
+
+	container.LocalhostForwards.Set(LocalhostForward{
+		Service:     svc,
+		Hostname:    host,
+		Port:        port,
+		ServicePort: svcPort,
 	})
 
 	return container, nil
