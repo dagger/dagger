@@ -94,13 +94,13 @@ func TestLegacyWorkspaceFieldHandling(t *testing.T) {
 	directErr := local.DirectLegacyWorkspaceLoadError()
 	require.EqualError(t,
 		directErr,
-		"This module must be migrated to a workspace. Run 'dagger -W .'",
+		"This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.\n\nTry: dagger -W .\n\nTo learn more: https://docs.dagger.io/reference/upgrade-to-workspaces",
 	)
 	var ext dagql.ExtendedError
 	require.True(t, errors.As(directErr, &ext))
 	require.Equal(t, map[string]any{
 		"_quiet":    true,
-		"_message":  "This module must be migrated to a workspace. Run 'dagger -W .'",
+		"_message":  "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.\n\nTry: dagger -W .\n\nTo learn more: https://docs.dagger.io/reference/upgrade-to-workspaces",
 		"_exitCode": 1,
 	}, ext.Extensions())
 	require.EqualError(t,
