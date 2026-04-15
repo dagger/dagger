@@ -21,3 +21,31 @@ dagger call app up --ports 3000:8080              # map specific ports
 dagger call app up --ports 3000:8080 --ports 5432:5432  # multiple ports
 dagger call app up --random                        # auto-assign local ports
 ```
+
+## Use cases
+
+- Running a database for local development or testing
+- Running end-to-end integration tests against a service
+- Running sidecars (proxies, caches, queues)
+
+## How services work
+
+Service containers have three key properties:
+
+- **Content-addressed hostnames.** Each service gets a canonical hostname derived from its definition. Same definition, same hostname — no port conflicts.
+- **Just-in-time lifecycle.** Services start when first needed, are de-duplicated if multiple clients request the same service, and stop when no longer referenced.
+- **Health checks.** Services are health-checked before clients can connect. No race conditions between service startup and test execution.
+
+## Container-to-host networking
+
+A service defined in a module can be exposed to your local machine:
+
+```shell
+# Start an HTTP service and access it locally
+dagger call http-service up --ports 8080:80
+curl http://localhost:8080
+```
+
+## Host-to-container networking
+
+Containers running in Dagger can also connect to services on your host machine. This is useful for testing against a locally running database or API.

@@ -20,6 +20,7 @@ The TUI shows:
 - Operation tree with parent-child relationships
 - Pass/fail status with duration
 - Real-time progress for running operations
+- Telemetry: CPU usage, network activity, memory consumption
 
 ### Verbosity
 
@@ -32,7 +33,9 @@ dagger check --debug # full debug output
 
 ### Interactive debugging
 
-When a workflow fails, Dagger can drop you into an interactive shell at the point of failure — with the full container state available for inspection. No breakpoints needed, no code changes.
+When a workflow fails, Dagger drops you into an interactive shell at the point of failure — with the full container state available for inspection. No breakpoints needed, no code changes.
+
+You can also set explicit breakpoints in your code to inspect containers at any point during execution.
 
 ## Dagger Cloud Traces
 
@@ -44,10 +47,11 @@ dagger login
 
 After logging in, every `dagger` command sends traces to your Dagger Cloud dashboard. You get:
 
-- **Timeline view**: See all operations with duration and status
-- **Error highlighting**: Failed steps are surfaced immediately with context
-- **Flame graphs**: Understand where time is spent
-- **CI and local traces**: Both environments in one view, grouped by git commit
+- **Timeline view**: See all operations with duration and status. Drill into individual traces to understand execution.
+- **Error highlighting**: Failed steps are surfaced immediately with context — not just the error, but the steps that led up to it.
+- **Flame graphs**: Understand where time is spent. Each operation shows its proportion of total duration.
+- **CI and local traces**: Both environments in one view, grouped by git commit. Traces from CI include repository metadata (branch, commit author, status).
+- **Search and navigation**: Search trace logs by keyword. Breadcrumbs show the full context of any span back to the root.
 
 Traces are useful for debugging failures, optimizing slow workflows, and understanding what your team's Dagger usage looks like across projects.
 
