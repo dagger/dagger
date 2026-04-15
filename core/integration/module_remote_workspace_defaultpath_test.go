@@ -46,6 +46,12 @@ import (
 //     the fix.
 //   - workspace CWD + remote root ref + check: PASSES always — the
 //     local workspace already has the files the toolchain needs.
+//   - workspace CWD with the target subtree removed + remote root ref +
+//     check: MUST pass. Today it FAILS — the CWD-as-workspace wins over
+//     the explicit -m remote ref, so the toolchain resolves against the
+//     partial local tree and misses the file that the remote ref still
+//     has. Drives the follow-up fix: an explicit -m <remote>@<ref> must
+//     take precedence over the local workspace.
 func (ModuleSuite) TestRemoteWorkspaceToolchainDefaultPath(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -191,6 +197,27 @@ git --git-dir=/srv/repo.git update-server-info
 			CombinedOutput(ctx)
 		require.NoError(t, err,
 			"workspace CWD must continue to satisfy defaultPath=\"/\":\n%s", out)
+		require.Regexp(t, `read-check.*OK`, out)
+	})
+
+	t.Run("workspace cwd missing target subtree", func(ctx context.Context, t *testctx.T) {
+		// Target regression for the follow-up fix. CWD is still the
+		// fixture workspace — valid .git, dagger.json, greeter toolchain
+		// — but the "maven" directory that ReadCheck reads has been
+		// removed from the local working tree. The remote ref passed via
+		// -m still contains it. The user's intent with `-m <remote>@<ref>`
+		// is "run this module from that ref", so the toolchain's
+		// defaultPath="/" workspace must resolve against the remote ref,
+		// not against a partial local checkout that happens to be the
+		// CWD. Today this FAILS: CWD-as-workspace wins over the explicit
+		// -m remote ref. The follow-up fix must make an explicit remote
+		// -m take precedence.
+		out, err := workspace().
+			WithExec([]string{"rm", "-rf", "/work/workspace-default-path/target-subdir/maven"}).
+			With(daggerExec("-m", modPath, "--progress=report", "check", "greeter:read-check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err,
+			"explicit -m remote ref must take precedence over a local workspace missing the target subtree:\n%s", out)
 		require.Regexp(t, `read-check.*OK`, out)
 	})
 }
