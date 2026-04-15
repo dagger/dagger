@@ -1,39 +1,33 @@
 ---
 title: "CI Integration"
 slug: /adopting/ci-integration
-description: "Run Dagger in your CI/CD pipeline"
+description: "Run Dagger checks automatically on every push"
 ---
 
 # CI Integration
 
-Dagger runs in any CI system that supports containers. The integration is a single command:
+## Cloud Checks
+
+The standard way to run Dagger in CI is [Cloud Checks](https://dagger.cloud) — managed CI with no runners to configure:
+
+1. `dagger login`
+2. Connect your repository in the Dagger Cloud dashboard
+3. Push code — checks run automatically and report as commit statuses on your PRs
+
+Cloud Checks runs on managed infrastructure with integrated compute and caching. No self-hosted runners, no CI configuration files, no maintenance.
+
+## Hybrid mode
+
+If you're evaluating Dagger incrementally or need to run alongside an existing CI system, you can call Dagger from any CI platform that supports containers:
 
 ```yaml
 # GitHub Actions
 - run: dagger check
-
-# GitLab CI
-script:
-  - dagger check
-
-# Any CI
-steps:
-  - run: dagger check
 ```
 
-Because Dagger runs identically everywhere, a passing `dagger check` locally guarantees the same result in CI.
+This is useful as a bridge while migrating to Cloud Checks. Because Dagger runs identically everywhere, you can start with hybrid mode and switch to Cloud Checks when ready — your checks don't change.
 
-## Cloud Checks
-
-For GitHub repositories, [Cloud Checks](https://dagger.cloud) can run your checks automatically on every push — no CI configuration needed:
-
-1. `dagger login`
-2. Connect your repository in the Dagger Cloud dashboard
-3. Push code — checks run automatically and report as commit statuses
-
-## CI platform guides
-
-For platform-specific setup (installation, caching, runners):
+Platform-specific setup guides:
 
 - [GitHub Actions](/getting-started/ci-integrations/github-actions)
 - [GitLab CI](/getting-started/ci-integrations/gitlab)
