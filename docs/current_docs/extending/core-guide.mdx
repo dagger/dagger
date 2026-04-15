@@ -1,0 +1,501 @@
+---
+title: "Core Guide (Source)"
+description: "Source file for edition assembly. Not published directly."
+unlisted: true
+---
+
+{/* SOURCE FILE — not published directly. Editions are derived from this file + an SDK guide. */}
+{/* See: extending/editions/ for the user-facing output. */}
+
+## Your first module
+
+A module is a type with public functions:
+
+```dang
+pub description = "CI for my project"
+
+type MyCi {
+  pub hello: String! {
+    "Hello from Dagger!"
+  }
+}
+```
+
+`pub` makes things visible to callers. `description` is the module's one-line summary shown in `dagger functions` and the Daggerverse.
+
+Try it:
+
+```shell
+dagger call hello
+# Hello from Dagger!
+```
+
+## Working with containers
+
+Most modules orchestrate containers. The Dagger API gives you a fluent builder:
+
+```dang
+type MyCi {
+  pub build: Container! {
+    container
+      .from("node:20")
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["npm", "install"])
+      .withExec(["npm", "run", "build"])
+  }
+}
+```
+
+Each method returns a new immutable container — nothing mutates. Dagger caches each step automatically, so re-running skips unchanged work.
+
+## Accepting arguments
+
+Functions accept typed arguments:
+
+```dang
+type MyCi {
+  pub build(
+    """
+    Node.js version to use
+    """
+    nodeVersion: String! = "20",
+  ): Container! {
+    container
+      .from("node:" + nodeVersion)
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["npm", "install"])
+      .withExec(["npm", "run", "build"])
+  }
+}
+```
+
+Arguments can have:
+- **Types**: `String!`, `Int!`, `Boolean!`, `Directory!`, `File!`, `Secret`, `Container!`, etc.
+- **Defaults**: `= "20"` — makes the argument optional
+- **Descriptions**: Triple-quoted strings above the argument
+- **Non-null markers**: `!` means required (when no default), absent means nullable
+
+```shell
+dagger call build
+dagger call build --node-version=18
+```
+
+## Accessing the workspace
+
+Modules access the project's files through directory arguments with `@defaultPath`:
+
+```dang
+type MyCi {
+  let source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+    "node_modules",
+    ".git",
+    "dist",
+  ])
+
+  pub build: Container! {
+    container
+      .from("node:20")
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["npm", "install"])
+      .withExec(["npm", "run", "build"])
+  }
+}
+```
+
+`@defaultPath(path: "/")` means "use the workspace root when no directory is explicitly passed." `@ignorePatterns` filters out files that aren't needed — this is important for cache efficiency. The less you load, the fewer cache invalidations.
+
+**Principle: push file access to the leaves.** Don't load the entire repo if you only need `src/`. Use specific paths and tight ignore patterns.
+
+```dang
+type MyCi {
+  # Only load what we need
+  let source: Directory! @defaultPath(path: "/src")
+  let config: File! @defaultPath(path: "/tsconfig.json")
+}
+```
+
+## Private state with `let`
+
+`let` defines private bindings — internal state and helpers not exposed to callers:
+
+```dang
+type Security {
+  # Private: not callable by users
+  let trivyBase = container
+    .from("aquasec/trivy:0.68.2")
+    .withMountedCache(
+      path: "/root/.cache",
+      cache: cacheVolume("trivy-cache"),
+      sharing: CacheSharingMode.LOCKED,
+    )
+    .withWorkdir("/home/trivy")
+
+  # Public: callable by users
+  pub scanSource(source: Directory! @defaultPath(path: "/")): Void {
+    trivyBase
+      .withMountedDirectory(".", source)
+      .withExec(["trivy", "fs", "--exit-code=1", "--severity=CRITICAL,HIGH", "."])
+      .sync
+    null
+  }
+}
+```
+
+`let` bindings are computed lazily and cached. Use them for shared setup that multiple functions reuse.
+
+## Checks
+
+A check is a function that validates something without requiring arguments. Mark it with `@check`:
+
+```dang
+type MyCi {
+  let source: Directory! @defaultPath(path: "/")
+
+  """
+  Lint the code
+  """
+  pub lint: Void @check {
+    container
+      .from("golangci/golangci-lint:latest")
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["golangci-lint", "run"])
+      .sync
+    null
+  }
+
+  """
+  Run unit tests
+  """
+  pub test: Void @check {
+    container
+      .from("golang:1.22")
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["go", "test", "./..."])
+      .sync
+    null
+  }
+}
+```
+
+Now `dagger check` discovers and runs both. A check passes if it completes without error; it fails if any `withExec` returns a non-zero exit code.
+
+Checks can also return `Container` — Dagger will sync it and use the exit code:
+
+```dang
+pub lint: Container @check {
+  container
+    .from("golangci/golangci-lint:latest")
+    .withDirectory("/app", source)
+    .withWorkdir("/app")
+    .withExec(["golangci-lint", "run"])
+}
+```
+
+## Generators
+
+A generator produces a changeset — a diff between the current source and generated output. Mark it with `@generate`:
+
+```dang
+type MyCi {
+  let source: Directory! @defaultPath(path: "/")
+
+  """
+  Generate Go code from protobuf definitions
+  """
+  pub generateProto: Changeset @generate {
+    container
+      .from("bufbuild/buf:latest")
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["buf", "generate"])
+      .directory(".")
+      .changes(source)
+  }
+}
+```
+
+The `.changes(source)` call computes the diff between the generated output and the original source. `dagger generate` runs all generators and presents the unified changeset for review.
+
+## Using other modules
+
+Modules can depend on other modules. Add a dependency:
+
+```shell
+dagger module install github.com/dagger/go
+```
+
+Then call it in your code:
+
+```dang
+type MyCi {
+  pub workspace: Directory! @defaultPath(path: "/")
+
+  pub devContainer: Container! {
+    # 'go' is the installed module — call it like a function
+    go(source: workspace).env.withWorkdir("/app")
+  }
+
+  pub test: Void @check {
+    devContainer
+      .withExec(["go", "test", "./..."])
+      .sync
+    null
+  }
+
+  pub generate: Changeset @generate {
+    devContainer
+      .withExec(["go", "generate", "./..."])
+      .withExec(["go", "mod", "tidy"])
+      .directory(".")
+      .changes(workspace)
+  }
+}
+```
+
+Module dependencies are versioned via git refs. Updates are explicit — `dagger module update` bumps to the latest.
+
+## Services
+
+Start services for integration tests or dev environments:
+
+```dang
+type MyCi {
+  let source: Directory! @defaultPath(path: "/")
+
+  # Private service — not directly callable
+  let db: Service {
+    container
+      .from("postgres:16")
+      .withEnvVariable("POSTGRES_PASSWORD", "test")
+      .withExposedPort(5432)
+      .asService
+  }
+
+  pub integrationTest: Void @check {
+    container
+      .from("golang:1.22")
+      .withDirectory("/app", source)
+      .withServiceBinding("db", db)
+      .withEnvVariable("DATABASE_URL", "postgres://postgres:test@db:5432/postgres")
+      .withExec(["go", "test", "-tags=integration", "./..."])
+      .sync
+    null
+  }
+}
+```
+
+Services are content-addressed — the same definition always gets the same hostname. No port conflicts, no flaky test infrastructure.
+
+## Secrets
+
+Accept secrets as typed arguments — never as plain strings:
+
+```dang
+type MyCi {
+  pub deploy(
+    """
+    API token for deployment
+    """
+    token: Secret!,
+  ): Void {
+    container
+      .from("alpine")
+      .withSecretVariable("DEPLOY_TOKEN", token)
+      .withExec(["sh", "-c", "deploy --token=$DEPLOY_TOKEN"])
+      .sync
+    null
+  }
+}
+```
+
+The `Secret` type ensures tokens are never leaked to logs, caches, or filesystem layers. Callers provide secrets via providers:
+
+```shell
+dagger call deploy --token=env:DEPLOY_TOKEN
+dagger call deploy --token=vault:secret/deploy#token
+```
+
+## Cache volumes
+
+Use cache volumes for package manager caches and other persistent data:
+
+```dang
+type MyCi {
+  let source: Directory! @defaultPath(path: "/")
+
+  pub build: Container! {
+    container
+      .from("node:20")
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/app/node_modules", cacheVolume("node-modules"))
+      .withExec(["npm", "install"])
+      .withExec(["npm", "run", "build"])
+  }
+}
+```
+
+Cache volumes persist across runs. The `cacheVolume("name")` call is keyed by name — same name, same cache.
+
+## Configuration with defaults
+
+Constructor arguments with defaults give users knobs to turn without requiring them:
+
+```dang
+type MyCi {
+  pub source: Directory! @defaultPath(path: "/")
+  pub nodeVersion: String! = "20"
+  pub registry: String! = "ghcr.io"
+
+  pub build: Container! {
+    container
+      .from("node:" + nodeVersion)
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["npm", "install"])
+      .withExec(["npm", "run", "build"])
+  }
+
+  pub publish(tag: String!): String! {
+    build
+      .publish(registry + "/myorg/myapp:" + tag)
+  }
+}
+```
+
+Users can override defaults via the CLI or workspace config:
+
+```shell
+# CLI override
+dagger call --node-version=18 build
+
+# Or configure in .dagger/config.toml
+# [modules.my-ci.config]
+# node-version = "18"
+# registry = "docker.io"
+```
+
+## Putting it together
+
+Here's a real-world module combining checks, generators, services, and configuration:
+
+```dang
+pub description = "CI for my web application"
+
+type WebCi {
+  let source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+    "node_modules", ".git", "dist", ".next",
+  ])
+  pub nodeVersion: String! = "20"
+
+  # --- Shared infrastructure ---
+
+  let baseImage: Container {
+    container
+      .from("node:" + nodeVersion)
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/app/node_modules", cacheVolume("node-modules"))
+      .withExec(["npm", "ci"])
+  }
+
+  let db: Service {
+    container
+      .from("postgres:16")
+      .withEnvVariable("POSTGRES_PASSWORD", "test")
+      .withExposedPort(5432)
+      .asService
+  }
+
+  # --- Checks ---
+
+  pub lint: Void @check {
+    baseImage.withExec(["npm", "run", "lint"]).sync
+    null
+  }
+
+  pub typecheck: Void @check {
+    baseImage.withExec(["npx", "tsc", "--noEmit"]).sync
+    null
+  }
+
+  pub unitTest: Void @check {
+    baseImage.withExec(["npm", "test"]).sync
+    null
+  }
+
+  pub integrationTest: Void @check {
+    baseImage
+      .withServiceBinding("db", db)
+      .withEnvVariable("DATABASE_URL", "postgres://postgres:test@db:5432/test")
+      .withExec(["npm", "run", "test:integration"])
+      .sync
+    null
+  }
+
+  # --- Generator ---
+
+  pub generateApi: Changeset @generate {
+    baseImage
+      .withExec(["npm", "run", "generate:api"])
+      .directory(".")
+      .changes(source)
+  }
+
+  # --- Build & publish ---
+
+  pub build: Container! {
+    baseImage.withExec(["npm", "run", "build"])
+  }
+
+  pub publish(tag: String!, token: Secret!): String! {
+    build
+      .withRegistryAuth("ghcr.io", "dagger", token)
+      .publish("ghcr.io/myorg/myapp:" + tag)
+  }
+}
+```
+
+```shell
+# Run all checks
+dagger check
+
+# Run generators
+dagger generate
+
+# Build
+dagger call build
+
+# Publish
+dagger call publish --tag=v1.0.0 --token=env:GITHUB_TOKEN
+```
+
+## Testing
+
+Test your module by calling its functions:
+
+```shell
+# Smoke test — does it build?
+dagger call build
+
+# Run checks
+dagger check
+
+# Run generators and verify output
+dagger generate
+git diff --exit-code
+```
+
+For more thorough testing, write a separate test module that imports yours and validates behavior. Testing patterns are still evolving — see [Module Development Reference](./modules/modules.mdx) for current best practices.
+
+## Next steps
+
+- [Module Development Reference](./modules/modules.mdx) — Detailed reference for all features (arguments, return types, chaining, custom types, interfaces, etc.)
+- [SDK Guides](/extending) — Language-specific setup and patterns
+- [Checking Your Code](/using-dagger/checking) — How users run your checks
+- [Generating Code](/using-dagger/generating) — How users run your generators

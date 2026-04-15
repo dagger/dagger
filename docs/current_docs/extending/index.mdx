@@ -14,62 +14,13 @@ When pre-built modules don't cover your needs, you can write your own. A module 
 
 **Then customize.** If an existing module is close but not quite right, you can often configure it via your workspace config rather than forking it.
 
-**Then build.** Write a module when:
+**Then build.** Write a module when your workflow is specific to your project, you need to compose multiple tools, or you want to share reusable automation with the community.
 
-- Your workflow is specific to your project and no general module fits
-- You need to compose multiple tools in a way that's unique to your stack
-- You want to enforce team conventions (naming, structure, policies)
-- You want to share reusable automation with the community
+## Pick your language
 
-## The progression
+Each edition is a complete, self-contained guide to developing modules in that language:
 
-Most modules start small and grow:
-
-1. **Project module** — Lives in your repo, serves your team. Quick to write, doesn't need to be general.
-2. **Team module** — Shared across repos in your org. More polished API, configuration options.
-3. **Community module** — Published for anyone to use. Well-documented, versioned, tested.
-
-You don't have to aim for step 3. A project module that makes your team faster is valuable on its own.
-
-## Choose an SDK
-
-| SDK | Best for | Trade-off |
-|-----|----------|-----------|
-| **Dang** | Dagger-native workflows, fastest path | DSL — no external libraries |
-| **Go** | Performance, systems work, existing Go codebases | Verbose, requires codegen |
-| **Python** | Scripting, data workflows, existing Python tools | Runtime overhead |
-| **TypeScript** | Web toolchains, existing Node.js tools | Runtime overhead |
-
-**Dang** is Dagger's own DSL. It maps directly to the Dagger API with no codegen, making it the fastest way to write a module. If your module is primarily orchestrating containers and files, Dang is the right choice.
-
-If you need to call external libraries (e.g., a Go parser, a Python ML library), use the corresponding SDK.
-
-## Get started
-
-```shell
-# Create a new module
-dagger module init --sdk=go my-module
-
-# Or with Dang
-dagger module init --sdk=dang my-module
-```
-
-This creates a module in `.dagger/modules/my-module/` with scaffolding for your chosen SDK.
-
-## Core guide
-
-The [core guide](./guide.mdx) walks through module development concepts using Dang. The patterns apply to all SDKs — Dang just keeps the focus on Dagger concepts without language noise.
-
-## SDK guides
-
-For language-specific setup, idioms, and patterns:
-
-- [Go SDK Guide](./custom-applications/go.mdx)
-- [Python SDK Guide](./custom-applications/python.mdx)
-- [TypeScript SDK Guide](./custom-applications/typescript.mdx)
-- [PHP SDK Guide](./custom-applications/php.mdx)
-
-## Reference
-
-- [Module Development Reference](./modules/modules.mdx) — Detailed reference for all module features
-- [Module Configuration Schema](https://docs.dagger.io/reference/dagger.schema.json) — `dagger.json` format
+- **[Dang Edition](/extending/editions/dang)** — Dagger's native DSL. No codegen, no external dependencies. The fastest path.
+- **[Go Edition](/extending/editions/go)** — For performance, systems work, and existing Go codebases.
+- **[TypeScript Edition](/extending/editions/typescript)** — For web toolchains and existing Node.js tools.
+- **[Python Edition](/extending/editions/python)** — For scripting, data workflows, and existing Python tools.

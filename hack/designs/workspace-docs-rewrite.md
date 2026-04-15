@@ -45,15 +45,14 @@ Using Dagger
 └── Running dev services
 
 Developing Modules
-├── When to Develop a Module
-├── Choosing an SDK
-├── Designing for Artifacts
-├── Workspace Access
-├── Collections
-├── Verbs (Checks, Generators, Ship)
-├── Configuration
-├── Testing
-└── SDK Guides (Go, Python, TypeScript, Dang)
+├── Dang Edition
+├── Go Edition
+├── TypeScript Edition
+├── Python Edition
+├── .NET Edition (placeholder)
+├── Java Edition (placeholder)
+├── Rust Edition (placeholder)
+└── Elixir Edition (placeholder)
 
 Reference
 ├── CLI (generated)
@@ -100,22 +99,57 @@ Dagger Cloud is not a separate section — it's a capability woven into each ver
 
 Three-stage user journey: project-specific module → team-shared → general-purpose/reusable.
 
-**Two-phase SDK guide rollout:**
+**What users see: Editions.** The sidebar shows one guide per language. Users pick their language and get a complete, self-contained guide. There is no "core guide" visible to users.
 
-**Phase 1 (current): Core guide is Dang-only.** This works because: (a) readers are told upfront that Dang illustrates concepts and patterns — they're expected to read their SDK guide after; (b) Dang snippets are readable enough to convey the shape of the code without being about the code itself. Dang is a core feature of the platform, not an incidental choice.
+```
+Developing Modules
+├── Dang Edition
+├── Go Edition
+├── TypeScript Edition
+├── Python Edition
+├── .NET Edition (placeholder)
+├── Java Edition (placeholder)
+├── Rust Edition (placeholder)
+└── Elixir Edition (placeholder)
+```
 
-This cleanly separates "what the Dagger core maintainers want you to know" (core guide in Dang) from "what the SDK maintainers want you to know" (per-SDK guides). Third-party SDKs can add their own guides without touching core docs.
+**What maintainers see: Sources + derived editions.** Editions are derived artifacts, built from two source files: a core guide (patterns and concepts, with Dang snippets) and an SDK guide (language-specific setup, idioms, and snippet overrides). The source layout:
 
-**Phase 2: All-in-one guides.** A suite of SDK-specific guides that bundle: (a) the core guide with language-specific examples replacing the Dang, and (b) the SDK-specific guide stitched into the same document. The result is a single monolithic guide per language that reads as if it were written natively for that SDK.
+```
+extending/
+  core-guide.mdx              ← patterns, concepts, structure (Dang snippets)
+  sdk-guides/
+    dang.mdx                  ← Dang SDK specifics
+    go.mdx                    ← Go SDK specifics
+    typescript.mdx            ← TypeScript SDK specifics
+    python.mdx                ← Python SDK specifics
+    ...
+  editions/
+    dang.mdx                  ← derived from core-guide + sdk-guides/dang
+    go.mdx                    ← derived from core-guide + sdk-guides/go
+    typescript.mdx            ← derived (placeholder until built)
+    ...
+```
 
-Building an all-in-one guide requires two inputs: a **raw core guide** and an **eligible raw SDK guide**. "Eligible" means the SDK guide implements the structure and conventions necessary for the builder to cherry-pick snippets into the core guide's structure and stitch in the SDK-specific sections.
+The sidebar points to `editions/`. The raw core guide and SDK guides are never in the sidebar — they're source files, not user-facing pages.
 
-Why this is better than multi-language tabs in the core guide:
+**Generated-file convention.** Every edition carries a header:
+
+```
+<!-- THIS FILE IS GENERATED. DO NOT EDIT DIRECTLY. -->
+<!-- Source: extending/core-guide.mdx + extending/sdk-guides/dang.mdx -->
+<!-- To rebuild: dagger call build-docs (not yet implemented — manually assembled for now) -->
+```
+
+This enforces the discipline: **never edit an edition directly — edit the core guide or the SDK guide.** The edition is a derived artifact. The header is aspirational until the builder exists, but the convention is real from day one. When the real builder ships, the header becomes true instead of aspirational — zero refactoring.
+
+**Why not multi-language tabs in a single guide:**
 - **Single source of truth.** The core guide stays pure — one set of concepts, one set of examples. No N-way tab maintenance.
-- **Better end product.** An all-in-one guide is a complete document in your language, not a tabbed patchwork.
+- **Better end product.** An edition is a complete document in your language, not a tabbed patchwork.
 - **Composable.** Adding a new SDK means writing one eligible SDK guide, not touching every example in the core guide.
+- **Community-friendly.** Third-party SDKs (Rust, Elixir, etc.) can add their own editions without touching core docs.
 
-**Sections (core guide):**
+**Core guide sections:**
 
 - **When to Develop a Module** — Should you write one, or install something? The spectrum from project-specific to general-purpose.
 - **Choosing an SDK** — Dang (no codegen, pure DSL, fastest path) vs Go/Python/TypeScript (full language power, existing libraries).
@@ -125,7 +159,8 @@ Why this is better than multi-language tabs in the core guide:
 - **Verbs (Checks, Generators, Ship)** — Annotating functions as check/generate/ship handlers tied to artifacts.
 - **Configuration** — Constructor args with defaults. Workspace config (`config.*`). Progressive disclosure.
 - **Testing** — How to test modules. (Placeholder — content TBD.)
-- **SDK Guides** — Per-language guides (Go, Python, TypeScript, Dang). Each assumes the core guide has been read. Covers project setup, language-specific syntax/idioms, workarounds, and cookbook patterns.
+
+**SDK guide requirements (for eligibility):** Each SDK guide must implement a structure and snippet convention that allows the builder to cherry-pick language-specific examples into the core guide's structure and stitch in SDK-specific sections. The exact convention is TBD — the Dang edition bootstraps the pattern.
 
 ### Reference
 
@@ -232,13 +267,13 @@ Everything else ships after merge.
 
 - Adopting Dagger pages (Secrets, Caching, Observability, CI Integration, Engine & Runtime) — migrate from Features
 - Using Dagger verb pages (checking, generating, shipping, running services)
-- Developing Modules core guide (in Dang)
-- SDK Guides (Go, Python, TypeScript, Dang)
-- Testing section in Developing Modules
+- Developing Modules editions (Dang first, then Go/TypeScript/Python)
+- Edition builder tool (`dagger call build-docs`)
+- Testing section in core guide
 - Sidebar restructure to match final hierarchy (Installation → Adopting Dagger → Using Dagger → Developing Modules → Reference)
 - Agent skills (setup-ci, use-dagger, write-module)
 - Intro module (`github.com/dagger/intro`)
 - Use-case specific pages (e2e tests, etc.)
 - "Joining a team" onboarding path
-- All-in-one SDK guides (phase 2 — requires eligible SDK guides + builder)
+- Additional editions (community SDKs: .NET, Java, Rust, Elixir)
 - Module-bundled skills

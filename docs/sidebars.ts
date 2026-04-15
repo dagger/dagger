@@ -74,29 +74,10 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
-        "extending/guide",
-        // TODO: split guide into focused pages per plan:
-        // "extending/when-to-develop"
-        // "extending/choosing-an-sdk"
-        // "extending/designing-for-artifacts"
-        // "extending/workspace-access"
-        // "extending/collections"
-        // "extending/verbs"
-        // "extending/configuration"
-        // "extending/testing"
-        {
-          type: "category",
-          label: "SDK Guides",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "extending/custom-applications/go",
-            "extending/custom-applications/python",
-            "extending/custom-applications/typescript",
-            "extending/custom-applications/php",
-            // TODO: "extending/sdk-guides/dang"
-          ],
-        },
+        "extending/editions/dang",
+        "extending/editions/go",
+        "extending/editions/typescript",
+        "extending/editions/python",
       ],
     },
 

@@ -1,14 +1,41 @@
+{/* THIS FILE IS GENERATED. DO NOT EDIT DIRECTLY. */}
+{/* Source: extending/core-guide.mdx + extending/sdk-guides/dang.mdx */}
+{/* To rebuild: dagger call build-docs (not yet implemented — manually assembled for now) */}
+
 ---
-title: "Core Guide"
-slug: /extending/guide
-description: "Learn module development concepts through practical examples in Dang"
+title: "Developing Modules — Dang"
+slug: /extending/editions/dang
+sidebar_label: "Dang Edition"
+description: "Learn to develop Dagger modules using Dang, Dagger's native DSL"
 ---
 
-# Core Guide
+# Developing Modules — Dang Edition
 
-This guide teaches module development using Dang — Dagger's lightweight DSL. The concepts apply to every SDK; Dang just keeps the focus on Dagger patterns without language noise.
+Dang is Dagger's native DSL. It maps directly to the Dagger API with no codegen — what you write is what runs. There's no build step, no generated files, no runtime overhead.
 
-If you're using Go, Python, or TypeScript, read this guide first to understand the patterns, then consult the [SDK guide](/extending) for language-specific syntax.
+Use Dang when your module is primarily orchestrating containers, files, and other Dagger objects. If you need to call external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the corresponding SDK instead.
+
+## Project setup
+
+```shell
+dagger module init --sdk=dang my-module
+```
+
+This creates a module at `.dagger/modules/my-module/` with a single `main.dang` file.
+
+## Language basics
+
+Dang is intentionally small:
+
+- **Types** are declared with `type Name { ... }`
+- **Public members** use `pub`, private use `let`
+- **Functions** are type members that return a value: `pub build: Container! { ... }`
+- **Arguments** go in parentheses: `pub build(source: Directory!): Container! { ... }`
+- **Annotations** modify behavior: `@check`, `@generate`, `@defaultPath`, `@ignorePatterns`
+- **Non-null** is marked with `!`, nullable is the default
+- **Descriptions** use triple-quoted strings: `""" ... """`
+- **Comments** use `#`
+- **Module metadata** uses top-level `pub`: `pub description = "..."`
 
 ## Your first module
 
@@ -494,11 +521,19 @@ dagger generate
 git diff --exit-code
 ```
 
-For more thorough testing, write a separate test module that imports yours and validates behavior. Testing patterns are still evolving — see [Module Development Reference](./modules/modules.mdx) for current best practices.
+For more thorough testing, write a separate test module that imports yours and validates behavior.
+
+## Dang vs other SDKs
+
+| | Dang | Go | Python | TypeScript |
+|---|---|---|---|---|
+| Codegen required | No | Yes | Yes | Yes |
+| External libraries | No | Yes | Yes | Yes |
+| Runtime overhead | None | Minimal | Moderate | Moderate |
+| File count | 1 (`main.dang`) | 3+ | 3+ | 3+ |
+| Learning curve | Dagger concepts only | Dagger + Go | Dagger + Python | Dagger + TS |
 
 ## Next steps
 
-- [Module Development Reference](./modules/modules.mdx) — Detailed reference for all features (arguments, return types, chaining, custom types, interfaces, etc.)
-- [SDK Guides](/extending) — Language-specific setup and patterns
 - [Checking Your Code](/using-dagger/checking) — How users run your checks
 - [Generating Code](/using-dagger/generating) — How users run your generators
