@@ -170,18 +170,83 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 		return fmt.Errorf("workspace detection: %w", err)
 	}
 
+	// Auto-promote: when the CLI was invoked with a single remote -m
+	// entrypoint AND the CWD has no workspace markers (no .git or
+	// dagger.json going up), treat the remote ref as the workspace
+	// instead of the empty CWD. Without this, a command like
+	//
+	//   dagger -m github.com/dagger/dagger@main check java-sdk:lint
+	//
+	// run from a non-workspace directory resolves the toolchain's
+	// defaultPath="/" workspace arg against the empty CWD and fails to
+	// find files that only exist in the remote repo.
+	statFS := core.NewCallerStatFS(client.bkClient)
+	if ref, ok := autoRemoteWorkspaceRefFromExtras(ctx, client, statFS); ok {
+		inWS, wsErr := cwdHasWorkspaceMarkers(ctx, statFS, cwd)
+		if wsErr != nil {
+			return fmt.Errorf("workspace detection: %w", wsErr)
+		}
+		if !inWS {
+			return srv.loadWorkspaceFromRemote(ctx, client, ref)
+		}
+	}
+
 	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
 		return filepath.Join(ws.Root, ws.Path, relPath)
 	}
 
 	return srv.detectAndLoadWorkspace(ctx, client,
-		core.NewCallerStatFS(client.bkClient),
+		statFS,
 		client.bkClient.ReadCallerHostFile,
 		cwd,
 		resolveLocalRef,
 		nil,
 		true, // isLocal
 	)
+}
+
+// autoRemoteWorkspaceRefFromExtras returns the client's single
+// entrypoint -m remote git ref, if exactly one such ref exists. Used to
+// derive an implicit workspace when the CWD has no workspace of its own.
+// Returns false for ambiguous cases (multiple entrypoint remote refs).
+//
+// ParseRefString is used rather than FastModuleSourceKindCheck because
+// the common `github.com/…` shape is ambiguous under the fast check
+// (the fast check defers to a stat + git-endpoint probe, which we want
+// here so that a local directory whose name happens to contain a dot
+// is not mistakenly promoted to a workspace).
+func autoRemoteWorkspaceRefFromExtras(ctx context.Context, client *daggerClient, statFS core.StatFS) (string, bool) {
+	var chosen string
+	for _, em := range client.pendingExtraModules {
+		if !em.Entrypoint {
+			continue
+		}
+		parsed, err := core.ParseRefString(ctx, statFS, em.Ref, "")
+		if err != nil || parsed == nil || parsed.Kind != core.ModuleSourceKindGit {
+			continue
+		}
+		if chosen != "" {
+			return "", false // ambiguous: multiple entrypoint remote refs
+		}
+		chosen = em.Ref
+	}
+	return chosen, chosen != ""
+}
+
+// cwdHasWorkspaceMarkers reports whether cwd or any ancestor directory
+// contains a workspace marker — a .git entry or a dagger.json file.
+// Matches the two signals workspace.Detect and the dagger.json find-up
+// already rely on.
+func cwdHasWorkspaceMarkers(ctx context.Context, statFS core.StatFS, cwd string) (bool, error) {
+	sought := map[string]struct{}{
+		".git":                         {},
+		workspace.ModuleConfigFileName: {},
+	}
+	found, err := core.Host{}.FindUpAll(ctx, statFS, cwd, sought)
+	if err != nil {
+		return false, err
+	}
+	return len(found) > 0, nil
 }
 
 func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *daggerClient, workspaceRef string) error {
