@@ -20,6 +20,22 @@ module.exports = {
       collapsed: false,
       items: [
         "getting-started/quickstart",
+        {
+          type: "category",
+          label: "Core Concepts",
+          link: {
+            type: "doc",
+            id: "introduction/core-concepts/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "introduction/core-concepts/workspaces",
+            "introduction/core-concepts/modules",
+            "introduction/core-concepts/functions",
+            "introduction/core-concepts/checks",
+          ],
+        },
         "adopting/set-up-your-project",
         "adopting/secrets",
         "adopting/caching",
@@ -38,22 +54,6 @@ module.exports = {
       collapsible: true,
       collapsed: false,
       items: [
-        {
-          type: "category",
-          label: "Core Concepts",
-          link: {
-            type: "doc",
-            id: "introduction/core-concepts/index",
-          },
-          collapsible: true,
-          collapsed: false,
-          items: [
-            "introduction/core-concepts/workspaces",
-            "introduction/core-concepts/modules",
-            "introduction/core-concepts/functions",
-            "introduction/core-concepts/checks",
-          ],
-        },
         "using-dagger/checking",
         "using-dagger/generating",
         "using-dagger/shipping",
