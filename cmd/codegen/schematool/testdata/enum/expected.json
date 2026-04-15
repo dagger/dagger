@@ -1,0 +1,56 @@
+{
+  "__schema": {
+    "queryType": {
+      "name": "Query"
+    },
+    "types": [
+      {
+        "kind": "OBJECT",
+        "name": "Query",
+        "interfaces": [],
+        "directives": []
+      },
+      {
+        "kind": "OBJECT",
+        "name": "Container",
+        "interfaces": [],
+        "directives": []
+      },
+      {
+        "kind": "ENUM",
+        "name": "Status",
+        "description": "Status represents a state",
+        "enumValues": [
+          {
+            "name": "PENDING",
+            "description": "Pending state",
+            "isDeprecated": false,
+            "deprecationReason": null,
+            "directives": []
+          },
+          {
+            "name": "ACTIVE",
+            "description": "Active state",
+            "isDeprecated": false,
+            "deprecationReason": null,
+            "directives": []
+          }
+        ],
+        "interfaces": [],
+        "directives": [
+          {
+            "name": "sourceModuleName",
+            "args": [
+              {
+                "name": "name",
+                "value": "\"workflow\""
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "directives": []
+  },
+  "__schemaVersion": "test"
+}
