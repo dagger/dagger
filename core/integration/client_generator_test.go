@@ -443,7 +443,7 @@ func main() {
 		`))
 				},
 				runSetup: func(ctr *dagger.Container) *dagger.Container {
-					return ctr.With(withGoSetup(`package main
+					return ctr.WithNewFile("main.go", `package main
 
 import (
   "context"
@@ -467,7 +467,7 @@ func main() {
 
   fmt.Println("result:", res)
 }
-		`))
+		`)
 				},
 				postSetup: addSDKReplaceToClient(defaultGenDir),
 			},
