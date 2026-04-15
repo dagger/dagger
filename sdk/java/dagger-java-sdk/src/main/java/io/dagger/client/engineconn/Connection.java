@@ -73,8 +73,7 @@ public final class Connection {
     return get(workingDir, false);
   }
 
-  public static Connection get(String workingDir, boolean loadWorkspaceModules)
-      throws IOException {
+  public static Connection get(String workingDir, boolean loadWorkspaceModules) throws IOException {
     Optional<Connection> connection = fromEnv();
     return connection.isPresent()
         ? connection.get()

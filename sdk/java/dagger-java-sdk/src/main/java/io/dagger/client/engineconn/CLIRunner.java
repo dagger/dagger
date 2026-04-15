@@ -77,7 +77,10 @@ class CLIRunner implements Runnable {
     if (loadWorkspaceModules) {
       command.add("--load-workspace-modules");
     }
-    this.process = FluentProcess.start(command.toArray(new String[0])).withAllowedExitCodes(137);
+    this.process =
+        FluentProcess.start(
+                command.get(0), command.subList(1, command.size()).toArray(new String[0]))
+            .withAllowedExitCodes(137);
     LOG.debug("Opening session: {}", process.toString());
     executorService = Executors.newSingleThreadExecutor(r -> new Thread(r, "dagger-runner"));
     executorService.execute(this);

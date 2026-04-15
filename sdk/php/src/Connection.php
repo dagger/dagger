@@ -47,8 +47,11 @@ abstract class Connection
      * dagger modules will always have the environment variables set
      * so we don't need to download a CLI Client
      */
-    public static function newProcessSession(string $workDir, bool $loadWorkspaceModules, CliDownloader $cliDownloader): ProcessSessionConnection
-    {
+    public static function newProcessSession(
+        string $workDir,
+        bool $loadWorkspaceModules,
+        CliDownloader $cliDownloader
+    ): ProcessSessionConnection {
         return new ProcessSessionConnection($workDir, $loadWorkspaceModules, $cliDownloader);
     }
 
