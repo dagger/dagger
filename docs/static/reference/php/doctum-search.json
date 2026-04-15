@@ -1717,12 +1717,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Binding::asPhpSdk",
-			"p": "Dagger/Binding.html#method_asPhpSdk",
-			"d": "<p>Retrieve the binding value, as type PhpSdk</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Binding::asSearchResult",
 			"p": "Dagger/Binding.html#method_asSearchResult",
 			"d": "<p>Retrieve the binding value, as type SearchResult</p>"
@@ -2044,18 +2038,6 @@
 			"n": "Dagger\\Client::cloud",
 			"p": "Dagger/Client.html#method_cloud",
 			"d": "<p>Dagger Cloud configuration and state</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Client::codegen",
-			"p": "Dagger/Client.html#method_codegen",
-			"d": null
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Client::codegenBase",
-			"p": "Dagger/Client.html#method_codegenBase",
-			"d": null
 		},
 		{
 			"t": "M",
@@ -2461,12 +2443,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::loadPhpSdkFromID",
-			"p": "Dagger/Client.html#method_loadPhpSdkFromID",
-			"d": "<p>Load a PhpSdk from its ID.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Client::loadPortFromID",
 			"p": "Dagger/Client.html#method_loadPortFromID",
 			"d": "<p>Load a Port from its ID.</p>"
@@ -2569,12 +2545,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::moduleRuntime",
-			"p": "Dagger/Client.html#method_moduleRuntime",
-			"d": null
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Client::moduleSource",
 			"p": "Dagger/Client.html#method_moduleSource",
 			"d": "<p>Create a new module source instance from a source ref string</p>"
@@ -2593,12 +2563,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::sourceDir",
-			"p": "Dagger/Client.html#method_sourceDir",
-			"d": null
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Client::sourceMap",
 			"p": "Dagger/Client.html#method_sourceMap",
 			"d": "<p>Creates source map metadata.</p>"
@@ -2614,12 +2578,6 @@
 			"n": "Dagger\\Client::version",
 			"p": "Dagger/Client.html#method_version",
 			"d": "<p>Get the current Dagger Engine version.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Client::with",
-			"p": "Dagger/Client.html#method_with",
-			"d": "<p>Configure the php-sdk constructor arguments.</p>"
 		},
 		{
 			"t": "M",
@@ -4042,18 +4000,6 @@
 			"n": "Dagger\\Env::withModuleSourceOutput",
 			"p": "Dagger/Env.html#method_withModuleSourceOutput",
 			"d": "<p>Declare a desired ModuleSource output to be assigned in the environment</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Env::withPhpSdkInput",
-			"p": "Dagger/Env.html#method_withPhpSdkInput",
-			"d": "<p>Create or update a binding of type PhpSdk in the environment</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Env::withPhpSdkOutput",
-			"p": "Dagger/Env.html#method_withPhpSdkOutput",
-			"d": "<p>Declare a desired PhpSdk output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",

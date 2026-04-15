@@ -446,7 +446,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
 ) error {
 	clientMD := client.clientMetadata
-	skipModules := !client.pendingWorkspaceLoad || (clientMD != nil && clientMD.SkipWorkspaceModules)
+	loadModules := client.pendingWorkspaceLoad && clientMD != nil && clientMD.LoadWorkspaceModules
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
 	ws, err := workspace.Detect(ctx, func(ctx context.Context, path string) (string, bool, error) {
@@ -489,7 +489,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 	client.workspace = coreWS
 
-	if skipModules {
+	if !loadModules {
 		return nil
 	}
 

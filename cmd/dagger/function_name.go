@@ -11,12 +11,12 @@ func initModuleParams(a []string) client.Params {
 		ExecCmd:              a,
 		Function:             functionName(a),
 		EagerRuntime:         eagerRuntime,
-		SkipWorkspaceModules: shouldSkipWorkspaceModules(false),
+		LoadWorkspaceModules: shouldLoadWorkspaceModules(false),
 	}
 }
 
-func shouldSkipWorkspaceModules(disableModuleLoad bool) bool {
-	return disableModuleLoad || moduleNoURL
+func shouldLoadWorkspaceModules(disableModuleLoad bool) bool {
+	return !disableModuleLoad && !moduleNoURL
 }
 
 func functionName(args []string) string {

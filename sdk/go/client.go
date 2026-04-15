@@ -55,6 +55,14 @@ func WithLogOutput(writer io.Writer) ClientOpt {
 	})
 }
 
+// WithLoadWorkspaceModules opts this client into loading workspace modules
+// based on the working directory when the session is created via the CLI.
+func WithLoadWorkspaceModules() ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.LoadWorkspaceModules = true
+	})
+}
+
 // WithConn sets the engine connection explicitly
 func WithConn(conn engineconn.EngineConn) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
@@ -99,9 +107,8 @@ func WithEnvironmentVariable(key, value string) ClientOpt {
 	})
 }
 
-// WithSkipWorkspaceModules prevents the engine from automatically loading
-// workspace modules based on the working directory. This is useful for
-// clients that only need the core API schema.
+// Deprecated: workspace modules are core-only by default. Use
+// WithLoadWorkspaceModules to opt into loading them when needed.
 func WithSkipWorkspaceModules() ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.SkipWorkspaceModules = true
