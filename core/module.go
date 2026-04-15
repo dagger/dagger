@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/vektah/gqlparser/v2/ast"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
@@ -73,6 +74,10 @@ type Module struct {
 	// When true and WorkspaceConfig is set, also load .env defaults
 	// for args not found in WorkspaceConfig. Off by default.
 	DefaultsFromDotEnv bool
+
+	// Salts the module content cache key with internal asModule options that
+	// can materially change the resulting module instance for the same source.
+	AsModuleVariantDigest string
 }
 
 func (*Module) Type() *ast.Type {

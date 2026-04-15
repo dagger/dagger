@@ -8136,6 +8136,12 @@ func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
 	return daggerNonNestedExec(args...)
 }
 
+func daggerNonNestedRunWithWorkspaceModules(args ...string) dagger.WithContainerFunc {
+	args = append([]string{"run", "--load-workspace-modules"}, args...)
+
+	return daggerNonNestedExec(args...)
+}
+
 func daggerClientInstall(generator string) dagger.WithContainerFunc {
 	return daggerExec("client", "install", generator)
 }

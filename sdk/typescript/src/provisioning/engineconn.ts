@@ -5,6 +5,7 @@ export interface ConnectOpts {
   Workdir?: string
   Project?: string
   LogOutput?: Writable
+  LoadWorkspaceModules?: boolean
   Timeout?: number
 }
 

@@ -26,6 +26,9 @@ class Config(ConnectConfig):
         Project config file.
     log_output:
         A TextIO object to send the logs from the engine.
+    load_workspace_modules:
+        Opt into loading workspace modules for this connection. By default,
+        only the core API is exposed.
     execute_timeout:
         The maximum time in seconds for the execution of a request before an
         ExecuteTimeoutError is raised. Passing None results in waiting forever for a
@@ -35,6 +38,7 @@ class Config(ConnectConfig):
     workdir: PathLike[str] | str = ""
     config_path: PathLike[str] | str = ""
     log_output: TextIO | None = None
+    load_workspace_modules: bool = False
     execute_timeout: Any = UNSET
     console: Console = dataclasses.field(init=False)
 

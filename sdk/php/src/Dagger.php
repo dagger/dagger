@@ -19,13 +19,13 @@ class Dagger
         return self::$client;
     }
 
-    public static function connect(string $workingDir = ''): Client
+    public static function connect(string $workingDir = '', bool $loadWorkspaceModules = false): Client
     {
         if (!class_exists('Dagger\\Client')) {
             throw new CompileError('Missing code generated dagger client');
         }
 
-        $connection = Connection::get($workingDir);
+        $connection = Connection::get($workingDir, $loadWorkspaceModules);
 
         return new Client($connection);
     }

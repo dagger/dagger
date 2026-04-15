@@ -12,6 +12,7 @@ async fn main() -> eyre::Result<()> {
             workdir_path: None,
             config_path: None,
             timeout_ms: 1000,
+            load_workspace_modules: false,
             execute_timeout_ms: None,
             logger: Some(Arc::new(TracingLogger::default())),
         },

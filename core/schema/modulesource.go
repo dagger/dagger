@@ -3079,6 +3079,17 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if args.ForceDefaultFunctionCaching {
 		mod.DisableDefaultFunctionCaching = false
 	}
+	// Keep the per-session content cache distinct for module variants produced
+	// from the same source with different internal asModule options.
+	mod.AsModuleVariantDigest = hashutil.HashStrings(
+		"asModuleVariant",
+		fmt.Sprintf("%t", args.ForceDefaultFunctionCaching),
+		args.LegacyNameOverride,
+		fmt.Sprintf("%t", args.LegacyDefaultPath),
+		args.LegacyWorkspaceConfigJSON,
+		fmt.Sprintf("%t", args.LegacyDefaultsFromDotEnv),
+		args.LegacyArgCustomizationsJSON,
+	).String()
 
 	// Apply legacy settings that must be set before Install runs.
 	if args.LegacyNameOverride != "" {

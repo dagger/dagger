@@ -126,6 +126,9 @@ func TestModuleResolutionFromSubdirectory(t *testing.T) {
 
 	client := &daggerClient{
 		pendingWorkspaceLoad: true,
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
 	}
 
 	srv := &Server{}
@@ -144,6 +147,56 @@ func TestModuleResolutionFromSubdirectory(t *testing.T) {
 	require.Len(t, client.pendingModules, 2) // declared module + implicit module
 	require.Equal(t, "/repo/modules/changelog", client.pendingModules[0].Ref)
 	require.Equal(t, "changelog", client.pendingModules[0].Name)
+}
+
+func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
+	t.Parallel()
+
+	existingFiles := map[string]bool{
+		"/repo/.git":        true,
+		"/repo/dagger.json": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
+	})
+
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Clean(path) == "/repo/dagger.json" {
+			return []byte(`{"name":"myproject","toolchains":[{"name":"changelog","source":"modules/changelog"}]}`), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+		clientMetadata:       &engine.ClientMetadata{},
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspace(ctx, client,
+		statFS,
+		readFile,
+		"/repo/sdk/go",
+		func(ws *workspace.Workspace, relPath string) string {
+			return filepath.Join(ws.Root, ws.Path, relPath)
+		},
+		nil,
+		true,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, client.workspace)
+	require.Empty(t, client.pendingModules)
 }
 
 func TestIsSameModuleReference(t *testing.T) {

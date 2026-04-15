@@ -16,6 +16,13 @@ defmodule Dagger.Session do
       "dagger.io/sdk.version:#{@sdk_version}"
     ]
 
+    args =
+      if opts[:load_workspace_modules] do
+        args ++ ["--load-workspace-modules"]
+      else
+        args
+      end
+
     port =
       Port.open({:spawn_executable, bin}, [
         :binary,
