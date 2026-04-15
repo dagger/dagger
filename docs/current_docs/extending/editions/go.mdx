@@ -11,6 +11,365 @@ description: "Learn to develop Dagger modules using Go"
 
 # Developing Modules — Go Edition
 
-This edition is not yet available. See the [Dang Edition](/extending/editions/dang) for the complete guide — the patterns are the same across all SDKs.
+This edition is not yet available. See the [Base Edition](/extending/editions/dang) for the complete guide — the patterns are the same across all SDKs.
 
 For Go-specific setup and syntax, see the [Go SDK Guide](/extending/custom-applications/go).
+
+## Recipes
+
+### Builds
+
+#### Perform a multi-stage build
+
+The following Dagger Function performs a multi-stage build.
+
+```go file=../../cookbook/snippets/builds/multi-stage-build/go/main.go
+```
+
+#### Perform a matrix build
+
+The following Dagger Function performs a matrix build.
+
+```go file=../../cookbook/snippets/builds/matrix-build/go/main.go
+```
+
+#### Build multi-arch image
+
+The following Dagger Function builds a single image for different CPU architectures using native emulation.
+
+```go file=../../cookbook/snippets/builds/multi-arch/go/main.go
+```
+
+#### Build multi-arch image with cross-compilation
+
+The following Dagger Function builds a single image for different CPU architectures using cross-compilation.
+
+```go file=../../cookbook/snippets/builds/multi-arch-cc/go/main.go
+```
+
+#### Build image from Dockerfile
+
+The following Dagger Function builds an image from a Dockerfile.
+
+```go file=../../cookbook/snippets/builds/dockerfile/go/main.go
+```
+
+#### Build image from Dockerfile using different build context
+
+The following function builds an image from a Dockerfile with a build context that is different than the current working directory.
+
+```go file=../../cookbook/snippets/builds/dockerfile-context/go/main.go
+```
+
+#### Cache application dependencies
+
+The following Dagger Function uses a cache volume for application dependencies. This enables Dagger to reuse the contents of the cache across Dagger Function runs and reduce execution time.
+
+```go file=../../cookbook/snippets/cache-dependencies/go/main.go
+```
+
+#### Execute functions concurrently
+
+The following Dagger Function demonstrates how to use native-language concurrency features (errgroups in Go) to execute other Dagger Functions concurrently. If any of the concurrently-running functions fails, the remaining ones will be immediately cancelled.
+
+```go file=../../cookbook/snippets/execute-concurrently/go/main.go
+```
+
+#### Persist service state across runs
+
+The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
+
+```go file=../modules/snippets/services/persist-service-state/go/main.go
+```
+
+#### Add OCI annotations to image
+
+The following Dagger Function adds OpenContainer Initiative (OCI) annotations to an image.
+
+```go file=../../cookbook/snippets/builds/oci-annotations/go/main.go
+```
+
+#### Add OCI labels to image
+
+The following Dagger Function adds OpenContainer Initiative (OCI) labels to an image.
+
+```go file=../../cookbook/snippets/builds/oci-labels/go/main.go
+```
+
+#### Invalidate cache
+
+The following function demonstrates how to invalidate the Dagger layer cache and force execution of subsequent workflow steps, by introducing a volatile time variable at a specific point in the Dagger workflow.
+
+```go file=../../cookbook/snippets/builds/cache/go/main.go
+```
+
+### Container Images
+
+#### Publish a container image to a private registry
+
+The following Dagger Function publishes a just-in-time container image to a private registry.
+
+```go file=../../cookbook/snippets/publish-image/go/main.go
+```
+
+#### Publish a container image to a private registry with multiple tags
+
+The following Dagger Function tags a just-in-time container image multiple times and publishes it to a private registry.
+
+```go file=../../cookbook/snippets/tag-publish-image/go/main.go
+```
+
+#### Export a container image to the host
+
+The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball.
+
+```go file=../../cookbook/snippets/export-container/go/main.go
+```
+
+#### Set environment variables in a container
+
+The following Dagger Function demonstrates how to set a single environment variable in a container.
+
+```go file=../../cookbook/snippets/set-env-var/go/main.go
+```
+
+### Filesystems
+
+#### Clone a remote Git repository into a container
+
+The following Dagger Function accepts a Git repository URL and a Git reference. It copies the repository at the specified reference to the `/src` path in a container and returns the modified container.
+
+```go file=../../cookbook/snippets/clone-git-repository/go/main.go
+```
+
+#### Clone a remote Git repository via SSH
+
+The following Dagger Function clones a Git repository using SSH authentication.
+
+```go file=../../cookbook/snippets/clone-git-repository-ssh/go/main.go
+```
+
+#### Mount or copy a directory or remote repository to a container
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It mounts the specified directory to the `/src` path in a container and returns the modified container.
+
+```go file=../../cookbook/snippets/mount-dir/go/main.go
+```
+
+#### Copy a directory to a container
+
+The following Dagger Function copies a directory to the `/src` path in a container instead of mounting it.
+
+```go file=../../cookbook/snippets/copy-dir/go/main.go
+```
+
+#### Modify a copied directory or remote repository in a container
+
+The following Dagger Function accepts a `Directory` argument, copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
+
+```go file=../../cookbook/snippets/copy-modify-dir/go/main.go
+```
+
+#### Copy a subset of a directory using pre-defined filters
+
+The following Dagger Function accepts a `Directory` argument, copies it to the `/src` path in a container using pre-defined filter patterns to exclude specified sub-directories and files, and returns the modified container.
+
+```go file=../../cookbook/snippets/copy-filter-dir-pre/go/main.go
+```
+
+#### Copy a subset of a directory using filters specified at run-time
+
+The following Dagger Function accepts a `Directory` argument, copies it to the `/src` path in a container using a filter pattern specified at call-time to exclude specified sub-directories and files, and returns the modified container.
+
+```go file=../../cookbook/snippets/copy-filter-dir-post/go/main.go
+```
+
+#### Mount or copy a local or remote file to a container
+
+The following Dagger Function accepts a `File` argument and mounts the specified file to a container in the `/src/` directory and returns the modified container.
+
+```go file=../../cookbook/snippets/mount-file/go/main.go
+```
+
+#### Copy a file to a container
+
+The following Dagger Function copies a file to the `/src/` directory in a container instead of mounting it.
+
+```go file=../../cookbook/snippets/copy-file/go/main.go
+```
+
+#### Copy a file to the Dagger module runtime container for custom processing
+
+The following Dagger Function accepts a `File` argument and copies the specified file to the Dagger module runtime container. This makes it possible to add one or more files to the runtime container and manipulate them using custom logic.
+
+```go file=../../cookbook/snippets/copy-file-runtime/go/main.go
+```
+
+#### Export a directory or file to the host
+
+The following Dagger Functions return a just-in-time directory and file. These outputs can be exported to the host with `dagger call ... export ...`.
+
+```go file=../../cookbook/snippets/export-file-dir/go/main.go
+```
+
+#### Request a file over HTTP/HTTPS and save it in a container
+
+The following Dagger Function fetches a file over HTTP/HTTPS and saves it in a container.
+
+```go file=../../cookbook/snippets/read-file-http/go/main.go
+```
+
+#### Set a module-wide default path
+
+The following Dagger module uses a constructor to set a module-wide `Directory` argument and point it to a default path on the host. This eliminates the need to pass a common `Directory` argument individually to each Dagger Function in the module.
+
+```go file=../../cookbook/snippets/set-common-default-path/go/main.go
+```
+
+### Services
+
+#### Bind and use services in Dagger Functions
+
+The following Dagger Function creates and returns an HTTP service. This service is bound and used from a different Dagger Function, via a service binding using an alias.
+
+```go file=../modules/snippets/services/bind-services/go/main.go
+```
+
+#### Expose services in Dagger Functions to the host
+
+The following Dagger Function creates and returns an HTTP service. This service can be used from the host.
+
+```go file=../modules/snippets/services/expose-dagger-services-to-host/go/main.go
+```
+
+#### Expose host services to Dagger Functions
+
+The following Dagger Function accepts a `Service` running on the host, binds it using an alias, and creates a client to access it via the service binding.
+
+```go file=../modules/snippets/services/expose-host-services-to-dagger/go/main.go
+```
+
+#### Use service endpoints
+
+The following Dagger Function starts a service manually, then retrieves its endpoint and sends a request.
+
+```go file=../modules/snippets/services/use-endpoint/go/main.go
+```
+
+#### Create a transient service for unit tests
+
+The following Dagger Function creates a service and binds it to an application container for unit testing. In this example, the application being tested is Drupal, and a database service is created on-the-fly by the Dagger Function.
+
+```go file=../modules/snippets/services/test-against-db-service/go/main.go
+```
+
+#### Start and stop services
+
+The following Dagger Function demonstrates how to control a service's lifecycle by explicitly starting and stopping a service. This example uses a Redis service.
+
+```go file=../modules/snippets/services/start-stop-services/go/main.go
+```
+
+#### Create interdependent services
+
+The following Dagger Function runs two services that depend on each other. The services are set up with custom hostnames, allowing each service to communicate with the other by hostname.
+
+```go file=../modules/snippets/services/create-interdependent-services/go/main.go
+```
+
+### Secrets
+
+#### Use secret variables
+
+The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API.
+
+```go file=../../cookbook/snippets/secret-variable/go/main.go
+```
+
+#### Mount files as secrets
+
+The following Dagger Function accepts a GitHub hosts configuration file as a `Secret`, and mounts the file as a `Secret` to a container to authorize a request to GitHub.
+
+```go file=../../cookbook/snippets/secret-file/go/main.go
+```
+
+#### Use secret in Dockerfile build
+
+The following Dagger Function demonstrates how to inject a secret into a Dockerfile build. The secret is automatically mounted in the build container at `/run/secrets/SECRET-ID`.
+
+```go file=../../cookbook/snippets/secret-dockerfile/go/main.go
+```
+
+### Errors & Debugging
+
+#### Terminate gracefully
+
+The following Dagger Function demonstrates how to handle errors in a workflow.
+
+```go file=../../cookbook/snippets/handle-errors/go/main.go
+```
+
+#### Continue using a container after command execution fails
+
+The following Dagger Function demonstrates how to continue using a container after a command executed within it fails. A common use case for this is to export a report that a test suite tool generates.
+
+```go file=../../cookbook/snippets/continue-after-errors/go/main.go
+```
+
+#### Debug workflows with the interactive terminal
+
+The following Dagger Function opens an interactive terminal session at different stages in a Dagger workflow to debug a container build.
+
+```go file=../../cookbook/snippets/terminal-container/go/main.go
+```
+
+#### Inspect directories and files
+
+The following Dagger Function clones Dagger's GitHub repository and opens an interactive terminal session to inspect it. Under the hood, this creates a new container and starts a shell, mounting the repository directory inside.
+
+```go file=../../cookbook/snippets/terminal-directory-1/go/main.go
+```
+
+#### Create custom spans
+
+The following Dagger Function demonstrates how to instrument custom OpenTelemetry spans. This allows you to define logical boundaries within complex workflows, measure execution time, and track nested operations with greater granularity.
+
+```go file=../../cookbook/snippets/custom-spans/go/main.go
+```
+
+### Agents
+
+#### Use string inputs and outputs
+
+The following Dagger Function creates an environment with a string input and a string output. The input is a question, and the output represents the answer. The environment is given to an LLM with a prompt describing how it should complete its work.
+
+```go file=../../cookbook/snippets/env-use-strings/go/main.go
+```
+
+#### Use container inputs and outputs
+
+The following Dagger Function creates an environment with a container input and a container output. The input is a base `alpine` container, and the output is the same container, updated with additional libraries and tools. The environment is given to an LLM with a prompt describing how it should update the container.
+
+```go file=../../cookbook/snippets/env-use-containers/go/main.go
+```
+
+#### Use directory inputs and outputs
+
+The following Dagger Function creates an environment with a directory input and a directory output. The input is a directory containing various files, and the output is a different directory containing translations of the original files. The environment is given to an LLM with a prompt describing how it should complete its work.
+
+```go file=../../cookbook/snippets/env-use-directories/go/main.go
+```
+
+#### Combine inputs and outputs of multiple types
+
+The following Dagger Function creates an environment with two inputs (a container and a directory) and one output (a file). The input container is a base `golang` container, the input directory is a Git repository containing Golang source code, and the output is the built Go executable. The environment is given to an LLM with a prompt describing how it should work.
+
+```go file=../../cookbook/snippets/env-use-multiple-types/go/main.go
+```
+
+#### Build a Golang coding agent
+
+The following Dagger Function creates a Golang coding agent. The input is a programming assignment and the output is a Go executable satisfying the assignment. The environment consists of a base `golang` container, which is given to an LLM with a prompt describing how it should perform the work.
+
+```go file=../../getting-started/quickstarts/agent/snippets/part1/go/main.go
+```
