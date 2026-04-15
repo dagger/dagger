@@ -501,7 +501,7 @@ main()
 `, defaultGenDir))
 				},
 				runSetup: func(ctr *dagger.Container) *dagger.Container {
-					return ctr.With(withTypeScriptSetup(`import { connection, dag } from "@my-app/dagger"
+					return ctr.WithNewFile("index.ts", `import { connection, dag } from "@my-app/dagger"
 
 async function main() {
   await connection(async () => {
@@ -512,7 +512,7 @@ async function main() {
 }
 
 main()
-`, defaultGenDir))
+`)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
