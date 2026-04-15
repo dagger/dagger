@@ -20,12 +20,12 @@ module.exports = {
       collapsed: false,
       items: [
         "getting-started/quickstart",
-        // TODO: "adopting/set-up-your-project" — intro module guide
-        // TODO: "adopting/secrets" — rewrite from features/secrets for adoption framing
-        // TODO: "adopting/caching" — rewrite from features/caching for adoption framing
-        // TODO: "adopting/observability" — rewrite from features/observability for adoption framing
-        // TODO: "adopting/ci-integration" — consolidate CI integration guides
-        // TODO: "adopting/engine-runtime" — consolidate engine/runtime config
+        "adopting/set-up-your-project",
+        "adopting/secrets",
+        "adopting/caching",
+        "adopting/observability",
+        "adopting/ci-integration",
+        "adopting/engine-runtime",
       ],
     },
 

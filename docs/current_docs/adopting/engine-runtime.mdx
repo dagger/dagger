@@ -1,0 +1,55 @@
+---
+title: "Engine & Runtime"
+slug: /adopting/engine-runtime
+description: "Configure the Dagger Engine and container runtime"
+---
+
+# Engine & Runtime
+
+Dagger runs out of the box with sensible defaults. This page covers configuration you may need for production deployments or specific infrastructure requirements.
+
+## Container runtime
+
+Dagger requires a Linux container runtime. Supported options:
+
+| Runtime | Platform | Notes |
+|---------|----------|-------|
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | macOS, Windows, Linux | Recommended for development |
+| [Docker Engine](https://docs.docker.com/engine/) | Linux | Recommended for CI |
+| [Podman](https://podman.io/) | Linux, macOS | Rootless supported |
+| [nerdctl](https://github.com/containerd/nerdctl) | Linux | containerd-based |
+| [Apple Containers](https://developer.apple.com/documentation/virtualization) | macOS | Native Apple silicon |
+
+## Engine configuration
+
+Configure the Dagger Engine via `engine.json`:
+
+```json
+{
+  "gc": {
+    "keepBytes": "10GB",
+    "reservedSpace": "2GB"
+  }
+}
+```
+
+Common configuration:
+
+- **Garbage collection**: Control cache size limits
+- **Registry mirrors**: Use private registries or mirrors
+- **DNS**: Custom DNS configuration
+- **Logging**: Log level and output
+
+See the [Engine Configuration Schema](https://docs.dagger.io/reference/engine.schema.json) for the full specification.
+
+## Custom runners
+
+For CI environments, you may need to configure how the Dagger Engine is provisioned:
+
+- **Kubernetes**: Run the engine as a pod or sidecar
+- **Custom provisioning**: Use `_EXPERIMENTAL_DAGGER_RUNNER_HOST` to connect to a pre-existing engine
+
+## Network configuration
+
+- **HTTP proxy**: Set `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` environment variables
+- **Custom CA certificates**: Mount additional CA certs for private registries or corporate proxies

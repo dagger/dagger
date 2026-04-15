@@ -1,0 +1,63 @@
+---
+title: "Observability"
+slug: /adopting/observability
+description: "Trace, debug, and monitor your Dagger workflows"
+---
+
+# Observability
+
+Every Dagger operation emits OpenTelemetry traces. You get visibility into what's happening without adding instrumentation.
+
+## Terminal UI
+
+The CLI includes a live terminal UI (TUI) that renders your workflow as a tree of operations:
+
+```shell
+dagger check
+```
+
+The TUI shows:
+- Operation tree with parent-child relationships
+- Pass/fail status with duration
+- Real-time progress for running operations
+
+### Verbosity
+
+```shell
+dagger check -v      # keep completed spans visible
+dagger check -vv     # show internal spans
+dagger check -vvv    # show sub-100ms spans
+dagger check --debug # full debug output
+```
+
+### Interactive debugging
+
+When a workflow fails, Dagger can drop you into an interactive shell at the point of failure — with the full container state available for inspection. No breakpoints needed, no code changes.
+
+## Dagger Cloud Traces
+
+[Dagger Cloud](https://dagger.cloud) collects traces from all your Dagger runs — local and CI — and presents them in a web interface.
+
+```shell
+dagger login
+```
+
+After logging in, every `dagger` command sends traces to your Dagger Cloud dashboard. You get:
+
+- **Timeline view**: See all operations with duration and status
+- **Error highlighting**: Failed steps are surfaced immediately with context
+- **Flame graphs**: Understand where time is spent
+- **CI and local traces**: Both environments in one view, grouped by git commit
+
+Traces are useful for debugging failures, optimizing slow workflows, and understanding what your team's Dagger usage looks like across projects.
+
+## OpenTelemetry
+
+Dagger's telemetry is built on [OpenTelemetry](https://opentelemetry.io/). Each function call is a trace; each operation is a span. This means you can export traces to any OTel-compatible backend:
+
+- Jaeger
+- Honeycomb
+- Grafana Tempo
+- Any OTel collector
+
+Set custom resource attributes via the standard `OTEL_RESOURCE_ATTRIBUTES` environment variable.

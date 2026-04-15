@@ -1,0 +1,44 @@
+---
+title: "Set Up Your Project"
+slug: /adopting/set-up-your-project
+description: "Add Dagger to your existing project"
+---
+
+# Set Up Your Project
+
+Add Dagger to an existing project in three steps.
+
+## 1. Initialize a workspace
+
+```shell
+cd your-project
+dagger init
+```
+
+This creates `.dagger/config.toml` — your project's Dagger configuration.
+
+## 2. Install modules
+
+Install modules for the tools you use:
+
+```shell
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+dagger install github.com/dagger/prettier
+```
+
+Browse available modules on the [Daggerverse](https://daggerverse.dev).
+
+## 3. Run checks
+
+```shell
+dagger check
+```
+
+If any checks fail, fix the issues and re-run. Every check runs identically on your laptop and in CI.
+
+## What's next
+
+- Add `dagger check` to your CI pipeline — it's a [single line](/using-dagger/checking#in-ci)
+- Configure [secrets](/adopting/secrets) if your workflows need credentials
+- Set up [Dagger Cloud](https://dagger.cloud) with `dagger login` for traces and Cloud Checks
