@@ -394,6 +394,7 @@ main()
 			generator string
 			callCmd   []string
 			setup     dagger.WithContainerFunc
+			runSetup  dagger.WithContainerFunc
 			postSetup dagger.WithContainerFunc
 		}
 
@@ -427,9 +428,36 @@ import (
 func main() {
   ctx := context.Background()
 
-  dag, err := dagger.Connect(ctx)
+  dag, err := dagger.Connect(ctx, dagger.WithLoadWorkspaceModules())
+  if err != nil {
+    panic(fmt.Errorf("connect: %w", err))
+  }
+
+  res, err := dag.Hello(ctx)
   if err != nil {
     panic(err)
+  }
+
+  fmt.Println("result:", res)
+}
+		`))
+				},
+				runSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.With(withGoSetup(`package main
+
+import (
+  "context"
+  "fmt"
+
+  "test.com/test/dagger"
+)
+
+func main() {
+  ctx := context.Background()
+
+  dag, err := dagger.Connect(ctx)
+  if err != nil {
+    panic(fmt.Errorf("connect: %w", err))
   }
 
   res, err := dag.Hello(ctx)
@@ -460,6 +488,20 @@ export class Test {
 }
 				`).
 						With(withTypeScriptSetup(`import { connection, dag } from "@my-app/dagger"
+
+async function main() {
+  await connection(async () => {
+    const res = await dag.hello()
+
+    console.log("result:", res)
+  }, { LoadWorkspaceModules: true })
+}
+
+main()
+`, defaultGenDir))
+				},
+				runSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.With(withTypeScriptSetup(`import { connection, dag } from "@my-app/dagger"
 
 async function main() {
   await connection(async () => {
@@ -500,7 +542,7 @@ main()
 				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
+					out, err := moduleSrc.With(tc.runSetup).With(daggerNonNestedRunWithWorkspaceModules(tc.callCmd...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
@@ -783,7 +825,7 @@ main()
 				}
 
 				out, err := regeneratedSrc.
-					With(daggerNonNestedRun(tc.callCmd...)).
+					With(daggerNonNestedRunWithWorkspaceModules(tc.callCmd...)).
 					Stdout(ctx)
 
 				require.NoError(t, err)
@@ -1817,7 +1859,7 @@ func main() {
 
 	dag, err := dagger.Connect(ctx)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("connect: %w", err))
 	}
 
 	res, err := dag.With(dagger.WithOpts{Greeting: "hi"}).Message(ctx)
@@ -1833,7 +1875,7 @@ func main() {
 		With(addSDKReplaceToClient(defaultGenDir)).
 		WithExec([]string{"go", "mod", "tidy"})
 
-	out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "./cmd/main.go")).Stdout(ctx)
+	out, err := moduleSrc.With(daggerNonNestedRunWithWorkspaceModules("go", "run", "./cmd/main.go")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "result: hi, world!")
 }
