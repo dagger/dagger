@@ -1,0 +1,19 @@
+{
+  "name": "zoo",
+  "interfaces": [
+    {
+      "name": "Animal",
+      "description": "Animal is a thing that makes sound.",
+      "functions": [
+        {
+          "name": "sound",
+          "description": "Sound produces a noise.",
+          "returnType": {
+            "kind": "NON_NULL",
+            "ofType": { "kind": "SCALAR", "name": "String" }
+          }
+        }
+      ]
+    }
+  ]
+}
