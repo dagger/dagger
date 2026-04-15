@@ -3,17 +3,17 @@
 {/* To rebuild: dagger call build-docs (not yet implemented — manually assembled for now) */}
 
 ---
-title: "Developing Modules — Dang"
+title: "Developing Modules — Base Edition"
 slug: /extending/editions/dang
-sidebar_label: "Dang Edition"
+sidebar_label: "Base Edition"
 description: "Learn to develop Dagger modules using Dang, Dagger's native DSL"
 ---
 
-# Developing Modules — Dang Edition
+# Developing Modules — Base Edition
 
-Dang is Dagger's native DSL. It maps directly to the Dagger API with no codegen — what you write is what runs. There's no build step, no generated files, no runtime overhead.
+This guide uses **Dang**, Dagger's native DSL. It maps directly to the Dagger API with no codegen — what you write is what runs. No build step, no generated files, no runtime overhead.
 
-Use Dang when your module is primarily orchestrating containers, files, and other Dagger objects. If you need to call external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the corresponding SDK instead.
+Use Dang when your module is primarily orchestrating containers, files, and other Dagger objects. If you need external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](/extending/editions/go), [TypeScript](/extending/editions/typescript), or [Python](/extending/editions/python) edition instead.
 
 ## Project setup
 

@@ -45,7 +45,7 @@ Using Dagger
 └── Running dev services
 
 Developing Modules
-├── Dang Edition
+├── Base Edition (Dang)
 ├── Go Edition
 ├── TypeScript Edition
 ├── Python Edition
@@ -103,7 +103,7 @@ Three-stage user journey: project-specific module → team-shared → general-pu
 
 ```
 Developing Modules
-├── Dang Edition
+├── Base Edition (Dang)
 ├── Go Edition
 ├── TypeScript Edition
 ├── Python Edition
