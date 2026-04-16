@@ -4,6 +4,7 @@ namespace Dagger\Tests\Unit\Service;
 
 use Dagger\Service\FindsDaggerObjects;
 use Dagger\Tests\Unit\Fixture;
+use Dagger\Tests\Unit\Fixture\Enums\ObjectUsingEnum;
 use Dagger\ValueObject\DaggerObject;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -33,6 +34,7 @@ class FindsDaggerObjectsTest extends TestCase
                 Fixture\NoDaggerFunctions::getValueObjectEquivalent(),
                 Fixture\DaggerObjectWithDaggerFunctions::getValueObjectEquivalent(),
                 Fixture\Module\Field\MyModule::asValueObject(),
+                ObjectUsingEnum::getValueObjectEquivalent(),
             ],
             __DIR__ . '/../Fixture',
         ];
