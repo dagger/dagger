@@ -20,22 +20,6 @@ module.exports = {
       collapsed: false,
       items: [
         "getting-started/quickstart",
-        {
-          type: "category",
-          label: "Core Concepts",
-          link: {
-            type: "doc",
-            id: "introduction/core-concepts/index",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "introduction/core-concepts/workspaces",
-            "introduction/core-concepts/modules",
-            "introduction/core-concepts/functions",
-            "introduction/core-concepts/checks",
-          ],
-        },
         "adopting/set-up-your-project",
         "adopting/secrets",
         "adopting/caching",
@@ -78,6 +62,26 @@ module.exports = {
         "extending/editions/go",
         "extending/editions/typescript",
         "extending/editions/python",
+      ],
+    },
+
+    // ========================================
+    // CORE CONCEPTS
+    // ========================================
+    {
+      type: "category",
+      label: "Core Concepts",
+      link: {
+        type: "doc",
+        id: "introduction/core-concepts/index",
+      },
+      collapsible: true,
+      collapsed: true,
+      items: [
+        "introduction/core-concepts/workspaces",
+        "introduction/core-concepts/modules",
+        "introduction/core-concepts/functions",
+        "introduction/core-concepts/checks",
       ],
     },
 
