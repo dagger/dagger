@@ -26,17 +26,23 @@ New core concepts: **Workspaces, Modules, Functions, Checks.**
 ## Docs Structure
 
 ```
+Overview
+
 Installation
 
 Adopting Dagger
 ├── Quickstart
-├── Core Concepts (Workspaces, Modules, Functions, Checks)
-├── Set Up Your Project
+├── Workspace Setup
 ├── Secrets
-├── Caching
 ├── Observability
-├── CI Integration
-└── Engine & Runtime
+├── Triggers
+│   ├── GitHub Actions, GitLab, CircleCI, Jenkins, Azure Pipelines,
+│   │   AWS CodeBuild, Argo Workflows, Tekton, TeamCity
+│   └── (overview: Cloud Checks as standard path; "hybrid mode" as bridge)
+├── Scaling
+│   ├── Kubernetes
+│   └── OpenShift
+└── Engine Configuration
 
 Using Dagger
 ├── Checking your code
@@ -49,18 +55,38 @@ Developing Modules
 ├── Go Edition
 ├── TypeScript Edition
 ├── Python Edition
-├── .NET Edition (placeholder)
 ├── Java Edition (placeholder)
-├── Rust Edition (placeholder)
-└── Elixir Edition (placeholder)
+├── PHP Edition (placeholder)
+├── Testing
+└── Types Reference
+    ├── Container, Directory, File, Secret, Service,
+    ├── CacheVolume, GitRepository, Env, LLM
+
+Core Concepts
+├── Workspaces
+├── Modules
+├── Artifacts
+├── Functions
+├── Checks
+└── Caching
 
 Reference
-├── CLI (generated)
-├── Workspace Configuration
-├── Module Configuration
-├── Container Runtimes
-├── Upgrading to Workspaces
+├── CLI
+│   ├── Command reference (generated)
+│   └── Lockfiles
+├── Module Configuration (dagger.json)
+├── Workspace Configuration (.dagger/config.toml) — TODO
+├── Engine schema (engine.json / engine.toml)
+├── Cloud
+├── Cache
+├── LLM
+├── Custom Runner
+├── Custom CA
+├── Proxy
+└── Upgrading to Workspaces
 ```
+
+Core Concepts is a top-level peer, not an Adopting Dagger child. It earns the slot because concepts are reference-shaped (you return to them as lookup), not journey-shaped. Adopting Dagger is the journey; Core Concepts is the mental model that journey builds on.
 
 ### Installation
 
@@ -68,25 +94,27 @@ Top-level peer to everything. Prerequisite to all other sections.
 
 ### Adopting Dagger
 
-Everything you do to make Dagger work for your team. Ranges from one-time getting-started to platform configuration. A platform engineer lands here and sees everything they need to roll out Dagger. A solo dev does Quickstart + Set Up Your Project and moves on — the rest is there when they need it.
+Everything you do to make Dagger work for your team. Ranges from one-time getting-started to platform configuration. A platform engineer lands here and sees everything they need to roll out Dagger. A solo dev does Quickstart + Workspace Setup and moves on — the rest is there when they need it.
 
 **Quickstart:** Clone `dagger/hello-dagger`, install `dagger/eslint`, `dagger/vitest`, `dagger/prettier`, run `dagger check`, `dagger login`, cloud checks. No code written. Minimal narration — let the product speak. Includes Dagger Cloud setup (motivated by "want to see what happened?" after first successful check, then progresses to cloud engines and Cloud Checks for automated CI).
 
-**Set Up Your Project:** Bridge from quickstart to real project via `dagger install github.com/dagger/intro`. The intro module provides red checks with guidance, creating a `dagger check` → edit → `dagger check` feedback loop. The product teaches, not the docs.
+**Workspace Setup:** Bridge from quickstart to real project via `dagger install github.com/dagger/setup`. The setup module provides red checks with guidance, creating a `dagger check` → edit → `dagger check` feedback loop. The product teaches, not the docs.
 
 **Secrets:** Managing secrets when using Dagger. Providers (env, file, cmd, Vault, 1Password, AWS), safeguards, URI schemes. Showcase page — Dagger does a lot here.
 
-**Caching:** Understanding and configuring cache behavior. Layer caching, volume caching, function call caching. Cache busting, shared caches.
-
 **Observability:** Tracing, debugging, TUI. Configuring OTel backends. Dagger Cloud Traces. Reading and understanding traces.
 
-**CI Integration:** The standard path is Cloud Checks — managed CI with no runners to configure. For teams evaluating incrementally or running alongside existing CI, there's "hybrid mode": call `dagger check` from any CI platform. Hybrid mode is presented as a temporary bridge, not a permanent architecture.
+**Triggers:** How Dagger gets triggered from CI. Cloud Checks is the standard path — managed, no runners to configure. For teams evaluating incrementally or running alongside existing CI, there's "hybrid mode": call `dagger check` from any CI platform (GitHub Actions, GitLab, CircleCI, Jenkins, Azure Pipelines, AWS CodeBuild, Argo Workflows, Tekton, TeamCity). Hybrid mode is a temporary bridge, not a permanent architecture.
 
-**Engine & Runtime:** Engine configuration, custom runners, proxies, custom CAs. Configure-once infrastructure.
+**Scaling:** Self-hosting the engine at scale. Kubernetes (Helm chart, DaemonSet, auto-scaling) and OpenShift (tainted nodes, tolerations). Presented as second-class to Dagger Cloud's managed engines.
+
+**Engine Configuration:** Engine config, custom runners, proxies, custom CAs. Configure-once infrastructure. Schema-level reference lives in Reference; user-facing "why and how" lives here.
+
+Caching used to live here but moved to Core Concepts — layer/volume/function-call caching is a mental model users return to, not a one-time setup step.
 
 ### Using Dagger
 
-Day-to-day usage organized by verbs — the actual things you do. Pure operations, no theory. Core Concepts lives in Adopting Dagger because "what are these things?" is an adopting question, not a using question.
+Day-to-day usage organized by verbs — the actual things you do. Pure operations, no theory. Core Concepts used to live here (then in Adopting Dagger) and is now a top-level peer: mental-model lookup, not part of any specific journey.
 
 - **Checking your code** — `dagger check`. Local, cloud (`--cloud`), automated (Cloud Checks). Filtering, selecting.
 - **Generating code** — `dagger generate`. Changesets, review.
@@ -99,78 +127,67 @@ Dagger Cloud is not a separate section — it's a capability woven into each ver
 
 Three-stage user journey: project-specific module → team-shared → general-purpose/reusable.
 
-**What users see: Editions.** The sidebar shows one guide per language. Users pick their language and get a complete, self-contained guide. There is no "core guide" visible to users.
+**Editions are self-contained.** The sidebar shows one guide per language. Users pick their language and get a complete, self-contained guide. Each edition is its own source file with its own snippet tree — not a derived artifact.
 
 ```
 Developing Modules
-├── Base Edition (Dang)
-├── Go Edition
-├── TypeScript Edition
-├── Python Edition
-├── .NET Edition (placeholder)
-├── Java Edition (placeholder)
-├── Rust Edition (placeholder)
-└── Elixir Edition (placeholder)
+├── Base Edition (Dang)     ← fully fleshed out; the reference implementation
+├── Go Edition              ← "not yet available" placeholder + recipes + IDE setup
+├── TypeScript Edition      ← "not yet available" placeholder + recipes + IDE setup
+├── Python Edition          ← "not yet available" placeholder + recipes + IDE setup
+├── Java Edition            ← placeholder
+├── PHP Edition             ← placeholder
+├── Testing
+└── Types Reference         ← shared across editions
 ```
 
-**What maintainers see: Sources + derived editions.** Editions are derived artifacts, built from two source files: a core guide (patterns and concepts, with Dang snippets) and an SDK guide (language-specific setup, idioms, and snippet overrides). The source layout:
+**What we tried and abandoned: sources + derived editions.** An earlier iteration split the guide into a shared `core-guide.mdx` plus per-SDK `sdk-guides/*.mdx`, with editions marked as "generated — do not edit directly" (aspirational, no builder existed). We killed this in the current pass:
 
-```
-extending/
-  core-guide.mdx              ← patterns, concepts, structure (Dang snippets)
-  sdk-guides/
-    dang.mdx                  ← Dang SDK specifics
-    go.mdx                    ← Go SDK specifics
-    typescript.mdx            ← TypeScript SDK specifics
-    python.mdx                ← Python SDK specifics
-    ...
-  editions/
-    dang.mdx                  ← derived from core-guide + sdk-guides/dang
-    go.mdx                    ← derived from core-guide + sdk-guides/go
-    typescript.mdx            ← derived (placeholder until built)
-    ...
-```
+- The builder was never going to get built — too much Docusaurus/MDX snippet choreography for too little payoff.
+- "Aspirational generated-file" headers invited exactly the wrong behavior: editors avoided the file, so fixes landed in the wrong place.
+- Splitting concepts from language kept the Dang edition accurate but made every other edition look deceptively complete while actually being a near-copy of Dang.
 
-The sidebar points to `editions/`. The raw core guide and SDK guides are never in the sidebar — they're source files, not user-facing pages.
-
-**Generated-file convention.** Every edition carries a header:
-
-```
-<!-- THIS FILE IS GENERATED. DO NOT EDIT DIRECTLY. -->
-<!-- Source: extending/core-guide.mdx + extending/sdk-guides/dang.mdx -->
-<!-- To rebuild: dagger call build-docs (not yet implemented — manually assembled for now) -->
-```
-
-This enforces the discipline: **never edit an edition directly — edit the core guide or the SDK guide.** The edition is a derived artifact. The header is aspirational until the builder exists, but the convention is real from day one. When the real builder ships, the header becomes true instead of aspirational — zero refactoring.
+**Replacement plan:** Dang is the reference edition. Go/TS/Python editions are currently placeholders with recipes + IDE setup, and will be fleshed out directly — each with its own prose and snippets, referencing the Dang edition for shared concepts where that saves work. If duplication becomes painful, we revisit — but duplication is cheap and divergence is honest.
 
 **Why not multi-language tabs in a single guide:**
-- **Single source of truth.** The core guide stays pure — one set of concepts, one set of examples. No N-way tab maintenance.
 - **Better end product.** An edition is a complete document in your language, not a tabbed patchwork.
-- **Composable.** Adding a new SDK means writing one eligible SDK guide, not touching every example in the core guide.
-- **Community-friendly.** Third-party SDKs (Rust, Elixir, etc.) can add their own editions without touching core docs.
+- **Composable.** Adding a new SDK means writing one new edition, not touching every example.
+- **Community-friendly.** Third-party SDKs can add their own editions without touching core docs.
 
-**Core guide sections:**
+**Dang edition (reference) sections:**
 
 - **When to Develop a Module** — Should you write one, or install something? The spectrum from project-specific to general-purpose.
 - **Choosing an SDK** — Dang (no codegen, pure DSL, fastest path) vs Go/Python/TypeScript (full language power, existing libraries).
 - **Designing for Artifacts** — API surface as artifacts (nouns, not verbs). Selectable, filterable, composable.
 - **Workspace Access** — Lazy file access through the Workspace API. Push to the leaves. Filter at the call.
 - **Collections** — Keyed sets of related objects with standard algebra (keys, list, get, subset, batch).
+- **Custom types, enums, interfaces** — Extending the type system.
 - **Verbs (Checks, Generators, Ship)** — Annotating functions as check/generate/ship handlers tied to artifacts.
 - **Configuration** — Constructor args with defaults. Workspace config (`config.*`). Progressive disclosure.
-- **Testing** — How to test modules. (Placeholder — content TBD.)
+- **Caching** — How caching behaves in modules. Cross-refs to Core Concepts > Caching.
+- **Documentation** — Docstrings, examples, the `dagger shell` introspection story.
+- **IDE setup** — Per-edition IDE configuration.
+- **Recipes** — Cookbook-style examples (distributed from the old Cookbook).
 
-**SDK guide requirements (for eligibility):** Each SDK guide must implement a structure and snippet convention that allows the builder to cherry-pick language-specific examples into the core guide's structure and stitch in SDK-specific sections. The exact convention is TBD — the Dang edition bootstraps the pattern.
+**Testing** lives as a sibling item in the sidebar rather than inside each edition — same testing story across SDKs.
+
+**Types Reference** is a shared sub-category (Container, Directory, File, Secret, Service, CacheVolume, GitRepository, Env, LLM). Moved out of Reference into Developing Modules so the types live next to the code that uses them.
 
 ### Reference
 
-- **CLI** — Generated, no manual work needed.
-- **Workspace Configuration** — `.dagger/config.toml` schema.
+- **CLI** — Command reference (generated) + Lockfiles page.
 - **Module Configuration** — `dagger.json` schema.
-- **Container Runtimes** — Docker, Podman, nerdctl, Apple Container.
+- **Workspace Configuration** — `.dagger/config.toml` schema. **TODO** — sidebar still has a placeholder comment.
+- **Engine** — `engine.json` / `engine.toml` schema.
+- **Cloud** — Dagger Cloud config options.
+- **Cache** — Cache-specific engine schema.
+- **LLM** — LLM provider config schema.
+- **Custom Runner** — Running your own engine container.
+- **Custom CA** — Custom certificate authority setup.
+- **Proxy** — HTTP/HTTPS/NO_PROXY config.
 - **Upgrading to Workspaces** — For existing users. Linked from CLI error messages and support channels.
 
-Engine & Runtime, CI Integrations moved to Adopting Dagger. Secrets provider reference (URI schemes, AWS query params) may live in both Adopting Dagger (user-facing) and Reference (schema-level).
+Container Runtimes is gone (dropped — runtime-detection is automatic; edge cases are support-channel material, not docs material). Triggers/Scaling (née CI Integration) moved to Adopting Dagger. Secrets provider reference (URI schemes, AWS query params) may live in both Adopting Dagger (user-facing) and Reference (schema-level).
 
 ## Upgrading to Workspaces Page
 
@@ -218,19 +235,21 @@ Run 'dagger migrate' when ready. More info: https://docs.dagger.io/reference/upg
 
 - All existing quickstarts (basics, CI, toolchain/blueprint, agent, agent-in-project) — **DONE**
 - Core concepts: `toolchains.mdx` — **DONE**
-- Features section — **migrates**, not killed. Content moves to:
-  - `secrets.mdx` → Adopting Dagger > Secrets
-  - `caching.mdx` → Adopting Dagger > Caching
-  - `observability.mdx` → Adopting Dagger > Observability
-  - `services.mdx` → Using Dagger > Running dev services
-  - `programmability.mdx` → Core Concepts / Developing Modules (split)
-  - `sandbox.mdx` → Core Concepts (security model)
-  - `reusability.mdx` → Core Concepts > Modules
-  - `shell.mdx` → Using Dagger or Adopting Dagger (TBD)
-  - `llm.mdx` → Using Dagger or Adopting Dagger (TBD)
-  - `local-defaults.mdx` → Adopting Dagger or Reference (TBD)
-- Use Cases, FAQ pages — kill (low value, not maintained)
-- Cookbook — folded into SDK guides under Developing Modules
+- Features section — **DONE**. Section deleted; valuable content transposed (commit `b4c777c2f`). Caching landed in Core Concepts, not Adopting.
+- Use Cases, FAQ, Examples pages — **DONE** (killed `introduction/use-cases.mdx`, `examples.mdx`, `faq.mdx`).
+- Cookbook — **DONE**. Recipes distributed into per-SDK editions (commit `ed1aa0492`).
+- Pre-workspace API guide — **DONE**. `getting-started/api.mdx`, `getting-started/api/clients-{cli,http,sdk}.mdx`, `reference/api/internals.mdx` all killed as an orphan island.
+- Custom applications guide (`extending/custom-applications/*`) — **DONE** (killed; the "embed an SDK directly" story wasn't earning its upkeep).
+- `reference/glossary.mdx` — **DONE**.
+- `reference/troubleshooting.mdx` — **DONE**.
+- `reference/best-practices/{monorepos,adopting,contributing}.mdx` — **DONE**.
+- `reference/ide-setup.mdx` — **DONE** (content moved into per-edition IDE setup sections).
+- `reference/deployment/{kubernetes,openshift}.mdx` — **DONE** (moved under Adopting Dagger > Scaling).
+- `getting-started/ci-integrations/*` — **DONE** (moved under Adopting Dagger > Triggers; `github.mdx` misc-tips page killed).
+- Container Runtimes — **DONE** (dropped entirely, commit `c2f1c0d09`).
+- `extending/core-guide.mdx` + `extending/sdk-guides/*` — **DONE** (sources-derived model abandoned).
+
+Remaining redirects for all the above are captured in `docs/netlify.toml`.
 
 ## Agent Skills
 
@@ -265,15 +284,25 @@ Everything else ships after merge.
 
 ## Follow-up Work (Post-Merge)
 
-- Adopting Dagger pages (Secrets, Caching, Observability, CI Integration, Engine & Runtime) — migrate from Features
-- Using Dagger verb pages (checking, generating, shipping, running services)
-- Developing Modules editions (Dang first, then Go/TypeScript/Python)
-- Edition builder tool (`dagger call build-docs`)
-- Testing section in core guide
-- Sidebar restructure to match final hierarchy (Installation → Adopting Dagger → Using Dagger → Developing Modules → Reference)
-- Agent skills (setup-ci, use-dagger, write-module)
-- Intro module (`github.com/dagger/intro`)
-- Use-case specific pages (e2e tests, etc.)
-- "Joining a team" onboarding path
-- Additional editions (community SDKs: .NET, Java, Rust, Elixir)
-- Module-bundled skills
+**Done (shipped during this restructure pass):**
+- Adopting Dagger pages — Secrets, Observability, Triggers, Scaling, Engine Configuration.
+- Features section migration / deletion.
+- Dang edition fleshed out (custom types, enums, interfaces, caching, documentation).
+- Cookbook distributed into editions.
+- Testing promoted to sidebar item.
+- Types Reference moved under Developing Modules.
+- Sidebar restructure (Overview → Installation → Adopting → Using → Developing → Core Concepts → Reference).
+- Orphan cleanup: glossary, troubleshooting, best-practices, ide-setup, use-cases, faq, examples, custom-applications, pre-workspace API pages, container runtimes.
+
+**Still pending:**
+- **Workspace Configuration reference page** (`.dagger/config.toml` schema) — sidebar has a TODO placeholder.
+- **Flesh out Go / TypeScript / Python editions** — currently placeholders with IDE setup + recipes. Need full prose covering the Dang edition's section structure, with language-idiomatic snippets.
+- **Using Dagger verb pages** (checking, generating, shipping, running services) — exist but light; may need depth pass.
+- **"Upgrading to Workspaces" page** — stub exists; need to flesh out with command equivalence table and migration walkthrough.
+- Edition builder tool — **abandoned**. Editions are now hand-written per language.
+- Agent skills (setup-ci, use-dagger, write-module).
+- Setup module (`github.com/dagger/setup`, née `dagger/intro`).
+- Use-case specific pages (e2e tests, etc.).
+- "Joining a team" onboarding path.
+- Additional community-SDK editions (.NET, Rust, Elixir — currently Java and PHP have placeholder pages).
+- Module-bundled skills.
