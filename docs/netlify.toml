@@ -111,6 +111,11 @@
   status = 301
 
 [[redirects]]
+  from = "/reference/glossary"
+  to = "/introduction/core-concepts"
+  status = 301
+
+[[redirects]]
   from = "/api/interfaces"
   to = "/extending/interfaces"
   status = 301
