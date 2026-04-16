@@ -14,6 +14,7 @@ const (
 const (
 	RuncPath       = "/usr/local/bin/runc"
 	DaggerInitPath = "/usr/local/bin/dagger-init"
+	EngineInitPath = "/usr/local/bin/tini"
 
 	EngineDefaultStateDir = "/var/lib/dagger"
 

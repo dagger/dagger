@@ -136,8 +136,9 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	}
 
 	type binAndPath struct {
-		path string
-		file *dagger.File
+		path     string
+		file     *dagger.File
+		fileOpts []dagger.ContainerWithFileOpts
 	}
 	bins := []binAndPath{
 		{path: consts.EngineServerPath, file: build.engineBinary(build.race)},
@@ -145,6 +146,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.RuncPath, file: build.runcBin()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
+		{path: consts.EngineInitPath, file: build.Init(), fileOpts: []dagger.ContainerWithFileOpts{{Permissions: 0o755}}},
 	}
 	qemuBins, err := build.qemuBins(ctx)
 	if err != nil {
@@ -167,7 +169,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	ctr := base
 	for _, bin := range bins {
-		ctr = ctr.WithFile(bin.path, bin.file)
+		ctr = ctr.WithFile(bin.path, bin.file, bin.fileOpts...)
 		eg.Go(func() error {
 			return build.verifyPlatform(ctx, bin.file)
 		})
@@ -320,6 +322,18 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 
 func (build *Builder) daggerInit() *dagger.File {
 	return build.binary("./cmd/init", false, false)
+}
+
+func (build *Builder) Init() *dagger.File {
+	var url string
+
+	switch build.platformSpec.Architecture {
+	case "amd64":
+		url = "https://github.com/krallin/tini/releases/download/v0.19.0/tini-amd64"
+	case "arm64":
+		url = "https://github.com/krallin/tini/releases/download/v0.19.0/tini-arm64"
+	}
+	return dag.HTTP(url)
 }
 
 func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {

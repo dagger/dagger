@@ -59,6 +59,7 @@ func (*File) TypeDescription() string {
 func (file *File) getResult() bkcache.ImmutableRef {
 	return file.Result
 }
+
 func (file *File) setResult(ref bkcache.ImmutableRef) {
 	file.Result = ref
 }

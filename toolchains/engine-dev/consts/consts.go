@@ -6,6 +6,7 @@ const (
 	EngineServerPath = "/usr/local/bin/dagger-engine"
 	RuncPath         = distconsts.RuncPath
 	DaggerInitPath   = distconsts.DaggerInitPath
+	EngineInitPath   = distconsts.EngineInitPath
 )
 
 const (
