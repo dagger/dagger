@@ -102,7 +102,12 @@
 
 [[redirects]]
   from = "/api/ide-integration"
-  to = "/reference/ide-setup"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/reference/ide-setup"
+  to = "/extending"
   status = 301
 
 [[redirects]]

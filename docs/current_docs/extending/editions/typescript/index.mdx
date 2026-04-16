@@ -340,3 +340,26 @@ The following Dagger Function demonstrates how to emit custom OpenTelemetry span
 
 ```typescript file=./snippets/custom-spans/index.ts
 ```
+
+## IDE setup
+
+When opening the generated `dagger/src/index.ts` in an IDE, most IDEs will automatically recognize the `@dagger.io/dagger` package, so long as the `tsconfig.json` file has a path configured on it.
+
+For Dagger modules initialized using `dagger module init`, the default template is already configured this way:
+
+```json
+    "experimentalDecorators": true,
+    "paths": {
+      "@dagger.io/dagger": ["./sdk"]
+    }
+```
+
+This configuration doesn't require separate installation of the dependency to enable type-hinting or other IDE features.
+
+### Source maps
+
+When working with multiple inter-dependent Dagger modules, it can be challenging to navigate between Dagger Functions defined in different modules. Source-maps offer a solution to this problem, by allowing developers to directly click through or navigate to type declarations in their IDE.
+
+The TypeScript SDK automatically attaches source-maps to the module code. These are a record of the filename, the line number, and the column number that a type declaration corresponds to in the source code. The SDK analyzes the source code, and outputs these (as line comments of the form `./path/to/filename:line`) when creating the type definitions during module initialization.
+
+Most popular IDEs support source-maps, either natively or with an external plugin, such as the [Open file plugin](https://marketplace.visualstudio.com/items?itemName=Fr43nk.seito-openfile) for Visual Studio Code.
