@@ -700,7 +700,8 @@ defmodule Dagger.Container do
           {:include, [String.t()]},
           {:gitignore, boolean() | nil},
           {:owner, String.t() | nil},
-          {:expand, boolean() | nil}
+          {:expand, boolean() | nil},
+          {:permissions, integer() | nil}
         ]) :: Dagger.Container.t()
   def with_directory(%__MODULE__{} = container, path, source, optional_args \\ []) do
     query_builder =
@@ -713,6 +714,7 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
+      |> QB.maybe_put_arg("permissions", optional_args[:permissions])
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -984,6 +986,7 @@ defmodule Dagger.Container do
   """
   @spec with_mounted_directory(t(), String.t(), Dagger.Directory.t(), [
           {:owner, String.t() | nil},
+          {:read_only, boolean() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_mounted_directory(%__MODULE__{} = container, path, source, optional_args \\ []) do
@@ -993,6 +996,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("path", path)
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("readOnly", optional_args[:read_only])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{
