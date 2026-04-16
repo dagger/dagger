@@ -1,0 +1,41 @@
+---
+title: "Artifacts"
+slug: /core-concepts/artifacts
+description: "The typed values that flow between Dagger functions"
+---
+
+# Artifacts
+
+Artifacts are the typed values that flow between Dagger functions: containers, directories, files, secrets, services, and more. They are the nouns of a Dagger workflow — functions are the verbs.
+
+Unlike strings or JSON blobs passed between CI steps, Dagger artifacts are first-class values managed by the engine. They can be:
+
+- **Passed between functions** as inputs and outputs
+- **Composed** — a `Container` can contain a `Directory`, a `Directory` can contain `Files`
+- **Cached** by content, automatically
+- **Lazily evaluated** — nothing executes until a terminal operation requires it
+
+## The main artifacts
+
+| Artifact | Represents |
+|---|---|
+| [`Container`](/getting-started/types/container) | An OCI-compatible container with layered filesystem, env, entrypoint |
+| [`Directory`](/getting-started/types/directory) | A directory tree (from the host, a Git repo, or synthesized) |
+| [`File`](/getting-started/types/file) | A single file |
+| [`Secret`](/getting-started/types/secret) | A credential that never leaks into the cache |
+| [`Service`](/getting-started/types/service) | A long-running process reachable over the network |
+| [`GitRepository`](/getting-started/types/git-repository) | A Git repository with refs and history |
+| [`CacheVolume`](/getting-started/types/cache-volume) | A directory that persists across runs |
+
+The full list is in the [API reference](https://docs.dagger.io/api/reference).
+
+## Why artifacts matter
+
+Artifacts are what make Dagger workflows portable and cacheable. A `Container` is the same whether it was built on your laptop or in a scaled-out engine — the engine can move it, cache it, ship it without your code needing to know.
+
+They also enable composition: a function that returns a `Container` can be chained into another function that takes a `Container` as input, with no glue code, no serialization, no intermediate files.
+
+## Next steps
+
+- **[Functions](/core-concepts/functions)** — how artifacts flow through operations
+- **[Types reference](/getting-started/types)** — detailed docs on each artifact type
