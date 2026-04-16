@@ -19,6 +19,9 @@ func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithExec([]string{"git", "init"})
 }
 
+// legacyWorkspaceBase creates a native git repo rooted at /work but seeds it
+// with a legacy dagger.json project shape. Compat detection and migration tests
+// use this to separate "legacy on disk" from "workspace at runtime".
 func legacyWorkspaceBase(t testing.TB, c *dagger.Client, config string, ops ...dagger.WithContainerFunc) *dagger.Container {
 	t.Helper()
 

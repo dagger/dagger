@@ -11,9 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// WorkspaceCompatSuite owns legacy dagger.json compatibility behavior:
-// fallback compat loading, migration handoff, and direct-load error handling.
-// Current module loading behavior belongs in module_loading_test.go.
+// WorkspaceCompatSuite owns legacy dagger.json behavior that implies a compat
+// workspace: detection, warnings, migration, and direct-load errors. This file
+// should answer "does this legacy project become a workspace, and what compat
+// rules apply?" rather than generic module-loading arbitration.
+//
+// Native runtime loading and entrypoint arbitration belong in
+// module_loading_test.go. Compat runtime equivalence tests belong here only as
+// seam coverage between compat inference and native workspace behavior.
 type WorkspaceCompatSuite struct{}
 
 func TestWorkspaceCompat(t *testing.T) {

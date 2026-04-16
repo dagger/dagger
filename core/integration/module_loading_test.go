@@ -9,9 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ModuleLoadingSuite owns runtime module loading from every nomination path:
-// workspace config, CWD module, -m, and extra modules. This file is about
-// what actually loads and which module wins as the active entrypoint.
+// ModuleLoadingSuite owns runtime module loading after a workspace boundary has
+// already been established. This file should use only native initialized
+// workspace fixtures so it can focus on arbitration and entrypoint routing.
+//
+// Compat workspace detection from legacy dagger.json belongs in
+// workspace_compat_test.go. This file may assume the workspace already exists.
 type ModuleLoadingSuite struct{}
 
 func TestModuleLoading(t *testing.T) {
