@@ -1378,6 +1378,36 @@
   to = "/extending"
   status = 301
 
+[[redirects]]
+  from = "/use-cases"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/examples"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/faq"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/concepts"
+  to = "/core-concepts"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/api/*"
+  to = "/core-concepts"
+  status = 301
+
+[[redirects]]
+  from = "/reference/api/internals"
+  to = "/core-concepts"
+  status = 301
+
 ## end: wildcard redirects ##
 
 [[redirects]]
