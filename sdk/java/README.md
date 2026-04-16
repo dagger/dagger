@@ -9,6 +9,8 @@
 > - Upcoming breaking changes
 > - Incomplete or out-of-date documentation
 
+<!-- -->
+
 > [!IMPORTANT]
 > The Dagger Java SDK requires Dagger v0.9.0 or later
 
