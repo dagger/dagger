@@ -412,7 +412,12 @@
 
 [[redirects]]
   from = "/troubleshooting"
-  to = "/reference/troubleshooting"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/reference/troubleshooting"
+  to = "/"
   status = 301
 
 ## end: specific redirects for 0.18 docs ##
