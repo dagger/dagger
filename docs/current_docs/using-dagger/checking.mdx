@@ -33,12 +33,4 @@ dagger check *:lint            # pattern across modules
 - run: dagger check
 ```
 
-## In the cloud
-
-Run checks on managed infrastructure:
-
-```shell
-dagger check --scale-out
-```
-
-Or automate checks on every push with [Cloud Checks](https://dagger.cloud) — no runners to configure. Set up with `dagger login`.
+To automate checks on every push without configuring runners, see [Triggers](/adopting/triggers).
