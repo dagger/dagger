@@ -3,6 +3,13 @@ package core
 // Workspace alignment: partially aligned; this historical umbrella suite and helper hub still needs further cleanup.
 // Scope: Shared module helpers plus broad historical module coverage that predates the workspace split.
 // Intent: Preserve confidence while incrementally extracting clearer module- and workspace-owned suites out of the historical umbrella.
+//
+// Cleanup plan:
+// 1. Extract exact-by-intent helpers first, not the historical helper blob as-is.
+// 2. Keep explicit module helpers for `dagger module ...` mutations and module-targeted call/query flows.
+// 3. Keep workspace helpers with workspace-owned suites instead of treating them as generic module helpers.
+// 4. Quarantine legacy rewrite helpers so shimmed top-level `init/install/update` stays visibly legacy-only.
+// 5. After the helper split, peel coherent coverage slices out of this file without changing behavior.
 
 import (
 	"bytes"
