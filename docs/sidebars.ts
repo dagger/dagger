@@ -75,6 +75,7 @@ module.exports = {
         "extending/editions/go",
         "extending/editions/typescript",
         "extending/editions/python",
+        "extending/testing",
         {
           type: "category",
           label: "Types Reference",

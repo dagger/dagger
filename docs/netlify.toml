@@ -132,7 +132,12 @@
 
 [[redirects]]
   from = "/api/module-tests"
-  to = "/reference/best-practices/modules"
+  to = "/extending/testing"
+  status = 301
+
+[[redirects]]
+  from = "/reference/best-practices/modules"
+  to = "/extending/testing"
   status = 301
 
 [[redirects]]
