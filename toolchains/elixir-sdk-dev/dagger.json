@@ -6,10 +6,6 @@
   },
   "dependencies": [
     {
-      "name": "codegen",
-      "source": "../../cmd/codegen"
-    },
-    {
       "name": "dagger-engine",
       "source": "../engine-dev"
     },
