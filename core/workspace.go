@@ -12,7 +12,7 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
-	// Path is the workspace directory relative to the workspace boundary.
+	// Path is the workspace directory path from the workspace boundary (always starts with /).
 	Path        string `field:"true" doc:"Workspace directory path relative to the workspace boundary."`
 	Address     string `field:"true" doc:"Canonical Dagger address of the workspace directory."`
 	Initialized bool   `field:"true" doc:"Whether .dagger/config.toml exists."`

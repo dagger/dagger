@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -590,7 +591,7 @@ func (srv *Server) buildCoreWorkspace(
 
 	coreWS := &core.Workspace{
 		Address:  address,
-		Path:     detected.Path,
+		Path:     path.Join("/", detected.Path),
 		ClientID: clientMetadata.ClientID,
 	}
 	if coreWS.Address == "" {
