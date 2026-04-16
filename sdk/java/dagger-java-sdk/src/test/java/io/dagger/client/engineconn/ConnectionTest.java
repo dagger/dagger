@@ -80,7 +80,7 @@ public class ConnectionTest {
     environmentVariables.set("_EXPERIMENTAL_DAGGER_CLI_BIN", null);
     CLIDownloader downloader = mock(CLIDownloader.class);
     when(downloader.downloadCLI()).thenThrow(new IOException("DOWNLOAD FAILED"));
-    CLIRunner runner = new CLIRunner(".", downloader);
+    CLIRunner runner = new CLIRunner(".", false, downloader);
     assertThatThrownBy(() -> Connection.fromCLI(runner))
         .isInstanceOf(IOException.class)
         .hasMessage("DOWNLOAD FAILED");

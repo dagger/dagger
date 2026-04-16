@@ -89,8 +89,8 @@ func cliSessionArgs(cfg *Config) []string {
 		}
 	}
 
-	if cfg.SkipWorkspaceModules {
-		args = append(args, "--skip-workspace-modules")
+	if cfg.LoadWorkspaceModules {
+		args = append(args, "--load-workspace-modules")
 	}
 
 	if cfg.Verbosity > 0 {

@@ -11,8 +11,30 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
+
+type fakeSessionCaller struct {
+	id string
+}
+
+func (caller *fakeSessionCaller) Context() context.Context {
+	return context.Background()
+}
+
+func (caller *fakeSessionCaller) Supports(string) bool {
+	return false
+}
+
+func (caller *fakeSessionCaller) Conn() *grpc.ClientConn {
+	return nil
+}
+
+func (caller *fakeSessionCaller) SharedKey() string {
+	return caller.id
+}
 
 func TestPendingLegacyModule(t *testing.T) {
 	t.Parallel()
@@ -126,6 +148,9 @@ func TestModuleResolutionFromSubdirectory(t *testing.T) {
 
 	client := &daggerClient{
 		pendingWorkspaceLoad: true,
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
 	}
 
 	srv := &Server{}
@@ -144,6 +169,56 @@ func TestModuleResolutionFromSubdirectory(t *testing.T) {
 	require.Len(t, client.pendingModules, 2) // declared module + implicit module
 	require.Equal(t, "/repo/modules/changelog", client.pendingModules[0].Ref)
 	require.Equal(t, "changelog", client.pendingModules[0].Name)
+}
+
+func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
+	t.Parallel()
+
+	existingFiles := map[string]bool{
+		"/repo/.git":        true,
+		"/repo/dagger.json": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
+	})
+
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Clean(path) == "/repo/dagger.json" {
+			return []byte(`{"name":"myproject","toolchains":[{"name":"changelog","source":"modules/changelog"}]}`), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+		clientMetadata:       &engine.ClientMetadata{},
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspace(ctx, client,
+		statFS,
+		readFile,
+		"/repo/sdk/go",
+		func(ws *workspace.Workspace, relPath string) string {
+			return filepath.Join(ws.Root, ws.Path, relPath)
+		},
+		nil,
+		true,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, client.workspace)
+	require.Empty(t, client.pendingModules)
 }
 
 func TestIsSameModuleReference(t *testing.T) {
@@ -225,6 +300,82 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 
 	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
 	require.Same(t, existing, child.workspace)
+}
+
+func TestResolveClientCallerFallsBackToParentForSyntheticNestedClient(t *testing.T) {
+	t.Parallel()
+
+	parentCaller := &fakeSessionCaller{id: "parent"}
+	parent := &daggerClient{clientID: "parent"}
+	parent.getClientCaller = func(id string) (bksession.Caller, error) {
+		require.Equal(t, "parent", id)
+		return parentCaller, nil
+	}
+
+	child := &daggerClient{
+		clientID: "child",
+		parents:  []*daggerClient{parent},
+	}
+
+	var calls []struct {
+		id     string
+		noWait bool
+	}
+
+	caller, err := child.resolveClientCaller("child", func(id string, noWait bool) (bksession.Caller, error) {
+		calls = append(calls, struct {
+			id     string
+			noWait bool
+		}{id: id, noWait: noWait})
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.Same(t, parentCaller, caller)
+	require.Equal(t, []struct {
+		id     string
+		noWait bool
+	}{
+		{id: "child", noWait: true},
+	}, calls)
+}
+
+func TestResolveClientCallerPrefersCurrentClientAttachable(t *testing.T) {
+	t.Parallel()
+
+	currentCaller := &fakeSessionCaller{id: "child"}
+	parent := &daggerClient{clientID: "parent"}
+	parent.getClientCaller = func(string) (bksession.Caller, error) {
+		t.Fatal("unexpected parent fallback")
+		return nil, nil
+	}
+
+	child := &daggerClient{
+		clientID: "child",
+		parents:  []*daggerClient{parent},
+	}
+
+	caller, err := child.resolveClientCaller("child", func(id string, noWait bool) (bksession.Caller, error) {
+		require.Equal(t, "child", id)
+		require.True(t, noWait)
+		return currentCaller, nil
+	})
+	require.NoError(t, err)
+	require.Same(t, currentCaller, caller)
+}
+
+func TestResolveClientCallerUsesBlockingLookupForOtherClients(t *testing.T) {
+	t.Parallel()
+
+	otherCaller := &fakeSessionCaller{id: "other"}
+	child := &daggerClient{clientID: "child"}
+
+	caller, err := child.resolveClientCaller("other", func(id string, noWait bool) (bksession.Caller, error) {
+		require.Equal(t, "other", id)
+		require.False(t, noWait)
+		return otherCaller, nil
+	})
+	require.NoError(t, err)
+	require.Same(t, otherCaller, caller)
 }
 
 func TestWorkspaceBindingMode(t *testing.T) {

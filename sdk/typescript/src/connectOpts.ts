@@ -11,6 +11,12 @@ export interface ConnectOpts {
   Workdir?: string
 
   /**
+   * Opt into loading workspace modules for this connection.
+   * By default, only the core API is exposed.
+   */
+  LoadWorkspaceModules?: boolean
+
+  /**
      * Enable logs output
      * @example
      * LogOutput
