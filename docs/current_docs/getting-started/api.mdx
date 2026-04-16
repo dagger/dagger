@@ -135,7 +135,7 @@ This example chains multiple function calls into a workflow that builds the Dagg
 - `file` returns the built binary as a `File` type
 - `export` exports the binary artifact to the Dagger host as `./dagger.bin`
 
-Functions can be chained with the CLI, or programmatically in a [custom Dagger function](../extending/modules/functions.mdx) using a Dagger SDK. The following are equivalent:
+Functions can be chained with the CLI, or programmatically in a custom Dagger function using a Dagger SDK. The following are equivalent:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -189,11 +189,11 @@ dagger core container from --address="alpine:latest" \
 </TabItem>
 </Tabs>
 
-As these example illustrate, function chaining is extremely powerful. See [more examples](../extending/modules/chaining.mdx) of it in action.
+As these examples illustrate, function chaining is extremely powerful.
 
 ## Modules
 
-Dagger [modules](../extending/modules/modules.mdx) are collections of Dagger Functions, packaged together for easy sharing and consumption. They are portable and reusable across languages.
+Dagger [modules](../extending/editions/dang) are collections of Dagger Functions, packaged together for easy sharing and consumption. They are portable and reusable across languages.
 
 ## Calling the Dagger API
 
@@ -216,7 +216,7 @@ The Dagger CLI can call any Dagger function, either from your local filesystem o
 
 ## Extending the Dagger API
 
-The Dagger API is extensible and shareable by design. You can extend the API by creating Dagger [modules](../extending/modules/modules.mdx).You are encouraged to write your own Dagger modules and share them with others.
+The Dagger API is extensible and shareable by design. You can extend the API by creating Dagger [modules](../extending/editions/dang). You are encouraged to write your own Dagger modules and share them with others.
 
 Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger functions, and lets you easily search and consume them.
 
