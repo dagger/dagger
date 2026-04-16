@@ -6,6 +6,7 @@ namespace Dagger\Command;
 
 use Dagger;
 use Dagger\Service\DecodesValue;
+use Dagger\Service\FindsDaggerEnums;
 use Dagger\Service\FindsDaggerObjects;
 use Dagger\Service\FindsSrcDirectory;
 use Dagger\Service\NormalizesClassName;
@@ -56,6 +57,25 @@ class EntrypointCommand extends Command
 
         $src = (new FindsSrcDirectory())();
         $daggerObjects = (new FindsDaggerObjects())($src);
+        $daggerEnums = (new FindsDaggerEnums())($daggerObjects);
+
+        // Enums must be registered before the objects that reference them.
+        foreach ($daggerEnums as $daggerEnum) {
+            $enumTypeDef = dag()->typeDef()->withEnum(
+                NormalizesClassName::shorten($daggerEnum->name),
+                $daggerEnum->description,
+            );
+
+            foreach ($daggerEnum->cases as $case) {
+                $enumTypeDef = $enumTypeDef->withEnumMember(
+                    name: $case->name,
+                    value: (string) $case->value,
+                    description: $case->description,
+                );
+            }
+
+            $daggerModule = $daggerModule->withEnum($enumTypeDef);
+        }
 
         foreach ($daggerObjects as $daggerObject) {
             $objectTypeDef = dag()->typeDef()->withObject(
