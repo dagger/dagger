@@ -10,6 +10,14 @@ import (
 	"dagger.io/dagger"
 )
 
+func daggerWorkspaceExec(args ...string) dagger.WithContainerFunc {
+	return daggerExecRaw(append([]string{"workspace"}, args...)...)
+}
+
+func daggerWorkspaceInstall(args ...string) dagger.WithContainerFunc {
+	return daggerExecRaw(append([]string{"install"}, args...)...)
+}
+
 // workspaceBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
 func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
@@ -54,7 +62,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			With(ensureWorkspaceInit()).
-			With(daggerExec("module", "init", "--sdk=dang", "--name="+name)).
+			With(daggerModuleExec("init", "--sdk=dang", "--name="+name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
 	}
 }
@@ -64,7 +72,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(daggerExec("module", "init", "--sdk=dang", "--source=.", "--name="+name)).
+			With(daggerModuleExec("init", "--sdk=dang", "--source=.", "--name="+name)).
 			WithNewFile("main.dang", source)
 	}
 }
@@ -75,8 +83,8 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			With(ensureWorkspaceInit()).
-			With(daggerExec("module", "init", "--sdk=dang", "--name="+name)).
+			With(daggerModuleExec("init", "--sdk=dang", "--name="+name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source).
-			With(daggerExec("workspace", "config", "modules."+name+".entrypoint", "true"))
+			With(daggerWorkspaceExec("config", "modules."+name+".entrypoint", "true"))
 	}
 }
