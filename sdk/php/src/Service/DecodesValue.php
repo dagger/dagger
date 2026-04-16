@@ -10,6 +10,7 @@ use Dagger\ValueObject\ListOfType;
 use Dagger\ValueObject\Type;
 use ReflectionEnum;
 use RuntimeException;
+use function constant;
 
 final readonly class DecodesValue
 {
@@ -64,18 +65,10 @@ final readonly class DecodesValue
             case TypeDefKind::VOID_KIND:
                 return null;
             case TypeDefKind::ENUM_KIND:
-                // The engine sends back the PHP case name as registered via
-                // withEnumValue($case->name) (e.g. "Json" for case Json = 'json').
-                // Look up by case name first; fall back to ::from() for any
-                // built-in/external enum where name == value (e.g. string-backed
-                // enums registered by other SDKs).
                 $decoded = json_decode($value, true);
                 $caseName = (string) $decoded;
-                $reflEnum = new ReflectionEnum($type->name);
-                if ($reflEnum->hasCase($caseName)) {
-                    return $reflEnum->getCase($caseName)->getValue();
-                }
-                return ($type->name)::from($decoded);
+
+                return constant("{$type->name}::{$caseName}");
             case TypeDefKind::INTERFACE_KIND:
                 throw new RuntimeException(sprintf(
                     'Currently cannot decode custom interfaces: %s',

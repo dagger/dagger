@@ -67,11 +67,6 @@ class EntrypointCommand extends Command
             );
 
             foreach ($daggerEnum->cases as $case) {
-                // Use the PHP case name (e.g. "Json") as the GraphQL enum
-                // identifier, not the backing value ("json"). This matches the
-                // convention used by built-in Dagger enums (TCP, UDP…) and means
-                // generated client enums will have case names like "Json" that
-                // users can access as PhpAuditFormat::Json.
                 $enumTypeDef = $enumTypeDef->withEnumValue(
                     value: $case->name,
                     description: $case->description,
