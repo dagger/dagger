@@ -25,7 +25,20 @@ module.exports = {
         "adopting/caching",
         "adopting/observability",
         "adopting/ci-integration",
-        "adopting/engine-runtime",
+        {
+          type: "category",
+          label: "Container Runtimes",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "adopting/container-runtimes/index",
+            "adopting/container-runtimes/docker",
+            "adopting/container-runtimes/podman",
+            "adopting/container-runtimes/nerdctl",
+            "adopting/container-runtimes/apple-container",
+          ],
+        },
+        "adopting/engine-configuration",
       ],
     },
 
@@ -107,19 +120,6 @@ module.exports = {
         },
         "reference/configuration/modules",
         // TODO: "reference/workspace-configuration" — .dagger/config.toml schema
-        {
-          type: "category",
-          label: "Container Runtimes",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "reference/container-runtimes/index",
-            "reference/container-runtimes/docker",
-            "reference/container-runtimes/podman",
-            "reference/container-runtimes/nerdctl",
-            "reference/container-runtimes/apple-container",
-          ],
-        },
         "reference/upgrade-to-workspaces",
       ],
     },

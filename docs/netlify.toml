@@ -207,7 +207,7 @@
 
 [[redirects]]
   from = "/ci/integrations/apple-container"
-  to = "/reference/container-runtimes/apple-container"
+  to = "/adopting/container-runtimes/apple-container"
   status = 301
 
 [[redirects]]
@@ -267,22 +267,22 @@
 
 [[redirects]]
   from = "/ci/integrations/kubernetes"
-  to = "/reference/container-runtimes/kubernetes"
+  to = "/adopting/container-runtimes/kubernetes"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/nerdctl"
-  to = "/reference/container-runtimes/nerdctl"
+  to = "/adopting/container-runtimes/nerdctl"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/openshift"
-  to = "/reference/container-runtimes/openshift"
+  to = "/adopting/container-runtimes/openshift"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/podman"
-  to = "/reference/container-runtimes/podman"
+  to = "/adopting/container-runtimes/podman"
   status = 301
 
 [[redirects]]
@@ -538,7 +538,7 @@
 
 [[redirects]]
   from = "/integrations/containerd"
-  to = "/reference/container-runtimes/nerdctl"
+  to = "/adopting/container-runtimes/nerdctl"
   status = 301
 
 [[redirects]]
@@ -1333,6 +1333,16 @@
 [[redirects]]
   from = "/reference/container-runtimes/openshift"
   to = "/reference/deployment/openshift"
+  status = 301
+
+[[redirects]]
+  from = "/reference/container-runtimes/*"
+  to = "/adopting/container-runtimes/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/engine-runtime"
+  to = "/adopting/engine-configuration"
   status = 301
 
 [[headers]]
