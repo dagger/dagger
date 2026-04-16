@@ -16,7 +16,7 @@ defmodule Dagger.GeneratorGroup do
   @type t() :: %__MODULE__{}
 
   @doc """
-  The combined changes from the generators execution
+  The combined changes from the last run of the generators
 
   If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
 
@@ -48,7 +48,7 @@ defmodule Dagger.GeneratorGroup do
   end
 
   @doc """
-  Whether the generated changeset is empty or not
+  Whether the generated changeset from the last run is empty or not
   """
   @spec empty?(t()) :: {:ok, boolean()} | {:error, term()}
   def empty?(%__MODULE__{} = generator_group) do
