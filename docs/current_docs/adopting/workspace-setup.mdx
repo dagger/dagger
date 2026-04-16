@@ -33,14 +33,14 @@ This creates `.dagger/config.toml` — the workspace configuration file. Commit 
 
 ## 3. Install modules
 
-Modules are how you add functionality to a workspace. Start with the [intro module](https://github.com/dagger/intro), which inspects your project and walks you through adopting Dagger interactively:
+Modules are how you add functionality to a workspace. Start with the [setup module](https://github.com/dagger/setup), which inspects your project and walks you through adopting Dagger interactively:
 
 ```shell
-dagger install github.com/dagger/intro
+dagger install github.com/dagger/setup
 dagger check
 ```
 
-The intro module suggests modules to install based on what it finds in your project. You can also install modules directly:
+The setup module suggests modules to install based on what it finds in your project. You can also install modules directly:
 
 ```shell
 dagger install github.com/dagger/eslint
