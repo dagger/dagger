@@ -1373,6 +1373,11 @@
   to = "/adopting/triggers/:splat"
   status = 301
 
+[[redirects]]
+  from = "/extending/custom-applications/*"
+  to = "/extending"
+  status = 301
+
 ## end: wildcard redirects ##
 
 [[redirects]]
