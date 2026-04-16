@@ -20,7 +20,7 @@ module.exports = {
       collapsed: false,
       items: [
         "getting-started/quickstart",
-        "adopting/set-up-your-project",
+        "adopting/workspace-setup",
         "adopting/secrets",
         "adopting/caching",
         "adopting/observability",

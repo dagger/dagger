@@ -1,0 +1,57 @@
+---
+title: "Workspace Setup"
+slug: /adopting/workspace-setup
+description: "Add a Dagger workspace to your project"
+---
+
+# Workspace Setup
+
+A Dagger workspace is a directory where Dagger stores its configuration and installed modules. Setting one up takes three steps.
+
+## 1. Choose where to initialize
+
+A workspace lives in a `.dagger/` directory. You need to decide where that directory goes.
+
+**For most projects, initialize at the repository root.** This matches how developers and CI systems expect to invoke checks — from the top of the repo — and makes a single workspace cover the whole codebase.
+
+**Initialize in a subdirectory when:**
+- You have a monorepo with independent components that ship separately
+- A specific subproject needs its own toolchain isolated from the rest
+- You're experimenting and don't want to commit a workspace at the root yet
+
+A repository can contain multiple workspaces. Dagger finds the nearest one by walking up from your current directory.
+
+## 2. Initialize the workspace
+
+From the directory you chose:
+
+```shell
+dagger init
+```
+
+This creates `.dagger/config.toml` — the workspace configuration file. Commit it to your repository so everyone uses the same setup.
+
+## 3. Install modules
+
+Modules are how you add functionality to a workspace. Start with the [intro module](https://github.com/dagger/intro), which inspects your project and walks you through adopting Dagger interactively:
+
+```shell
+dagger install github.com/dagger/intro
+dagger check
+```
+
+The intro module suggests modules to install based on what it finds in your project. You can also install modules directly:
+
+```shell
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+dagger install github.com/dagger/prettier
+```
+
+Browse available modules on the [Daggerverse](https://daggerverse.dev).
+
+## What's next
+
+- Add `dagger check` to your CI pipeline — it's a [single line](/using-dagger/checking#in-ci)
+- Configure [secrets](/adopting/secrets) if your workflows need credentials
+- Set up [Dagger Cloud](https://dagger.cloud) with `dagger login` for traces and Cloud Checks
