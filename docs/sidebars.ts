@@ -22,7 +22,6 @@ module.exports = {
         "getting-started/quickstart",
         "adopting/workspace-setup",
         "adopting/secrets",
-        "adopting/caching",
         "adopting/observability",
         "adopting/triggers",
         "adopting/scaling",
@@ -96,6 +95,7 @@ module.exports = {
         "introduction/core-concepts/modules",
         "introduction/core-concepts/functions",
         "introduction/core-concepts/checks",
+        "introduction/core-concepts/caching",
       ],
     },
 

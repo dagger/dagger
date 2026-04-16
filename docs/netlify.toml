@@ -1355,6 +1355,11 @@
   to = "/adopting/triggers"
   status = 301
 
+[[redirects]]
+  from = "/adopting/caching"
+  to = "/core-concepts/caching"
+  status = 301
+
 [[headers]]
   for = "/*"
   [headers.values]
