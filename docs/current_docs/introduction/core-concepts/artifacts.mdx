@@ -1,41 +1,43 @@
 ---
 title: "Artifacts"
 slug: /core-concepts/artifacts
-description: "The typed values that flow between Dagger functions"
+description: "The units Dagger operates on in your workspace"
 ---
 
 # Artifacts
 
-Artifacts are the typed values that flow between Dagger functions: containers, directories, files, secrets, services, and more. They are the nouns of a Dagger workflow — functions are the verbs.
+An artifact is a thing in your workspace that Dagger can operate on as a unit — something you might check, ship, or generate code for. When you run `dagger check`, Dagger finds the artifacts in your workspace and runs their checks.
 
-Unlike strings or JSON blobs passed between CI steps, Dagger artifacts are first-class values managed by the engine. They can be:
+## Where artifacts come from
 
-- **Passed between functions** as inputs and outputs
-- **Composed** — a `Container` can contain a `Directory`, a `Directory` can contain `Files`
-- **Cached** by content, automatically
-- **Lazily evaluated** — nothing executes until a terminal operation requires it
+Each [module](/core-concepts/modules) you install contributes an artifact to your workspace. For example, installing the `eslint` module contributes an ESLint artifact; installing `vitest` contributes a Vitest artifact.
 
-## The main artifacts
+```shell
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+```
 
-| Artifact | Represents |
-|---|---|
-| [`Container`](/getting-started/types/container) | An OCI-compatible container with layered filesystem, env, entrypoint |
-| [`Directory`](/getting-started/types/directory) | A directory tree (from the host, a Git repo, or synthesized) |
-| [`File`](/getting-started/types/file) | A single file |
-| [`Secret`](/getting-started/types/secret) | A credential that never leaks into the cache |
-| [`Service`](/getting-started/types/service) | A long-running process reachable over the network |
-| [`GitRepository`](/getting-started/types/git-repository) | A Git repository with refs and history |
-| [`CacheVolume`](/getting-started/types/cache-volume) | A directory that persists across runs |
+Your workspace now has two artifacts: one from each module.
 
-The full list is in the [API reference](https://docs.dagger.io/api/reference).
+## What artifacts do
 
-## Why artifacts matter
+Artifacts are the units that [verbs](/core-concepts/functions) operate on. A module author attaches functions to an artifact — a check function, a ship function, a generate function — and those functions run when you invoke the corresponding verb:
 
-Artifacts are what make Dagger workflows portable and cacheable. A `Container` is the same whether it was built on your laptop or in a scaled-out engine — the engine can move it, cache it, ship it without your code needing to know.
+```shell
+dagger check        # runs every check attached to every artifact
+dagger check eslint # runs checks attached to the eslint artifact only
+```
 
-They also enable composition: a function that returns a `Container` can be chained into another function that takes a `Container` as input, with no glue code, no serialization, no intermediate files.
+The artifact is how Dagger answers "what can I check here?" It's the selection model for lifecycle commands.
+
+## Why this matters
+
+Without artifacts, every verb command (`check`, `ship`, etc.) would need its own discovery logic and its own selection syntax. With artifacts, the selection vocabulary is shared: the same way you filter what to check, you filter what to ship.
+
+This is also why installing a module feels like adding a unit of functionality rather than a bag of functions — the artifact is the unit.
 
 ## Next steps
 
-- **[Functions](/core-concepts/functions)** — how artifacts flow through operations
-- **[Types reference](/getting-started/types)** — detailed docs on each artifact type
+- **[Functions](/core-concepts/functions)** — what runs when you invoke a verb on an artifact
+- **[Checks](/core-concepts/checks)** — the verb you'll use most often
+- **[Modules](/core-concepts/modules)** — where artifacts come from
