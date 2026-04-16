@@ -217,7 +217,7 @@
 
 [[redirects]]
   from = "/ci/adopting"
-  to = "/reference/best-practices/adopting"
+  to = "/adopting/workspace-setup"
   status = 301
 
 [[redirects]]
@@ -357,7 +357,7 @@
 
 [[redirects]]
   from = "/contributing"
-  to = "/reference/best-practices/contributing"
+  to = "https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md"
   status = 301
 
 [[redirects]]
@@ -507,7 +507,17 @@
 
 [[redirects]]
   from = "/adopting"
-  to = "/reference/best-practices/adopting"
+  to = "/adopting/workspace-setup"
+  status = 301
+
+[[redirects]]
+  from = "/reference/best-practices/adopting"
+  to = "/adopting/workspace-setup"
+  status = 301
+
+[[redirects]]
+  from = "/reference/best-practices/contributing"
+  to = "https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md"
   status = 301
 
 [[redirects]]
@@ -537,7 +547,7 @@
 
 [[redirects]]
   from = "/204441/contributing"
-  to = "/reference/best-practices/contributing"
+  to = "https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md"
   status = 301
 
 [[redirects]]
