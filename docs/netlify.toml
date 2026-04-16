@@ -232,17 +232,17 @@
 
 [[redirects]]
   from = "/ci/integrations/argo-workflows"
-  to = "/getting-started/ci-integrations/argo-workflows"
+  to = "/adopting/triggers/argo-workflows"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/aws-codebuild"
-  to = "/getting-started/ci-integrations/aws-codebuild"
+  to = "/adopting/triggers/aws-codebuild"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/azure-pipelines"
-  to = "/getting-started/ci-integrations/azure-pipelines"
+  to = "/adopting/triggers/azure-pipelines"
   status = 301
 
 [[redirects]]
@@ -252,7 +252,7 @@
 
 [[redirects]]
   from = "/ci/integrations/circleci"
-  to = "/getting-started/ci-integrations/circleci"
+  to = "/adopting/triggers/circleci"
   status = 301
 
 [[redirects]]
@@ -262,17 +262,17 @@
 
 [[redirects]]
   from = "/ci/integrations/github"
-  to = "/getting-started/ci-integrations/github"
+  to = "/adopting/triggers/github-actions"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/github-actions"
-  to = "/getting-started/ci-integrations/github-actions"
+  to = "/adopting/triggers/github-actions"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/gitlab"
-  to = "/getting-started/ci-integrations/gitlab-ci"
+  to = "/adopting/triggers/gitlab"
   status = 301
 
 [[redirects]]
@@ -282,7 +282,7 @@
 
 [[redirects]]
   from = "/ci/integrations/jenkins"
-  to = "/getting-started/ci-integrations/jenkins"
+  to = "/adopting/triggers/jenkins"
   status = 301
 
 [[redirects]]
@@ -307,7 +307,7 @@
 
 [[redirects]]
   from = "/ci/integrations/tekton"
-  to = "/getting-started/ci-integrations/tekton"
+  to = "/adopting/triggers/tekton"
   status = 301
 
 [[redirects]]
@@ -1356,6 +1356,21 @@
 [[redirects]]
   from = "/cli/*"
   to = "/reference/cli"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/ci-integrations/github"
+  to = "/adopting/triggers/github-actions"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/ci-integrations/gitlab-ci"
+  to = "/adopting/triggers/gitlab"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/ci-integrations/*"
+  to = "/adopting/triggers/:splat"
   status = 301
 
 ## end: wildcard redirects ##

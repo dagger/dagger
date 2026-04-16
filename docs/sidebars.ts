@@ -23,7 +23,27 @@ module.exports = {
         "adopting/workspace-setup",
         "adopting/secrets",
         "adopting/observability",
-        "adopting/triggers",
+        {
+          type: "category",
+          label: "Triggers",
+          link: {
+            type: "doc",
+            id: "adopting/triggers/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "adopting/triggers/github-actions",
+            "adopting/triggers/gitlab",
+            "adopting/triggers/circleci",
+            "adopting/triggers/jenkins",
+            "adopting/triggers/azure-pipelines",
+            "adopting/triggers/aws-codebuild",
+            "adopting/triggers/argo-workflows",
+            "adopting/triggers/tekton",
+            "adopting/triggers/teamcity",
+          ],
+        },
         {
           type: "category",
           label: "Scaling",
