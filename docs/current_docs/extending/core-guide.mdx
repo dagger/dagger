@@ -257,7 +257,40 @@ type MyCi {
 }
 ```
 
-Module dependencies are versioned via git refs. Updates are explicit — `dagger module update` bumps to the latest.
+### Module references
+
+A module reference follows the format `[proto://]host/repo[/subpath][@version]`:
+
+```shell
+github.com/shykes/daggerverse/hello@v0.3.0
+#          ^^^^^^ ^^^^^^^^^^^^^ ^^^^^ ^^^^^^
+#          host   repo          path  version
+```
+
+- `proto://` is optional (`ssh://` or `https://`). If omitted, Dagger chooses based on available authentication.
+- `@version` can be a tag, branch, or commit. If omitted, the default branch is used.
+- Private modules work with both HTTPS (Git credential managers) and SSH (`SSH_AUTH_SOCK`).
+
+### Managing dependencies
+
+```shell
+# Install a dependency
+dagger module install github.com/shykes/daggerverse/hello@v0.3.0
+
+# Update to latest version
+dagger module update hello
+
+# Update to a specific version
+dagger module update hello@v0.4.0
+
+# Remove a dependency
+dagger uninstall hello
+
+# Local modules (same git repo) work too
+dagger module install ./path/to/module
+```
+
+Dependencies are pinned to exact commits in `dagger.json` and versioned via git refs. Updates are explicit.
 
 ## Services
 
@@ -313,16 +346,36 @@ type MyCi {
 }
 ```
 
-The `Secret` type ensures tokens are never leaked to logs, caches, or filesystem layers. Callers provide secrets via providers:
+The `Secret` type ensures tokens are never leaked to logs, caches, or filesystem layers. Dagger automatically scrubs secrets from all output streams, including crash reports.
+
+Callers provide secrets via providers:
 
 ```shell
-dagger call deploy --token=env:DEPLOY_TOKEN
-dagger call deploy --token=vault:secret/deploy#token
+dagger call deploy --token=env:DEPLOY_TOKEN        # environment variable
+dagger call deploy --token=file:./token.txt         # file
+dagger call deploy --token=cmd:"gh auth token"      # command output
+dagger call deploy --token=op://vault/item/field    # 1Password
+dagger call deploy --token=vault://path/to/secret   # HashiCorp Vault
+dagger call deploy --token=gcp://secret-name        # Google Cloud Secret Manager
 ```
 
-## Cache volumes
+**Security considerations:**
+- Never write secret plaintext to files inside containers — it could be stored in the cache.
+- Secrets are scoped to the module that defines them. To share across modules, pass them explicitly via function arguments.
 
-Use cache volumes for package manager caches and other persistent data:
+## Caching
+
+Dagger has multiple layers of caching that work together to minimize redundant work.
+
+### Layer caching
+
+Every container operation (`from`, `withExec`, `withDirectory`, etc.) is automatically cached by its inputs. If the inputs haven't changed, the operation is skipped entirely. This is the same model as Docker layer caching, but applied to the entire Dagger API.
+
+You don't need to do anything to enable layer caching — it's always on.
+
+### Cache volumes
+
+Use cache volumes for package manager caches and other persistent data that should survive across runs:
 
 ```dang
 type MyCi {
@@ -340,7 +393,32 @@ type MyCi {
 }
 ```
 
-Cache volumes persist across runs. The `cacheVolume("name")` call is keyed by name — same name, same cache.
+`cacheVolume("name")` is keyed by name — same name, same cache. Cache volumes are scoped to the module that defines them. To share a cache volume across modules, pass a reference to it via function arguments.
+
+### Function caching
+
+By default, Dagger caches function results for up to 7 days. If a function is called again with the same inputs (arguments, parent object state, module source), the cached result is returned without re-executing.
+
+You can control this per function:
+
+```dang
+# Cache for 10 minutes (useful for external data that changes)
+pub latestRelease: String! @cache(ttl: "10m") {
+  # fetch from GitHub API...
+}
+
+# Cache only for the current session
+pub sessionId: String! @cache(scope: "session") {
+  # generate once per session...
+}
+
+# Never cache (always re-execute)
+pub currentTime: String! @cache(scope: "never") {
+  # always fresh...
+}
+```
+
+**How it fits together:** A function cache hit skips the function entirely. A function cache miss runs the function, but individual operations inside it may still hit the layer cache. `@cache(scope: "never")` forces the function to run every call, but does *not* disable layer caching for the operations inside it.
 
 ## Configuration with defaults
 
@@ -379,6 +457,131 @@ dagger call --node-version=18 build
 # node-version = "18"
 # registry = "docker.io"
 ```
+
+## Custom types
+
+Modules can define custom types to model their domain. This is how you design the artifacts your module produces and consumes.
+
+```dang
+type MyCi {
+  """
+  Build result containing the binary and metadata
+  """
+  type BuildResult {
+    pub binary: File!
+    pub version: String!
+    pub platform: String!
+  }
+
+  pub build(
+    platform: String! = "linux/amd64",
+  ): BuildResult! {
+    let bin = container
+      .from("golang:1.22")
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["go", "build", "-o", "/out/app", "."])
+      .file("/out/app")
+
+    BuildResult {
+      binary: bin,
+      version: "1.0.0",
+      platform: platform,
+    }
+  }
+}
+```
+
+Custom types are accessible through chaining, starting from a function on the main type. Dagger prefixes their names in the API schema (e.g. `MyCiBuildResult`) to prevent conflicts when multiple modules are loaded together.
+
+Use custom types when:
+- A function needs to return multiple related values
+- You want to model a domain concept (a build result, a deployment target, a test report)
+- You want to enable chaining on your return values
+
+## Enumerations
+
+Use enums to restrict string arguments to a set of valid values:
+
+```dang
+type Security {
+  enum Severity {
+    UNKNOWN
+    LOW
+    MEDIUM
+    HIGH
+    CRITICAL
+  }
+
+  pub scan(
+    ref: String!,
+    severity: Severity!,
+  ): String! {
+    container
+      .from("aquasec/trivy:latest")
+      .withExec(["trivy", "image", "--severity", severity, ref])
+      .stdout
+  }
+}
+```
+
+Enum values are strictly validated. Passing an invalid value produces a clear error showing the allowed choices:
+
+```shell
+dagger call scan --ref=alpine:latest --severity=FOO
+# Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
+```
+
+## Interfaces
+
+Interfaces let your module accept arbitrary types from other modules without being tightly coupled to them:
+
+```dang
+type Deployer {
+  """
+  Any object that can produce a container image
+  """
+  interface Buildable {
+    build: Container!
+  }
+
+  pub deploy(app: Buildable!, registry: String!): String! {
+    app.build.publish(registry + "/app:latest")
+  }
+}
+```
+
+Any module that has a `build` function returning `Container!` can be passed as a `Buildable`. Dagger automatically detects compatible types and generates the necessary conversions — no explicit "implements" declaration needed by the other module.
+
+Interfaces are useful for creating modules that compose with others without knowing about them in advance.
+
+## Documenting your module
+
+Descriptions on modules, functions, and arguments appear in `dagger functions`, `dagger call --help`, and the Daggerverse. Write them as part of your code:
+
+```dang
+"""
+CI pipeline for my web application.
+Handles building, testing, and publishing.
+"""
+pub description = "CI for my web app"
+
+type WebCi {
+  """
+  Build the application for production
+  """
+  pub build(
+    """
+    Node.js version to use for the build
+    """
+    nodeVersion: String! = "20",
+  ): Container! {
+    # ...
+  }
+}
+```
+
+Good descriptions make your module self-documenting. Users can discover what it does and how to call it without reading source code.
 
 ## Putting it together
 
@@ -491,11 +694,9 @@ dagger generate
 git diff --exit-code
 ```
 
-For more thorough testing, write a separate test module that imports yours and validates behavior. Testing patterns are still evolving — see [Module Development Reference](./modules/modules.mdx) for current best practices.
+For more thorough testing, write a separate test module that imports yours and validates behavior.
 
 ## Next steps
 
-- [Module Development Reference](./modules/modules.mdx) — Detailed reference for all features (arguments, return types, chaining, custom types, interfaces, etc.)
-- [SDK Guides](/extending) — Language-specific setup and patterns
 - [Checking Your Code](/using-dagger/checking) — How users run your checks
 - [Generating Code](/using-dagger/generating) — How users run your generators
