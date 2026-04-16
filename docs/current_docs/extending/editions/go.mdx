@@ -337,39 +337,3 @@ The following Dagger Function demonstrates how to instrument custom OpenTelemetr
 ```go file=../../cookbook/snippets/custom-spans/go/main.go
 ```
 
-### Agents
-
-#### Use string inputs and outputs
-
-The following Dagger Function creates an environment with a string input and a string output. The input is a question, and the output represents the answer. The environment is given to an LLM with a prompt describing how it should complete its work.
-
-```go file=../../cookbook/snippets/env-use-strings/go/main.go
-```
-
-#### Use container inputs and outputs
-
-The following Dagger Function creates an environment with a container input and a container output. The input is a base `alpine` container, and the output is the same container, updated with additional libraries and tools. The environment is given to an LLM with a prompt describing how it should update the container.
-
-```go file=../../cookbook/snippets/env-use-containers/go/main.go
-```
-
-#### Use directory inputs and outputs
-
-The following Dagger Function creates an environment with a directory input and a directory output. The input is a directory containing various files, and the output is a different directory containing translations of the original files. The environment is given to an LLM with a prompt describing how it should complete its work.
-
-```go file=../../cookbook/snippets/env-use-directories/go/main.go
-```
-
-#### Combine inputs and outputs of multiple types
-
-The following Dagger Function creates an environment with two inputs (a container and a directory) and one output (a file). The input container is a base `golang` container, the input directory is a Git repository containing Golang source code, and the output is the built Go executable. The environment is given to an LLM with a prompt describing how it should work.
-
-```go file=../../cookbook/snippets/env-use-multiple-types/go/main.go
-```
-
-#### Build a Golang coding agent
-
-The following Dagger Function creates a Golang coding agent. The input is a programming assignment and the output is a Go executable satisfying the assignment. The environment consists of a base `golang` container, which is given to an LLM with a prompt describing how it should perform the work.
-
-```go file=../../getting-started/quickstarts/agent/snippets/part1/go/main.go
-```
