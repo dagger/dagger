@@ -41,7 +41,9 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(
 			cmd.Context(),
-			client.Params{},
+			client.Params{
+				LoadWorkspaceModules: true,
+			},
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
 				ws := dag.CurrentWorkspace()

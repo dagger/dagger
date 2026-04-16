@@ -46,6 +46,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -176,10 +177,9 @@ type daggerClient struct {
 	// isn't available during initialization (the session attachables request
 	// is blocked on the same locks that initializeDaggerClient holds).
 
-	// Whether this client should detect its own workspace and auto-load
-	// workspace modules from that workspace.
-	// True for non-module clients (main client and nested non-module clients);
-	// false for module clients (they inherit workspace binding and skip auto-load).
+	// Whether this client should detect its own workspace binding.
+	// Non-module clients detect their own workspace; module clients inherit a
+	// parent workspace binding instead.
 	pendingWorkspaceLoad bool
 	workspaceMu          sync.Mutex
 	workspaceLoaded      bool
@@ -513,13 +513,16 @@ func (srv *Server) initializeDaggerClient(
 	failureCleanups.Add("close llb solver", client.llbSolver.Close)
 
 	var callerG singleflight.Group[string, bksession.Caller]
-	client.getClientCaller = func(id string) (bksession.Caller, error) {
+	getClientCaller := func(id string, noWait bool) (bksession.Caller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (bksession.Caller, error) {
-			return srv.bkSessionManager.Get(ctx, id, false)
+			return srv.bkSessionManager.Get(ctx, id, noWait)
 		})
 		return caller, err
+	}
+	client.getClientCaller = func(id string) (bksession.Caller, error) {
+		return client.resolveClientCaller(id, getClientCaller)
 	}
 
 	client.buildkitSession, err = srv.newBuildkitSession(ctx, client)
@@ -738,6 +741,27 @@ func (srv *Server) initializeDaggerClient(
 	return nil
 }
 
+func (client *daggerClient) resolveClientCaller(
+	id string,
+	getClientCaller func(string, bool) (bksession.Caller, error),
+) (bksession.Caller, error) {
+	if id == client.clientID && len(client.parents) > 0 {
+		// Synthetic nested clients (e.g. builtin dang evaluation) do not
+		// establish their own session attachables. When host-backed services
+		// such as git config are requested through the current client ID, fall
+		// back to the immediate parent client chain.
+		caller, err := getClientCaller(id, true)
+		if err != nil || caller != nil {
+			return caller, err
+		}
+
+		parent := client.parents[len(client.parents)-1]
+		return parent.getClientCaller(parent.clientID)
+	}
+
+	return getClientCaller(id, false)
+}
+
 // initClientResources adds secrets/sockets from the call ID and parent IDs to
 // the client's stores.
 func (srv *Server) initClientResources(ctx context.Context, client *daggerClient, opts *ClientInitOpts) error {
@@ -930,8 +954,8 @@ func (srv *Server) getOrInitClient(
 		if client.clientMetadata.AllowedLLMModules == nil {
 			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
 		}
-		if opts.SkipWorkspaceModules {
-			client.clientMetadata.SkipWorkspaceModules = true
+		if opts.LoadWorkspaceModules {
+			client.clientMetadata.LoadWorkspaceModules = true
 		}
 		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
 			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
@@ -1015,14 +1039,14 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
-	var skipWorkspaceModules bool
+	var loadWorkspaceModules bool
 	var eagerRuntime bool
 	var workspaceRef *string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
 		extraModules = md.ExtraModules
-		skipWorkspaceModules = md.SkipWorkspaceModules
+		loadWorkspaceModules = md.LoadWorkspaceModules
 		eagerRuntime = md.EagerRuntime
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
 			ref := declaredWorkspace
@@ -1042,7 +1066,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
 			AllowedLLMModules:    allowedLLMModules,
 			ExtraModules:         extraModules,
-			SkipWorkspaceModules: skipWorkspaceModules,
+			LoadWorkspaceModules: loadWorkspaceModules,
 			EagerRuntime:         eagerRuntime,
 			Workspace:            workspaceRef,
 		},
@@ -1416,11 +1440,15 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 		// Also serve toolchains so their functions are available in the
 		// client schema (e.g. when `dagger shell` `.cd`s into a module).
 		if src := mod.GetSource(); src != nil {
-			for _, tcSrc := range src.Toolchains {
+			for i, tcSrc := range src.Toolchains {
 				if tcSrc.Self() == nil {
 					continue
 				}
-				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc)
+				var cfg *modules.ModuleConfigDependency
+				if i < len(src.ConfigToolchains) {
+					cfg = src.ConfigToolchains[i]
+				}
+				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pendingRelatedModule(src, tcSrc.Self(), cfg, false))
 				if err != nil {
 					return fmt.Errorf("error resolving toolchain module: %w", err)
 				}

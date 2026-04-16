@@ -27,6 +27,7 @@ type Config struct {
 	VersionOverride      string
 	Verbosity            int
 	ExtraEnv             []string
+	LoadWorkspaceModules bool
 	SkipWorkspaceModules bool
 }
 
@@ -41,6 +42,24 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		return cfg.Conn, nil
 	}
 
+	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
+		cfg.LoadWorkspaceModules,
+		cfg.SkipWorkspaceModules,
+	)
+	if err != nil {
+		return nil, err
+	}
+	cfg = &Config{
+		Workdir:              cfg.Workdir,
+		Workspace:            cfg.Workspace,
+		LogOutput:            cfg.LogOutput,
+		RunnerHost:           cfg.RunnerHost,
+		VersionOverride:      cfg.VersionOverride,
+		Verbosity:            cfg.Verbosity,
+		ExtraEnv:             cfg.ExtraEnv,
+		LoadWorkspaceModules: loadWorkspaceModules,
+	}
+
 	// Try DAGGER_SESSION_PORT next
 	conn, ok, err := FromSessionEnv()
 	if err != nil {
@@ -52,6 +71,9 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		}
 		if cfg.Workspace != "" {
 			return nil, fmt.Errorf("cannot configure workspace for existing session")
+		}
+		if cfg.LoadWorkspaceModules {
+			return nil, fmt.Errorf("cannot configure workspace module loading for existing session")
 		}
 		return conn, nil
 	}
@@ -71,6 +93,16 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		return nil, err
 	}
 	return conn, nil
+}
+
+func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {
+	if loadWorkspaceModules && skipWorkspaceModules {
+		return false, fmt.Errorf("load workspace modules and skip workspace modules are mutually exclusive")
+	}
+	if skipWorkspaceModules {
+		return false, nil
+	}
+	return loadWorkspaceModules, nil
 }
 
 func fallbackSpanContext(ctx context.Context) context.Context {

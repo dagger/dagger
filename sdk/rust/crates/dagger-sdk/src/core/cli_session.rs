@@ -98,6 +98,9 @@ impl InnerCliSession {
             let abs_path = canonicalize(config_path)?;
             args.extend(["--project".into(), abs_path.to_string_lossy().to_string()])
         }
+        if config.load_workspace_modules {
+            args.push("--load-workspace-modules".into());
+        }
 
         args.extend(["--label".into(), "dagger.io/sdk.name:rust".into()]);
         args.extend([

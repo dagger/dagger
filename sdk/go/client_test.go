@@ -21,6 +21,15 @@ func TestWithWorkspace(t *testing.T) {
 	require.Equal(t, "github.com/acme/ws", cfg.Workspace)
 }
 
+func TestWithLoadWorkspaceModules(t *testing.T) {
+	t.Parallel()
+
+	cfg := &engineconn.Config{}
+	WithLoadWorkspaceModules().setClientOpt(cfg)
+
+	require.True(t, cfg.LoadWorkspaceModules)
+}
+
 func TestDirectory(t *testing.T) {
 	t.Parallel()
 

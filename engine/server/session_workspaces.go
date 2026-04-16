@@ -446,7 +446,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
 ) error {
 	clientMD := client.clientMetadata
-	skipModules := !client.pendingWorkspaceLoad || (clientMD != nil && clientMD.SkipWorkspaceModules)
+	loadModules := client.pendingWorkspaceLoad && clientMD != nil && clientMD.LoadWorkspaceModules
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
 	ws, err := workspace.Detect(ctx, func(ctx context.Context, path string) (string, bool, error) {
@@ -489,7 +489,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 	client.workspace = coreWS
 
-	if skipModules {
+	if !loadModules {
 		return nil
 	}
 
@@ -736,11 +736,15 @@ func (srv *Server) resolveModuleLoad(
 		return resolved, nil
 	}
 
-	for _, toolchainSrc := range src.Toolchains {
+	for i, toolchainSrc := range src.Toolchains {
 		if toolchainSrc.Self() == nil {
 			continue
 		}
-		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, toolchainSrc)
+		var cfg *modules.ModuleConfigDependency
+		if i < len(src.ConfigToolchains) {
+			cfg = src.ConfigToolchains[i]
+		}
+		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, toolchainSrc, pendingRelatedModule(src, toolchainSrc.Self(), cfg, false))
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving toolchain module: %w", err)
 		}
@@ -751,7 +755,7 @@ func (srv *Server) resolveModuleLoad(
 	}
 
 	if src.Blueprint.Self() != nil {
-		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, src.Blueprint)
+		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, src.Blueprint, pendingRelatedModule(src, src.Blueprint.Self(), src.ConfigBlueprint, true))
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving blueprint module: %w", err)
 		}
@@ -767,19 +771,131 @@ func (srv *Server) resolveModuleLoad(
 	return resolved, nil
 }
 
+// pendingRelatedModule adapts a related module of a primary module into the
+// existing pendingModule loading path.
+//
+// Related modules are modules attached through the primary module source's
+// blueprint or toolchains. They are resolved separately from regular
+// dependencies but still need the same legacy compat handling as modules loaded
+// from workspace discovery, such as legacy default-path resolution and
+// dagger.json argument customizations.
+func pendingRelatedModule(
+	parent *core.ModuleSource,
+	related *core.ModuleSource,
+	cfg *modules.ModuleConfigDependency,
+	entrypoint bool,
+) pendingModule {
+	mod := pendingModule{
+		Ref:        related.AsString(),
+		RefPin:     related.Pin(),
+		Entrypoint: entrypoint,
+		// LegacyDefaultPath is intentionally not set here. Related modules
+		// are loaded as siblings of an explicit -m entrypoint: their
+		// +defaultPath must resolve against that entrypoint's repo (the
+		// -m argument), not against the session's currentWorkspace — the
+		// latter is the user's CWD, which may be empty, partial, or a
+		// different checkout entirely. The default _contextDirectory
+		// resolution already uses the module's own source, which for a
+		// toolchain/blueprint declared as a subdir of the -m module
+		// shares the entrypoint's clone (or local context) root.
+	}
+	if cfg != nil {
+		if cfg.Name != "" {
+			mod.Name = cfg.Name
+		}
+		mod.ConfigDefaults = legacyConfigDefaults(cfg.Customizations)
+		mod.ArgCustomizations = cfg.Customizations
+	}
+	if entrypoint && parent != nil && parent.Kind == core.ModuleSourceKindLocal {
+		mod.LegacyCallerModuleDir = parent.AsString()
+	}
+	return mod
+}
+
+func legacyConfigDefaults(customizations []*modules.ModuleConfigArgument) map[string]any {
+	config := make(map[string]any)
+	for _, cust := range customizations {
+		if cust != nil && len(cust.Function) == 0 && cust.Default != "" {
+			config[cust.Argument] = cust.Default
+		}
+	}
+	if len(config) == 0 {
+		return nil
+	}
+	return config
+}
+
 func (srv *Server) resolveModuleSourceAsModule(
 	ctx context.Context,
 	dag *dagql.Server,
 	src dagql.ObjectResult[*core.ModuleSource],
+	mod pendingModule,
 ) (*core.Module, error) {
+	if mod.Ref == "" && src.Self() != nil {
+		mod.Ref = src.Self().AsString()
+	}
+	if mod.RefPin == "" && src.Self() != nil {
+		mod.RefPin = src.Self().Pin()
+	}
+	if mod.LegacyCallerModuleDir != "" && mod.Entrypoint {
+		if err := srv.mergeLegacyCallerEnvDefaults(ctx, dag, src.Self(), mod.LegacyCallerModuleDir); err != nil {
+			return nil, err
+		}
+	}
+
+	asModuleArgs, err := asModuleArgsForPendingModule(mod)
+	if err != nil {
+		return nil, err
+	}
+
 	var resolved dagql.ObjectResult[*core.Module]
-	err := dag.Select(ctx, src, &resolved,
-		dagql.Selector{Field: "asModule"},
+	err = dag.Select(ctx, src, &resolved,
+		dagql.Selector{Field: "asModule", Args: asModuleArgs},
 	)
 	if err != nil {
 		return nil, err
 	}
 	return resolved.Self(), nil
+}
+
+func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error) {
+	// Build asModule args so legacy settings flow through dagql and are applied
+	// before Install runs inside moduleSourceAsModule.
+	asModuleArgs := []dagql.NamedInput{}
+	if mod.Name != "" {
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "legacyNameOverride", Value: dagql.String(mod.Name),
+		})
+	}
+	if mod.LegacyDefaultPath {
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "legacyDefaultPath", Value: dagql.Boolean(true),
+		})
+	}
+	if len(mod.ConfigDefaults) > 0 {
+		wsJSON, err := json.Marshal(mod.ConfigDefaults)
+		if err != nil {
+			return nil, fmt.Errorf("encoding workspace config for %q: %w", mod.Ref, err)
+		}
+		asModuleArgs = append(asModuleArgs,
+			dagql.NamedInput{Name: "legacyWorkspaceConfigJson", Value: dagql.String(string(wsJSON))},
+		)
+		if mod.DefaultsFromDotEnv {
+			asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+				Name: "legacyDefaultsFromDotEnv", Value: dagql.Boolean(true),
+			})
+		}
+	}
+	if len(mod.ArgCustomizations) > 0 {
+		custJSON, err := json.Marshal(mod.ArgCustomizations)
+		if err != nil {
+			return nil, fmt.Errorf("encoding arg customizations for %q: %w", mod.Ref, err)
+		}
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
+		})
+	}
+	return asModuleArgs, nil
 }
 
 // serveAllResolvedModuleLoads serves all resolved primary modules and their
@@ -903,58 +1019,12 @@ func (srv *Server) resolveModule(
 		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 
-	if mod.LegacyCallerModuleDir != "" && mod.Entrypoint {
-		if err := srv.mergeLegacyCallerEnvDefaults(ctx, dag, src.Self(), mod.LegacyCallerModuleDir); err != nil {
-			return nil, err
-		}
-	}
-
-	// Build asModule args — legacy settings flow through dagql so they are
-	// applied before Install runs inside moduleSourceAsModule.
-	asModuleArgs := []dagql.NamedInput{}
-	if mod.Name != "" {
-		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-			Name: "legacyNameOverride", Value: dagql.String(mod.Name),
-		})
-	}
-	if mod.LegacyDefaultPath {
-		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-			Name: "legacyDefaultPath", Value: dagql.Boolean(true),
-		})
-	}
-	if len(mod.ConfigDefaults) > 0 {
-		wsJSON, err := json.Marshal(mod.ConfigDefaults)
-		if err != nil {
-			return nil, fmt.Errorf("encoding workspace config for %q: %w", mod.Ref, err)
-		}
-		asModuleArgs = append(asModuleArgs,
-			dagql.NamedInput{Name: "legacyWorkspaceConfigJson", Value: dagql.String(string(wsJSON))},
-		)
-		if mod.DefaultsFromDotEnv {
-			asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-				Name: "legacyDefaultsFromDotEnv", Value: dagql.Boolean(true),
-			})
-		}
-	}
-	if len(mod.ArgCustomizations) > 0 {
-		custJSON, err := json.Marshal(mod.ArgCustomizations)
-		if err != nil {
-			return nil, fmt.Errorf("encoding arg customizations for %q: %w", mod.Ref, err)
-		}
-		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
-		})
-	}
-
-	var resolved dagql.ObjectResult[*core.Module]
-	err = dag.Select(ctx, src, &resolved,
-		dagql.Selector{Field: "asModule", Args: asModuleArgs},
-	)
+	resolved, err := srv.resolveModuleSourceAsModule(ctx, dag, src, mod)
 	if err != nil {
 		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 
-	return resolved.Self(), nil
+	return resolved, nil
 }
 
 func (srv *Server) mergeLegacyCallerEnvDefaults(

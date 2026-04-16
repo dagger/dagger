@@ -20,6 +20,27 @@ def test_getting_connect_params(fp: FakeProcess):
         assert conn.session_token == "abc"
 
 
+def test_load_workspace_modules_flag(fp: FakeProcess):
+    fp.register(
+        [
+            "dagger",
+            "session",
+            "--label",
+            fp.any(),
+            "--label",
+            fp.any(),
+            "--load-workspace-modules",
+        ],
+        stdout=['{"port":50004,"session_token":"abc"}', ""],
+    )
+    with session.start_cli_session_sync(
+        dagger.Config(load_workspace_modules=True),
+        "dagger",
+    ) as conn:
+        assert conn.port == 50004
+        assert conn.session_token == "abc"
+
+
 @pytest.mark.parametrize("config_args", [{"log_output": sys.stderr}, {}])
 @pytest.mark.parametrize(
     "call_kwargs",

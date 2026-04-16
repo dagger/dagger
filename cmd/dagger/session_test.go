@@ -21,22 +21,40 @@ func TestSessionCmdWorkspaceFlag(t *testing.T) {
 func TestSessionClientParamsWorkspace(t *testing.T) {
 	oldWorkspace := sessionWorkspace
 	oldVersion := sessionVersion
+	oldLoad := sessionLoadWorkspaceModules
 	oldSkip := sessionSkipWorkspaceModules
 	t.Cleanup(func() {
 		sessionWorkspace = oldWorkspace
 		sessionVersion = oldVersion
+		sessionLoadWorkspaceModules = oldLoad
 		sessionSkipWorkspaceModules = oldSkip
 	})
 
 	sessionWorkspace = "github.com/acme/ws"
 	sessionVersion = "v1.2.3"
-	sessionSkipWorkspaceModules = true
+	sessionLoadWorkspaceModules = true
 
-	params := sessionClientParams("secret")
+	params, err := sessionClientParams("secret")
+	require.NoError(t, err)
 
 	require.Equal(t, "secret", params.SecretToken)
 	require.Equal(t, "v1.2.3", params.Version)
-	require.True(t, params.SkipWorkspaceModules)
+	require.True(t, params.LoadWorkspaceModules)
 	require.NotNil(t, params.Workspace)
 	require.Equal(t, "github.com/acme/ws", *params.Workspace)
+}
+
+func TestSessionClientParamsRejectConflictingWorkspaceModuleFlags(t *testing.T) {
+	oldLoad := sessionLoadWorkspaceModules
+	oldSkip := sessionSkipWorkspaceModules
+	t.Cleanup(func() {
+		sessionLoadWorkspaceModules = oldLoad
+		sessionSkipWorkspaceModules = oldSkip
+	})
+
+	sessionLoadWorkspaceModules = true
+	sessionSkipWorkspaceModules = true
+
+	_, err := sessionClientParams("secret")
+	require.ErrorContains(t, err, "mutually exclusive")
 }

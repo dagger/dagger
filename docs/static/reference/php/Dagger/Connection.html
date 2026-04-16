@@ -119,7 +119,7 @@
                     static&nbsp;<a href="../Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_get">get</a>(string $workingDir = &#039;&#039;)
+                    <a href="#method_get">get</a>(string $workingDir = &#039;&#039;, bool $loadWorkspaceModules = false)
         
                                             <p class="no-description">No description</p>
                                     </div>
@@ -141,7 +141,7 @@
                     static&nbsp;<abbr title="Dagger\Connection\ProcessSessionConnection">ProcessSessionConnection</abbr>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_newProcessSession">newProcessSession</a>(string $workDir, <abbr title="Dagger\Connection\CliDownloader">CliDownloader</abbr> $cliDownloader)
+                    <a href="#method_newProcessSession">newProcessSession</a>(string $workDir, bool $loadWorkspaceModules, <abbr title="Dagger\Connection\CliDownloader">CliDownloader</abbr> $cliDownloader)
         <small><span class="label label-danger">deprecated</span></small>
                                             <p class="no-description">No description</p>
                                     </div>
@@ -190,7 +190,7 @@
                     <h3 id="method_get">
         <div class="location">at line 15</div>
         <code>        static            <a href="../Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a>
-    <strong>get</strong>(string $workingDir = &#039;&#039;)
+    <strong>get</strong>(string $workingDir = &#039;&#039;, bool $loadWorkspaceModules = false)
         </code>
     </h3>
     <div class="details">    
@@ -208,6 +208,11 @@
                     <tr>
                 <td>string</td>
                 <td>$workingDir</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool</td>
+                <td>$loadWorkspaceModules</td>
                 <td></td>
             </tr>
             </table>
@@ -266,7 +271,7 @@
                     <h3 id="method_newProcessSession">
         <div class="location">at line 50</div>
         <code>        static            <abbr title="Dagger\Connection\ProcessSessionConnection">ProcessSessionConnection</abbr>
-    <strong>newProcessSession</strong>(string $workDir, <abbr title="Dagger\Connection\CliDownloader">CliDownloader</abbr> $cliDownloader)
+    <strong>newProcessSession</strong>(string $workDir, bool $loadWorkspaceModules, <abbr title="Dagger\Connection\CliDownloader">CliDownloader</abbr> $cliDownloader)
         <small><span class="label label-danger">deprecated</span></small></code>
     </h3>
     <div class="details">    
@@ -295,6 +300,11 @@ so we don't need to download a CLI Client</td>
                 <td></td>
             </tr>
                     <tr>
+                <td>bool</td>
+                <td>$loadWorkspaceModules</td>
+                <td></td>
+            </tr>
+                    <tr>
                 <td><abbr title="Dagger\Connection\CliDownloader">CliDownloader</abbr></td>
                 <td>$cliDownloader</td>
                 <td></td>
@@ -320,7 +330,7 @@ so we don't need to download a CLI Client</td>
             </div>
                     <div class="method-item">
                     <h3 id="method_createGraphQlClient">
-        <div class="location">at line 55</div>
+        <div class="location">at line 58</div>
         <code>        static    protected        <abbr title="GraphQL\Client">Client</abbr>
     <strong>createGraphQlClient</strong>(int $port, string $token)
         </code>
@@ -368,7 +378,7 @@ so we don't need to download a CLI Client</td>
             </div>
                     <div class="method-item">
                     <h3 id="method_connect">
-        <div class="location">at line 70</div>
+        <div class="location">at line 73</div>
         <code>    abstract                <abbr title="GraphQL\Client">Client</abbr>
     <strong>connect</strong>()
         </code>
@@ -401,7 +411,7 @@ so we don't need to download a CLI Client</td>
             </div>
                     <div class="method-item">
                     <h3 id="method_close">
-        <div class="location">at line 72</div>
+        <div class="location">at line 75</div>
         <code>    abstract                void
     <strong>close</strong>()
         </code>
