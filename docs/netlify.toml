@@ -67,7 +67,7 @@
 
 [[redirects]]
   from = "/api/default-paths"
-  to = "/getting-started/types/directory"
+  to = "/extending/types/directory"
   status = 301
 
 [[redirects]]
@@ -92,7 +92,7 @@
 
 [[redirects]]
   from = "/api/filters"
-  to = "/getting-started/types/directory"
+  to = "/extending/types/directory"
   status = 301
 
 [[redirects]]
@@ -117,7 +117,7 @@
 
 [[redirects]]
   from = "/api/llm"
-  to = "/getting-started/types/llm"
+  to = "/extending/types/llm"
   status = 301
 
 [[redirects]]
@@ -192,7 +192,7 @@
 
 [[redirects]]
   from = "/api/types"
-  to = "/getting-started/types"
+  to = "/extending/types"
   status = 301
 
 [[redirects]]
@@ -357,7 +357,7 @@
 
 [[redirects]]
   from = "/features/services"
-  to = "/getting-started/types/service"
+  to = "/extending/types/service"
   status = 301
 
 [[redirects]]
@@ -1358,6 +1358,11 @@
 [[redirects]]
   from = "/adopting/caching"
   to = "/core-concepts/caching"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/types/*"
+  to = "/extending/types/:splat"
   status = 301
 
 [[headers]]
