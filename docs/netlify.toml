@@ -1362,12 +1362,27 @@
 
 [[redirects]]
   from = "/reference/container-runtimes/kubernetes"
-  to = "/reference/deployment/kubernetes"
+  to = "/adopting/scaling/kubernetes"
   status = 301
 
 [[redirects]]
   from = "/reference/container-runtimes/openshift"
-  to = "/reference/deployment/openshift"
+  to = "/adopting/scaling/openshift"
+  status = 301
+
+[[redirects]]
+  from = "/reference/deployment/kubernetes"
+  to = "/adopting/scaling/kubernetes"
+  status = 301
+
+[[redirects]]
+  from = "/reference/deployment/openshift"
+  to = "/adopting/scaling/openshift"
+  status = 301
+
+[[redirects]]
+  from = "/reference/deployment/*"
+  to = "/adopting/scaling"
   status = 301
 
 [[redirects]]

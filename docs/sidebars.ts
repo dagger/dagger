@@ -24,7 +24,20 @@ module.exports = {
         "adopting/secrets",
         "adopting/observability",
         "adopting/triggers",
-        "adopting/scaling",
+        {
+          type: "category",
+          label: "Scaling",
+          link: {
+            type: "doc",
+            id: "adopting/scaling/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "adopting/scaling/kubernetes",
+            "adopting/scaling/openshift",
+          ],
+        },
         "adopting/engine-configuration",
       ],
     },
