@@ -217,7 +217,7 @@
 
 [[redirects]]
   from = "/ci/integrations/apple-container"
-  to = "/adopting/container-runtimes/apple-container"
+  to = "/getting-started/installation"
   status = 301
 
 [[redirects]]
@@ -277,22 +277,22 @@
 
 [[redirects]]
   from = "/ci/integrations/kubernetes"
-  to = "/adopting/container-runtimes/kubernetes"
+  to = "/getting-started/installation"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/nerdctl"
-  to = "/adopting/container-runtimes/nerdctl"
+  to = "/getting-started/installation"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/openshift"
-  to = "/adopting/container-runtimes/openshift"
+  to = "/getting-started/installation"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/podman"
-  to = "/adopting/container-runtimes/podman"
+  to = "/getting-started/installation"
   status = 301
 
 [[redirects]]
@@ -548,7 +548,7 @@
 
 [[redirects]]
   from = "/integrations/containerd"
-  to = "/adopting/container-runtimes/nerdctl"
+  to = "/getting-started/installation"
   status = 301
 
 [[redirects]]
@@ -1347,7 +1347,12 @@
 
 [[redirects]]
   from = "/reference/container-runtimes/*"
-  to = "/adopting/container-runtimes/:splat"
+  to = "/getting-started/installation"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/container-runtimes/*"
+  to = "/getting-started/installation"
   status = 301
 
 [[redirects]]
