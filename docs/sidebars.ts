@@ -24,7 +24,8 @@ module.exports = {
         "adopting/secrets",
         "adopting/caching",
         "adopting/observability",
-        "adopting/ci-infrastructure",
+        "adopting/triggers",
+        "adopting/scaling",
         {
           type: "category",
           label: "Container Runtimes",

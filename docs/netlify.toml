@@ -1347,7 +1347,12 @@
 
 [[redirects]]
   from = "/adopting/ci-integration"
-  to = "/adopting/ci-infrastructure"
+  to = "/adopting/triggers"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/ci-infrastructure"
+  to = "/adopting/triggers"
   status = 301
 
 [[headers]]
