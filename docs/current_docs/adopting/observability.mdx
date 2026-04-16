@@ -8,35 +8,6 @@ description: "Trace, debug, and monitor your Dagger workflows"
 
 Every Dagger operation emits OpenTelemetry traces. You get visibility into what's happening without adding instrumentation.
 
-## Terminal UI
-
-The CLI includes a live terminal UI (TUI) that renders your workflow as a tree of operations:
-
-```shell
-dagger check
-```
-
-The TUI shows:
-- Operation tree with parent-child relationships
-- Pass/fail status with duration
-- Real-time progress for running operations
-- Telemetry: CPU usage, network activity, memory consumption
-
-### Verbosity
-
-```shell
-dagger check -v      # keep completed spans visible
-dagger check -vv     # show internal spans
-dagger check -vvv    # show sub-100ms spans
-dagger check --debug # full debug output
-```
-
-### Interactive debugging
-
-When a workflow fails, Dagger drops you into an interactive shell at the point of failure — with the full container state available for inspection. No breakpoints needed, no code changes.
-
-You can also set explicit breakpoints in your code to inspect containers at any point during execution.
-
 ## Dagger Cloud Traces
 
 [Dagger Cloud](https://dagger.cloud) collects traces from all your Dagger runs — local and CI — and presents them in a web interface.
