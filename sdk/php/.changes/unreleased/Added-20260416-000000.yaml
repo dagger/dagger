@@ -1,0 +1,6 @@
+kind: Added
+body: Add support for backed enum registration
+time: 2026-04-16T00:00:00.000000000Z
+custom:
+    Author: Neirda24
+    PR: "1"
