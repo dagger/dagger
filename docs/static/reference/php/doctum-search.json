@@ -2787,13 +2787,13 @@
 			"t": "M",
 			"n": "Dagger\\Container::envVariable",
 			"p": "Dagger/Container.html#method_envVariable",
-			"d": "<p>Retrieves the value of the specified environment variable.</p>"
+			"d": "<p>Retrieves the value of the specified persistent environment variable.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\Container::envVariables",
 			"p": "Dagger/Container.html#method_envVariables",
-			"d": "<p>Retrieves the list of environment variables passed to commands.</p>"
+			"d": "<p>Retrieves the list of persistent environment variables configured on the container.</p>"
 		},
 		{
 			"t": "M",
@@ -3109,6 +3109,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::withVolatileVariable",
+			"p": "Dagger/Container.html#method_withVolatileVariable",
+			"d": "<p>Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::withWorkdir",
 			"p": "Dagger/Container.html#method_withWorkdir",
 			"d": "<p>Change the container's working directory. Like WORKDIR in Dockerfile.</p>"
@@ -3202,6 +3208,12 @@
 			"n": "Dagger\\Container::withoutUser",
 			"p": "Dagger/Container.html#method_withoutUser",
 			"d": "<p>Retrieves this container with an unset command user.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::withoutVolatileVariable",
+			"p": "Dagger/Container.html#method_withoutVolatileVariable",
+			"d": "<p>Retrieves this container minus the given volatile environment variable.</p>"
 		},
 		{
 			"t": "M",

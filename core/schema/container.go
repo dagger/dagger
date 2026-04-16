@@ -29,6 +29,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -144,10 +145,10 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				`Should default to "/".`),
 
 		dagql.Func("envVariables", s.envVariables).
-			Doc(`Retrieves the list of environment variables passed to commands.`),
+			Doc(`Retrieves the list of persistent environment variables configured on the container.`),
 
 		dagql.Func("envVariable", s.envVariable).
-			Doc(`Retrieves the value of the specified environment variable.`).
+			Doc(`Retrieves the value of the specified persistent environment variable.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the environment variable to retrieve (e.g., "PATH").`),
 			),
@@ -181,6 +182,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("secret").Doc(`Identifier of the secret value.`),
 			),
 
+		dagql.Func("withVolatileVariable", s.withVolatileVariable).
+			Doc(`Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.`,
+				`This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.`).
+			Args(
+				dagql.Arg("name").Doc(`Name of the volatile variable (e.g., "CI_RUN_ID").`),
+				dagql.Arg("value").Doc(`Value of the volatile variable.`),
+			),
+
 		dagql.Func("withoutEnvVariable", s.withoutEnvVariable).
 			Doc(`Retrieves this container minus the given environment variable.`).
 			Args(
@@ -191,6 +200,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves this container minus the given environment variable containing the secret.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the environment variable (e.g., "HOST").`),
+			),
+
+		dagql.Func("withoutVolatileVariable", s.withoutVolatileVariable).
+			Doc(`Retrieves this container minus the given volatile environment variable.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the volatile environment variable (e.g., "CI_RUN_ID").`),
 			),
 
 		dagql.Func("withLabel", s.withLabel).
@@ -1161,15 +1176,192 @@ func (s *containerSchema) withExecCacheKey(
 		return nil, err
 	}
 
+	parentDigest, err := withExecParentDigest(parent.ID())
+	if err != nil {
+		return nil, err
+	}
+
 	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
 	if resp.CacheKey.ID == nil {
 		return nil, errors.New("cache key ID is nil")
 	}
 	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
-		parent.ID().Digest().String(),
+		parentDigest.String(),
 		string(argDigest),
 	))
 	return resp, nil
+}
+
+func withExecParentDigest(id *call.ID) (digest.Digest, error) {
+	if !hasVolatileVariableMutations(id) {
+		return id.Digest(), nil
+	}
+
+	normalizedDigest, volatileEnv, err := normalizedWithExecParentDigest(id)
+	if err != nil {
+		return "", err
+	}
+
+	inputs := []string{normalizedDigest.String()}
+	core.WalkEnv(volatileEnv, func(name, _, _ string) {
+		inputs = append(inputs, name)
+	})
+	return hashutil.HashStrings(inputs...), nil
+}
+
+func hasVolatileVariableMutations(id *call.ID) bool {
+	for id != nil {
+		switch id.Field() {
+		case "withVolatileVariable", "withoutVolatileVariable":
+			return true
+		}
+		id = id.Receiver()
+	}
+	return false
+}
+
+func normalizedWithExecParentDigest(id *call.ID) (digest.Digest, []string, error) {
+	if id == nil {
+		return "", nil, nil
+	}
+
+	receiverDigest, volatileEnv, err := normalizedWithExecParentDigest(id.Receiver())
+	if err != nil {
+		return "", nil, err
+	}
+
+	switch id.Field() {
+	case "withVolatileVariable":
+		name, err := callStringArg(id, "name")
+		if err != nil {
+			return "", nil, err
+		}
+		return receiverDigest, core.AddEnv(volatileEnv, name, ""), nil
+	case "withoutVolatileVariable":
+		name, err := callStringArg(id, "name")
+		if err != nil {
+			return "", nil, err
+		}
+		return receiverDigest, withoutEnvName(volatileEnv, name), nil
+	}
+
+	if id.Field() == "from" {
+		fromDigest, err := normalizedFromDigest(id, receiverDigest)
+		if err != nil {
+			return "", nil, err
+		}
+		return fromDigest, volatileEnv, nil
+	}
+
+	if id.HasCustomDigest() {
+		return id.Digest(), volatileEnv, nil
+	}
+
+	curDigest, err := digestCallWithReceiver(id, receiverDigest)
+	if err != nil {
+		return "", nil, err
+	}
+	return curDigest, volatileEnv, nil
+}
+
+func normalizedFromDigest(id *call.ID, receiverDigest digest.Digest) (digest.Digest, error) {
+	address, err := callStringArg(id, "address")
+	if err != nil {
+		return "", err
+	}
+
+	refName, err := reference.ParseNormalizedNamed(address)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse image address %s: %w", address, err)
+	}
+
+	var imageRef string
+	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
+		imageRef = "digest:" + string(refName.Digest())
+	} else {
+		imageRef = address
+	}
+
+	return hashutil.HashStrings(
+		receiverDigest.String(),
+		imageRef,
+	), nil
+}
+
+func callStringArg(id *call.ID, name string) (string, error) {
+	arg := id.Arg(name)
+	if arg == nil {
+		return "", fmt.Errorf("%s missing %q argument", id.Field(), name)
+	}
+	val, ok := arg.Value().(*call.LiteralString)
+	if !ok {
+		return "", fmt.Errorf("%s %q argument is not a string", id.Field(), name)
+	}
+	return val.Value(), nil
+}
+
+func withoutEnvName(env []string, name string) []string {
+	filtered := make([]string, 0, len(env))
+	core.WalkEnv(env, func(key, _, original string) {
+		if !shell.EqualEnvKeys(key, name) {
+			filtered = append(filtered, original)
+		}
+	})
+	return filtered
+}
+
+func digestCallWithReceiver(id *call.ID, receiverDigest digest.Digest) (digest.Digest, error) {
+	h := hashutil.NewHasher()
+
+	if receiver := id.Receiver(); receiver != nil {
+		if receiver.ContentDigest() != "" {
+			h = h.WithString(receiver.ContentDigest().String())
+		} else {
+			h = h.WithString(receiverDigest.String())
+		}
+	}
+	h = h.WithDelim()
+
+	for curType := id.Call().Type; curType != nil; curType = curType.Elem {
+		h = h.WithString(curType.NamedType)
+		if curType.NonNull {
+			h = h.WithByte(2)
+		} else {
+			h = h.WithByte(1)
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	h = h.WithString(id.Field()).WithDelim()
+
+	var err error
+	for _, arg := range id.Args() {
+		if arg.IsSensitive() {
+			continue
+		}
+		h, err = call.AppendArgumentBytes(arg, h)
+		if err != nil {
+			h.Close()
+			return "", err
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	h = h.WithInt64(id.Nth()).WithDelim()
+
+	if module := id.Call().Module; module != nil {
+		h = h.WithString(module.CallDigest).
+			WithString(module.Name).
+			WithString(module.Ref).
+			WithString(module.Pin)
+	}
+	h = h.WithDelim()
+
+	h = h.WithString(id.View().String()).WithDelim()
+
+	return digest.Digest(h.DigestAndClose()), nil
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
@@ -1430,16 +1622,16 @@ type containerWithVariableArgs struct {
 }
 
 func (s *containerSchema) withEnvVariable(ctx context.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
-		value := args.Value
-
-		if args.Expand {
-			value = os.Expand(value, func(k string) string {
-				v, _ := core.LookupEnv(cfg.Env, k)
-				return v
-			})
+	value := args.Value
+	if args.Expand {
+		expanded, err := expandEnvVar(ctx, parent, args.Value, true)
+		if err != nil {
+			return nil, err
 		}
+		value = expanded
+	}
 
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Env = core.AddEnv(cfg.Env, args.Name, value)
 
 		return cfg
@@ -1478,6 +1670,15 @@ type containerWithSystemEnvArgs struct {
 	Name string
 }
 
+type containerWithVolatileVariableArgs struct {
+	Name  string
+	Value string
+}
+
+func (s *containerSchema) withVolatileVariable(ctx context.Context, parent *core.Container, args containerWithVolatileVariableArgs) (*core.Container, error) {
+	return parent.WithVolatileVariable(args.Name, args.Value), nil
+}
+
 func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent *core.Container, args containerWithSystemEnvArgs) (*core.Container, error) {
 	ctr := parent.Clone()
 	ctr.SystemEnvNames = append(ctr.SystemEnvNames, args.Name)
@@ -1502,6 +1703,10 @@ func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent *core.C
 
 		return cfg
 	})
+}
+
+func (s *containerSchema) withoutVolatileVariable(ctx context.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
+	return parent.WithoutVolatileVariable(args.Name), nil
 }
 
 func (s *containerSchema) envVariables(ctx context.Context, parent *core.Container, args struct{}) (dagql.Array[core.EnvVariable], error) {
@@ -1993,12 +2198,20 @@ func expandEnvVar(ctx context.Context, parent *core.Container, input string, exp
 	for _, secret := range parent.Secrets {
 		secretEnvs = append(secretEnvs, secret.EnvName)
 	}
+	volatileEnvs := []string{}
+	core.WalkEnv(parent.VolatileEnv, func(name, _, _ string) {
+		volatileEnvs = append(volatileEnvs, name)
+	})
 
 	var secretEnvFoundError error
 	expanded := os.Expand(input, func(k string) string {
 		// set error if its a secret env variable
 		if slices.Contains(secretEnvs, k) {
 			secretEnvFoundError = fmt.Errorf("expand cannot be used with secret env variable %q", k)
+			return ""
+		}
+		if slices.Contains(volatileEnvs, k) {
+			secretEnvFoundError = fmt.Errorf("expand cannot be used with volatile env variable %q", k)
 			return ""
 		}
 

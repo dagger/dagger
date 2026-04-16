@@ -164,7 +164,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	return &execMD, nil
 }
 
-func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts) (*executor.Meta, error) {
+func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts, includeVolatileEnv bool) (*executor.Meta, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get current query: %w", err)
@@ -192,6 +192,9 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
+	if includeVolatileEnv {
+		metaSpec.Env = mergeEnv(metaSpec.Env, container.VolatileEnv)
+	}
 
 	if opts.Expect != ReturnSuccess {
 		metaSpec.ValidExitCodes = opts.Expect.ReturnCodes()
@@ -254,7 +257,7 @@ func (container *Container) WithExec(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	metaSpec, err := container.metaSpec(ctx, opts)
+	metaSpec, err := container.metaSpec(ctx, opts, true)
 	if err != nil {
 		return nil, err
 	}

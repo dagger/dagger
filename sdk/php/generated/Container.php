@@ -123,7 +123,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves the value of the specified environment variable.
+     * Retrieves the value of the specified persistent environment variable.
      */
     public function envVariable(string $name): string
     {
@@ -133,7 +133,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves the list of environment variables passed to commands.
+     * Retrieves the list of persistent environment variables configured on the container.
      */
     public function envVariables(): array
     {
@@ -1033,6 +1033,19 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+     *
+     * This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+     */
+    public function withVolatileVariable(string $name, string $value): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolatileVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Change the container's working directory. Like WORKDIR in Dockerfile.
      */
     public function withWorkdir(string $path, ?bool $expand = false): Container
@@ -1211,6 +1224,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     public function withoutUser(): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUser');
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container minus the given volatile environment variable.
+     */
+    public function withoutVolatileVariable(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutVolatileVariable');
+        $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
