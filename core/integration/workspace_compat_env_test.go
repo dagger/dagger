@@ -1,16 +1,11 @@
 package core
 
-// Workspace alignment: partially aligned; current defaults coverage and compat .env flows are still mixed.
-// Scope: User-provided default values from current config paths and legacy .env compatibility paths.
-// Intent: Keep defaults behavior covered while successor workspace-config tests and compat fallback tests are separated more cleanly.
+// Workspace alignment: aligned; intentionally compat-focused.
+// Scope: Legacy .env-driven module configuration behavior kept for compat workspaces and legacy project shapes.
+// Intent: Keep .env coverage isolated as legacy-only behavior while workspace_config_test.go owns current workspace module configuration.
 
 import (
 	"context"
-	"os"
-	"path"
-	"path/filepath"
-	"strings"
-	"testing"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
@@ -18,13 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type UserDefaultsSuite struct{}
-
-func TestUserDefaults(t *testing.T) {
-	testctx.New(t, Middleware()...).RunTests(UserDefaultsSuite{})
-}
-
-func (UserDefaultsSuite) TestRemoteFile(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestRemoteFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithWorkdir("defaults").
@@ -35,7 +24,7 @@ func (UserDefaultsSuite) TestRemoteFile(ctx context.Context, t *testctx.T) {
 	require.Contains(t, output, "package main")
 }
 
-func (UserDefaultsSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile("hello.txt", "well hello!").
@@ -47,7 +36,7 @@ func (UserDefaultsSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "well hello!", output)
 }
 
-func (UserDefaultsSuite) TestLocalDirectory(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestLocalDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithDirectory("data", dag.Directory().WithNewFile("hello.txt", "well hello!")).
@@ -59,7 +48,7 @@ func (UserDefaultsSuite) TestLocalDirectory(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "well hello!", output)
 }
 
-func (UserDefaultsSuite) TestRemoteDirectory(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestRemoteDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithWorkdir("defaults").
@@ -71,8 +60,8 @@ func (UserDefaultsSuite) TestRemoteDirectory(ctx context.Context, t *testctx.T) 
 }
 
 // TestCompatBlueprintDefaults keeps coverage for legacy blueprint-driven
-// defaults resolution while workspace config becomes the current path.
-func (UserDefaultsSuite) TestCompatBlueprintDefaults(ctx context.Context, t *testctx.T) {
+// .env resolution in compat mode.
+func (WorkspaceCompatSuite) TestCompatBlueprintDefaults(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile("./app/dagger.json", `{"name":"app", "blueprint": {"name":"defaults", "source":"../defaults"}}`)
@@ -143,8 +132,8 @@ DEFAULTS_MESSAGE_NAME=planete-outer
 }
 
 // TestCompatToolchainDefaults keeps coverage for legacy toolchain-driven
-// defaults resolution while workspace config becomes the current path.
-func (UserDefaultsSuite) TestCompatToolchainDefaults(ctx context.Context, t *testctx.T) {
+// .env resolution in compat mode.
+func (WorkspaceCompatSuite) TestCompatToolchainDefaults(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile("./app/dagger.json", `{"name":"app", "toolchains": [{"name":"defaults", "source":"../defaults"}]}`)
@@ -214,7 +203,7 @@ DEFAULTS_MESSAGE_NAME=planete-outer
 	}
 }
 
-func (UserDefaultsSuite) TestOuterEnvFile(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestOuterEnvFile(ctx context.Context, t *testctx.T) {
 	tmp := tempDirWithEnvFile(t,
 		`DEFAULTS_GREETING=salutations`,
 		`DEFAULTS_MESSAGE_NAME="tout le monde"`,
@@ -250,7 +239,7 @@ func (UserDefaultsSuite) TestOuterEnvFile(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (UserDefaultsSuite) TestSystemVariables(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestSystemVariables(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithWorkdir("defaults").
@@ -262,7 +251,7 @@ func (UserDefaultsSuite) TestSystemVariables(ctx context.Context, t *testctx.T) 
 	require.Equal(t, "live long and prosper, world!", output)
 }
 
-func (UserDefaultsSuite) TestRequiredDirectory(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestRequiredDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithWorkdir("defaults").
@@ -274,7 +263,7 @@ func (UserDefaultsSuite) TestRequiredDirectory(ctx context.Context, t *testctx.T
 	require.Equal(t, "hello.txt\n", output, "user default should successfully apply to required argument")
 }
 
-func (UserDefaultsSuite) TestRequiredString(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestRequiredString(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile(".env", `DEFAULTS_CAPITALIZE_S=hello world`).
@@ -285,11 +274,11 @@ func (UserDefaultsSuite) TestRequiredString(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "HELLO WORLD", output, "user default should successfully apply to required argument")
 }
 
-func (UserDefaultsSuite) TestArgName(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestArgName(ctx context.Context, t *testctx.T) {
 	t.Skip(`FIXME: test conversion between arg name and env var name (eg."FOO_BAR=hello" -> "fooBar=hello"`)
 }
 
-func (UserDefaultsSuite) TestDependencies(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestDependencies(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile(".env", `FOOBAR_EXCLAIM_COUNT=4`).
@@ -300,7 +289,7 @@ func (UserDefaultsSuite) TestDependencies(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "hello, world!!!!", output, "User defaults should apply to nested dependencies")
 }
 
-func (UserDefaultsSuite) TestOptionalDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestOptionalDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	docs := dag.Directory().
 		WithNewFile("README.md", "Thank you for reading me. The end.").
@@ -315,7 +304,7 @@ func (UserDefaultsSuite) TestOptionalDirectoryWithIgnore(ctx context.Context, t 
 	require.Equal(t, "README.md\n", output)
 }
 
-func (UserDefaultsSuite) TestRequiredDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestRequiredDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	docs := dag.Directory().
 		WithNewFile("README.md", "Thank you for reading me. The end.").
@@ -337,10 +326,8 @@ func (UserDefaultsSuite) TestRequiredDirectoryWithIgnore(ctx context.Context, t 
 	require.Equal(t, "README.md\n", output)
 }
 
-var nestedExec = dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}
-
 // Test that it all works with a module that has a dash ("-") in its name
-func (UserDefaultsSuite) TestModuleWithDash(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestModuleWithDash(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nestedDaggerContainer(t, c, "go", "defaults/super-dash-dash")
 	outerEnv := c.EnvFile().
@@ -392,7 +379,7 @@ func (UserDefaultsSuite) TestModuleWithDash(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (UserDefaultsSuite) TestConstructorOptional(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestConstructorOptional(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile("/foo/hello.txt", "hello there!").
@@ -472,17 +459,7 @@ func (UserDefaultsSuite) TestConstructorOptional(ctx context.Context, t *testctx
 	}
 }
 
-func trimDaggerFunctionUsageText(s string) string {
-	// Trim the output for readability
-	start := strings.Index(s, "ARGUMENTS")
-	end := strings.Index(s, "OPTIONS")
-	if start >= 0 && end > start {
-		s = s[start:end]
-	}
-	return s
-}
-
-func (UserDefaultsSuite) TestConstructorRequired(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nestedDaggerContainer(t, c, "go", "defaults/superconstructor").
 		WithNewFile("/foo/hello.txt", "hello there!").
@@ -563,7 +540,7 @@ func (UserDefaultsSuite) TestConstructorRequired(ctx context.Context, t *testctx
 	}
 }
 
-func (UserDefaultsSuite) TestCaching(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestCaching(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := nestedDaggerContainer(t, c, "go", "defaults")
 	// First run
@@ -584,33 +561,7 @@ func (UserDefaultsSuite) TestCaching(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "greeting2, world!", output2, "same module source with different env file, should not be cached")
 }
 
-func nestedDaggerContainer(t *testctx.T, c *dagger.Client, modLang, modName string) *dagger.Container {
-	ctr := c.Container().
-		From(alpineImage).
-		WithWorkdir("/work").
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-	if modLang != "" && modName != "" {
-		ctr = ctr.
-			WithExec([]string{"apk", "add", "git"}).
-			WithExec([]string{"git", "init"}).
-			WithDirectory(modName, c.Host().Directory(testModule(t, modLang, modName)))
-	}
-	return ctr
-}
-
-func testModule(t *testctx.T, lang, name string) string {
-	modulePath, err := filepath.Abs(path.Join("testdata", "modules", lang, name))
-	require.NoError(t, err)
-	return modulePath
-}
-
-func tempDirWithEnvFile(t *testctx.T, environ ...string) string {
-	tmp := t.TempDir()
-	os.WriteFile(tmp+"/.env", []byte(strings.Join(environ, "\n")), 0600)
-	return tmp
-}
-
-func (UserDefaultsSuite) TestSimple(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestSimple(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := nestedDaggerContainer(t, c, "go", "defaults")
 	for _, tc := range []struct {

@@ -1,8 +1,8 @@
 package core
 
 // Workspace alignment: aligned structurally, but coverage is still incomplete.
-// Scope: Workspace config read or write behavior, config aliasing, and config boundary handling.
-// Intent: Keep workspace configuration behavior explicit and finish the missing API and boundary cases.
+// Scope: Workspace config read or write behavior, config aliasing, boundary handling, and runtime effects on loaded modules.
+// Intent: Keep current workspace configuration behavior explicit, including [modules.<name>.config], and finish the missing API and boundary cases.
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -144,6 +145,82 @@ entrypoint = true
 	})
 }
 
+func (WorkspaceSuite) TestWorkspaceModuleConfigRuntime(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	newConfiguredCtr := func(configTOML string) *dagger.Container {
+		t.Helper()
+		return nestedDaggerContainer(t, c, "go", "defaults/superconstructor").
+			WithNewFile(".dagger/config.toml", configTOML).
+			WithNewFile("/foo/hello.txt", "hello there!").
+			WithEnvVariable("PASSWORD", "topsecret").
+			WithServiceBinding("www", c.Container().From("nginx").AsService())
+	}
+
+	t.Run("workspace module config drives constructor help and runtime", func(ctx context.Context, t *testctx.T) {
+		ctr := newConfiguredCtr(`[modules.superconstructor]
+source = "defaults/superconstructor"
+entrypoint = true
+
+[modules.superconstructor.config]
+Count = 7
+Greeting = "yay"
+dir = "/foo"
+file = "/foo/hello.txt"
+password = "env://PASSWORD"
+service = "tcp://www:80"
+`)
+
+		out, err := ctr.WithExec([]string{"dagger", "call", "--help"}, nestedExec).Stdout(ctx)
+		out = trimDaggerFunctionUsageText(out)
+		require.NoError(t, err)
+		require.Regexp(t, `(?m)--count int *\(default 7\)\s*$`, out)
+		require.Regexp(t, `(?m)--greeting string *\(default "yay"\)\s*$`, out)
+
+		out, err = ctr.WithExec([]string{"dagger", "call", "greeting"}, nestedExec).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yay", out)
+
+		out, err = ctr.WithExec([]string{"dagger", "call", "count"}, nestedExec).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "7", out)
+
+		out, err = ctr.WithExec([]string{"dagger", "call", "--greeting=bonjour", "greeting"}, nestedExec).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bonjour", out)
+
+		out, err = ctr.WithExec([]string{"dagger", "call", "file", "contents"}, nestedExec).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello there!", out)
+
+		out, err = ctr.WithExec([]string{"dagger", "call", "dir", "entries"}, nestedExec).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello.txt\n", out)
+	})
+
+	t.Run("native workspaces do not fall back to .env", func(ctx context.Context, t *testctx.T) {
+		ctr := newConfiguredCtr(`[modules.superconstructor]
+source = "defaults/superconstructor"
+entrypoint = true
+
+[modules.superconstructor.config]
+count = 7
+dir = "/foo"
+file = "/foo/hello.txt"
+password = "env://PASSWORD"
+service = "tcp://www:80"
+`).WithNewFile(".env", "SUPERCONSTRUCTOR_greeting=from-env")
+
+		stderr, err := ctr.WithExec([]string{"dagger", "call", "greeting"}, dagger.ContainerWithExecOpts{
+			Expect:                        dagger.ReturnTypeFailure,
+			ExperimentalPrivilegedNesting: true,
+		}).Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stderr, "required")
+		require.Contains(t, stderr, "greeting")
+	})
+}
+
 func (WorkspaceSuite) TestConfigAlias(ctx context.Context, t *testctx.T) {
 	workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.greeter]
 source = "modules/greeter"
@@ -253,10 +330,16 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 	})
 }
 
+func (WorkspaceSuite) TestWorkspaceModuleConfigPolicy(ctx context.Context, t *testctx.T) {
+	t.Run("unknown constructor config keys have an explicit policy", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: decide whether unknown keys in [modules.<name>.config] are ignored or rejected at load time.`)
+	})
+}
+
 // TestWorkspaceConfigurationLifecycle is the planning scaffold for the full
-// scope this file should eventually own: initializing, editing, and detecting
-// workspaces from .dagger/config.toml. Module management, compat, and
-// migration belong in their own files.
+// scope this file should eventually own: initializing, editing, detecting, and
+// applying .dagger/config.toml. Module management, compat, and migration
+// belong in their own files.
 func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t *testctx.T) {
 	t.Run("CurrentWorkspace.Init creates config for the repo", func(ctx context.Context, t *testctx.T) {
 		t.Fatal(`FIXME: implement CurrentWorkspace.Init API coverage.
