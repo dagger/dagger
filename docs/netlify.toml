@@ -141,6 +141,11 @@
   status = 301
 
 [[redirects]]
+  from = "/reference/best-practices/monorepos"
+  to = "/adopting/workspace-setup"
+  status = 301
+
+[[redirects]]
   from = "/api/packages"
   to = "/extending/packages"
   status = 301
