@@ -120,6 +120,20 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Retrieves this container's configured docker healthcheck.
+  """
+  @spec docker_healthcheck(t()) :: Dagger.HealthcheckConfig.t() | nil
+  def docker_healthcheck(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("dockerHealthcheck")
+
+    %Dagger.HealthcheckConfig{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Return the container's OCI entrypoint.
   """
   @spec entrypoint(t()) :: {:ok, [String.t()]} | {:error, term()}
@@ -485,6 +499,24 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Return file status
+  """
+  @spec stat(t(), String.t(), [{:do_not_follow_symlinks, boolean() | nil}]) ::
+          Dagger.Stat.t() | nil
+  def stat(%__MODULE__{} = container, path, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("stat")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+
+    %Dagger.Stat{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   The buffered standard error stream of the last executed command
 
   Returns an error if no command was executed
@@ -606,7 +638,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Retrieves this container plus the given OCI anotation.
+  Retrieves this container plus the given OCI annotation.
   """
   @spec with_annotation(t(), String.t(), String.t()) :: Dagger.Container.t()
   def with_annotation(%__MODULE__{} = container, name, value) do
@@ -681,6 +713,35 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Retrieves this container with the specificed docker healtcheck command set.
+  """
+  @spec with_docker_healthcheck(t(), [String.t()], [
+          {:shell, boolean() | nil},
+          {:interval, String.t() | nil},
+          {:timeout, String.t() | nil},
+          {:start_period, String.t() | nil},
+          {:start_interval, String.t() | nil},
+          {:retries, integer() | nil}
+        ]) :: Dagger.Container.t()
+  def with_docker_healthcheck(%__MODULE__{} = container, args, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withDockerHealthcheck")
+      |> QB.put_arg("args", args)
+      |> QB.maybe_put_arg("shell", optional_args[:shell])
+      |> QB.maybe_put_arg("interval", optional_args[:interval])
+      |> QB.maybe_put_arg("timeout", optional_args[:timeout])
+      |> QB.maybe_put_arg("startPeriod", optional_args[:start_period])
+      |> QB.maybe_put_arg("startInterval", optional_args[:start_interval])
+      |> QB.maybe_put_arg("retries", optional_args[:retries])
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -1213,6 +1274,20 @@ defmodule Dagger.Container do
       |> QB.select("withoutDirectory")
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Retrieves this container without a configured docker healtcheck command.
+  """
+  @spec without_docker_healthcheck(t()) :: Dagger.Container.t()
+  def without_docker_healthcheck(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("withoutDockerHealthcheck")
 
     %Dagger.Container{
       query_builder: query_builder,

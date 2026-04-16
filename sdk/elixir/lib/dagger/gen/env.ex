@@ -16,6 +16,44 @@ defmodule Dagger.Env do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Return the check with the given name from the installed modules. Must match exactly one check.
+
+  > #### Experimental {: .warning}
+  >
+  > "Checks API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec check(t(), String.t()) :: Dagger.Check.t()
+  def check(%__MODULE__{} = env, name) do
+    query_builder =
+      env.query_builder |> QB.select("check") |> QB.put_arg("name", name)
+
+    %Dagger.Check{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Return all checks defined by the installed modules
+
+  > #### Experimental {: .warning}
+  >
+  > "Checks API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  def checks(%__MODULE__{} = env, optional_args \\ []) do
+    query_builder =
+      env.query_builder
+      |> QB.select("checks")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.CheckGroup{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   A unique identifier for this Env.
   """
   @spec id(t()) :: {:ok, Dagger.EnvID.t()} | {:error, term()}
@@ -96,6 +134,26 @@ defmodule Dagger.Env do
          }
        end}
     end
+  end
+
+  @doc """
+  Return all services defined by the installed modules
+
+  > #### Experimental {: .warning}
+  >
+  > "Services API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec services(t(), [{:include, [String.t()]}]) :: Dagger.UpGroup.t()
+  def services(%__MODULE__{} = env, optional_args \\ []) do
+    query_builder =
+      env.query_builder
+      |> QB.select("services")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.UpGroup{
+      query_builder: query_builder,
+      client: env.client
+    }
   end
 
   @doc """
@@ -362,6 +420,41 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type DiffStat in the environment
+  """
+  @spec with_diff_stat_input(t(), String.t(), Dagger.DiffStat.t(), String.t()) :: Dagger.Env.t()
+  def with_diff_stat_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withDiffStatInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired DiffStat output to be assigned in the environment
+  """
+  @spec with_diff_stat_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_diff_stat_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withDiffStatOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type Directory in the environment
   """
   @spec with_directory_input(t(), String.t(), Dagger.Directory.t(), String.t()) :: Dagger.Env.t()
@@ -502,6 +595,77 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type GeneratorGroup in the environment
+  """
+  @spec with_generator_group_input(t(), String.t(), Dagger.GeneratorGroup.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_generator_group_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withGeneratorGroupInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired GeneratorGroup output to be assigned in the environment
+  """
+  @spec with_generator_group_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_generator_group_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withGeneratorGroupOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type Generator in the environment
+  """
+  @spec with_generator_input(t(), String.t(), Dagger.Generator.t(), String.t()) :: Dagger.Env.t()
+  def with_generator_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withGeneratorInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Generator output to be assigned in the environment
+  """
+  @spec with_generator_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_generator_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withGeneratorOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type GitRef in the environment
   """
   @spec with_git_ref_input(t(), String.t(), Dagger.GitRef.t(), String.t()) :: Dagger.Env.t()
@@ -607,6 +771,27 @@ defmodule Dagger.Env do
     }
   end
 
+  @doc """
+  Sets the main module for this environment (the project being worked on)
+
+  Contextual path arguments will be populated using the environment's workspace.
+  """
+  @spec with_main_module(t(), Dagger.Module.t()) :: Dagger.Env.t()
+  def with_main_module(%__MODULE__{} = env, module) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withMainModule")
+      |> QB.put_arg("module", Dagger.ID.id!(module))
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @deprecated """
+  Use withMainModule instead
+  """
   @doc """
   Installs a module into the environment, exposing its functions to the model
 
@@ -912,6 +1097,41 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type Stat in the environment
+  """
+  @spec with_stat_input(t(), String.t(), Dagger.Stat.t(), String.t()) :: Dagger.Env.t()
+  def with_stat_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withStatInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Stat output to be assigned in the environment
+  """
+  @spec with_stat_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_stat_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withStatOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Provides a string input binding to the environment
   """
   @spec with_string_input(t(), String.t(), String.t(), String.t()) :: Dagger.Env.t()
@@ -947,6 +1167,76 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type UpGroup in the environment
+  """
+  @spec with_up_group_input(t(), String.t(), Dagger.UpGroup.t(), String.t()) :: Dagger.Env.t()
+  def with_up_group_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withUpGroupInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired UpGroup output to be assigned in the environment
+  """
+  @spec with_up_group_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_up_group_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withUpGroupOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type Up in the environment
+  """
+  @spec with_up_input(t(), String.t(), Dagger.Up.t(), String.t()) :: Dagger.Env.t()
+  def with_up_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withUpInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Up output to be assigned in the environment
+  """
+  @spec with_up_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_up_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withUpOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Returns a new environment with the provided workspace
   """
   @spec with_workspace(t(), Dagger.Directory.t()) :: Dagger.Env.t()
@@ -955,6 +1245,41 @@ defmodule Dagger.Env do
       env.query_builder
       |> QB.select("withWorkspace")
       |> QB.put_arg("workspace", Dagger.ID.id!(workspace))
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type Workspace in the environment
+  """
+  @spec with_workspace_input(t(), String.t(), Dagger.Workspace.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Workspace output to be assigned in the environment
+  """
+  @spec with_workspace_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
 
     %Dagger.Env{
       query_builder: query_builder,

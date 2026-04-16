@@ -38,6 +38,20 @@ defmodule Dagger.Check do
   end
 
   @doc """
+  If the check failed, this is the error
+  """
+  @spec error(t()) :: Dagger.Error.t() | nil
+  def error(%__MODULE__{} = check) do
+    query_builder =
+      check.query_builder |> QB.select("error")
+
+    %Dagger.Error{
+      query_builder: query_builder,
+      client: check.client
+    }
+  end
+
+  @doc """
   A unique identifier for this Check.
   """
   @spec id(t()) :: {:ok, Dagger.CheckID.t()} | {:error, term()}
@@ -57,6 +71,20 @@ defmodule Dagger.Check do
       check.query_builder |> QB.select("name")
 
     Client.execute(check.client, query_builder)
+  end
+
+  @doc """
+  The original module in which the check has been defined
+  """
+  @spec original_module(t()) :: Dagger.Module.t()
+  def original_module(%__MODULE__{} = check) do
+    query_builder =
+      check.query_builder |> QB.select("originalModule")
+
+    %Dagger.Module{
+      query_builder: query_builder,
+      client: check.client
+    }
   end
 
   @doc """
