@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned structurally, but coverage is still incomplete.
+// Scope: Runtime module loading, nomination, precedence, and entrypoint arbitration after a workspace already exists.
+// Intent: Keep loading behavior separate from compat detection and finish the missing precedence and conflict cases.
+
 import (
 	"context"
 	"strings"

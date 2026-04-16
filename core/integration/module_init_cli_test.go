@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Explicit module init CLI behavior, including license and Git initialization paths.
+// Intent: Keep module initialization behavior separate from workspace init and legacy aliases.
+
 import (
 	"context"
 	"encoding/json"

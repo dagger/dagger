@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Supported module-shaped dagger.json semantics for a single module.
+// Intent: Keep current module config behavior explicit and keep legacy workspace inference out of this file.
+
 import (
 	"bytes"
 	"context"

@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Remote cache import or export behavior and registry-backed cache integration.
+// Intent: Keep remote cache behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"fmt"

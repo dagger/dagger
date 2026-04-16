@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; helper-only file for workspace-era fixtures.
+// Scope: Shared workspace test fixtures and container setup for workspace-focused suites.
+// Intent: Keep workspace setup centralized and explicit so workspace suites do not depend on historical module helpers.
+
 import (
 	"testing"
 

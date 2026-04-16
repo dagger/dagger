@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: partially aligned; this historical umbrella suite and helper hub still needs further cleanup.
+// Scope: Shared module helpers plus broad historical module coverage that predates the workspace split.
+// Intent: Preserve confidence while incrementally extracting clearer module- and workspace-owned suites out of the historical umbrella.
+
 import (
 	"bytes"
 	"cmp"

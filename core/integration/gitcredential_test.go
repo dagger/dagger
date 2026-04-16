@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: partially aligned; coverage is valid but setup still inherits historical module-helper conventions.
+// Scope: Git credential forwarding for module sources and dependency installs.
+// Intent: Keep module auth behavior covered while the command surface is made explicit in follow-up cleanup.
+
 import (
 	"context"
 	"encoding/base64"

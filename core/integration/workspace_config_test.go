@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned structurally, but coverage is still incomplete.
+// Scope: Workspace config read or write behavior, config aliasing, and config boundary handling.
+// Intent: Keep workspace configuration behavior explicit and finish the missing API and boundary cases.
+
 import (
 	"context"
 	"fmt"

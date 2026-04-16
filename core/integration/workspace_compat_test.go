@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned structurally, but coverage is still incomplete.
+// Scope: Legacy dagger.json shapes that imply a compat workspace, plus compat warnings, migration seams, and direct-load errors.
+// Intent: Own the legacy-to-workspace seam explicitly and finish the missing compat detection and migration cases.
+
 import (
 	"context"
 	"os"

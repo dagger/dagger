@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Module CLI introspection commands such as functions and load-error reporting.
+// Intent: Keep module inspection behavior explicit without relying on legacy command rewrites.
+
 import (
 	"context"
 	"strings"

@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned structurally, but coverage is still incomplete.
+// Scope: Workspace migration planning and apply behavior for legacy projects.
+// Intent: Keep migration behavior isolated from compat detection and finish the missing migration-scope cases.
+
 import (
 	"context"
 	"strings"

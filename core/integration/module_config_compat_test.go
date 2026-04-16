@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; intentionally compat-focused.
+// Scope: Legacy module-shaped dagger.json forms that are still accepted and normalized as module config.
+// Intent: Keep supported module-config compatibility explicit without mixing it with workspace compat inference.
+
 import (
 	"context"
 	"encoding/json"

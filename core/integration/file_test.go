@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Core file object behavior.
+// Intent: Keep file semantics stable independently of module and workspace cleanup.
+
 import (
 	"bytes"
 	"context"

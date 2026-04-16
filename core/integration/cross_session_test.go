@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: partially aligned; coverage is valid but setup still inherits historical module-helper conventions.
+// Scope: Cross-session module caching and reuse behavior.
+// Intent: Keep cross-session module behavior covered while command setup is cleaned up separately.
+
 import (
 	"context"
 	"crypto/rand"

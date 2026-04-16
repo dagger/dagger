@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this is a suite-registration file for a multi-file workspace-era suite.
+// Scope: Registers the module config suite and keeps shared testctx setup in one place.
+// Intent: Make the module-config suite boundary explicit while current and compat coverage live in separate files.
+
 import (
 	"testing"
 

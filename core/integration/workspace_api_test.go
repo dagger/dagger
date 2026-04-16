@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Workspace object behavior once a workspace has already been injected or selected.
+// Intent: Keep the Workspace API separate from compat inference and loading arbitration.
+
 import (
 	"context"
 	"strings"

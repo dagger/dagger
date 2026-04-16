@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: mostly aligned; coverage targets post-workspace module type semantics, but setup still relies on historical module helpers.
+// Scope: Cross-SDK custom types, objects, enums, lists, and type wiring in module APIs.
+// Intent: Keep module type semantics stable while helper and command cleanup proceed separately.
+
 import (
 	"context"
 	"fmt"

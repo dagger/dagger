@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: partially aligned; coverage is valid but setup still inherits historical module-helper conventions.
+// Scope: Interactive terminal attachment and TUI behavior for module calls.
+// Intent: Keep module terminal UX covered while its setup is decoupled from historical helpers.
+
 import (
 	"bytes"
 	"context"

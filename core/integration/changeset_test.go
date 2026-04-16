@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Changeset creation and mutation semantics exposed by generated modules.
+// Intent: Keep changeset behavior stable without entangling it with workspace cleanup.
+
 import (
 	"context"
 	"fmt"

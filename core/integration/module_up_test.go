@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: partially aligned; coverage is valid but setup still inherits historical module-helper conventions.
+// Scope: The dagger up development server and interactive module UI behavior.
+// Intent: Keep module development UX covered while its command setup is made explicit in follow-up cleanup.
+
 import (
 	"context"
 	"fmt"

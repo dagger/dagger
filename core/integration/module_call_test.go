@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: mostly aligned; coverage targets post-workspace module invocation, but setup still relies on historical module helpers.
+// Scope: Module function calling, help, argument passing, return values, and invocation UX.
+// Intent: Keep module call semantics stable while the underlying helper conventions are cleaned up incrementally.
+
 import (
 	"context"
 	"encoding/json"

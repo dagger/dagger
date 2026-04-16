@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: partially aligned; current defaults coverage and compat .env flows are still mixed.
+// Scope: User-provided default values from current config paths and legacy .env compatibility paths.
+// Intent: Keep defaults behavior covered while successor workspace-config tests and compat fallback tests are separated more cleanly.
+
 import (
 	"context"
 	"os"

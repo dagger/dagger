@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Engine process lifecycle and integration-level engine behavior.
+// Intent: Keep engine behavior stable independently of workspace cleanup.
+
 import (
 	"bytes"
 	"context"

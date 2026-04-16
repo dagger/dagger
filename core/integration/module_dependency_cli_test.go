@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Explicit module dependency install, uninstall, and update CLI behavior.
+// Intent: Keep module dependency mutations separate from workspace install behavior and legacy command aliases.
+
 import (
 	"context"
 	"encoding/json"

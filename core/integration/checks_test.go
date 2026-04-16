@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Check discovery and execution across direct SDK, compat blueprint, and workspace-installed modules.
+// Intent: Keep successor workspace behavior and legacy compat coverage explicit and separate.
+
 import (
 	"context"
 	"path/filepath"

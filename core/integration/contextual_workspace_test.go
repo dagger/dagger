@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned structurally, but coverage is still incomplete.
+// Scope: Context-derived workspace selection and find-up behavior when commands run from nested directories.
+// Intent: Pin down contextual workspace inference separately from compat detection and generic module loading.
+
 import (
 	"context"
 	"crypto/rand"

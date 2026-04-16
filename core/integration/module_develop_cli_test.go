@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Module develop command behavior, codegen determinism, and source editing flows.
+// Intent: Keep the module development command surface explicit and separate from workspace commands.
+
 import (
 	"context"
 	"path/filepath"

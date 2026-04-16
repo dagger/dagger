@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: mostly aligned; coverage targets post-workspace module reference resolution, but setup still relies on historical module helpers.
+// Scope: Module reference resolution between local, remote, and Git-shaped paths.
+// Intent: Keep module ref semantics stable while helper and command cleanup proceed separately.
+
 import (
 	"context"
 	"strings"

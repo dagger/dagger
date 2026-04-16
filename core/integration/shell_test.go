@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: partially aligned; coverage is valid but setup still inherits historical module-helper conventions.
+// Scope: Shell command UX and interactive command execution against modules.
+// Intent: Keep shell behavior covered while its module setup is cleaned up separately.
+
 import (
 	"context"
 	"crypto/rand"

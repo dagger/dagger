@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Workspace lockfile behavior, lock resolution, and config-to-lock interactions.
+// Intent: Keep lockfile coverage owned by workspace behavior rather than by legacy module config or compat detection.
+
 import (
 	"context"
 	"errors"

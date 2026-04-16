@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Cache volumes and cache-key behavior exposed through the core API.
+// Intent: Keep cache semantics stable independently of module and workspace cleanup.
+
 import (
 	"context"
 	"os"

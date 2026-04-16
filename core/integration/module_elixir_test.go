@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: mostly aligned; coverage targets post-workspace modules, but setup still relies on historical module helpers.
+// Scope: Elixir SDK module initialization, codegen, and runtime behavior.
+// Intent: Keep Elixir module behavior stable while helper and command cleanup proceed separately.
+
 import (
 	"context"
 	"path/filepath"
