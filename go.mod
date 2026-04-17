@@ -3,8 +3,8 @@ module github.com/dagger/dagger
 go 1.25.6
 
 require (
-	dagger.io/dagger v0.20.3
-	github.com/dagger/dagger/engine/distconsts v0.20.3
+	dagger.io/dagger v0.20.6
+	github.com/dagger/dagger/engine/distconsts v0.20.6
 )
 
 replace (
