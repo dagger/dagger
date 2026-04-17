@@ -543,7 +543,7 @@ func prepareMounts(
 			}
 
 		case pb.MountType_SSH:
-			mountable, err = prepareExecSSHMount(ctx, state.SSH)
+			mountable, err = prepareExecSSHMount(state.SSH)
 			if err != nil {
 				return err
 			}
@@ -899,7 +899,7 @@ func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error,
 	}}, cleanup, nil
 }
 
-func prepareExecSSHMount(ctx context.Context, cfg *execSSHMountConfig) (bkcache.Mountable, error) {
+func prepareExecSSHMount(cfg *execSSHMountConfig) (bkcache.Mountable, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("invalid ssh mount options")
 	}
@@ -1324,7 +1324,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				}
 
 			case pb.MountType_SSH:
-				mountable, err = prepareExecSSHMount(ctx, state.SSH)
+				mountable, err = prepareExecSSHMount(state.SSH)
 				if err != nil {
 					return err
 				}

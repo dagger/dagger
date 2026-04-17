@@ -1,14 +1,13 @@
 package dagql
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 )
 
-func (c *Cache) lookupMatchForIDLocked(ctx context.Context, id *call.ID) (lookupMatch, error) {
+func (c *Cache) lookupMatchForIDLocked(id *call.ID) (lookupMatch, error) {
 	match := lookupMatch{
 		primaryLookupPossible: true,
 		missingInputIndex:     -1,
@@ -60,8 +59,8 @@ func (c *Cache) lookupMatchForIDLocked(ctx context.Context, id *call.ID) (lookup
 	return match, nil
 }
 
-func (c *Cache) resolveSharedResultForInputIDLocked(ctx context.Context, id *call.ID) (*sharedResult, error) {
-	match, err := c.lookupMatchForIDLocked(ctx, id)
+func (c *Cache) resolveSharedResultForInputIDLocked(id *call.ID) (*sharedResult, error) {
+	match, err := c.lookupMatchForIDLocked(id)
 	if err != nil {
 		return nil, err
 	}

@@ -137,7 +137,7 @@ func (c *converter) convertOp(dag *engineutil.OpDAG) (*call.ID, error) {
 	case hasHTTP(dag):
 		id, err = c.convertHTTPSource(mustHTTP(dag))
 	case hasOCI(dag):
-		id, err = c.convertOCISource(mustOCI(dag))
+		err = c.convertOCISource(mustOCI(dag))
 	case dag.GetSource() != nil:
 		err = unsupported(opDigest(dag), "source", "unsupported source scheme")
 	default:

@@ -27,7 +27,7 @@ func TestDetachedReceiverSelectionPreservesReceiverLineage(t *testing.T) {
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
-	srv := cacheTestServer(t, base)
+	srv := cacheTestServer(t)
 
 	Fields[*detachedLineageObject]{
 		Func("child", func(_ context.Context, self *detachedLineageObject, _ struct{}) (*detachedLineageObject, error) {
@@ -62,7 +62,7 @@ func TestNthValuePreservesAttachmentLineage(t *testing.T) {
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
-	srv := cacheTestServer(t, base)
+	srv := cacheTestServer(t)
 	ctx = srvToContext(ctx, srv)
 
 	list := Array[*cacheTestObject]{
@@ -110,7 +110,7 @@ func TestNthValueAttachedObjectResultArrayReturnsCanonicalChild(t *testing.T) {
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
-	srv := cacheTestServer(t, base)
+	srv := cacheTestServer(t)
 	ctx = srvToContext(ctx, srv)
 
 	child1Call := &ResultCall{
@@ -180,7 +180,7 @@ func TestNthValueAttachedDynamicResultArrayReturnsCanonicalChild(t *testing.T) {
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
-	ctx = srvToContext(ctx, cacheTestServer(t, base))
+	ctx = srvToContext(ctx, cacheTestServer(t))
 
 	child1Call := cacheTestIntCall("result-array-child-1")
 	child1Any, err := base.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: child1Call}, ValueFunc(cacheTestIntResult(child1Call, 11)))
@@ -241,7 +241,7 @@ func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
-	srv := cacheTestServer(t, base)
+	srv := cacheTestServer(t)
 	ctx = srvToContext(ctx, srv)
 
 	nullable := Nullable[*cacheTestObject]{
@@ -300,7 +300,7 @@ func TestNullableWrappedUsesSameSharedResult(t *testing.T) {
 	assert.NilError(t, err)
 	base := cacheIface
 	ctx = ContextWithCache(ctx, base)
-	srv := cacheTestServer(t, base)
+	srv := cacheTestServer(t)
 	ctx = srvToContext(ctx, srv)
 
 	call := &ResultCall{
@@ -359,7 +359,7 @@ func TestNullableDerefCacheHitsReconstructObjectView(t *testing.T) {
 	cacheIface, err := NewCache(ctx, "", nil, nil)
 	assert.NilError(t, err)
 	base := cacheIface
-	srv := cacheTestServer(t, base)
+	srv := cacheTestServer(t)
 	ctx = srvToContext(ctx, srv)
 
 	nullable := Nullable[*cacheTestObject]{

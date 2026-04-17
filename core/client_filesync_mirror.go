@@ -153,7 +153,7 @@ func (m *ClientFilesyncMirror) OnRelease(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.usageCount = 0
-	rerr := m.releaseRuntimeLocked(ctx)
+	rerr := m.releaseRuntimeLocked()
 	if m.snapshot != nil {
 		rerr = errorsJoin(rerr, m.snapshot.Release(ctx))
 		m.snapshot = nil
@@ -214,14 +214,14 @@ func (m *ClientFilesyncMirror) acquire(ctx context.Context, query *Query) (_ *fi
 	m.usageCount++
 	sharedState := m.sharedState
 	m.mu.Unlock()
-	return sharedState, func(releaseCtx context.Context) error {
+	return sharedState, func(_ context.Context) error {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		m.usageCount--
 		if m.usageCount > 0 {
 			return nil
 		}
-		return m.releaseRuntimeLocked(releaseCtx)
+		return m.releaseRuntimeLocked()
 	}, nil
 }
 
@@ -261,7 +261,7 @@ func (m *ClientFilesyncMirror) ensureRuntimeLocked(ctx context.Context, query *Q
 	return nil
 }
 
-func (m *ClientFilesyncMirror) releaseRuntimeLocked(ctx context.Context) (rerr error) {
+func (m *ClientFilesyncMirror) releaseRuntimeLocked() (rerr error) {
 	if m.mounter != nil {
 		rerr = errorsJoin(rerr, m.mounter.Unmount())
 		m.mounter = nil

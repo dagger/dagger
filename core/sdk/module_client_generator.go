@@ -18,7 +18,7 @@ type clientGeneratorModule struct {
 func (sdk *clientGeneratorModule) RequiredClientGenerationFiles(
 	ctx context.Context,
 ) (res dagql.Array[dagql.String], err error) {
-	dag, err := sdk.mod.dag(ctx)
+	dag, err := sdk.mod.dag()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
@@ -46,7 +46,7 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
-	dag, err := sdk.mod.dag(ctx)
+	dag, err := sdk.mod.dag()
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}

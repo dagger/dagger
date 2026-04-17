@@ -495,7 +495,6 @@ type ClientInitOpts struct {
 func (srv *Server) initializeDaggerClient(
 	ctx context.Context,
 	client *daggerClient,
-	failureCleanups *cleanups.Cleanups,
 	opts *ClientInitOpts,
 ) error {
 	slog := slog.With(
@@ -836,7 +835,7 @@ func (srv *Server) getOrInitClient(
 	defer client.stateMu.Unlock()
 	switch client.state {
 	case clientStateUninitialized:
-		if err := srv.initializeDaggerClient(ctx, client, failureCleanups, opts); err != nil {
+		if err := srv.initializeDaggerClient(ctx, client, opts); err != nil {
 			return nil, nil, fmt.Errorf("initialize client: %w", err)
 		}
 	case clientStateInitialized:

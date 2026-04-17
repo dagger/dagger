@@ -141,19 +141,19 @@ func loadPersistedSnapshotLinksByResultID(ctx context.Context, dag *dagql.Server
 	return links, nil
 }
 
-func loadPersistedImmutableSnapshotByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label, role string) (bkcache.ImmutableRef, dagql.PersistedSnapshotRefLink, error) {
+func loadPersistedImmutableSnapshotByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label, role string) (bkcache.ImmutableRef, error) {
 	link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, label, role)
 	if err != nil {
-		return nil, dagql.PersistedSnapshotRefLink{}, err
+		return nil, err
 	}
 	query, err := persistedDecodeQuery(dag)
 	if err != nil {
-		return nil, dagql.PersistedSnapshotRefLink{}, err
+		return nil, err
 	}
 	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
 	if err != nil {
-		return nil, dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted immutable snapshot %q: %w", link.RefKey, err)
+		return nil, fmt.Errorf("load persisted immutable snapshot %q: %w", link.RefKey, err)
 	}
-	return ref, link, nil
+	return ref, nil
 }
 

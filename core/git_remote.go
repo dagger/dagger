@@ -137,13 +137,13 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 		return "", err
 	}
 	inputs := []string{clientMetadata.SessionID, repo.URL.Remote()}
-	inputs = append(inputs, repo.remoteCacheScope(ctx)...)
+	inputs = append(inputs, repo.remoteCacheScope()...)
 	return hashutil.HashStrings(inputs...).String(), nil
 }
 
 // Pipelines could query the same remote with different creds (e.g. a pipeline checking that creds were properly rotated)
 // instead of being too smart, we just scope the cache key to the auth configuration: less chance of cache poisoning
-func (repo *RemoteGitRepository) remoteCacheScope(ctx context.Context) []string {
+func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	scope := make([]string, 0, 4)
 	if token := repo.AuthToken; token.Self() != nil {
 		if tokenHandle := token.Self().Handle; tokenHandle != "" {

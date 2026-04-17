@@ -473,7 +473,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			return fmt.Errorf("hydrate snapshot metadata: %w", err)
 		}
 
-		desiredLeaseIDs, err := c.desiredImportedOwnerLeaseIDs(ctx)
+		desiredLeaseIDs, err := c.desiredImportedOwnerLeaseIDs()
 		if err != nil {
 			return fmt.Errorf("compute desired imported owner leases: %w", err)
 		}

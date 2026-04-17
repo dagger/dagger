@@ -396,7 +396,7 @@ func NoopDone(res AnyResult, cached bool, rerr *error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
-	r, preselectResult, err := r.preselect(ctx, s, sel)
+	r, preselectResult, err := r.preselect(ctx, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +422,7 @@ func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.Vi
 	})
 }
 
-func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector) (ObjectResult[T], *preselectResult, error) {
+func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectResult[T], *preselectResult, error) {
 	view := sel.View
 	field, ok := r.class.Field(sel.Field, view)
 	if !ok {

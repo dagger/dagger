@@ -22,7 +22,7 @@ func (sdk *codeGeneratorModule) Codegen(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dag, err := sdk.mod.dag(ctx)
+	dag, err := sdk.mod.dag()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}

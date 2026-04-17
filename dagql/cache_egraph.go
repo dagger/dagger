@@ -680,24 +680,23 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 }
 
 func (c *Cache) lookupMatchForCallLocked(
-	ctx context.Context,
 	frame *ResultCall,
 	recipeDigest digest.Digest,
 	selfDigest digest.Digest,
 	inputDigests []digest.Digest,
 	nowUnix int64,
-) (lookupMatch, error) {
+) lookupMatch {
 	match := lookupMatch{
 		primaryLookupPossible: true,
 		missingInputIndex:     -1,
 	}
 	if frame == nil {
-		return match, nil
+		return match
 	}
 
 	match = c.lookupMatchForDigestsLocked(recipeDigest, frame.ExtraDigests, nowUnix)
 	if match.candidates != nil && !match.candidates.Empty() {
-		return match, nil
+		return match
 	}
 
 	match.selfDigest = selfDigest
@@ -730,7 +729,7 @@ func (c *Cache) lookupMatchForCallLocked(
 			match.candidates = candidates
 		}
 	}
-	return match, nil
+	return match
 }
 
 func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, responseFrame *ResultCall) error {
@@ -816,10 +815,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 	}
 	now := time.Now()
 	nowUnix := now.Unix()
-	match, err := c.lookupMatchForCallLocked(ctx, req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
-	if err != nil {
-		return nil, false, err
-	}
+	match := c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
 	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 
@@ -1095,10 +1091,7 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	match, err := c.lookupMatchForCallLocked(ctx, frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
-	if err != nil {
-		return 0, err
-	}
+	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
 	}
@@ -1623,13 +1616,13 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	return nil
 }
 
-func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedResult) error {
+func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedResult) {
 	if res == nil {
-		return nil
+		return
 	}
 	if len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0 {
 		c.maybeResetEgraphLocked()
-		return nil
+		return
 	}
 
 	affectedOutputEqClasses := c.outputEqClassesForResultLocked(res.id)
@@ -1694,7 +1687,6 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 		delete(c.outputEqClassToTerms, outputEqID)
 	}
 	c.maybeResetEgraphLocked()
-	return nil
 }
 
 func (c *Cache) maybeResetEgraphLocked() {

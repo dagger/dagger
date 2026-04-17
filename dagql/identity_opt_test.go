@@ -126,7 +126,7 @@ func TestObjectPreselectAppliesFieldModule(t *testing.T) {
 	_, preselected, err := root.preselect(engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
 		ClientID:  "dagql-test-client",
 		SessionID: "dagql-test-session",
-	}), srv, Selector{Field: "field"})
+	}), Selector{Field: "field"})
 	require.NoError(t, err)
 	require.NotNil(t, preselected.request.ResultCall.Module)
 	require.Equal(t, module.Name, preselected.request.ResultCall.Module.Name)

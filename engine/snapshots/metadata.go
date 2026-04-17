@@ -165,11 +165,11 @@ type cacheMetadata struct {
 func (cm *snapshotManager) Search(ctx context.Context, idx string, prefixOnly bool) ([]RefMetadata, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	return cm.search(ctx, idx, prefixOnly)
+	return cm.search(idx, prefixOnly), nil
 }
 
 // callers must hold cm.mu lock
-func (cm *snapshotManager) search(_ context.Context, idx string, prefixOnly bool) ([]RefMetadata, error) {
+func (cm *snapshotManager) search(idx string, prefixOnly bool) []RefMetadata {
 	ids := map[string]struct{}{}
 	cm.metadataStore.mu.RLock()
 	for indexedVal, set := range cm.metadataStore.index {
@@ -199,7 +199,7 @@ func (cm *snapshotManager) search(_ context.Context, idx string, prefixOnly bool
 		}
 		mds = append(mds, md)
 	}
-	return mds, nil
+	return mds
 }
 
 // callers must hold cm.mu lock

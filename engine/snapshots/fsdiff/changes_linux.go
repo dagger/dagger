@@ -109,7 +109,7 @@ func nextPath(ctx context.Context, pathC <-chan *currentPath) (*currentPath, err
 	}
 }
 
-func addDirChanges(ctx context.Context, changeFn continuityfs.ChangeFunc, root string) error {
+func addDirChanges(changeFn continuityfs.ChangeFunc, root string) error {
 	return filepath.Walk(root, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -136,7 +136,7 @@ func WalkChanges(
 	changeFn continuityfs.ChangeFunc,
 ) error {
 	if lowerRoot == "" {
-		return addDirChanges(ctx, changeFn, upperRoot)
+		return addDirChanges(changeFn, upperRoot)
 	}
 	return doubleWalkChanges(ctx, changeFn, lowerRoot, upperRoot, comparison)
 }

@@ -84,7 +84,7 @@ func (*persistConcurrentDecodeObj) DecodePersistedObject(ctx context.Context, da
 	return &persistConcurrentDecodeObj{Name: persisted.Name}, nil
 }
 
-func newPersistCodecImportTestServer(cache *Cache) *Server {
+func newPersistCodecImportTestServer() *Server {
 	srv, err := NewServer(context.Background(), &persistCodecRoot{})
 	if err != nil {
 		panic(err)
@@ -114,7 +114,7 @@ func newPersistCodecImportTestServer(cache *Cache) *Server {
 	return srv
 }
 
-func newPersistConcurrentDecodeTestServer(cache *Cache) *Server {
+func newPersistConcurrentDecodeTestServer() *Server {
 	srv, err := NewServer(context.Background(), &persistCodecRoot{})
 	if err != nil {
 		panic(err)
@@ -191,7 +191,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cA := cacheA
-	srvA := newPersistCodecImportTestServer(cacheA)
+	srvA := newPersistCodecImportTestServer()
 
 	rootCtxA := ContextWithCall(ctx, &ResultCall{
 		Kind:  ResultCallKindField,
@@ -214,7 +214,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
-	srvB := newPersistCodecImportTestServer(cacheB)
+	srvB := newPersistCodecImportTestServer()
 
 	rootCtxB := ContextWithCall(ctx, &ResultCall{
 		Kind:  ResultCallKindField,
@@ -243,7 +243,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cA := cacheA
-	srvA := newPersistCodecImportTestServer(cacheA)
+	srvA := newPersistCodecImportTestServer()
 
 	rootCtxA := ContextWithCall(ctx, &ResultCall{
 		Kind:  ResultCallKindField,
@@ -289,7 +289,7 @@ func TestCachePersistenceImportedObjectAliasSupportsChainedSelect(t *testing.T) 
 
 	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
-	srvA := newPersistCodecImportTestServer(cacheA)
+	srvA := newPersistCodecImportTestServer()
 
 	rootCtxA := ContextWithCall(ctx, &ResultCall{
 		Kind:  ResultCallKindField,
@@ -312,7 +312,7 @@ func TestCachePersistenceImportedObjectAliasSupportsChainedSelect(t *testing.T) 
 	defer func() {
 		assert.NilError(t, cacheB.Close(context.Background()))
 	}()
-	srvB := newPersistCodecImportTestServer(cacheB)
+	srvB := newPersistCodecImportTestServer()
 
 	rootCtxB := ContextWithCall(ctx, &ResultCall{
 		Kind:  ResultCallKindField,
@@ -340,7 +340,7 @@ func TestCachePersistenceImportedObjectLoadSerializesPersistedDecode(t *testing.
 	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cA := cacheA
-	srvA := newPersistConcurrentDecodeTestServer(cacheA)
+	srvA := newPersistConcurrentDecodeTestServer()
 
 	rootCtxA := ContextWithCall(ctx, &ResultCall{
 		Kind:  ResultCallKindField,
@@ -367,7 +367,7 @@ func TestCachePersistenceImportedObjectLoadSerializesPersistedDecode(t *testing.
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
-	srvB := newPersistConcurrentDecodeTestServer(cacheB)
+	srvB := newPersistConcurrentDecodeTestServer()
 
 	hook := &persistConcurrentDecodeHook{
 		firstEntered:  make(chan struct{}),

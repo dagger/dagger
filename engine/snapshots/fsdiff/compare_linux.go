@@ -23,9 +23,8 @@ func samePathInfo(
 		return true, nil
 	}
 
-	equalStat, err := compareSysStat(f1.Sys(), f2.Sys())
-	if err != nil || !equalStat {
-		return equalStat, err
+	if !compareSysStat(f1.Sys(), f2.Sys()) {
+		return false, nil
 	}
 
 	if eq, err := compareCapabilities(p1, p2); err != nil || !eq {
@@ -74,17 +73,17 @@ func samePathInfo(
 	}
 }
 
-func compareSysStat(s1, s2 interface{}) (bool, error) {
+func compareSysStat(s1, s2 interface{}) bool {
 	ls1, ok := s1.(*syscall.Stat_t)
 	if !ok {
-		return false, nil
+		return false
 	}
 	ls2, ok := s2.(*syscall.Stat_t)
 	if !ok {
-		return false, nil
+		return false
 	}
 
-	return ls1.Mode == ls2.Mode && ls1.Uid == ls2.Uid && ls1.Gid == ls2.Gid && ls1.Rdev == ls2.Rdev, nil
+	return ls1.Mode == ls2.Mode && ls1.Uid == ls2.Uid && ls1.Gid == ls2.Gid && ls1.Rdev == ls2.Rdev
 }
 
 func compareCapabilities(p1, p2 string) (bool, error) {

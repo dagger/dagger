@@ -618,7 +618,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	_ = pushHandler
 
 	pushUpdateSourceHandler, err := updateDistributionSourceHandler(r.contentStore, images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
-		_, err := limitedPushHandler(pusher, img.Provider, ref)(ctx, desc)
+		_, err := limitedPushHandler(pusher, img.Provider)(ctx, desc)
 		return nil, err
 	}), ref)
 	if err != nil {
@@ -657,7 +657,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if err != nil {
 		return err
 	}
-	pushLeaf := limitedPushHandler(pusher, img.Provider, ref)
+	pushLeaf := limitedPushHandler(pusher, img.Provider)
 	for i := len(manifestStack) - 1; i >= 0; i-- {
 		if _, err := pushLeaf(ctx, manifestStack[i]); err != nil {
 			return err
@@ -964,7 +964,7 @@ func collectManifestStack(ctx context.Context, provider content.Provider, rootDe
 	return stack, nil
 }
 
-func limitedPushHandler(pusher remotes.Pusher, provider content.Provider, ref string) images.HandlerFunc {
+func limitedPushHandler(pusher remotes.Pusher, provider content.Provider) images.HandlerFunc {
 	return func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
 		cw, err := pusher.Push(ctx, desc)
 		if err != nil {

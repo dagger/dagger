@@ -1556,7 +1556,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		if link.Role != "meta" {
 			continue
 		}
-		metaSnapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "container", "meta")
+		metaSnapshot, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "container", "meta")
 		if err != nil {
 			return nil, err
 		}

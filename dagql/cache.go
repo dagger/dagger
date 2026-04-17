@@ -665,9 +665,8 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 			depIDs = append(depIDs, depID)
 		}
 
-		if err := c.removeResultFromEgraphLocked(ctx, res); err != nil {
-			rerr = errors.Join(rerr, err)
-		} else if res.onRelease != nil {
+		c.removeResultFromEgraphLocked(ctx, res)
+		if res.onRelease != nil {
 			onReleases = append(onReleases, res.onRelease)
 		}
 		res.deps = nil
@@ -847,7 +846,7 @@ func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult
 	return c.syncResultSnapshotLeases(ctx, shared)
 }
 
-func (c *Cache) desiredImportedOwnerLeaseIDs(ctx context.Context) (map[string]struct{}, error) {
+func (c *Cache) desiredImportedOwnerLeaseIDs() (map[string]struct{}, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -1617,14 +1616,13 @@ func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep
 	if depRes == nil {
 		return fmt.Errorf("add explicit dependency: dep result %d missing from cache", depShared.id)
 	}
-	return c.addExplicitDependencyLocked(ctx, parentRes, depRes, dep, reason)
+	return c.addExplicitDependencyLocked(ctx, parentRes, depRes, reason)
 }
 
 func (c *Cache) addExplicitDependencyLocked(
 	ctx context.Context,
 	parentRes *sharedResult,
 	depRes *sharedResult,
-	dep AnyResult,
 	reason string,
 ) error {
 	if parentRes == nil || depRes == nil {

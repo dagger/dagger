@@ -353,7 +353,7 @@ func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
 	assert.NilError(t, err)
 	ctx := ContextWithCache(baseCtx, cacheIface)
 	c := cacheIface
-	srv := cacheTestServer(t, c)
+	srv := cacheTestServer(t)
 
 	spanExporter := &cacheTestSpanExporter{}
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
@@ -472,7 +472,7 @@ func (obj *cacheTestObject) AttachDependencyResults(
 	return deps, nil
 }
 
-func cacheTestServer(t *testing.T, base *Cache) *Server {
+func cacheTestServer(t *testing.T) *Server {
 	t.Helper()
 	srv := newDagqlServerForTest(t, cacheTestQuery{})
 	Fields[*cacheTestObject]{
@@ -503,9 +503,9 @@ func cacheTestReleaseSession(t *testing.T, cache *Cache, ctx context.Context) {
 	assert.NilError(t, cache.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
 }
 
-func cacheTestObjectResolverServer(t *testing.T, base *Cache, marker int) *Server {
+func cacheTestObjectResolverServer(t *testing.T, marker int) *Server {
 	t.Helper()
-	srv := cacheTestServer(t, base)
+	srv := cacheTestServer(t)
 	Fields[cacheTestQuery]{
 		NodeFunc("obj", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
 			return NewResultForCurrentCall(ctx, &cacheTestObject{Value: 0})
@@ -665,7 +665,7 @@ func TestCacheEvaluate(t *testing.T) {
 		cacheIface, err := NewCache(ctx, "", nil, nil)
 		assert.NilError(t, err)
 		ctx = ContextWithCache(ctx, cacheIface)
-		srv := cacheTestServer(t, cacheIface)
+		srv := cacheTestServer(t)
 		return ctx, cacheIface, srv
 	}
 
@@ -728,7 +728,7 @@ func TestCacheEvaluate(t *testing.T) {
 		cacheIface, err := NewCache(ctx, "", nil, nil)
 		assert.NilError(t, err)
 		ctx = ContextWithCache(ctx, cacheIface)
-		srv := cacheTestServer(t, cacheIface)
+		srv := cacheTestServer(t)
 
 		frame := &ResultCall{
 			Kind:  ResultCallKindField,
@@ -2843,7 +2843,7 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 	cacheIface, err := NewCache(ctx, "", nil, nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
-	srv := cacheTestServer(t, cacheIface)
+	srv := cacheTestServer(t)
 
 	objType := (&cacheTestObject{}).Type()
 
@@ -2941,8 +2941,8 @@ func TestCacheHitRewrapsObjectResultForCurrentServer(t *testing.T) {
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
 
-	srvA := cacheTestObjectResolverServer(t, cacheIface, 1)
-	srvB := cacheTestObjectResolverServer(t, cacheIface, 2)
+	srvA := cacheTestObjectResolverServer(t, 1)
+	srvB := cacheTestObjectResolverServer(t, 2)
 	ctxA := srvToContext(ctx, srvA)
 	ctxB := srvToContext(ctx, srvB)
 
@@ -2995,7 +2995,7 @@ func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
 	cacheIface, err := NewCache(ctx, "", nil, nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
-	srv := cacheTestServer(t, cacheIface)
+	srv := cacheTestServer(t)
 
 	objType := (&cacheTestObject{}).Type()
 
@@ -3044,7 +3044,7 @@ func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
 	cacheIface, err := NewCache(ctx, "", nil, nil)
 	assert.NilError(t, err)
 	ctx = ContextWithCache(ctx, cacheIface)
-	srv := cacheTestServer(t, cacheIface)
+	srv := cacheTestServer(t)
 
 	contentDig := digest.FromString("service-content")
 	objType := (&cacheTestObject{}).Type()
@@ -3233,7 +3233,7 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	assert.Equal(t, cacheTestMustEncodeID(t, childARes), cacheTestMustEncodeID(t, childBRes))
 
 	c.egraphMu.RLock()
-	resolvedChildB, resolveErr := c.resolveSharedResultForInputIDLocked(ctx, childBKey)
+	resolvedChildB, resolveErr := c.resolveSharedResultForInputIDLocked(childBKey)
 	c.egraphMu.RUnlock()
 	assert.NilError(t, resolveErr)
 	assert.Assert(t, resolvedChildB != nil)
@@ -3600,7 +3600,7 @@ func TestCacheDoNotCachePreservesAttachedReturnedObject(t *testing.T) {
 	cacheIface, err := NewCache(ctx, "", nil, nil)
 	assert.NilError(t, err)
 	c := cacheIface
-	srv := cacheTestServer(t, c)
+	srv := cacheTestServer(t)
 
 	objectCall := &ResultCall{
 		Kind:  ResultCallKindField,
@@ -3805,7 +3805,7 @@ func TestCacheArrayResultsRetainChildResultsAcrossProducerSessionRelease(t *test
 		c := cacheIface
 		ctxA = ContextWithCache(ctxA, c)
 		ctxB = ContextWithCache(ctxB, c)
-		srv := cacheTestServer(t, c)
+		srv := cacheTestServer(t)
 
 		child1Call := &ResultCall{
 			Kind:  ResultCallKindField,
@@ -3908,7 +3908,7 @@ func TestCacheArrayResultStressDoesNotReturnHitWithoutCallFrame(t *testing.T) {
 	cacheIface, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
 	c := cacheIface
-	srv := cacheTestServer(t, c)
+	srv := cacheTestServer(t)
 
 	seedCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
 		ClientID:  "stress-array-seed-client",
@@ -4108,7 +4108,7 @@ func TestCacheArrayResultStressDoesNotRaceExplicitDependencyAttachment(t *testin
 	cacheIface, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
 	c := cacheIface
-	srv := cacheTestServer(t, c)
+	srv := cacheTestServer(t)
 
 	seedCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
 		ClientID:  "stress-attach-seed-client",
@@ -4227,7 +4227,7 @@ func TestCacheMixedSessionWaitersCancelDoNotLeak(t *testing.T) {
 	cacheIface, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
 	c := cacheIface
-	srv := cacheTestServer(t, c)
+	srv := cacheTestServer(t)
 
 	seedCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
 		ClientID:  "stress-mixed-seed-client",
@@ -4469,7 +4469,7 @@ func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T)
 	cacheIface, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
 	c := cacheIface
-	srv := cacheTestServer(t, c)
+	srv := cacheTestServer(t)
 
 	seedCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
 		ClientID:  "stress-load-by-id-seed-client",
@@ -4682,7 +4682,7 @@ func TestCacheObjectResultRoundTripAndRelease(t *testing.T) {
 	cacheIface, err := NewCache(ctx, "", nil, nil)
 	assert.NilError(t, err)
 	c := cacheIface
-	srv := cacheTestServer(t, c)
+	srv := cacheTestServer(t)
 
 	keyCall := &ResultCall{
 		Kind:  ResultCallKindField,

@@ -134,7 +134,7 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, pare
 		value := fields[name]
 		fieldTypeDef, ok := t.typeDef.FieldByOriginalName(name)
 		if !ok {
-			updated, err := unknownModuleObjectValueToSDKInput(ctx, value)
+			updated, err := unknownModuleObjectValueToSDKInput(value)
 			if err != nil {
 				return nil, fmt.Errorf("convert private field %q: %w", name, err)
 			}
@@ -251,7 +251,7 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 	}
 }
 
-func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, error) {
+func unknownModuleObjectValueToSDKInput(value any) (any, error) {
 	switch value := value.(type) {
 	case nil:
 		return nil, nil
@@ -266,7 +266,7 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 			}
 			return id.Encode()
 		}
-		return unknownModuleObjectValueToSDKInput(ctx, value.Unwrap())
+		return unknownModuleObjectValueToSDKInput(value.Unwrap())
 	case dagql.IDable:
 		id, err := value.ID()
 		if err != nil {
@@ -295,7 +295,7 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 	case []any:
 		items := make([]any, 0, len(value))
 		for i, item := range value {
-			updated, err := unknownModuleObjectValueToSDKInput(ctx, item)
+			updated, err := unknownModuleObjectValueToSDKInput(item)
 			if err != nil {
 				return nil, fmt.Errorf("item %d: %w", i, err)
 			}
@@ -305,7 +305,7 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 	case map[string]any:
 		fields := make(map[string]any, len(value))
 		for _, name := range slices.Sorted(maps.Keys(value)) {
-			updated, err := unknownModuleObjectValueToSDKInput(ctx, value[name])
+			updated, err := unknownModuleObjectValueToSDKInput(value[name])
 			if err != nil {
 				return nil, fmt.Errorf("field %q: %w", name, err)
 			}

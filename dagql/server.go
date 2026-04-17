@@ -639,7 +639,7 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 	if err != nil {
 		return nil, err
 	}
-	return s.toSelectable(ctx, res)
+	return s.toSelectable(res)
 }
 
 func (s *Server) loadNthValue(
@@ -834,7 +834,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		base = state.srv.root
 	}
 
-	baseObj, err := state.srv.toSelectable(state.ctx, base)
+	baseObj, err := state.srv.toSelectable(base)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: instantiate base: %w", idInputDebugString(id), err)
 	}
@@ -1313,7 +1313,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 					continue
 				}
 				if isObj {
-					val, err = s.toSelectable(ctx, val)
+					val, err = s.toSelectable(val)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
 					}
@@ -1326,7 +1326,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		} else if s.isObjectType(res.Type().Name()) {
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
-			self, err = s.toSelectable(ctx, res)
+			self, err = s.toSelectable(res)
 			if err != nil {
 				return err
 			}
@@ -1630,7 +1630,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 						results[nth-1] = nil
 						return nil
 					}
-					node, err := s.toSelectable(ctx, elemVal)
+					node, err := s.toSelectable(elemVal)
 					if err != nil {
 						return fmt.Errorf("instantiate %dth array element: %w", nth, err)
 					}
@@ -1664,7 +1664,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	}
 
 	// instantiate the return value so we can sub-select
-	node, err := s.toSelectable(ctx, val)
+	node, err := s.toSelectable(val)
 	if err != nil {
 		return nil, fmt.Errorf("instantiate: %w", err)
 	}
@@ -1672,7 +1672,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	return s.Resolve(ctx, node, sel.Subselections...)
 }
 
-func (s *Server) toSelectable(ctx context.Context, val AnyResult) (AnyObjectResult, error) {
+func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 	if sel, ok := val.(AnyObjectResult); ok {
 		// We always support returning something that's already Selectable, e.g. an
 		// object loaded from its ID.

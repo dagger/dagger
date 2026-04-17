@@ -241,9 +241,9 @@ func (c *converter) convertHTTPSource(op *engineutil.HTTPOp) (*call.ID, error) {
 	return appendCall(dirID, directoryType(), "withFile", argString("path", name), argID("source", fileID)), nil
 }
 
-func (c *converter) convertOCISource(op *engineutil.OCIOp) (*call.ID, error) {
+func (c *converter) convertOCISource(op *engineutil.OCIOp) error {
 	_ = op
-	return nil, unsupported(opDigest(op.OpDAG), "source(oci-layout)", "oci-layout source is not yet supported")
+	return unsupported(opDigest(op.OpDAG), "source(oci-layout)", "oci-layout source is not yet supported")
 }
 
 func parseJSONPatternList(raw string) ([]string, error) {

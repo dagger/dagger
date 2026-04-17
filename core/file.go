@@ -230,7 +230,7 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dag *dagql.Server,
 	}
 	switch persisted.Form {
 	case persistedFileFormSnapshot:
-		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "file", snapshotRole)
+		snapshot, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "file", snapshotRole)
 		if err != nil {
 			return nil, err
 		}

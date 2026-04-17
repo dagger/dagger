@@ -238,7 +238,7 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dag *dagql.Se
 	}
 	switch persisted.Form {
 	case persistedDirectoryFormSnapshot:
-		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "directory", snapshotRole)
+		snapshot, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "directory", snapshotRole)
 		if err != nil {
 			return nil, err
 		}
