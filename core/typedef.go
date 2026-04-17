@@ -1610,8 +1610,8 @@ func (field *FieldTypeDef) AttachDependencyResults(
 	return owned, nil
 }
 
-func (typeDef FieldTypeDef) Clone() *FieldTypeDef {
-	cp := typeDef
+func (field FieldTypeDef) Clone() *FieldTypeDef {
+	cp := field
 	return &cp
 }
 

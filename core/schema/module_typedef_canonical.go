@@ -2,38 +2,10 @@ package schema
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 )
-
-//nolint:dupl // symmetric with loadInputTypeDef in module.go; this is the canonical-deps variant
-func (s *moduleSchema) servedInputTypeDef(ctx context.Context, self *core.Query, args struct {
-	Name string
-}) (*core.TypeDef, error) {
-	deps, err := self.CurrentServedDeps(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current module: %w", err)
-	}
-	dag, err := deps.Schema(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current schema: %w", err)
-	}
-	typeDefs, err := deps.TypeDefs(ctx, dag)
-	if err != nil {
-		return nil, err
-	}
-	for _, typeDef := range typeDefs {
-		if typeDef.Self() == nil || typeDef.Self().Kind != core.TypeDefKindInput || !typeDef.Self().AsInput.Valid {
-			continue
-		}
-		if typeDef.Self().AsInput.Value.Self().Name == args.Name {
-			return typeDef.Self(), nil
-		}
-	}
-	return nil, fmt.Errorf("input type %q not found", args.Name)
-}
 
 func (s *moduleSchema) functionArgs(
 	ctx context.Context,

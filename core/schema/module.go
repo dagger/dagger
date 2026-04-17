@@ -600,7 +600,6 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 }
 
-//nolint:dupl // symmetric with loadCanonicalInputTypeDef in module_typedef_canonical.go; sharing hides the served-deps vs canonical-deps path
 func (s *moduleSchema) loadInputTypeDef(ctx context.Context, self *core.Query, args struct {
 	Name string
 }) (*core.TypeDef, error) {

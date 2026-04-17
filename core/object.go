@@ -680,7 +680,7 @@ func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.
 	fieldNames := slices.Collect(maps.Keys(obj.Fields))
 	slices.Sort(fieldNames)
 	for _, name := range fieldNames {
-		encoded, err := encodePersistedModuleObjectValue(ctx, cache, obj.Fields[name])
+		encoded, err := encodePersistedModuleObjectValue(cache, obj.Fields[name])
 		if err != nil {
 			return nil, fmt.Errorf("encode persisted module object field %q: %w", name, err)
 		}
@@ -727,7 +727,7 @@ func (obj *ModuleObject) DecodePersistedObject(
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.PersistedObjectCache, val any) (persistedModuleObjectValue, error) {
+func encodePersistedModuleObjectValue(cache dagql.PersistedObjectCache, val any) (persistedModuleObjectValue, error) {
 	if val == nil {
 		return persistedModuleObjectValue{Kind: persistedModuleObjectValueKindNull}, nil
 	}
@@ -788,7 +788,7 @@ func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.Persisted
 		fieldNames := slices.Collect(maps.Keys(x))
 		slices.Sort(fieldNames)
 		for _, name := range fieldNames {
-			encoded, err := encodePersistedModuleObjectValue(ctx, cache, x[name])
+			encoded, err := encodePersistedModuleObjectValue(cache, x[name])
 			if err != nil {
 				return persistedModuleObjectValue{}, fmt.Errorf("field %q: %w", name, err)
 			}
@@ -801,7 +801,7 @@ func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.Persisted
 	case []any:
 		items := make([]persistedModuleObjectValue, 0, len(x))
 		for i, item := range x {
-			encoded, err := encodePersistedModuleObjectValue(ctx, cache, item)
+			encoded, err := encodePersistedModuleObjectValue(cache, item)
 			if err != nil {
 				return persistedModuleObjectValue{}, fmt.Errorf("item %d: %w", i, err)
 			}
@@ -822,14 +822,14 @@ func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.Persisted
 		if rv.IsNil() {
 			return persistedModuleObjectValue{Kind: persistedModuleObjectValueKindNull}, nil
 		}
-		return encodePersistedModuleObjectValue(ctx, cache, rv.Elem().Interface())
+		return encodePersistedModuleObjectValue(cache, rv.Elem().Interface())
 	case reflect.Slice, reflect.Array:
 		if rv.Type().Elem().Kind() == reflect.Uint8 {
 			return persistedModuleObjectScalarValue(val)
 		}
 		items := make([]persistedModuleObjectValue, 0, rv.Len())
 		for i := 0; i < rv.Len(); i++ {
-			encoded, err := encodePersistedModuleObjectValue(ctx, cache, rv.Index(i).Interface())
+			encoded, err := encodePersistedModuleObjectValue(cache, rv.Index(i).Interface())
 			if err != nil {
 				return persistedModuleObjectValue{}, fmt.Errorf("item %d: %w", i, err)
 			}
@@ -847,7 +847,7 @@ func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.Persisted
 		iter := rv.MapRange()
 		for iter.Next() {
 			name := iter.Key().String()
-			encoded, err := encodePersistedModuleObjectValue(ctx, cache, iter.Value().Interface())
+			encoded, err := encodePersistedModuleObjectValue(cache, iter.Value().Interface())
 			if err != nil {
 				return persistedModuleObjectValue{}, fmt.Errorf("field %q: %w", name, err)
 			}
@@ -866,7 +866,7 @@ func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.Persisted
 			if !ok {
 				continue
 			}
-			encoded, err := encodePersistedModuleObjectValue(ctx, cache, rv.Field(i).Interface())
+			encoded, err := encodePersistedModuleObjectValue(cache, rv.Field(i).Interface())
 			if err != nil {
 				return persistedModuleObjectValue{}, fmt.Errorf("field %q: %w", name, err)
 			}

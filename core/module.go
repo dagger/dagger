@@ -248,6 +248,7 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 // For primitive types (string, int, bool, float), it sets arg.DefaultValue
 // to the JSON representation. For object types (Secret, Directory, etc.),
 // it marks the arg as optional (since a default will be resolved at call time).
+//
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *dagql.Server) error {
 	if mod.WorkspaceConfig == nil {
@@ -1294,6 +1295,7 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.O
 
 // prefix the given typedef (and any recursively referenced typedefs) with this
 // module's name/path for any objects
+//
 //nolint:gocyclo,dupl // namespacing each typedef kind (object/interface/input/enum) and each closure (field/arg) is intrinsically shaped alike; sharing obscures which field is rewritten
 func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef dagql.ObjectResult[*TypeDef]) (dagql.ObjectResult[*TypeDef], error) {
 	dag, err := CurrentDagqlServer(ctx)
@@ -1796,6 +1798,7 @@ func (mod *Module) modulePath() string {
 
 // Patch is called after all types have been loaded - here we can update any
 // definitions as required, and attempt to resolve references.
+//
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) Patch(ctx context.Context) error {
 	dag, err := CurrentDagqlServer(ctx)

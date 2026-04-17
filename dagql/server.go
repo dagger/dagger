@@ -1194,6 +1194,7 @@ func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyO
 
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
+//
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) (rerr error) {
 	ctx = srvToContext(ctx, s)

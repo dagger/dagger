@@ -17,7 +17,6 @@ func applyDockerImageConfig(id *call.ID, img *dockerspec.DockerOCIImage) (*call.
 	}
 
 	cfg := img.Config
-	//nolint:staticcheck // ArgsEscaped is legacy but we must surface it to reject Windows images that rely on it.
 	if cfg.ArgsEscaped && strings.EqualFold(img.OS, "windows") {
 		return nil, fmt.Errorf("llbtodagger: unsupported image config argsEscaped on Windows image")
 	}
