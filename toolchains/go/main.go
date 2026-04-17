@@ -619,8 +619,13 @@ func filterPath(path string, include, exclude []string) (bool, error) {
 // +check
 func (p *Go) Lint(
 	ctx context.Context,
-	include []string, //+optional
-	exclude []string, //+optional
+	// +optional
+	include []string,
+	// +optional
+	exclude []string,
+	// limit numbers of golangci-lint parallel jobs to run
+	// +default=3
+	limit int,
 ) error {
 	mods, err := p.Modules(ctx, include, exclude)
 	if err != nil {
@@ -629,7 +634,7 @@ func (p *Go) Lint(
 	jobs := parallel.New().
 		// On a large repo this can run dozens of parallel golangci-lint jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
-		WithLimit(3).
+		WithLimit(limit).
 		// For better display in 'dagger checks': logs from all functions below the job will
 		// be printed below the job.
 		// TODO: remove this when dagger has a sub-checks API
