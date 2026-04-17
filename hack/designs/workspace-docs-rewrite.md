@@ -39,10 +39,9 @@ Adopting Dagger
 │   ├── GitHub Actions, GitLab, CircleCI, Jenkins, Azure Pipelines,
 │   │   AWS CodeBuild, Argo Workflows, Tekton, TeamCity
 │   └── (overview: Cloud Checks as standard path; "hybrid mode" as bridge)
-├── Scaling
-│   ├── Kubernetes
-│   └── OpenShift
-└── Engine Configuration
+└── Scaling
+    ├── Kubernetes
+    └── OpenShift
 
 Using Dagger
 ├── Checking your code
@@ -108,7 +107,7 @@ Everything you do to make Dagger work for your team. Ranges from one-time gettin
 
 **Scaling:** Self-hosting the engine at scale. Kubernetes (Helm chart, DaemonSet, auto-scaling) and OpenShift (tainted nodes, tolerations). Presented as second-class to Dagger Cloud's managed engines.
 
-**Engine Configuration:** Engine config, custom runners, proxies, custom CAs. Configure-once infrastructure. Schema-level reference lives in Reference; user-facing "why and how" lives here.
+**Engine Configuration:** dropped from Adopting. The page became a thin table of contents for `reference/configuration/{engine,custom-runner,custom-ca,proxy}`; the intended "user-facing why and how" narrative never materialized. Reference now owns the full story; `/adopting/engine-configuration` redirects there. Revisit if/when we have genuine adoption-phase narrative to add (e.g. a "configuring Dagger for production" runbook).
 
 Caching used to live here but moved to Core Concepts — layer/volume/function-call caching is a mental model users return to, not a one-time setup step.
 

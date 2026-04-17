@@ -58,7 +58,6 @@ module.exports = {
             "adopting/scaling/openshift",
           ],
         },
-        "adopting/engine-configuration",
       ],
     },
 

@@ -1447,7 +1447,12 @@
 
 [[redirects]]
   from = "/adopting/engine-runtime"
-  to = "/adopting/engine-configuration"
+  to = "/reference/configuration/engine"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/engine-configuration"
+  to = "/reference/configuration/engine"
   status = 301
 
 [[redirects]]
