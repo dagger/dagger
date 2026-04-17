@@ -1,8 +1,8 @@
 package core
 
-// Workspace alignment: partially aligned; coverage is valid but setup still inherits historical module-helper conventions.
+// Workspace alignment: mostly aligned; command intent is explicit, though some shell-specific setup still uses historical patterns.
 // Scope: Shell command UX and interactive command execution against modules.
-// Intent: Keep shell behavior covered while its module setup is cleaned up separately.
+// Intent: Keep shell behavior covered with exact module/raw helpers instead of legacy command rewriting where command intent matters.
 
 import (
 	"context"
@@ -65,14 +65,14 @@ func (m *Hello) Hello() string {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		WithWorkdir("/work/test/nosdk/hello").
-		With(daggerExec("init", "--sdk=go", "--name=hello")).
+		With(daggerModuleExec("init", "--sdk=go", "--name=hello")).
 		WithNewFile("main.go", helloCode).
 		WithWorkdir("/work/test/nosdk").
-		With(daggerExec("init", "--name=nosdk")).
-		With(daggerExec("install", "./hello")).
+		With(daggerModuleExec("init", "--name=nosdk")).
+		With(daggerModuleExec("install", "./hello")).
 		WithWorkdir("/work/test").
-		With(daggerExec("init", "--name=test")).
-		With(daggerExec("install", "./nosdk"))
+		With(daggerModuleExec("init", "--name=test")).
+		With(daggerModuleExec("install", "./nosdk"))
 
 	daggerJSON, err := testCtr.File("dagger.json").Contents(ctx)
 	require.NoError(t, err)
@@ -101,8 +101,7 @@ func (m *Hello) Hello() string {
 
 func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {
 	tmpdir := t.TempDir()
-	initCmd := hostDaggerCommand(ctx, t, tmpdir, "init", "--source=.", "--name=test", "--sdk=go")
-	initOutput, err := initCmd.CombinedOutput()
+	initOutput, err := hostDaggerModuleExec(ctx, t, tmpdir, "init", "--source=.", "--name=test", "--sdk=go")
 	require.NoError(t, err, string(initOutput))
 
 	err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
@@ -135,7 +134,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "1").
-				With(daggerExec("-s", "-c", "fn-2 env://FOO | stdout")).
+				With(daggerExecRaw("-s", "-c", "fn-2 env://FOO | stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -147,7 +146,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "2").
-				With(daggerExec("-s", "-c", "fn-2 env://FOO | stdout")).
+				With(daggerExecRaw("-s", "-c", "fn-2 env://FOO | stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -167,7 +166,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", plaintext).
-				With(daggerExec("-s", "-c", "fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout")).
+				With(daggerExecRaw("-s", "-c", "fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -179,7 +178,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", identity.NewID()).
-				With(daggerExec("-s", "-c", "fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout")).
+				With(daggerExecRaw("-s", "-c", "fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -382,10 +381,10 @@ func (Other) Version() string {
 }
 `,
 		)).
-		With(daggerExec("install", "./modules/dep")).
-		With(daggerExec("install", "./modules/git")).
-		With(daggerExec("install", "./modules/go")).
-		With(daggerExec("install", "./modules/objdoc"))
+		With(daggerModuleExec("install", "./modules/dep")).
+		With(daggerModuleExec("install", "./modules/git")).
+		With(daggerModuleExec("install", "./modules/go")).
+		With(daggerModuleExec("install", "./modules/objdoc"))
 
 	t.Run("general help", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
@@ -632,7 +631,7 @@ type Foo struct{
 	t.Run("main object", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", test).
-			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
+			With(daggerModuleExec("init", "--sdk=go", "--source=foo", "foo")).
 			With(sdkSourceAt("foo", "go", foo)).
 			With(daggerShell("foo")).
 			Stdout(ctx)
@@ -643,7 +642,7 @@ type Foo struct{
 	t.Run("stateful", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", test).
-			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
+			With(daggerModuleExec("init", "--sdk=go", "--source=foo", "foo")).
 			With(sdkSourceAt("foo", "go", foo)).
 			With(daggerShell(".cd foo; bar")).
 			Stdout(ctx)
@@ -654,7 +653,7 @@ type Foo struct{
 	t.Run("stateless", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		modGen := modInit(t, c, "go", test).
-			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
+			With(daggerModuleExec("init", "--sdk=go", "--source=foo", "foo")).
 			With(sdkSourceAt("foo", "go", foo))
 
 		out, err := modGen.
@@ -1051,7 +1050,7 @@ func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
 
 		tty := console.Tty()
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "-M", "-c", ".exit 5")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-M", "-c", ".exit 5")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -1123,7 +1122,7 @@ func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	_, err := modInit(t, c, "go", "").
-		With(daggerExec("init", "--sdk=go", "dep")).
+		With(daggerModuleExec("init", "--sdk=go", "dep")).
 		With(daggerShell(".install dep")).
 		WithExec([]string{"grep", "dep", ".dagger/config.toml"}).
 		Sync(ctx)
