@@ -17,7 +17,145 @@ type moduleSchema struct{}
 
 var _ SchemaResolvers = &moduleSchema{}
 
+var moduleDirectives = []dagql.DirectiveSpec{
+	{
+		Name:        "sourceMap",
+		Description: dagql.FormatDescription(`Indicates the source information for where a given field is defined.`),
+		Args: dagql.NewInputSpecs(
+			dagql.InputSpec{
+				Name: "module",
+				Type: dagql.String(""),
+			},
+			dagql.InputSpec{
+				Name: "filename",
+				Type: dagql.String(""),
+			},
+			dagql.InputSpec{
+				Name: "line",
+				Type: dagql.Int(0),
+			},
+			dagql.InputSpec{
+				Name: "column",
+				Type: dagql.Int(0),
+			},
+			dagql.InputSpec{
+				Name: "url",
+				Type: dagql.String(""),
+			},
+		),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationScalar,
+			dagql.DirectiveLocationObject,
+			dagql.DirectiveLocationFieldDefinition,
+			dagql.DirectiveLocationArgumentDefinition,
+			dagql.DirectiveLocationUnion,
+			dagql.DirectiveLocationEnum,
+			dagql.DirectiveLocationEnumValue,
+			dagql.DirectiveLocationInputObject,
+		},
+	},
+	{
+		Name:        "enumValue",
+		Description: dagql.FormatDescription(`Indicates the underlying value of an enum member.`),
+		Args: dagql.NewInputSpecs(
+			dagql.InputSpec{
+				Name: "value",
+				Type: dagql.String(""),
+			},
+		),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationEnumValue,
+		},
+	},
+	{
+		Name:        "defaultPath",
+		Description: dagql.FormatDescription(`Indicates that the argument defaults to a contextual path.`),
+		Args: dagql.NewInputSpecs(
+			dagql.InputSpec{
+				Name: "path",
+				Type: dagql.String(""),
+			},
+		),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
+		Name:        "defaultAddress",
+		Description: dagql.FormatDescription(`Indicates that the argument defaults to a container address.`),
+		Args: dagql.NewInputSpecs(
+			dagql.InputSpec{
+				Name: "address",
+				Type: dagql.String(""),
+			},
+		),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
+		Name:        "ignorePatterns",
+		Description: dagql.FormatDescription(`Filter directory contents using .gitignore-style glob patterns.`),
+		Args: dagql.NewInputSpecs(
+			dagql.InputSpec{
+				Name: "patterns",
+				Type: dagql.ArrayInput[dagql.String](nil),
+			},
+		),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
+		Name:        "check",
+		Description: dagql.FormatDescription(`Indicates that this function is a check.`),
+		Args:        dagql.NewInputSpecs(),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	},
+	{
+		Name:        "generate",
+		Description: dagql.FormatDescription(`Indicates that this function is a generate function.`),
+		Args:        dagql.NewInputSpecs(),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	},
+	{
+		Name:        "up",
+		Description: dagql.FormatDescription(`Indicates that this function returns a service for dagger up.`),
+		Args:        dagql.NewInputSpecs(), // none
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	},
+	{
+		Name:        "cache",
+		Description: dagql.FormatDescription(`Controls the caching behavior of a function.`),
+		Args: dagql.NewInputSpecs(
+			dagql.InputSpec{
+				Name:        "policy",
+				Description: dagql.FormatDescription(`The cache policy to use.`),
+				Type:        dagql.Optional[core.FunctionCachePolicy]{},
+			},
+			dagql.InputSpec{
+				Name:        "ttl",
+				Description: dagql.FormatDescription(`The time-to-live for cached results, as a duration string (e.g. "5m", "1h30s"). Only valid with the Default policy.`),
+				Type:        dagql.Optional[dagql.String]{},
+			},
+		),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	},
+}
+
 func (s *moduleSchema) Install(dag *dagql.Server) {
+	for _, directive := range moduleDirectives {
+		dag.InstallDirective(directive)
+	}
+
 	dagql.Fields[*core.Query]{
 		dagql.Func("module", s.module).
 			Doc(`Create a new module.`),
@@ -98,6 +236,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all generators defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+			),
+
+		dagql.Func("services", s.moduleServices).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return all services defined by the module`).
+			Args(
+				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
 
 		dagql.Func("generator", s.moduleGenerator).
@@ -203,6 +348,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("withGenerator", s.functionWithGenerator).
 			Doc(`Returns the function with a flag indicating it's a generator.`),
+
+		dagql.Func("withUp", s.functionWithUp).
+			Doc(`Returns the function with a flag indicating it returns a service for dagger up.`),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
@@ -568,6 +716,10 @@ func (s *moduleSchema) functionWithGenerator(ctx context.Context, fn *core.Funct
 	return fn.WithGenerator(), nil
 }
 
+func (s *moduleSchema) functionWithUp(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	return fn.WithUp(), nil
+}
+
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
 	Name           string
 	TypeDef        core.TypeDefID
@@ -910,6 +1062,22 @@ func (s *moduleSchema) moduleGenerators(
 		}
 	}
 	return mod.Generators(ctx, include)
+}
+
+func (s *moduleSchema) moduleServices(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.UpGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+	return mod.Services(ctx, include)
 }
 
 func (s *moduleSchema) currentModuleGenerators(

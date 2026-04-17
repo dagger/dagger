@@ -34,13 +34,13 @@ type ElixirSdkDev {
   """
   Regenerate the Elixir SDK API
   """
-  pub generate(introspectionJson: File!): Changeset! @generate {
+  pub clientLibrary(): Changeset! @generate {
     # Make sure everything is relative to git root
     let before = directory
       .withDirectory(sourcePath, source)
 
     let gen = withCodegen(devContainer)
-      .withMountedFile("/schema.json", introspectionJson)
+      .withMountedFile("/schema.json", daggerEngine.introspectionJson)
       .withExec(["mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"])
       .withExec(["mix", "format", "gen/*.ex"])
       .directory("gen")

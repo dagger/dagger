@@ -107,3 +107,30 @@ func (pf PortForward) FrontendOrBackendPort() int {
 	}
 	return pf.Backend
 }
+
+// ParsePortMapping parses a Docker-like "hostPort:containerPort" string into a PortForward.
+func ParsePortMapping(s string) (PortForward, error) {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return PortForward{}, fmt.Errorf("invalid port mapping %q: expected \"hostPort:containerPort\"", s)
+	}
+	frontend, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return PortForward{}, fmt.Errorf("invalid host port in %q: %w", s, err)
+	}
+	if frontend < 1 || frontend > 65535 {
+		return PortForward{}, fmt.Errorf("host port %d in %q out of range (1-65535)", frontend, s)
+	}
+	backend, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return PortForward{}, fmt.Errorf("invalid container port in %q: %w", s, err)
+	}
+	if backend < 1 || backend > 65535 {
+		return PortForward{}, fmt.Errorf("container port %d in %q out of range (1-65535)", backend, s)
+	}
+	return PortForward{
+		Frontend: &frontend,
+		Backend:  backend,
+		Protocol: NetworkProtocolTCP,
+	}, nil
+}

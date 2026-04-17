@@ -266,6 +266,12 @@ func LoadCurrentModuleFromID(id dagger.CurrentModuleID) *dagger.CurrentModule {
 	return client.LoadCurrentModuleFromID(id)
 }
 
+// Load a DiffStat from its ID.
+func LoadDiffStatFromID(id dagger.DiffStatID) *dagger.DiffStat {
+	client := initClient()
+	return client.LoadDiffStatFromID(id)
+}
+
 // Load a Directory from its ID.
 func LoadDirectoryFromID(id dagger.DirectoryID) *dagger.Directory {
 	client := initClient()
@@ -558,6 +564,18 @@ func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	client := initClient()
 	return client.LoadTypeDefFromID(id)
+}
+
+// Load a Up from its ID.
+func LoadUpFromID(id dagger.UpID) *dagger.Up {
+	client := initClient()
+	return client.LoadUpFromID(id)
+}
+
+// Load a UpGroup from its ID.
+func LoadUpGroupFromID(id dagger.UpGroupID) *dagger.UpGroup {
+	client := initClient()
+	return client.LoadUpGroupFromID(id)
 }
 
 // Load a Workspace from its ID.

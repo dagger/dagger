@@ -183,6 +183,32 @@ CMD echo "stage2"
 		require.NotContains(t, output, "stage2\n")
 	})
 
+	t.Run("with heredoc", func(ctx context.Context, t *testctx.T) {
+		dockerfile := `FROM ` + alpineImage + `
+RUN <<EOF
+#!/bin/sh
+echo "hello from heredoc" > /heredoc-output
+EOF
+CMD cat /heredoc-output
+`
+
+		t.Run("builtin frontend", func(ctx context.Context, t *testctx.T) {
+			dir := baseDir.WithNewFile("Dockerfile", dockerfile)
+
+			stdout, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "hello from heredoc")
+		})
+
+		t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
+			dir := baseDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
+
+			stdout, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "hello from heredoc")
+		})
+	})
+
 	t.Run("with build secrets", func(ctx context.Context, t *testctx.T) {
 		sec := c.SetSecret("my-secret", "barbar")
 
@@ -546,4 +572,30 @@ COPY --exclude=no data data
 	found, err = dir.DockerBuild().Exists(ctx, "data/no")
 	require.NoError(t, err)
 	require.False(t, found)
+}
+
+func (DockerfileSuite) TestAddUnpack(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := c.Container().
+		From(alpineImage).
+		WithWorkdir("/src").
+		WithExec([]string{"sh", "-c", "mkdir -p payload && printf hello > payload/hello.txt && tar -cf archive.tar payload"}).
+		Directory(".")
+
+	t.Run("local archive can disable unpacking", func(ctx context.Context, t *testctx.T) {
+		dir := contextDir.
+			WithNewFile("Dockerfile", `FROM `+alpineImage+`
+ADD --unpack=false archive.tar /out/
+`)
+		ctr := dir.DockerBuild()
+
+		found, err := ctr.Exists(ctx, "/out/archive.tar")
+		require.NoError(t, err)
+		require.True(t, found)
+
+		found, err = ctr.Exists(ctx, "/out/payload/hello.txt")
+		require.NoError(t, err)
+		require.False(t, found)
+	})
 }

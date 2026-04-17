@@ -3,10 +3,11 @@ import dataclasses
 import json
 import logging
 import subprocess
+import threading
 import time
 from importlib import metadata
 from pathlib import Path
-from typing import cast
+from typing import TextIO, cast
 
 from dagger._managers import SyncResource
 from dagger.client._session import ConnectParams
@@ -81,6 +82,21 @@ def start_cli_session_sync(cfg: Config, path: str):
         raise SessionError(e) from e
 
 
+def _has_fileno(stream: TextIO) -> bool:
+    """Check if a stream has a valid file descriptor."""
+    try:
+        stream.fileno()
+    except (AttributeError, OSError):
+        return False
+    return True
+
+
+def _forward_stderr(source: TextIO, dest: TextIO) -> None:
+    """Forward lines from source to dest until EOF."""
+    with contextlib.suppress(ValueError):
+        dest.writelines(source)
+
+
 def run(cfg: Config, path: str) -> subprocess.Popen[str]:
     args = [
         path,
@@ -94,6 +110,17 @@ def run(cfg: Config, path: str) -> subprocess.Popen[str]:
         args.extend(["--workdir", str(Path(cfg.workdir).absolute())])
     if cfg.config_path:
         args.extend(["--project", str(Path(cfg.config_path).absolute())])
+    if cfg.load_workspace_modules:
+        args.append("--load-workspace-modules")
+
+    # Determine stderr target. If the stream doesn't have a file descriptor
+    # (e.g. StringIO), use a PIPE and forward via a background thread so that
+    # any TextIO works as documented in Config.log_output.
+    log_output = cfg.log_output
+    needs_forwarding = log_output is not None and not _has_fileno(log_output)
+    stderr_target = (
+        subprocess.PIPE if (not log_output or needs_forwarding) else log_output
+    )
 
     # Retry starting if "text file busy" error is hit. That error can happen
     # due to a flaw in how Linux works: if any fork of this process happens
@@ -110,7 +137,7 @@ def run(cfg: Config, path: str) -> subprocess.Popen[str]:
                 bufsize=0,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=cfg.log_output or subprocess.PIPE,
+                stderr=stderr_target,
                 encoding="utf-8",
             )
         except OSError as e:  # noqa: PERF203
@@ -119,6 +146,16 @@ def run(cfg: Config, path: str) -> subprocess.Popen[str]:
             logger.warning("file busy, retrying in 0.1 seconds...")
             time.sleep(0.1)
         else:
+            if needs_forwarding and proc.stderr:
+                t = threading.Thread(
+                    target=_forward_stderr,
+                    args=(proc.stderr, log_output),
+                    daemon=True,
+                )
+                t.start()
+                # Clear proc.stderr so callers don't try to read from it
+                # (it's being consumed by the forwarding thread).
+                proc.stderr = None
             return proc
 
     msg = "CLI busy"

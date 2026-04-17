@@ -56,6 +56,11 @@ class CurrentModuleID(Scalar):
     object of type CurrentModule."""
 
 
+class DiffStatID(Scalar):
+    """The `DiffStatID` scalar type represents an identifier for an object
+    of type DiffStat."""
+
+
 class DirectoryID(Scalar):
     """The `DirectoryID` scalar type represents an identifier for an
     object of type Directory."""
@@ -311,6 +316,16 @@ class TypeDefID(Scalar):
     of type TypeDef."""
 
 
+class UpGroupID(Scalar):
+    """The `UpGroupID` scalar type represents an identifier for an object
+    of type UpGroup."""
+
+
+class UpID(Scalar):
+    """The `UpID` scalar type represents an identifier for an object of
+    type Up."""
+
+
 class Void(Scalar):
     """The absence of a value.  A Null Void is used as a placeholder for
     resolvers that do not return anything."""
@@ -363,6 +378,22 @@ class ChangesetsMergeConflict(Enum):
 
     FAIL_EARLY = "FAIL_EARLY"
     """Fail before attempting merge if file-level conflicts are detected between any changesets"""
+
+
+class DiffStatKind(Enum):
+    """The type of change for a diff stat entry."""
+
+    ADDED = "ADDED"
+    """A file or directory was added."""
+
+    MODIFIED = "MODIFIED"
+    """A file was modified."""
+
+    REMOVED = "REMOVED"
+    """A file or directory was removed."""
+
+    RENAMED = "RENAMED"
+    """A file was renamed."""
 
 
 class ExistsType(Enum):
@@ -773,6 +804,12 @@ class Binding(Type):
         _ctx = self._select("asContainer", _args)
         return Container(_ctx)
 
+    def as_diff_stat(self) -> "DiffStat":
+        """Retrieve the binding value, as type DiffStat"""
+        _args: list[Arg] = []
+        _ctx = self._select("asDiffStat", _args)
+        return DiffStat(_ctx)
+
     def as_directory(self) -> "Directory":
         """Retrieve the binding value, as type Directory"""
         _args: list[Arg] = []
@@ -901,6 +938,18 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asString", _args)
         return await _ctx.execute(str | None)
+
+    def as_up(self) -> "Up":
+        """Retrieve the binding value, as type Up"""
+        _args: list[Arg] = []
+        _ctx = self._select("asUp", _args)
+        return Up(_ctx)
+
+    def as_up_group(self) -> "UpGroup":
+        """Retrieve the binding value, as type UpGroup"""
+        _args: list[Arg] = []
+        _ctx = self._select("asUpGroup", _args)
+        return UpGroup(_ctx)
 
     def as_workspace(self) -> "Workspace":
         """Retrieve the binding value, as type Workspace"""
@@ -1087,6 +1136,14 @@ class Changeset(Type):
         _args: list[Arg] = []
         _ctx = self._select("before", _args)
         return Directory(_ctx)
+
+    async def diff_stats(self) -> list["DiffStat"]:
+        """Structured per-path diff statistics (kind and line counts) for this
+        changeset.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("diffStats", _args)
+        return await _ctx.execute_object_list(DiffStat)
 
     async def export(self, path: str) -> str:
         """Applies the diff represented by this changeset to a path on the host.
@@ -1499,9 +1556,17 @@ class CheckGroup(Type):
         _ctx = self._select("report", _args)
         return File(_ctx)
 
-    def run(self) -> Self:
-        """Execute all selected checks"""
-        _args: list[Arg] = []
+    def run(self, *, fail_fast: bool | None = None) -> Self:
+        """Execute all selected checks
+
+        Parameters
+        ----------
+        fail_fast:
+            If true, stop running checks as soon as any check fails.
+        """
+        _args = [
+            Arg("failFast", fail_fast, None),
+        ]
         _ctx = self._select("run", _args)
         return CheckGroup(_ctx)
 
@@ -3826,6 +3891,136 @@ class CurrentModule(Type):
 
 
 @typecheck
+class DiffStat(Type):
+    async def added_lines(self) -> int:
+        """Number of added lines for this path.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedLines", _args)
+        return await _ctx.execute(int)
+
+    async def id(self) -> DiffStatID:
+        """A unique identifier for this DiffStat.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        DiffStatID
+            The `DiffStatID` scalar type represents an identifier for an
+            object of type DiffStat.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(DiffStatID)
+
+    async def kind(self) -> DiffStatKind:
+        """Type of change.
+
+        Returns
+        -------
+        DiffStatKind
+            The type of change for a diff stat entry.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(DiffStatKind)
+
+    async def old_path(self) -> str | None:
+        """Previous path of the file, set only for renames.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("oldPath", _args)
+        return await _ctx.execute(str | None)
+
+    async def path(self) -> str:
+        """Path of the changed file or directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
+
+    async def removed_lines(self) -> int:
+        """Number of removed lines for this path.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedLines", _args)
+        return await _ctx.execute(int)
+
+
+@typecheck
 class Directory(Type):
     """A directory."""
 
@@ -5535,6 +5730,28 @@ class Env(Type):
         _ctx = self._select("outputs", _args)
         return await _ctx.execute_object_list(Binding)
 
+    def services(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> "UpGroup":
+        """Return all services defined by the installed modules
+
+        .. caution::
+            Experimental: Services API is highly experimental and may be
+            removed or replaced entirely.
+
+        Parameters
+        ----------
+        include:
+            Only include services matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("services", _args)
+        return UpGroup(_ctx)
+
     def with_address_input(
         self,
         name: str,
@@ -5838,6 +6055,48 @@ class Env(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("withCurrentModule", _args)
+        return Env(_ctx)
+
+    def with_diff_stat_input(
+        self,
+        name: str,
+        value: DiffStat,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type DiffStat in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The DiffStat value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDiffStatInput", _args)
+        return Env(_ctx)
+
+    def with_diff_stat_output(self, name: str, description: str) -> Self:
+        """Declare a desired DiffStat output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDiffStatOutput", _args)
         return Env(_ctx)
 
     def with_directory_input(
@@ -6677,6 +6936,90 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withStringOutput", _args)
+        return Env(_ctx)
+
+    def with_up_group_input(
+        self,
+        name: str,
+        value: "UpGroup",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type UpGroup in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The UpGroup value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withUpGroupInput", _args)
+        return Env(_ctx)
+
+    def with_up_group_output(self, name: str, description: str) -> Self:
+        """Declare a desired UpGroup output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withUpGroupOutput", _args)
+        return Env(_ctx)
+
+    def with_up_input(
+        self,
+        name: str,
+        value: "Up",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Up in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Up value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withUpInput", _args)
+        return Env(_ctx)
+
+    def with_up_output(self, name: str, description: str) -> Self:
+        """Declare a desired Up output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withUpOutput", _args)
         return Env(_ctx)
 
     def with_workspace(self, workspace: Directory) -> Self:
@@ -7885,6 +8228,14 @@ class Function(Type):
         _ctx = self._select("withSourceMap", _args)
         return Function(_ctx)
 
+    def with_up(self) -> Self:
+        """Returns the function with a flag indicating it returns a service for
+        dagger up.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withUp", _args)
+        return Function(_ctx)
+
     def with_(self, cb: Callable[["Function"], "Function"]) -> "Function":
         """Call the provided callable with current Function.
 
@@ -8413,7 +8764,7 @@ class GeneratedCode(Type):
 @typecheck
 class Generator(Type):
     def changes(self) -> Changeset:
-        """The generated changeset"""
+        """The generated changeset from the last run"""
         _args: list[Arg] = []
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
@@ -8483,7 +8834,7 @@ class Generator(Type):
         return await _ctx.execute(GeneratorID)
 
     async def is_empty(self) -> bool:
-        """Wether changeset from the generator execution is empty or not
+        """Whether changeset from the last generator run is empty or not
 
         Returns
         -------
@@ -8571,7 +8922,7 @@ class GeneratorGroup(Type):
         on_conflict: ChangesetsMergeConflict
         | None = ChangesetsMergeConflict.FAIL_EARLY,
     ) -> Changeset:
-        """The combined changes from the generators execution
+        """The combined changes from the last run of the generators
 
         If any conflict occurs, for instance if the same file is modified by
         multiple generators, or if a file is both modified and deleted, an
@@ -8616,7 +8967,7 @@ class GeneratorGroup(Type):
         return await _ctx.execute(GeneratorGroupID)
 
     async def is_empty(self) -> bool:
-        """Whether the generated changeset is empty or not
+        """Whether the generated changeset from the last run is empty or not
 
         Returns
         -------
@@ -10610,6 +10961,28 @@ class Module(Type):
         _ctx = self._select("serve", _args)
         await _ctx.execute()
 
+    def services(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> "UpGroup":
+        """Return all services defined by the module
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        include:
+            Only include services matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("services", _args)
+        return UpGroup(_ctx)
+
     def source(self) -> "ModuleSource":
         """The source for the module."""
         _args: list[Arg] = []
@@ -12295,6 +12668,14 @@ class Query(Root):
         _ctx = self._select("loadCurrentModuleFromID", _args)
         return CurrentModule(_ctx)
 
+    def load_diff_stat_from_id(self, id: DiffStatID) -> DiffStat:
+        """Load a DiffStat from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadDiffStatFromID", _args)
+        return DiffStat(_ctx)
+
     def load_directory_from_id(self, id: DirectoryID) -> Directory:
         """Load a Directory from its ID."""
         _args = [
@@ -12700,6 +13081,22 @@ class Query(Root):
         ]
         _ctx = self._select("loadTypeDefFromID", _args)
         return TypeDef(_ctx)
+
+    def load_up_from_id(self, id: UpID) -> "Up":
+        """Load a Up from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadUpFromID", _args)
+        return Up(_ctx)
+
+    def load_up_group_from_id(self, id: UpGroupID) -> "UpGroup":
+        """Load a UpGroup from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadUpGroupFromID", _args)
+        return UpGroup(_ctx)
 
     def load_workspace_from_id(self, id: WorkspaceID) -> "Workspace":
         """Load a Workspace from its ID."""
@@ -14227,6 +14624,161 @@ class TypeDef(Type):
 
 
 @typecheck
+class Up(Type):
+    async def description(self) -> str:
+        """The description of the service
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> UpID:
+        """A unique identifier for this Up.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        UpID
+            The `UpID` scalar type represents an identifier for an object of
+            type Up.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(UpID)
+
+    async def name(self) -> str:
+        """Return the fully qualified name of the service
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def original_module(self) -> Module:
+        """The original module in which the service has been defined"""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The path of the service within its module
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+    def run(self) -> Self:
+        """Execute the service function"""
+        _args: list[Arg] = []
+        _ctx = self._select("run", _args)
+        return Up(_ctx)
+
+    def with_(self, cb: Callable[["Up"], "Up"]) -> "Up":
+        """Call the provided callable with current Up.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
+class UpGroup(Type):
+    async def id(self) -> UpGroupID:
+        """A unique identifier for this UpGroup.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        UpGroupID
+            The `UpGroupID` scalar type represents an identifier for an object
+            of type UpGroup.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(UpGroupID)
+
+    async def list_(self) -> list[Up]:
+        """Return a list of individual services and their details"""
+        _args: list[Arg] = []
+        _ctx = self._select("list", _args)
+        return await _ctx.execute_object_list(Up)
+
+    def run(self) -> Self:
+        """Execute all selected service functions"""
+        _args: list[Arg] = []
+        _ctx = self._select("run", _args)
+        return UpGroup(_ctx)
+
+    def with_(self, cb: Callable[["UpGroup"], "UpGroup"]) -> "UpGroup":
+        """Call the provided callable with current UpGroup.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory."""
 
@@ -14515,6 +15067,24 @@ class Workspace(Type):
         _ctx = self._select("path", _args)
         return await _ctx.execute(str)
 
+    def services(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> UpGroup:
+        """Return all services from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include services matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("services", _args)
+        return UpGroup(_ctx)
+
 
 class Client(Query):
     """The Dagger client.
@@ -14553,6 +15123,9 @@ __all__ = [
     "ContainerID",
     "CurrentModule",
     "CurrentModuleID",
+    "DiffStat",
+    "DiffStatID",
+    "DiffStatKind",
     "Directory",
     "DirectoryID",
     "Engine",
@@ -14662,6 +15235,10 @@ __all__ = [
     "TypeDef",
     "TypeDefID",
     "TypeDefKind",
+    "Up",
+    "UpGroup",
+    "UpGroupID",
+    "UpID",
     "Void",
     "Workspace",
     "WorkspaceID",

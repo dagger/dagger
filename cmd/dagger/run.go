@@ -67,6 +67,7 @@ dagger run python main.py
 
 var waitDelay time.Duration
 var runFocus bool
+var runLoadWorkspaceModules bool
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
@@ -80,6 +81,11 @@ func init() {
 	)
 
 	runCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
+	runCmd.Flags().BoolVar(&runLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
+	if err := runCmd.Flags().MarkHidden("load-workspace-modules"); err != nil {
+		fmt.Fprintln(stderr, "Error hiding flag: load-workspace-modules", err)
+		os.Exit(1)
+	}
 }
 
 func Run(cmd *cobra.Command, args []string) error {
@@ -121,7 +127,8 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	return withEngine(ctx, client.Params{
-		SecretToken: sessionToken,
+		SecretToken:          sessionToken,
+		LoadWorkspaceModules: runLoadWorkspaceModules,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {

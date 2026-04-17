@@ -32,6 +32,11 @@ export const check = registry.check
 export const generate = registry.generate
 
 /**
+ * The definition of @up decorator that marks a function as a service for dagger up.
+ */
+export const up = registry.up
+
+/**
  * The definition of @field decorator that should be on top of any
  * class' property that must be exposed to the Dagger API.
  *

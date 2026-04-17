@@ -8,18 +8,23 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"structs"
 
 	"github.com/cilium/ebpf"
 )
 
 type ovlinuseMountArgs struct {
+	_     structs.HostLayout
 	Src   [256]int8
 	Dst   [256]int8
 	Data  [512]int8
 	Mntns uint32
 }
 
-type ovlinuseProbeCtx struct{ DentryPtr uint64 }
+type ovlinuseProbeCtx struct {
+	_         structs.HostLayout
+	DentryPtr uint64
+}
 
 // loadOvlinuse returns the embedded CollectionSpec for ovlinuse.
 func loadOvlinuse() (*ebpf.CollectionSpec, error) {

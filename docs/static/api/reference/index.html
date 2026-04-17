@@ -62,6 +62,7 @@
               <li><a href="#query-loadCloudFromID">loadCloudFromID</a></li>
               <li><a href="#query-loadContainerFromID">loadContainerFromID</a></li>
               <li><a href="#query-loadCurrentModuleFromID">loadCurrentModuleFromID</a></li>
+              <li><a href="#query-loadDiffStatFromID">loadDiffStatFromID</a></li>
               <li><a href="#query-loadDirectoryFromID">loadDirectoryFromID</a></li>
               <li><a href="#query-loadEngineCacheEntryFromID">loadEngineCacheEntryFromID</a></li>
               <li><a href="#query-loadEngineCacheEntrySetFromID">loadEngineCacheEntrySetFromID</a></li>
@@ -111,6 +112,8 @@
               <li><a href="#query-loadStatFromID">loadStatFromID</a></li>
               <li><a href="#query-loadTerminalFromID">loadTerminalFromID</a></li>
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
+              <li><a href="#query-loadUpFromID">loadUpFromID</a></li>
+              <li><a href="#query-loadUpGroupFromID">loadUpGroupFromID</a></li>
               <li><a href="#query-loadWorkspaceFromID">loadWorkspaceFromID</a></li>
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
@@ -147,6 +150,9 @@
               <li><a href="#definition-ContainerID">ContainerID</a></li>
               <li><a href="#definition-CurrentModule">CurrentModule</a></li>
               <li><a href="#definition-CurrentModuleID">CurrentModuleID</a></li>
+              <li><a href="#definition-DiffStat">DiffStat</a></li>
+              <li><a href="#definition-DiffStatID">DiffStatID</a></li>
+              <li><a href="#definition-DiffStatKind">DiffStatKind</a></li>
               <li><a href="#definition-Directory">Directory</a></li>
               <li><a href="#definition-DirectoryID">DirectoryID</a></li>
               <li><a href="#definition-Engine">Engine</a></li>
@@ -260,6 +266,10 @@
               <li><a href="#definition-TypeDef">TypeDef</a></li>
               <li><a href="#definition-TypeDefID">TypeDefID</a></li>
               <li><a href="#definition-TypeDefKind">TypeDefKind</a></li>
+              <li><a href="#definition-Up">Up</a></li>
+              <li><a href="#definition-UpGroup">UpGroup</a></li>
+              <li><a href="#definition-UpGroupID">UpGroupID</a></li>
+              <li><a href="#definition-UpID">UpID</a></li>
               <li><a href="#definition-Void">Void</a></li>
               <li><a href="#definition-Workspace">Workspace</a></li>
               <li><a href="#definition-WorkspaceID">WorkspaceID</a></li>
@@ -2003,6 +2013,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-CurrentModuleID"><code>CurrentModuleID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadDiffStatFromID" class="operation operation-query" data-traverse-target="query-loadDiffStatFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadDiffStatFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a DiffStat from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-DiffStat"><code>DiffStat!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DiffStatID"><code>DiffStatID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -4617,6 +4680,112 @@
               </div>
             </div>
           </section>
+          <section id="query-loadUpFromID" class="operation operation-query" data-traverse-target="query-loadUpFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadUpFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Up from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Up"><code>Up!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-UpID"><code>UpID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadUpGroupFromID" class="operation operation-query" data-traverse-target="query-loadUpGroupFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadUpGroupFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a UpGroup from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-UpGroup"><code>UpGroup!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-UpGroupID"><code>UpGroupID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadWorkspaceFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -5203,6 +5372,10 @@
                         <td> Retrieve the binding value, as type Container </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asDiffStat" href="#Binding-asDiffStat"><code>asDiffStat</code></a> - <span class="property-type"><a href="#definition-DiffStat"><code>DiffStat!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type DiffStat </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asDirectory" href="#Binding-asDirectory"><code>asDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Directory </td>
                       </tr>
@@ -5277,6 +5450,14 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asString" href="#Binding-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
                         <td> Returns the binding's string value </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asUp" href="#Binding-asUp"><code>asUp</code></a> - <span class="property-type"><a href="#definition-Up"><code>Up!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Up </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asUpGroup" href="#Binding-asUpGroup"><code>asUpGroup</code></a> - <span class="property-type"><a href="#definition-UpGroup"><code>UpGroup!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type UpGroup </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspace" href="#Binding-asWorkspace"><code>asWorkspace</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
@@ -5518,6 +5699,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Changeset-before" href="#Changeset-before"><code>before</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> The older/lower snapshot to compare against. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-diffStats" href="#Changeset-diffStats"><code>diffStats</code></a> - <span class="property-type"><a href="#definition-DiffStat"><code>[DiffStat!]!</code></a></span> </td>
+                        <td> Structured per-path diff statistics (kind and line counts) for this changeset. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Changeset-export" href="#Changeset-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -5831,9 +6016,22 @@
                         <td data-property-name=""><a class="property-name" id="CheckGroup-report" href="#CheckGroup-report"><code>report</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
                         <td> Generate a markdown report </td>
                       </tr>
-                      <tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="CheckGroup-run" href="#CheckGroup-run"><code>run</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
                         <td> Execute all selected checks </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>failFast</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If true, stop running checks as soon as any check fails.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -7673,6 +7871,125 @@
               </div>
             </div>
           </section>
+          <section id="definition-DiffStat" class="definition definition-object" data-traverse-target="definition-DiffStat">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DiffStat</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-addedLines" href="#DiffStat-addedLines"><code>addedLines</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> Number of added lines for this path. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-id" href="#DiffStat-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DiffStatID"><code>DiffStatID!</code></a></span> </td>
+                        <td> A unique identifier for this DiffStat. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-kind" href="#DiffStat-kind"><code>kind</code></a> - <span class="property-type"><a href="#definition-DiffStatKind"><code>DiffStatKind!</code></a></span> </td>
+                        <td> Type of change. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-oldPath" href="#DiffStat-oldPath"><code>oldPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> Previous path of the file, set only for renames. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-path" href="#DiffStat-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Path of the changed file or directory. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-removedLines" href="#DiffStat-removedLines"><code>removedLines</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> Number of removed lines for this path. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DiffStatID" class="definition definition-scalar" data-traverse-target="definition-DiffStatID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DiffStatID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>DiffStatID</code> scalar type represents an identifier for an object of type DiffStat.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DiffStatKind" class="definition definition-enum" data-traverse-target="definition-DiffStatKind">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DiffStatKind</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The type of change for a diff stat entry.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>ADDED</code></p>
+                        </td>
+                        <td> A file or directory was added. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>MODIFIED</code></p>
+                        </td>
+                        <td> A file was modified. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>REMOVED</code></p>
+                        </td>
+                        <td> A file or directory was removed. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>RENAMED</code></p>
+                        </td>
+                        <td> A file was renamed. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"ADDED"</span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-Directory" class="definition definition-object" data-traverse-target="definition-Directory">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -8969,6 +9286,23 @@
                         <td> Returns all declared output bindings for the environment </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-services" href="#Env-services"><code>services</code></a> - <span class="property-type"><a href="#definition-UpGroup"><code>UpGroup!</code></a></span> </td>
+                        <td> Return all services defined by the installed modules </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include services matching the specified patterns</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withAddressInput" href="#Env-withAddressInput"><code>withAddressInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type Address in the environment </td>
                       </tr>
@@ -9295,6 +9629,52 @@
                         <td>
                           <p>Installs the current module into the environment, exposing its functions to the model</p>
                           <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withDiffStatInput" href="#Env-withDiffStatInput"><code>withDiffStatInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type DiffStat in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-DiffStatID"><code>DiffStatID!</code></a></span></h6>
+                                <p>The DiffStat value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withDiffStatOutput" href="#Env-withDiffStatOutput"><code>withDiffStatOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired DiffStat output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
@@ -10205,6 +10585,98 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The description of the output</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withUpGroupInput" href="#Env-withUpGroupInput"><code>withUpGroupInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type UpGroup in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-UpGroupID"><code>UpGroupID!</code></a></span></h6>
+                                <p>The UpGroup value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withUpGroupOutput" href="#Env-withUpGroupOutput"><code>withUpGroupOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired UpGroup output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withUpInput" href="#Env-withUpInput"><code>withUpInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Up in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-UpID"><code>UpID!</code></a></span></h6>
+                                <p>The Up value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withUpOutput" href="#Env-withUpOutput"><code>withUpOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Up output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
                               </div>
                             </div>
                           </div>
@@ -11297,6 +11769,10 @@
                           </div>
                         </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Function-withUp" href="#Function-withUp"><code>withUp</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Returns the function with a flag indicating it returns a service for dagger up. </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -11710,7 +12186,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-changes" href="#Generator-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
-                        <td> The generated changeset </td>
+                        <td> The generated changeset from the last run </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-completed" href="#Generator-completed"><code>completed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
@@ -11726,7 +12202,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-isEmpty" href="#Generator-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Wether changeset from the generator execution is empty or not </td>
+                        <td> Whether changeset from the last generator run is empty or not </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-name" href="#Generator-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -11770,7 +12246,7 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-changes" href="#GeneratorGroup-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
                         <td>
-                          <p>The combined changes from the generators execution</p>
+                          <p>The combined changes from the last run of the generators</p>
                           <p>If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.</p>
                           <p>Set &#39;continueOnConflicts&#39; flag to force to merge the changes in a &#39;last write wins&#39; strategy.</p>
                         </td>
@@ -11794,7 +12270,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-isEmpty" href="#GeneratorGroup-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Whether the generated changeset is empty or not </td>
+                        <td> Whether the generated changeset from the last run is empty or not </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-list" href="#GeneratorGroup-list"><code>list</code></a> - <span class="property-type"><a href="#definition-Generator"><code>[Generator!]!</code></a></span> </td>
@@ -13448,6 +13924,23 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>entrypoint</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Install the module as the entrypoint, promoting its main-object methods onto the Query root</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Module-services" href="#Module-services"><code>services</code></a> - <span class="property-type"><a href="#definition-UpGroup"><code>UpGroup!</code></a></span> </td>
+                        <td> Return all services defined by the module </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include services matching the specified patterns</p>
                               </div>
                             </div>
                           </div>
@@ -15800,6 +16293,116 @@
               </div>
             </div>
           </section>
+          <section id="definition-Up" class="definition definition-object" data-traverse-target="definition-Up">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Up</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Up-description" href="#Up-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The description of the service </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Up-id" href="#Up-id"><code>id</code></a> - <span class="property-type"><a href="#definition-UpID"><code>UpID!</code></a></span> </td>
+                        <td> A unique identifier for this Up. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Up-name" href="#Up-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Return the fully qualified name of the service </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Up-originalModule" href="#Up-originalModule"><code>originalModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
+                        <td> The original module in which the service has been defined </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Up-path" href="#Up-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> The path of the service within its module </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Up-run" href="#Up-run"><code>run</code></a> - <span class="property-type"><a href="#definition-Up"><code>Up!</code></a></span> </td>
+                        <td> Execute the service function </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-UpGroup" class="definition definition-object" data-traverse-target="definition-UpGroup">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">UpGroup</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="UpGroup-id" href="#UpGroup-id"><code>id</code></a> - <span class="property-type"><a href="#definition-UpGroupID"><code>UpGroupID!</code></a></span> </td>
+                        <td> A unique identifier for this UpGroup. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="UpGroup-list" href="#UpGroup-list"><code>list</code></a> - <span class="property-type"><a href="#definition-Up"><code>[Up!]!</code></a></span> </td>
+                        <td> Return a list of individual services and their details </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="UpGroup-run" href="#UpGroup-run"><code>run</code></a> - <span class="property-type"><a href="#definition-UpGroup"><code>UpGroup!</code></a></span> </td>
+                        <td> Execute all selected service functions </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-UpGroupID" class="definition definition-scalar" data-traverse-target="definition-UpGroupID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">UpGroupID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>UpGroupID</code> scalar type represents an identifier for an object of type UpGroup.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-UpID" class="definition definition-scalar" data-traverse-target="definition-UpID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">UpID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>UpID</code> scalar type represents an identifier for an object of type Up.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-Void" class="definition definition-scalar" data-traverse-target="definition-Void">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -15975,6 +16578,23 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-path" href="#Workspace-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Workspace directory path relative to the workspace boundary. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-services" href="#Workspace-services"><code>services</code></a> - <span class="property-type"><a href="#definition-UpGroup"><code>UpGroup!</code></a></span> </td>
+                        <td> Return all services from modules loaded in the workspace. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include services matching the specified patterns</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                     </tbody>
                   </table>

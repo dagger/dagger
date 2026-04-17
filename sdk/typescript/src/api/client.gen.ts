@@ -253,6 +253,13 @@ function ChangesetsMergeConflictNameToValue(
       return name as ChangesetsMergeConflict
   }
 }
+export type CheckGroupRunOpts = {
+  /**
+   * If true, stop running checks as soon as any check fails.
+   */
+  failFast?: boolean
+}
+
 /**
  * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
  */
@@ -939,6 +946,73 @@ export type CurrentModuleWorkdirOpts = {
  */
 export type CurrentModuleID = string & { __CurrentModuleID: never }
 
+/**
+ * The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
+ */
+export type DiffStatID = string & { __DiffStatID: never }
+
+/**
+ * The type of change for a diff stat entry.
+ */
+export enum DiffStatKind {
+  /**
+   * A file or directory was added.
+   */
+  Added = "ADDED",
+
+  /**
+   * A file was modified.
+   */
+  Modified = "MODIFIED",
+
+  /**
+   * A file or directory was removed.
+   */
+  Removed = "REMOVED",
+
+  /**
+   * A file was renamed.
+   */
+  Renamed = "RENAMED",
+}
+
+/**
+ * Utility function to convert a DiffStatKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function DiffStatKindValueToName(value: DiffStatKind): string {
+  switch (value) {
+    case DiffStatKind.Added:
+      return "ADDED"
+    case DiffStatKind.Modified:
+      return "MODIFIED"
+    case DiffStatKind.Removed:
+      return "REMOVED"
+    case DiffStatKind.Renamed:
+      return "RENAMED"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a DiffStatKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function DiffStatKindNameToValue(name: string): DiffStatKind {
+  switch (name) {
+    case "ADDED":
+      return DiffStatKind.Added
+    case "MODIFIED":
+      return DiffStatKind.Modified
+    case "REMOVED":
+      return DiffStatKind.Removed
+    case "RENAMED":
+      return DiffStatKind.Renamed
+    default:
+      return name as DiffStatKind
+  }
+}
 export type DirectoryAsModuleOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
@@ -1263,6 +1337,13 @@ export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 export type EnvChecksOpts = {
   /**
    * Only include checks matching the specified patterns
+   */
+  include?: string[]
+}
+
+export type EnvServicesOpts = {
+  /**
+   * Only include services matching the specified patterns
    */
   include?: string[]
 }
@@ -1946,6 +2027,13 @@ export type ModuleServeOpts = {
    * Install the module as the entrypoint, promoting its main-object methods onto the Query root
    */
   entrypoint?: boolean
+}
+
+export type ModuleServicesOpts = {
+  /**
+   * Only include services matching the specified patterns
+   */
+  include?: string[]
 }
 
 /**
@@ -2714,6 +2802,16 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
   }
 }
 /**
+ * The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
+ */
+export type UpGroupID = string & { __UpGroupID: never }
+
+/**
+ * The `UpID` scalar type represents an identifier for an object of type Up.
+ */
+export type UpID = string & { __UpID: never }
+
+/**
  * The absence of a value.
  *
  * A Null Void is used as a placeholder for resolvers that do not return anything.
@@ -2754,6 +2852,13 @@ export type WorkspaceFindUpOpts = {
 export type WorkspaceGeneratorsOpts = {
   /**
    * Only include generators matching the specified patterns
+   */
+  include?: string[]
+}
+
+export type WorkspaceServicesOpts = {
+  /**
+   * Only include services matching the specified patterns
    */
   include?: string[]
 }
@@ -2997,6 +3102,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type DiffStat
+   */
+  asDiffStat = (): DiffStat => {
+    const ctx = this._ctx.select("asDiffStat")
+    return new DiffStat(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type Directory
    */
   asDirectory = (): Directory => {
@@ -3153,6 +3266,22 @@ export class Binding extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Retrieve the binding value, as type Up
+   */
+  asUp = (): Up => {
+    const ctx = this._ctx.select("asUp")
+    return new Up(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type UpGroup
+   */
+  asUpGroup = (): UpGroup => {
+    const ctx = this._ctx.select("asUpGroup")
+    return new UpGroup(ctx)
   }
 
   /**
@@ -3330,6 +3459,21 @@ export class Changeset extends BaseClient {
   before = (): Directory => {
     const ctx = this._ctx.select("before")
     return new Directory(ctx)
+  }
+
+  /**
+   * Structured per-path diff statistics (kind and line counts) for this changeset.
+   */
+  diffStats = async (): Promise<DiffStat[]> => {
+    type diffStats = {
+      id: DiffStatID
+    }
+
+    const ctx = this._ctx.select("diffStats").select("id")
+
+    const response: Awaited<diffStats[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadDiffStatFromID(r.id))
   }
 
   /**
@@ -3685,9 +3829,10 @@ export class CheckGroup extends BaseClient {
 
   /**
    * Execute all selected checks
+   * @param opts.failFast If true, stop running checks as soon as any check fails.
    */
-  run = (): CheckGroup => {
-    const ctx = this._ctx.select("run")
+  run = (opts?: CheckGroupRunOpts): CheckGroup => {
+    const ctx = this._ctx.select("run", { ...opts })
     return new CheckGroup(ctx)
   }
 
@@ -5194,6 +5339,127 @@ export class CurrentModule extends BaseClient {
   }
 }
 
+export class DiffStat extends BaseClient {
+  private readonly _id?: DiffStatID = undefined
+  private readonly _addedLines?: number = undefined
+  private readonly _kind?: DiffStatKind = undefined
+  private readonly _oldPath?: string = undefined
+  private readonly _path?: string = undefined
+  private readonly _removedLines?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: DiffStatID,
+    _addedLines?: number,
+    _kind?: DiffStatKind,
+    _oldPath?: string,
+    _path?: string,
+    _removedLines?: number,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._addedLines = _addedLines
+    this._kind = _kind
+    this._oldPath = _oldPath
+    this._path = _path
+    this._removedLines = _removedLines
+  }
+
+  /**
+   * A unique identifier for this DiffStat.
+   */
+  id = async (): Promise<DiffStatID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<DiffStatID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Number of added lines for this path.
+   */
+  addedLines = async (): Promise<number> => {
+    if (this._addedLines) {
+      return this._addedLines
+    }
+
+    const ctx = this._ctx.select("addedLines")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Type of change.
+   */
+  kind = async (): Promise<DiffStatKind> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<DiffStatKind> = await ctx.execute()
+
+    return DiffStatKindNameToValue(response)
+  }
+
+  /**
+   * Previous path of the file, set only for renames.
+   */
+  oldPath = async (): Promise<string> => {
+    if (this._oldPath) {
+      return this._oldPath
+    }
+
+    const ctx = this._ctx.select("oldPath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Path of the changed file or directory.
+   */
+  path = async (): Promise<string> => {
+    if (this._path) {
+      return this._path
+    }
+
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Number of removed lines for this path.
+   */
+  removedLines = async (): Promise<number> => {
+    if (this._removedLines) {
+      return this._removedLines
+    }
+
+    const ctx = this._ctx.select("removedLines")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+}
+
 /**
  * A directory.
  */
@@ -6494,6 +6760,16 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Return all services defined by the installed modules
+   * @param opts.include Only include services matching the specified patterns
+   * @experimental
+   */
+  services = (opts?: EnvServicesOpts): UpGroup => {
+    const ctx = this._ctx.select("services", { ...opts })
+    return new UpGroup(ctx)
+  }
+
+  /**
    * Create or update a binding of type Address in the environment
    * @param name The name of the binding
    * @param value The Address value to assign to the binding
@@ -6687,6 +6963,35 @@ export class Env extends BaseClient {
    */
   withCurrentModule = (): Env => {
     const ctx = this._ctx.select("withCurrentModule")
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type DiffStat in the environment
+   * @param name The name of the binding
+   * @param value The DiffStat value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withDiffStatInput = (
+    name: string,
+    value: DiffStat,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withDiffStatInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired DiffStat output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withDiffStatOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withDiffStatOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -7241,6 +7546,56 @@ export class Env extends BaseClient {
    */
   withStringOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withStringOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type UpGroup in the environment
+   * @param name The name of the binding
+   * @param value The UpGroup value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withUpGroupInput = (
+    name: string,
+    value: UpGroup,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withUpGroupInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired UpGroup output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withUpGroupOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withUpGroupOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Up in the environment
+   * @param name The name of the binding
+   * @param value The Up value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withUpInput = (name: string, value: Up, description: string): Env => {
+    const ctx = this._ctx.select("withUpInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Up output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withUpOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withUpOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -8258,6 +8613,14 @@ export class Function_ extends BaseClient {
   }
 
   /**
+   * Returns the function with a flag indicating it returns a service for dagger up.
+   */
+  withUp = (): Function_ => {
+    const ctx = this._ctx.select("withUp")
+    return new Function_(ctx)
+  }
+
+  /**
    * Call the provided function with current Function.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
@@ -8776,7 +9139,7 @@ export class Generator extends BaseClient {
   }
 
   /**
-   * The generated changeset
+   * The generated changeset from the last run
    */
   changes = (): Changeset => {
     const ctx = this._ctx.select("changes")
@@ -8814,7 +9177,7 @@ export class Generator extends BaseClient {
   }
 
   /**
-   * Wether changeset from the generator execution is empty or not
+   * Whether changeset from the last generator run is empty or not
    */
   isEmpty = async (): Promise<boolean> => {
     if (this._isEmpty) {
@@ -8910,7 +9273,7 @@ export class GeneratorGroup extends BaseClient {
   }
 
   /**
-   * The combined changes from the generators execution
+   * The combined changes from the last run of the generators
    *
    * If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
    *
@@ -8930,7 +9293,7 @@ export class GeneratorGroup extends BaseClient {
   }
 
   /**
-   * Whether the generated changeset is empty or not
+   * Whether the generated changeset from the last run is empty or not
    */
   isEmpty = async (): Promise<boolean> => {
     if (this._isEmpty) {
@@ -10617,6 +10980,16 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Return all services defined by the module
+   * @param opts.include Only include services matching the specified patterns
+   * @experimental
+   */
+  services = (opts?: ModuleServicesOpts): UpGroup => {
+    const ctx = this._ctx.select("services", { ...opts })
+    return new UpGroup(ctx)
+  }
+
+  /**
    * The source for the module.
    */
   source = (): ModuleSource => {
@@ -12065,6 +12438,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a DiffStat from its ID.
+   */
+  loadDiffStatFromID = (id: DiffStatID): DiffStat => {
+    const ctx = this._ctx.select("loadDiffStatFromID", { id })
+    return new DiffStat(ctx)
+  }
+
+  /**
    * Load a Directory from its ID.
    */
   loadDirectoryFromID = (id: DirectoryID): Directory => {
@@ -12462,6 +12843,22 @@ export class Client extends BaseClient {
   loadTypeDefFromID = (id: TypeDefID): TypeDef => {
     const ctx = this._ctx.select("loadTypeDefFromID", { id })
     return new TypeDef(ctx)
+  }
+
+  /**
+   * Load a Up from its ID.
+   */
+  loadUpFromID = (id: UpID): Up => {
+    const ctx = this._ctx.select("loadUpFromID", { id })
+    return new Up(ctx)
+  }
+
+  /**
+   * Load a UpGroup from its ID.
+   */
+  loadUpGroupFromID = (id: UpGroupID): UpGroup => {
+    const ctx = this._ctx.select("loadUpGroupFromID", { id })
+    return new UpGroup(ctx)
   }
 
   /**
@@ -13769,6 +14166,169 @@ export class TypeDef extends BaseClient {
   }
 }
 
+export class Up extends BaseClient {
+  private readonly _id?: UpID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: UpID,
+    _description?: string,
+    _name?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this Up.
+   */
+  id = async (): Promise<UpID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<UpID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The description of the service
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the fully qualified name of the service
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The original module in which the service has been defined
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * The path of the service within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Execute the service function
+   */
+  run = (): Up => {
+    const ctx = this._ctx.select("run")
+    return new Up(ctx)
+  }
+
+  /**
+   * Call the provided function with current Up.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Up) => Up) => {
+    return arg(this)
+  }
+}
+
+export class UpGroup extends BaseClient {
+  private readonly _id?: UpGroupID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: UpGroupID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this UpGroup.
+   */
+  id = async (): Promise<UpGroupID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<UpGroupID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return a list of individual services and their details
+   */
+  list = async (): Promise<Up[]> => {
+    type list = {
+      id: UpID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadUpFromID(r.id))
+  }
+
+  /**
+   * Execute all selected service functions
+   */
+  run = (): UpGroup => {
+    const ctx = this._ctx.select("run")
+    return new UpGroup(ctx)
+  }
+
+  /**
+   * Call the provided function with current UpGroup.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: UpGroup) => UpGroup) => {
+    return arg(this)
+  }
+}
+
 /**
  * A Dagger workspace detected from the current working directory.
  */
@@ -13980,6 +14540,15 @@ export class Workspace extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Return all services from modules loaded in the workspace.
+   * @param opts.include Only include services matching the specified patterns
+   */
+  services = (opts?: WorkspaceServicesOpts): UpGroup => {
+    const ctx = this._ctx.select("services", { ...opts })
+    return new UpGroup(ctx)
   }
 }
 

@@ -96,11 +96,11 @@ spec:
           {{- if .Values.magicache.enabled }}
           envFrom:
             - secretRef:
-              {{- if .Values.magicache.secretName }}
-              name: {{ .Values.magicache.secretName }}
-              {{- else }}
-              name: {{ include "dagger.fullname" . }}-magicache-token
-              {{- end }}
+                {{- if .Values.magicache.secretName }}
+                name: {{ .Values.magicache.secretName }}
+                {{- else }}
+                name: {{ include "dagger.fullname" . }}-magicache-token
+                {{- end }}
           {{- end }}
           {{- if or .Values.engine.containerPorts .Values.engine.port }}
           ports:
@@ -136,25 +136,9 @@ spec:
             {{- end }}
           {{- end }}
           readinessProbe:
-            exec:
-              command:
-                - sh
-                - -exc
-                - |-
-                  dagger core version
-            {{- if .Values.engine.readinessProbeSettings }}
             {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
-            {{- end }}
           livenessProbe:
-            exec:
-              command:
-                - sh
-                - -exc
-                - |-
-                  dagger core version
-            {{- if .Values.engine.livenessProbeSettings }}
             {{- toYaml .Values.engine.livenessProbeSettings | nindent 12 }}
-            {{- end }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/dagger

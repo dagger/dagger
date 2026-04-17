@@ -23,7 +23,9 @@ import (
 var (
 	sessionLabels               = enginetel.NewLabelFlag()
 	sessionVersion              string
+	sessionLoadWorkspaceModules bool
 	sessionSkipWorkspaceModules bool
+	sessionWorkspace            string
 )
 
 func sessionCmd() *cobra.Command {
@@ -38,6 +40,8 @@ func sessionCmd() *cobra.Command {
 	// This is not used by kept for backward compatibility.
 	// We don't want SDKs failing because this flag is not defined.
 	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'dagger.io/sdk.name:python' --label 'dagger.io/sdk.version:0.5.2' --label 'dagger.io/sdk.async:true')")
+	cmd.Flags().StringVarP(&sessionWorkspace, "workspace", "W", "", "select the workspace to load")
+	cmd.Flags().BoolVar(&sessionLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
 	cmd.Flags().BoolVar(&sessionSkipWorkspaceModules, "skip-workspace-modules", false, "skip loading workspace modules")
 	return cmd
 }
@@ -83,11 +87,12 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	port := l.Addr().(*net.TCPAddr).Port
 
-	return withEngine(ctx, client.Params{
-		SecretToken:          sessionToken.String(),
-		Version:              sessionVersion,
-		SkipWorkspaceModules: sessionSkipWorkspaceModules,
-	}, func(ctx context.Context, sess *client.Client) error {
+	params, err := sessionClientParams(sessionToken.String())
+	if err != nil {
+		return err
+	}
+
+	return withEngine(ctx, params, func(ctx context.Context, sess *client.Client) error {
 		// Requests maintain their original trace context from the client, rather
 		// than appearing beneath the dagger session span, so in order to see any
 		// logs we need to reveal everything.
@@ -123,4 +128,20 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	})
+}
+
+func sessionClientParams(secretToken string) (client.Params, error) {
+	if sessionLoadWorkspaceModules && sessionSkipWorkspaceModules {
+		return client.Params{}, fmt.Errorf("--load-workspace-modules and --skip-workspace-modules are mutually exclusive")
+	}
+
+	params := client.Params{
+		SecretToken:          secretToken,
+		Version:              sessionVersion,
+		LoadWorkspaceModules: sessionLoadWorkspaceModules,
+	}
+	if sessionWorkspace != "" {
+		params.Workspace = &sessionWorkspace
+	}
+	return params, nil
 }

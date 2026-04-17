@@ -559,6 +559,10 @@ func (container *Container) FromCanonicalRef(
 		return nil, err
 	}
 
+	if err := ref.EnsureLocal(ctx, bkSessionGroup); err != nil {
+		return nil, fmt.Errorf("failed to ensure image is local: %w", err)
+	}
+
 	rootfsDir := &Directory{
 		Result: ref,
 	}
@@ -2334,7 +2338,7 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		useEntrypoint = true
 	}
 
-	var cmdargs = container.Config.Cmd
+	cmdargs := container.Config.Cmd
 	if len(args.Args) > 0 {
 		cmdargs = args.Args
 		if !args.UseEntrypoint {

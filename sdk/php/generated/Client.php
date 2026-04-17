@@ -433,6 +433,16 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Load a DiffStat from its ID.
+     */
+    public function loadDiffStatFromID(DiffStatId|DiffStat $id): DiffStat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDiffStatFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\DiffStat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Directory from its ID.
      */
     public function loadDirectoryFromID(DirectoryId|Directory $id): Directory
@@ -931,6 +941,26 @@ class Client extends Client\AbstractClient implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Up from its ID.
+     */
+    public function loadUpFromID(UpId|Up $id): Up
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadUpFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Up($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a UpGroup from its ID.
+     */
+    public function loadUpGroupFromID(UpGroupId|UpGroup $id): UpGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadUpGroupFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

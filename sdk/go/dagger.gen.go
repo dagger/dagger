@@ -157,6 +157,9 @@ type ContainerID string
 // The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
 type CurrentModuleID string
 
+// The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
+type DiffStatID string
+
 // The `DirectoryID` scalar type represents an identifier for an object of type Directory.
 type DirectoryID string
 
@@ -311,6 +314,12 @@ type TerminalID string
 
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
+
+// The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
+type UpGroupID string
+
+// The `UpID` scalar type represents an identifier for an object of type Up.
+type UpID string
 
 // The absence of a value.
 //
@@ -627,6 +636,15 @@ func (r *Binding) AsContainer() *Container {
 	}
 }
 
+// Retrieve the binding value, as type DiffStat
+func (r *Binding) AsDiffStat() *DiffStat {
+	q := r.query.Select("asDiffStat")
+
+	return &DiffStat{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type Directory
 func (r *Binding) AsDirectory() *Directory {
 	q := r.query.Select("asDirectory")
@@ -800,6 +818,24 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Retrieve the binding value, as type Up
+func (r *Binding) AsUp() *Up {
+	q := r.query.Select("asUp")
+
+	return &Up{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type UpGroup
+func (r *Binding) AsUpGroup() *UpGroup {
+	q := r.query.Select("asUpGroup")
+
+	return &UpGroup{
+		query: q,
+	}
 }
 
 // Retrieve the binding value, as type Workspace
@@ -1015,6 +1051,39 @@ func (r *Changeset) Before() *Directory {
 	return &Directory{
 		query: q,
 	}
+}
+
+// Structured per-path diff statistics (kind and line counts) for this changeset.
+func (r *Changeset) DiffStats(ctx context.Context) ([]DiffStat, error) {
+	q := r.query.Select("diffStats")
+
+	q = q.Select("id")
+
+	type diffStats struct {
+		Id DiffStatID
+	}
+
+	convert := func(fields []diffStats) []DiffStat {
+		out := []DiffStat{}
+
+		for i := range fields {
+			val := DiffStat{id: &fields[i].Id}
+			val.query = q.Root().Select("loadDiffStatFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []diffStats
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Applies the diff represented by this changeset to a path on the host.
@@ -1450,9 +1519,21 @@ func (r *CheckGroup) Report() *File {
 	}
 }
 
+// CheckGroupRunOpts contains options for CheckGroup.Run
+type CheckGroupRunOpts struct {
+	// If true, stop running checks as soon as any check fails.
+	FailFast bool
+}
+
 // Execute all selected checks
-func (r *CheckGroup) Run() *CheckGroup {
+func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
 	q := r.query.Select("run")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
+		}
+	}
 
 	return &CheckGroup{
 		query: q,
@@ -3654,6 +3735,128 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 	}
 }
 
+type DiffStat struct {
+	query *querybuilder.Selection
+
+	addedLines   *int
+	id           *DiffStatID
+	kind         *DiffStatKind
+	oldPath      *string
+	path         *string
+	removedLines *int
+}
+
+func (r *DiffStat) WithGraphQLQuery(q *querybuilder.Selection) *DiffStat {
+	return &DiffStat{
+		query: q,
+	}
+}
+
+// Number of added lines for this path.
+func (r *DiffStat) AddedLines(ctx context.Context) (int, error) {
+	if r.addedLines != nil {
+		return *r.addedLines, nil
+	}
+	q := r.query.Select("addedLines")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this DiffStat.
+func (r *DiffStat) ID(ctx context.Context) (DiffStatID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response DiffStatID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *DiffStat) XXX_GraphQLType() string {
+	return "DiffStat"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *DiffStat) XXX_GraphQLIDType() string {
+	return "DiffStatID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *DiffStat) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *DiffStat) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Type of change.
+func (r *DiffStat) Kind(ctx context.Context) (DiffStatKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response DiffStatKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Previous path of the file, set only for renames.
+func (r *DiffStat) OldPath(ctx context.Context) (string, error) {
+	if r.oldPath != nil {
+		return *r.oldPath, nil
+	}
+	q := r.query.Select("oldPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Path of the changed file or directory.
+func (r *DiffStat) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Number of removed lines for this path.
+func (r *DiffStat) RemovedLines(ctx context.Context) (int, error) {
+	if r.removedLines != nil {
+		return *r.removedLines, nil
+	}
+	q := r.query.Select("removedLines")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // A directory.
 type Directory struct {
 	query *querybuilder.Selection
@@ -5474,6 +5677,29 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	return convert(response), nil
 }
 
+// EnvServicesOpts contains options for Env.Services
+type EnvServicesOpts struct {
+	// Only include services matching the specified patterns
+	Include []string
+}
+
+// Return all services defined by the installed modules
+//
+// Experimental: Services API is highly experimental and may be removed or replaced entirely.
+func (r *Env) Services(opts ...EnvServicesOpts) *UpGroup {
+	q := r.query.Select("services")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Address in the environment
 func (r *Env) WithAddressInput(name string, value *Address, description string) *Env {
 	assertNotNil("value", value)
@@ -5647,6 +5873,30 @@ func (r *Env) WithContainerOutput(name string, description string) *Env {
 // Contextual path arguments will be populated using the environment's workspace.
 func (r *Env) WithCurrentModule() *Env {
 	q := r.query.Select("withCurrentModule")
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type DiffStat in the environment
+func (r *Env) WithDiffStatInput(name string, value *DiffStat, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withDiffStatInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired DiffStat output to be assigned in the environment
+func (r *Env) WithDiffStatOutput(name string, description string) *Env {
+	q := r.query.Select("withDiffStatOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -6128,6 +6378,54 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 // Declares a desired string output binding
 func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type UpGroup in the environment
+func (r *Env) WithUpGroupInput(name string, value *UpGroup, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withUpGroupInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired UpGroup output to be assigned in the environment
+func (r *Env) WithUpGroupOutput(name string, description string) *Env {
+	q := r.query.Select("withUpGroupOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Up in the environment
+func (r *Env) WithUpInput(name string, value *Up, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withUpInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Up output to be assigned in the environment
+func (r *Env) WithUpOutput(name string, description string) *Env {
+	q := r.query.Select("withUpOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -7479,6 +7777,15 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 	}
 }
 
+// Returns the function with a flag indicating it returns a service for dagger up.
+func (r *Function) WithUp() *Function {
+	q := r.query.Select("withUp")
+
+	return &Function{
+		query: q,
+	}
+}
+
 // An argument accepted by a function.
 //
 // This is a specification for an argument at function definition time, not an argument passed at function call time.
@@ -8014,7 +8321,7 @@ func (r *Generator) WithGraphQLQuery(q *querybuilder.Selection) *Generator {
 	}
 }
 
-// The generated changeset
+// The generated changeset from the last run
 func (r *Generator) Changes() *Changeset {
 	q := r.query.Select("changes")
 
@@ -8089,7 +8396,7 @@ func (r *Generator) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Wether changeset from the generator execution is empty or not
+// Whether changeset from the last generator run is empty or not
 func (r *Generator) IsEmpty(ctx context.Context) (bool, error) {
 	if r.isEmpty != nil {
 		return *r.isEmpty, nil
@@ -8172,7 +8479,7 @@ type GeneratorGroupChangesOpts struct {
 	OnConflict ChangesetsMergeConflict
 }
 
-// The combined changes from the generators execution
+// The combined changes from the last run of the generators
 //
 // If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
 //
@@ -8231,7 +8538,7 @@ func (r *GeneratorGroup) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Whether the generated changeset is empty or not
+// Whether the generated changeset from the last run is empty or not
 func (r *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
 	if r.isEmpty != nil {
 		return *r.isEmpty, nil
@@ -10412,6 +10719,29 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 	return q.Execute(ctx)
 }
 
+// ModuleServicesOpts contains options for Module.Services
+type ModuleServicesOpts struct {
+	// Only include services matching the specified patterns
+	Include []string
+}
+
+// Return all services defined by the module
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Module) Services(opts ...ModuleServicesOpts) *UpGroup {
+	q := r.query.Select("services")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // The source for the module.
 func (r *Module) Source() *ModuleSource {
 	q := r.query.Select("source")
@@ -12160,6 +12490,16 @@ func (r *Query) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 	}
 }
 
+// Load a DiffStat from its ID.
+func (r *Query) LoadDiffStatFromID(id DiffStatID) *DiffStat {
+	q := r.query.Select("loadDiffStatFromID")
+	q = q.Arg("id", id)
+
+	return &DiffStat{
+		query: q,
+	}
+}
+
 // Load a Directory from its ID.
 func (r *Query) LoadDirectoryFromID(id DirectoryID) *Directory {
 	q := r.query.Select("loadDirectoryFromID")
@@ -12646,6 +12986,26 @@ func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q = q.Arg("id", id)
 
 	return &TypeDef{
+		query: q,
+	}
+}
+
+// Load a Up from its ID.
+func (r *Query) LoadUpFromID(id UpID) *Up {
+	q := r.query.Select("loadUpFromID")
+	q = q.Arg("id", id)
+
+	return &Up{
+		query: q,
+	}
+}
+
+// Load a UpGroup from its ID.
+func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
+	q := r.query.Select("loadUpGroupFromID")
+	q = q.Arg("id", id)
+
+	return &UpGroup{
 		query: q,
 	}
 }
@@ -14320,6 +14680,224 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	}
 }
 
+type Up struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *UpID
+	name        *string
+}
+type WithUpFunc func(r *Up) *Up
+
+// With calls the provided function with current Up.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Up) With(f WithUpFunc) *Up {
+	return f(r)
+}
+
+func (r *Up) WithGraphQLQuery(q *querybuilder.Selection) *Up {
+	return &Up{
+		query: q,
+	}
+}
+
+// The description of the service
+func (r *Up) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Up.
+func (r *Up) ID(ctx context.Context) (UpID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response UpID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Up) XXX_GraphQLType() string {
+	return "Up"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Up) XXX_GraphQLIDType() string {
+	return "UpID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Up) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Up) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return the fully qualified name of the service
+func (r *Up) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The original module in which the service has been defined
+func (r *Up) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The path of the service within its module
+func (r *Up) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Execute the service function
+func (r *Up) Run() *Up {
+	q := r.query.Select("run")
+
+	return &Up{
+		query: q,
+	}
+}
+
+type UpGroup struct {
+	query *querybuilder.Selection
+
+	id *UpGroupID
+}
+type WithUpGroupFunc func(r *UpGroup) *UpGroup
+
+// With calls the provided function with current UpGroup.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *UpGroup) With(f WithUpGroupFunc) *UpGroup {
+	return f(r)
+}
+
+func (r *UpGroup) WithGraphQLQuery(q *querybuilder.Selection) *UpGroup {
+	return &UpGroup{
+		query: q,
+	}
+}
+
+// A unique identifier for this UpGroup.
+func (r *UpGroup) ID(ctx context.Context) (UpGroupID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response UpGroupID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *UpGroup) XXX_GraphQLType() string {
+	return "UpGroup"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *UpGroup) XXX_GraphQLIDType() string {
+	return "UpGroupID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *UpGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *UpGroup) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return a list of individual services and their details
+func (r *UpGroup) List(ctx context.Context) ([]Up, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id UpID
+	}
+
+	convert := func(fields []list) []Up {
+		out := []Up{}
+
+		for i := range fields {
+			val := Up{id: &fields[i].Id}
+			val.query = q.Root().Select("loadUpFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Execute all selected service functions
+func (r *UpGroup) Run() *UpGroup {
+	q := r.query.Select("run")
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // A Dagger workspace detected from the current working directory.
 type Workspace struct {
 	query *querybuilder.Selection
@@ -14582,6 +15160,27 @@ func (r *Workspace) Path(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceServicesOpts contains options for Workspace.Services
+type WorkspaceServicesOpts struct {
+	// Only include services matching the specified patterns
+	Include []string
+}
+
+// Return all services from modules loaded in the workspace.
+func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
+	q := r.query.Select("services")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
 // Sharing mode of the cache volume.
 type CacheSharingMode string
 
@@ -14779,6 +15378,77 @@ const (
 
 	// Attempt the octopus merge and fail if git merge fails due to conflicts
 	ChangesetsMergeConflictFail ChangesetsMergeConflict = "FAIL"
+)
+
+// The type of change for a diff stat entry.
+type DiffStatKind string
+
+func (DiffStatKind) IsEnum() {}
+
+func (v DiffStatKind) Name() string {
+	switch v {
+	case DiffStatKindAdded:
+		return "ADDED"
+	case DiffStatKindModified:
+		return "MODIFIED"
+	case DiffStatKindRemoved:
+		return "REMOVED"
+	case DiffStatKindRenamed:
+		return "RENAMED"
+	default:
+		return ""
+	}
+}
+
+func (v DiffStatKind) Value() string {
+	return string(v)
+}
+
+func (v *DiffStatKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *DiffStatKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ADDED":
+		*v = DiffStatKindAdded
+	case "MODIFIED":
+		*v = DiffStatKindModified
+	case "REMOVED":
+		*v = DiffStatKindRemoved
+	case "RENAMED":
+		*v = DiffStatKindRenamed
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// A file or directory was added.
+	DiffStatKindAdded DiffStatKind = "ADDED"
+
+	// A file was modified.
+	DiffStatKindModified DiffStatKind = "MODIFIED"
+
+	// A file or directory was removed.
+	DiffStatKindRemoved DiffStatKind = "REMOVED"
+
+	// A file was renamed.
+	DiffStatKindRenamed DiffStatKind = "RENAMED"
 )
 
 // File type.

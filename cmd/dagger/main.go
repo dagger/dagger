@@ -30,7 +30,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
@@ -141,6 +141,7 @@ func init() {
 		traceCmd,
 		configCmd,
 		checksCmd,
+		upCmd,
 		generateCmd,
 		moduleInitCmd,
 		moduleDepInstallCmd,

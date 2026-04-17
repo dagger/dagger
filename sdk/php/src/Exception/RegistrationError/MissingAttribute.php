@@ -28,4 +28,13 @@ final class MissingAttribute extends \RuntimeException implements RegistrationEr
             . ", Dagger Functions returning arrays require $missingAttribute",
         );
     }
+
+    public static function fieldListOfType(string $fieldName): self
+    {
+        $missingAttribute = \Dagger\Attribute\ReturnsListOfType::class;
+        return new self(
+            "DaggerField '$fieldName' is an array"
+            . ", array fields require $missingAttribute",
+        );
+    }
 }

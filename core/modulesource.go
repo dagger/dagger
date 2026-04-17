@@ -339,6 +339,7 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 			Field: "exists",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(".env")},
+				{Name: "expectedType", Value: dagql.Opt(ExistsTypeRegular)},
 			},
 		},
 	); status.Code(err) == codes.NotFound {
@@ -393,6 +394,32 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 		return nil, "", fmt.Errorf("failed to find-up outer .env: %s", err.Error())
 	}
 	if envFilePath == "" {
+		return &EnvFile{}, "", nil
+	}
+	// Check if the found .env path is a regular file (not a directory)
+	envFileDir := path.Dir(envFilePath.String())
+	envFileName := path.Base(envFilePath.String())
+	var isRegularFile bool
+	if err := dag.Select(ctx, dag.Root(), &isRegularFile,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(envFileDir)},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(envFileName)}},
+			},
+		},
+		dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(envFileName)},
+				{Name: "expectedType", Value: dagql.Opt(ExistsTypeRegular)},
+			},
+		},
+	); err != nil {
+		return nil, "", fmt.Errorf("failed to check outer env file type at %q: %w", envFilePath.String(), err)
+	}
+	if !isRegularFile {
 		return &EnvFile{}, "", nil
 	}
 	var envFile *EnvFile

@@ -74,6 +74,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type DiffStat
+     */
+    public function asDiffStat(): DiffStat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asDiffStat');
+        return new \Dagger\DiffStat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Directory
      */
     public function asDirectory(): Directory
@@ -251,6 +260,24 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asString');
         return (string)$this->queryLeaf($leafQueryBuilder, 'asString');
+    }
+
+    /**
+     * Retrieve the binding value, as type Up
+     */
+    public function asUp(): Up
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asUp');
+        return new \Dagger\Up($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type UpGroup
+     */
+    public function asUpGroup(): UpGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asUpGroup');
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

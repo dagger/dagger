@@ -105,6 +105,23 @@
           },
           "type": "array",
           "description": "IgnoreGenerators is a list of generator patterns to exclude from this toolchain. Patterns can use glob syntax to match generator names."
+        },
+        "ignoreServices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "IgnoreServices is a list of service (up) patterns to exclude from this toolchain. Patterns can use glob syntax to match service names."
+        },
+        "portMappings": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object",
+          "description": "PortMappings maps service names to port forwarding rules. Keys are service names (e.g. \"web\", \"infra:database\"). Values are arrays of \"hostPort:containerPort\" strings (e.g. [\"3000:80\"])."
         }
       },
       "additionalProperties": false,
@@ -170,7 +187,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "Paths to explicitly exclude from the module, relative to the configuration file. Deprecated: Use !\u003cpattern\u003e in the include list instead."
+          "description": "Paths to explicitly exclude from the module, relative to the configuration file.\n\nDeprecated: Use !\u003cpattern\u003e in the include list instead."
         },
         "clients": {
           "items": {
