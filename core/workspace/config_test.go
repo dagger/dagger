@@ -35,7 +35,7 @@ greeting = "hola"
 		Source:            "modules/greeter",
 		Entrypoint:        true,
 		LegacyDefaultPath: true,
-		Config: map[string]any{
+		Settings: map[string]any{
 			"enabled":  true,
 			"greeting": "hello",
 		},
@@ -43,7 +43,7 @@ greeting = "hola"
 	require.Equal(t, EnvOverlay{
 		Modules: map[string]EnvModuleOverlay{
 			"greeter": {
-				Config: map[string]any{
+				Settings: map[string]any{
 					"greeting": "hola",
 				},
 			},
@@ -67,7 +67,7 @@ func TestSerializeConfig(t *testing.T) {
 				Source:            "modules/greeter",
 				Entrypoint:        true,
 				LegacyDefaultPath: true,
-				Config: map[string]any{
+				Settings: map[string]any{
 					"tags":     []string{"main", "develop"},
 					"greeting": "hello",
 					"enabled":  true,
@@ -79,7 +79,7 @@ func TestSerializeConfig(t *testing.T) {
 			"ci": {
 				Modules: map[string]EnvModuleOverlay{
 					"greeter": {
-						Config: map[string]any{
+						Settings: map[string]any{
 							"greeting": "hola",
 							"enabled":  false,
 						},
@@ -202,7 +202,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.Equal(t, ModuleEntry{
 			Source:     "modules/greeter",
 			Entrypoint: true,
-			Config: map[string]any{
+			Settings: map[string]any{
 				"count":    int64(42),
 				"greeting": "hello",
 				"tags":     []any{"main", "develop"},
@@ -211,7 +211,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.Equal(t, EnvOverlay{
 			Modules: map[string]EnvModuleOverlay{
 				"greeter": {
-					Config: map[string]any{
+					Settings: map[string]any{
 						"region": "us-east-1",
 					},
 				},
@@ -246,14 +246,14 @@ func TestApplyEnvOverlay(t *testing.T) {
 			Modules: map[string]ModuleEntry{
 				"aws": {
 					Source: "github.com/dagger/aws",
-					Config: map[string]any{
+					Settings: map[string]any{
 						"region": "us-west-2",
 						"format": "json",
 					},
 				},
 				"vitest": {
 					Source: "github.com/dagger/vitest",
-					Config: map[string]any{
+					Settings: map[string]any{
 						"reporter": "dot",
 					},
 				},
@@ -262,7 +262,7 @@ func TestApplyEnvOverlay(t *testing.T) {
 				"ci": {
 					Modules: map[string]EnvModuleOverlay{
 						"aws": {
-							Config: map[string]any{
+							Settings: map[string]any{
 								"region":    "us-east-1",
 								"secretKey": "op://supervault/prodawskey",
 							},
@@ -278,14 +278,14 @@ func TestApplyEnvOverlay(t *testing.T) {
 			"format":    "json",
 			"region":    "us-east-1",
 			"secretKey": "op://supervault/prodawskey",
-		}, applied.Modules["aws"].Config)
+		}, applied.Modules["aws"].Settings)
 		require.Equal(t, map[string]any{
 			"reporter": "dot",
-		}, applied.Modules["vitest"].Config)
+		}, applied.Modules["vitest"].Settings)
 		require.Equal(t, map[string]any{
 			"region": "us-west-2",
 			"format": "json",
-		}, base.Modules["aws"].Config)
+		}, base.Modules["aws"].Settings)
 	})
 
 	t.Run("returns an unchanged copy when env name is empty", func(t *testing.T) {
@@ -320,7 +320,7 @@ func TestApplyEnvOverlay(t *testing.T) {
 			Env: map[string]EnvOverlay{
 				"ci": {
 					Modules: map[string]EnvModuleOverlay{
-						"missing": {Config: map[string]any{"region": "us-east-1"}},
+						"missing": {Settings: map[string]any{"region": "us-east-1"}},
 					},
 				},
 			},

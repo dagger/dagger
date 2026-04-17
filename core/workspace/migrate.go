@@ -247,7 +247,7 @@ func analyzeCustomizations(toolchains []*modules.ModuleConfigDependency) []migra
 				warnings = append(warnings, migrationWarning{
 					module: tc.Name,
 					message: fmt.Sprintf(
-						"function customization for %q could not be migrated automatically because workspace config only carries constructor config values",
+						"function customization for %q could not be migrated automatically because workspace config only carries constructor settings values",
 						funcName,
 					),
 					original: cust,
@@ -266,7 +266,7 @@ func analyzeCustomizations(toolchains []*modules.ModuleConfigDependency) []migra
 				if cust.DefaultAddress != "" {
 					parts = append(parts, "'defaultAddress'")
 				}
-				msg += " " + strings.Join(parts, " and ") + " customization that cannot be expressed as a workspace config value"
+				msg += " " + strings.Join(parts, " and ") + " customization that cannot be expressed as a workspace settings value"
 				warnings = append(warnings, migrationWarning{
 					module:   tc.Name,
 					message:  msg,

@@ -87,7 +87,7 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 			"zeta": {
 				Source:     "github.com/acme/zeta@main",
 				Entrypoint: true,
-				Config:     map[string]any{"message": "hello"},
+				Settings:   map[string]any{"message": "hello"},
 			},
 			"alpha": {
 				Source: "modules/alpha",

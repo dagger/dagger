@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -199,6 +201,24 @@ func (s *workspaceSchema) configRead(
 	parent *core.Workspace,
 	args configReadArgs,
 ) (dagql.String, error) {
+	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
+		cfg, err := readWorkspaceConfig(ctx, parent)
+		if err != nil {
+			return "", err
+		}
+
+		effective, err := effectiveWorkspaceConfigBytes(cfg, envName)
+		if err != nil {
+			return "", err
+		}
+
+		result, err := workspace.ReadConfigValue(effective, args.Key)
+		if err != nil {
+			return "", err
+		}
+		return dagql.String(result), nil
+	}
+
 	data, err := readConfigBytes(ctx, parent)
 	if err != nil {
 		return "", err
@@ -230,7 +250,19 @@ func (s *workspaceSchema) configWrite(
 		return "", err
 	}
 
-	updated, err := workspace.WriteConfigValue(data, args.Key, args.Value)
+	writeKey := args.Key
+	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
+		cfg, err := workspace.ParseConfig(data)
+		if err != nil {
+			return "", err
+		}
+		writeKey, err = envScopedConfigKey(cfg, envName, args.Key)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	updated, err := workspace.WriteConfigValue(data, writeKey, args.Value)
 	if err != nil {
 		return "", err
 	}
@@ -240,6 +272,48 @@ func (s *workspaceSchema) configWrite(
 	}
 
 	return dagql.String(args.Value), nil
+}
+
+func selectedWorkspaceEnv(ctx context.Context) (string, bool) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil || clientMetadata.WorkspaceEnv == nil || *clientMetadata.WorkspaceEnv == "" {
+		return "", false
+	}
+	return *clientMetadata.WorkspaceEnv, true
+}
+
+func isExplicitEnvConfigKey(key string) bool {
+	return key == "env" || strings.HasPrefix(key, "env.")
+}
+
+func effectiveWorkspaceConfigBytes(cfg *workspace.Config, envName string) ([]byte, error) {
+	applied, err := workspace.ApplyEnvOverlay(cfg, envName)
+	if err != nil {
+		return nil, err
+	}
+	applied.Env = nil
+	return workspace.SerializeConfig(applied), nil
+}
+
+func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, error) {
+	if cfg == nil {
+		return "", fmt.Errorf("workspace env %q requires .dagger/config.toml", envName)
+	}
+	if _, ok := cfg.Env[envName]; !ok {
+		return "", fmt.Errorf("workspace env %q is not defined", envName)
+	}
+
+	parts := strings.Split(key, ".")
+	if len(parts) < 4 || parts[0] != "modules" || parts[2] != "settings" {
+		return "", fmt.Errorf("key %q cannot be set in env %q; only modules.<name>.settings.* is supported", key, envName)
+	}
+
+	moduleName := parts[1]
+	if _, ok := cfg.Modules[moduleName]; !ok {
+		return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+	}
+
+	return strings.Join(append([]string{"env", envName}, parts...), "."), nil
 }
 
 func exportWorkspaceFileToHost(ctx context.Context, bk *buildkit.Client, hostPath string, contents []byte) error {

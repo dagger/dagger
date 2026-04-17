@@ -49,7 +49,9 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 
 func TestWorkspaceCommandGrouping(t *testing.T) {
 	require.Equal(t, workspaceGroup.ID, configCmd.GroupID)
+	require.Equal(t, workspaceGroup.ID, envCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, initCmd.GroupID)
+	require.Equal(t, workspaceGroup.ID, settingsCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, workspaceCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, moduleDepInstallCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, moduleUpdateCmd.GroupID)
@@ -80,9 +82,11 @@ func TestRootHelpShowsWorkspaceCommandGroup(t *testing.T) {
 
 	workspaceSection := help[workspaceIdx:moduleIdx]
 	require.Contains(t, workspaceSection, "  config")
+	require.Contains(t, workspaceSection, "  env")
 	require.Contains(t, workspaceSection, "  init")
 	require.Contains(t, workspaceSection, "  install")
 	require.Contains(t, workspaceSection, "  update")
+	require.Contains(t, workspaceSection, "  settings")
 	require.Contains(t, workspaceSection, "  workspace")
 	require.Contains(t, workspaceSection, "  migrate")
 	require.Contains(t, workspaceSection, "  lock")
@@ -144,12 +148,18 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(migrateCmd, nil), "not supported")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source"}))
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
+	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source"}))
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(envCreateCmd, []string{"ci"}), "must be a local path")
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(envRmCmd, []string{"ci"}), "must be a local path")
 
 	workspaceRef = "./local-workspace"
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))
+	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}))
+	require.NoError(t, validateWorkspaceFlagPolicy(envCreateCmd, []string{"ci"}))
 }
 
 func TestApplyWorkspaceClientParams(t *testing.T) {
@@ -231,7 +241,7 @@ func TestWriteWorkspaceModuleList(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t,
 		"Source paths below are resolved and shown relative to the workspace root\n"+
-			"\"dagger workspace config\" prints the raw values stored in .dagger/config.toml, so local sources may look different there\n"+
+			"\"dagger workspace config\" reads the workspace config view; with --env it shows the effective env-applied view, and explicit env.* keys address raw overlay storage\n"+
 			"* indicates a module is the workspace entrypoint, with all its functions aliased to the root level\n"+
 			"\n"+
 			"Name       Resolved Source\n"+

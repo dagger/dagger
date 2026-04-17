@@ -92,6 +92,21 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source)."),
 				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
 			),
+		dagql.Func("envList", s.envList).
+			DoNotCache("Reads live config from host").
+			Doc("List named environments defined in the workspace configuration."),
+		dagql.Func("envCreate", s.envCreate).
+			DoNotCache("Mutates workspace config on host").
+			Doc("Create a named workspace environment if it does not already exist.").
+			Args(
+				dagql.Arg("name").Doc("Environment name."),
+			),
+		dagql.Func("envRemove", s.envRemove).
+			DoNotCache("Mutates workspace config on host").
+			Doc("Remove a named workspace environment.").
+			Args(
+				dagql.Arg("name").Doc("Environment name."),
+			),
 		dagql.Func("moduleList", s.moduleList).
 			DoNotCache("Reads live config from host").
 			Doc("List modules defined in the workspace configuration."),

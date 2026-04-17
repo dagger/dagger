@@ -22,7 +22,7 @@ type Config struct {
 // ModuleEntry represents a single module entry in the workspace config.
 type ModuleEntry struct {
 	Source            string         `toml:"source"`
-	Config            map[string]any `toml:"config,omitempty"`
+	Settings          map[string]any `toml:"settings,omitempty"`
 	Entrypoint        bool           `toml:"entrypoint,omitempty"`
 	LegacyDefaultPath bool           `toml:"legacy-default-path,omitempty"`
 }
@@ -35,7 +35,7 @@ type EnvOverlay struct {
 
 // EnvModuleOverlay is the environment-specific overlay for one installed module.
 type EnvModuleOverlay struct {
-	Config map[string]any `toml:"config,omitempty"`
+	Settings map[string]any `toml:"settings,omitempty"`
 }
 
 // ResolveModuleEntrySource converts a workspace-config module source into the
@@ -65,9 +65,9 @@ func ParseConfig(data []byte) (*Config, error) {
 }
 
 // ApplyEnvOverlay returns a copy of cfg with the named environment overlay
-// applied on top of the base module config.
+// applied on top of the base module settings.
 //
-// In v1, environments may only override [modules.<name>.config] values.
+// In v1, environments may only override [modules.<name>.settings] values.
 func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 	if cfg == nil {
 		if envName == "" {
@@ -91,16 +91,58 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 		if !ok {
 			return nil, fmt.Errorf("workspace env %q references unknown module %q", envName, moduleName)
 		}
-		if entry.Config == nil {
-			entry.Config = map[string]any{}
+		if entry.Settings == nil {
+			entry.Settings = map[string]any{}
 		}
-		for key, value := range overlay.Config {
-			entry.Config[key] = value
+		for key, value := range overlay.Settings {
+			entry.Settings[key] = value
 		}
 		applied.Modules[moduleName] = entry
 	}
 
 	return applied, nil
+}
+
+// EnvNames returns the configured environment names in deterministic order.
+func EnvNames(cfg *Config) []string {
+	if cfg == nil || len(cfg.Env) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(cfg.Env))
+	for name := range cfg.Env {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// EnsureEnv makes sure the named environment exists.
+// It returns true when the config was changed.
+func EnsureEnv(cfg *Config, envName string) bool {
+	if cfg.Env == nil {
+		cfg.Env = map[string]EnvOverlay{}
+	}
+	if _, ok := cfg.Env[envName]; ok {
+		return false
+	}
+	cfg.Env[envName] = EnvOverlay{}
+	return true
+}
+
+// RemoveEnv removes the named environment from the config.
+func RemoveEnv(cfg *Config, envName string) error {
+	if cfg == nil || len(cfg.Env) == 0 {
+		return fmt.Errorf("workspace env %q is not defined", envName)
+	}
+	if _, ok := cfg.Env[envName]; !ok {
+		return fmt.Errorf("workspace env %q is not defined", envName)
+	}
+	delete(cfg.Env, envName)
+	if len(cfg.Env) == 0 {
+		cfg.Env = nil
+	}
+	return nil
 }
 
 // SerializeConfig serializes a workspace config into deterministic TOML.
@@ -144,7 +186,7 @@ func cloneConfig(cfg *Config) *Config {
 		for name, entry := range cfg.Modules {
 			cloned.Modules[name] = ModuleEntry{
 				Source:            entry.Source,
-				Config:            cloneConfigMap(entry.Config),
+				Settings:          cloneConfigMap(entry.Settings),
 				Entrypoint:        entry.Entrypoint,
 				LegacyDefaultPath: entry.LegacyDefaultPath,
 			}
@@ -158,7 +200,7 @@ func cloneConfig(cfg *Config) *Config {
 				clonedEnv.Modules = make(map[string]EnvModuleOverlay, len(env.Modules))
 				for moduleName, overlay := range env.Modules {
 					clonedEnv.Modules[moduleName] = EnvModuleOverlay{
-						Config: cloneConfigMap(overlay.Config),
+						Settings: cloneConfigMap(overlay.Settings),
 					}
 				}
 			}
@@ -204,7 +246,7 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		if entry.LegacyDefaultPath {
 			b.WriteString("legacy-default-path = true\n")
 		}
-		writeConfigTable(b, "modules."+name+".config", entry.Config, true)
+		writeConfigTable(b, "modules."+name+".settings", entry.Settings, true)
 	}
 
 	return true
@@ -242,7 +284,7 @@ func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
 			if j > 0 {
 				b.WriteString("\n")
 			}
-			writeConfigTable(b, "env."+name+".modules."+moduleName+".config", env.Modules[moduleName].Config, false)
+			writeConfigTable(b, "env."+name+".modules."+moduleName+".settings", env.Modules[moduleName].Settings, false)
 		}
 	}
 

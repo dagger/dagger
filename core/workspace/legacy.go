@@ -85,7 +85,7 @@ func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatW
 			Pin:        tc.Pin,
 			Entry: ModuleEntry{
 				Source:            legacyWorkspaceModuleSource(tc.Source, tc.Pin),
-				Config:            extractConfigDefaults(tc.Customizations),
+				Settings:          extractConfigDefaults(tc.Customizations),
 				LegacyDefaultPath: true,
 			},
 			ArgCustomizations: cloneCustomizations(tc.Customizations),
@@ -144,7 +144,7 @@ func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
 	for _, mod := range compatWorkspace.Modules {
 		cfg.Modules[mod.ConfigName] = ModuleEntry{
 			Source:            mod.Entry.Source,
-			Config:            cloneConfigDefaults(mod.Entry.Config),
+			Settings:          cloneConfigDefaults(mod.Entry.Settings),
 			Entrypoint:        mod.Entry.Entrypoint,
 			LegacyDefaultPath: mod.Entry.LegacyDefaultPath,
 		}

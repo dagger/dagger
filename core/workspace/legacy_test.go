@@ -35,7 +35,7 @@ func TestParseCompatWorkspacePins(t *testing.T) {
 	require.Equal(t, "go", compatWorkspace.Modules[0].Name)
 	require.Equal(t, "github.com/acme/go-toolchain@main", compatWorkspace.Modules[0].Source)
 	require.Equal(t, "tool123", compatWorkspace.Modules[0].Pin)
-	require.Equal(t, map[string]any{"version": "1.24.1"}, compatWorkspace.Modules[0].Entry.Config)
+	require.Equal(t, map[string]any{"version": "1.24.1"}, compatWorkspace.Modules[0].Entry.Settings)
 	require.Len(t, compatWorkspace.Modules[0].ArgCustomizations, 1)
 	require.Equal(t, "version", compatWorkspace.Modules[0].ArgCustomizations[0].Argument)
 	require.Equal(t, "1.24.1", compatWorkspace.Modules[0].ArgCustomizations[0].Default)
@@ -83,14 +83,14 @@ func TestParseCompatWorkspacePins(t *testing.T) {
 	require.NotNil(t, compatWorkspace)
 	require.Len(t, compatWorkspace.Modules, 2)
 	require.Equal(t, "../toolchains/go", compatWorkspace.Modules[0].Entry.Source)
-	require.Equal(t, map[string]any{"version": "1.24.1"}, compatWorkspace.Modules[0].Entry.Config)
+	require.Equal(t, map[string]any{"version": "1.24.1"}, compatWorkspace.Modules[0].Entry.Settings)
 	require.Equal(t, "../blueprint", compatWorkspace.Modules[1].Entry.Source)
 	require.True(t, compatWorkspace.Modules[1].Entry.Entrypoint)
 
 	cfg := compatWorkspace.WorkspaceConfig()
 	require.Equal(t, ModuleEntry{
 		Source:            "../toolchains/go",
-		Config:            map[string]any{"version": "1.24.1"},
+		Settings:          map[string]any{"version": "1.24.1"},
 		LegacyDefaultPath: true,
 	}, cfg.Modules["go"])
 	require.Equal(t, ModuleEntry{

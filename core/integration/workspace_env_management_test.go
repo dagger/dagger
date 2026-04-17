@@ -1,8 +1,9 @@
 package core
 
-// Workspace alignment: aligned structurally, but env-management and env-scoped config semantics are not implemented yet.
+// Workspace alignment: this file is the user-facing design spec for env
+// management and env-scoped config semantics.
 // Scope: User-facing workspace environment lifecycle plus `dagger config` read/write behavior when `--env` is selected.
-// Intent: Lock the env UX before implementation so config storage, effective reads, runtime behavior, and CLI management all converge on one contract.
+// Intent: Keep config storage, effective reads, runtime behavior, and CLI management aligned on one env contract.
 //
 // This file covers generic config behavior in env scope. Typed module-setting
 // discovery belongs to `dagger settings`; here, module-specific examples use

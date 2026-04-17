@@ -78,6 +78,9 @@ With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
 With two arguments, sets the value at the given key.
 
+With --env, reads show the effective env-applied view while writes target that
+environment's overlay. Explicit env.* keys always address raw overlay storage.
+
 Local module source values are stored relative to .dagger/config.toml, so they may
 look different from the resolved paths shown by "dagger workspace list".`,
 	Args: cobra.MaximumNArgs(2),
@@ -91,7 +94,7 @@ var workspaceListCmd = &cobra.Command{
 
 Note:
 - Source paths are resolved and shown relative to the workspace root.
-- "dagger workspace config" prints the raw config values stored in .dagger/config.toml, so local sources may look different there.
+- "dagger workspace config" reads the workspace config view; with --env it shows the effective env-applied view, and explicit env.* keys address raw overlay storage.
 - * means the module is the workspace entrypoint, with all its functions aliased to the root level.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -248,7 +251,7 @@ func writeWorkspaceModuleList(ctx context.Context, out io.Writer, modules []work
 	if _, err := fmt.Fprintln(out, "Source paths below are resolved and shown relative to the workspace root"); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(out, `"dagger workspace config" prints the raw values stored in .dagger/config.toml, so local sources may look different there`); err != nil {
+	if _, err := fmt.Fprintln(out, `"dagger workspace config" reads the workspace config view; with --env it shows the effective env-applied view, and explicit env.* keys address raw overlay storage`); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintln(out, "* indicates a module is the workspace entrypoint, with all its functions aliased to the root level"); err != nil {

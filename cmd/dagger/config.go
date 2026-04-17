@@ -18,6 +18,9 @@ With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
 With two arguments, sets the value at the given key.
 
+With --env, reads show the effective env-applied view while writes target that
+environment's overlay. Explicit env.* keys always address raw overlay storage.
+
 Local module source values are stored relative to .dagger/config.toml, so they may
 look different from the resolved paths shown by "dagger workspace list".`,
 	),

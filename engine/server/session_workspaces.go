@@ -468,7 +468,7 @@ func workspaceConfigPendingModules(
 			Entrypoint:         entry.Entrypoint,
 			LegacyDefaultPath:  entry.LegacyDefaultPath,
 			DisableFindUp:      true,
-			ConfigDefaults:     entry.Config,
+			ConfigDefaults:     entry.Settings,
 			DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
 			legacyFieldPolicy:  legacyWorkspaceFieldPolicyRejectAsWorkspace,
 		}
@@ -658,7 +658,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				legacyMod.Source,
 				legacyMod.Pin,
 				legacyMod.Entry.Entrypoint,
-				legacyMod.Entry.Config,
+				legacyMod.Entry.Settings,
 				legacyMod.ArgCustomizations,
 			)
 			if legacyMod.Entry.Entrypoint {

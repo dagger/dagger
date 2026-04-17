@@ -144,6 +144,8 @@ func init() {
 		traceCmd,
 		lockCmd,
 		configCmd,
+		envCmd,
+		settingsCmd,
 		checksCmd,
 		generateCmd,
 		initCmd,
@@ -430,6 +432,9 @@ func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
 	if isWorkspaceConfigCommand(cmd) && len(args) == 2 {
 		return workspaceFlagPolicyLocalOnly
 	}
+	if isWorkspaceSettingsWriteCommand(cmd, args) {
+		return workspaceFlagPolicyLocalOnly
+	}
 
 	for c := cmd; c != nil; c = c.Parent() {
 		if policy := c.Annotations[workspaceFlagPolicyAnnotation]; policy != "" {
@@ -447,6 +452,10 @@ func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
 	default:
 		return false
 	}
+}
+
+func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
+	return commandName(cmd) == "settings" && len(args) == 3
 }
 
 func isObviouslyRemoteWorkspaceRef(ref string) bool {

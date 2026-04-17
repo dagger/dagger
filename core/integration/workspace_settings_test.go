@@ -1,14 +1,13 @@
 package core
 
-// Workspace alignment: this is a user-facing design spec for `dagger settings`; implementation and storage migration are still pending.
+// Workspace alignment: this file is the user-facing design spec for `dagger settings`.
 // Scope: Command grammar, discovery, read/write semantics, env scoping, and the relationship between `dagger settings` and `dagger config`.
 // Intent: Make module settings a first-class UX distinct from workspace config while keeping one underlying source of truth.
 //
 // Storage examples in this file intentionally use `[modules.<alias>.settings]`
 // and `[env.<name>.modules.<alias>.settings]`. That terminology is part of the
-// design being specified here. Any compatibility with legacy
-// `[modules.<alias>.config]` storage belongs in migration or compat coverage,
-// not in this command spec.
+// design being specified here. Any legacy storage naming, if it needs coverage,
+// belongs in migration or compat tests instead of this command spec.
 
 import (
 	"context"
