@@ -1752,7 +1752,7 @@ func (mod *Module) namespaceSourceMap(
 	if mod.Source.Valid && mod.Source.Value.Self().Kind == ModuleSourceKindGit {
 		link, err := mod.Source.Value.Self().Git.Link(filename, sourceMap.Value.Self().Line, sourceMap.Value.Self().Column)
 		if err != nil {
-			return dagql.Nullable[dagql.ObjectResult[*SourceMap]]{}, nil
+			return dagql.Nullable[dagql.ObjectResult[*SourceMap]]{}, fmt.Errorf("namespace source map git link: %w", err)
 		}
 		url = link
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -655,7 +656,10 @@ func resolveHostStoreManifestMatch(
 	switch desc.MediaType {
 	case ocispec.MediaTypeImageManifest, images.MediaTypeDockerSchema2Manifest:
 		if _, err := store.Info(ctx, desc.Digest); err != nil {
-			return nil, true, nil
+			if cerrdefs.IsNotFound(err) {
+				return nil, true, nil
+			}
+			return nil, false, fmt.Errorf("stat host manifest %s: %w", desc.Digest, err)
 		}
 		return &desc, true, nil
 

@@ -1259,7 +1259,7 @@ func resultIsObject(val AnyResult, resolver TypeResolver) (bool, error) {
 		return false, nil
 	}
 	if _, err := objType.New(val); err != nil {
-		return false, nil
+		return false, fmt.Errorf("instantiate %s from value: %w", typ.Name(), err)
 	}
 	return true, nil
 }
