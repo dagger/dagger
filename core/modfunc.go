@@ -226,11 +226,6 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		uiFnName := fn.mod.Name()
-		if fn.metadata.Name != "" {
-			uiFnName += "." + fn.metadata.Name
-		}
-		console(ctx, "user default: %s(%s=%q)", uiFnName, argName, argDefault.UserInput)
 		if argDefault.IsObject() {
 			// FIXME (cosmetic): expose the user default value to the client, without
 			// breaking other things
@@ -244,14 +239,6 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// Print text directly on the user's console
-func console(ctx context.Context, msg string, args ...any) {
-	if !strings.HasSuffix(msg, "\n") {
-		msg += "\n"
-	}
-	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
 }
 
 // A user-defined default value that is a primitive type (not an object)

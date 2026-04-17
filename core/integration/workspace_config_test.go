@@ -181,6 +181,11 @@ service = "tcp://www:80"
 		require.NoError(t, err)
 		require.Equal(t, "yay", out)
 
+		out, err = ctr.WithExec([]string{"dagger", "call", "greeting"}, nestedExec).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "user default:")
+		require.Contains(t, out, "yay")
+
 		out, err = ctr.WithExec([]string{"dagger", "call", "count"}, nestedExec).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "7", out)
