@@ -600,6 +600,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 }
 
+//nolint:dupl // symmetric with loadCanonicalInputTypeDef in module_typedef_canonical.go; sharing hides the served-deps vs canonical-deps path
 func (s *moduleSchema) loadInputTypeDef(ctx context.Context, self *core.Query, args struct {
 	Name string
 }) (*core.TypeDef, error) {
@@ -1016,6 +1017,7 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	return def.WithObject(obj), nil
 }
 
+//nolint:dupl // symmetric with typeDefWithEnum; sharing hides the Interface vs Enum kinds
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
 	Name             string
 	Description      string `default:""`
@@ -1158,6 +1160,7 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 	return def.WithObject(obj), nil
 }
 
+//nolint:dupl // symmetric with typeDefWithInterface; sharing hides the Enum vs Interface kinds
 func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, args struct {
 	Name             string
 	Description      string `default:""`

@@ -107,6 +107,7 @@ func (cm *snapshotManager) ImportImage(
 	return current, nil
 }
 
+//nolint:gocyclo,dupl // the blob-key and diff-key dedupe blocks are intentionally parallel; sharing hides the cache lookup/delete asymmetry
 func (cm *snapshotManager) importImageLayer(
 	ctx context.Context,
 	desc ocispecs.Descriptor,

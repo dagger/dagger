@@ -514,6 +514,7 @@ var _ dagql.PersistedObject = (*FunctionArg)(nil)
 var _ dagql.PersistedObjectDecoder = (*FunctionArg)(nil)
 var _ dagql.HasDependencyResults = (*FunctionArg)(nil)
 
+//nolint:dupl // symmetric with FieldTypeDef.AttachDependencyResults; each typedef kind walks its own fields
 func (arg *FunctionArg) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
@@ -1569,6 +1570,7 @@ func (*FieldTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 	return decodePersistedFieldTypeDef(ctx, dag, &persisted)
 }
 
+//nolint:dupl // symmetric with FunctionArg.AttachDependencyResults; each typedef kind walks its own fields
 func (field *FieldTypeDef) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
@@ -1685,6 +1687,7 @@ func (*InterfaceTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.S
 	return decodePersistedInterfaceTypeDef(ctx, dag, &persisted)
 }
 
+//nolint:dupl // symmetric with EnumTypeDef.AttachDependencyResults; each typedef kind walks its own fields
 func (iface *InterfaceTypeDef) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
@@ -2066,6 +2069,7 @@ func (*EnumTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 	return decodePersistedEnumTypeDef(ctx, dag, &persisted)
 }
 
+//nolint:dupl // symmetric with InterfaceTypeDef.AttachDependencyResults; each typedef kind walks its own fields
 func (enum *EnumTypeDef) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
@@ -3212,6 +3216,7 @@ func encodePersistedInterfaceTypeDef(cache dagql.PersistedObjectCache, iface *In
 	return payload, nil
 }
 
+//nolint:dupl // symmetric with decodePersistedEnumTypeDef; each typedef kind rehydrates its own fields
 func decodePersistedInterfaceTypeDef(ctx context.Context, dag *dagql.Server, iface *persistedInterfaceTypeDef) (*InterfaceTypeDef, error) {
 	if iface == nil {
 		return nil, nil
@@ -3354,6 +3359,7 @@ func encodePersistedEnumTypeDef(cache dagql.PersistedObjectCache, enum *EnumType
 	return payload, nil
 }
 
+//nolint:dupl // symmetric with decodePersistedInterfaceTypeDef; each typedef kind rehydrates its own fields
 func decodePersistedEnumTypeDef(ctx context.Context, dag *dagql.Server, enum *persistedEnumTypeDef) (*EnumTypeDef, error) {
 	if enum == nil {
 		return nil, nil

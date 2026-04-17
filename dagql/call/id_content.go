@@ -130,6 +130,7 @@ func appendArgumentContentPreferredBytes(arg *Argument, h *hashutil.Hasher) (*ha
 	return h, nil
 }
 
+//nolint:dupl // symmetric with appendLiteralBytes; sharing would mean sprinkling branches that change the ID-digest semantics we audit
 func appendLiteralContentPreferredBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	var err error
 	// we use a unique prefix byte for each type to avoid collisions

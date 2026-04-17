@@ -176,6 +176,7 @@ func resultCallArgFromRecipeArgument(ctx context.Context, arg *call.Argument) (*
 	}, nil
 }
 
+//nolint:dupl // symmetric with resultCallLiteralFromCallLiteral; the two differ in how structural input digests get resolved
 func resultCallLiteralFromRecipeLiteral(ctx context.Context, lit call.Literal) (*ResultCallLiteral, error) {
 	switch v := lit.(type) {
 	case nil:
@@ -318,6 +319,7 @@ func resultCallLiteralFromInput(ctx context.Context, input Input) (*ResultCallLi
 	return resultCallLiteralFromCallLiteral(ctx, input.ToLiteral())
 }
 
+//nolint:dupl // symmetric with resultCallLiteralFromRecipeLiteral; the two differ in how structural input digests get resolved
 func resultCallLiteralFromCallLiteral(ctx context.Context, lit call.Literal) (*ResultCallLiteral, error) {
 	switch v := lit.(type) {
 	case nil:

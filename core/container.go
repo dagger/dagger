@@ -768,6 +768,7 @@ func NewContainer(platform Platform) *Container {
 	}
 }
 
+//nolint:dupl // symmetric with cloneDetachedFileForContainerResult; sharing obscures type specifics
 func cloneDetachedDirectoryForContainerResult(ctx context.Context, src *Directory) (*Directory, error) {
 	if src == nil {
 		return nil, nil
@@ -803,6 +804,7 @@ func cloneDetachedDirectoryForContainerResult(ctx context.Context, src *Director
 	return cp, nil
 }
 
+//nolint:dupl // symmetric with cloneDetachedDirectoryForContainerResult; sharing obscures type specifics
 func cloneDetachedFileForContainerResult(ctx context.Context, src *File) (*File, error) {
 	if src == nil {
 		return nil, nil
@@ -5183,6 +5185,8 @@ func (container *Container) WithSymlink(ctx context.Context, parent dagql.Object
 }
 
 // mutates container caller must have handled cloning or creating a new child.
+//
+//nolint:dupl // symmetric with WithMountedFile; sharing would hide type specifics
 func (container *Container) WithMountedDirectory(
 	ctx context.Context,
 	parent dagql.ObjectResult[*Container],
@@ -5228,6 +5232,8 @@ func (container *Container) WithMountedDirectory(
 }
 
 // mutates container caller must have handled cloning or creating a new child.
+//
+//nolint:dupl // symmetric with WithMountedDirectory; sharing would hide type specifics
 func (container *Container) WithMountedFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*Container],

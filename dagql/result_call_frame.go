@@ -1134,6 +1134,7 @@ func appendResultCallArgSelfRefs(
 	return nextH, nextInputs, nil
 }
 
+//nolint:dupl // symmetric with appendResultCallLiteralContentPreferredBytes; each is a distinct ID-digest pass
 func appendResultCallLiteralBytes(
 	c *Cache,
 	lit *ResultCallLiteral,
@@ -1204,6 +1205,7 @@ func appendResultCallLiteralBytes(
 	return h, nil
 }
 
+//nolint:dupl // symmetric with appendResultCallLiteralBytes; each is a distinct ID-digest pass
 func appendResultCallLiteralContentPreferredBytes(
 	c *Cache,
 	lit *ResultCallLiteral,

@@ -746,6 +746,7 @@ type withPatchFileArgs struct {
 	Patch core.FileID
 }
 
+//nolint:dupl // symmetric with (*directorySchema).withChanges; sharing hides the single-patch vs multi-change specifics
 func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchFileArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -980,6 +981,7 @@ type withoutDirectoryArgs struct {
 	Path string
 }
 
+//nolint:dupl // symmetric with (*directorySchema).withoutFile; sharing hides the directory vs file semantic
 func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1007,6 +1009,7 @@ type withoutFileArgs struct {
 	Path string
 }
 
+//nolint:dupl // symmetric with (*directorySchema).withoutDirectory; sharing hides the file vs directory semantic
 func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1244,6 +1247,7 @@ type withChangesArgs struct {
 	Changes dagql.ID[*core.Changeset]
 }
 
+//nolint:dupl // symmetric with (*directorySchema).withPatchFile; sharing hides the single-patch vs multi-change specifics
 func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withChangesArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1770,6 +1774,7 @@ type directoryWithSymlinkArgs struct {
 	LinkName string
 }
 
+//nolint:dupl // symmetric with (*directorySchema).chown; sharing hides the symlink vs chown Lazy kinds
 func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryWithSymlinkArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1806,6 +1811,7 @@ type directoryChownArgs struct {
 	Owner string
 }
 
+//nolint:dupl // symmetric with (*directorySchema).withSymlink; sharing hides the chown vs symlink Lazy kinds
 func (s *directorySchema) chown(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Directory],

@@ -1291,6 +1291,7 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.O
 
 // prefix the given typedef (and any recursively referenced typedefs) with this
 // module's name/path for any objects
+//nolint:gocyclo,dupl // namespacing each typedef kind (object/interface/input/enum) and each closure (field/arg) is intrinsically shaped alike; sharing obscures which field is rewritten
 func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef dagql.ObjectResult[*TypeDef]) (dagql.ObjectResult[*TypeDef], error) {
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {

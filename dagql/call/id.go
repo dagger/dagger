@@ -1278,6 +1278,7 @@ func appendArgumentSelfRefs(arg *Argument, h *hashutil.Hasher, inputs []Structur
 }
 
 // appendLiteralBytes appends a binary representation of the given literal to the given byte slice.
+//nolint:dupl // symmetric with appendLiteralContentPreferredBytes; sharing would mean sprinkling branches that change the ID-digest semantics we audit
 func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	var err error
 	// we use a unique prefix byte for each type to avoid collisions

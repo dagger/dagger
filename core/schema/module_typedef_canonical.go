@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
+//nolint:dupl // symmetric with loadInputTypeDef in module.go; this is the canonical-deps variant
 func (s *moduleSchema) servedInputTypeDef(ctx context.Context, self *core.Query, args struct {
 	Name string
 }) (*core.TypeDef, error) {

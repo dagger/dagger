@@ -73,6 +73,7 @@ func (*Secret) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	}, nil
 }
 
+//nolint:dupl // symmetric with resolveSessionSocket; sharing hides Secret vs Socket semantics
 func resolveSessionSecret(ctx context.Context, secret *Secret) (*Secret, error) {
 	if secret == nil {
 		return nil, nil

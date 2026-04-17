@@ -453,6 +453,7 @@ func (plan *materializedExecPlan) releaseOutputRefs(ctx context.Context) error {
 
 type makeExecMutable func(dest string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error)
 
+//nolint:dupl // symmetric with the mount-materialization closure inside (*ContainerExecState).Evaluate; sharing hurts readability of each phase
 func prepareMounts(
 	ctx context.Context,
 	container *Container,
@@ -1003,6 +1004,7 @@ func (container *Container) WithExec(
 	return nil
 }
 
+//nolint:dupl // symmetric with prepareMounts; sharing hurts readability of each phase
 func (state *ContainerExecState) Evaluate(ctx context.Context, container *Container) (rerr error) {
 	if state == nil {
 		return nil

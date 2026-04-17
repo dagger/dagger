@@ -2690,6 +2690,7 @@ type containerDirectoryArgs struct {
 	Expand bool `default:"false"`
 }
 
+//nolint:dupl // symmetric with (*containerSchema).file; sharing hides Directory vs File specifics
 func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2722,6 +2723,7 @@ type containerFileArgs struct {
 	Expand bool `default:"false"`
 }
 
+//nolint:dupl // symmetric with (*containerSchema).directory; sharing hides File vs Directory specifics
 func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFileArgs) (dagql.ObjectResult[*core.File], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
