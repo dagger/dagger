@@ -1,48 +1,86 @@
 ---
-title: "Overview"
+title: "Dagger Documentation"
 description: "Dagger is a CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale."
 slug: "/"
 ---
 
-# Dagger
+# Dagger Documentation
 
-:::tip Migrating from a previous version?
-Dagger now uses **workspaces** (`.dagger/config.toml`) instead of configuring everything in `dagger.json`. Your existing setup still works, but see [Upgrading to Workspaces](/reference/upgrade-to-workspaces) when you're ready to migrate.
-:::
+## What is Dagger?
 
 Dagger is a CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale.
 
-## Why Dagger?
+## Orientation
 
-**Programmable.** CI has been stuck on shell scripts and proprietary YAML for too long. Dagger pipelines are real code: Go, Python, TypeScript, or 5 other languages. Types, tests, abstractions, and your editor — not a textarea in a browser.
+- **Want to adopt Dagger in your project?** Start with the [Quickstart](/quickstart), then follow [Workspace Setup](/adopting/workspace-setup).
+- **Your project already uses Dagger?** See [Using Dagger](/using-dagger/checking) to run checks, generate code, and start services.
+- **Migrating to workspaces?** See [Upgrading to Workspaces](/reference/upgrade-to-workspaces).
+- **Want to learn more about what Dagger can do?** Keep reading.
 
-**Local-first.** CI shouldn't start at `git push`. Run your full pipeline locally — same containers, same result — before you commit. Your laptop, an AI sandbox, a CI server, or dedicated cloud infrastructure. One engine, everywhere.
+## What you can do
 
-**Repeatable.** Every pipeline runs in containers. Dependencies are explicit and strictly typed. Caching is automatic with fine-grained control. A test result from your laptop and a test result from CI should be the same result. With Dagger, they are.
+No code required. Install modules, run commands, get results.
 
-**Observable.** CI logs are a wall of text. You shouldn't have to guess what broke. Dagger gives you step-level tracing across your entire pipeline. See what happened at every step, then drill down to the one that failed.
+### Lint and format across your stack
 
-## Get started
+```shell
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/prettier
+dagger check
+```
 
-- [Quickstart](/quickstart) — zero to state-of-the-art CI in 5 minutes
-- [Core Concepts](/core-concepts) — workspaces, modules, functions, checks
+{/* TODO: TUI gif */}
 
-## Use Dagger
+### Run e2e tests with real services
 
-- [`dagger check`](/using-dagger/checking) — run automated checks
-- [`dagger generate`](/using-dagger/generating) — run code generators
-- [`dagger call ... up`](/using-dagger/services) — start dev services
+```shell
+dagger install github.com/dagger/playwright
+dagger check
+```
 
-## Develop modules
+{/* TODO: TUI gif */}
 
-When pre-built modules don't cover your needs, [write your own](/extending). Start with the [Base Edition](/extending/editions/dang) or pick your language.
+### Generate code and docs
 
-## Dagger Cloud
+```shell
+dagger install github.com/dagger/openapi
+dagger generate
+```
 
-[Dagger Cloud](https://dagger.cloud) adds managed infrastructure: run checks on every push with Cloud Checks, visualize traces, and manage modules centrally.
+{/* TODO: TUI gif */}
 
-## Community
+### Start dev services
 
-- [Discord](https://discord.gg/dagger-io) — get help and share ideas
-- [GitHub](https://github.com/dagger/dagger) — contribute
-- [YouTube](https://www.youtube.com/@dagger-io) — demos and livestreams
+```shell
+dagger install github.com/dagger/postgres
+dagger up
+```
+
+{/* TODO: TUI gif */}
+
+### Debug a broken build
+
+```shell
+dagger check
+dagger call eslint lint terminal
+```
+
+{/* TODO: TUI gif */}
+
+## Key features
+
+**Programmable.** Real code — Go, Python, TypeScript — not YAML.
+
+**Local-first.** Run your full pipeline before you push. Same result everywhere.
+
+**Zero-setup tracing.** Every step traced automatically. No instrumentation code.
+
+**Interactive debugging.** Drop into a terminal at any step of your pipeline.
+
+**Incremental execution.** Only what changed gets re-executed.
+
+**Agent-friendly.** Agents run Dagger checks in their dev loop. Sandboxed, cached, remote.
+
+**Native secrets.** Plugs into your existing secret infrastructure.
+
+**Just-in-time services.** Service dependencies build on demand, no pre-provisioning.
