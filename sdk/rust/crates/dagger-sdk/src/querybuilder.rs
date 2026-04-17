@@ -204,6 +204,22 @@ impl Selection {
             return self.unpack_resp_value(o.get(first).unwrap().clone());
         }
 
+        if let serde_json::Value::Array(arr) = r {
+            let unwrapped: Vec<serde_json::Value> = arr
+                .into_iter()
+                .map(|v| match v {
+                    serde_json::Value::Object(mut o) if o.len() == 1 => {
+                        let key = o.keys().next().unwrap().clone();
+                        o.remove(&key).unwrap()
+                    }
+                    other => other,
+                })
+                .collect();
+            return serde_json::from_value::<D>(serde_json::Value::Array(unwrapped))
+                .map_err(DaggerUnpackError::Deserialize)
+                .map_err(DaggerError::Unpack);
+        }
+
         serde_json::from_value::<D>(r)
             .map_err(DaggerUnpackError::Deserialize)
             .map_err(DaggerError::Unpack)

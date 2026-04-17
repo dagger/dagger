@@ -227,3 +227,22 @@ async fn test_container() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn test_env_variables() {
+    connect(|client| async move {
+        let envs = client
+            .container()
+            .from("alpine:3.20.2")
+            .with_env_variable("FOO", "bar")
+            .env_variables()
+            .await?;
+
+        let names = futures::future::try_join_all(envs.iter().map(|env| env.name())).await?;
+
+        assert_eq!(names, vec!["PATH".to_string(), "FOO".to_string()]);
+        Ok(())
+    })
+    .await
+    .unwrap();
+}
