@@ -6,19 +6,18 @@ namespace Dagger\Command;
 
 use Dagger;
 use Dagger\Service\DecodesValue;
-use Dagger\Service\FindsDaggerEnums;
 use Dagger\Service\FindsDaggerObjects;
 use Dagger\Service\FindsSrcDirectory;
 use Dagger\Service\NormalizesClassName;
 use Dagger\Service\Serialisation;
 use Dagger\TypeDef;
 use Dagger\TypeDefKind;
+use Dagger\ValueObject;
 use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\ListOfType;
 use Dagger\ValueObject\Type;
 use GraphQL\Exception\QueryError;
 use ReflectionClass;
-use ReflectionMethod;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -36,7 +35,7 @@ class EntrypointCommand extends Command
 
     protected function execute(
         InputInterface $input,
-        OutputInterface $output
+        OutputInterface $output,
     ): int {
         $functionCall = dag()->currentFunctionCall();
 
@@ -57,87 +56,101 @@ class EntrypointCommand extends Command
 
         $src = (new FindsSrcDirectory())();
         $daggerObjects = (new FindsDaggerObjects())($src);
-        $daggerEnums = (new FindsDaggerEnums())($daggerObjects);
-
-        // Enums must be registered before the objects that reference them.
-        foreach ($daggerEnums as $daggerEnum) {
-            $enumTypeDef = dag()->typeDef()->withEnum(
-                NormalizesClassName::shorten($daggerEnum->name),
-                $daggerEnum->description,
-            );
-
-            foreach ($daggerEnum->cases as $case) {
-                $enumTypeDef = $enumTypeDef->withEnumMember(
-                    name: $case->name,
-                    value: (string) $case->value,
-                    description: $case->description,
-                );
-            }
-
-            $daggerModule = $daggerModule->withEnum($enumTypeDef);
-        }
 
         foreach ($daggerObjects as $daggerObject) {
-            $objectTypeDef = dag()->typeDef()->withObject(
-                NormalizesClassName::trimLeadingNamespace($daggerObject->name),
-                $daggerObject->description,
-            );
-
-            foreach ($daggerObject->daggerFields as $daggerField) {
-                $objectTypeDef = $objectTypeDef->withField(
-                    $daggerField->name,
-                    $this->getTypeDef($daggerField->type),
-                    $daggerField->description,
-                );
-            }
-
-            foreach ($daggerObject->daggerFunctions as $daggerFunction) {
-                $func = dag()->function(
-                    $daggerFunction->name,
-                    $this->getTypeDef($daggerFunction->returnType)
-                );
-
-                if ($daggerFunction->description !== null) {
-                    $func = $func->withDescription($daggerFunction->description);
-                }
-
-                foreach ($daggerFunction->arguments as $argument) {
-                    $func = $func->withArg(
-                        name: $argument->name,
-                        typeDef: $this
-                            ->getTypeDef($argument->type)
-                            ->withOptional($argument->type->nullable),
-                        description: $argument->description,
-                        defaultValue: $argument->default,
-                        defaultPath: $argument->defaultPath,
-                        ignore: $argument->ignore,
-                    );
-                }
-
-                $objectTypeDef = $daggerFunction->isConstructor() ?
-                    $objectTypeDef->withConstructor($func) :
-                    $objectTypeDef->withFunction($func);
-            }
-
-            if (
-                $daggerObject->requiresConstruction()
-                && ! $daggerObject->hasConstructor()
-            ) {
-                $noopConstructor = dag()->function('', $this
-                    ->getTypeDef(new Type($daggerObject->name)));
-
-                $objectTypeDef = $objectTypeDef
-                    ->withConstructor($noopConstructor);
-            }
-
-            $daggerModule = $daggerModule->withObject($objectTypeDef);
+            $daggerModule = match (true) {
+                $daggerObject instanceof ValueObject\DaggerObject =>
+                    $daggerModule->withObject($this->formatObjectTypeDef($daggerObject)),
+                /** @phpstan-ignore instanceof.alwaysTrue */
+                $daggerObject instanceof ValueObject\DaggerEnum =>
+                    $daggerModule->withEnum($this->formatEnumTypeDef($daggerObject)),
+                default =>
+                    $daggerModule,
+            };
         }
 
         $functionCall->returnValue(new Dagger\Json(json_encode(
-            (string) $daggerModule->id()
+            (string) $daggerModule->id(),
         )));
 
         return Command::SUCCESS;
+    }
+
+    private function formatObjectTypeDef(
+        ValueObject\DaggerObject $daggerObject,
+    ): Dagger\TypeDef {
+        $result = dag()->typeDef()->withObject(
+            NormalizesClassName::trimLeadingNamespace($daggerObject->name),
+            $daggerObject->description,
+        );
+
+        foreach ($daggerObject->daggerFields as $daggerField) {
+            $result = $result->withField(
+                $daggerField->name,
+                $this->getTypeDef($daggerField->type),
+                $daggerField->description,
+            );
+        }
+
+        foreach ($daggerObject->daggerFunctions as $daggerFunction) {
+            $func = dag()->function(
+                $daggerFunction->name,
+                $this->getTypeDef($daggerFunction->returnType),
+            );
+
+            if ($daggerFunction->description !== null) {
+                $func = $func->withDescription($daggerFunction->description);
+            }
+
+            foreach ($daggerFunction->arguments as $argument) {
+                $func = $func->withArg(
+                    name: $argument->name,
+                    typeDef: $this
+                        ->getTypeDef($argument->type)
+                        ->withOptional($argument->type->nullable),
+                    description: $argument->description,
+                    defaultValue: $argument->default,
+                    defaultPath: $argument->defaultPath,
+                    ignore: $argument->ignore,
+                );
+            }
+
+            $result = $daggerFunction->isConstructor()
+                ? $result->withConstructor($func)
+                : $result->withFunction($func);
+        }
+
+        if (
+            $daggerObject->requiresConstruction()
+            && ! $daggerObject->hasConstructor()
+        ) {
+            $noopConstructor = dag()->function('', $this
+                ->getTypeDef(new Type($daggerObject->name)));
+
+            $result = $result
+                ->withConstructor($noopConstructor);
+        }
+
+        return $result;
+    }
+
+    private function formatEnumTypeDef(
+        ValueObject\DaggerEnum $daggerEnum,
+    ): TypeDef {
+        $result = dag()->typeDef()->withEnum(
+            NormalizesClassName::shorten($daggerEnum->name),
+            $daggerEnum->description,
+        );
+
+        foreach ($daggerEnum->cases as $case) {
+            $result = $result->withEnumMember(
+                name: $case->name,
+                value: $case->value,
+                description: $case->description,
+            );
+        }
+
+        return $result;
     }
 
     private function callFunctionOnParent(
@@ -154,14 +167,14 @@ class EntrypointCommand extends Command
         $args = $this->formatArguments(
             $parentName,
             $functionName,
-            json_decode(json_encode($functionCall->inputArgs()), true)
+            json_decode(json_encode($functionCall->inputArgs()), true),
         );
 
         try {
             if ($functionName !== '') {
                 $class = $this->getSerialiser()->deserialise(
                     (string) $functionCall->parent(),
-                    $parentName
+                    $parentName,
                 );
                 $result = ($class)->$functionName(...$args);
             } else {
@@ -201,28 +214,28 @@ class EntrypointCommand extends Command
                 return $typeDef->withKind($type->typeDefKind);
             case TypeDefKind::SCALAR_KIND:
                 return $typeDef->withScalar(
-                    NormalizesClassName::shorten($type->name)
+                    NormalizesClassName::shorten($type->name),
                 );
             case TypeDefKind::ENUM_KIND:
                 return $typeDef->withEnum(
-                    NormalizesClassName::shorten($type->name)
+                    NormalizesClassName::shorten($type->name),
                 );
             case TypeDefKind::LIST_KIND:
                 return $typeDef->withListOf($this->getTypeDef($type->subtype));
             case TypeDefKind::INTERFACE_KIND:
                 throw new RuntimeException(sprintf(
                     'Currently cannot handle custom interfaces: %s',
-                    $type->name
+                    $type->name,
                 ));
             case TypeDefKind::OBJECT_KIND:
                 if ($type->isIdable()) {
                     return $typeDef->withObject(
-                        NormalizesClassName::shorten($type->name)
+                        NormalizesClassName::shorten($type->name),
                     );
                 }
 
                 return $typeDef->withObject(
-                    NormalizesClassName::trimLeadingNamespace($type->name)
+                    NormalizesClassName::trimLeadingNamespace($type->name),
                 );
             default:
                 throw new RuntimeException("No support exists for $type->name");
@@ -267,7 +280,7 @@ class EntrypointCommand extends Command
                 if ($parameter->name === $argument['Name']) {
                     $result[$parameter->name] = $decodesValue(
                         $argument['Value'],
-                        $type
+                        $type,
                     );
                     continue 2;
                 }
@@ -284,10 +297,12 @@ class EntrypointCommand extends Command
                 [
                     new Serialisation\AbstractScalarSubscriber(),
                     new Serialisation\IdableSubscriber(),
+                    new Serialisation\EnumSubscriber(),
                 ],
                 [
                     new Serialisation\AbstractScalarHandler(),
                     new Serialisation\IdableHandler(dag()),
+                    new Serialisation\EnumHandler(),
                 ],
             );
         }
@@ -298,7 +313,7 @@ class EntrypointCommand extends Command
     private function outputErrorInformation(
         InputInterface $input,
         OutputInterface $output,
-        \Throwable $t
+        \Throwable $t,
     ): void {
         $io = new SymfonyStyle($input, $output);
         $io->error($t->getMessage());

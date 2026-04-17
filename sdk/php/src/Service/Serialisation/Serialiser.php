@@ -5,10 +5,7 @@ declare(strict_types=1);
 namespace Dagger\Service\Serialisation;
 
 use JMS\Serializer\EventDispatcher\EventDispatcher;
-use JMS\Serializer\EventDispatcher\PreDeserializeEvent;
-use JMS\Serializer\EventDispatcher\PreSerializeEvent;
 use JMS\Serializer\Handler\HandlerRegistry;
-use JMS\Serializer\Handler\SubscribingHandlerInterface;
 use JMS\Serializer\Naming\IdenticalPropertyNamingStrategy;
 use JMS\Serializer\SerializationContext;
 use JMS\Serializer\Serializer;

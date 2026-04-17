@@ -4,8 +4,7 @@ namespace Dagger\Tests\Unit\Service;
 
 use Dagger\Client;
 use Dagger\Service\DecodesValue;
-use Dagger\Tests\Unit\Fixture\Enums\Priority;
-use Dagger\Tests\Unit\Fixture\Enums\Status;
+use Dagger\Tests\Unit\Fixture;
 use Dagger\ValueObject\ListOfType;
 use Dagger\ValueObject\Type;
 use Generator;
@@ -133,34 +132,18 @@ class DecodesValueTest extends TestCase
     }
 
     /**
-     * @return \Generator<array{0: mixed, 1: string, 2: Type}>
+     * @return \Generator<array{string, string, Type}>
      */
     public static function provideEnums(): Generator
     {
-        // Engine sends back the PHP case name (registered via withEnumValue($case->name))
-        yield 'string-backed enum by case name' => [
-            Status::Active,
-            '"Active"',
-            new Type(Status::class),
-        ];
+        $stringBackedEnum = new Type(Fixture\StringBackedEnum::class);
 
-        yield 'int-backed enum by case name' => [
-            Priority::Medium,
-            '"Medium"',
-            new Type(Priority::class),
-        ];
-
-        // Fallback: engine sends the backing value (built-in Dagger enums or other SDKs)
-        yield 'string-backed enum by backing value' => [
-            Status::Active,
-            '"active"',
-            new Type(Status::class),
-        ];
-
-        yield 'int-backed enum by backing value' => [
-            Priority::Medium,
-            '2',
-            new Type(Priority::class),
-        ];
+        foreach(Fixture\StringBackedEnum::cases() as $case) {
+            yield sprintf('nonsense word: %s', $case->value) => [
+                $case,
+                sprintf('"%s"', $case->name),
+                $stringBackedEnum,
+            ];
+        }
     }
 }

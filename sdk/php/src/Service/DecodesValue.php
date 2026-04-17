@@ -9,9 +9,7 @@ use Dagger\Id;
 use Dagger\TypeDefKind;
 use Dagger\ValueObject\ListOfType;
 use Dagger\ValueObject\Type;
-use ReflectionEnum;
 use RuntimeException;
-use function constant;
 
 final readonly class DecodesValue
 {
@@ -66,14 +64,13 @@ final readonly class DecodesValue
             case TypeDefKind::VOID_KIND:
                 return null;
             case TypeDefKind::ENUM_KIND:
-                $decoded = json_decode($value, true);
-                $caseName = (string) $decoded;
-                if (defined("{$type->name}::{$caseName}")) {
-                    return constant("{$type->name}::{$caseName}");
-                }
-                // Fallback: engine may send the backing value instead of the
-                // PHP case name (e.g. built-in Dagger enums or other SDKs).
-                return ($type->name)::from($decoded);
+                // Engine should be sending the backing value, unquoted, as per GQL
+                // However we are receiving the case's name, quoted.
+                return constant(sprintf(
+                    '%s::%s',
+                    $type->name,
+                    json_decode($value),
+                ));
             case TypeDefKind::INTERFACE_KIND:
                 throw new RuntimeException(sprintf(
                     'Currently cannot decode custom interfaces: %s',
