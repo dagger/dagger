@@ -54,16 +54,15 @@ func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*M
 	return nil
 }
 
-func (ms *mockServer) CurrentModule(ctx context.Context) (dagql.ObjectResult[*Module], error) {
+func (ms *mockServer) CurrentModule(_ context.Context) (dagql.ObjectResult[*Module], error) {
 	var zero dagql.ObjectResult[*Module]
 	if ms.moduleSource == nil {
 		return zero, nil
 	}
-	cacheIface, err := dagql.NewCache(context.Background(), "", nil, nil)
-	if err != nil {
-		panic(err)
-	}
-	ctx = dagql.ContextWithCache(ctx, cacheIface)
+	// This helper only builds test-only module results. Keep using
+	// context.Background here: passing the caller ctx would not change
+	// behavior, because dagql.NewServer ignores its context today and this
+	// path does not use the dagql cache.
 	dag, err := dagql.NewServer(context.Background(), &Query{})
 	if err != nil {
 		panic(err)

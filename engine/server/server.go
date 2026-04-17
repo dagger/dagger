@@ -687,6 +687,11 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		}
 	}
 
+	// FIXME: Keep this join for now. It looks unused only because GracefulStop
+	// currently drops earlier shutdown errors and later returns only the async
+	// DB-close path. When GracefulStop is fixed, it should return those earlier
+	// errors instead of deleting this assignment.
+	//nolint:ineffassign
 	err = errors.Join(err, srv.worker.Close())
 
 	// Shutdown the global namespace worker pool
