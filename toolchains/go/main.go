@@ -549,8 +549,13 @@ func changesetMerge(changesets ...*dagger.Changeset) *dagger.Changeset {
 // +check
 func (p *Go) CheckTidy(
 	ctx context.Context,
-	include []string, // +optional
-	exclude []string, // +optional
+	// +optional
+	include []string,
+	// +optional
+	exclude []string,
+	// limit numbers of go mod tidy parallel jobs to run
+	// +default=3
+	limit int,
 ) error {
 	modules, err := p.Modules(ctx, include, exclude)
 	if err != nil {
@@ -559,7 +564,7 @@ func (p *Go) CheckTidy(
 	jobs := parallel.New().
 		// On a large repo this can run dozens of parallel golangci-lint jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
-		WithLimit(3).
+		WithLimit(limit).
 		// For better display in 'dagger checks': logs from all functions below the job will
 		// be printed below the job.
 		// TODO: remove this when dagger has a sub-checks API
