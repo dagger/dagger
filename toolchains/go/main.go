@@ -507,15 +507,23 @@ func (p *Go) TidyModule(ctx context.Context, mod string) (*dagger.Changeset, err
 
 func (p *Go) Tidy(
 	ctx context.Context,
-	include []string, // +optional
-	exclude []string, // +optional
+	// +optional
+	include []string,
+	// +optional
+	exclude []string,
+	// limit numbers of go mod tidy parallel jobs to run
+	// +default=3
+	limit int,
 ) (*dagger.Changeset, error) {
 	modules, err := p.Modules(ctx, include, exclude)
 	if err != nil {
 		return nil, err
 	}
 	tidyModules := make([]*dagger.Changeset, len(modules))
-	jobs := parallel.New()
+	jobs := parallel.New().
+		// On a large repo this can run dozens of parallel go mod tidy jobs,
+		// which can lead to OOM or extreme CPU usage, so we limit parallelism
+		WithLimit(limit)
 	for i, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
 			var err error
@@ -526,23 +534,7 @@ func (p *Go) Tidy(
 	if err := jobs.Run(ctx); err != nil {
 		return nil, err
 	}
-	return changesetMerge(tidyModules...), nil
-}
-
-// Merge Changesets together
-// FIXME: move this to core dagger: https://github.com/dagger/dagger/issues/11189
-// FIXME: this duplicates the same function in .dagger/util.go
-// (cross-module function sharing is a PITA)
-func changesetMerge(changesets ...*dagger.Changeset) *dagger.Changeset {
-	before := dag.Directory()
-	for _, changeset := range changesets {
-		before = before.WithDirectory("", changeset.Before())
-	}
-	after := before
-	for _, changeset := range changesets {
-		after = after.WithChanges(changeset)
-	}
-	return after.Changes(before)
+	return dag.Changeset().WithChangesets(tidyModules), nil
 }
 
 // Check if 'go mod tidy' is up-to-date
@@ -562,7 +554,7 @@ func (p *Go) CheckTidy(
 		return err
 	}
 	jobs := parallel.New().
-		// On a large repo this can run dozens of parallel golangci-lint jobs,
+		// On a large repo this can run dozens of parallel go mod tidy jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
 		WithLimit(limit).
 		// For better display in 'dagger checks': logs from all functions below the job will
