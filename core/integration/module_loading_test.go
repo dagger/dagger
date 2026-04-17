@@ -1,11 +1,13 @@
 package core
 
 // Workspace alignment: aligned structurally, but coverage is still incomplete.
-// Scope: Runtime module loading, nomination, precedence, and entrypoint arbitration after a workspace already exists.
-// Intent: Keep loading behavior separate from compat detection and finish the missing precedence and conflict cases.
+// Scope: Module source resolution, nomination, precedence, and entrypoint arbitration for native workspace and module sources.
+// Intent: Keep loading behavior separate from compat detection and make source-resolution and arbitration ownership explicit.
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,16 +15,88 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ModuleLoadingSuite owns runtime module loading after a workspace boundary has
-// already been established. This file should use only native initialized
-// workspace fixtures so it can focus on arbitration and entrypoint routing.
+// ModuleLoadingSuite owns native module loading behavior from source resolution
+// through entrypoint arbitration.
 //
 // Compat workspace detection from legacy dagger.json belongs in
-// workspace_compat_test.go. This file may assume the workspace already exists.
+// workspace_compat_test.go. This file may cover loading edge cases without a
+// workspace, but it should not own compat detection itself.
 type ModuleLoadingSuite struct{}
 
 func TestModuleLoading(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ModuleLoadingSuite{})
+}
+
+// TestModuleSourceResolution should pin down how module loading behaves before
+// arbitration, including the cases where a path does not actually resolve to a
+// module source.
+func (ModuleLoadingSuite) TestModuleSourceResolution(ctx context.Context, t *testctx.T) {
+	t.Run("context directory is empty when path has no module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "foo")
+		require.NoError(t, os.WriteFile(filePath, []byte("foo"), 0o644))
+
+		ents, err := c.ModuleSource(tmpDir).ContextDirectory().Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, ents)
+	})
+
+	t.Run("module under unicode path initializes and loads", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/wórk/sub/").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/wórk/sub/main.go", `package main
+ 			import (
+ 				"context"
+ 			)
+ 			type Test struct {}
+ 			func (m *Test) Hello(ctx context.Context) string {
+				return "hello"
+ 			}
+ 			`,
+			).
+			With(daggerQuery(`{hello}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"hello":"hello"}`, out)
+	})
+
+	t.Run("relative extra module path resolves from invocation cwd", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement relative extra-module path coverage.
+
+Invoke Dagger with -m ./submodule from more than one working directory depth
+and verify the same native module is loaded each time. This should make the
+resolution base explicit and prevent future drift between CLI and engine path
+handling.`)
+	})
+
+	t.Run("missing module path fails clearly", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement missing-module-path coverage.
+
+Attempt to load a non-existent native module path and verify the error is a
+clear "not found" style failure rather than an empty or misleading module
+source.`)
+	})
+
+	t.Run("non-directory module path fails clearly", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement non-directory module path coverage.
+
+Point module loading at a regular file and verify the runtime rejects it with a
+clear error instead of treating it like a directory-backed module source.`)
+	})
+
+	t.Run("canonical and symlinked module paths dedupe to one source", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement canonical-path dedupe coverage.
+
+Nominate the same native module once through its real path and once through a
+symlink. Verify load sees one module source before any precedence or entrypoint
+arbitration runs.`)
+	})
 }
 
 // TestAmbientWorkspaceModuleLoading should pin down the baseline runtime shape
