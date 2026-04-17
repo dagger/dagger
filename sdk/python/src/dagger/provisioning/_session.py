@@ -97,8 +97,12 @@ def _has_fileno(stream: TextIO) -> bool:
 
 def _forward_stderr(source: TextIO, dest: TextIO) -> None:
     """Forward lines from source to dest until EOF."""
-    with contextlib.suppress(ValueError):
-        dest.writelines(source)
+    try:
+        with contextlib.suppress(ValueError):
+            dest.writelines(source)
+    finally:
+        with contextlib.suppress(OSError, ValueError):
+            source.close()
 
 
 class _TailBuffer:
