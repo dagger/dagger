@@ -91,9 +91,9 @@ module.exports = {
       collapsed: true,
       items: [
         "extending/editions/dang",
-        "extending/editions/go",
-        "extending/editions/typescript",
-        "extending/editions/python",
+        "extending/editions/go/index",
+        "extending/editions/typescript/index",
+        "extending/editions/python/index",
         "extending/testing",
         {
           type: "category",
