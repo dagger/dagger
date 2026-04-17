@@ -218,10 +218,6 @@ func (c *Cache) nextTraceSeq() uint64 {
 	return atomic.AddUint64(&c.traceSeq, 1)
 }
 
-func (c *Cache) nextPersistBatchID() string {
-	return fmt.Sprintf("persist-batch-%d", atomic.AddUint64(&c.tracePersistBatch, 1))
-}
-
 func (c *Cache) nextImportRunID() string {
 	return fmt.Sprintf("import-run-%d", atomic.AddUint64(&c.traceImportRuns, 1))
 }

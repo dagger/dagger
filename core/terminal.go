@@ -90,16 +90,6 @@ func cloneTerminalFileSource(ctx context.Context, query *Query, src *LazyAccesso
 	return CloneContainerFileAccessor(ctx, src)
 }
 
-func cloneTerminalDirectory(ctx context.Context, query *Query, dir *Directory) (*Directory, error) {
-	_ = query
-	return cloneDetachedDirectoryForContainerResult(ctx, dir)
-}
-
-func cloneTerminalFile(ctx context.Context, query *Query, file *File) (*File, error) {
-	_ = query
-	return cloneDetachedFileForContainerResult(ctx, file)
-}
-
 func newSyntheticTerminalContainerResult(
 	srv *dagql.Server,
 	ctr *Container,

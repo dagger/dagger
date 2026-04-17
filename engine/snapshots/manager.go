@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -91,8 +90,6 @@ type snapshotManager struct {
 	importLayerLocker      *locker.Locker
 
 	mountPool sharableMountPool
-
-	unlazyG flightcontrol.Group[struct{}]
 }
 
 func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {

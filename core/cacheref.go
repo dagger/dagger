@@ -27,16 +27,10 @@ const keyGitSnapshot = "git-snapshot"
 const indexGitRemote = keyGitRemote + "::"
 const indexGitSnapshot = keyGitSnapshot + "::"
 
-func searchGitRemote(ctx context.Context, store bkcache.MetadataStore, remote string) ([]cacheRefMetadata, error) {
-	return searchRefMetadata(ctx, store, remote, indexGitRemote)
-}
 func searchGitSnapshot(ctx context.Context, store bkcache.MetadataStore, key string) ([]cacheRefMetadata, error) {
 	return searchRefMetadata(ctx, store, key, indexGitSnapshot)
 }
 
 func (md cacheRefMetadata) setGitSnapshot(key string) error {
 	return md.SetString(keyGitSnapshot, key, indexGitSnapshot+key)
-}
-func (md cacheRefMetadata) setGitRemote(key string) error {
-	return md.SetString(keyGitRemote, key, indexGitRemote+key)
 }

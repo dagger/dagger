@@ -659,10 +659,6 @@ func (sr *immutableRef) Release(ctx context.Context) error {
 	return sr.release(ctx)
 }
 
-func (sr *immutableRef) shouldUpdateLastUsed() bool {
-	return sr.triggerLastUsed
-}
-
 func (sr *immutableRef) updateLastUsedNow() bool {
 	return sr.triggerLastUsed
 }
@@ -686,10 +682,6 @@ func (sr *immutableRef) release(ctx context.Context) (rerr error) {
 	sr.mountCache = nil
 	sr.released = true
 	return nil
-}
-
-func (sr *mutableRef) shouldUpdateLastUsed() bool {
-	return sr.triggerLastUsed
 }
 
 func (sr *mutableRef) commit(ctx context.Context) (_ *immutableRef, rerr error) {

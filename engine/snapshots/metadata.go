@@ -401,10 +401,6 @@ func (md *cacheMetadata) getBlobOnly() bool {
 	return md.getBool(keyBlobOnly)
 }
 
-func (md *cacheMetadata) queueDeleted() error {
-	return md.queueValue(keyDeleted, true, "")
-}
-
 func (md *cacheMetadata) getDeleted() bool {
 	return md.getBool(keyDeleted)
 }

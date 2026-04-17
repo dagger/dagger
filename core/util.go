@@ -368,14 +368,6 @@ func TrimErrPathPrefix(err error, prefix string) error {
 	return err
 }
 
-func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput[I] {
-	ins := make(dagql.ArrayInput[I], len(ts))
-	for i, v := range ts {
-		ins[i] = conv(v)
-	}
-	return ins
-}
-
 func pathResolverForMount(
 	m *mount.Mount,
 	mntedPath string, // if set, paths will be assumed to be provided as seen from under mntedPath

@@ -1551,24 +1551,3 @@ func normalizedExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest 
 	return out
 }
 
-func normalizedExtraDigestStrings(in []*callpbv1.ExtraDigest) []string {
-	if len(in) == 0 {
-		return nil
-	}
-	set := make(map[string]struct{}, len(in))
-	for _, extra := range in {
-		if extra == nil || extra.Digest == "" {
-			continue
-		}
-		set[extra.Digest] = struct{}{}
-	}
-	if len(set) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(set))
-	for dig := range set {
-		out = append(out, dig)
-	}
-	slices.Sort(out)
-	return out
-}

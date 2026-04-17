@@ -2886,61 +2886,6 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	return file, nil
 }
 
-// toolchainContext holds information about toolchain handling for a module
-type toolchainContext struct {
-	originalSrc dagql.ObjectResult[*core.ModuleSource]
-	src         dagql.ObjectResult[*core.ModuleSource]
-}
-
-// createBaseModule creates the initial module structure with dependencies
-func (s *moduleSourceSchema) createBaseModule(
-	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
-) (*core.Module, error) {
-	sdk := src.Self().SDK
-	if sdk == nil {
-		sdk = &core.SDKConfig{}
-	}
-
-	mod := &core.Module{
-		Source:                        dagql.NonNull(src),
-		NameField:                     src.Self().ModuleName,
-		OriginalName:                  src.Self().ModuleOriginalName,
-		SDKConfig:                     sdk,
-		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
-	}
-
-	// Load dependencies as modules
-	deps, err := s.loadDependencyModules(ctx, src)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load dependencies as modules: %w", err)
-	}
-	mod.Deps = deps
-
-	return mod, nil
-}
-
-// initializeSDKModule initializes a module with SDK implementation
-func (s *moduleSourceSchema) initializeSDKModule(
-	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
-	mod *core.Module,
-	dag *dagql.Server,
-) (*core.Module, error) {
-	// Run SDK codegen
-	var err error
-	mod, err = s.runModuleDefInSDK(ctx, mod)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, ok := src.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(src) {
-		mod.IncludeSelfInDeps = true
-	}
-
-	return mod, nil
-}
-
 // createStubModule creates an empty module definition (no SDK, no blueprints)
 func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) (*core.Module, error) {
 	typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{

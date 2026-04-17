@@ -1050,10 +1050,9 @@ type Cache struct {
 	// persistent normalized cache store (disk persistence/import).
 	pdb *persistdb.Queries
 
-	traceBootID       string
-	traceSeq          uint64
-	tracePersistBatch uint64
-	traceImportRuns   uint64
+	traceBootID     string
+	traceSeq        uint64
+	traceImportRuns uint64
 
 	snapshotManager bkcache.SnapshotManager
 	snapshotGC      func(context.Context) error
@@ -1075,8 +1074,6 @@ type sessionResourceBindings struct {
 	latestClientID string
 	byClientID     map[string]any
 }
-
-const sharedResultSizeUnknown int64 = -1
 
 func compareSessionResourceHandles(a, b SessionResourceHandle) int {
 	switch {
@@ -3661,14 +3658,6 @@ func cacheUsageSizeBytesFromSelf(ctx context.Context, self Typed, identity strin
 	return sizer.CacheUsageSize(ctx, identity)
 }
 
-func cacheUsageSizeBytes(ctx context.Context, res *sharedResult, identity string) (int64, bool, error) {
-	state := res.loadPayloadState()
-	if res == nil || !state.hasValue || state.self == nil {
-		return 0, false, nil
-	}
-	return cacheUsageSizeBytesFromSelf(ctx, state.self, identity)
-}
-
 func cacheUsageIdentitiesFromSelf(self Typed) []string {
 	if self == nil {
 		return nil
@@ -3699,12 +3688,4 @@ func cacheUsageSizeMayChangeFromSelf(self Typed) bool {
 		return false
 	}
 	return mutableSizer.CacheUsageMayChange()
-}
-
-func cacheUsageSizeMayChange(res *sharedResult) bool {
-	state := res.loadPayloadState()
-	if res == nil || !state.hasValue || state.self == nil {
-		return false
-	}
-	return cacheUsageSizeMayChangeFromSelf(state.self)
 }

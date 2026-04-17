@@ -383,16 +383,6 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 	return nil
 }
 
-func functionByOriginalName(obj *ObjectTypeDef, name string) (*Function, bool) {
-	for _, fn := range obj.Functions {
-		fnSelf := fn.Self()
-		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, gqlFieldName(name)) {
-			return fnSelf, true
-		}
-	}
-	return nil, false
-}
-
 func functionResultByOriginalName(obj *ObjectTypeDef, name string) (dagql.ObjectResult[*Function], bool) {
 	for _, fn := range obj.Functions {
 		fnSelf := fn.Self()
@@ -401,16 +391,6 @@ func functionResultByOriginalName(obj *ObjectTypeDef, name string) (dagql.Object
 		}
 	}
 	return dagql.ObjectResult[*Function]{}, false
-}
-
-func lookupFunctionArg(fn *Function, name string) (*FunctionArg, bool) {
-	for _, arg := range fn.Args {
-		argSelf := arg.Self()
-		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, gqlFieldName(name)) {
-			return argSelf, true
-		}
-	}
-	return nil, false
 }
 
 func functionArgResultByName(fn *Function, name string) (dagql.ObjectResult[*FunctionArg], bool) {

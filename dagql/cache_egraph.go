@@ -525,58 +525,6 @@ func (c *Cache) firstResultDeterministicallyAtLocked(
 	return nil
 }
 
-func (c *Cache) firstResultForTermSetDeterministicallyAtLocked(
-	termSet *set.TreeSet[egraphTermID],
-	nowUnix int64,
-) *sharedResult {
-	if termSet == nil {
-		return nil
-	}
-	var bestAssociatedID sharedResultID
-	for termID := range termSet.Items() {
-		for resID := range c.termResults[termID] {
-			res := c.resultsByID[resID]
-			if res == nil {
-				continue
-			}
-			if c.resultExpiredAtLocked(res, nowUnix) {
-				continue
-			}
-			if bestAssociatedID == 0 || resID < bestAssociatedID {
-				bestAssociatedID = resID
-			}
-		}
-	}
-	if bestAssociatedID != 0 {
-		return c.resultsByID[bestAssociatedID]
-	}
-
-	seenOutputEqClasses := make(map[eqClassID]struct{}, termSet.Size())
-	var bestID sharedResultID
-	for termID := range termSet.Items() {
-		term := c.egraphTerms[termID]
-		if term == nil {
-			continue
-		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
-		if outputEqID == 0 {
-			continue
-		}
-		if _, ok := seenOutputEqClasses[outputEqID]; ok {
-			continue
-		}
-		seenOutputEqClasses[outputEqID] = struct{}{}
-		res := c.firstResultForOutputEqClassDeterministicallyAtLocked(outputEqID, nowUnix)
-		if res == nil {
-			continue
-		}
-		if bestID == 0 || res.id < bestID {
-			bestID = res.id
-		}
-	}
-	return c.resultsByID[bestID]
-}
-
 func (c *Cache) firstResultForOutputEqClassDeterministicallyAtLocked(
 	outputEqID eqClassID,
 	nowUnix int64,

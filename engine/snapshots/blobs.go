@@ -24,7 +24,6 @@ import (
 )
 
 var g flightcontrol.Group[*leaseutil.LeaseRef]
-var gFileList flightcontrol.Group[[]string]
 var gEnsureExportBlob flightcontrol.Group[ensureExportBlobResult]
 
 var ErrNoBlobs = errors.Errorf("no blobs for snapshot")
