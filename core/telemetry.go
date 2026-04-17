@@ -395,7 +395,6 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 			immediateReceiver = receiver
 		}
 
-		//nolint:gocritic
 		// disable these unless debug is set in OTEL baggage
 		if !slog.IsDebug(ctx) && receiver.Type != nil {
 			switch receiver.Type.NamedType {

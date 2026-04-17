@@ -793,7 +793,7 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 	return runtime, nil
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) {
 	mod := fn.mod.Self()
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)

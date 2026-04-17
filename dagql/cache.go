@@ -2789,7 +2789,7 @@ func (c *Cache) publishUsageMeasurements(sizes map[sharedResultID]map[string]int
 	}
 }
 
-//nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
+// Core cache lookup/insert flow is intentionally centralized here.
 func (c *Cache) GetOrInitCall(
 	ctx context.Context,
 	sessionID string,
