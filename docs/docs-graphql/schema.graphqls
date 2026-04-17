@@ -357,6 +357,11 @@ enum ChangesetsMergeConflict {
 }
 
 type Check {
+  """
+  The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+  """
+  checkType: String!
+
   """Whether the check completed"""
   completed: Boolean!
 
@@ -2426,6 +2431,11 @@ type Env {
   checks(
     """Only include checks matching the specified patterns"""
     include: [String!]
+
+    """
+    When true, only return annotated check functions; exclude generate-as-checks
+    """
+    noGenerate: Boolean
   ): CheckGroup! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Env."""
@@ -4417,6 +4427,11 @@ type Module {
   checks(
     """Only include checks matching the specified patterns"""
     include: [String!]
+
+    """
+    When true, only return annotated check functions; exclude generate-as-checks
+    """
+    noGenerate: Boolean
   ): CheckGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """The dependencies of the module."""
@@ -6065,6 +6080,11 @@ type Workspace {
   checks(
     """Only include checks matching the specified patterns"""
     include: [String!]
+
+    """
+    When true, only return annotated check functions; exclude generate-as-checks
+    """
+    noGenerate: Boolean
   ): CheckGroup!
 
   """The client ID that owns this workspace's host filesystem."""

@@ -1357,6 +1357,11 @@ export type EnvChecksOpts = {
    * Only include checks matching the specified patterns
    */
   include?: string[]
+
+  /**
+   * When true, only return annotated check functions; exclude generate-as-checks
+   */
+  noGenerate?: boolean
 }
 
 export type EnvServicesOpts = {
@@ -2031,6 +2036,11 @@ export type ModuleChecksOpts = {
    * Only include checks matching the specified patterns
    */
   include?: string[]
+
+  /**
+   * When true, only return annotated check functions; exclude generate-as-checks
+   */
+  noGenerate?: boolean
 }
 
 export type ModuleGeneratorsOpts = {
@@ -2882,6 +2892,11 @@ export type WorkspaceChecksOpts = {
    * Only include checks matching the specified patterns
    */
   include?: string[]
+
+  /**
+   * When true, only return annotated check functions; exclude generate-as-checks
+   */
+  noGenerate?: boolean
 }
 
 export type WorkspaceDirectoryOpts = {
@@ -3681,6 +3696,7 @@ export class Changeset extends BaseClient {
 
 export class Check extends BaseClient {
   private readonly _id?: CheckID = undefined
+  private readonly _checkType?: string = undefined
   private readonly _completed?: boolean = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -3693,6 +3709,7 @@ export class Check extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: CheckID,
+    _checkType?: string,
     _completed?: boolean,
     _description?: string,
     _name?: string,
@@ -3702,6 +3719,7 @@ export class Check extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._checkType = _checkType
     this._completed = _completed
     this._description = _description
     this._name = _name
@@ -3720,6 +3738,21 @@ export class Check extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<CheckID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+   */
+  checkType = async (): Promise<string> => {
+    if (this._checkType) {
+      return this._checkType
+    }
+
+    const ctx = this._ctx.select("checkType")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -6807,6 +6840,7 @@ export class Env extends BaseClient {
   /**
    * Return all checks defined by the installed modules
    * @param opts.include Only include checks matching the specified patterns
+   * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
    * @experimental
    */
   checks = (opts?: EnvChecksOpts): CheckGroup => {
@@ -10970,6 +11004,7 @@ export class Module_ extends BaseClient {
   /**
    * Return all checks defined by the module
    * @param opts.include Only include checks matching the specified patterns
+   * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
    * @experimental
    */
   checks = (opts?: ModuleChecksOpts): CheckGroup => {
@@ -14654,6 +14689,7 @@ export class Workspace extends BaseClient {
   /**
    * Return all checks from modules loaded in the workspace.
    * @param opts.include Only include checks matching the specified patterns
+   * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
    */
   checks = (opts?: WorkspaceChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })

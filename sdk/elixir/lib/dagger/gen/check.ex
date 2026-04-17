@@ -16,6 +16,17 @@ defmodule Dagger.Check do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+  """
+  @spec check_type(t()) :: {:ok, String.t()} | {:error, term()}
+  def check_type(%__MODULE__{} = check) do
+    query_builder =
+      check.query_builder |> QB.select("checkType")
+
+    Client.execute(check.client, query_builder)
+  end
+
+  @doc """
   Whether the check completed
   """
   @spec completed(t()) :: {:ok, boolean()} | {:error, term()}

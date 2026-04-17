@@ -2994,6 +2994,11 @@ pub struct Check {
     pub graphql_client: DynGraphQLClient,
 }
 impl Check {
+    /// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+    pub async fn check_type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("checkType");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Whether the check completed
     pub async fn completed(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("completed");
@@ -7446,6 +7451,9 @@ pub struct EnvChecksOpts<'a> {
     /// Only include checks matching the specified patterns
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
+    /// When true, only return annotated check functions; exclude generate-as-checks
+    #[builder(setter(into, strip_option), default)]
+    pub no_generate: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EnvServicesOpts<'a> {
@@ -7490,6 +7498,9 @@ impl Env {
         let mut query = self.selection.select("checks");
         if let Some(include) = opts.include {
             query = query.arg("include", include);
+        }
+        if let Some(no_generate) = opts.no_generate {
+            query = query.arg("noGenerate", no_generate);
         }
         CheckGroup {
             proc: self.proc.clone(),
@@ -11656,6 +11667,9 @@ pub struct ModuleChecksOpts<'a> {
     /// Only include checks matching the specified patterns
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
+    /// When true, only return annotated check functions; exclude generate-as-checks
+    #[builder(setter(into, strip_option), default)]
+    pub no_generate: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleGeneratorsOpts<'a> {
@@ -11715,6 +11729,9 @@ impl Module {
         let mut query = self.selection.select("checks");
         if let Some(include) = opts.include {
             query = query.arg("include", include);
+        }
+        if let Some(no_generate) = opts.no_generate {
+            query = query.arg("noGenerate", no_generate);
         }
         CheckGroup {
             proc: self.proc.clone(),
@@ -15574,6 +15591,9 @@ pub struct WorkspaceChecksOpts<'a> {
     /// Only include checks matching the specified patterns
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
+    /// When true, only return annotated check functions; exclude generate-as-checks
+    #[builder(setter(into, strip_option), default)]
+    pub no_generate: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceDirectoryOpts<'a> {
@@ -15633,6 +15653,9 @@ impl Workspace {
         let mut query = self.selection.select("checks");
         if let Some(include) = opts.include {
             query = query.arg("include", include);
+        }
+        if let Some(no_generate) = opts.no_generate {
+            query = query.arg("noGenerate", no_generate);
         }
         CheckGroup {
             proc: self.proc.clone(),
