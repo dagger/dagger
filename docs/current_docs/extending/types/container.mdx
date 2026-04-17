@@ -8,12 +8,6 @@ import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
 import ContainerType from "@daggerTypes/_container.mdx";
-import BuildImageFromDockerfile from '@cookbookBuild/_image-from-dockerfile.mdx';
-import BuildImageFromDockerfileContext from '@cookbookBuild/_image-from-dockerfile-build-context.mdx';
-import OciAnnotations from '@cookbookBuild/_oci-annotations.mdx';
-import OciLabels from '@cookbookBuild/_oci-labels.mdx';
-import DebugTerminal from "@cookbookError/_debug-terminal.mdx";
-import InspectFilesystem from "@cookbookError/_inspect-filesystem.mdx";
 
 <ContainerType />
 
@@ -66,17 +60,3 @@ The default address can be any valid container image reference, such as:
 - `alpine:3.19` - Docker Hub image with specific version
 - `ghcr.io/owner/image:tag` - GitHub Container Registry image
 - `gcr.io/project/image:tag` - Google Container Registry image
-
-## Examples
-
-<BuildImageFromDockerfile />
-
-<BuildImageFromDockerfileContext />
-
-<DebugTerminal />
-
-<InspectFilesystem />
-
-<OciAnnotations />
-
-<OciLabels />
