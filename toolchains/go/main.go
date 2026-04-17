@@ -645,12 +645,12 @@ func (p *Go) Lint(
 	return jobs.Run(ctx)
 }
 
-func (p *Go) LintModule(ctx context.Context, mod string) error {
+func (p *Go) LintModule(ctx context.Context, module string) error {
 	lintImageRepo := "docker.io/golangci/golangci-lint"
 	lintImageTag := "v2.11.4-alpine"
 	lintImageDigest := "sha256:72bcd68512b4e27540dd3a778a1b7afd45759d8145cfb3c089f1d7af53e718e9"
 	lintImage := lintImageRepo + ":" + lintImageTag + "@" + lintImageDigest
-	p, err := p.GenerateDaggerRuntime(ctx, mod)
+	p, err := p.GenerateDaggerRuntime(ctx, module)
 	if err != nil {
 		return err
 	}
@@ -662,10 +662,10 @@ func (p *Go) LintModule(ctx context.Context, mod string) error {
 			WithMountedCache("/root/.cache/golangci-lint", dag.CacheVolume("golangci-lint")).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", p.Source).
-			WithWorkdir(mod).
+			WithWorkdir(module).
 			WithExec([]string{
 				"golangci-lint", "run",
-				"--path-prefix", mod + "/",
+				"--path-prefix", module + "/",
 				"--output.tab.path=stderr",
 				"--output.tab.print-linter-name=true",
 				"--output.tab.colors=false",
