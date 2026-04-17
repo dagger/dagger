@@ -18,7 +18,7 @@ const (
 	sdkSrc           = "/sdk"
 	genDir           = "dagger_sdk"
 	schemaPath       = "/schema.json"
-	elixirImage      = "elixir:1.18.4-otp-28-alpine@sha256:35777d29cf6c00c66b2c4ae135bf187dd9e3d5d4b75d0922b75e073732a1613a"
+	elixirImage      = "elixir:1.19.5-otp-28-alpine@sha256:1747b3595b6742d2273d18608203457d5b925000cd38aca40c76e23c64d44def"
 )
 
 //go:embed template/mix.exs
@@ -82,7 +82,7 @@ func (m *ElixirSdk) ModuleRuntime(
 		WithEntrypoint([]string{
 			"mix", "cmd",
 			"--cd", path.Join(ModSourceDirPath, subPath),
-			fmt.Sprintf("mix dagger.entrypoint.invoke %s", toElixirModuleName(modName)),
+			"mix", "dagger.entrypoint.invoke", toElixirModuleName(modName),
 		}), nil
 }
 
