@@ -2,7 +2,7 @@ package core
 
 // Workspace alignment: aligned; this file already matches the workspace-era split.
 // Scope: Workspace-facing module install, list, naming, and configured source behavior.
-// Intent: Keep workspace module configuration behavior separate from raw module dependency mutation behavior.
+// Intent: Keep workspace module settings behavior separate from raw module dependency mutation behavior.
 
 import (
 	"context"

@@ -2,7 +2,7 @@ package core
 
 // Workspace alignment: aligned; intentionally compat-focused.
 // Scope: Legacy .env-driven module configuration behavior kept for compat workspaces and legacy project shapes.
-// Intent: Keep .env coverage isolated as legacy-only behavior while workspace_config_test.go owns current workspace module configuration.
+// Intent: Keep .env coverage isolated as legacy-only behavior while workspace_config_test.go owns current workspace module settings behavior.
 
 import (
 	"context"

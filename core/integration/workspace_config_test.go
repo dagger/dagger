@@ -2,7 +2,7 @@ package core
 
 // Workspace alignment: aligned structurally, but coverage is still incomplete.
 // Scope: Workspace config read or write behavior, config aliasing, boundary handling, and runtime effects on loaded modules.
-// Intent: Keep current workspace configuration behavior explicit, including [modules.<name>.config], and finish the missing API and boundary cases.
+// Intent: Keep current workspace configuration behavior explicit, including [modules.<name>.settings], and finish the missing API and boundary cases.
 
 import (
 	"context"
@@ -61,7 +61,7 @@ func (WorkspaceSuite) TestWorkspaceConfigRead(ctx context.Context, t *testctx.T)
 source = "modules/greeter"
 entrypoint = true
 
-[modules.greeter.config]
+[modules.greeter.settings]
 greeting = "hello"
 
 [modules.wolfi]
@@ -123,7 +123,7 @@ source = "modules/greeter"
 entrypoint = true
 `)
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.config.tags", "main, develop")
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.settings.tags", "main, develop")
 		require.NoError(t, err)
 
 		configContents, err := os.ReadFile(filepath.Join(workdir, workspace.LockDirName, workspace.ConfigFileName))
@@ -145,7 +145,7 @@ entrypoint = true
 	})
 }
 
-func (WorkspaceSuite) TestWorkspaceModuleConfigRuntime(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestWorkspaceModuleSettingsRuntime(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	newConfiguredCtr := func(configTOML string) *dagger.Container {
@@ -157,12 +157,12 @@ func (WorkspaceSuite) TestWorkspaceModuleConfigRuntime(ctx context.Context, t *t
 			WithServiceBinding("www", c.Container().From("nginx").AsService())
 	}
 
-	t.Run("workspace module config drives constructor help and runtime", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace module settings drive constructor help and runtime", func(ctx context.Context, t *testctx.T) {
 		ctr := newConfiguredCtr(`[modules.superconstructor]
 source = "defaults/superconstructor"
 entrypoint = true
 
-[modules.superconstructor.config]
+[modules.superconstructor.settings]
 Count = 7
 Greeting = "yay"
 dir = "/foo"
@@ -203,7 +203,7 @@ service = "tcp://www:80"
 source = "defaults/superconstructor"
 entrypoint = true
 
-[modules.superconstructor.config]
+[modules.superconstructor.settings]
 count = 7
 dir = "/foo"
 file = "/foo/hello.txt"
@@ -330,18 +330,18 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 	})
 }
 
-func (WorkspaceSuite) TestWorkspaceModuleConfigPolicy(ctx context.Context, t *testctx.T) {
-	t.Run("unknown constructor config keys have an explicit policy", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: decide whether unknown keys in [modules.<name>.config] are ignored or rejected at load time.`)
+func (WorkspaceSuite) TestWorkspaceModuleSettingsPolicy(ctx context.Context, t *testctx.T) {
+	t.Run("unknown constructor settings keys have an explicit policy", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: decide whether unknown keys in [modules.<name>.settings] are ignored or rejected at load time.`)
 	})
 }
 
-// TestWorkspaceModuleConfigSemantics is the planning scaffold for the
-// unresolved behavior in [modules.<name>.config] beyond the happy-path runtime
+// TestWorkspaceModuleSettingsSemantics is the planning scaffold for the
+// unresolved behavior in [modules.<name>.settings] beyond the happy-path runtime
 // coverage above.
-func (WorkspaceSuite) TestWorkspaceModuleConfigSemantics(ctx context.Context, t *testctx.T) {
-	t.Run("config key normalization and casing are explicit", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement workspace module config key-normalization coverage.
+func (WorkspaceSuite) TestWorkspaceModuleSettingsSemantics(ctx context.Context, t *testctx.T) {
+	t.Run("settings key normalization and casing are explicit", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement workspace module settings key-normalization coverage.
 
 Use constructor arguments whose runtime names differ in case or word shape
 (for example camelCase, snake_case, and acronym-heavy names). Verify one
@@ -349,36 +349,36 @@ explicit TOML key-mapping policy and make the accepted forms part of the
 contract.`)
 	})
 
-	t.Run("typed config values validate and coerce predictably", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement typed workspace module config coverage.
+	t.Run("typed settings values validate and coerce predictably", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement typed workspace module settings coverage.
 
 Cover scalar and path-like constructor arguments supplied through
-[modules.<name>.config]. Verify successful coercion for supported types and a
+[modules.<name>.settings]. Verify successful coercion for supported types and a
 clear validation error for unsupported or malformed values.`)
 	})
 
 	t.Run("explicit args override only the fields they replace", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement partial-override coverage for workspace module config.
+		t.Fatal(`FIXME: implement partial-override coverage for workspace module settings.
 
-Seed several constructor values from [modules.<name>.config], then override one
+Seed several constructor values from [modules.<name>.settings], then override one
 or two at call time. Verify only the explicitly provided fields change and the
 remaining constructor inputs still come from workspace config.`)
 	})
 
-	t.Run("module config is scoped per loaded module", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement sibling-module isolation coverage for workspace module config.
+	t.Run("module settings are scoped per loaded module", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement sibling-module isolation coverage for workspace module settings.
 
 Configure two loaded modules with overlapping constructor argument names.
-Verify each module reads only its own [modules.<name>.config] table and one
-module's config cannot leak into another.`)
+Verify each module reads only its own [modules.<name>.settings] table and one
+module's settings cannot leak into another.`)
 	})
 
 	t.Run("broken env, file, directory, and service references fail clearly", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement invalid reference coverage for workspace module config.
+		t.Fatal(`FIXME: implement invalid reference coverage for workspace module settings.
 
-Point config-driven constructor values at missing env vars, nonexistent files
+Point settings-driven constructor values at missing env vars, nonexistent files
 or directories, and invalid service addresses. Verify the failure points at the
-specific config key and reference that could not be resolved.`)
+specific settings key and reference that could not be resolved.`)
 	})
 }
 

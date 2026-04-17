@@ -3,6 +3,10 @@ package core
 // Workspace alignment: aligned structurally, but env-management and env-scoped config semantics are not implemented yet.
 // Scope: User-facing workspace environment lifecycle plus `dagger config` read/write behavior when `--env` is selected.
 // Intent: Lock the env UX before implementation so config storage, effective reads, runtime behavior, and CLI management all converge on one contract.
+//
+// This file covers generic config behavior in env scope. Typed module-setting
+// discovery belongs to `dagger settings`; here, module-specific examples use
+// the underlying `[modules.<alias>.settings]` storage model.
 
 import (
 	"context"
@@ -61,10 +65,10 @@ env.ci contents. This command is "ensure exists", not "fail if already exists".`
 
 Given:
 
-[env.dev.modules.aws.config]
+[env.dev.modules.aws.settings]
 region = "us-west-2"
 
-[env.ci.modules.aws.config]
+[env.ci.modules.aws.settings]
 region = "us-east-1"
 
 Running:
@@ -95,17 +99,17 @@ Given:
 [modules.aws]
 source = "github.com/dagger/aws"
 
-[modules.aws.config]
+[modules.aws.settings]
 format = "json"
 region = "us-west-2"
 
 [modules.vitest]
 source = "github.com/dagger/vitest"
 
-[modules.vitest.config]
+[modules.vitest.settings]
 reporter = "dot"
 
-[env.ci.modules.aws.config]
+[env.ci.modules.aws.settings]
 region = "us-east-1"
 
 Running:
@@ -117,14 +121,14 @@ should print the effective active config for ci, shaped like the base config:
 [modules.aws]
 source = "github.com/dagger/aws"
 
-[modules.aws.config]
+[modules.aws.settings]
 format = "json"
 region = "us-east-1"
 
 [modules.vitest]
 source = "github.com/dagger/vitest"
 
-[modules.vitest.config]
+[modules.vitest.settings]
 reporter = "dot"
 
 It must not print [env.ci] tables in this mode, because the user asked for the
@@ -136,7 +140,7 @@ config as ci sees it, not for the raw storage subtree.`)
 
 Using the fixture above:
 
-  dagger --env=ci config modules.aws.config.region
+  dagger --env=ci config modules.aws.settings.region
 
 should print:
 
@@ -146,7 +150,7 @@ because ci overrides that key.
 
 And:
 
-  dagger --env=ci config modules.aws.config.format
+  dagger --env=ci config modules.aws.settings.format
 
 should print:
 
@@ -155,7 +159,7 @@ should print:
 because the key is not overridden in ci and must fall back to the base config.`)
 	})
 
-	t.Run("table reads in env scope merge base entry fields with env config overrides", func(ctx context.Context, t *testctx.T) {
+	t.Run("table reads in env scope merge base entry fields with env settings overrides", func(ctx context.Context, t *testctx.T) {
 		t.Fatal(`FIXME: implement env-scoped config table-read coverage.
 
 Using the same fixture:
@@ -165,19 +169,19 @@ Using the same fixture:
 should print a merged table view that includes:
 
   source = "github.com/dagger/aws"
-  config.format = "json"
-  config.region = "us-east-1"
+  settings.format = "json"
+  settings.region = "us-east-1"
 
 And:
 
-  dagger --env=ci config modules.aws.config
+  dagger --env=ci config modules.aws.settings
 
 should print:
 
   format = "json"
   region = "us-east-1"
 
-This locks in that env reads merge module.config keys only; module source and
+This locks in that env reads merge module.settings keys only; module source and
 other non-overridable fields still come from the base config.`)
 	})
 
@@ -190,7 +194,7 @@ Given a workspace with no env.ci, running:
 
 or:
 
-  dagger --env=ci config modules.aws.config.region
+  dagger --env=ci config modules.aws.settings.region
 
 should fail clearly. It must not silently behave like base-scope config, or a
 typo in the env name becomes invisible.`)
@@ -209,25 +213,25 @@ Given:
 [modules.aws]
 source = "github.com/dagger/aws"
 
-[modules.aws.config]
+[modules.aws.settings]
 region = "us-west-2"
 
 [env.ci]
 
 Running:
 
-  dagger --env=ci config modules.aws.config.region us-east-1
+  dagger --env=ci config modules.aws.settings.region us-east-1
 
 should write:
 
-[env.ci.modules.aws.config]
+[env.ci.modules.aws.settings]
 region = "us-east-1"
 
-and must leave the base value under modules.aws.config.region unchanged.
+and must leave the base value under modules.aws.settings.region unchanged.
 
 After the write:
 
-  dagger config modules.aws.config.region
+  dagger config modules.aws.settings.region
 
 should still print:
 
@@ -235,7 +239,7 @@ should still print:
 
 while:
 
-  dagger --env=ci config modules.aws.config.region
+  dagger --env=ci config modules.aws.settings.region
 
 should print:
 
@@ -247,9 +251,9 @@ should print:
 
 Running:
 
-  dagger --env=ci config modules.vitest.config.failFast true
-  dagger --env=ci config modules.vitest.config.retries 3
-  dagger --env=ci config modules.vitest.config.tags smoke, nightly
+  dagger --env=ci config modules.vitest.settings.failFast true
+  dagger --env=ci config modules.vitest.settings.retries 3
+  dagger --env=ci config modules.vitest.settings.tags smoke, nightly
 
 should write bool, integer, and array values under env.ci with the same typing
 rules used by base-scope dagger config writes.`)
@@ -266,7 +270,7 @@ The following should fail clearly in env scope:
 
 because v1 env overlays may only write:
 
-  modules.<alias>.config.*
+  modules.<alias>.settings.*
 
 The error should explain that the key is not writable in env scope, not just
 that some TOML field is unknown.`)
@@ -277,14 +281,14 @@ that some TOML field is unknown.`)
 
 Running:
 
-  dagger --env=missing config modules.aws.config.region us-east-1
+  dagger --env=missing config modules.aws.settings.region us-east-1
 
 should fail because envs are created explicitly through dagger env create;
 env-scoped config writes must not auto-create a new env for a mistyped name.
 
 And:
 
-  dagger --env=ci config modules.missing.config.region us-east-1
+  dagger --env=ci config modules.missing.settings.region us-east-1
 
 should fail because env overlays may only target already-installed workspace
 module aliases.`)
@@ -300,15 +304,15 @@ func (WorkspaceSuite) TestWorkspaceEnvRawAccessEscapeHatches(ctx context.Context
 
 Given:
 
-[modules.aws.config]
+[modules.aws.settings]
 region = "us-west-2"
 
-[env.ci.modules.aws.config]
+[env.ci.modules.aws.settings]
 region = "us-east-1"
 
 Running:
 
-  dagger config env.ci.modules.aws.config.region
+  dagger config env.ci.modules.aws.settings.region
 
 should print:
 
@@ -316,7 +320,7 @@ should print:
 
 This is the raw stored override, not the effective merged value logic used by:
 
-  dagger --env=ci config modules.aws.config.region`)
+  dagger --env=ci config modules.aws.settings.region`)
 	})
 
 	t.Run("explicit env-prefixed writes edit raw stored overlays directly", func(ctx context.Context, t *testctx.T) {
@@ -324,7 +328,7 @@ This is the raw stored override, not the effective merged value logic used by:
 
 Running:
 
-  dagger config env.ci.modules.aws.config.region us-east-1
+  dagger config env.ci.modules.aws.settings.region us-east-1
 
 should write the raw env subtree directly, without requiring --env=ci.
 
@@ -337,7 +341,7 @@ though ordinary env-scoped reads and writes are effective/scope-aware.`)
 
 If a user runs:
 
-  dagger --env=prod config env.ci.modules.aws.config.region
+  dagger --env=prod config env.ci.modules.aws.settings.region
 
 the explicit env.ci key path should still address the raw env.ci storage, not
 the current effective prod scope. Explicit raw paths should win over implicit
@@ -354,7 +358,7 @@ func (WorkspaceSuite) TestWorkspaceEnvConfigRuntimeConsistency(ctx context.Conte
 
 Use a workspace module whose constructor defaults are visible through both:
 
-  dagger --env=ci config modules.<alias>.config.<key>
+  dagger --env=ci config modules.<alias>.settings.<key>
 
 and:
 
@@ -370,8 +374,8 @@ to populate constructor defaults and runtime behavior under that env.`)
 
 Given one workspace and two envs:
 
-  dagger --env=ci config modules.aws.config.region us-east-1
-  dagger --env=dev config modules.aws.config.region us-west-2
+  dagger --env=ci config modules.aws.settings.region us-east-1
+  dagger --env=dev config modules.aws.settings.region us-west-2
 
 Verify:
 

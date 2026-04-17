@@ -19,11 +19,11 @@ source = "modules/greeter"
 entrypoint = true
 legacy-default-path = true
 
-[modules.greeter.config]
+[modules.greeter.settings]
 greeting = "hello"
 enabled = true
 
-[env.ci.modules.greeter.config]
+[env.ci.modules.greeter.settings]
 greeting = "hola"
 
 [env.local]
@@ -98,7 +98,7 @@ source = "modules/greeter"
 entrypoint = true
 legacy-default-path = true
 
-[modules.greeter.config]
+[modules.greeter.settings]
 enabled = true
 greeting = "hello"
 tags = ["main", "develop"]
@@ -106,7 +106,7 @@ tags = ["main", "develop"]
 [modules.wolfi]
 source = "github.com/dagger/dagger/modules/wolfi"
 
-[env.ci.modules.greeter.config]
+[env.ci.modules.greeter.settings]
 enabled = false
 greeting = "hola"
 
@@ -120,7 +120,7 @@ func TestReadConfigValue(t *testing.T) {
 	data := []byte(`[modules.greeter]
 source = "modules/greeter"
 
-[modules.greeter.config]
+[modules.greeter.settings]
 greeting = "hello"
 enabled = true
 `)
@@ -144,7 +144,7 @@ enabled = true
 	t.Run("table", func(t *testing.T) {
 		t.Parallel()
 
-		value, err := ReadConfigValue(data, "modules.greeter.config")
+		value, err := ReadConfigValue(data, "modules.greeter.settings")
 		require.NoError(t, err)
 		require.ElementsMatch(t,
 			[]string{
@@ -158,12 +158,12 @@ enabled = true
 	t.Run("env table", func(t *testing.T) {
 		t.Parallel()
 
-		envData := []byte(`[env.ci.modules.greeter.config]
+		envData := []byte(`[env.ci.modules.greeter.settings]
 greeting = "hola"
 enabled = false
 `)
 
-		value, err := ReadConfigValue(envData, "env.ci.modules.greeter.config")
+		value, err := ReadConfigValue(envData, "env.ci.modules.greeter.settings")
 		require.NoError(t, err)
 		require.ElementsMatch(t,
 			[]string{
@@ -185,15 +185,15 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.entrypoint", "true")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.config.greeting", "hello")
+		data, err = WriteConfigValue(data, "modules.greeter.settings.greeting", "hello")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.config.count", "42")
+		data, err = WriteConfigValue(data, "modules.greeter.settings.count", "42")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.config.tags", "main, develop")
+		data, err = WriteConfigValue(data, "modules.greeter.settings.tags", "main, develop")
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "defaults_from_dotenv", "true")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "env.ci.modules.greeter.config.region", "us-east-1")
+		data, err = WriteConfigValue(data, "env.ci.modules.greeter.settings.region", "us-east-1")
 		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
@@ -223,23 +223,23 @@ func TestWriteConfigValue(t *testing.T) {
 		t.Parallel()
 
 		_, err := WriteConfigValue(nil, "modules.greeter", "value")
-		require.EqualError(t, err, "cannot set \"modules.greeter\" directly; specify a field like modules.greeter.config")
+		require.EqualError(t, err, "cannot set \"modules.greeter\" directly; specify a field like modules.greeter.settings")
 
 		_, err = WriteConfigValue(nil, "modules.greeter.unknown", "value")
-		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: config, entrypoint, legacy-default-path, source")
+		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: entrypoint, legacy-default-path, settings, source")
 
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
 
 		_, err = WriteConfigValue(nil, "env.ci.modules.greeter.source", "github.com/acme/greeter")
-		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.source\"; valid fields at this level: config")
+		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.source\"; valid fields at this level: settings")
 	})
 }
 
 func TestApplyEnvOverlay(t *testing.T) {
 	t.Parallel()
 
-	t.Run("merges module config overrides without mutating base config", func(t *testing.T) {
+	t.Run("merges module settings overrides without mutating base config", func(t *testing.T) {
 		t.Parallel()
 
 		base := &Config{
