@@ -1067,7 +1067,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 	}
 }
 
-func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedResultID, error) {
+func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
 	if frame == nil {
 		return 0, fmt.Errorf("resolve result ID for call: nil call")
 	}

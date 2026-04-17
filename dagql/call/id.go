@@ -1565,4 +1565,3 @@ func normalizedExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest 
 	}
 	return out
 }
-

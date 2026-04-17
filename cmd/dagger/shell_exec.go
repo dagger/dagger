@@ -898,10 +898,7 @@ func (h *shellCallHandler) StateResult(ctx context.Context, st *ShellState) (*Re
 	}
 
 	r := &Result{typeDef: fn.ReturnType}
-	q, err := handleObjectLeaf(st.QueryBuilder(h.dag), fn.ReturnType)
-	if err != nil {
-		return nil, err
-	}
+	q := handleObjectLeaf(st.QueryBuilder(h.dag), fn.ReturnType)
 	err = makeRequest(ctx, q, &r.Value)
 
 	return r, err

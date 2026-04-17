@@ -393,7 +393,7 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 		return nil, fmt.Errorf("resolve result ref: %w", err)
 	}
 	if ref.Call != nil {
-		resultID, err := cache.resultIDForCall(ctx, ref.Call)
+		resultID, err := cache.resultIDForCall(ref.Call)
 		if err != nil {
 			return nil, err
 		}

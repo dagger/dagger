@@ -79,8 +79,8 @@ func newModuleSDK(
 	}).withConfig(ctx, rawConfig)
 }
 
-func (sdk *module) dag() (*dagql.Server, error) {
-	return sdk.server, nil
+func (sdk *module) dag() *dagql.Server {
+	return sdk.server
 }
 
 // withConfig function checks if the moduleSDK exposes a function with name `WithConfig`.
@@ -148,10 +148,7 @@ func (sdk *module) withConfig(
 		})
 	}
 
-	dag, err := sdk.dag()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.Self().Name(), err)
-	}
+	dag := sdk.dag()
 
 	var sdkwithconfig dagql.AnyObjectResult
 	err = dag.Select(ctx, sdk.sdk, &sdkwithconfig, []dagql.Selector{

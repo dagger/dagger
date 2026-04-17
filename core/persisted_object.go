@@ -156,4 +156,3 @@ func loadPersistedImmutableSnapshotByResultID(ctx context.Context, dag *dagql.Se
 	}
 	return ref, nil
 }
-

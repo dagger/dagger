@@ -434,4 +434,3 @@ func sourceIdentifierWithoutScheme(identifier, scheme string) (string, error) {
 	}
 	return value, nil
 }
-

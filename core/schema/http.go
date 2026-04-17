@@ -69,7 +69,7 @@ type httpStateResolveArgs struct {
 	Name        string
 }
 
-func (s *httpSchema) httpPath(parent *core.Query, args httpArgs) (string, error) {
+func (s *httpSchema) httpPath(args httpArgs) (string, error) {
 	if args.Name.Valid {
 		return string(args.Name.Value), nil
 	}
@@ -91,7 +91,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
-	filename, err := s.httpPath(parent.Self(), args)
+	filename, err := s.httpPath(args)
 	if err != nil {
 		return inst, err
 	}

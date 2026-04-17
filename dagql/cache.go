@@ -846,9 +846,9 @@ func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult
 	return c.syncResultSnapshotLeases(ctx, shared)
 }
 
-func (c *Cache) desiredImportedOwnerLeaseIDs() (map[string]struct{}, error) {
+func (c *Cache) desiredImportedOwnerLeaseIDs() map[string]struct{} {
 	if c == nil {
-		return nil, nil
+		return nil
 	}
 
 	c.egraphMu.RLock()
@@ -868,7 +868,7 @@ func (c *Cache) desiredImportedOwnerLeaseIDs() (map[string]struct{}, error) {
 		}
 	}
 
-	return desired, nil
+	return desired
 }
 
 func prepareCacheDBs(ctx context.Context, dbPath string) (*sql.DB, *persistdb.Queries, error) {
@@ -1446,7 +1446,7 @@ func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 	if err := c.normalizePendingResultCallRefsWithSeen(ctx, ref.Call, seen); err != nil {
 		return err
 	}
-	resultID, err := c.resultIDForCall(ctx, ref.Call)
+	resultID, err := c.resultIDForCall(ref.Call)
 	if err != nil {
 		return err
 	}

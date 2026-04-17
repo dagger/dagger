@@ -30,12 +30,9 @@ func (sdk *moduleTypes) ModuleTypes(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs object")
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dag, err := sdk.mod.dag()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
-	}
+	dag := sdk.mod.dag()
 
-	source, err = scopeSourceForSDKOperation(ctx, source, "moduleTypes", dag)
+	source, err := scopeSourceForSDKOperation(ctx, source, "moduleTypes", dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module source for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
 	}

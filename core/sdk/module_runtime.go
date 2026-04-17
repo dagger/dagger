@@ -22,12 +22,9 @@ func (sdk *runtimeModule) Runtime(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dag, err := sdk.mod.dag()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
-	}
+	dag := sdk.mod.dag()
 
-	source, err = scopeSourceForSDKOperation(ctx, source, "runtime", dag)
+	source, err := scopeSourceForSDKOperation(ctx, source, "runtime", dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scope module source for sdk module %s runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
