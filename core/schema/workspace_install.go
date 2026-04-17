@@ -46,7 +46,7 @@ func (s *workspaceSchema) install(
 	cfg.Modules[name] = workspace.ModuleEntry{
 		Source: sourcePath,
 	}
-	hints := s.collectWorkspaceConfigHints(ctx, parent, map[string]string{name: args.Ref})
+	hints := s.collectWorkspaceSettingsHints(ctx, parent, map[string]string{name: args.Ref})
 	if err := writeWorkspaceConfigWithHints(ctx, parent, cfg, hints); err != nil {
 		return "", err
 	}

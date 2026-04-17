@@ -62,16 +62,18 @@ func (s *workspaceSchema) migrate(
 	}(); err != nil {
 		return nil, err
 	}
-	if hints := s.collectWorkspaceConfigHints(ctx, ws, workspaceMigrationHintRefs(compatWorkspace)); len(hints) > 0 {
-		cfg, err := workspace.ParseConfig(plan.WorkspaceConfigData)
-		if err != nil {
-			return nil, fmt.Errorf("parse planned workspace config: %w", err)
+	cfg, err := workspace.ParseConfig(plan.WorkspaceConfigData)
+	if err != nil {
+		return nil, fmt.Errorf("parse planned workspace config: %w", err)
+	}
+	if _, updatedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan); err == nil {
+		if hints := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, updatedDir); len(hints) > 0 {
+			updated, err := workspace.UpdateConfigBytesWithHints(nil, cfg, hints)
+			if err != nil {
+				return nil, fmt.Errorf("render planned workspace config with hints: %w", err)
+			}
+			plan.WorkspaceConfigData = updated
 		}
-		updated, err := workspace.UpdateConfigBytesWithHints(nil, cfg, hints)
-		if err != nil {
-			return nil, fmt.Errorf("render planned workspace config with hints: %w", err)
-		}
-		plan.WorkspaceConfigData = updated
 	}
 
 	warnings := workspaceMigrationWarnings(plan)
@@ -100,27 +102,6 @@ func (s *workspaceSchema) migrate(
 			},
 		},
 	}, nil
-}
-
-func workspaceMigrationHintRefs(compatWorkspace *workspace.CompatWorkspace) map[string]string {
-	if compatWorkspace == nil {
-		return nil
-	}
-
-	refs := map[string]string{}
-	for _, mod := range compatWorkspace.Modules {
-		if mod.ConfigName == "" || mod.Source == "" {
-			continue
-		}
-		refs[mod.ConfigName] = mod.Source
-	}
-	if compatWorkspace.MainModule != nil && compatWorkspace.MainModule.ConfigName != "" {
-		refs[compatWorkspace.MainModule.ConfigName] = "."
-	}
-	if len(refs) == 0 {
-		return nil
-	}
-	return refs
 }
 
 func (s *workspaceSchema) workspaceMigrationLockBytes(
@@ -184,45 +165,9 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	ctx, span := core.Tracer(ctx).Start(ctx, "build migration changeset")
 	defer telemetry.EndWithCause(span, &rerr)
 
-	projectRootPath, err := workspaceMigrationProjectRootPath(ws, plan)
+	baseDir, updatedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan)
 	if err != nil {
 		return nil, err
-	}
-
-	baseDir, err := s.resolveRootfs(ctx, ws, projectRootPath, core.CopyFilter{}, false)
-	if err != nil {
-		return nil, err
-	}
-
-	updatedDir := baseDir
-
-	if plan.SourceCopyPath != "" {
-		if err := func() (rerr error) {
-			copyCtx, span := core.Tracer(ctx).Start(ctx, "migrate source directory")
-			defer telemetry.EndWithCause(span, &rerr)
-
-			srcDir, err := s.resolveRootfs(copyCtx, ws, filepath.Join(projectRootPath, plan.SourceCopyPath), core.CopyFilter{}, false)
-			if err != nil {
-				return fmt.Errorf("migration source directory %q: %w", plan.SourceCopyPath, err)
-			}
-			updatedDir, err = workspaceMigrationSelectDirectory(copyCtx, updatedDir, "withDirectory", []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyDest)))},
-				{Name: "source", Value: dagql.NewID[*core.Directory](srcDir.ID())},
-			})
-			if err != nil {
-				return fmt.Errorf("migration copy source directory: %w", err)
-			}
-			return nil
-		}(); err != nil {
-			return nil, err
-		}
-	}
-
-	if len(plan.MigratedModuleConfigData) > 0 {
-		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "write migrated module config")
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, filepath.Join(workspace.LockDirName, workspace.ConfigFileName), plan.WorkspaceConfigData, "write workspace config")
@@ -295,6 +240,58 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return nil, fmt.Errorf("migration changeset: %w", err)
 	}
 	return changes, nil
+}
+
+func (s *workspaceSchema) workspaceMigrationPreparedDirectories(
+	ctx context.Context,
+	ws *core.Workspace,
+	plan *workspace.MigrationPlan,
+) (_ dagql.ObjectResult[*core.Directory], _ dagql.ObjectResult[*core.Directory], rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "prepare migrated workspace directory")
+	defer telemetry.EndWithCause(span, &rerr)
+
+	projectRootPath, err := workspaceMigrationProjectRootPath(ws, plan)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
+	}
+
+	baseDir, err := s.resolveRootfs(ctx, ws, projectRootPath, core.CopyFilter{}, false)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
+	}
+
+	updatedDir := baseDir
+
+	if plan.SourceCopyPath != "" {
+		if err := func() (rerr error) {
+			copyCtx, span := core.Tracer(ctx).Start(ctx, "migrate source directory")
+			defer telemetry.EndWithCause(span, &rerr)
+
+			srcDir, err := s.resolveRootfs(copyCtx, ws, filepath.Join(projectRootPath, plan.SourceCopyPath), core.CopyFilter{}, false)
+			if err != nil {
+				return fmt.Errorf("migration source directory %q: %w", plan.SourceCopyPath, err)
+			}
+			updatedDir, err = workspaceMigrationSelectDirectory(copyCtx, updatedDir, "withDirectory", []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyDest)))},
+				{Name: "source", Value: dagql.NewID[*core.Directory](srcDir.ID())},
+			})
+			if err != nil {
+				return fmt.Errorf("migration copy source directory: %w", err)
+			}
+			return nil
+		}(); err != nil {
+			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
+		}
+	}
+
+	if len(plan.MigratedModuleConfigData) > 0 {
+		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "write migrated module config")
+		if err != nil {
+			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
+		}
+	}
+
+	return baseDir, updatedDir, nil
 }
 
 func withWorkspaceMigrationFile(

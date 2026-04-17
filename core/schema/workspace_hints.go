@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -13,7 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-func (s *workspaceSchema) collectWorkspaceConfigHints(
+func (s *workspaceSchema) collectWorkspaceSettingsHints(
 	ctx context.Context,
 	ws *core.Workspace,
 	refs map[string]string,
@@ -22,15 +24,9 @@ func (s *workspaceSchema) collectWorkspaceConfigHints(
 		return nil
 	}
 
-	ctx, err := withWorkspaceClientContext(ctx, ws)
+	ctx, srv, err := workspaceSettingsHintIntrospectionContext(ctx, ws)
 	if err != nil {
-		slog.Warn("could not prepare workspace config hints", "error", err)
-		return nil
-	}
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		slog.Warn("could not prepare workspace config hints", "error", err)
+		slog.Warn("could not prepare workspace settings hints", "error", err)
 		return nil
 	}
 
@@ -49,7 +45,7 @@ func (s *workspaceSchema) collectWorkspaceConfigHints(
 
 		constructorHints, err := introspectConstructorArgs(ctx, srv, ref)
 		if err != nil {
-			slog.Warn("could not introspect constructor args for workspace config hints",
+			slog.Warn("could not introspect constructor args for workspace settings hints",
 				"module", name,
 				"ref", ref,
 				"error", err,
@@ -65,6 +61,72 @@ func (s *workspaceSchema) collectWorkspaceConfigHints(
 		return nil
 	}
 	return hints
+}
+
+func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
+	ctx context.Context,
+	ws *core.Workspace,
+	cfg *workspace.Config,
+	dir dagql.ObjectResult[*core.Directory],
+) map[string][]workspace.ConstructorArgHint {
+	if cfg == nil || len(cfg.Modules) == 0 {
+		return nil
+	}
+
+	ctx, srv, err := workspaceSettingsHintIntrospectionContext(ctx, ws)
+	if err != nil {
+		slog.Warn("could not prepare workspace settings hints", "error", err)
+		return nil
+	}
+
+	names := make([]string, 0, len(cfg.Modules))
+	for name := range cfg.Modules {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	hints := make(map[string][]workspace.ConstructorArgHint, len(cfg.Modules))
+	for _, name := range names {
+		entry, ok := cfg.Modules[name]
+		if !ok || entry.Source == "" {
+			continue
+		}
+
+		constructorHints, err := introspectConfiguredModuleArgs(ctx, srv, dir, entry.Source)
+		if err != nil {
+			slog.Warn("could not introspect constructor args for workspace settings hints",
+				"module", name,
+				"source", entry.Source,
+				"error", err,
+			)
+			continue
+		}
+		if len(constructorHints) > 0 {
+			hints[name] = constructorHints
+		}
+	}
+
+	if len(hints) == 0 {
+		return nil
+	}
+	return hints
+}
+
+func workspaceSettingsHintIntrospectionContext(
+	ctx context.Context,
+	ws *core.Workspace,
+) (context.Context, *dagql.Server, error) {
+	ctx, err := withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return ctx, srv, nil
 }
 
 func introspectConstructorArgs(
@@ -86,16 +148,65 @@ func introspectConstructorArgs(
 		return nil, fmt.Errorf("loading module: %w", err)
 	}
 
-	mainObj, ok := mod.Self().MainObject()
+	return constructorHintsFromModule(mod.Self()), nil
+}
+
+func introspectConfiguredModuleArgs(
+	ctx context.Context,
+	srv *dagql.Server,
+	dir dagql.ObjectResult[*core.Directory],
+	source string,
+) ([]workspace.ConstructorArgHint, error) {
+	resolvedSource := workspace.ResolveModuleEntrySource(workspace.LockDirName, source)
+	switch {
+	case filepath.IsAbs(resolvedSource):
+		return introspectConstructorArgs(ctx, srv, resolvedSource)
+	case resolvedSource != source:
+		return introspectConstructorArgsFromDirectory(ctx, srv, dir, resolvedSource)
+	default:
+		return introspectConstructorArgs(ctx, srv, source)
+	}
+}
+
+func introspectConstructorArgsFromDirectory(
+	ctx context.Context,
+	srv *dagql.Server,
+	dir dagql.ObjectResult[*core.Directory],
+	sourceRootPath string,
+) ([]workspace.ConstructorArgHint, error) {
+	sourceRootPath = path.Clean(filepath.ToSlash(sourceRootPath))
+	if sourceRootPath == "" {
+		sourceRootPath = "."
+	}
+
+	var mod dagql.ObjectResult[*core.Module]
+	if err := srv.Select(ctx, dir, &mod, dagql.Selector{
+		Field: "asModule",
+		Args: []dagql.NamedInput{
+			{Name: "sourceRootPath", Value: dagql.String(sourceRootPath)},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("loading module from directory: %w", err)
+	}
+
+	return constructorHintsFromModule(mod.Self()), nil
+}
+
+func constructorHintsFromModule(mod *core.Module) []workspace.ConstructorArgHint {
+	if mod == nil {
+		return nil
+	}
+
+	mainObj, ok := mod.MainObject()
 	if !ok || !mainObj.Constructor.Valid {
-		return nil, nil
+		return nil
 	}
 
 	hints := make([]workspace.ConstructorArgHint, 0, len(mainObj.Constructor.Value.Args))
 	for _, arg := range mainObj.Constructor.Value.Args {
 		hints = append(hints, buildHintFromArg(arg))
 	}
-	return hints, nil
+	return hints
 }
 
 var configurableObjectTypes = map[string]string{

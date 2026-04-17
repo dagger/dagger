@@ -145,6 +145,35 @@ type Myapp {
 		require.Contains(t, configOut, `# settings.password = "env://MY_SECRET" # Secret`)
 	})
 
+	t.Run("migrated main module hints load from migrated module layout", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		mainModuleSrc := filepath.Join("core", "integration", "testdata", "modules", "go", "defaults", "superconstructor")
+		toolchainSrc := filepath.Join("core", "integration", "testdata", "modules", "go", "defaults")
+		legacyConfig := `{
+  "name": "superconstructor",
+  "engineVersion": "v0.20.1",
+  "sdk": {"source": "go"},
+  "source": ".",
+  "toolchains": [
+    {"name": "defaults", "source": "./toolchain"}
+  ],
+  "disableDefaultFunctionCaching": true
+}`
+
+		ctr := legacyWorkspaceBase(t, c, legacyConfig, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithDirectory(".", c.Host().Directory(mainModuleSrc)).
+				WithDirectory("toolchain", c.Host().Directory(toolchainSrc)).
+				WithNewFile("dagger.json", legacyConfig)
+		}).With(daggerExec("migrate", "-y"))
+
+		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, `[modules.superconstructor]`)
+		require.Contains(t, configOut, `# settings.count = 42 # int`)
+		require.Contains(t, configOut, `# settings.password = "env://MY_SECRET" # Secret`)
+	})
+
 	t.Run("dot dagger source is pruned to workspace outputs", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := legacyWorkspaceBase(t, c, `{
