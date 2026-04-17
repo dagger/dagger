@@ -3,5 +3,5 @@ body: Toolchain customizations now support glob patterns and flexible casing for
 time: 2026-03-05T13:38:38.458227-05:00
 custom:
   Author: Geoff Wilson (@suprjinx)
-  Issue: "11804"
+  Issue: "11884"
   PR: "11906"
