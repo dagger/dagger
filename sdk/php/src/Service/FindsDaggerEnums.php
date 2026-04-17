@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dagger\Service;
 
+use Dagger\Exception\UnsupportedType;
 use Dagger\TypeDefKind;
 use Dagger\ValueObject;
 use ReflectionEnum;
@@ -48,7 +49,10 @@ final class FindsDaggerEnums
             }
             $reflEnum = new ReflectionEnum($fqn);
             if (!$reflEnum->isBacked()) {
-                continue;
+                throw new UnsupportedType(sprintf(
+                    'Enum %s must be a backed enum (string or int) to be used as a Dagger type.',
+                    $fqn,
+                ));
             }
             $result[] = ValueObject\DaggerEnum::fromReflection($reflEnum);
         }

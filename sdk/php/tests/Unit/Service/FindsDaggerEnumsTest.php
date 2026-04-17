@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Dagger\Tests\Unit\Service;
 
+use Dagger\Exception\UnsupportedType;
 use Dagger\Service\FindsDaggerEnums;
 use Dagger\Service\FindsDaggerObjects;
 use Dagger\Tests\Unit\Fixture\Enums\ObjectUsingEnum;
 use Dagger\Tests\Unit\Fixture\Enums\Priority;
 use Dagger\Tests\Unit\Fixture\Enums\PureEnum;
 use Dagger\Tests\Unit\Fixture\Enums\Status;
+use Dagger\ValueObject;
 use Dagger\ValueObject\DaggerEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
@@ -56,15 +58,29 @@ class FindsDaggerEnumsTest extends TestCase
     }
 
     #[Test]
-    public function itIgnoresPureEnums(): void
+    public function itThrowsOnPureEnum(): void
     {
-        // PureEnum has no backing type — it must be silently ignored.
-        $daggerObjects = (new FindsDaggerObjects())($this->fixtureDir);
-        $result = (new FindsDaggerEnums())($daggerObjects);
+        $pureEnumType = new ValueObject\Type(PureEnum::class);
+        $daggerObjects = [
+            new ValueObject\DaggerObject(
+                name: 'Fake',
+                description: '',
+                fields: [],
+                functions: [
+                    new ValueObject\DaggerFunction(
+                        name: 'fake',
+                        description: null,
+                        arguments: [new ValueObject\Argument('input', '', $pureEnumType)],
+                        returnType: $pureEnumType,
+                    ),
+                ],
+            ),
+        ];
 
-        $fqns = array_map(fn(DaggerEnum $e) => $e->name, $result);
+        $this->expectException(UnsupportedType::class);
+        $this->expectExceptionMessageMatches('/backed enum/');
 
-        self::assertNotContains(PureEnum::class, $fqns);
+        (new FindsDaggerEnums())($daggerObjects);
     }
 
     #[Test]
