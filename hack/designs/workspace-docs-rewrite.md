@@ -295,7 +295,7 @@ Everything else ships after merge.
 - Orphan cleanup: glossary, troubleshooting, best-practices, ide-setup, use-cases, faq, examples, custom-applications, pre-workspace API pages, container runtimes.
 
 **Still pending:**
-- **Workspace Configuration reference page** (`.dagger/config.toml` schema) — sidebar has a TODO placeholder.
+- **Workspace Configuration reference page** (`.dagger/config.toml` schema) — intentionally deferred. Tracked in `docs/TODO.md`.
 - **Flesh out Go / TypeScript / Python editions** — currently placeholders with IDE setup + recipes. Need full prose covering the Dang edition's section structure, with language-idiomatic snippets.
 - **Using Dagger verb pages** (checking, generating, shipping, running services) — exist but light; may need depth pass.
 - **"Upgrading to Workspaces" page** — stub exists; need to flesh out with command equivalence table and migration walkthrough.

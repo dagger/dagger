@@ -163,7 +163,6 @@ module.exports = {
           ],
         },
         "reference/configuration/modules",
-        // TODO: "reference/workspace-configuration" — .dagger/config.toml schema
         "reference/configuration/engine",
         "reference/configuration/cloud",
         "reference/configuration/cache",
