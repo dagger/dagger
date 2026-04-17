@@ -1,6 +1,6 @@
 import gc
-import warnings
 import uuid
+import warnings
 
 import anyio
 import pytest
