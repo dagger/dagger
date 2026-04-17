@@ -1,11 +1,13 @@
 package workspace
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"strings"
 	"unicode"
 
+	"github.com/creachadair/tomledit"
 	neontoml "github.com/neongreen/mono/lib/toml"
 )
 
@@ -66,7 +68,10 @@ func UpdateConfigBytesWithHints(
 		return nil, err
 	}
 
-	out := doc.Bytes()
+	out, err := pruneUnwantedEmptySections(doc.Bytes(), keepEmptyConfigSectionHeaders(cfg))
+	if err != nil {
+		return nil, err
+	}
 	if len(hints) == 0 {
 		return out, nil
 	}
@@ -201,6 +206,40 @@ func ensureEmptyEnvSections(doc *neontoml.Document, envs map[string]EnvOverlay) 
 	}
 
 	return nil
+}
+
+func keepEmptyConfigSectionHeaders(cfg *Config) map[string]bool {
+	keep := map[string]bool{}
+	for envName, env := range cfg.Env {
+		if len(env.Modules) > 0 {
+			continue
+		}
+		keep["[env."+formatConfigPathSegment(envName)+"]"] = true
+	}
+	return keep
+}
+
+func pruneUnwantedEmptySections(data []byte, keepEmptySections map[string]bool) ([]byte, error) {
+	doc, err := tomledit.Parse(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse rewritten config document: %w", err)
+	}
+
+	sections := doc.Sections[:0]
+	for _, section := range doc.Sections {
+		if len(section.Items) == 0 && !keepEmptySections[section.Heading.String()] {
+			continue
+		}
+		sections = append(sections, section)
+	}
+	doc.Sections = sections
+
+	var buf bytes.Buffer
+	var formatter tomledit.Formatter
+	if err := formatter.Format(&buf, doc); err != nil {
+		return nil, fmt.Errorf("format pruned config document: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 func insertWorkspaceSettingHintComments(data []byte, cfg *Config, hints map[string][]ConstructorArgHint) []byte {

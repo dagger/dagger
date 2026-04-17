@@ -262,6 +262,30 @@ greeting = "hello"
 		require.Contains(t, out, "count = 42")
 		require.NotContains(t, out, "[modules]\n\n  [modules.greeter]")
 	})
+
+	t.Run("preserves comments across env setting writes", func(t *testing.T) {
+		t.Parallel()
+
+		data := []byte(`# top comment
+[modules.greeter]
+source = "modules/greeter"
+
+# env comment
+[env.ci.modules.greeter.settings]
+# region comment
+region = "us-west-2"
+`)
+
+		updated, err := WriteConfigValue(data, "env.ci.modules.greeter.settings.region", "us-east-1")
+		require.NoError(t, err)
+
+		out := string(updated)
+		require.Contains(t, out, "# top comment")
+		require.Contains(t, out, "# env comment")
+		require.Contains(t, out, "# region comment")
+		require.Contains(t, out, "[env.ci.modules.greeter.settings]")
+		require.Contains(t, out, `region = "us-east-1"`)
+	})
 }
 
 func TestUpdateConfigBytes(t *testing.T) {
@@ -340,6 +364,38 @@ source = "modules/greeter"
 		require.Contains(t, out, "[modules.greeter.settings]")
 		require.Contains(t, out, "# greeting = \"hello\" # string")
 		require.NotContains(t, out, "# settings.greeting = \"hello\" # string")
+	})
+
+	t.Run("preserves comments across env removal", func(t *testing.T) {
+		t.Parallel()
+
+		existing := []byte(`# Dagger workspace configuration
+[modules.greeter]
+source = "modules/greeter"
+
+# keep dev
+[env.dev]
+
+# remove ci
+[env.ci.modules.greeter.settings]
+region = "us-east-1"
+`)
+
+		cfg, err := ParseConfig(existing)
+		require.NoError(t, err)
+
+		err = RemoveEnv(cfg, "ci")
+		require.NoError(t, err)
+
+		updated, err := UpdateConfigBytes(existing, cfg)
+		require.NoError(t, err)
+
+		out := string(updated)
+		require.Contains(t, out, "# Dagger workspace configuration")
+		require.Contains(t, out, "# keep dev")
+		require.Contains(t, out, "[env.dev]")
+		require.NotContains(t, out, "[env.ci.modules.greeter.settings]")
+		require.NotContains(t, out, `region = "us-east-1"`)
 	})
 }
 
