@@ -44,7 +44,7 @@ fi
 # many systems default to 1024 which is far too low
 ulimit -n 1048576 || echo "cannot increase open FDs with ulimit, ignoring"
 
-exec {{.EngineBin}} --config {{.EngineConfig}} "$@"
+exec tini -- {{.EngineBin}} --config {{.EngineConfig}} "$@"
 `
 
 const engineConfigTmpl = `
