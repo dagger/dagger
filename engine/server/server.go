@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -534,7 +533,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			slog.Warn("failed to read secret salt", "error", err)
 		}
 		srv.secretSalt = make([]byte, 32)
-		_, err = cryptorand.Read(srv.secretSalt)
+		_, err = rand.Read(srv.secretSalt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read secret salt rand bytes: %w", err)
 		}

@@ -12,7 +12,6 @@ import (
 	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/contenthash"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -69,7 +68,7 @@ func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir
 		if !ok {
 			return "", fmt.Errorf("content hash metadata: unexpected ref type %T", ref)
 		}
-		md := contenthash.CacheRefMetadata{RefMetadata: mdRef}
+		md := bkcontenthash.CacheRefMetadata{RefMetadata: mdRef}
 
 		if subdir == "/" {
 			// content hashes for the root of dirs are saved in the metadata of the ref (both below

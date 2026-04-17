@@ -29,7 +29,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
-	"github.com/dagger/dagger/engine/contenthash"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -492,7 +491,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 	// If we have already created a cache ref with the same content hash, use that instead of copying
 	// another equivalent one.
-	sis, err := contenthash.SearchContentHash(ctx, cacheManager, dgst)
+	sis, err := bkcontenthash.SearchContentHash(ctx, cacheManager, dgst)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to search content hash: %w", err)
 	}
@@ -576,7 +575,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 		return nil, "", fmt.Errorf("failed to set cache context: %w", err)
 	}
 
-	if err := (contenthash.CacheRefMetadata{RefMetadata: finalMD}).SetContentHashKey(dgst); err != nil {
+	if err := (bkcontenthash.CacheRefMetadata{RefMetadata: finalMD}).SetContentHashKey(dgst); err != nil {
 		return nil, "", fmt.Errorf("failed to set content hash key: %w", err)
 	}
 	if err := finalMD.SetDescription(fmt.Sprintf("local dir %s (include: %v) (exclude %v)", local.subdir, local.includes, local.excludes)); err != nil {
