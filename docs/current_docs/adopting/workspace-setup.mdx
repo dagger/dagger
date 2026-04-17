@@ -6,41 +6,33 @@ description: "Add a Dagger workspace to your project"
 
 # Workspace Setup
 
-A Dagger workspace is a directory where Dagger stores its configuration and installed modules. Setting one up takes three steps.
+You've seen Dagger work on [hello-dagger](/quickstart). Now set it up on your own project.
 
-## 1. Choose where to initialize
+## Get started
 
-A workspace lives in a `.dagger/` directory. You need to decide where that directory goes.
-
-**For most projects, initialize at the repository root.** This matches how developers and CI systems expect to invoke checks — from the top of the repo — and makes a single workspace cover the whole codebase.
-
-**Initialize in a subdirectory when:**
-- You have a monorepo with independent components that ship separately
-- A specific subproject needs its own toolchain isolated from the rest
-- You're experimenting and don't want to commit a workspace at the root yet
-
-A repository can contain multiple workspaces. Dagger finds the nearest one by walking up from your current directory.
-
-## 2. Initialize the workspace
-
-From the directory you chose:
-
-```shell
-dagger init
-```
-
-This creates `.dagger/config.toml` — the workspace configuration file. Commit it to your repository so everyone uses the same setup.
-
-## 3. Install modules
-
-Modules are how you add functionality to a workspace. Start with the [setup module](https://github.com/dagger/setup), which inspects your project and walks you through adopting Dagger interactively:
+From the root of your repository:
 
 ```shell
 dagger install github.com/dagger/setup
 dagger check
 ```
 
-The setup module suggests modules to install based on what it finds in your project. You can also install modules directly:
+`dagger install` creates a workspace (`.dagger/config.toml`) and adds the [setup module](https://github.com/dagger/setup). `dagger check` runs it — and the setup module inspects your project, then reports what it finds as failing checks. Each failing check tells you what to do next.
+
+## The feedback loop
+
+Install what the setup module suggests, then run `dagger check` again:
+
+```shell
+dagger install github.com/dagger/eslint
+dagger check
+```
+
+The check that suggested ESLint turns green. New suggestions may appear for other tools the setup module detects. Repeat until you're happy with your coverage — you don't have to install everything at once.
+
+## Manual setup
+
+If you already know which modules you want, skip the setup module and install them directly:
 
 ```shell
 dagger install github.com/dagger/eslint
@@ -50,8 +42,16 @@ dagger install github.com/dagger/prettier
 
 Browse available modules on the [Daggerverse](https://daggerverse.dev).
 
+## Multiple workspaces
+
+By default, your workspace covers the entire repository from the root. This is the right choice for most projects — it matches how developers and CI systems invoke Dagger.
+
+The only reason to create a workspace in a subdirectory is organizational: different teams own different parts of the repo and need independent Dagger configurations. If that's your situation, run `dagger install` from the subdirectory instead of the root. Dagger finds the nearest workspace by walking up from your current directory.
+
+Don't split workspaces for technical reasons (different languages, different build tools). A single workspace handles all of that — each module covers its own scope.
+
 ## What's next
 
-- Add `dagger check` to your CI pipeline — it's a [single line](/using-dagger/checking#in-ci)
-- Configure [secrets](/adopting/secrets) if your workflows need credentials
-- Set up [Dagger Cloud](https://dagger.cloud) with `dagger login` for traces and Cloud Checks
+- **Add to CI** — `dagger check` is a [single line](/using-dagger/checking#in-ci) in any CI provider
+- **Connect Dagger Cloud** — `dagger login` gives you traces for every run and unlocks [Cloud Checks](/adopting/triggers)
+- **Manage secrets** — if your checks need credentials, see [Secrets](/adopting/secrets)

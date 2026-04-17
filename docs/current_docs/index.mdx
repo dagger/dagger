@@ -1,29 +1,26 @@
 ---
 title: "Overview"
-description: "Dagger is a platform for automating software delivery. It can build, test, and ship any codebase, reliably and at scale."
+description: "Dagger is a CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale."
 slug: "/"
 ---
 
-# What is Dagger?
+# Dagger
 
-Dagger is a platform for automating software delivery. It can build, test and ship any codebase, reliably and at scale.
-
-Dagger runs locally, in your CI server, or directly in the cloud.
+A CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale.
 
 ## Why Dagger?
 
-**Programmable.** Write delivery workflows in code, not YAML. SDKs for Go, Python, TypeScript, PHP, and more.
+**Programmable.** CI has been stuck on shell scripts and proprietary YAML for too long. Dagger pipelines are real code: Go, Python, TypeScript, or 5 other languages. Types, tests, abstractions, and your editor — not a textarea in a browser.
 
-**Local-first.** Runs anywhere with a container runtime. Your laptop, CI server, or cloud infrastructure — same behavior everywhere.
+**Local-first.** CI shouldn't start at `git push`. Run your full pipeline locally — same containers, same result — before you commit. Your laptop, an AI sandbox, a CI server, or dedicated cloud infrastructure. One engine, everywhere.
 
-**Repeatable.** Everything runs in containers. Every operation is cached by its inputs. Same inputs, same outputs.
+**Repeatable.** Every pipeline runs in containers. Dependencies are explicit and strictly typed. Caching is automatic with fine-grained control. A test result from your laptop and a test result from CI should be the same result. With Dagger, they are.
 
-**Observable.** Every operation emits OpenTelemetry traces. Debug in the terminal TUI or in a web view.
+**Observable.** CI logs are a wall of text. You shouldn't have to guess what broke. Dagger gives you step-level tracing across your entire pipeline. See what happened at every step, then drill down to the one that failed.
 
 ## Get started
 
-- [Install Dagger](./getting-started/installation.mdx)
-- [Quickstart](./getting-started/quickstart.mdx) — your first workspace in 5 minutes
+- [Quickstart](/quickstart) — your first workspace in 5 minutes
 - [Core Concepts](/core-concepts) — workspaces, modules, functions, checks
 
 ## Use Dagger
@@ -38,7 +35,7 @@ When pre-built modules don't cover your needs, [write your own](/extending). Sta
 
 ## Dagger Cloud
 
-[Dagger Cloud](https://dagger.cloud) adds managed infrastructure: run checks on every push with Cloud Checks, visualize traces across your organization, and manage modules centrally.
+[Dagger Cloud](https://dagger.cloud) adds managed infrastructure: run checks on every push with Cloud Checks, visualize traces, and manage modules centrally.
 
 ## Community
 
