@@ -388,7 +388,7 @@ func (cc *cacheContext) HandleChange(kind fsutil.ChangeKind, p string, fi os.Fil
 			for _, l := range links {
 				pp := convertKeyToPath(l)
 				cc.txn.Insert(l, cr)
-				d := path.Dir(string(pp))
+				d := path.Dir(pp)
 				if d == "/" {
 					d = ""
 				}

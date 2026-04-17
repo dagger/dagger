@@ -22,7 +22,9 @@ func setUnixOpt(path string, fi os.FileInfo, stat *fstypes.Stat) error {
 	if !fi.IsDir() {
 		if s.Mode&syscall.S_IFLNK == 0 && (s.Mode&syscall.S_IFBLK != 0 ||
 			s.Mode&syscall.S_IFCHR != 0) {
+			//nolint:unconvert // Rdev is uint64 on linux but int32 on darwin
 			stat.Devmajor = int64(unix.Major(uint64(s.Rdev)))
+			//nolint:unconvert // Rdev is uint64 on linux but int32 on darwin
 			stat.Devminor = int64(unix.Minor(uint64(s.Rdev)))
 		}
 	}

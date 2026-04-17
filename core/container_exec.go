@@ -887,7 +887,7 @@ func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error,
 		_ = cleanup()
 		return nil, nil, err
 	}
-	if err := os.Chmod(fp, os.FileMode(secret.secret.mode&0o777)); err != nil {
+	if err := os.Chmod(fp, secret.secret.mode&0o777); err != nil {
 		_ = cleanup()
 		return nil, nil, err
 	}
@@ -947,7 +947,7 @@ func (ssh *execSSHMountInstance) Mount() ([]ctrdmount.Mount, func() error, error
 		}
 		return nil, nil, err
 	}
-	if err := os.Chmod(ssh.sock, os.FileMode(ssh.ssh.mode&0o777)); err != nil {
+	if err := os.Chmod(ssh.sock, ssh.ssh.mode&0o777); err != nil {
 		if ssh.cleanup != nil {
 			_ = ssh.cleanup()
 		}

@@ -172,12 +172,12 @@ func sizeFromMetadata(
 
 		if dgst := md.getBlob(); dgst != "" {
 			added := make(map[digest.Digest]struct{})
-			info, err := cm.ContentStore.Info(ctx, digest.Digest(dgst))
+			info, err := cm.ContentStore.Info(ctx, dgst)
 			if err == nil {
 				usage.Size += info.Size
-				added[digest.Digest(dgst)] = struct{}{}
+				added[dgst] = struct{}{}
 			}
-			walkBlobVariantsOnly(ctx, cm.ContentStore, digest.Digest(dgst), func(desc ocispecs.Descriptor) bool {
+			walkBlobVariantsOnly(ctx, cm.ContentStore, dgst, func(desc ocispecs.Descriptor) bool {
 				if _, ok := added[desc.Digest]; !ok {
 					if info, err := cm.ContentStore.Info(ctx, desc.Digest); err == nil {
 						usage.Size += info.Size

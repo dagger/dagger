@@ -626,7 +626,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	}
 
 	handlers := []images.Handler{
-		images.HandlerFunc(annotateDistributionSourceHandler(r.contentStore, img.SourceAnnotations, imageChildrenHandler(img.Provider))),
+		annotateDistributionSourceHandler(r.contentStore, img.SourceAnnotations, imageChildrenHandler(img.Provider)),
 		images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
 			switch desc.MediaType {
 			case images.MediaTypeDockerSchema2Manifest, ocispecs.MediaTypeImageManifest,
