@@ -1456,6 +1456,16 @@
   status = 301
 
 [[redirects]]
+  from = "/core-concepts/artifacts"
+  to = "/core-concepts"
+  status = 301
+
+[[redirects]]
+  from = "/using-dagger/shipping"
+  to = "/core-concepts/functions"
+  status = 301
+
+[[redirects]]
   from = "/adopting/ci-integration"
   to = "/adopting/triggers"
   status = 301

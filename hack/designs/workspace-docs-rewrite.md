@@ -64,7 +64,6 @@ Developing Modules
 Core Concepts
 ├── Workspaces
 ├── Modules
-├── Artifacts
 ├── Functions
 ├── Checks
 └── Caching
@@ -117,8 +116,9 @@ Day-to-day usage organized by verbs — the actual things you do. Pure operation
 
 - **Checking your code** — `dagger check`. Local, cloud (`--cloud`), automated (Cloud Checks). Filtering, selecting.
 - **Generating code** — `dagger generate`. Changesets, review.
-- **Shipping your code** — `dagger ship`. Publishing, releasing, deploying.
 - **Running dev services** — `dagger up`. Service discovery, parallel startup.
+
+"Shipping your code" was originally planned as a fourth verb (`dagger ship`) but the page was killed; the command isn't shipping yet and a coming-soon stub with no content wasn't earning its spot in the sidebar. Revisit when `dagger ship` lands.
 
 Dagger Cloud is not a separate section — it's a capability woven into each verb (local → cloud → automated).
 
@@ -295,8 +295,9 @@ Everything else ships after merge.
 
 **Still pending:**
 - **Workspace Configuration reference page** (`.dagger/config.toml` schema) — intentionally deferred. Tracked in `docs/TODO.md`.
+- **Artifacts core concept page** — deferred to the upcoming artifacts branch. The page existed but was thin and was killed rather than shipped half-baked. The Dang edition still teaches artifacts as a design frame, and the artifacts branch will reintroduce the dedicated concept page.
 - **Flesh out Go / TypeScript / Python editions** — currently placeholders with IDE setup + recipes. Need full prose covering the Dang edition's section structure, with language-idiomatic snippets.
-- **Using Dagger verb pages** (checking, generating, shipping, running services) — exist but light; may need depth pass.
+- **Using Dagger verb pages** (checking, generating, running services) — exist but light; may need depth pass. The "shipping" verb page was removed pending the `dagger ship` command landing.
 - **"Upgrading to Workspaces" page** — stub exists; need to flesh out with command equivalence table and migration walkthrough.
 - Edition builder tool — **abandoned**. Editions are now hand-written per language.
 - Agent skills (setup-ci, use-dagger, write-module).

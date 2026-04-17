@@ -72,7 +72,6 @@ module.exports = {
       items: [
         "using-dagger/checking",
         "using-dagger/generating",
-        "using-dagger/shipping",
         "using-dagger/services",
       ],
     },
@@ -131,7 +130,6 @@ module.exports = {
       items: [
         "introduction/core-concepts/workspaces",
         "introduction/core-concepts/modules",
-        "introduction/core-concepts/artifacts",
         "introduction/core-concepts/functions",
         "introduction/core-concepts/checks",
         "introduction/core-concepts/caching",
