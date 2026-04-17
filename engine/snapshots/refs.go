@@ -697,7 +697,7 @@ func (sr *mutableRef) commit(ctx context.Context) (_ *immutableRef, rerr error) 
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
 	rec, ok := sr.cm.records[sr.snapshotID]
-	if !ok || !rec.mutable || rec.locked == false {
+	if !ok || !rec.mutable || !rec.locked {
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
 

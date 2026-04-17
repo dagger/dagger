@@ -159,13 +159,9 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	if err != nil {
 		return nil, fmt.Errorf("load dependency schema: %w", err)
 	}
-	val, err := dag.Load(ctx, id)
+	objVal, err := dag.Load(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("load interface implementation: %w", err)
-	}
-	objVal, ok := val.(dagql.AnyObjectResult)
-	if !ok {
-		return nil, fmt.Errorf("load interface implementation: unexpected result %T", val)
 	}
 
 	typeName := objVal.ObjectType().TypeName()

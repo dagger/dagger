@@ -2223,12 +2223,12 @@ func (*EnumMemberTypeDef) TypeDescription() string {
 
 var _ dagql.HasDependencyResults = (*EnumMemberTypeDef)(nil)
 
-func (member *EnumMemberTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (enumValue *EnumMemberTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	_ = ctx
-	if member == nil {
+	if enumValue == nil {
 		return nil, fmt.Errorf("encode persisted enum member type def: nil enum member type def")
 	}
-	payload, err := encodePersistedEnumMemberTypeDef(cache, member)
+	payload, err := encodePersistedEnumMemberTypeDef(cache, enumValue)
 	if err != nil {
 		return nil, err
 	}
@@ -2243,16 +2243,16 @@ func (*EnumMemberTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.
 	return decodePersistedEnumMemberTypeDef(ctx, dag, &persisted)
 }
 
-func (member *EnumMemberTypeDef) AttachDependencyResults(
+func (enumValue *EnumMemberTypeDef) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if member == nil || !member.SourceMap.Valid || member.SourceMap.Value.Self() == nil {
+	if enumValue == nil || !enumValue.SourceMap.Valid || enumValue.SourceMap.Value.Self() == nil {
 		return nil, nil
 	}
 
-	attached, err := attach(member.SourceMap.Value)
+	attached, err := attach(enumValue.SourceMap.Value)
 	if err != nil {
 		return nil, fmt.Errorf("attach enum member source map: %w", err)
 	}
@@ -2260,7 +2260,7 @@ func (member *EnumMemberTypeDef) AttachDependencyResults(
 	if !ok {
 		return nil, fmt.Errorf("attach enum member source map: unexpected result %T", attached)
 	}
-	member.SourceMap = dagql.NonNull(typed)
+	enumValue.SourceMap = dagql.NonNull(typed)
 	return []dagql.AnyResult{typed}, nil
 }
 

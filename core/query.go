@@ -261,8 +261,7 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	deps := defaultDeps
 	seenModuleResultIDs := map[uint64]struct{}{}
 
-	var appendModule func(dagql.ObjectResult[*Module]) error
-	appendModule = func(inst dagql.ObjectResult[*Module]) error {
+	appendModule := func(inst dagql.ObjectResult[*Module]) error {
 		if inst.Self() == nil {
 			return nil
 		}

@@ -1015,8 +1015,7 @@ func (container *Container) AttachDependencyResults(
 	owned := make([]dagql.AnyResult, 0, len(container.Mounts)+len(container.Secrets)+len(container.Sockets))
 	for i := range container.Mounts {
 		mnt := &container.Mounts[i]
-		switch {
-		case mnt.CacheSource != nil && mnt.CacheSource.Volume.Self() != nil:
+		if mnt.CacheSource != nil && mnt.CacheSource.Volume.Self() != nil {
 			attached, err := attach(mnt.CacheSource.Volume)
 			if err != nil {
 				return nil, fmt.Errorf("attach container cache mount %q: %w", mnt.Target, err)

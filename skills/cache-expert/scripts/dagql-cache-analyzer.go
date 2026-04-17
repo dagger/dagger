@@ -237,7 +237,7 @@ func (a *analyzer) countArray(dec *json.Decoder, dst *int) error {
 		if err := dec.Decode(&discard); err != nil {
 			return err
 		}
-		*dst = *dst + 1
+		*dst++
 		return nil
 	})
 }

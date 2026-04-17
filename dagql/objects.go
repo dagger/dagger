@@ -549,7 +549,7 @@ func (r ObjectResult[T]) call(
 	view := req.View
 	field, ok := r.class.Field(fieldName, view)
 	if !ok {
-		return nil, fmt.Errorf("Call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
+		return nil, fmt.Errorf("call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
 	}
 	if field.Spec.BuiltinLoadByIDFunc != nil {
 		return field.Spec.BuiltinLoadByIDFunc(ctx, r, inputArgs)
