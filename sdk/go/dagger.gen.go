@@ -5637,6 +5637,8 @@ func (r *Env) Check(name string) *Check {
 type EnvChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// When true, only return annotated check functions; exclude generate-as-checks
+	NoGenerate bool
 }
 
 // Return all checks defined by the installed modules
@@ -5648,6 +5650,10 @@ func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `noGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
+			q = q.Arg("noGenerate", opts[i].NoGenerate)
 		}
 	}
 
@@ -10579,6 +10585,8 @@ func (r *Module) Check(name string) *Check {
 type ModuleChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// When true, only return annotated check functions; exclude generate-as-checks
+	NoGenerate bool
 }
 
 // Return all checks defined by the module
@@ -10590,6 +10598,10 @@ func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `noGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
+			q = q.Arg("noGenerate", opts[i].NoGenerate)
 		}
 	}
 
