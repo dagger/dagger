@@ -10,7 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -66,14 +66,14 @@ func (sdk *dangSDK) Runtime(
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (core.ModuleRuntime, error) {
 	return &DangRuntime{
-		root:      sdk.root,
+		deps:      deps,
 		modSource: source,
 	}, nil
 }
 
 // DangRuntime is a native Dang runtime that doesn't use containers
 type DangRuntime struct {
-	root      *core.Query
+	deps      *core.SchemaBuilder
 	modSource dagql.ObjectResult[*core.ModuleSource]
 }
 
@@ -84,7 +84,7 @@ func (r *DangRuntime) AsContainer() (dagql.ObjectResult[*core.Container], bool) 
 
 func (r *DangRuntime) Call(
 	ctx context.Context,
-	execMD *buildkit.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	fnCall *core.FunctionCall,
 ) (res []byte, clientID string, rerr error) {
 	defer func() {
@@ -102,44 +102,28 @@ func (r *DangRuntime) Call(
 	execMD.SessionID = clientMetadata.SessionID
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
 
-	if execMD.CallID == nil {
-		execMD.CallID = dagql.CurrentID(ctx)
-	}
 	if execMD.ExecID == "" {
 		execMD.ExecID = identity.NewID()
 	}
-
 	if execMD.SecretToken == "" {
 		execMD.SecretToken = identity.NewID()
 	}
-	execMD.ClientStableID = identity.NewID()
-
-	if execMD.EncodedModuleID == "" {
-		mod := fnCall.Module
-		if mod.ResultID == nil {
-			return nil, "", fmt.Errorf("current module has no instance ID")
-		}
-		execMD.EncodedModuleID, err = mod.ResultID.Encode()
-		if err != nil {
-			return nil, "", err
-		}
+	if execMD.ClientStableID == "" {
+		execMD.ClientStableID = identity.NewID()
 	}
-
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
 	}
 
-	// Get schema introspection file for the op's serialized state.
-	schemaJSONFile, err := fnCall.Module.Deps.SchemaIntrospectionJSONFile(ctx, nil)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("current query: %w", err)
+	}
+	schemaJSONFile, err := r.deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("get schema introspection: %w", err)
 	}
-
-	// All calls (init and function calls) go through DangEvalOp for
-	// persistent caching through buildkit. On cache hit, the Dang
-	// evaluation is skipped entirely.
-	callID := dagql.CurrentID(ctx)
-	outputBytes, err := solveDangEval(ctx, callID, execMD.CacheMixin, r.modSource, schemaJSONFile, execMD, fnCall)
+	outputBytes, err := r.eval(ctx, query, schemaJSONFile, execMD, fnCall)
 	if err != nil {
 		return nil, "", err
 	}

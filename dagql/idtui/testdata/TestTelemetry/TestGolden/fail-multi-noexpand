@@ -4,7 +4,7 @@ Expected stderr:
 ✔ load workspace: . X.Xs
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
+$ viztest: Viztest! X.Xs CACHED
 ✘ .failMulti: Void X.Xs ERROR
 
 ┇ roll-up pseudo-check span › sub-thing 1 ›

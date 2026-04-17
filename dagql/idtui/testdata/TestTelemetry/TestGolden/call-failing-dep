@@ -11,9 +11,9 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
+$ viztest: Viztest! X.Xs CACHED
 ✘ .callFailingDep: Void X.Xs ERROR
-├╴✔ dep: Dep! X.Xs
+├╴$ dep: Dep! X.Xs CACHED
 ╰╴✘ .failingFunction: Void X.Xs ERROR
   ! this function always fails
 

@@ -3,14 +3,13 @@ package schema
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/opencontainers/go-digest"
 )
 
 var _ SchemaResolvers = &httpSchema{}
@@ -19,32 +18,60 @@ type httpSchema struct{}
 
 func (s *httpSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("http", s.http, dagql.CachePerClient).
+		dagql.NodeFunc("http", s.http).
+			WithInput(dagql.PerSessionInput).
 			Doc(`Returns a file containing an http remote url content.`).
 			Args(
 				dagql.Arg("url").Doc(`HTTP url to get the content from (e.g., "https://docs.dagger.io").`),
 				dagql.Arg("name").Doc(`File name to use for the file. Defaults to the last part of the URL.`),
 				dagql.Arg("permissions").Doc(`Permissions to set on the file.`),
+				dagql.Arg("checksum").Doc(`Expected digest of the downloaded content (e.g., "sha256:...").`),
 				dagql.Arg("authHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the URL is fetched.`),
+			),
+		dagql.NodeFunc("_httpState", s.httpState).
+			IsPersistable().
+			Doc(`(Internal-only) Returns a persistent HTTP state object.`).
+			Args(
+				dagql.Arg("url").Doc(`HTTP url to get the content from.`),
+			),
+	}.Install(srv)
+
+	dagql.Fields[*core.HTTPState]{
+		dagql.NodeFunc("_resolve", s.httpStateResolve).
+			IsPersistable().
+			WithInput(dagql.PerSessionInput).
+			Doc(`(Internal-only) Resolve the HTTP state once per session and return the resulting file.`).
+			Args(
+				dagql.Arg("checksum").Doc(`Expected digest of the downloaded content.`),
+				dagql.Arg("permissions").Doc(`Permissions to set on the file.`),
+				dagql.Arg("name").Doc(`Resolved file name to use for the file.`),
 			),
 	}.Install(srv)
 }
 
 type httpArgs struct {
 	URL                     string
-	Name                    *string
-	Permissions             *int
+	Name                    dagql.Optional[dagql.String]
+	Permissions             dagql.Optional[dagql.Int]
+	Checksum                dagql.Optional[dagql.String]
 	AuthHeader              dagql.Optional[core.SecretID]
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
-
-	FSDagOpInternalArgs
-	RefID string `internal:"true" default:"" name:"refID"`
 }
 
-func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args httpArgs) (string, error) {
-	if args.Name != nil {
-		return *args.Name, nil
+type httpStateArgs struct {
+	URL string
+}
+
+type httpStateResolveArgs struct {
+	Checksum    dagql.Optional[dagql.String]
+	Permissions int
+	Name        string
+}
+
+func (s *httpSchema) httpPath(args httpArgs) (string, error) {
+	if args.Name.Valid {
+		return string(args.Name.Value), nil
 	}
 
 	parsed, err := url.Parse(args.URL)
@@ -58,47 +85,99 @@ func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args http
 	return filename, nil
 }
 
-func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Query], args httpArgs) (inst dagql.ObjectResult[*core.File], rerr error) {
+func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Query], args httpArgs) (inst dagql.ObjectResult[*core.File], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
-	if args.InDagOp() {
-		cache := parent.Self().BuildkitCache()
-		snap, err := cache.Get(ctx, args.RefID, nil)
-		if err != nil {
-			return inst, err
-		}
-		snap = snap.Clone()
-
-		f := core.NewFile(nil, args.DagOpPath, parent.Self().Platform(), nil)
-		f.Result = snap
-		return dagql.NewObjectResultForCurrentID(ctx, srv, f)
-	}
-
-	filename, err := s.httpPath(ctx, parent.Self(), args)
+	filename, err := s.httpPath(args)
 	if err != nil {
 		return inst, err
 	}
-	permissions := 0600
-	if args.Permissions != nil {
-		permissions = *args.Permissions
+	permissions := int(args.Permissions.GetOr(dagql.Int(0600)))
+
+	if args.AuthHeader.Valid || args.ExperimentalServiceHost.Valid {
+		authHeader, detach, err := s.resolveHTTPSessionContext(ctx, parent.Self(), srv, args)
+		if err != nil {
+			return inst, err
+		}
+		if detach != nil {
+			defer detach()
+		}
+
+		fetched, err := core.FetchHTTPFile(ctx, parent.Self(), core.FetchHTTPRequestOpts{
+			URL:                 args.URL,
+			Filename:            filename,
+			Permissions:         permissions,
+			Checksum:            args.Checksum,
+			AuthorizationHeader: authHeader,
+		})
+		if err != nil {
+			return inst, err
+		}
+		return s.newHTTPFileResult(ctx, srv, fetched, permissions, args.Checksum)
 	}
 
-	var authHeader string
+	if err := srv.Select(ctx, parent, &inst, dagql.Selector{
+		Field: "_httpState",
+		Args: []dagql.NamedInput{
+			{Name: "url", Value: dagql.String(args.URL)},
+		},
+	}, dagql.Selector{
+		Field: "_resolve",
+		Args: []dagql.NamedInput{
+			{Name: "checksum", Value: args.Checksum},
+			{Name: "permissions", Value: dagql.Int(permissions)},
+			{Name: "name", Value: dagql.String(filename)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+func (s *httpSchema) httpState(ctx context.Context, parent dagql.ObjectResult[*core.Query], args httpStateArgs) (*core.HTTPState, error) {
+	return &core.HTTPState{URL: args.URL}, nil
+}
+
+func (s *httpSchema) httpStateResolve(ctx context.Context, parent dagql.ObjectResult[*core.HTTPState], args httpStateResolveArgs) (inst dagql.ObjectResult[*core.File], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("engine cache: %w", err)
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("current query: %w", err)
+	}
+	fetched, err := parent.Self().Resolve(ctx, query, args.Checksum, args.Permissions, args.Name)
+	if err != nil {
+		return inst, err
+	}
+	if err := cache.SyncResultSnapshotOwnerLeases(ctx, parent); err != nil {
+		return inst, fmt.Errorf("sync http state snapshot owner leases: %w", err)
+	}
+	return s.newHTTPFileResult(ctx, srv, fetched, args.Permissions, args.Checksum)
+}
+
+func (s *httpSchema) resolveHTTPSessionContext(
+	ctx context.Context,
+	query *core.Query,
+	srv *dagql.Server,
+	args httpArgs,
+) (authHeader string, detach func(), err error) {
 	if args.AuthHeader.Valid {
 		secret, err := args.AuthHeader.Value.Load(ctx, srv)
 		if err != nil {
-			return inst, err
+			return "", nil, err
 		}
-		secretStore, err := parent.Self().Secrets(ctx)
+		authHeaderRaw, err := secret.Self().Plaintext(ctx)
 		if err != nil {
-			return inst, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		authHeaderRaw, err := secretStore.GetSecretPlaintext(ctx, core.SecretIDDigest(secret.ID()))
-		if err != nil {
-			return inst, err
+			return "", nil, err
 		}
 		authHeader = string(authHeaderRaw)
 	}
@@ -106,73 +185,68 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	if args.ExperimentalServiceHost.Valid {
 		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, srv)
 		if err != nil {
-			return inst, err
+			return "", nil, err
 		}
-		host, err := svc.Self().Hostname(ctx, svc.ID())
+		svcDig, err := svc.ContentPreferredDigest(ctx)
 		if err != nil {
-			return inst, err
+			return "", nil, err
+		}
+		host, err := svc.Self().Hostname(ctx, svcDig)
+		if err != nil {
+			return "", nil, err
 		}
 		binding := core.ServiceBinding{
 			Service:  svc,
 			Hostname: host,
 		}
-
-		svcs, err := parent.Self().Services(ctx)
+		svcs, err := query.Services(ctx)
 		if err != nil {
-			return inst, fmt.Errorf("failed to get services: %w", err)
+			return "", nil, fmt.Errorf("failed to get services: %w", err)
 		}
-		detach, _, err := svcs.StartBindings(ctx, []core.ServiceBinding{binding})
+		detach, _, err = svcs.StartBindings(ctx, []core.ServiceBinding{binding})
 		if err != nil {
-			return inst, err
+			return "", nil, err
 		}
-		defer detach()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, args.URL, nil)
+	return authHeader, detach, nil
+}
+
+func (s *httpSchema) newHTTPFileResult(
+	ctx context.Context,
+	srv *dagql.Server,
+	fetched *core.HTTPFetchResult,
+	permissions int,
+	checksum dagql.Optional[dagql.String],
+) (inst dagql.ObjectResult[*core.File], err error) {
+	filePath, _ := fetched.File.File.Peek()
+	outputDigest := hashutil.HashStrings(
+		filePath,
+		fmt.Sprint(permissions),
+		fetched.ContentDigest.String(),
+		fetched.LastModified,
+		string(checksum.GetOr(dagql.String(""))),
+	)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, fetched.File)
 	if err != nil {
+		_ = fetched.File.OnRelease(context.WithoutCancel(ctx))
 		return inst, err
 	}
-	if authHeader != "" {
-		req.Header.Add("Authorization", authHeader)
-	}
-	snap, dgst, resp, err := core.DoHTTPRequest(ctx, parent.Self(), req, filename, permissions)
+	inst, err = inst.WithContentDigest(ctx, outputDigest)
 	if err != nil {
-		return inst, err
-	}
-	defer resp.Body.Close()
-	defer snap.Release(context.WithoutCancel(ctx))
-
-	// also mixin the checksum
-	newID := dagql.CurrentID(ctx).
-		WithArgument(call.NewArgument(
-			"refID",
-			call.NewLiteralString(snap.ID()),
-			false,
-		)).
-		WithDigest(hashutil.HashStrings(
-			filename,
-			fmt.Sprint(permissions),
-			dgst.String(),
-			resp.Header.Get("Last-Modified"),
-		))
-	ctxDagOp := dagql.ContextWithID(ctx, newID)
-
-	file, effectID, err := DagOpFile(ctxDagOp, srv, parent.Self(), args, s.http, WithPathFn(s.httpPath))
-	if err != nil {
-		return inst, err
-	}
-
-	// evaluate now! so that the snapshot definitely lives long enough
-	if _, err := file.Evaluate(ctx); err != nil {
-		return inst, err
-	}
-
-	if effectID != "" {
-		newID = newID.AppendEffectIDs(effectID)
-	}
-	inst, err = dagql.NewObjectResultForID(file, srv, newID)
-	if err != nil {
+		_ = fetched.File.OnRelease(context.WithoutCancel(ctx))
 		return inst, err
 	}
 	return inst, nil
+}
+
+func parseChecksumArg(checksum *string) (digest.Digest, error) {
+	if checksum == nil || *checksum == "" {
+		return "", nil
+	}
+	parsed, err := digest.Parse(*checksum)
+	if err != nil {
+		return "", fmt.Errorf("invalid checksum %q: %w", *checksum, err)
+	}
+	return parsed, nil
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type LLMTestQuery struct{}
@@ -30,12 +31,19 @@ func (mockSecret) Type() *ast.Type {
 	}
 }
 
+func llmTestContext() context.Context {
+	return engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID:  "llm-test-client",
+		SessionID: "llm-test-session",
+	})
+}
+
 func TestLlmConfig(t *testing.T) {
 	q := LLMTestQuery{}
 
-	baseCache, err := dagql.NewCache(context.Background(), "")
+	baseCache, err := dagql.NewCache(context.Background(), "", nil, nil)
 	assert.NoError(t, err)
-	srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
+	srv := newCoreDagqlServerForTest(t, q)
 
 	vars := map[string]string{
 		"file://.env":                    "",
@@ -69,7 +77,7 @@ func TestLlmConfig(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	ctx := context.Background()
+	ctx := dagql.ContextWithCache(llmTestContext(), baseCache)
 	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
 	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
@@ -125,9 +133,9 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := LLMTestQuery{}
 
-			baseCache, err := dagql.NewCache(context.Background(), "")
+			baseCache, err := dagql.NewCache(context.Background(), "", nil, nil)
 			assert.NoError(t, err)
-			srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
+			srv := newCoreDagqlServerForTest(t, q)
 			dagql.Fields[LLMTestQuery]{
 				dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 					URI string
@@ -145,7 +153,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 				}),
 			}.Install(srv)
 
-			ctx := context.Background()
+			ctx := dagql.ContextWithCache(llmTestContext(), baseCache)
 			r, err := NewLLMRouter(ctx, srv)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expected, r.OpenAIDisableStreaming)
@@ -156,9 +164,9 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 func TestLlmConfigEnvFile(t *testing.T) {
 	q := LLMTestQuery{}
 
-	baseCache, err := dagql.NewCache(context.Background(), "")
+	baseCache, err := dagql.NewCache(context.Background(), "", nil, nil)
 	assert.NoError(t, err)
-	srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
+	srv := newCoreDagqlServerForTest(t, q)
 	dagql.Fields[LLMTestQuery]{
 		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 			URI string
@@ -187,7 +195,7 @@ GEMINI_MODEL=gemini-model`, nil
 		}),
 	}.Install(srv)
 
-	ctx := context.Background()
+	ctx := dagql.ContextWithCache(llmTestContext(), baseCache)
 	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
 	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)

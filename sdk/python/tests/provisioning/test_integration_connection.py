@@ -1,5 +1,8 @@
+import gc
 import uuid
+import warnings
 
+import anyio
 import pytest
 
 import dagger
@@ -31,3 +34,23 @@ async def test_execute_timeout(alpine_image: str):
                 .with_exec(["sleep", "2"])
                 .stdout()
             )
+
+
+async def test_connection_close_does_not_warn_about_unclosed_stderr_pipe():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+
+        async with dagger.Connection(dagger.Config(retry=None)) as client:
+            await client.version()
+
+        for _ in range(3):
+            gc.collect()
+            await anyio.sleep(0.1)
+
+    leaked = [
+        warning
+        for warning in caught
+        if issubclass(warning.category, ResourceWarning)
+        and "unclosed file" in str(warning.message)
+    ]
+    assert leaked == []

@@ -98,7 +98,9 @@ defmodule Dagger.EnumTypeDef do
   @deprecated """
   use members instead
   """
-
+  @doc """
+  The members of the enum.
+  """
   @spec values(t()) :: {:ok, [Dagger.EnumValueTypeDef.t()]} | {:error, term()}
   def values(%__MODULE__{} = enum_type_def) do
     query_builder =

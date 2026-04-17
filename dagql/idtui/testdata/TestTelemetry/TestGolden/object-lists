@@ -15,16 +15,16 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
+$ viztest: Viztest! X.Xs CACHED
 ✔ .objectLists: String! X.Xs
 ┃ AAABBBCCC
-├╴✔ dep: Dep! X.Xs
+├╴$ dep: Dep! X.Xs CACHED
 ├╴✔ .getFiles: [File!]! X.Xs
-│ ├╴$ file(name: "a", contents: "AAA"): File! X.Xs CACHED
+│ ├╴✔ file(name: "a", contents: "AAA"): File! X.Xs
 │ │
-│ ├╴$ file(name: "b", contents: "BBB"): File! X.Xs CACHED
+│ ├╴✔ file(name: "b", contents: "BBB"): File! X.Xs
 │ │
-│ ╰╴$ file(name: "c", contents: "CCC"): File! X.Xs CACHED
+│ ╰╴✔ file(name: "c", contents: "CCC"): File! X.Xs
 │
 ╰╴✔ Dep.fileContents(files: [xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX]): String! X.Xs
   ┃ AAABBBCCC

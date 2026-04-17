@@ -32,10 +32,19 @@ defmodule Dagger.Client do
   @doc """
   Constructs a cache volume for a given cache key.
   """
-  @spec cache_volume(t(), String.t()) :: Dagger.CacheVolume.t()
-  def cache_volume(%__MODULE__{} = client, key) do
+  @spec cache_volume(t(), String.t(), [
+          {:source, Dagger.DirectoryID.t() | nil},
+          {:sharing, Dagger.CacheSharingMode.t() | nil},
+          {:owner, String.t() | nil}
+        ]) :: Dagger.CacheVolume.t()
+  def cache_volume(%__MODULE__{} = client, key, optional_args \\ []) do
     query_builder =
-      client.query_builder |> QB.select("cacheVolume") |> QB.put_arg("key", key)
+      client.query_builder
+      |> QB.select("cacheVolume")
+      |> QB.put_arg("key", key)
+      |> QB.maybe_put_arg("source", optional_args[:source])
+      |> QB.maybe_put_arg("sharing", optional_args[:sharing])
+      |> QB.maybe_put_arg("owner", optional_args[:owner])
 
     %Dagger.CacheVolume{
       query_builder: query_builder,
@@ -144,12 +153,15 @@ defmodule Dagger.Client do
   @doc """
   The TypeDef representations of the objects currently being served in the session.
   """
-  @spec current_type_defs(t(), [{:hide_core, boolean() | nil}]) ::
-          {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
+  @spec current_type_defs(t(), [
+          {:return_all_types, boolean() | nil},
+          {:hide_core, boolean() | nil}
+        ]) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
   def current_type_defs(%__MODULE__{} = client, optional_args \\ []) do
     query_builder =
       client.query_builder
       |> QB.select("currentTypeDefs")
+      |> QB.maybe_put_arg("returnAllTypes", optional_args[:return_all_types])
       |> QB.maybe_put_arg("hideCore", optional_args[:hide_core])
       |> QB.select("id")
 
@@ -377,6 +389,7 @@ defmodule Dagger.Client do
   @spec http(t(), String.t(), [
           {:name, String.t() | nil},
           {:permissions, integer() | nil},
+          {:checksum, String.t() | nil},
           {:auth_header, Dagger.SecretID.t() | nil},
           {:experimental_service_host, Dagger.ServiceID.t() | nil}
         ]) :: Dagger.File.t()
@@ -387,6 +400,7 @@ defmodule Dagger.Client do
       |> QB.put_arg("url", url)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+      |> QB.maybe_put_arg("checksum", optional_args[:checksum])
       |> QB.maybe_put_arg("authHeader", optional_args[:auth_header])
       |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
 
@@ -522,6 +536,21 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadCheckGroupFromID") |> QB.put_arg("id", id)
 
     %Dagger.CheckGroup{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a ClientFilesyncMirror from its ID.
+  """
+  @spec load_client_filesync_mirror_from_id(t(), Dagger.ClientFilesyncMirrorID.t()) ::
+          Dagger.ClientFilesyncMirror.t()
+  def load_client_filesync_mirror_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadClientFilesyncMirrorFromID") |> QB.put_arg("id", id)
+
+    %Dagger.ClientFilesyncMirror{
       query_builder: query_builder,
       client: client.client
     }
@@ -911,6 +940,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a HTTPState from its ID.
+  """
+  @spec load_http_state_from_id(t(), Dagger.HTTPStateID.t()) :: Dagger.HTTPState.t()
+  def load_http_state_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadHTTPStateFromID") |> QB.put_arg("id", id)
+
+    %Dagger.HTTPState{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a HealthcheckConfig from its ID.
   """
   @spec load_healthcheck_config_from_id(t(), Dagger.HealthcheckConfigID.t()) ::
@@ -1118,6 +1161,21 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadQueryFromID") |> QB.put_arg("id", id)
 
     %Dagger.Client{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a RemoteGitMirror from its ID.
+  """
+  @spec load_remote_git_mirror_from_id(t(), Dagger.RemoteGitMirrorID.t()) ::
+          Dagger.RemoteGitMirror.t()
+  def load_remote_git_mirror_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadRemoteGitMirrorFromID") |> QB.put_arg("id", id)
+
+    %Dagger.RemoteGitMirror{
       query_builder: query_builder,
       client: client.client
     }
