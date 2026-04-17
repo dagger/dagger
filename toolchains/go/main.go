@@ -490,18 +490,18 @@ func (p *Go) Modules(
 	return mods, nil
 }
 
-func (p *Go) TidyModule(ctx context.Context, mod string) (*dagger.Changeset, error) {
-	p, err := p.GenerateDaggerRuntime(ctx, mod)
+func (p *Go) TidyModule(ctx context.Context, module string) (*dagger.Changeset, error) {
+	p, err := p.GenerateDaggerRuntime(ctx, module)
 	if err != nil {
 		return nil, err
 	}
 	tidyModDir := p.Env(defaultPlatform).
-		WithWorkdir(mod).
+		WithWorkdir(module).
 		WithExec([]string{"go", "mod", "tidy"}).
 		Directory(".")
 	return p.Source.
-		WithFile(path.Join(mod, "/go.mod"), tidyModDir.File("go.mod")).
-		WithFile(path.Join(mod, "/go.sum"), tidyModDir.File("go.sum")).
+		WithFile(path.Join(module, "/go.mod"), tidyModDir.File("go.mod")).
+		WithFile(path.Join(module, "/go.sum"), tidyModDir.File("go.sum")).
 		Changes(p.Source), nil
 }
 
