@@ -275,7 +275,12 @@ func (WorkspaceCompatSuite) TestRequiredString(ctx context.Context, t *testctx.T
 }
 
 func (WorkspaceCompatSuite) TestArgName(ctx context.Context, t *testctx.T) {
-	t.Skip(`FIXME: test conversion between arg name and env var name (eg."FOO_BAR=hello" -> "fooBar=hello"`)
+	t.Fatal(`FIXME: implement compat env arg-name mapping coverage.
+
+Verify how .env keys map onto constructor or function argument names in compat
+mode, including camelCase, snake_case, and acronym-heavy names. This should
+pin down one explicit conversion policy rather than relying on incidental name
+matching.`)
 }
 
 func (WorkspaceCompatSuite) TestDependencies(ctx context.Context, t *testctx.T) {
@@ -465,7 +470,6 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 		WithNewFile("/foo/hello.txt", "hello there!").
 		WithEnvVariable("PASSWORD", "topsecret").
 		WithServiceBinding("www", c.Container().From("nginx").AsService())
-	// FIXME: call lookupPrefix()
 	outerEnv := c.EnvFile().
 		WithVariable("SUPERCONSTRUCTOR_DIR", "/foo").
 		WithVariable("SUPERCONSTRUCTOR_FILE", "/foo/hello.txt").
@@ -538,6 +542,14 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 			require.Equal(t, "hello.txt\n", out, "user default should be applied")
 		})
 	}
+}
+
+func (WorkspaceCompatSuite) TestCompatEnvPrefixLookupPolicy(ctx context.Context, t *testctx.T) {
+	t.Fatal(`FIXME: implement compat env prefix-lookup coverage.
+
+Exercise the same compat-backed module through inner .env, outer .env, dashed
+module names, and prefixed outer env keys. Verify one explicit rule for how the
+compat runtime derives the accepted env prefix for a module.`)
 }
 
 func (WorkspaceCompatSuite) TestCaching(ctx context.Context, t *testctx.T) {

@@ -336,6 +336,52 @@ func (WorkspaceSuite) TestWorkspaceModuleConfigPolicy(ctx context.Context, t *te
 	})
 }
 
+// TestWorkspaceModuleConfigSemantics is the planning scaffold for the
+// unresolved behavior in [modules.<name>.config] beyond the happy-path runtime
+// coverage above.
+func (WorkspaceSuite) TestWorkspaceModuleConfigSemantics(ctx context.Context, t *testctx.T) {
+	t.Run("config key normalization and casing are explicit", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement workspace module config key-normalization coverage.
+
+Use constructor arguments whose runtime names differ in case or word shape
+(for example camelCase, snake_case, and acronym-heavy names). Verify one
+explicit TOML key-mapping policy and make the accepted forms part of the
+contract.`)
+	})
+
+	t.Run("typed config values validate and coerce predictably", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement typed workspace module config coverage.
+
+Cover scalar and path-like constructor arguments supplied through
+[modules.<name>.config]. Verify successful coercion for supported types and a
+clear validation error for unsupported or malformed values.`)
+	})
+
+	t.Run("explicit args override only the fields they replace", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement partial-override coverage for workspace module config.
+
+Seed several constructor values from [modules.<name>.config], then override one
+or two at call time. Verify only the explicitly provided fields change and the
+remaining constructor inputs still come from workspace config.`)
+	})
+
+	t.Run("module config is scoped per loaded module", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement sibling-module isolation coverage for workspace module config.
+
+Configure two loaded modules with overlapping constructor argument names.
+Verify each module reads only its own [modules.<name>.config] table and one
+module's config cannot leak into another.`)
+	})
+
+	t.Run("broken env, file, directory, and service references fail clearly", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement invalid reference coverage for workspace module config.
+
+Point config-driven constructor values at missing env vars, nonexistent files
+or directories, and invalid service addresses. Verify the failure points at the
+specific config key and reference that could not be resolved.`)
+	})
+}
+
 // TestWorkspaceConfigurationLifecycle is the planning scaffold for the full
 // scope this file should eventually own: initializing, editing, detecting, and
 // applying .dagger/config.toml. Module management, compat, and migration

@@ -279,3 +279,23 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateScope(ctx context.Context, t 
 Verify Workspace.migrate operates on the compat workspace already attached to
 the loaded Workspace rather than rediscovering a target from disk.`)
 }
+
+// TestWorkspaceMigrateSafety is the planning scaffold for migration properties
+// that protect users from repeated or destructive application.
+func (WorkspaceMigrationSuite) TestWorkspaceMigrateSafety(ctx context.Context, t *testctx.T) {
+	t.Run("rerunning migrate after apply is a no-op", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement migration idempotency coverage.
+
+Apply dagger migrate -y to a compat-eligible project, then run it again.
+Verify the second run does not rewrite files, recreate modules, or emit a fresh
+migration summary.`)
+	})
+
+	t.Run("apply refuses to overwrite conflicting target paths", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement migration target-collision coverage.
+
+Pre-create files or directories at the locations migration wants to write, such
+as .dagger/config.toml or .dagger/modules/<name>. Verify migrate fails clearly
+instead of overwriting unrelated user data.`)
+	})
+}

@@ -189,6 +189,14 @@ type Greeter {
 		require.NoError(t, err)
 		require.Equal(t, "hello from workspace", strings.TrimSpace(out))
 	})
+
+	t.Run("workspace without ambient entrypoint keeps modules namespaced", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement no-entrypoint ambient workspace coverage.
+
+Serve a native workspace config with multiple modules and no ambient entrypoint.
+Verify dagger functions lists the modules, dagger call requires an explicit
+module name, and no module methods are promoted to Query root.`)
+	})
 }
 
 // TestAmbientWorkspaceValidation should lock down invalid ambient workspace
@@ -225,6 +233,14 @@ second entrypoint.`)
 
 Nominate an ambient workspace entrypoint and a distinct extra module in the
 same invocation. Verify the extra module wins as the active entrypoint.`)
+	})
+
+	t.Run("no module mode suppresses ambient and cwd module loading", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement no-module-mode loading coverage.
+
+Invoke Dagger from inside a nested module directory under an initialized
+workspace with -M. Verify neither the ambient workspace nor the CWD module is
+nominated, and only the base API remains available.`)
 	})
 }
 

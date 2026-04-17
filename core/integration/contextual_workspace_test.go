@@ -74,11 +74,27 @@ Invoke Dagger from a compat-eligible legacy project with no .dagger/config.toml
 and verify the injected Workspace is the inferred compat workspace.`)
 	})
 
+	t.Run("nearest initialized workspace beats an outer initialized workspace", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement nested initialized-workspace selection coverage.
+
+Create nested native workspace boundaries and invoke Dagger from inside the
+inner one. Verify the injected Workspace reflects the nearest initialized
+boundary rather than the outer repo workspace.`)
+	})
+
 	t.Run("non-eligible legacy module does not inject a workspace", func(ctx context.Context, t *testctx.T) {
 		t.Fatal(`FIXME: implement negative workspace inference coverage.
 
 Use a standalone module that is not an initialized workspace and not
 compat-eligible. Verify no ambient Workspace is inferred for injection.`)
+	})
+
+	t.Run("initialized workspace beats outer compat inference", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement native-over-compat contextual selection coverage.
+
+Create an outer compat-eligible legacy project and a nested initialized native
+workspace. Invoke Dagger from inside the native workspace and verify the
+injected Workspace comes from the native boundary, not compat inference.`)
 	})
 }
 

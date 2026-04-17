@@ -144,6 +144,14 @@ func (WorkspaceCompatSuite) TestCompatDetection(ctx context.Context, t *testctx.
 	t.Run("sdk-only root source does not create a compat workspace", func(ctx context.Context, t *testctx.T) {
 		t.Fatal(`FIXME: implement the negative compat detection case for sdk-only root-source modules.`)
 	})
+
+	t.Run("native workspace config suppresses compat inference", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement native-config-wins coverage.
+
+Create a repo with both a compat-eligible dagger.json and an initialized native
+workspace config. Verify runtime selection uses the native workspace and does
+not infer a CompatWorkspace from dagger.json.`)
+	})
 }
 
 // TestCompatWarning should pin down the user-facing warning emitted when the
@@ -216,6 +224,13 @@ migrated modules.`)
 
 Point a workspace module source at a remote legacy workspace and verify the
 error clearly says a migrated upstream ref is required.`)
+	})
+
+	t.Run("explicit -W loads a compat workspace successfully", func(ctx context.Context, t *testctx.T) {
+		t.Fatal(`FIXME: implement explicit compat opt-in coverage.
+
+Use dagger -W against a compat-eligible legacy project and verify it loads the
+CompatWorkspace successfully instead of hitting the direct-load error path.`)
 	})
 }
 
