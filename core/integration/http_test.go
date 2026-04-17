@@ -284,7 +284,6 @@ func (HTTPSuite) TestHTTPETag(ctx context.Context, t *testctx.T) {
 		ctx,
 		dagger.WithRunnerHost(endpoint),
 		dagger.WithLogOutput(testutil.NewTWriter(t)),
-		dagger.WithSkipWorkspaceModules(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c1.Close() })
@@ -293,7 +292,6 @@ func (HTTPSuite) TestHTTPETag(ctx context.Context, t *testctx.T) {
 		ctx,
 		dagger.WithRunnerHost(endpoint),
 		dagger.WithLogOutput(testutil.NewTWriter(t)),
-		dagger.WithSkipWorkspaceModules(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })

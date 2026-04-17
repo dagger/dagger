@@ -135,7 +135,6 @@ func (DockerfileSuite) TestDockerBuildSecurityPolicy(ctx context.Context, t *tes
 		ctx,
 		dagger.WithRunnerHost(endpoint),
 		dagger.WithLogOutput(io.Discard),
-		dagger.WithSkipWorkspaceModules(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c2.Close() })

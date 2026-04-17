@@ -34,7 +34,6 @@ func (EngineSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {
 		ctx,
 		dagger.WithRunnerHost(endpoint),
 		dagger.WithLogOutput(testutil.NewTWriter(t)),
-		dagger.WithSkipWorkspaceModules(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
@@ -97,7 +96,6 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 				ctx,
 				dagger.WithRunnerHost(endpoint),
 				dagger.WithLogOutput(testutil.NewTWriter(t)),
-				dagger.WithSkipWorkspaceModules(),
 			)
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
@@ -212,7 +210,6 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 				ctx,
 				dagger.WithRunnerHost(endpoint),
 				dagger.WithLogOutput(testutil.NewTWriter(t)),
-				dagger.WithSkipWorkspaceModules(),
 			)
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
@@ -242,7 +239,6 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 				ctx,
 				dagger.WithRunnerHost(endpoint),
 				dagger.WithLogOutput(testutil.NewTWriter(t)),
-				dagger.WithSkipWorkspaceModules(),
 			)
 			require.NoError(t, err)
 			_, err = c3.Directory().WithNewFile("/tmp/foo", "foo").Sync(ctx)
@@ -274,7 +270,6 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 				ctx,
 				dagger.WithRunnerHost(endpoint),
 				dagger.WithLogOutput(testutil.NewTWriter(t)),
-				dagger.WithSkipWorkspaceModules(),
 			)
 			require.NoError(t, err)
 			for i := range tc.blocks {
@@ -396,7 +391,6 @@ func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *tes
 			ctx,
 			dagger.WithRunnerHost(endpoint),
 			dagger.WithLogOutput(testutil.NewTWriter(t)),
-			dagger.WithSkipWorkspaceModules(),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { c2.Close() })
@@ -408,7 +402,6 @@ func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *tes
 				ctx,
 				dagger.WithRunnerHost(endpoint),
 				dagger.WithLogOutput(testutil.NewTWriter(t)),
-				dagger.WithSkipWorkspaceModules(),
 			)
 			require.NoError(t, err)
 			_, err = c3.Container().From(alpineImage).WithExec([]string{

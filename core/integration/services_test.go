@@ -2176,7 +2176,6 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	c, err := dagger.Connect(
 		ctx,
 		dagger.WithLogOutput(testutil.NewTWriter(t)),
-		dagger.WithSkipWorkspaceModules(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
@@ -2220,7 +2219,6 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	c2, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost("tcp://127.0.0.1:32132"),
 		dagger.WithLogOutput(testutil.NewTWriter(t)),
-		dagger.WithSkipWorkspaceModules(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })

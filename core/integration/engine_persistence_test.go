@@ -55,7 +55,6 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 			ctx,
 			dagger.WithRunnerHost(endpoint),
 			dagger.WithLogOutput(testutil.NewTWriter(t)),
-			dagger.WithSkipWorkspaceModules(),
 		)
 		require.NoError(t, err)
 		return upstreamSvc, engineSvc, engineClient

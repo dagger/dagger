@@ -3315,11 +3315,11 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 
 		res1, err := testutil.QueryWithClient[struct {
 			Test struct {
-				MakeSecretId string
+				MakeSecretID string
 			}
 		}](c1, t, `{test{makeSecretId}}`, nil)
 		require.NoError(t, err)
-		secretID := res1.Test.MakeSecretId
+		secretID := res1.Test.MakeSecretID
 		require.NotEmpty(t, secretID)
 
 		sameSession, err := c1.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)

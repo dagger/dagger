@@ -19,7 +19,6 @@ func Query[R any](t *testctx.T, query string, opts *QueryOptions, clientOpts ...
 	ctx := t.Context()
 	clientOpts = append([]dagger.ClientOpt{
 		dagger.WithLogOutput(NewTWriter(t)),
-		dagger.WithSkipWorkspaceModules(),
 	}, clientOpts...)
 	client, err := dagger.Connect(ctx, clientOpts...)
 	if err != nil {

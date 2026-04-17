@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
 )
 
@@ -315,7 +316,7 @@ func (s *telemetryTestSpan) SetAttributes(attrs ...attribute.KeyValue) {
 	s.attrs = append(s.attrs, attrs...)
 }
 func (s *telemetryTestSpan) TracerProvider() trace.TracerProvider {
-	return trace.NewNoopTracerProvider()
+	return noop.NewTracerProvider()
 }
 
 type telemetryTestLazyString struct {

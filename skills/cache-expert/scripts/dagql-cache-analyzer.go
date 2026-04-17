@@ -456,17 +456,31 @@ func (a *analyzer) printRootCounters(title string, rootIDs []uint64, topN int) {
 		categoryCounts[categoryKey{TypeName: nz(res.TypeName), RecordType: nz(res.RecordType)}]++
 	}
 
-	fmt.Printf("Top %s by Type\n", strings.Title(title))
+	titled := titleCase(title)
+	fmt.Printf("Top %s by Type\n", titled)
 	printCounter(typeCounts, topN)
 	fmt.Println()
 
-	fmt.Printf("Top %s by Record Type\n", strings.Title(title))
+	fmt.Printf("Top %s by Record Type\n", titled)
 	printCounter(recordCounts, topN)
 	fmt.Println()
 
-	fmt.Printf("Top %s by Type+Record\n", strings.Title(title))
+	fmt.Printf("Top %s by Type+Record\n", titled)
 	printCategoryCounter(categoryCounts, topN)
 	fmt.Println()
+}
+
+// titleCase capitalizes the first rune of each whitespace-separated word in s.
+// It is a deliberately minimal replacement for the deprecated strings.Title.
+func titleCase(s string) string {
+	words := strings.Fields(s)
+	for i, w := range words {
+		if w == "" {
+			continue
+		}
+		words[i] = strings.ToUpper(w[:1]) + w[1:]
+	}
+	return strings.Join(words, " ")
 }
 
 func (a *analyzer) topRootGroups(rootIDs []uint64, limit int) []groupSummary {

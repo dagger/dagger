@@ -35,8 +35,9 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/chrootarchive"
+	"github.com/moby/go-archive"
+	"github.com/moby/go-archive/chrootarchive"
+	"github.com/moby/go-archive/compression"
 )
 
 // Directory is a content-addressed directory.
@@ -2569,7 +2570,7 @@ func isArchivePath(path string) bool {
 	}
 	defer file.Close()
 
-	rdr, err := archive.DecompressStream(file)
+	rdr, err := compression.DecompressStream(file)
 	if err != nil {
 		return false
 	}

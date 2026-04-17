@@ -94,7 +94,7 @@ func (GPUSuite) TestGPUAccess(ctx context.Context, t *testctx.T) {
 	if gpuTestsEnabled := os.Getenv(gpuTestsEnabledEnvName); gpuTestsEnabled == "" {
 		t.Skip("Skipping GPU Tests")
 	}
-	c, err := dagger.Connect(ctx, dagger.WithSkipWorkspaceModules())
+	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -157,7 +157,7 @@ func (GPUSuite) TestGPUAccessWithPython(ctx context.Context, t *testctx.T) {
 	if gpuTestsEnabled := os.Getenv(gpuTestsEnabledEnvName); gpuTestsEnabled == "" {
 		t.Skip("Skipping GPU Tests")
 	}
-	c, err := dagger.Connect(ctx, dagger.WithSkipWorkspaceModules())
+	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
 

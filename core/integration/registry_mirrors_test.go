@@ -86,7 +86,6 @@ func testImagePull(ctx context.Context, t *testctx.T, c *dagger.Client, devEngin
 		ctx,
 		dagger.WithRunnerHost(endpoint),
 		dagger.WithLogOutput(testutil.NewTWriter(t)),
-		dagger.WithSkipWorkspaceModules(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
