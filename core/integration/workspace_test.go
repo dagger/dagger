@@ -1,13 +1,17 @@
 package core
 
 // Workspace alignment: aligned; helper-only file for workspace-era fixtures.
-// Scope: Shared workspace test fixtures and container setup for workspace-focused suites.
+// Scope: Shared workspace test fixtures, host-side workspace helpers, and container setup for workspace-focused suites.
 // Intent: Keep workspace setup centralized and explicit so workspace suites do not depend on historical module helpers.
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/stretchr/testify/require"
 )
 
 func daggerWorkspaceExec(args ...string) dagger.WithContainerFunc {
@@ -16,6 +20,11 @@ func daggerWorkspaceExec(args ...string) dagger.WithContainerFunc {
 
 func daggerWorkspaceInstall(args ...string) dagger.WithContainerFunc {
 	return daggerExecRaw(append([]string{"install"}, args...)...)
+}
+
+func hostDaggerWorkspaceExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
+	t.Helper()
+	return hostDaggerExecRaw(ctx, t, workdir, append([]string{"workspace"}, args...)...)
 }
 
 // workspaceBase returns a container with git, the dagger CLI, and an
@@ -87,4 +96,22 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source).
 			With(daggerWorkspaceExec("config", "modules."+name+".entrypoint", "true"))
 	}
+}
+
+// initHostDangBlueprint creates a minimal explicit workspace on the host with a
+// single Dang entrypoint module. Host-side command tests can use this to avoid
+// implicit CWD-module behavior and exercise ambient workspace loading directly.
+func initHostDangBlueprint(ctx context.Context, t testing.TB, workdir, name, source string) {
+	t.Helper()
+
+	_, err := hostDaggerWorkspaceExec(ctx, t, workdir, "init")
+	require.NoError(t, err)
+
+	_, err = hostDaggerModuleExec(ctx, t, workdir, "init", "--sdk=dang", "--name="+name)
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".dagger", "modules", name, "main.dang"), []byte(source), 0o644))
+
+	_, err = hostDaggerWorkspaceExec(ctx, t, workdir, "config", "modules."+name+".entrypoint", "true")
+	require.NoError(t, err)
 }

@@ -1,7 +1,7 @@
 package core
 
 // Workspace alignment: partially aligned; this historical umbrella suite still needs further cleanup.
-// Scope: Remaining broad historical module coverage around runtime behavior, SDK plumbing, client/session behavior, and legacy authoring flows not yet split into narrower suites.
+// Scope: Remaining broad historical module coverage around runtime behavior and path/loading edge cases not yet split into narrower suites.
 // Intent: Preserve confidence while incrementally extracting clearer module-owned suites out of the historical umbrella.
 //
 // Cleanup plan:
@@ -17,7 +17,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,13 +24,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
@@ -39,94 +35,6 @@ type ModuleSuite struct{}
 
 func TestModule(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ModuleSuite{})
-}
-
-func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
-	t.Run("with mod", func(ctx context.Context, t *testctx.T) {
-		modDir := t.TempDir()
-		_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-		require.NoError(t, err)
-
-		addr := "127.0.0.1:12456"
-		listenCmd := hostDaggerCommand(ctx, t, modDir, "listen", "--listen", addr)
-		listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
-		listenCmd.Stdout = testutil.NewTWriter(t)
-		listenCmd.Stderr = testutil.NewTWriter(t)
-		require.NoError(t, listenCmd.Start())
-
-		backoff.Retry(func() error {
-			c, err := net.Dial("tcp", addr)
-			t.Log("dial", addr, c, err)
-			if err != nil {
-				return err
-			}
-			return c.Close()
-		}, backoff.NewExponentialBackOff(
-			backoff.WithMaxElapsedTime(time.Minute),
-		))
-
-		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "container-echo", "--string-arg=hi", "stdout")
-		callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
-		callCmd.Stderr = testutil.NewTWriter(t)
-		out, err := callCmd.Output()
-		require.NoError(t, err)
-		lines := strings.Split(string(out), "\n")
-		lastLine := lines[len(lines)-2]
-		require.Equal(t, "hi", lastLine)
-	})
-
-	t.Run("disable read write", func(ctx context.Context, t *testctx.T) {
-		t.Run("with mod", func(ctx context.Context, t *testctx.T) {
-			// mod load fails but should still be able to query base api
-
-			modDir := t.TempDir()
-			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-			require.NoError(t, err)
-
-			listenCmd := hostDaggerCommand(ctx, t, modDir, "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12457")
-			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
-			require.NoError(t, listenCmd.Start())
-
-			var out []byte
-			for range limitTicker(time.Second, 60) {
-				callCmd := hostDaggerCommand(ctx, t, modDir, "query")
-				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
-				callCmd.Stderr = testutil.NewTWriter(t)
-				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
-				out, err = callCmd.Output()
-				if err == nil {
-					require.Contains(t, string(out), distconsts.AlpineVersion)
-					return
-				}
-				time.Sleep(1 * time.Second)
-			}
-			t.Fatalf("failed to call query: %s err: %v", string(out), err)
-		})
-
-		t.Run("without mod", func(ctx context.Context, t *testctx.T) {
-			tmpdir := t.TempDir()
-
-			listenCmd := hostDaggerCommand(ctx, t, tmpdir, "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12458")
-			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
-			require.NoError(t, listenCmd.Start())
-
-			var out []byte
-			var err error
-			for range limitTicker(time.Second, 60) {
-				callCmd := hostDaggerCommand(ctx, t, tmpdir, "query")
-				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
-				callCmd.Stderr = testutil.NewTWriter(t)
-				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
-				out, err = callCmd.Output()
-				if err == nil {
-					require.Contains(t, string(out), distconsts.AlpineVersion)
-					return
-				}
-				time.Sleep(1 * time.Second)
-			}
-			t.Fatalf("failed to call query: %s err: %v", string(out), err)
-		})
-	})
 }
 
 func (ModuleSuite) TestSecretNested(ctx context.Context, t *testctx.T) {
@@ -2081,54 +1989,4 @@ func (m *Test) Fn(
 		callOutput, err = callCmd.CombinedOutput()
 		require.NoError(t, err, string(callOutput))
 	})
-}
-
-func (ModuleSuite) TestNestedClientCreatedByModule(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
-
-import (
-	"context"
-
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {}
-
-func (m *Test) Fn(ctx context.Context, cli *dagger.File, modDir *dagger.Directory) (string, error) {
-	return dag.Container().From("`+alpineImage+`").
-		WithMountedFile("/bin/dagger", cli).
-		WithMountedDirectory("/dir", modDir).
-		WithWorkdir("/dir").
-		WithExec([]string{"dagger", "develop", "--recursive"}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
-		WithExec([]string{"dagger", "call", "str"}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
-		Stdout(ctx)
-}
-
-func (m *Test) Str() string {
-	return "yoyoyo"
-}
-`,
-		).
-		WithWorkdir("/work/some/sub/dir").
-		With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-		WithWorkdir("/work").
-		With(daggerExec("install", "./some/sub/dir"))
-
-	out, err := modGen.
-		With(daggerCall("fn",
-			"--cli", testCLIBinPath,
-			"--modDir", ".",
-		)).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "yoyoyo", out)
 }
