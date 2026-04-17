@@ -200,10 +200,7 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 		if !ok {
 			return nil, fmt.Errorf("decode object_id envelope: object type %q does not implement persisted decode", env.TypeName)
 		}
-		decodeCtx := ctx
-		if call != nil {
-			decodeCtx = ContextWithCall(ctx, call)
-		}
+		decodeCtx := ContextWithCall(ctx, call)
 		valSelf, err := decoder.DecodePersistedObject(decodeCtx, dag, resultID, call, env.ObjectJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode object_id envelope load: %w", err)

@@ -672,8 +672,16 @@ func cloneResultCall(call *dagql.ResultCall) *dagql.ResultCall {
 	if call == nil {
 		return nil
 	}
-	cp := *call
-	cp.Type = cloneResultCallType(call.Type)
+	cp := &dagql.ResultCall{
+		Kind:        call.Kind,
+		Type:        cloneResultCallType(call.Type),
+		Field:       call.Field,
+		SyntheticOp: call.SyntheticOp,
+		View:        call.View,
+		Nth:         call.Nth,
+		Receiver:    call.Receiver,
+		Module:      call.Module,
+	}
 	if call.EffectIDs != nil {
 		cp.EffectIDs = slices.Clone(call.EffectIDs)
 	}
@@ -686,7 +694,7 @@ func cloneResultCall(call *dagql.ResultCall) *dagql.ResultCall {
 	if call.ImplicitInputs != nil {
 		cp.ImplicitInputs = slices.Clone(call.ImplicitInputs)
 	}
-	return &cp
+	return cp
 }
 
 func cloneResultCallType(typ *dagql.ResultCallType) *dagql.ResultCallType {

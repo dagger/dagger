@@ -770,8 +770,7 @@ func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.Persisted
 			CallID: encodedID,
 		}, nil
 	case call.ID:
-		id := x
-		encodedID, err := encodePersistedCallID(&id)
+		encodedID, err := encodePersistedCallID(&x)
 		if err != nil {
 			return persistedModuleObjectValue{}, err
 		}

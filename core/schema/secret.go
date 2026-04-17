@@ -162,22 +162,34 @@ func (s *secretSchema) setSecret(
 	if curCall == nil {
 		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("current call is nil")
 	}
-	sanitizedCall := *curCall
-	sanitizedCall.Args = []*dagql.ResultCallArg{
-		{
-			Name: "name",
-			Value: &dagql.ResultCallLiteral{
-				Kind:        dagql.ResultCallLiteralKindString,
-				StringValue: args.Name,
+	sanitizedCall := &dagql.ResultCall{
+		Kind:         curCall.Kind,
+		Type:         curCall.Type,
+		Field:        curCall.Field,
+		SyntheticOp:  curCall.SyntheticOp,
+		View:         curCall.View,
+		Nth:          curCall.Nth,
+		EffectIDs:    curCall.EffectIDs,
+		ExtraDigests: curCall.ExtraDigests,
+		Receiver:     curCall.Receiver,
+		Module:       curCall.Module,
+		Args: []*dagql.ResultCallArg{
+			{
+				Name: "name",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: args.Name,
+				},
+			},
+			{
+				Name: "plaintext",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: "***",
+				},
 			},
 		},
-		{
-			Name: "plaintext",
-			Value: &dagql.ResultCallLiteral{
-				Kind:        dagql.ResultCallLiteralKindString,
-				StringValue: "***",
-			},
-		},
+		ImplicitInputs: curCall.ImplicitInputs,
 	}
 
 	concreteVal := &core.Secret{
@@ -196,7 +208,7 @@ func (s *secretSchema) setSecret(
 	handleVal := &core.Secret{
 		Handle: handle,
 	}
-	handleRes, err := dagql.NewObjectResultForCall(handleVal, srv, &sanitizedCall)
+	handleRes, err := dagql.NewObjectResultForCall(handleVal, srv, sanitizedCall)
 	if err != nil {
 		return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("failed to create handle setSecret result: %w", err)
 	}

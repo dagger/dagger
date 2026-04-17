@@ -14,7 +14,7 @@ import (
 
 func (c *converter) convertMerge(op *engineutil.MergeOp) (*call.ID, error) {
 	if op == nil {
-		return nil, unsupported(opDigest(op.OpDAG), "merge", "missing merge op")
+		return nil, unsupported("", "merge", "missing merge op")
 	}
 	if len(op.OpDAG.Inputs) == 0 {
 		return scratchDirectoryID(), nil

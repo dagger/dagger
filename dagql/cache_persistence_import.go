@@ -152,15 +152,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("import result %d: empty self payload kind", resultID)
 			}
 
-			var frame *ResultCall
-			if row.CallFrameJSON != "" {
-				var decoded ResultCall
-				if err := json.Unmarshal([]byte(row.CallFrameJSON), &decoded); err != nil {
-					return fmt.Errorf("import result %d call_frame_json: %w", resultID, err)
-				}
-				frame = &decoded
-			} else {
+			if row.CallFrameJSON == "" {
 				return fmt.Errorf("import result %d: empty call_frame_json", resultID)
+			}
+			frame := &ResultCall{}
+			if err := json.Unmarshal([]byte(row.CallFrameJSON), frame); err != nil {
+				return fmt.Errorf("import result %d call_frame_json: %w", resultID, err)
 			}
 
 			res := &sharedResult{
@@ -174,10 +171,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				recordType:            row.RecordType,
 				persistedEnvelope:     &env,
 			}
-			if frame != nil {
-				res.storeResultCall(frame)
-				c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
-			}
+			res.storeResultCall(frame)
+			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
 
 			if env.Kind == persistedResultKindNull {
 				res.hasValue = true

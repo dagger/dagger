@@ -772,7 +772,7 @@ func (id *ID) Encode() (string, error) {
 	return base64.StdEncoding.EncodeToString(proto), nil
 }
 
-func (id ID) MarshalJSON() ([]byte, error) {
+func (id *ID) MarshalJSON() ([]byte, error) {
 	enc, err := id.Encode()
 	if err != nil {
 		return nil, err
@@ -854,23 +854,31 @@ func (id *ID) FromProto(dagPB *callpbv1.DAG) error {
 
 func (id *ID) shallowClone() *ID {
 	id.mustBeRecipe("shallowClone")
-	cp := *id
+	cp := &ID{
+		mode:           id.mode,
+		receiver:       id.receiver,
+		args:           id.args,
+		implicitInputs: id.implicitInputs,
+		module:         id.module,
+		typ:            id.typ,
+		engineResultID: id.engineResultID,
+	}
 	// NB: this is finnicky, but shouldn't change much, seems worth avoiding
 	// reflection in proto.CloneOf
 	cp.pb = &callpbv1.Call{
-		ReceiverDigest: cp.pb.ReceiverDigest,
-		Type:           cp.pb.Type,
-		Field:          cp.pb.Field,
-		Args:           cp.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
-		ImplicitInputs: cp.pb.ImplicitInputs,
-		Nth:            cp.pb.Nth,
-		Module:         cp.pb.Module,
-		Digest:         cp.pb.Digest,
-		View:           cp.pb.View,
-		EffectIds:      cp.pb.EffectIds,
-		ExtraDigests:   cloneExtraDigests(cp.pb.ExtraDigests),
+		ReceiverDigest: id.pb.ReceiverDigest,
+		Type:           id.pb.Type,
+		Field:          id.pb.Field,
+		Args:           id.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
+		ImplicitInputs: id.pb.ImplicitInputs,
+		Nth:            id.pb.Nth,
+		Module:         id.pb.Module,
+		Digest:         id.pb.Digest,
+		View:           id.pb.View,
+		EffectIds:      id.pb.EffectIds,
+		ExtraDigests:   cloneExtraDigests(id.pb.ExtraDigests),
 	}
-	return &cp
+	return cp
 }
 
 func (id *ID) apply(opts ...IDOpt) *ID {
@@ -950,7 +958,14 @@ func (id *ID) decode(
 	*id = ID{}
 
 	if existingID, ok := memo[dgst]; ok {
-		*id = *existingID
+		id.mode = existingID.mode
+		id.pb = existingID.pb
+		id.receiver = existingID.receiver
+		id.args = existingID.args
+		id.implicitInputs = existingID.implicitInputs
+		id.module = existingID.module
+		id.typ = existingID.typ
+		id.engineResultID = existingID.engineResultID
 		return nil
 	}
 	memo[dgst] = id
