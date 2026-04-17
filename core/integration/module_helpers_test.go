@@ -160,6 +160,11 @@ func hostDaggerExecRaw(ctx context.Context, t testing.TB, workdir string, args .
 	return output, err
 }
 
+func hostDaggerModuleCommand(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
+	t.Helper()
+	return hostDaggerCommandRaw(ctx, t, workdir, append([]string{"module"}, args...)...)
+}
+
 func hostDaggerModuleExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
 	t.Helper()
 	return hostDaggerExecRaw(ctx, t, workdir, append([]string{"module"}, args...)...)
