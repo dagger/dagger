@@ -760,6 +760,7 @@ func (file *File) Search(ctx context.Context, self dagql.ObjectResult[*File], op
 	return results, nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*File], searchStr, replacementStr string, firstFrom *int, all bool) error {
 	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 

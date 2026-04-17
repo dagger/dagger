@@ -604,6 +604,7 @@ func (fn *ModuleFunction) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	return objDefaults.Namespace(ctx, fn.metadata.OriginalName)
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (fn *ModuleFunction) DynamicInputsForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,

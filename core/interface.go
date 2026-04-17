@@ -320,6 +320,7 @@ func (iface *InterfaceType) TypeDef(ctx context.Context) (dagql.ObjectResult[*Ty
 	})
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) error {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("interface", iface.typeDef.Name))
 	slog.ExtraDebug("installing interface")

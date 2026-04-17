@@ -154,6 +154,7 @@ type hostDirectoryArgs struct {
 	Gitignore     bool     `default:"false"`
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

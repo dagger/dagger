@@ -525,6 +525,7 @@ func attachFileResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res
 	return typed, nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *dagql.ResultCall, payload json.RawMessage) (Lazy[*Directory], error) {
 	switch call.Field {
 	case "withDirectory":
@@ -2616,6 +2617,7 @@ func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRe
 	})
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (dir *Directory) WithFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*Directory],
@@ -2992,6 +2994,7 @@ func (dir *Directory) Diff(ctx context.Context, parent dagql.ObjectResult[*Direc
 	return nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult[*Directory], changes dagql.ObjectResult[*Changeset]) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {

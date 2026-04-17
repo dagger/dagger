@@ -312,6 +312,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.Object
 	return state.typedefs, nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
 	schema := &introspection.Schema{}

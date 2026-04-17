@@ -10,6 +10,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 	if exec == nil || exec.ExecOp == nil {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec op")

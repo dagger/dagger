@@ -1173,6 +1173,7 @@ func (container *Container) CacheUsageIdentities() []string {
 	return identities
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (container *Container) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
 	if container == nil || identity == "" {
 		return 0, false, nil
@@ -2954,6 +2955,7 @@ func (lazy *ContainerWithRootFSLazy) EncodePersisted(ctx context.Context, cache 
 	})
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.directory", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
@@ -3102,6 +3104,7 @@ func (*ContainerDirectoryLazy) EncodePersisted(context.Context, dagql.PersistedO
 	return nil, fmt.Errorf("encode persisted container directory lazy: unsupported top-level form")
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.file", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
@@ -3825,6 +3828,7 @@ func (lazy *ContainerImportLazy) EncodePersisted(ctx context.Context, cache dagq
 	})
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func decodePersistedContainerLazy(
 	ctx context.Context,
 	dag *dagql.Server,

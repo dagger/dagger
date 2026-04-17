@@ -1072,6 +1072,7 @@ func TestCacheRecursiveCall(t *testing.T) {
 	assert.Equal(t, 12, cacheTestUnwrapInt(t, v))
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func TestCacheContextCancel(t *testing.T) {
 	t.Run("cancels after all are canceled", func(t *testing.T) {
 		t.Parallel()

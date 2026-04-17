@@ -904,6 +904,7 @@ func (c *Cache) tracePersistedPayloadDecoded(ctx context.Context, res *sharedRes
 	})
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
@@ -1061,6 +1062,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 	return snap
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	sessionResults := c.debugSessionResultsSnapshot()
 	c.callsMu.Lock()

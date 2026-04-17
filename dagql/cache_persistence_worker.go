@@ -23,6 +23,7 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 	return c.applyPersistStateSnapshot(ctx, snapshot)
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
 	var snapshot persistStateSnapshot
 
@@ -284,6 +285,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	return snapshot, nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistStateSnapshot) error {
 	if c.sqlDB == nil || c.pdb == nil {
 		return nil

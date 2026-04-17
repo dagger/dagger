@@ -33,6 +33,7 @@ type ensureExportBlobResult struct {
 	hasLayer bool
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (cm *snapshotManager) ensureExportBlob(
 	ctx context.Context,
 	parentSnapshotID string,

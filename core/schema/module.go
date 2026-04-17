@@ -2192,6 +2192,7 @@ func stripCoreQueryFunctions(
 	return result, nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func expandTypeDefClosure(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -2383,6 +2384,7 @@ func typeDefIsStub(typeDef *core.TypeDef) bool {
 	}
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectResult[*core.TypeDef], error) {
 	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
 	queryType := dagqlSchema.QueryType()

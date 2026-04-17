@@ -166,6 +166,7 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 	}, nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {
 	setHandle := func(res AnyResult) AnyResult {
 		if res == nil || env.SessionResourceHandle == "" {

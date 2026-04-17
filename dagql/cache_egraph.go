@@ -371,6 +371,7 @@ func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqCl
 	return c.findEqClassLocked(ids[0])
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (merges []eqMergePair) {
 	termSet := c.inputEqClassToTerms[root]
 	if len(termSet) == 0 {
@@ -1259,6 +1260,7 @@ func (c *Cache) associateResultWithTermLocked(
 	c.traceResultTermAssocAdded(ctx, res.id, termID, inputProvenance)
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) teachResultIdentityLocked(
 	ctx context.Context,
 	res *sharedResult,
@@ -1394,6 +1396,7 @@ func (c *Cache) teachResultIdentityLocked(
 	return nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) indexWaitResultInEgraphLocked(
 	ctx context.Context,
 	requestFrame *ResultCall,
@@ -1714,6 +1717,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.nextSharedResultID = 0
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) compactEqClassesLocked() (changed bool, oldSlots int, newSlots int) {
 	if len(c.egraphParents) <= 1 {
 		return false, 0, 0

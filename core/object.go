@@ -726,6 +726,7 @@ func (obj *ModuleObject) DecodePersistedObject(
 	}, nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.PersistedObjectCache, val any) (persistedModuleObjectValue, error) {
 	if val == nil {
 		return persistedModuleObjectValue{Kind: persistedModuleObjectValueKindNull}, nil

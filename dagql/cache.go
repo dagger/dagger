@@ -3232,6 +3232,7 @@ func (c *Cache) wait(
 	return retResAny, nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()

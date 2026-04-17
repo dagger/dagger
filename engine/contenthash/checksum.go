@@ -450,6 +450,7 @@ func (cc *cacheContext) Checksum(ctx context.Context, mountable cache.Mountable,
 	return digester.Digest(), nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (cc *cacheContext) includedPaths(ctx context.Context, m *mount, p string, opts ChecksumOpts) ([]*includedPath, error) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()

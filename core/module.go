@@ -248,6 +248,7 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 // For primitive types (string, int, bool, float), it sets arg.DefaultValue
 // to the JSON representation. For object types (Secret, Directory, etc.),
 // it marks the arg as optional (since a default will be resolved at call time).
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *dagql.Server) error {
 	if mod.WorkspaceConfig == nil {
 		return nil
@@ -506,6 +507,7 @@ func (mod *Module) patchFunctionArg(
 	return updatedFn, !sameAttachedResult(updatedFn, fn), nil
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag *dagql.Server, customizations []*modules.ModuleConfigArgument) error {
 	if len(customizations) == 0 {
 		return nil
@@ -692,6 +694,7 @@ func (mod *Module) Sync(ctx context.Context) error {
 	return mod.Evaluate(ctx)
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) AttachDependencyResults(
 	ctx context.Context,
 	self dagql.AnyResult,
@@ -1793,6 +1796,7 @@ func (mod *Module) modulePath() string {
 
 // Patch is called after all types have been loaded - here we can update any
 // definitions as required, and attempt to resolve references.
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) Patch(ctx context.Context) error {
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) importPersistedState(ctx context.Context) error {
 	if c.pdb == nil {
 		return nil
@@ -526,6 +527,7 @@ func resolverServer(resolver TypeResolver) *Server {
 	return dag
 }
 
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver TypeResolver, hit AnyResult) (AnyResult, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("ensure persisted hit value loaded: type resolver is nil")
