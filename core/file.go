@@ -55,14 +55,6 @@ func (*File) TypeDescription() string {
 	return "A file."
 }
 
-func (file *File) getResult() bkcache.ImmutableRef {
-	return file.Result
-}
-
-func (file *File) setResult(ref bkcache.ImmutableRef) {
-	file.Result = ref
-}
-
 var _ dagql.OnReleaser = (*File)(nil)
 var _ dagql.HasDependencyResults = (*File)(nil)
 var _ dagql.HasLazyEvaluation = (*File)(nil)
