@@ -11,10 +11,9 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
-✘ .failEffect: Container! X.Xs ERROR
-! exit code: 1
-├╴✔ container: Container! X.Xs
+$ viztest: Viztest! X.Xs CACHED
+✔ .failEffect: Container! X.Xs
+├╴$ container: Container! X.Xs CACHED
 ├╴$ .from(address: "alpine"): Container! X.Xs CACHED
 ╰╴✘ withExec sh -c 'echo this is a failing effect; exit 1' X.Xs ERROR
   ┃ this is a failing effect

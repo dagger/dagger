@@ -165,7 +165,7 @@ func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *daggerClie
 }
 
 func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *daggerClient, hostPath string) error {
-	cwd, err := client.bkClient.AbsPath(ctx, hostPath)
+	cwd, err := client.engineUtilClient.AbsPath(ctx, hostPath)
 	if err != nil {
 		return fmt.Errorf("workspace detection: %w", err)
 	}
@@ -175,8 +175,8 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 	}
 
 	return srv.detectAndLoadWorkspace(ctx, client,
-		core.NewCallerStatFS(client.bkClient),
-		client.bkClient.ReadCallerHostFile,
+		core.NewCallerStatFS(client.engineUtilClient),
+		client.engineUtilClient.ReadCallerHostFile,
 		cwd,
 		resolveLocalRef,
 		nil,
@@ -187,9 +187,9 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *daggerClient, workspaceRef string) error {
 	// Resolve as local path first (relative to the connecting client's cwd).
 	// If not found, fall back to parsing as a git workspace ref.
-	localPath, err := client.bkClient.AbsPath(ctx, workspaceRef)
+	localPath, err := client.engineUtilClient.AbsPath(ctx, workspaceRef)
 	if err == nil {
-		localStat, statErr := client.bkClient.StatCallerHostPath(ctx, localPath, true)
+		localStat, statErr := client.engineUtilClient.StatCallerHostPath(ctx, localPath, true)
 		switch {
 		case statErr == nil:
 			if !localStat.IsDir() {
@@ -363,13 +363,13 @@ type moduleLoadRequest struct {
 }
 
 type resolvedModuleLoad struct {
-	primary           *core.Module
+	primary           dagql.ObjectResult[*core.Module]
 	primaryEntrypoint bool
 	related           []resolvedServedModule
 }
 
 type resolvedServedModule struct {
-	mod        *core.Module
+	mod        dagql.ObjectResult[*core.Module]
 	entrypoint bool
 }
 
@@ -731,7 +731,7 @@ func (srv *Server) resolveModuleLoad(
 		return resolved, nil
 	}
 
-	src := primary.GetSource()
+	src := primary.Self().GetSource()
 	if src == nil {
 		return resolved, nil
 	}
@@ -830,7 +830,7 @@ func (srv *Server) resolveModuleSourceAsModule(
 	dag *dagql.Server,
 	src dagql.ObjectResult[*core.ModuleSource],
 	mod pendingModule,
-) (*core.Module, error) {
+) (dagql.ObjectResult[*core.Module], error) {
 	if mod.Ref == "" && src.Self() != nil {
 		mod.Ref = src.Self().AsString()
 	}
@@ -839,13 +839,13 @@ func (srv *Server) resolveModuleSourceAsModule(
 	}
 	if mod.LegacyCallerModuleDir != "" && mod.Entrypoint {
 		if err := srv.mergeLegacyCallerEnvDefaults(ctx, dag, src.Self(), mod.LegacyCallerModuleDir); err != nil {
-			return nil, err
+			return dagql.ObjectResult[*core.Module]{}, err
 		}
 	}
 
 	asModuleArgs, err := asModuleArgsForPendingModule(mod)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.Module]{}, err
 	}
 
 	var resolved dagql.ObjectResult[*core.Module]
@@ -853,9 +853,9 @@ func (srv *Server) resolveModuleSourceAsModule(
 		dagql.Selector{Field: "asModule", Args: asModuleArgs},
 	)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.Module]{}, err
 	}
-	return resolved.Self(), nil
+	return resolved, nil
 }
 
 func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error) {
@@ -911,11 +911,11 @@ func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []mod
 	for i := range loads {
 		load := resolved[i]
 		for _, related := range load.related {
-			if err := srv.serveModule(client, related.mod, core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
-				return fmt.Errorf("error serving related module %s: %w", related.mod.Name(), err)
+			if err := srv.serveModule(client, core.NewUserMod(related.mod), core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
+				return fmt.Errorf("error serving related module %s: %w", related.mod.Self().Name(), err)
 			}
 		}
-		if err := srv.serveModule(client, load.primary, core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
+		if err := srv.serveModule(client, core.NewUserMod(load.primary), core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
 			return moduleLoadErr(loads[i], err)
 		}
 		// For the entrypoint module (the one the user targets via dagger call),
@@ -923,7 +923,7 @@ func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []mod
 		// concrete types behind interfaces. This mirrors the includeDependencies
 		// behavior from `main`. Toolchain/non-entrypoint deps stay internal.
 		if load.primaryEntrypoint {
-			for _, dep := range load.primary.Deps.Mods() {
+			for _, dep := range load.primary.Self().Deps.Mods() {
 				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
 					return fmt.Errorf("error serving entrypoint dependency %s: %w", dep.Name(), err)
 				}
@@ -1000,7 +1000,7 @@ func (srv *Server) resolveModule(
 	ctx context.Context,
 	dag *dagql.Server,
 	mod pendingModule,
-) (*core.Module, error) {
+) (dagql.ObjectResult[*core.Module], error) {
 	srcArgs := []dagql.NamedInput{
 		{Name: "refString", Value: dagql.String(mod.Ref)},
 	}
@@ -1016,12 +1016,12 @@ func (srv *Server) resolveModule(
 		dagql.Selector{Field: "moduleSource", Args: srcArgs},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 
 	resolved, err := srv.resolveModuleSourceAsModule(ctx, dag, src, mod)
 	if err != nil {
-		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 
 	return resolved, nil
@@ -1037,9 +1037,9 @@ func (srv *Server) mergeLegacyCallerEnvDefaults(
 	if err != nil {
 		return fmt.Errorf("get current query for legacy caller env: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("get buildkit for legacy caller env: %w", err)
+		return fmt.Errorf("get engine client for legacy caller env: %w", err)
 	}
 
 	envPath := filepath.Join(callerModuleDir, ".env")
@@ -1073,6 +1073,5 @@ func (srv *Server) mergeLegacyCallerEnvDefaults(
 	}
 
 	src.UserDefaults = core.NewEnvFile(true).WithEnvFiles(src.UserDefaults, callerEnv)
-	src.Digest = src.CalcDigest(ctx).String()
 	return nil
 }

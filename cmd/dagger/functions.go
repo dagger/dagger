@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -421,7 +422,9 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return c.FlagErrorFunc()(c, err)
 		}
 
-		fc.addSubCommands(ctx, c, fn.ReturnType)
+		if err := fc.addSubCommands(ctx, c, fn.ReturnType); err != nil {
+			return err
+		}
 
 		if fc.needsHelp {
 			// May be too noisy to always show a warning for skipped functions
@@ -516,7 +519,9 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 	var hasArgs bool
 
 	for _, arg := range fn.Args {
-		fc.mod.LoadTypeDef(arg.TypeDef)
+		if err := fc.mod.LoadTypeDef(arg.TypeDef); err != nil {
+			return err
+		}
 
 		if err := arg.AddFlag(cmd.Flags()); err != nil {
 			var e *UnsupportedFlagError
@@ -550,17 +555,22 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 
 // addSubCommands creates sub-commands for the functions in an object or
 // interface type definition.
-func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, typeDef *modTypeDef) {
-	fc.mod.LoadTypeDef(typeDef)
+func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, typeDef *modTypeDef) error {
+	if err := fc.mod.LoadTypeDef(typeDef); err != nil {
+		return err
+	}
 
 	fnProvider := typeDef.AsFunctionProvider()
 	if fnProvider == nil {
-		return
+		return nil
 	}
 
 	cmd.AddGroup(funcGroup)
 
-	fns, skipped := GetSupportedFunctions(fnProvider)
+	fns, skipped, err := GetSupportedFunctions(fnProvider)
+	if err != nil {
+		return err
+	}
 
 	for _, fn := range fns {
 		subCmd := fc.makeSubCmd(ctx, fn)
@@ -574,6 +584,8 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	if len(skipped) > 0 {
 		cmd.Annotations[skippedCmdsAnnotation] = strings.Join(skipped, ", ")
 	}
+
+	return nil
 }
 
 // makeSubCmd creates a sub-command for a function definition.
@@ -677,6 +689,9 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// else to sub-select. In that case `q` will be nil to signal that we
 		// just want to return the object's name, without making an API request.
 		if q == nil {
+			if fn.ReturnType.Name() == "Query" {
+				return printEncodedID(o, "")
+			}
 			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e, autoApply)
 		}
 
@@ -731,6 +746,10 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 	// TODO: Replace with interface when possible.
 	if hasSync {
 		return q.SelectWithAlias("id", "sync")
+	}
+
+	if typeDef.Name() == "Query" {
+		return nil
 	}
 
 	return q.Select("id")
@@ -972,7 +991,11 @@ func printEncodedID(w io.Writer, encodedID string) error {
 	if err := id.Decode(encodedID); err != nil {
 		return fmt.Errorf("failed to decode ID: %w", err)
 	}
-	_, err := fmt.Fprintf(w, "%s@%s\n", id.Type().ToAST().Name(), id.Digest())
+	dig, err := idDigest(encodedID)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "%s@%s\n", id.Type().ToAST().Name(), dig)
 	return err
 }
 
@@ -980,6 +1003,9 @@ func idDigest(encodedID string) (digest.Digest, error) {
 	var id call.ID
 	if err := id.Decode(encodedID); err != nil {
 		return "", fmt.Errorf("failed to decode ID: %w", err)
+	}
+	if id.IsHandle() {
+		return hashutil.HashStrings(encodedID), nil
 	}
 	return id.Digest(), nil
 }

@@ -1,4 +1,4 @@
-#!/usr/bin/env -S dagger shell --no-mod
+#!/usr/bin/env -S dagger --progress=plain shell --no-mod
 
 # hack/build builds the engine and cli from local code, and additionally starts
 # the engine in the host's docker runtime.

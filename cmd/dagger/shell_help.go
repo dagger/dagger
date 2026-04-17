@@ -323,7 +323,7 @@ func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 	// named main object to get the original constructor and its functions.
 	constr := m.MainObject.AsObject.Constructor
 	mainObj := m.GetObject(m.Name)
-	if mainObj != nil && mainObj.Constructor != nil {
+	if mainObj != nil && mainObj.Constructor != nil && mainObj.Constructor.Name != "" {
 		constr = mainObj.Constructor
 	}
 

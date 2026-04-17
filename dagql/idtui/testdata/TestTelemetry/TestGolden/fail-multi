@@ -11,7 +11,7 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
+$ viztest: Viztest! X.Xs CACHED
 ✘ .failMulti: Void X.Xs ERROR
 ╰╴✘ roll-up pseudo-check span X.Xs ⡀⡄⡆⡇⣇⣧⣷⣿ ERROR
 

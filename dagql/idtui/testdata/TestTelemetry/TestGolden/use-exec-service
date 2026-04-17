@@ -11,20 +11,24 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
+$ viztest: Viztest! X.Xs CACHED
 ✔ .useExecService: Void X.Xs
-├╴✔ container: Container! X.Xs
-├╴$ .from(address: "busybox"): Container! X.Xs CACHED
+├╴$ container: Container! X.Xs CACHED
+├╴✔ .from(address: "busybox"): Container! X.Xs
 ├╴✔ withNewFile /srv/index.html (contents: "<h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>") X.Xs
 ├╴✔ .withExposedPort(port: 80): Container! X.Xs
 ├╴✔ .asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs ✔ 1
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
+│ ╰╴✔ exec httpd -v -h /srv -f X.Xs
+│   ╰╴✔ 80/tcp X.Xs
+│     ┃ XX:XX:XX WRN port not ready host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local error="dial tcp 10.XX.XX.XX:80: connect: connection refused" elapsed=X.Xs
+│     ┃ XX:XX:XX INF port is healthy host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local endpoint=10.XX.XX.XX:80
 │
 ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
-├╴$ .withServiceBinding(
+├╴✔ .withServiceBinding(
 │   ┆ alias: "exec-service"
 │   ┆ service: Container.asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service!
-│   ): Container! X.Xs CACHED
+│   ): Container! X.Xs
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
 ╰╴✔ withExec wget -q -O- http://exec-service X.Xs
   ┃ <h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>

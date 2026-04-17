@@ -205,5 +205,5 @@ func (PlatformSuite) TestWindows(ctx context.Context, t *testctx.T) {
 		Rootfs().
 		Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"License.txt", "ProgramData/", "Users/", "Windows/"}, ents)
+	require.Equal(t, []string{"Files/", "UtilityVM/"}, ents)
 }

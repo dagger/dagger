@@ -229,8 +229,8 @@ func (ef *EnvFile) add(name, value string) {
 	}
 }
 
-// AsFile converts the EnvFile to a File containing the environment variables
-func (ef *EnvFile) AsFile(ctx context.Context) (*File, error) {
+// AsFile converts the EnvFile to a File containing the environment variables.
+func (ef *EnvFile) AsFile(ctx context.Context) (dagql.ObjectResult[*File], error) {
 	// FIXME: expand
 	contents := strings.Join(ef.Environ, "\n")
 	if len(ef.Environ) > 0 {
@@ -253,12 +253,12 @@ func (ef *EnvFile) AsFile(ctx context.Context) (*File, error) {
 	}
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*File]{}, err
 	}
-	var file *File
+	var file dagql.ObjectResult[*File]
 	err = srv.Select(ctx, srv.Root(), &file, q...)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*File]{}, err
 	}
 	return file, nil
 }
