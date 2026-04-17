@@ -55,7 +55,6 @@ func (*File) TypeDescription() string {
 	return "A file."
 }
 
-<<<<<<< init_inside_engine
 func (file *File) getResult() bkcache.ImmutableRef {
 	return file.Result
 }
@@ -64,8 +63,6 @@ func (file *File) setResult(ref bkcache.ImmutableRef) {
 	file.Result = ref
 }
 
-=======
->>>>>>> main
 var _ dagql.OnReleaser = (*File)(nil)
 var _ dagql.HasDependencyResults = (*File)(nil)
 var _ dagql.HasLazyEvaluation = (*File)(nil)
