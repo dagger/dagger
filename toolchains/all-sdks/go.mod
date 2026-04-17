@@ -35,7 +35,7 @@ require (
 replace github.com/dagger/dagger => ../..
 
 require (
-	dagger.io/dagger v0.20.6-0.20260415192040-7058e9313c72
+	dagger.io/dagger v0.20.6
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

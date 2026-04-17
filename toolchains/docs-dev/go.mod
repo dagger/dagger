@@ -29,7 +29,7 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.6-0.20260415192040-7058e9313c72
+	dagger.io/dagger v0.20.6
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef // indirect
