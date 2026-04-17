@@ -290,7 +290,7 @@ func keyPath(p string) string {
 }
 
 // HandleChange notifies the source about a modification operation
-func (cc *cacheContext) HandleChange(kind fsutil.ChangeKind, p string, fi os.FileInfo, err error) (retErr error) {
+func (cc *cacheContext) HandleChange(kind fsutil.ChangeKind, p string, fi os.FileInfo, err error) error {
 	p = keyPath(p)
 	k := convertPathToKey(p)
 
@@ -331,7 +331,7 @@ func (cc *cacheContext) HandleChange(kind fsutil.ChangeKind, p string, fi os.Fil
 			d = ""
 		}
 		cc.dirtyMap[d] = struct{}{}
-		return
+		return nil
 	}
 
 	stat, ok := fi.Sys().(*fstypes.Stat)

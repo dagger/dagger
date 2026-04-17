@@ -1070,7 +1070,6 @@ func TestCacheRecursiveCall(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, 12, cacheTestUnwrapInt(t, v))
-
 }
 
 func TestCacheContextCancel(t *testing.T) {

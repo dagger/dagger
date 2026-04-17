@@ -35,7 +35,7 @@ func v0TarHeaderSelect(h *tar.Header) (orderedHeaders [][2]string) {
 	}
 }
 
-func v1TarHeaderSelect(h *tar.Header) (orderedHeaders [][2]string) {
+func v1TarHeaderSelect(h *tar.Header) [][2]string {
 	pax := h.PAXRecords
 	if len(h.Xattrs) > 0 { //nolint:staticcheck // field deprecated in stdlib
 		if pax == nil {
@@ -60,7 +60,7 @@ func v1TarHeaderSelect(h *tar.Header) (orderedHeaders [][2]string) {
 
 	// Make the slice with enough capacity to hold the 11 basic headers
 	// we want from the v0 selector plus however many xattrs we have.
-	orderedHeaders = make([][2]string, 0, 11+len(xAttrKeys))
+	orderedHeaders := make([][2]string, 0, 11+len(xAttrKeys))
 
 	// Copy all headers from v0 excluding the 'mtime' header (the 5th element).
 	v0headers := v0TarHeaderSelect(h)
@@ -72,5 +72,5 @@ func v1TarHeaderSelect(h *tar.Header) (orderedHeaders [][2]string) {
 		orderedHeaders = append(orderedHeaders, [2]string{k, h.PAXRecords["SCHILY.xattr."+k]})
 	}
 
-	return
+	return orderedHeaders
 }
