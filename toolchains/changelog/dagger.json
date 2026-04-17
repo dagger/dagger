@@ -1,5 +1,7 @@
 {
   "name": "changelog",
-  "engineVersion": "v0.20.5",
-  "sdk": "dang"
+  "engineVersion": "v0.20.6",
+  "sdk": {
+    "source": "dang"
+  }
 }
