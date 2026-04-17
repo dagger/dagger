@@ -1257,8 +1257,12 @@ func resultIsObject(val AnyResult, resolver TypeResolver) (bool, error) {
 	if !ok {
 		return false, nil
 	}
+	// Not every value whose type name matches the object class is instantiable
+	// as that class — a Nullable[*T] value has typ.Name() == T but isn't
+	// directly a T, for instance. Treat instantiation failure as 'not an
+	// object of this class' rather than as a hard error.
 	if _, err := objType.New(val); err != nil {
-		return false, fmt.Errorf("instantiate %s from value: %w", typ.Name(), err)
+		return false, nil //nolint:nilerr // see comment above
 	}
 	return true, nil
 }

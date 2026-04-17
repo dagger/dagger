@@ -17,6 +17,9 @@ func applyDockerImageConfig(id *call.ID, img *dockerspec.DockerOCIImage) (*call.
 	}
 
 	cfg := img.Config
+	// ArgsEscaped is a deprecated legacy docker/OCI field but we must
+	// surface it to reject Windows images that rely on it. SA1019 is
+	// excluded for this specific use in .golangci.yml.
 	if cfg.ArgsEscaped && strings.EqualFold(img.OS, "windows") {
 		return nil, fmt.Errorf("llbtodagger: unsupported image config argsEscaped on Windows image")
 	}
