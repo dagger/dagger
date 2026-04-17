@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
@@ -132,8 +133,10 @@ func TestConfigAliasFlags(t *testing.T) {
 
 func TestWorkspaceFlagPolicy(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
+	oldWorkspaceEnv := workspaceEnv
 	t.Cleanup(func() {
 		workspaceRef = oldWorkspaceRef
+		workspaceEnv = oldWorkspaceEnv
 	})
 
 	workspaceRef = "github.com/acme/ws"
@@ -147,6 +150,35 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	workspaceRef = "./local-workspace"
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))
+}
+
+func TestApplyWorkspaceClientParams(t *testing.T) {
+	oldWorkspaceRef := workspaceRef
+	oldWorkspaceEnv := workspaceEnv
+	t.Cleanup(func() {
+		workspaceRef = oldWorkspaceRef
+		workspaceEnv = oldWorkspaceEnv
+	})
+
+	workspaceRef = "github.com/acme/ws"
+	workspaceEnv = "ci"
+
+	params := client.Params{}
+	applyWorkspaceClientParams(&params)
+	require.NotNil(t, params.Workspace)
+	require.NotNil(t, params.WorkspaceEnv)
+	require.Equal(t, "github.com/acme/ws", *params.Workspace)
+	require.Equal(t, "ci", *params.WorkspaceEnv)
+
+	explicitWorkspace := "github.com/acme/other"
+	explicitEnv := "prod"
+	params = client.Params{
+		Workspace:    &explicitWorkspace,
+		WorkspaceEnv: &explicitEnv,
+	}
+	applyWorkspaceClientParams(&params)
+	require.Equal(t, "github.com/acme/other", *params.Workspace)
+	require.Equal(t, "prod", *params.WorkspaceEnv)
 }
 
 func TestWriteWorkspaceInfo(t *testing.T) {

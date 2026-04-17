@@ -126,6 +126,18 @@ func workspaceRefFromClientMetadata(clientMD *engine.ClientMetadata) (string, bo
 	return "", false
 }
 
+// workspaceEnvFromClientMetadata returns the explicitly declared workspace
+// environment selection, if present.
+func workspaceEnvFromClientMetadata(clientMD *engine.ClientMetadata) (string, bool) {
+	if clientMD == nil {
+		return "", false
+	}
+	if clientMD.WorkspaceEnv != nil {
+		return *clientMD.WorkspaceEnv, true
+	}
+	return "", false
+}
+
 // inheritWorkspaceBinding copies the nearest available parent workspace binding
 // onto the current client. This keeps nested clients aligned with their parent
 // workspace for currentWorkspace() resolution.
@@ -560,6 +572,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 ) error {
 	clientMD := client.clientMetadata
 	skipModules := !client.pendingWorkspaceLoad || (clientMD != nil && clientMD.SkipWorkspaceModules)
+	workspaceEnv, hasWorkspaceEnv := workspaceEnvFromClientMetadata(clientMD)
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
 	ws, err := workspace.Detect(ctx, func(ctx context.Context, path string) (string, bool, error) {
@@ -614,6 +627,20 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	if skipModules {
 		return nil
+	}
+
+	if hasWorkspaceEnv {
+		if wsConfig == nil {
+			return fmt.Errorf("workspace env %q requires .dagger/config.toml", workspaceEnv)
+		}
+		if err := func() (rerr error) {
+			_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("applying env: %s", workspaceEnv))
+			defer telemetry.EndWithCause(span, &rerr)
+			wsConfig, rerr = workspace.ApplyEnvOverlay(wsConfig, workspaceEnv)
+			return rerr
+		}(); err != nil {
+			return err
+		}
 	}
 
 	// --- Gather all modules to load ---

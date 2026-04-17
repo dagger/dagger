@@ -960,6 +960,12 @@ func (srv *Server) getOrInitClient(
 				client.clientMetadata.Workspace = &ref
 			}
 		}
+		if client.clientMetadata.WorkspaceEnv == nil && !client.workspaceLoaded {
+			if workspaceEnv, ok := workspaceEnvFromClientMetadata(opts.ClientMetadata); ok {
+				env := workspaceEnv
+				client.clientMetadata.WorkspaceEnv = &env
+			}
+		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
 		// session attachable request already created the client without them.
 		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
@@ -1082,6 +1088,7 @@ func nestedClientMetadata(execMD *buildkit.ExecutionMetadata, forwarded *engine.
 	lockMode := inheritedLockMode
 	var eagerRuntime bool
 	var workspaceRef *string
+	var workspaceEnv *string
 	if forwarded != nil {
 		clientVersion = forwarded.ClientVersion
 		allowedLLMModules = forwarded.AllowedLLMModules
@@ -1094,6 +1101,10 @@ func nestedClientMetadata(execMD *buildkit.ExecutionMetadata, forwarded *engine.
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(forwarded); ok {
 			ref := declaredWorkspace
 			workspaceRef = &ref
+		}
+		if declaredEnv, ok := workspaceEnvFromClientMetadata(forwarded); ok {
+			env := declaredEnv
+			workspaceEnv = &env
 		}
 	}
 
@@ -1112,6 +1123,7 @@ func nestedClientMetadata(execMD *buildkit.ExecutionMetadata, forwarded *engine.
 		LockMode:             lockMode,
 		EagerRuntime:         eagerRuntime,
 		Workspace:            workspaceRef,
+		WorkspaceEnv:         workspaceEnv,
 	}
 }
 

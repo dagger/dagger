@@ -16,6 +16,7 @@ type Config struct {
 	Modules            map[string]ModuleEntry `toml:"modules"`
 	Ignore             []string               `toml:"ignore"`
 	DefaultsFromDotEnv bool                   `toml:"defaults_from_dotenv,omitempty"`
+	Env                map[string]EnvOverlay  `toml:"env"`
 }
 
 // ModuleEntry represents a single module entry in the workspace config.
@@ -24,6 +25,17 @@ type ModuleEntry struct {
 	Config            map[string]any `toml:"config,omitempty"`
 	Entrypoint        bool           `toml:"entrypoint,omitempty"`
 	LegacyDefaultPath bool           `toml:"legacy-default-path,omitempty"`
+}
+
+// EnvOverlay is a named workspace environment overlay.
+// It intentionally supports only a constrained subset of the root schema.
+type EnvOverlay struct {
+	Modules map[string]EnvModuleOverlay `toml:"modules"`
+}
+
+// EnvModuleOverlay is the environment-specific overlay for one installed module.
+type EnvModuleOverlay struct {
+	Config map[string]any `toml:"config,omitempty"`
 }
 
 // ResolveModuleEntrySource converts a workspace-config module source into the
@@ -52,6 +64,45 @@ func ParseConfig(data []byte) (*Config, error) {
 	return &cfg, nil
 }
 
+// ApplyEnvOverlay returns a copy of cfg with the named environment overlay
+// applied on top of the base module config.
+//
+// In v1, environments may only override [modules.<name>.config] values.
+func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
+	if cfg == nil {
+		if envName == "" {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("workspace env %q requires .dagger/config.toml", envName)
+	}
+
+	applied := cloneConfig(cfg)
+	if envName == "" {
+		return applied, nil
+	}
+
+	env, ok := cfg.Env[envName]
+	if !ok {
+		return nil, fmt.Errorf("workspace env %q is not defined", envName)
+	}
+
+	for moduleName, overlay := range env.Modules {
+		entry, ok := applied.Modules[moduleName]
+		if !ok {
+			return nil, fmt.Errorf("workspace env %q references unknown module %q", envName, moduleName)
+		}
+		if entry.Config == nil {
+			entry.Config = map[string]any{}
+		}
+		for key, value := range overlay.Config {
+			entry.Config[key] = value
+		}
+		applied.Modules[moduleName] = entry
+	}
+
+	return applied, nil
+}
+
 // SerializeConfig serializes a workspace config into deterministic TOML.
 func SerializeConfig(cfg *Config) []byte {
 	var b strings.Builder
@@ -71,12 +122,70 @@ func SerializeConfig(cfg *Config) []byte {
 		b.WriteString("defaults_from_dotenv = true\n\n")
 	}
 
-	if len(cfg.Modules) == 0 {
-		return []byte(b.String())
+	if writeModuleEntries(&b, cfg.Modules) && len(cfg.Env) > 0 {
+		b.WriteString("\n")
+	}
+	writeEnvEntries(&b, cfg.Env)
+
+	return []byte(b.String())
+}
+
+func cloneConfig(cfg *Config) *Config {
+	if cfg == nil {
+		return nil
 	}
 
-	names := make([]string, 0, len(cfg.Modules))
-	for name := range cfg.Modules {
+	cloned := &Config{
+		Ignore:             append([]string(nil), cfg.Ignore...),
+		DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
+	}
+	if len(cfg.Modules) > 0 {
+		cloned.Modules = make(map[string]ModuleEntry, len(cfg.Modules))
+		for name, entry := range cfg.Modules {
+			cloned.Modules[name] = ModuleEntry{
+				Source:            entry.Source,
+				Config:            cloneConfigMap(entry.Config),
+				Entrypoint:        entry.Entrypoint,
+				LegacyDefaultPath: entry.LegacyDefaultPath,
+			}
+		}
+	}
+	if len(cfg.Env) > 0 {
+		cloned.Env = make(map[string]EnvOverlay, len(cfg.Env))
+		for envName, env := range cfg.Env {
+			clonedEnv := EnvOverlay{}
+			if len(env.Modules) > 0 {
+				clonedEnv.Modules = make(map[string]EnvModuleOverlay, len(env.Modules))
+				for moduleName, overlay := range env.Modules {
+					clonedEnv.Modules[moduleName] = EnvModuleOverlay{
+						Config: cloneConfigMap(overlay.Config),
+					}
+				}
+			}
+			cloned.Env[envName] = clonedEnv
+		}
+	}
+	return cloned
+}
+
+func cloneConfigMap(config map[string]any) map[string]any {
+	if len(config) == 0 {
+		return nil
+	}
+	cloned := make(map[string]any, len(config))
+	for key, value := range config {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool {
+	if len(modules) == 0 {
+		return false
+	}
+
+	names := make([]string, 0, len(modules))
+	for name := range modules {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -86,32 +195,78 @@ func SerializeConfig(cfg *Config) []byte {
 			b.WriteString("\n")
 		}
 
-		entry := cfg.Modules[name]
-		fmt.Fprintf(&b, "[modules.%s]\n", name)
-		fmt.Fprintf(&b, "source = %q\n", entry.Source)
+		entry := modules[name]
+		fmt.Fprintf(b, "[modules.%s]\n", name)
+		fmt.Fprintf(b, "source = %q\n", entry.Source)
 		if entry.Entrypoint {
 			b.WriteString("entrypoint = true\n")
 		}
 		if entry.LegacyDefaultPath {
 			b.WriteString("legacy-default-path = true\n")
 		}
-		if len(entry.Config) == 0 {
+		writeConfigTable(b, "modules."+name+".config", entry.Config, true)
+	}
+
+	return true
+}
+
+func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
+	if len(envs) == 0 {
+		return false
+	}
+
+	names := make([]string, 0, len(envs))
+	for name := range envs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for i, name := range names {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+
+		env := envs[name]
+		if len(env.Modules) == 0 {
+			fmt.Fprintf(b, "[env.%s]\n", name)
 			continue
 		}
 
-		keys := make([]string, 0, len(entry.Config))
-		for key := range entry.Config {
-			keys = append(keys, key)
+		moduleNames := make([]string, 0, len(env.Modules))
+		for moduleName := range env.Modules {
+			moduleNames = append(moduleNames, moduleName)
 		}
-		sort.Strings(keys)
+		sort.Strings(moduleNames)
 
-		fmt.Fprintf(&b, "\n[modules.%s.config]\n", name)
-		for _, key := range keys {
-			fmt.Fprintf(&b, "%s = %s\n", key, formatConfigValue(entry.Config[key]))
+		for j, moduleName := range moduleNames {
+			if j > 0 {
+				b.WriteString("\n")
+			}
+			writeConfigTable(b, "env."+name+".modules."+moduleName+".config", env.Modules[moduleName].Config, false)
 		}
 	}
 
-	return []byte(b.String())
+	return true
+}
+
+func writeConfigTable(b *strings.Builder, tablePath string, config map[string]any, leadingBlankLine bool) {
+	if len(config) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(config))
+	for key := range config {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	if leadingBlankLine {
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(b, "[%s]\n", tablePath)
+	for _, key := range keys {
+		fmt.Fprintf(b, "%s = %s\n", key, formatConfigValue(config[key]))
+	}
 }
 
 // ReadConfigValue reads a value from config TOML at the given dotted key.

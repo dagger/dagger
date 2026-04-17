@@ -22,6 +22,11 @@ legacy-default-path = true
 [modules.greeter.config]
 greeting = "hello"
 enabled = true
+
+[env.ci.modules.greeter.config]
+greeting = "hola"
+
+[env.local]
 `))
 	require.NoError(t, err)
 	require.Equal(t, []string{"dist"}, cfg.Ignore)
@@ -35,6 +40,17 @@ enabled = true
 			"greeting": "hello",
 		},
 	}, cfg.Modules["greeter"])
+	require.Equal(t, EnvOverlay{
+		Modules: map[string]EnvModuleOverlay{
+			"greeter": {
+				Config: map[string]any{
+					"greeting": "hola",
+				},
+			},
+		},
+	}, cfg.Env["ci"])
+	require.Contains(t, cfg.Env, "local")
+	require.Empty(t, cfg.Env["local"].Modules)
 }
 
 func TestSerializeConfig(t *testing.T) {
@@ -58,6 +74,19 @@ func TestSerializeConfig(t *testing.T) {
 				},
 			},
 		},
+		Env: map[string]EnvOverlay{
+			"local": {},
+			"ci": {
+				Modules: map[string]EnvModuleOverlay{
+					"greeter": {
+						Config: map[string]any{
+							"greeting": "hola",
+							"enabled":  false,
+						},
+					},
+				},
+			},
+		},
 	})
 
 	require.Equal(t, `ignore = ["dist", "node_modules"]
@@ -76,6 +105,12 @@ tags = ["main", "develop"]
 
 [modules.wolfi]
 source = "github.com/dagger/dagger/modules/wolfi"
+
+[env.ci.modules.greeter.config]
+enabled = false
+greeting = "hola"
+
+[env.local]
 `, string(out))
 }
 
@@ -119,6 +154,25 @@ enabled = true
 			strings.Split(value, "\n"),
 		)
 	})
+
+	t.Run("env table", func(t *testing.T) {
+		t.Parallel()
+
+		envData := []byte(`[env.ci.modules.greeter.config]
+greeting = "hola"
+enabled = false
+`)
+
+		value, err := ReadConfigValue(envData, "env.ci.modules.greeter.config")
+		require.NoError(t, err)
+		require.ElementsMatch(t,
+			[]string{
+				"enabled = false",
+				`greeting = "hola"`,
+			},
+			strings.Split(value, "\n"),
+		)
+	})
 }
 
 func TestWriteConfigValue(t *testing.T) {
@@ -139,6 +193,8 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "defaults_from_dotenv", "true")
 		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "env.ci.modules.greeter.config.region", "us-east-1")
+		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
 		require.NoError(t, err)
@@ -152,6 +208,15 @@ func TestWriteConfigValue(t *testing.T) {
 				"tags":     []any{"main", "develop"},
 			},
 		}, cfg.Modules["greeter"])
+		require.Equal(t, EnvOverlay{
+			Modules: map[string]EnvModuleOverlay{
+				"greeter": {
+					Config: map[string]any{
+						"region": "us-east-1",
+					},
+				},
+			},
+		}, cfg.Env["ci"])
 	})
 
 	t.Run("rejects invalid keys", func(t *testing.T) {
@@ -165,6 +230,102 @@ func TestWriteConfigValue(t *testing.T) {
 
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
+
+		_, err = WriteConfigValue(nil, "env.ci.modules.greeter.source", "github.com/acme/greeter")
+		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.source\"; valid fields at this level: config")
+	})
+}
+
+func TestApplyEnvOverlay(t *testing.T) {
+	t.Parallel()
+
+	t.Run("merges module config overrides without mutating base config", func(t *testing.T) {
+		t.Parallel()
+
+		base := &Config{
+			Modules: map[string]ModuleEntry{
+				"aws": {
+					Source: "github.com/dagger/aws",
+					Config: map[string]any{
+						"region": "us-west-2",
+						"format": "json",
+					},
+				},
+				"vitest": {
+					Source: "github.com/dagger/vitest",
+					Config: map[string]any{
+						"reporter": "dot",
+					},
+				},
+			},
+			Env: map[string]EnvOverlay{
+				"ci": {
+					Modules: map[string]EnvModuleOverlay{
+						"aws": {
+							Config: map[string]any{
+								"region":    "us-east-1",
+								"secretKey": "op://supervault/prodawskey",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		applied, err := ApplyEnvOverlay(base, "ci")
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{
+			"format":    "json",
+			"region":    "us-east-1",
+			"secretKey": "op://supervault/prodawskey",
+		}, applied.Modules["aws"].Config)
+		require.Equal(t, map[string]any{
+			"reporter": "dot",
+		}, applied.Modules["vitest"].Config)
+		require.Equal(t, map[string]any{
+			"region": "us-west-2",
+			"format": "json",
+		}, base.Modules["aws"].Config)
+	})
+
+	t.Run("returns an unchanged copy when env name is empty", func(t *testing.T) {
+		t.Parallel()
+
+		base := &Config{
+			Modules: map[string]ModuleEntry{
+				"aws": {Source: "github.com/dagger/aws"},
+			},
+		}
+
+		applied, err := ApplyEnvOverlay(base, "")
+		require.NoError(t, err)
+		require.Equal(t, base, applied)
+		require.NotSame(t, base, applied)
+	})
+
+	t.Run("rejects missing env", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := ApplyEnvOverlay(&Config{}, "ci")
+		require.EqualError(t, err, `workspace env "ci" is not defined`)
+	})
+
+	t.Run("rejects unknown module alias", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := ApplyEnvOverlay(&Config{
+			Modules: map[string]ModuleEntry{
+				"aws": {Source: "github.com/dagger/aws"},
+			},
+			Env: map[string]EnvOverlay{
+				"ci": {
+					Modules: map[string]EnvModuleOverlay{
+						"missing": {Config: map[string]any{"region": "us-east-1"}},
+					},
+				},
+			},
+		}, "ci")
+		require.EqualError(t, err, `workspace env "ci" references unknown module "missing"`)
 	})
 }
 

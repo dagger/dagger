@@ -128,6 +128,10 @@ type ClientMetadata struct {
 	// Workspace explicitly declares the workspace binding for this client.
 	// When unset, the engine applies default workspace binding behavior.
 	Workspace *string `json:"workspace,omitempty"`
+
+	// WorkspaceEnv explicitly selects the workspace environment overlay for
+	// this client. When unset, no environment overlay is applied.
+	WorkspaceEnv *string `json:"workspace_env,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}

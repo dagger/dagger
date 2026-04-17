@@ -70,10 +70,7 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
-	if params.Workspace == nil && workspaceRef != "" {
-		ref := workspaceRef
-		params.Workspace = &ref
-	}
+	applyWorkspaceClientParams(&params)
 	if !moduleNoURL {
 		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
 			params.Module = modRef
@@ -159,6 +156,17 @@ func withEngine(
 
 		return cleanup.Run, fn(ctx, sess)
 	})
+}
+
+func applyWorkspaceClientParams(params *client.Params) {
+	if params.Workspace == nil && workspaceRef != "" {
+		ref := workspaceRef
+		params.Workspace = &ref
+	}
+	if params.WorkspaceEnv == nil && workspaceEnv != "" {
+		env := workspaceEnv
+		params.WorkspaceEnv = &env
+	}
 }
 
 func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {

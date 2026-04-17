@@ -301,6 +301,7 @@ func TestNestedClientMetadata(t *testing.T) {
 			LockMode:             string(workspace.LockModeLive),
 			EagerRuntime:         true,
 			Workspace:            stringPtr("github.com/dagger/dagger@main"),
+			WorkspaceEnv:         stringPtr("ci"),
 		}, string(workspace.LockModeFrozen))
 
 		require.Equal(t, "nested-client", md.ClientID)
@@ -310,6 +311,7 @@ func TestNestedClientMetadata(t *testing.T) {
 		require.True(t, md.SkipWorkspaceModules)
 		require.True(t, md.EagerRuntime)
 		require.Equal(t, "github.com/dagger/dagger@main", *md.Workspace)
+		require.Equal(t, "ci", *md.WorkspaceEnv)
 		require.Len(t, md.ExtraModules, 1)
 	})
 
@@ -333,6 +335,7 @@ func TestNestedClientMetadata(t *testing.T) {
 		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
 		require.Empty(t, md.LockMode)
 		require.Nil(t, md.Workspace)
+		require.Nil(t, md.WorkspaceEnv)
 	})
 }
 
