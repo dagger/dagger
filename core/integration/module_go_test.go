@@ -1809,6 +1809,65 @@ func Foo() *dagger.Directory {
 	require.JSONEq(t, `{"hello":"hello world"}`, out)
 }
 
+// A Go module with one valid entrypoint file and one separate broken file
+// should fail module loading with the real Go package error. The module must
+// not disappear from the workspace schema and degrade into generic command
+// lookup errors.
+func (GoSuite) TestLoadPackageErrorsFailModuleLoad(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	brokenModule := func() *dagger.Container {
+		return c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+type Minimal struct{}
+
+func (m *Minimal) Hello() string {
+	return "hello"
+}
+`).
+			WithNewFile("broken.go", `package main
+
+type Broken struct {
+	Field MissingType
+}
+`)
+	}
+
+	t.Run("functions", func(ctx context.Context, t *testctx.T) {
+		// Listing functions only loads the workspace schema; it should still
+		// surface the package error rather than silently dropping the module.
+		stderr, err := brokenModule().
+			With(daggerExecFail("functions")).
+			Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stderr, "package load errors")
+		require.Contains(t, stderr, "broken.go")
+		require.Contains(t, stderr, "MissingType")
+	})
+
+	t.Run("call", func(ctx context.Context, t *testctx.T) {
+		// Calling a valid function from the good file must fail with the actual
+		// Go package error from the bad file, not a generic "unknown command"
+		// symptom caused by the module vanishing from the workspace schema.
+		stderr, err := brokenModule().
+			WithExec([]string{"dagger", "call", "hello"}, dagger.ContainerWithExecOpts{
+				UseEntrypoint:                 true,
+				ExperimentalPrivilegedNesting: true,
+				Expect:                        dagger.ReturnTypeFailure,
+			}).
+			Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stderr, "package load errors")
+		require.Contains(t, stderr, "broken.go")
+		require.Contains(t, stderr, "MissingType")
+		require.NotContains(t, stderr, `unknown command "hello"`)
+	})
+}
+
 // Verify that we can use the released library in module.
 //
 // WARNING: this test can fail if we make a breaking change on the `telemetry` or

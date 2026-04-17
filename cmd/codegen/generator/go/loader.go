@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/trace"
 	telemetry "github.com/dagger/otel-go"
@@ -38,12 +39,6 @@ func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.
 			if err != nil {
 				return nil, err
 			}
-			// strip function bodies since we don't need them and don't need to waste time in packages.Load with type checking them
-			for _, decl := range astFile.Decls {
-				if fn, ok := decl.(*ast.FuncDecl); ok {
-					fn.Body = nil
-				}
-			}
 			return astFile, nil
 		},
 		// Print some debug logs with timing information to stdout
@@ -52,6 +47,9 @@ func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.
 		},
 	}, ".")
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := packageErrors(pkgs); err != nil {
 		return nil, nil, err
 	}
 	switch len(pkgs) {
@@ -69,4 +67,29 @@ func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.
 		// this would mean I don't understand how loading '.' works
 		return nil, nil, fmt.Errorf("expected 1 package, got %d", len(pkgs))
 	}
+}
+
+func packageErrors(pkgs []*packages.Package) error {
+	var msgs []string
+	seen := map[string]struct{}{}
+
+	for _, pkg := range pkgs {
+		for _, pkgErr := range pkg.Errors {
+			msg := strings.TrimSpace(pkgErr.Error())
+			if msg == "" {
+				continue
+			}
+			if _, ok := seen[msg]; ok {
+				continue
+			}
+			seen[msg] = struct{}{}
+			msgs = append(msgs, msg)
+		}
+	}
+
+	if len(msgs) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("package load errors:\n%s", strings.Join(msgs, "\n"))
 }

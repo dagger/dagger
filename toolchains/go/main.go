@@ -12,8 +12,9 @@ import (
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	telemetry "github.com/dagger/otel-go"
 
+	"mod-golang/internal/dagger"
+
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/modules/go/internal/dagger"
 	"github.com/dagger/dagger/util/parallel"
 )
 
@@ -78,12 +79,12 @@ func New(
 	if moduleCache == nil {
 		// Cache volumes should be namespaced by module, but they aren't (yet).
 		// For now, we namespace them explicitly here.
-		moduleCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:modules")
+		moduleCache = dag.CacheVolume("modules")
 	}
 	if buildCache == nil {
 		// Cache volumes should be namespaced by module, but they aren't (yet).
 		// For now, we namespace them explicitly here.
-		buildCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:build")
+		buildCache = dag.CacheVolume("build")
 	}
 	if base == nil {
 		packages := []string{

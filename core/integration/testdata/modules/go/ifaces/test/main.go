@@ -221,12 +221,13 @@ func (m *Test) DepWithIface(ctx context.Context, iface CustomIface) (*Test, erro
 		m.Dep = dag.Dep()
 	}
 
-	id, err := iface.(interface {
-		ID(context.Context) (CustomIfaceID, error)
+	idValue, err := iface.(interface {
+		ID(context.Context) (any, error)
 	}).ID(ctx)
 	if err != nil {
 		return nil, err
 	}
+	id := fmt.Sprintf("%v", idValue)
 
 	loadedIface := dag.LoadDepCustomIfaceFromID(dagger.DepCustomIfaceID(id))
 
