@@ -234,6 +234,113 @@ func TestWriteConfigValue(t *testing.T) {
 		_, err = WriteConfigValue(nil, "env.ci.modules.greeter.source", "github.com/acme/greeter")
 		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.source\"; valid fields at this level: settings")
 	})
+
+	t.Run("preserves comments and section layout", func(t *testing.T) {
+		t.Parallel()
+
+		data := []byte(`# top comment
+ignore = ["dist"]
+
+# module comment
+[modules.greeter]
+source = "modules/greeter"
+
+[modules.greeter.settings]
+# greeting comment
+greeting = "hello"
+`)
+
+		updated, err := WriteConfigValue(data, "modules.greeter.settings.count", "42")
+		require.NoError(t, err)
+
+		out := string(updated)
+		require.Contains(t, out, "# top comment")
+		require.Contains(t, out, "# module comment")
+		require.Contains(t, out, "# greeting comment")
+		require.Contains(t, out, "[modules.greeter]")
+		require.Contains(t, out, "[modules.greeter.settings]")
+		require.Contains(t, out, "count = 42")
+		require.NotContains(t, out, "[modules]\n\n  [modules.greeter]")
+	})
+}
+
+func TestUpdateConfigBytes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("preserves existing comments across structured writes", func(t *testing.T) {
+		t.Parallel()
+
+		existing := []byte(`# Dagger workspace configuration
+[modules.greeter]
+source = "modules/greeter"
+# settings.greeting = "" # string
+`)
+
+		cfg, err := ParseConfig(existing)
+		require.NoError(t, err)
+		cfg.Env = map[string]EnvOverlay{
+			"local": {},
+		}
+
+		updated, err := UpdateConfigBytes(existing, cfg)
+		require.NoError(t, err)
+
+		out := string(updated)
+		require.Contains(t, out, "# Dagger workspace configuration")
+		require.Contains(t, out, "# settings.greeting = \"\" # string")
+		require.Contains(t, out, "[env.local]")
+	})
+
+	t.Run("adds setting hints under module sections", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := &Config{
+			Modules: map[string]ModuleEntry{
+				"greeter": {
+					Source: "modules/greeter",
+				},
+			},
+		}
+
+		updated, err := UpdateConfigBytesWithHints(nil, cfg, map[string][]ConstructorArgHint{
+			"greeter": {{
+				Name:         "greeting",
+				TypeLabel:    "string",
+				ExampleValue: `"hello"`,
+			}},
+		})
+		require.NoError(t, err)
+		require.Contains(t, string(updated), "# settings.greeting = \"hello\" # string")
+	})
+
+	t.Run("adds setting hints inside existing settings sections", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := &Config{
+			Modules: map[string]ModuleEntry{
+				"greeter": {
+					Source: "modules/greeter",
+					Settings: map[string]any{
+						"enabled": true,
+					},
+				},
+			},
+		}
+
+		updated, err := UpdateConfigBytesWithHints(nil, cfg, map[string][]ConstructorArgHint{
+			"greeter": {{
+				Name:         "greeting",
+				TypeLabel:    "string",
+				ExampleValue: `"hello"`,
+			}},
+		})
+		require.NoError(t, err)
+
+		out := string(updated)
+		require.Contains(t, out, "[modules.greeter.settings]")
+		require.Contains(t, out, "# greeting = \"hello\" # string")
+		require.NotContains(t, out, "# settings.greeting = \"hello\" # string")
+	})
 }
 
 func TestApplyEnvOverlay(t *testing.T) {

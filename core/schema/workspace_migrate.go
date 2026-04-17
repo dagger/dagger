@@ -62,6 +62,17 @@ func (s *workspaceSchema) migrate(
 	}(); err != nil {
 		return nil, err
 	}
+	if hints := s.collectWorkspaceConfigHints(ctx, ws, workspaceMigrationHintRefs(compatWorkspace)); len(hints) > 0 {
+		cfg, err := workspace.ParseConfig(plan.WorkspaceConfigData)
+		if err != nil {
+			return nil, fmt.Errorf("parse planned workspace config: %w", err)
+		}
+		updated, err := workspace.UpdateConfigBytesWithHints(nil, cfg, hints)
+		if err != nil {
+			return nil, fmt.Errorf("render planned workspace config with hints: %w", err)
+		}
+		plan.WorkspaceConfigData = updated
+	}
 
 	warnings := workspaceMigrationWarnings(plan)
 	for _, warning := range warnings {
@@ -89,6 +100,27 @@ func (s *workspaceSchema) migrate(
 			},
 		},
 	}, nil
+}
+
+func workspaceMigrationHintRefs(compatWorkspace *workspace.CompatWorkspace) map[string]string {
+	if compatWorkspace == nil {
+		return nil
+	}
+
+	refs := map[string]string{}
+	for _, mod := range compatWorkspace.Modules {
+		if mod.ConfigName == "" || mod.Source == "" {
+			continue
+		}
+		refs[mod.ConfigName] = mod.Source
+	}
+	if compatWorkspace.MainModule != nil && compatWorkspace.MainModule.ConfigName != "" {
+		refs[compatWorkspace.MainModule.ConfigName] = "."
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return refs
 }
 
 func (s *workspaceSchema) workspaceMigrationLockBytes(

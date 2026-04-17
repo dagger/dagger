@@ -6,6 +6,7 @@ package core
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -122,6 +123,26 @@ type Myapp {
 		lockOut, err := ctr.File("/work/.dagger/lock").Contents(ctx)
 		require.NoError(t, err)
 		assertModuleResolveLockEntry(t, []byte(lockOut), source, workspace.PolicyFloat)
+	})
+
+	t.Run("local migrated modules include commented setting hints", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		toolchainSrc := filepath.Join("core", "integration", "testdata", "modules", "go", "defaults")
+
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "defaults", "source": "./toolchain"}
+  ]
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithDirectory("toolchain", c.Host().Directory(toolchainSrc))
+		}).With(daggerExec("migrate", "-y"))
+
+		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, `[modules.defaults]`)
+		require.Contains(t, configOut, `# settings.greeting = "hello" # string`)
+		require.Contains(t, configOut, `# settings.password = "env://MY_SECRET" # Secret`)
 	})
 
 	t.Run("dot dagger source is pruned to workspace outputs", func(ctx context.Context, t *testctx.T) {

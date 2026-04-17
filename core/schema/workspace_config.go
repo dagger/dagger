@@ -178,10 +178,27 @@ func readWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Co
 }
 
 func writeWorkspaceConfig(ctx context.Context, ws *core.Workspace, cfg *workspace.Config) error {
+	return writeWorkspaceConfigWithHints(ctx, ws, cfg, nil)
+}
+
+func writeWorkspaceConfigWithHints(
+	ctx context.Context,
+	ws *core.Workspace,
+	cfg *workspace.Config,
+	hints map[string][]workspace.ConstructorArgHint,
+) error {
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
-	return writeConfigBytes(ctx, ws, workspace.SerializeConfig(cfg))
+	existingData, err := readConfigBytes(ctx, ws)
+	if err != nil {
+		return err
+	}
+	updated, err := workspace.UpdateConfigBytesWithHints(existingData, cfg, hints)
+	if err != nil {
+		return err
+	}
+	return writeConfigBytes(ctx, ws, updated)
 }
 
 func writeConfigBytes(ctx context.Context, ws *core.Workspace, data []byte) error {

@@ -103,7 +103,11 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	if needsProjectModuleMigration && compatWorkspace.MainModule != nil {
 		wsCfg.Modules[cfg.Name] = compatWorkspace.MainModule.Entry
 	}
-	plan.WorkspaceConfigData = SerializeConfig(wsCfg)
+	workspaceConfigData, err := UpdateConfigBytes(nil, wsCfg)
+	if err != nil {
+		return nil, fmt.Errorf("serializing workspace config: %w", err)
+	}
+	plan.WorkspaceConfigData = workspaceConfigData
 
 	migrateLock := NewLock()
 	hasLockEntries := false

@@ -345,29 +345,20 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 		return nil, err
 	}
 
-	var (
-		tree *toml.Tree
-		err  error
-	)
-	if len(existingData) > 0 {
-		tree, err = toml.LoadBytes(existingData)
-		if err != nil {
-			return nil, fmt.Errorf("parse existing config: %w", err)
-		}
-	} else {
-		tree, err = toml.TreeFromMap(map[string]interface{}{})
-		if err != nil {
-			return nil, fmt.Errorf("create config tree: %w", err)
-		}
+	cfg, err := ParseConfig(existingData)
+	if err != nil && len(existingData) > 0 {
+		return nil, fmt.Errorf("parse existing config: %w", err)
+	}
+	if cfg == nil {
+		cfg = &Config{}
 	}
 
-	tree.SetPath(strings.Split(key, "."), parseValueString(key, rawValue))
-
-	out, err := tree.ToTomlString()
-	if err != nil {
-		return nil, fmt.Errorf("serialize updated config: %w", err)
+	value := parseValueString(key, rawValue)
+	if setConfigValue(cfg, strings.Split(key, "."), value); err != nil {
+		return nil, err
 	}
-	return []byte(out), nil
+
+	return UpdateConfigBytes(existingData, cfg)
 }
 
 func flattenTOMLTree(prefix string, tree *toml.Tree) string {
@@ -467,6 +458,101 @@ func validateConfigKey(key string) error {
 	return validateKeyAgainstType(parts, reflect.TypeOf(Config{}), key)
 }
 
+func setConfigValue(cfg *Config, parts []string, value any) error {
+	if len(parts) == 0 {
+		return fmt.Errorf("key is required")
+	}
+
+	switch parts[0] {
+	case "ignore":
+		if len(parts) != 1 {
+			return fmt.Errorf("invalid key %q; ignore does not have sub-keys", strings.Join(parts, "."))
+		}
+		switch v := value.(type) {
+		case []string:
+			cfg.Ignore = append([]string(nil), v...)
+		case []any:
+			cfg.Ignore = make([]string, 0, len(v))
+			for _, item := range v {
+				cfg.Ignore = append(cfg.Ignore, fmt.Sprint(item))
+			}
+		default:
+			cfg.Ignore = []string{fmt.Sprint(v)}
+		}
+		return nil
+	case "defaults_from_dotenv":
+		if len(parts) != 1 {
+			return fmt.Errorf("invalid key %q; defaults_from_dotenv does not have sub-keys", strings.Join(parts, "."))
+		}
+		boolValue, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("defaults_from_dotenv must be a boolean")
+		}
+		cfg.DefaultsFromDotEnv = boolValue
+		return nil
+	case "modules":
+		if len(parts) < 3 {
+			return fmt.Errorf("cannot set %q directly; specify a field like %s.settings", strings.Join(parts, "."), strings.Join(parts, "."))
+		}
+		if cfg.Modules == nil {
+			cfg.Modules = map[string]ModuleEntry{}
+		}
+		moduleName := parts[1]
+		entry := cfg.Modules[moduleName]
+		switch parts[2] {
+		case "source":
+			entry.Source = fmt.Sprint(value)
+		case "entrypoint":
+			boolValue, ok := value.(bool)
+			if !ok {
+				return fmt.Errorf("modules.%s.entrypoint must be a boolean", moduleName)
+			}
+			entry.Entrypoint = boolValue
+		case "legacy-default-path":
+			boolValue, ok := value.(bool)
+			if !ok {
+				return fmt.Errorf("modules.%s.legacy-default-path must be a boolean", moduleName)
+			}
+			entry.LegacyDefaultPath = boolValue
+		case "settings":
+			if len(parts) < 4 {
+				return fmt.Errorf("cannot set modules.%s.settings directly; specify a setting key", moduleName)
+			}
+			if entry.Settings == nil {
+				entry.Settings = map[string]any{}
+			}
+			entry.Settings[parts[3]] = value
+		default:
+			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
+		}
+		cfg.Modules[moduleName] = entry
+		return nil
+	case "env":
+		if len(parts) < 5 || parts[2] != "modules" || parts[4] != "settings" || len(parts) < 6 {
+			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
+		}
+		if cfg.Env == nil {
+			cfg.Env = map[string]EnvOverlay{}
+		}
+		envName := parts[1]
+		env := cfg.Env[envName]
+		if env.Modules == nil {
+			env.Modules = map[string]EnvModuleOverlay{}
+		}
+		moduleName := parts[3]
+		module := env.Modules[moduleName]
+		if module.Settings == nil {
+			module.Settings = map[string]any{}
+		}
+		module.Settings[parts[5]] = value
+		env.Modules[moduleName] = module
+		cfg.Env[envName] = env
+		return nil
+	default:
+		return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
+	}
+}
+
 func validateKeyAgainstType(parts []string, t reflect.Type, fullKey string) error {
 	if len(parts) == 0 {
 		return nil
@@ -491,8 +577,8 @@ func validateKeyAgainstType(parts []string, t reflect.Type, fullKey string) erro
 		elemType := fieldType.Elem()
 		if elemType.Kind() == reflect.Struct {
 			if len(mapValueRest) == 0 {
-				valid := validTOMLFieldNames(elemType)
-				return fmt.Errorf("cannot set %q directly; specify a field like %s.%s", fullKey, fullKey, valid[0])
+				return fmt.Errorf("cannot set %q directly; specify a field like %s.%s",
+					fullKey, fullKey, preferredExampleFieldName(elemType))
 			}
 			return validateKeyAgainstType(mapValueRest, elemType, fullKey)
 		}
@@ -531,6 +617,22 @@ func validTOMLFieldNames(t reflect.Type) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func preferredExampleFieldName(t reflect.Type) string {
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("toml")
+		name := strings.Split(tag, ",")[0]
+		if name == "settings" {
+			return name
+		}
+	}
+
+	names := validTOMLFieldNames(t)
+	if len(names) == 0 {
+		return "value"
+	}
+	return names[0]
 }
 
 func parseValueString(key string, rawValue string) any {
