@@ -67,7 +67,8 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 	ctx context.Context,
 	ws *core.Workspace,
 	cfg *workspace.Config,
-	dir dagql.ObjectResult[*core.Directory],
+	baseDir dagql.ObjectResult[*core.Directory],
+	migratedDir dagql.ObjectResult[*core.Directory],
 ) map[string][]workspace.ConstructorArgHint {
 	if cfg == nil || len(cfg.Modules) == 0 {
 		return nil
@@ -92,7 +93,7 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 			continue
 		}
 
-		constructorHints, err := introspectConfiguredModuleArgs(ctx, srv, dir, entry.Source)
+		constructorHints, err := introspectConfiguredModuleArgs(ctx, srv, baseDir, migratedDir, entry.Source)
 		if err != nil {
 			slog.Warn("could not introspect constructor args for workspace settings hints",
 				"module", name,
@@ -154,7 +155,8 @@ func introspectConstructorArgs(
 func introspectConfiguredModuleArgs(
 	ctx context.Context,
 	srv *dagql.Server,
-	dir dagql.ObjectResult[*core.Directory],
+	baseDir dagql.ObjectResult[*core.Directory],
+	migratedDir dagql.ObjectResult[*core.Directory],
 	source string,
 ) ([]workspace.ConstructorArgHint, error) {
 	resolvedSource := workspace.ResolveModuleEntrySource(workspace.LockDirName, source)
@@ -162,10 +164,24 @@ func introspectConfiguredModuleArgs(
 	case filepath.IsAbs(resolvedSource):
 		return introspectConstructorArgs(ctx, srv, resolvedSource)
 	case resolvedSource != source:
+		dir := baseDir
+		if usesMigratedWorkspaceHintDirectory(resolvedSource) {
+			if migratedDir.ID() == nil {
+				return nil, fmt.Errorf("migrated module source %q requires prepared migrated workspace directory", source)
+			}
+			dir = migratedDir
+		}
 		return introspectConstructorArgsFromDirectory(ctx, srv, dir, resolvedSource)
 	default:
 		return introspectConstructorArgs(ctx, srv, source)
 	}
+}
+
+func usesMigratedWorkspaceHintDirectory(resolvedSource string) bool {
+	migratedModulesDir := filepath.Clean(filepath.Join(workspace.LockDirName, "modules"))
+	resolvedSource = filepath.Clean(resolvedSource)
+	return resolvedSource == migratedModulesDir ||
+		strings.HasPrefix(resolvedSource, migratedModulesDir+string(filepath.Separator))
 }
 
 func introspectConstructorArgsFromDirectory(

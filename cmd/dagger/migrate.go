@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"dagger.io/dagger"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/sdk/go/dagger"
 )
 
 var migrateList bool
