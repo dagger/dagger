@@ -505,13 +505,16 @@ func (srv *Server) initializeDaggerClient(
 	)
 	slog.Info("initializing new client")
 	var callerG singleflight.Group[string, bksession.Caller]
-	client.getClientCaller = func(id string) (bksession.Caller, error) {
+	getClientCaller := func(id string, noWait bool) (bksession.Caller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (bksession.Caller, error) {
-			return srv.bkSessionManager.Get(ctx, id, false)
+			return srv.bkSessionManager.Get(ctx, id, noWait)
 		})
 		return caller, err
+	}
+	client.getClientCaller = func(id string) (bksession.Caller, error) {
+		return client.resolveClientCaller(id, getClientCaller)
 	}
 
 	var err error
@@ -675,6 +678,27 @@ func (srv *Server) initializeDaggerClient(
 
 	client.state = clientStateInitialized
 	return nil
+}
+
+func (client *daggerClient) resolveClientCaller(
+	id string,
+	getClientCaller func(string, bool) (bksession.Caller, error),
+) (bksession.Caller, error) {
+	if id == client.clientID && len(client.parents) > 0 {
+		// Synthetic nested clients (e.g. builtin dang evaluation) do not
+		// establish their own session attachables. When host-backed services
+		// such as git config are requested through the current client ID, fall
+		// back to the immediate parent client chain.
+		caller, err := getClientCaller(id, true)
+		if err != nil || caller != nil {
+			return caller, err
+		}
+
+		parent := client.parents[len(client.parents)-1]
+		return parent.getClientCaller(parent.clientID)
+	}
+
+	return getClientCaller(id, false)
 }
 
 func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error) {
