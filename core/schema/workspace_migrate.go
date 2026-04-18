@@ -65,20 +65,18 @@ func (s *workspaceSchema) migrate(
 	if err != nil {
 		return nil, fmt.Errorf("parse planned workspace config: %w", err)
 	}
-	if baseDir, err := s.workspaceMigrationBaseDirectory(ctx, ws, plan); err == nil {
-		var updatedDir dagql.ObjectResult[*core.Directory]
-		if workspaceConfigUsesMigratedModuleSources(cfg) {
-			if _, preparedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan); err == nil {
-				updatedDir = preparedDir
-			}
+	var updatedDir dagql.ObjectResult[*core.Directory]
+	if workspaceConfigUsesMigratedModuleSources(cfg) {
+		if _, preparedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan); err == nil {
+			updatedDir = preparedDir
 		}
-		if hints := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, baseDir, updatedDir); len(hints) > 0 {
-			updated, err := workspace.UpdateConfigBytesWithHints(plan.WorkspaceConfigData, cfg, hints)
-			if err != nil {
-				return nil, fmt.Errorf("render planned workspace config with hints: %w", err)
-			}
-			plan.WorkspaceConfigData = updated
+	}
+	if hints := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, plan.ProjectRoot, updatedDir); len(hints) > 0 {
+		updated, err := workspace.UpdateConfigBytesWithHints(plan.WorkspaceConfigData, cfg, hints)
+		if err != nil {
+			return nil, fmt.Errorf("render planned workspace config with hints: %w", err)
 		}
+		plan.WorkspaceConfigData = updated
 	}
 
 	warnings := workspaceMigrationWarnings(plan)

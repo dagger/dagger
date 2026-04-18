@@ -67,7 +67,7 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 	ctx context.Context,
 	ws *core.Workspace,
 	cfg *workspace.Config,
-	baseDir dagql.ObjectResult[*core.Directory],
+	projectRootPath string,
 	migratedDir dagql.ObjectResult[*core.Directory],
 ) map[string][]workspace.ConstructorArgHint {
 	if cfg == nil || len(cfg.Modules) == 0 {
@@ -93,7 +93,7 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 			continue
 		}
 
-		constructorHints, err := introspectConfiguredModuleArgs(ctx, srv, baseDir, migratedDir, entry.Source)
+		constructorHints, err := introspectConfiguredModuleArgs(ctx, srv, projectRootPath, migratedDir, entry.Source)
 		if err != nil {
 			slog.Warn("could not introspect constructor args for workspace settings hints",
 				"module", name,
@@ -155,7 +155,7 @@ func introspectConstructorArgs(
 func introspectConfiguredModuleArgs(
 	ctx context.Context,
 	srv *dagql.Server,
-	baseDir dagql.ObjectResult[*core.Directory],
+	projectRootPath string,
 	migratedDir dagql.ObjectResult[*core.Directory],
 	source string,
 ) ([]workspace.ConstructorArgHint, error) {
@@ -164,14 +164,16 @@ func introspectConfiguredModuleArgs(
 	case filepath.IsAbs(resolvedSource):
 		return introspectConstructorArgs(ctx, srv, resolvedSource)
 	case resolvedSource != source:
-		dir := baseDir
 		if usesMigratedWorkspaceHintDirectory(resolvedSource) {
 			if migratedDir.ID() == nil {
 				return nil, fmt.Errorf("migrated module source %q requires prepared migrated workspace directory", source)
 			}
-			dir = migratedDir
+			return introspectConstructorArgsFromDirectory(ctx, srv, migratedDir, resolvedSource)
 		}
-		return introspectConstructorArgsFromDirectory(ctx, srv, dir, resolvedSource)
+		if projectRootPath == "" {
+			return nil, fmt.Errorf("workspace project root is required for local module source %q", source)
+		}
+		return introspectConstructorArgs(ctx, srv, filepath.Clean(filepath.Join(projectRootPath, resolvedSource)))
 	default:
 		return introspectConstructorArgs(ctx, srv, source)
 	}

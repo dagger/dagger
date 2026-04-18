@@ -127,7 +127,7 @@ type Myapp {
 
 	t.Run("local migrated modules include commented setting hints", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		toolchainSrc := filepath.Join("core", "integration", "testdata", "modules", "go", "defaults")
+		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
 
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
@@ -147,8 +147,8 @@ type Myapp {
 
 	t.Run("migrated main module hints load from migrated module layout", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		mainModuleSrc := filepath.Join("core", "integration", "testdata", "modules", "go", "defaults", "superconstructor")
-		toolchainSrc := filepath.Join("core", "integration", "testdata", "modules", "go", "defaults")
+		mainModuleSrc := filepath.Join("testdata", "modules", "go", "defaults", "superconstructor")
+		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
 		legacyConfig := `{
   "name": "superconstructor",
   "engineVersion": "v0.20.1",
@@ -177,8 +177,8 @@ type Myapp {
 
 	t.Run("dot dagger source keeps toolchain and migrated main module hints", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		mainModuleSrc := filepath.Join("core", "integration", "testdata", "modules", "go", "defaults", "superconstructor")
-		toolchainSrc := filepath.Join("core", "integration", "testdata", "modules", "go", "defaults")
+		mainModuleSrc := filepath.Join("testdata", "modules", "go", "defaults", "superconstructor")
+		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
 		legacyConfig := `{
   "name": "superconstructor",
   "engineVersion": "v0.20.1",
