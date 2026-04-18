@@ -1,0 +1,182 @@
+---
+slug: /extending/persisting-artifacts
+title: "Persisting Artifacts"
+description: "Learn how to persist files produced by a Dagger Function to the caller's filesystem"
+---
+
+# Persisting Artifacts to the Caller's Filesystem
+
+A common requirement is to have a Dagger Function produce an artifact — a scan report, a build log, a generated file — and persist it to the caller's filesystem. For example, a CI pipeline might want to write reports to a shared volume so a separate dashboard pod can read them.
+
+This page explains where data lives in a Dagger pipeline and the correct pattern for persisting artifacts to the caller's host.
+
+## Where files live inside a Dagger Function
+
+Dagger Functions execute inside containers spawned by the Dagger Engine. This is called the *module runtime container*. Its filesystem is:
+
+- **Ephemeral** — the container is torn down after the pipeline completes.
+- **Isolated** — it does not share mounts with the Dagger Engine host, with the `dagger call` client, or with any Kubernetes pod the pipeline is invoked from.
+- **Not the caller's filesystem.**
+
+This is a deliberate design choice. It ensures [reproducibility, caching, and security](./functions.mdx) — Dagger Functions cannot accidentally read or write arbitrary host paths.
+
+## The `export` gotcha
+
+The `File.export` and `Directory.export` methods have **different semantics** depending on where they are called from.
+
+| Where `export` is called | Target filesystem |
+| --- | --- |
+| Inside a `@func()` body | The **module runtime container's** ephemeral filesystem (lost at end of run) |
+| In a CLI chain (`dagger call ... export --path /host/path`) | The **caller's host** filesystem (the machine running `dagger call`) |
+
+Both forms use the same method name. The difference is the execution context.
+
+:::warning
+Calling `file.export("/some/path")` inside a `@func()` body **does not write to the caller's host**. It writes to the module runtime container, whose filesystem disappears after the run. Even if the path looks like a mounted volume on the caller, the write will not reach it.
+
+To persist an artifact to the caller's filesystem, return a `File` or `Directory` from your function and invoke `export` from the CLI chain instead.
+:::
+
+If files produced by a pipeline seem to "silently disappear" with no error in the logs, this is almost always the cause. The write succeeded — into a filesystem that was then garbage-collected.
+
+## Recommended pattern: return a `Directory`, export on the CLI
+
+Have your Dagger Function return a `File` or `Directory` representing the artifact. Let the caller decide where to persist it via CLI chaining.
+
+### Step 1: Build a `Directory` inside the function
+
+Use `dag.directory()` as the starting point. Chain `withFile`, `withNewFile`, and `withDirectory` to accumulate artifacts. Return the final `Directory`.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go
+package main
+
+import (
+	"context"
+
+	"dagger/my-module/internal/dagger"
+)
+
+type MyModule struct{}
+
+// Run a scan and return the report file packaged in a Directory
+// keyed at `scans/{runID}/report.json`.
+func (m *MyModule) RunScan(ctx context.Context, runID string, source *dagger.Directory) *dagger.Directory {
+	report := dag.Container().
+		From("aquasec/trivy:latest").
+		WithMountedDirectory("/src", source).
+		WithExec([]string{"trivy", "fs", "--format", "json", "--output", "/report.json", "/src"}).
+		File("/report.json")
+
+	return dag.Directory().WithFile("scans/"+runID+"/report.json", report)
+}
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python
+import dagger
+from dagger import dag, function, object_type
+
+
+@object_type
+class MyModule:
+    @function
+    async def run_scan(self, run_id: str, source: dagger.Directory) -> dagger.Directory:
+        """Run a scan and return the report file packaged in a Directory
+        keyed at `scans/{run_id}/report.json`."""
+        report = (
+            dag.container()
+            .from_("aquasec/trivy:latest")
+            .with_mounted_directory("/src", source)
+            .with_exec(["trivy", "fs", "--format", "json", "--output", "/report.json", "/src"])
+            .file("/report.json")
+        )
+        return dag.directory().with_file(f"scans/{run_id}/report.json", report)
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript
+import { dag, Directory, object, func } from "@dagger.io/dagger"
+
+@object()
+class MyModule {
+  /**
+   * Run a scan and return the report file packaged in a Directory
+   * keyed at `scans/{runID}/report.json`.
+   */
+  @func()
+  async runScan(runID: string, source: Directory): Promise<Directory> {
+    const report = dag
+      .container()
+      .from("aquasec/trivy:latest")
+      .withMountedDirectory("/src", source)
+      .withExec(["trivy", "fs", "--format", "json", "--output", "/report.json", "/src"])
+      .file("/report.json")
+
+    return dag.directory().withFile(`scans/${runID}/report.json`, report)
+  }
+}
+```
+</TabItem>
+</Tabs>
+
+### Step 2: Export from the CLI
+
+Chain `export --path` after the function call. The export runs on the `dagger call` client, so the files land on the client's filesystem:
+
+```shell
+dagger call run-scan --run-id=abc123 --source=. export --path ./reports
+```
+
+After this command, the host will contain `./reports/scans/abc123/report.json`.
+
+## When running from a containerised caller
+
+The "caller's filesystem" is whichever process invoked `dagger call`. In a CI pipeline, this is commonly a Kubernetes pod or a CI runner. Any volume mounted on the caller pod is a valid `export` target.
+
+For example, if an Argo Workflows pod mounts a PVC at `/mnt/reports`, the following will write artifacts to that PVC:
+
+```shell
+dagger call run-scan --run-id=abc123 --source=. export --path /mnt/reports
+```
+
+The Dagger Engine itself does not need the PVC mounted — `export` streams file contents from the pipeline graph back to the client, which then writes to its own filesystem.
+
+## When you *do* want files in the module runtime container
+
+There are valid reasons to use `export` inside a `@func()` body — for example, unpacking a file into the runtime container so your function can read it with standard library file I/O:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="python" label="Python">
+```python file=../../cookbook/snippets/copy-file-runtime/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=../../cookbook/snippets/copy-file-runtime/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+This is a different pattern with a different goal. It is explicitly **not** a way to persist data to the caller. Use it when your function needs ephemeral, in-process access to file contents.
+
+## Diagnosing "my files disappeared"
+
+If a pipeline logs a successful write but the file is not visible on the expected volume:
+
+1. Confirm whether the write was from inside a `@func()` body or a CLI chain. Inside the function = wrong target.
+2. Exec into the Dagger Engine pod and search for the file:
+
+    ```shell
+    kubectl exec <dagger-engine-pod> -- find /var/lib/dagger -name <filename>
+    ```
+
+    A path under `/var/lib/dagger/worker/snapshots/` confirms the write went to a runtime container snapshot.
+3. Refactor the function to return a `File` or `Directory` instead of calling `export` internally, and move the `export` to the CLI chain.
+
+## Summary
+
+- The body of a Dagger Function runs in a short-lived *module runtime container*, not on the caller's filesystem.
+- `export` inside a `@func()` body targets that runtime container. `export` in a CLI chain targets the `dagger call` caller.
+- To persist an artifact for the caller, return a `File` or `Directory` and let the caller chain `export --path`.
+- The Dagger Engine does not need access to the caller's storage — the client handles writing the exported data to its own filesystem.
