@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -119,6 +120,30 @@ func TestPlanMigrationPrunesDotDaggerSourceToWorkspaceOutputs(t *testing.T) {
 	require.True(t, plan.PruneOldSourceToOutputs)
 	require.False(t, plan.RemoveOldSource)
 	require.NotContains(t, plan.Warnings, `old source dir ".dagger" is ancestor of new location; skipped cleanup`)
+}
+
+func TestPlanMigrationWritesMainModuleFirst(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": ".",
+  "toolchains": [
+    {"name": "toolchain", "source": "./toolchain"}
+  ],
+  "blueprint": {"name": "blueprint", "source": "./blueprint"}
+}`)
+
+	configData := string(plan.WorkspaceConfigData)
+	mainIdx := strings.Index(configData, "[modules.myapp]")
+	toolchainIdx := strings.Index(configData, "[modules.toolchain]")
+	blueprintIdx := strings.Index(configData, "[modules.blueprint]")
+	require.NotEqual(t, -1, mainIdx)
+	require.NotEqual(t, -1, toolchainIdx)
+	require.NotEqual(t, -1, blueprintIdx)
+	require.Less(t, mainIdx, blueprintIdx)
+	require.Less(t, mainIdx, toolchainIdx)
 }
 
 func TestPlanMigrationFailsOnConflictingLegacyPins(t *testing.T) {

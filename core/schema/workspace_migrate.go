@@ -68,7 +68,7 @@ func (s *workspaceSchema) migrate(
 	}
 	if _, updatedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan); err == nil {
 		if hints := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, updatedDir); len(hints) > 0 {
-			updated, err := workspace.UpdateConfigBytesWithHints(nil, cfg, hints)
+			updated, err := workspace.UpdateConfigBytesWithHints(plan.WorkspaceConfigData, cfg, hints)
 			if err != nil {
 				return nil, fmt.Errorf("render planned workspace config with hints: %w", err)
 			}

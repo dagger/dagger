@@ -103,7 +103,7 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	if needsProjectModuleMigration && compatWorkspace.MainModule != nil {
 		wsCfg.Modules[cfg.Name] = compatWorkspace.MainModule.Entry
 	}
-	workspaceConfigData, err := UpdateConfigBytes(nil, wsCfg)
+	workspaceConfigData, err := renderMigrationWorkspaceConfig(wsCfg, compatWorkspace.MainModule)
 	if err != nil {
 		return nil, fmt.Errorf("serializing workspace config: %w", err)
 	}
@@ -137,6 +137,28 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	}
 
 	return plan, nil
+}
+
+func renderMigrationWorkspaceConfig(cfg *Config, mainModule *CompatMainModule) ([]byte, error) {
+	if mainModule == nil {
+		return UpdateConfigBytes(nil, cfg)
+	}
+
+	mainEntry, ok := cfg.Modules[mainModule.ConfigName]
+	if !ok {
+		return UpdateConfigBytes(nil, cfg)
+	}
+
+	seeded, err := UpdateConfigBytes(nil, &Config{
+		Modules: map[string]ModuleEntry{
+			mainModule.ConfigName: mainEntry,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return UpdateConfigBytes(seeded, cfg)
 }
 
 // buildMigratedModuleJSON creates the cleaned-up dagger.json for the migrated

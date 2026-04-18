@@ -172,6 +172,7 @@ type Myapp {
 		require.Contains(t, configOut, `[modules.superconstructor]`)
 		require.Contains(t, configOut, `# settings.count = 42 # int`)
 		require.Contains(t, configOut, `# settings.password = "env://MY_SECRET" # Secret`)
+		require.Less(t, strings.Index(configOut, `[modules.superconstructor]`), strings.Index(configOut, `[modules.defaults]`))
 	})
 
 	t.Run("dot dagger source is pruned to workspace outputs", func(ctx context.Context, t *testctx.T) {
