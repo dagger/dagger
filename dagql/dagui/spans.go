@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
@@ -99,12 +102,8 @@ type Span struct {
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
 
-	// v0.15+
 	causesViaLinks  SpanSet
 	effectsViaLinks SpanSet
-	// v0.14 and below
-	causesViaAttrs  SpanSet
-	effectsViaAttrs map[string]SpanSet
 
 	// Indicates that this span was actually exported to the database, and not
 	// just allocated due to a span parent or other relationship.
@@ -149,11 +148,16 @@ func (span *Span) CallID() (*call.ID, error) {
 		return nil, fmt.Errorf("no call for span")
 	}
 
-	dag := &callpbv1.DAG{
+	recipe := &callpbv1.RecipeDAG{
 		RootDigest:    spanCall.Digest,
 		CallsByDigest: map[string]*callpbv1.Call{},
 	}
-	extractIntoDAG(dag, span.db, spanCall.Digest)
+	extractIntoDAG(recipe, span.db, spanCall.Digest)
+	dag := &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{
+			Recipe: recipe,
+		},
+	}
 
 	var id call.ID
 	err := id.FromProto(dag)
@@ -176,7 +180,23 @@ func (span *Span) Base() *callpbv1.Call {
 	// TODO: respect an already-set base value computed server-side, and client
 	// subsequently requests necessary DAG
 	if call.ReceiverDigest != "" {
-		parentCall := span.db.MustCall(call.ReceiverDigest)
+		parentCall := span.db.Call(call.ReceiverDigest)
+		if parentCall == nil {
+			suffix := "." + call.Field
+			if span.Name != "" && strings.HasSuffix(span.Name, suffix) {
+				baseName := strings.TrimSuffix(span.Name, suffix)
+				if baseName != "" {
+					span.baseCache = &callpbv1.Call{
+						Digest: call.ReceiverDigest,
+						Type: &callpbv1.Type{
+							NamedType: baseName,
+						},
+					}
+					return span.baseCache
+				}
+			}
+		}
+		parentCall = span.db.MustCall(call.ReceiverDigest)
 		if parentCall != nil {
 			span.baseCache = span.db.Simplify(parentCall, span.Internal)
 			return span.baseCache
@@ -208,6 +228,7 @@ type SpanSnapshot struct {
 	Final bool
 
 	ID        SpanID
+	TraceID   TraceID
 	Name      string
 	StartTime time.Time
 	EndTime   time.Time
@@ -219,7 +240,7 @@ type SpanSnapshot struct {
 
 	Status sdktrace.Status `json:",omitzero"`
 
-	// statuses derived from span and its effects
+	// statuses derived from the span and any causal continuations
 	Failed_         bool     `json:",omitempty"`
 	FailedReason_   []string `json:",omitempty"`
 	Cached_         bool     `json:",omitempty"`
@@ -232,6 +253,7 @@ type SpanSnapshot struct {
 	// statuses reported by the span via attributes
 	Canceled bool `json:",omitempty"`
 	Cached   bool `json:",omitempty"`
+	Pending  bool `json:",omitempty"`
 
 	// An extra flag to indicate that a span was canceled because the root span
 	// completed while the span was still running.
@@ -272,9 +294,7 @@ type SpanSnapshot struct {
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
 
-	EffectID         string   `json:",omitempty"`
-	EffectIDs        []string `json:",omitempty"`
-	EffectsCompleted []string `json:",omitempty"`
+	ResumeOutput string `json:",omitempty"`
 
 	CallDigest  string `json:",omitempty"`
 	CallPayload string `json:",omitempty"`
@@ -316,6 +336,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.CanceledAttr:
 		snapshot.Canceled = val.(bool)
+
+	case dagql.PendingAttr:
+		snapshot.Pending = val.(bool)
 
 	case telemetry.UIEncapsulateAttr:
 		snapshot.Encapsulate = val.(bool)
@@ -378,17 +401,11 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)
 
-	case telemetry.EffectIDsAttr:
-		snapshot.EffectIDs = sliceOf[string](val)
-
-	case telemetry.EffectsCompletedAttr:
-		snapshot.EffectsCompleted = sliceOf[string](val)
-
 	case telemetry.DagOutputAttr:
 		snapshot.Output = val.(string)
 
-	case telemetry.EffectIDAttr:
-		snapshot.EffectID = val.(string)
+	case telemetryattrs.UIResumeOutputAttr:
+		snapshot.ResumeOutput = val.(string)
 
 	case telemetry.ContentTypeAttr:
 		snapshot.ContentType = val.(string)
@@ -426,8 +443,8 @@ func sliceOf[T any](val any) []T {
 // PropagateStatusToParentsAndLinks updates the running and failed state of all
 // parent spans, linked spans, and their parents to reflect the span.
 //
-// NOTE: failed state only propagates to spans that installed the current
-// span's effect - it does _not_ propagate through the parent span.
+// NOTE: failed state propagates through causal links, not through the direct
+// parent span.
 func (span *Span) PropagateStatusToParentsAndLinks() {
 	// Update the span's own activity to reflect its current state
 	span.Activity.Add(span)
@@ -454,7 +471,16 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	for parent := range span.Parents {
 		// don't propagate failure, to respect encapsulation
 		// don't propagate activity, since these are direct parents
-		if propagate(parent, false, false) {
+		changed := propagate(parent, false, false)
+
+		// If a child only starts after its parent already completed, treat it as
+		// a resumed continuation of that parent for failure purposes.
+		lateContinuation := !parent.IsRunning() && span.StartTime.After(parent.EndTime)
+		if lateContinuation && span.IsFailedOrCausedFailure() {
+			changed = parent.FailedLinks.Add(span) || changed
+		}
+
+		if changed {
 			span.db.update(parent)
 		}
 	}
@@ -659,42 +685,14 @@ func (span *Span) Errors() SpanSet {
 	for _, failed := range span.FailedLinks.Order {
 		errs.Add(failed)
 	}
-	if len(errs.Order) > 0 {
-		return errs
-	}
-	for _, effect := range span.EffectIDs {
-		if span.db.FailedEffects[effect] {
-			if effectSpans := span.db.EffectSpans[effect]; effectSpans != nil {
-				for _, e := range effectSpans.Order {
-					if e.IsFailed() {
-						errs.Add(e)
-					}
-				}
-			}
-		}
-	}
 	return errs
 }
 
 func (span *Span) IsFailedOrCausedFailure() bool {
-	if span.Final {
-		return span.Failed_
-	}
-	if span.IsFailed() || len(span.FailedLinks.Order) > 0 {
-		return true
-	}
-	for _, effect := range span.EffectIDs {
-		if span.db.FailedEffects[effect] {
-			return true
-		}
-	}
-	return false
+	return span.IsFailed() || (span.FailedLinks != nil && len(span.FailedLinks.Order) > 0) || (span.Final && span.Failed_)
 }
 
 func (span *Span) FailedReason() (bool, []string) {
-	if span.Final {
-		return span.Failed_, span.FailedReason_
-	}
 	var reasons []string
 	if span.IsFailed() {
 		reasons = append(reasons, "span itself errored")
@@ -702,10 +700,8 @@ func (span *Span) FailedReason() (bool, []string) {
 	for _, failed := range span.FailedLinks.Order {
 		reasons = append(reasons, "span has failed link: "+failed.Name)
 	}
-	for _, effect := range span.EffectIDs {
-		if span.db.FailedEffects[effect] {
-			reasons = append(reasons, "span installed failed effect: "+effect)
-		}
+	if len(reasons) == 0 && span.Final && span.Failed_ {
+		reasons = append(reasons, span.FailedReason_...)
 	}
 	return len(reasons) > 0, reasons
 }
@@ -766,8 +762,7 @@ func (span *Span) IsRunning() bool {
 	return span.EndTime.Before(span.StartTime)
 }
 
-// CausalSpans iterates over the spans that directly cause this span, by following
-// links (for newer engines) or attributes (for old engines).
+// CausalSpans iterates over the spans that directly cause this span.
 func (span *Span) CausalSpans(f func(*Span) bool) {
 	var visit func(*Span) bool
 	visit = func(s *Span) bool {
@@ -786,33 +781,12 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 			return
 		}
 	}
-	if span.causesViaAttrs != nil {
-		for _, cause := range span.causesViaAttrs.Order {
-			if span.StartTime.Before(cause.StartTime) {
-				// cannot possibly be "caused" by it, since it came after
-				continue
-			}
-			if !visit(cause) {
-				return
-			}
-		}
-	}
 }
 
 func (span *Span) EffectSpans(f func(*Span) bool) {
-	if len(span.effectsViaLinks.Order) > 0 {
-		for _, span := range span.effectsViaLinks.Order {
-			if !f(span) {
-				return
-			}
-		}
-		return
-	}
-	for _, set := range span.effectsViaAttrs {
-		for _, span := range set.Order {
-			if !f(span) {
-				return
-			}
+	for _, span := range span.effectsViaLinks.Order {
+		if !f(span) {
+			return
 		}
 	}
 }
@@ -828,32 +802,16 @@ func (span *Span) IsPending() bool {
 	// NB: keep this in extremely close alignment with PendingReason, we don't
 	// re-use it so we can minimize allocations
 
-	if span.Final {
-		return span.Pending_
-	}
 	if span.IsRunningOrEffectsRunning() {
 		return false
 	}
-	if len(span.EffectIDs) > 0 {
-		for _, digest := range span.EffectIDs {
-			effectSpans := span.db.EffectSpans[digest]
-			if effectSpans != nil && len(effectSpans.Order) > 0 {
-				return false
-			}
-			if span.db.CompletedEffects[digest] {
-				return false
-			}
-		}
-		// there's an output but no linked spans yet, so we're pending
-		return true
+	if span.Pending || (span.Final && span.Pending_) {
+		return len(span.effectsViaLinks.Order) == 0
 	}
 	return false
 }
 
 func (span *Span) PendingReason() (bool, []string) {
-	if span.Final {
-		return span.Pending_, span.PendingReason_
-	}
 	if span.IsRunningOrEffectsRunning() {
 		var reasons []string
 		if span.IsRunning() {
@@ -864,24 +822,11 @@ func (span *Span) PendingReason() (bool, []string) {
 		}
 		return false, reasons
 	}
-	var reasons []string
-	if len(span.EffectIDs) > 0 {
-		for _, digest := range span.EffectIDs {
-			effectSpans := span.db.EffectSpans[digest]
-			if effectSpans != nil && len(effectSpans.Order) > 0 {
-				return false, []string{
-					digest + " has started",
-				}
-			}
-			if span.db.CompletedEffects[digest] {
-				return false, []string{
-					digest + " has completed",
-				}
-			}
-			reasons = append(reasons, digest+" has not started")
+	if span.Pending || (span.Final && span.Pending_) {
+		if len(span.effectsViaLinks.Order) > 0 {
+			return false, []string{"span has resumed via causal continuation"}
 		}
-		// there's an output but no linked spans yet, so we're pending
-		return true, reasons
+		return true, []string{"span says it is pending"}
 	}
 	return false, []string{"span has completed"}
 }
@@ -890,89 +835,17 @@ func (span *Span) IsCached() bool {
 	// NB: keep this in extremely close alignment with CachedReason, we don't
 	// re-use it so we can minimize allocations
 
-	if span.Final {
-		return span.Cached_
-	}
-	if span.Cached {
-		return true
-	}
-	if span.ChildCount > 0 {
-		return false
-	}
-	if span.HasLogs {
-		return false
-	}
-	var anyCached bool
-	for _, effect := range span.EffectIDs {
-		// first check for spans we've seen for the effect
-		effectSpans := span.db.EffectSpans[effect]
-		if effectSpans != nil && len(effectSpans.Order) > 0 {
-			for _, span := range effectSpans.Order {
-				if span.IsCached() {
-					anyCached = true
-				} else {
-					// if any effects were not cache hits, we're definitely not cached
-					return false
-				}
-			}
-		} else if span.db.CompletedEffects[effect] {
-			// if the effect is completed but we never saw a span for it, that
-			// might mean it was a multiple-layers-deep cache hit. or, some
-			// buildkit bug caused us to never see the span. or, another parallel
-			// client completed it. in all of those cases, we'll at least consider
-			// it cached so it's not stuck 'pending' forever.
-			anyCached = true
-		}
-	}
-	// some effects were not cached
-	return anyCached
+	return span.Cached || (span.Final && span.Cached_)
 }
 
 func (span *Span) CachedReason() (bool, []string) {
-	if span.Final {
-		return span.Cached_, span.CachedReason_
-	}
 	if span.Cached {
 		return true, []string{"span says it is cached"}
 	}
-	if span.ChildCount > 0 {
-		return false, []string{"span has children"}
+	if span.Final && span.Cached_ {
+		return true, span.CachedReason_
 	}
-	if span.HasLogs {
-		return false, []string{"span has logs"}
-	}
-	states := map[bool]int{}
-	reasons := []string{}
-	track := func(effect string, cached bool) {
-		states[cached]++
-		if cached {
-			reasons = append(reasons, fmt.Sprintf("%s is cached", effect))
-		} else {
-			reasons = append(reasons, fmt.Sprintf("%s is not cached", effect))
-		}
-	}
-	for _, effect := range span.EffectIDs {
-		// first check for spans we've seen for the effect
-		effectSpans := span.db.EffectSpans[effect]
-		if effectSpans != nil && len(effectSpans.Order) > 0 {
-			for _, span := range effectSpans.Order {
-				track(effect, span.IsCached())
-			}
-		} else {
-			// if the effect is completed but we never saw a span for it, that
-			// might mean it was a multiple-layers-deep cache hit. or, some
-			// buildkit bug caused us to never see the span. or, another parallel
-			// client completed it. in all of those cases, we'll at least consider
-			// it cached so it's not stuck 'pending' forever.
-			track(effect, span.db.CompletedEffects[effect])
-		}
-	}
-	if len(states) == 1 && states[true] > 0 {
-		// all effects were cached
-		return true, reasons
-	}
-	// some effects were not cached
-	return false, reasons
+	return false, []string{"span is not cached"}
 }
 
 func (span *Span) HasParent(parent *Span) bool {

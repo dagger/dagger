@@ -22,14 +22,24 @@ func (sdk *runtimeModule) Runtime(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.EndWithCause(span, &rerr)
 
+	dag := sdk.mod.dag()
+
+	source, err := scopeSourceForSDKOperation(ctx, source, "runtime", dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scope module source for sdk module %s runtime: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
-
-	dag, err := sdk.mod.dag(ctx)
+	sourceID, err := source.ID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
+		return nil, fmt.Errorf("failed to get scoped module source ID for sdk module %s runtime: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema introspection json ID during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	var inst dagql.ObjectResult[*core.Container]
@@ -39,11 +49,11 @@ func (sdk *runtimeModule) Runtime(
 			Args: []dagql.NamedInput{
 				{
 					Name:  "modSource",
-					Value: dagql.NewID[*core.ModuleSource](source.ID()),
+					Value: dagql.NewID[*core.ModuleSource](sourceID),
 				},
 				{
 					Name:  "introspectionJson",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+					Value: dagql.NewID[*core.File](schemaJSONFileID),
 				},
 			},
 		},

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -9,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -292,6 +293,27 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().WithDirectory("/", c.Directory()).Sync(ctx)
 		require.NoError(t, err)
 	})
+}
+
+func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	src := c.Directory().
+		WithNewDirectory("nested", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o700}).
+		WithNewFile("nested/file.txt", "nested", dagger.DirectoryWithNewFileOpts{Permissions: 0o600}).
+		WithNewFile("root.txt", "root", dagger.DirectoryWithNewFileOpts{Permissions: 0o640})
+
+	dir := c.Directory().WithDirectory("out", src, dagger.DirectoryWithDirectoryOpts{
+		Permissions: 0o751,
+	})
+
+	ctr := c.Container().From(alpineImage).WithDirectory("/", dir)
+	stdout, err := ctr.WithExec([]string{"sh", "-lc", "stat -c '%a %n' /out /out/nested /out/nested/file.txt /out/root.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "751 /out")
+	require.Contains(t, stdout, "751 /out/nested")
+	require.Contains(t, stdout, "751 /out/nested/file.txt")
+	require.Contains(t, stdout, "751 /out/root.txt")
 }
 
 func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) {
@@ -924,13 +946,19 @@ func (DirectorySuite) TestChownLookup(ctx context.Context, t *testctx.T) {
 	d := c.Container().
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
-		Rootfs()
-
-	_, err := d.
+		Rootfs().
 		WithNewDirectory("dir").
-		Chown("dir", "auser:agroup").
-		Sync(ctx)
+		WithNewFile("dir/file.txt", "hello").
+		Chown("dir", "auser:agroup")
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
+		WithMountedDirectory("/mnt", d.Directory("dir")).
+		WithExec([]string{"stat", "-c", "%u:%g %U:%G", "/mnt/file.txt"}).
+		Stdout(ctx)
 	require.NoError(t, err)
+	require.Equal(t, "1234:4321 auser:agroup\n", out)
 }
 
 func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
@@ -1383,7 +1411,7 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 
 		digest, err := dir.Digest(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", digest)
+		require.Equal(t, "sha256:0e5db88383bce812f795689f5318a2b2f4fde740ef31c2a2365a46368aafddd2", digest)
 	})
 }
 
@@ -1613,7 +1641,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 		WithExec([]string{
 			"sh",
 			"-c",
-			fmt.Sprintf("head -c %d /dev/zero | tr '\\000' 'a' > /large.txt", buildkit.MaxFileContentsSize+1),
+			fmt.Sprintf("head -c %d /dev/zero | tr '\\000' 'a' > /large.txt", engineutil.MaxFileContentsSize+1),
 		}).
 		File("/large.txt")
 
@@ -1624,7 +1652,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 
 	patchSize, err := patchFile.Size(ctx)
 	require.NoError(t, err)
-	require.Greater(t, patchSize, buildkit.MaxFileContentsSize)
+	require.Greater(t, patchSize, engineutil.MaxFileContentsSize)
 
 	patchID, err := patchFile.ID(ctx)
 	require.NoError(t, err)
@@ -1644,7 +1672,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 
 	size, err := patchedDir.File("large.txt").Size(ctx)
 	require.NoError(t, err)
-	require.Equal(t, buildkit.MaxFileContentsSize+1, size)
+	require.Equal(t, engineutil.MaxFileContentsSize+1, size)
 }
 
 func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
@@ -2791,16 +2819,18 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 	// if this side-effect were to ever change (i.e. adopting SOURCE_DATE_EPOCH functionality),
 	// then this test will break.
 
+	randID := rand.Text()
+
 	c := connect(ctx, t)
 	d1, err := c.Directory().
 		WithoutFile("non-existent").
-		WithNewFile("file", "data").
+		WithNewFile("file", randID).
 		Sync(ctx)
 	require.NoError(t, err)
 
 	d2, err := c.Directory().
 		WithoutFile("also-non-existent").
-		WithNewFile("file", "data").
+		WithNewFile("file", randID).
 		Sync(ctx)
 	require.NoError(t, err)
 

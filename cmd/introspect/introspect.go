@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/spf13/cobra"
 )
 
@@ -31,15 +32,23 @@ func Introspect(cmd *cobra.Command, args []string) error {
 }
 
 func getIntrospection(ctx context.Context) (*introspection.Response, error) {
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "dagql-introspect",
+		SessionID: "dagql-introspect",
+	})
+
 	root := &core.Query{}
-	baseCache, err := dagql.NewCache(ctx, "")
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	dag := dagql.NewServer(root, dagql.NewSessionCache(baseCache))
-	dag.View = call.View(version)
-	coreMod := &schema.CoreMod{Dag: dag}
-	if err := coreMod.Install(ctx, dag); err != nil {
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	coreSchemaBase, err := schema.NewCoreSchemaBase(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	dag, err := coreSchemaBase.Fork(ctx, root, call.View(version))
+	if err != nil {
 		return nil, err
 	}
 
