@@ -366,15 +366,14 @@ func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(customizations []*modules
 		if cust == nil {
 			continue
 		}
-		fn, found := mod.lookupCustomizationFunction(cust.Function)
-		if !found {
-			continue
+		fns := mod.lookupCustomizationFunctions(cust.Function)
+		for _, fn := range fns {
+			arg, found := lookupFunctionArg(fn, cust.Argument)
+			if !found {
+				continue
+			}
+			applyLegacyArgCustomization(arg, cust)
 		}
-		arg, found := lookupFunctionArg(fn, cust.Argument)
-		if !found {
-			continue
-		}
-		applyLegacyArgCustomization(arg, cust)
 	}
 }
 
@@ -394,40 +393,41 @@ func nameMatches(pattern string, names ...string) bool {
 	return false
 }
 
-func (mod *Module) lookupCustomizationFunction(path []string) (*Function, bool) {
+func (mod *Module) lookupCustomizationFunctions(path []string) []*Function {
 	obj, ok := mod.MainObject()
 	if !ok {
-		return nil, false
+		return nil
 	}
 	if len(path) == 0 {
 		if !obj.Constructor.Valid {
-			return nil, false
+			return nil
 		}
-		return obj.Constructor.Value, true
+		return []*Function{obj.Constructor.Value}
 	}
 	if len(path) == 1 {
+		var matches []*Function
 		for _, fn := range obj.Functions {
 			if nameMatches(path[0], fn.OriginalName, fn.Name) {
-				return fn, true
+				matches = append(matches, fn)
 			}
 		}
-		return nil, false
+		return matches
 	}
 	for i, segment := range path {
 		fn, ok := functionByOriginalName(obj, segment)
 		if !ok {
-			return nil, false
+			return nil
 		}
 		if i == len(path)-1 {
-			return fn, true
+			return []*Function{fn}
 		}
 		nextObj, ok := mod.lookupCustomizationObject(fn.ReturnType)
 		if !ok {
-			return nil, false
+			return nil
 		}
 		obj = nextObj
 	}
-	return nil, false
+	return nil
 }
 
 func (mod *Module) lookupCustomizationObject(typeDef *TypeDef) (*ObjectTypeDef, bool) {
