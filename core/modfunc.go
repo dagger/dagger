@@ -588,6 +588,12 @@ func (fn *ModuleFunction) CacheConfigForCall(
 
 	dgstInputs := []string{cacheCfgResp.CacheKey.ID.Digest().String()}
 
+	// Include the module variant digest so that different customizations
+	// (which change primitive default values) produce different cache keys.
+	if fn.mod.AsModuleVariantDigest != "" {
+		dgstInputs = append(dgstInputs, fn.mod.AsModuleVariantDigest)
+	}
+
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
