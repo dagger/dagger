@@ -93,6 +93,63 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 	}
 }
 
+func TestModuleFunctionCacheImplicitInputsPerModuleVariant(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		variantDigest  string
+		expectVariant  bool
+		expectedDigest string
+	}{
+		{
+			name:          "no variant digest: non-customized modules emit no salt",
+			variantDigest: "",
+			expectVariant: false,
+		},
+		{
+			name:           "variant digest set: calls from this module instance get salted",
+			variantDigest:  "variant-abc123",
+			expectVariant:  true,
+			expectedDigest: "variant-abc123",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mod := &Module{
+				NameField:             "test",
+				AsModuleVariantDigest: tc.variantDigest,
+			}
+			modRes, err := dagql.NewObjectResultForCall(
+				mod,
+				func() *dagql.Server {
+					dag := newCoreDagqlServerForTest(t, &Query{})
+					dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+					return dag
+				}(),
+				&dagql.ResultCall{
+					Kind:        dagql.ResultCallKindSynthetic,
+					SyntheticOp: "modfunc_test_variant_module",
+					Type:        dagql.NewResultCallType((&Module{}).Type()),
+				},
+			)
+			require.NoError(t, err)
+
+			modFn := &ModuleFunction{
+				mod:      modRes,
+				metadata: &Function{Name: "fn"},
+			}
+
+			byName := mapImplicitInputsByName(modFn.cacheImplicitInputs())
+			variantInput, hasVariantInput := byName["cachePerModuleVariant"]
+			require.Equal(t, tc.expectVariant, hasVariantInput,
+				"cachePerModuleVariant presence must track Module.AsModuleVariantDigest")
+			if tc.expectVariant {
+				require.Equal(t, tc.expectedDigest,
+					resolveImplicitInputString(t, variantInput, context.Background()),
+					"resolver must surface the exact digest so two variants hash differently")
+			}
+		})
+	}
+}
+
 func TestModuleFunctionCacheImplicitInputsNilSafe(t *testing.T) {
 	require.Nil(t, (*ModuleFunction)(nil).cacheImplicitInputs())
 	require.Nil(t, (&ModuleFunction{}).cacheImplicitInputs())
