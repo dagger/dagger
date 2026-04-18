@@ -71,6 +71,10 @@ func New(
 	// valid if 'base' arg is nil
 	// +optional
 	extraPackages []string,
+
+	// max number of parallel jobs to run for tidy/check tidy/lint
+	// +default=3
+	limit int,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
@@ -126,6 +130,7 @@ func New(
 		Cgo:         cgo,
 		Race:        race,
 		Experiment:  experiment,
+		Limit:       limit,
 	}
 }
 
@@ -167,6 +172,9 @@ type Go struct {
 	Include []string
 
 	Exclude []string
+
+	// Max number of parallel jobs to run
+	Limit int
 }
 
 type AssociativeArray[T any] []struct {
@@ -507,13 +515,8 @@ func (p *Go) TidyModule(ctx context.Context, module string) (*dagger.Changeset, 
 
 func (p *Go) Tidy(
 	ctx context.Context,
-	// +optional
-	include []string,
-	// +optional
-	exclude []string,
-	// limit numbers of go mod tidy parallel jobs to run
-	// +default=3
-	limit int,
+	include []string, // +optional
+	exclude []string, // +optional
 ) (*dagger.Changeset, error) {
 	modules, err := p.Modules(ctx, include, exclude)
 	if err != nil {
@@ -523,7 +526,7 @@ func (p *Go) Tidy(
 	jobs := parallel.New().
 		// On a large repo this can run dozens of parallel go mod tidy jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
-		WithLimit(limit)
+		WithLimit(p.Limit)
 	for i, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
 			var err error
@@ -541,13 +544,8 @@ func (p *Go) Tidy(
 // +check
 func (p *Go) CheckTidy(
 	ctx context.Context,
-	// +optional
-	include []string,
-	// +optional
-	exclude []string,
-	// limit numbers of go mod tidy parallel jobs to run
-	// +default=3
-	limit int,
+	include []string, // +optional
+	exclude []string, // +optional
 ) error {
 	modules, err := p.Modules(ctx, include, exclude)
 	if err != nil {
@@ -556,7 +554,7 @@ func (p *Go) CheckTidy(
 	jobs := parallel.New().
 		// On a large repo this can run dozens of parallel go mod tidy jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
-		WithLimit(limit).
+		WithLimit(p.Limit).
 		// For better display in 'dagger checks': logs from all functions below the job will
 		// be printed below the job.
 		// TODO: remove this when dagger has a sub-checks API
@@ -616,13 +614,8 @@ func filterPath(path string, include, exclude []string) (bool, error) {
 // +check
 func (p *Go) Lint(
 	ctx context.Context,
-	// +optional
-	include []string,
-	// +optional
-	exclude []string,
-	// limit numbers of golangci-lint parallel jobs to run
-	// +default=3
-	limit int,
+	include []string, // +optional
+	exclude []string, // +optional
 ) error {
 	mods, err := p.Modules(ctx, include, exclude)
 	if err != nil {
@@ -631,7 +624,7 @@ func (p *Go) Lint(
 	jobs := parallel.New().
 		// On a large repo this can run dozens of parallel golangci-lint jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
-		WithLimit(limit).
+		WithLimit(p.Limit).
 		// For better display in 'dagger checks': logs from all functions below the job will
 		// be printed below the job.
 		// TODO: remove this when dagger has a sub-checks API
