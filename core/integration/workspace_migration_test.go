@@ -233,7 +233,8 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Cont
 			require.NoError(t, err)
 			stderr, err := migrate.Stderr(ctx)
 			require.NoError(t, err)
-			require.Contains(t, stdout+stderr, "Migrated to workspace format")
+			require.Contains(t, stdout+stderr, "prepare workspace migration")
+			require.NotContains(t, stdout+stderr, "Migrated to workspace format")
 		})
 
 		t.Run("general migration summary", func(ctx context.Context, t *testctx.T) {
@@ -258,7 +259,8 @@ type Myapp {
 			require.NoError(t, err)
 			stderr, err := migrate.Stderr(ctx)
 			require.NoError(t, err)
-			require.Contains(t, stdout+stderr, "Migrated to workspace format")
+			require.Contains(t, stdout+stderr, "prepare workspace migration")
+			require.NotContains(t, stdout+stderr, "Migrated to workspace format")
 		})
 	})
 
@@ -292,11 +294,12 @@ type Myapp {
 		stderr, err := migrate.Stderr(ctx)
 		require.NoError(t, err)
 		output := stdout + stderr
+		require.Contains(t, output, "prepare workspace migration")
 		require.Contains(t, output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
-		require.Contains(t, output, "If you apply this migration, review .dagger/migration-report.md.")
-		require.Equal(t, 1, strings.Count(output, "Migrated to workspace format"))
+		require.NotContains(t, output, "If you apply this migration, review .dagger/migration-report.md.")
+		require.Equal(t, 1, strings.Count(output, "prepare workspace migration"))
 		require.Equal(t, 1, strings.Count(output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md"))
-		require.Equal(t, 1, strings.Count(output, "If you apply this migration, review .dagger/migration-report.md."))
+		require.NotContains(t, output, "Migrated to workspace format")
 	})
 
 	t.Run("dot dagger source does not warn about skipped cleanup", func(ctx context.Context, t *testctx.T) {

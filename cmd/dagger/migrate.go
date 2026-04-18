@@ -12,6 +12,7 @@ import (
 
 	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/sdk/go/dagger"
 )
 
 var migrateList bool
@@ -55,6 +56,16 @@ var migrateCmd = &cobra.Command{
 				return err
 			}
 
+			warnings, err := migrationWarnings(ctx, migration)
+			if err != nil {
+				return fmt.Errorf("migration warnings: %w", err)
+			}
+			for _, warning := range warnings {
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
+					return err
+				}
+			}
+
 			return handleChangesetResponse(ctx, dag, changes, autoApply)
 		})
 	},
@@ -68,6 +79,34 @@ func init() {
 type migrationTarget struct {
 	ConfigPath  string
 	ProjectRoot string
+}
+
+func migrationWarnings(ctx context.Context, migration *dagger.WorkspaceMigration) ([]string, error) {
+	steps, err := migration.Steps(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	warnings := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, step := range steps {
+		stepWarnings, err := step.Warnings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, warning := range stepWarnings {
+			if warning == "" {
+				continue
+			}
+			if _, ok := seen[warning]; ok {
+				continue
+			}
+			seen[warning] = struct{}{}
+			warnings = append(warnings, warning)
+		}
+	}
+
+	return warnings, nil
 }
 
 func probeMigratableModuleConfig(dir string) (*migrationTarget, string, error) {

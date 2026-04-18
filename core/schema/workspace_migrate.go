@@ -39,9 +39,8 @@ func (s *workspaceSchema) migrate(
 		}, nil
 	}
 
-	ctx, span := core.Tracer(ctx).Start(ctx, "Migrated to workspace format")
+	ctx, span := core.Tracer(ctx).Start(ctx, "prepare workspace migration")
 	defer telemetry.EndWithCause(span, &rerr)
-	workspaceMigrationConsole(ctx, "Migrated to workspace format")
 
 	workspaceCtx, err := s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
@@ -77,9 +76,6 @@ func (s *workspaceSchema) migrate(
 	}
 
 	warnings := workspaceMigrationWarnings(plan)
-	for _, warning := range warnings {
-		workspaceMigrationConsole(ctx, "Warning: %s", warning)
-	}
 
 	lockBytes, err := s.workspaceMigrationLockBytes(workspaceCtx, query, plan)
 	if err != nil {
@@ -176,7 +172,6 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	}
 
 	if len(plan.MigrationReportData) > 0 {
-		workspaceMigrationConsole(ctx, "If you apply this migration, review %s.", plan.MigrationReportPath)
 		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigrationReportPath, plan.MigrationReportData, "write migration report")
 		if err != nil {
 			return nil, err
@@ -356,13 +351,6 @@ func workspaceMigrationChanges(
 		return nil, err
 	}
 	return changes.Self(), nil
-}
-
-func workspaceMigrationConsole(ctx context.Context, msg string, args ...any) {
-	if !strings.HasSuffix(msg, "\n") {
-		msg += "\n"
-	}
-	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
 }
 
 func workspaceMigrationScratchDirectory(ctx context.Context) (dir dagql.ObjectResult[*core.Directory], err error) {
