@@ -24,6 +24,10 @@ var WithWorkspace = dagger.WithWorkspace
 // WithLogOutput sets the progress writer
 var WithLogOutput = dagger.WithLogOutput
 
+// WithLoadWorkspaceModules opts this client into loading workspace modules
+// based on the working directory when the session is created via the CLI.
+var WithLoadWorkspaceModules = dagger.WithLoadWorkspaceModules
+
 // WithConn sets the engine connection explicitly
 var WithConn = dagger.WithConn
 

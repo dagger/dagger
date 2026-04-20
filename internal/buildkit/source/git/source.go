@@ -626,16 +626,6 @@ func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out 
 		return nil, errors.Wrapf(err, "failed to update submodules for %s", urlutil.RedactCredentials(gs.src.Remote))
 	}
 
-	if idmap := mount.IdentityMapping(); idmap != nil {
-		u := idmap.RootPair()
-		err := filepath.WalkDir(gitDir, func(p string, _ os.DirEntry, _ error) error {
-			return os.Lchown(p, u.UID, u.GID)
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to remap git checkout")
-		}
-	}
-
 	lm.Unmount()
 	lm = nil
 

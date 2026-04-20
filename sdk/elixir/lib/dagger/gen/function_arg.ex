@@ -18,6 +18,17 @@ defmodule Dagger.FunctionArg do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
+  """
+  @spec default_address(t()) :: {:ok, String.t()} | {:error, term()}
+  def default_address(%__MODULE__{} = function_arg) do
+    query_builder =
+      function_arg.query_builder |> QB.select("defaultAddress")
+
+    Client.execute(function_arg.client, query_builder)
+  end
+
+  @doc """
   Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
   """
   @spec default_path(t()) :: {:ok, String.t()} | {:error, term()}

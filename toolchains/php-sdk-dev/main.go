@@ -154,7 +154,7 @@ func (t *PhpSdkDev) Changes() *dagger.Changeset {
 
 func (t *PhpSdkDev) WithGeneratedClient() *PhpSdkDev {
 	relLayer := t.DevContainer(true).
-		WithExec([]string{"dagger", "run", "./scripts/codegen.php"}).
+		WithExec([]string{"dagger", "run", "--load-workspace-modules", "./scripts/codegen.php"}).
 		Directory(".").
 		Filter(dagger.DirectoryFilterOpts{
 			Exclude: []string{

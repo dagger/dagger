@@ -67,12 +67,22 @@ defmodule Dagger.EngineCache do
   @doc """
   Prune the cache of releaseable entries
   """
-  @spec prune(t(), [{:use_default_policy, boolean() | nil}]) :: :ok | {:error, term()}
+  @spec prune(t(), [
+          {:use_default_policy, boolean() | nil},
+          {:max_used_space, String.t() | nil},
+          {:reserved_space, String.t() | nil},
+          {:min_free_space, String.t() | nil},
+          {:target_space, String.t() | nil}
+        ]) :: :ok | {:error, term()}
   def prune(%__MODULE__{} = engine_cache, optional_args \\ []) do
     query_builder =
       engine_cache.query_builder
       |> QB.select("prune")
       |> QB.maybe_put_arg("useDefaultPolicy", optional_args[:use_default_policy])
+      |> QB.maybe_put_arg("maxUsedSpace", optional_args[:max_used_space])
+      |> QB.maybe_put_arg("reservedSpace", optional_args[:reserved_space])
+      |> QB.maybe_put_arg("minFreeSpace", optional_args[:min_free_space])
+      |> QB.maybe_put_arg("targetSpace", optional_args[:target_space])
 
     case Client.execute(engine_cache.client, query_builder) do
       {:ok, _} -> :ok

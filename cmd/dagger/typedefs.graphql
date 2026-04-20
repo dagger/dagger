@@ -1,60 +1,25 @@
 fragment TypeDefRefParts on TypeDef {
-  kind
-  optional
-  asObject {
-    name
-  }
-  asInterface {
-    name
-  }
-  asInput {
-    name
-  }
-  asScalar {
-    name
-  }
-  asEnum {
-    name
-  }
-  asList {
-    elementTypeDef {
-      kind
-      asObject {
-        name
-      }
-      asInterface {
-        name
-      }
-      asInput {
-        name
-      }
-      asScalar {
-        name
-      }
-      asEnum {
-        name
-      }
-    }
-  }
+	name
+	optional
 }
 
 fragment FunctionParts on Function {
-  name
-  description
-  sourceModuleName
-  returnType {
-    ...TypeDefRefParts
-  }
-  args {
-    name
-    description
-    defaultValue
-    defaultPath
-    ignore
-    typeDef {
-      ...TypeDefRefParts
-    }
-  }
+	name
+	description
+	sourceModuleName
+	returnType {
+		...TypeDefRefParts
+	}
+	args {
+		name
+		description
+		defaultValue
+		defaultPath
+		ignore
+		typeDef {
+			...TypeDefRefParts
+		}
+	}
 }
 
 fragment FieldParts on FieldTypeDef {
@@ -66,48 +31,56 @@ fragment FieldParts on FieldTypeDef {
 }
 
 query TypeDefs($hideCore: Boolean) {
-  typeDefs: currentTypeDefs(hideCore: $hideCore) {
-    kind
-    optional
-    asObject {
-      name
-      description
-      sourceModuleName
-      constructor {
-        ...FunctionParts
-      }
-      functions {
-        ...FunctionParts
-      }
-      fields {
-        ...FieldParts
-      }
-    }
-    asScalar {
-      name
-      description
-    }
-    asEnum {
-      name
-      description
-      members {
-        name
-        description
-      }
-    }
-    asInterface {
-      name
-      description
-      sourceModuleName
-      functions {
-        ...FunctionParts
-      }
-    }
-    asInput {
-      name
-      fields {
-        ...FieldParts
-      }
-    }
-  }
+	typeDefs: currentTypeDefs(returnAllTypes: true, hideCore: $hideCore) {
+		name
+		kind
+		optional
+		asObject {
+			name
+			description
+			sourceModuleName
+			constructor {
+				...FunctionParts
+			}
+			functions {
+				...FunctionParts
+			}
+			fields {
+				...FieldParts
+			}
+		}
+		asScalar {
+			name
+			description
+			sourceModuleName
+		}
+		asEnum {
+			name
+			description
+			sourceModuleName
+			members {
+				name
+				description
+			}
+		}
+		asInterface {
+			name
+			description
+			sourceModuleName
+			functions {
+				...FunctionParts
+			}
+		}
+		asInput {
+			name
+			fields {
+				...FieldParts
+			}
+		}
+		asList {
+			elementTypeDef {
+				...TypeDefRefParts
+			}
+		}
+	}
 }

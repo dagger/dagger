@@ -33,6 +33,11 @@ defmodule Dagger.Core.Client do
         type: :string,
         doc: "Sets the engine workdir."
       ],
+      load_workspace_modules: [
+        type: :boolean,
+        doc: "Opt into loading workspace modules for this connection.",
+        default: false
+      ],
       log_output: [
         type: {:or, [:atom, :pid]},
         doc: "The log device to write the progress.",

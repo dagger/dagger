@@ -182,7 +182,7 @@ func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 		}
 
 		// Check if there are pending logs for this span and flush them
-		e.logs.flushPendingLogsForSpan(id)
+		e.logs.flushResolvedLogsForSpan(id)
 
 		// Only print output when span ends
 		if span.EndTime().IsZero() {

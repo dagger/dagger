@@ -11,8 +11,8 @@ import (
 )
 
 func WithLease(ctx context.Context, ls leases.Manager, opts ...leases.Opt) (context.Context, func(context.Context) error, error) {
-	_, ok := leases.FromContext(ctx)
-	if ok {
+	leaseID, ok := leases.FromContext(ctx)
+	if ok && leaseID != "" {
 		return ctx, func(context.Context) error {
 			return nil
 		}, nil

@@ -1,13 +1,40 @@
 package dagui
 
 import (
+	"context"
+	"reflect"
 	"testing"
 	"time"
+	"unsafe"
 
 	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+
+	telemetry "github.com/dagger/otel-go"
 )
+
+func newTestLogRecord(traceID trace.TraceID, spanID trace.SpanID, body string, attrs ...otellog.KeyValue) sdklog.Record {
+	r := new(sdklog.Record)
+
+	rf := reflect.ValueOf(r).Elem()
+	attrCountLimit := rf.FieldByName("attributeCountLimit")
+	attrCountLimit = reflect.NewAt(attrCountLimit.Type(), unsafe.Pointer(attrCountLimit.UnsafeAddr())).Elem()
+	attrCountLimit.SetInt(-1)
+
+	attrValueLengthLimit := rf.FieldByName("attributeValueLengthLimit")
+	attrValueLengthLimit = reflect.NewAt(attrValueLengthLimit.Type(), unsafe.Pointer(attrValueLengthLimit.UnsafeAddr())).Elem()
+	attrValueLengthLimit.SetInt(-1)
+
+	r.SetTraceID(traceID)
+	r.SetSpanID(spanID)
+	r.SetBody(otellog.StringValue(body))
+	r.SetAttributes(attrs...)
+
+	return *r
+}
 
 // TestRollUpStateIncremental verifies that rollup state updates are incremental
 // and correct across various state transitions
@@ -58,7 +85,7 @@ func TestRollUpStateIncremental(t *testing.T) {
 		case "pending":
 			span.EndTime = now
 			span.Status = sdktrace.Status{Code: codes.Ok}
-			span.EffectIDs = []string{"pending-effect"}
+			span.Pending = true
 		}
 		span.PropagateStatusToParentsAndLinks()
 	}
@@ -154,6 +181,239 @@ func TestRollUpStateIncremental(t *testing.T) {
 			parent.rollUpState.FailedCount,
 			parent.rollUpState.CanceledCount,
 		)
+	}
+}
+
+func TestLogTargetSpanIDUsesCreatorFromSameTrace(t *testing.T) {
+	db := NewDB()
+
+	warmTraceID := TraceID{TraceID: trace.TraceID{1}}
+	liveTraceID := TraceID{TraceID: trace.TraceID{2}}
+	outputDig := "xxh3:service-output"
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         SpanID{SpanID: trace.SpanID{1}},
+			TraceID:    warmTraceID,
+			StartTime:  time.Unix(1, 0),
+			EndTime:    time.Unix(2, 0),
+			CallDigest: "xxh3:warm-call",
+			Output:     outputDig,
+		},
+		{
+			ID:         SpanID{SpanID: trace.SpanID{2}},
+			TraceID:    liveTraceID,
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: "xxh3:live-call",
+			Output:     outputDig,
+		},
+	})
+
+	record := newTestLogRecord(
+		liveTraceID.TraceID,
+		trace.SpanID{9},
+		"hello",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+
+	spanID := db.LogTargetSpanID(record)
+	if spanID != (SpanID{SpanID: trace.SpanID{2}}) {
+		t.Fatalf("expected live creator span, got %s", spanID)
+	}
+}
+
+func TestLogTargetSpanIDWaitsForMatchingTraceCreator(t *testing.T) {
+	db := NewDB()
+
+	outputDig := "xxh3:service-output"
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         SpanID{SpanID: trace.SpanID{1}},
+			TraceID:    TraceID{TraceID: trace.TraceID{1}},
+			StartTime:  time.Unix(1, 0),
+			EndTime:    time.Unix(2, 0),
+			CallDigest: "xxh3:warm-call",
+			Output:     outputDig,
+		},
+	})
+
+	record := newTestLogRecord(
+		trace.TraceID{2},
+		trace.SpanID{9},
+		"hello",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+
+	spanID := db.LogTargetSpanID(record)
+	if spanID.IsValid() {
+		t.Fatalf("expected unresolved span target, got %s", spanID)
+	}
+}
+
+func TestPendingDigestLogsResolveWhenCreatorArrives(t *testing.T) {
+	db := NewDB()
+
+	traceID := trace.TraceID{2}
+	outputDig := "xxh3:service-output"
+	creatorID := SpanID{SpanID: trace.SpanID{3}}
+
+	record := newTestLogRecord(
+		traceID,
+		trace.SpanID{9},
+		"hello",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
+		t.Fatalf("export logs: %v", err)
+	}
+
+	if got := db.DrainResolvedLogs(creatorID); len(got) != 0 {
+		t.Fatalf("expected no resolved logs before creator, got %d", len(got))
+	}
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         creatorID,
+			TraceID:    TraceID{TraceID: traceID},
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: "xxh3:live-call",
+			Output:     outputDig,
+		},
+	})
+
+	resolved := db.DrainResolvedLogs(creatorID)
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved log, got %d", len(resolved))
+	}
+	if resolved[0].Body().AsString() != "hello" {
+		t.Fatalf("expected resolved log body %q, got %q", "hello", resolved[0].Body().AsString())
+	}
+
+	creator := db.Spans.Map[creatorID]
+	if creator == nil {
+		t.Fatal("expected creator span")
+	}
+	if !creator.HasLogs {
+		t.Fatal("expected creator span to have logs")
+	}
+}
+
+func TestResumeOutputReparentsRuntimeSpanUnderCreator(t *testing.T) {
+	db := NewDB()
+
+	traceID := TraceID{TraceID: trace.TraceID{1}}
+	withExecID := SpanID{SpanID: trace.SpanID{1}}
+	runtimeID := SpanID{SpanID: trace.SpanID{2}}
+	asServiceID := SpanID{SpanID: trace.SpanID{3}}
+	outputDig := "xxh3:service-output"
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:        withExecID,
+			TraceID:   traceID,
+			StartTime: time.Unix(1, 0),
+			EndTime:   time.Unix(2, 0),
+			Name:      "withExec redis-cli -h redis ping",
+		},
+		{
+			ID:           runtimeID,
+			TraceID:      traceID,
+			ParentID:     withExecID,
+			StartTime:    time.Unix(3, 0),
+			EndTime:      time.Unix(4, 0),
+			Name:         "exec docker-entrypoint.sh redis-server",
+			ResumeOutput: outputDig,
+		},
+		{
+			ID:         asServiceID,
+			TraceID:    traceID,
+			StartTime:  time.Unix(5, 0),
+			EndTime:    time.Unix(6, 0),
+			Name:       "Container.asService",
+			CallDigest: "xxh3:as-service",
+			Output:     outputDig,
+		},
+	})
+
+	runtime := db.Spans.Map[runtimeID]
+	if runtime == nil {
+		t.Fatal("expected runtime span")
+	}
+	if runtime.ParentSpan == nil || runtime.ParentSpan.ID != withExecID {
+		t.Fatalf("expected actual parent to remain withExec, got %v", runtime.ParentSpan)
+	}
+
+	asService := db.Spans.Map[asServiceID]
+	if asService == nil {
+		t.Fatal("expected asService span")
+	}
+	if _, ok := asService.ChildSpans.Map[runtimeID]; !ok {
+		t.Fatal("expected creator span to include runtime child")
+	}
+	if _, ok := runtime.causesViaLinks.Map[asServiceID]; !ok {
+		t.Fatal("expected runtime span to causally resume under creator")
+	}
+
+	rowsView := db.RowsView(FrontendOpts{})
+	runtimeTree := rowsView.BySpan[runtimeID]
+	if runtimeTree == nil {
+		t.Fatal("expected runtime tree")
+	}
+	if runtimeTree.Parent == nil || runtimeTree.Parent.Span.ID != asServiceID {
+		t.Fatalf("expected runtime span to be displayed under asService, got %+v", runtimeTree.Parent)
+	}
+}
+
+func TestPendingClearsAndPropagatesThroughCausalContinuation(t *testing.T) {
+	db := NewDB()
+
+	origID := SpanID{trace.SpanID{1}}
+	orig := db.newSpan(origID)
+	orig.Received = true
+	orig.Name = "original"
+	orig.Pending = true
+	orig.StartTime = time.Now()
+	orig.EndTime = orig.StartTime.Add(time.Millisecond)
+	db.Spans.Add(orig)
+	db.integrateSpan(orig)
+	orig.PropagateStatusToParentsAndLinks()
+
+	if !orig.IsPending() {
+		t.Fatal("expected original span to start pending")
+	}
+
+	resumeID := SpanID{trace.SpanID{2}}
+	resume := db.newSpan(resumeID)
+	resume.Received = true
+	resume.Name = "resume"
+	resume.StartTime = time.Now()
+	resume.EndTime = resume.StartTime.Add(-time.Millisecond)
+	resume.Links = []SpanLink{{
+		SpanContext: SpanContext{
+			SpanID: origID,
+		},
+	}}
+	db.Spans.Add(resume)
+	db.integrateSpan(resume)
+	resume.PropagateStatusToParentsAndLinks()
+
+	if orig.IsPending() {
+		t.Fatal("expected causal continuation to clear pending state")
+	}
+	if !orig.IsRunningOrEffectsRunning() {
+		t.Fatal("expected original span to inherit running state from continuation")
+	}
+
+	resume.EndTime = time.Now()
+	resume.Status = sdktrace.Status{Code: codes.Error}
+	resume.PropagateStatusToParentsAndLinks()
+
+	if !orig.IsFailedOrCausedFailure() {
+		t.Fatal("expected original span to inherit failure from continuation")
 	}
 }
 
@@ -275,5 +535,39 @@ func TestRollUpStateWorksForAllSpans(t *testing.T) {
 	state := parent.RollUpState()
 	if state == nil {
 		t.Error("Expected non-nil rollup state for non-rollup span")
+	}
+}
+
+func TestMostInterestingSpanPrefersEarliestNonCachedSpan(t *testing.T) {
+	db := NewDB()
+
+	dig := "xxh3:shared-call"
+	cachedID := SpanID{SpanID: trace.SpanID{1}}
+	liveID := SpanID{SpanID: trace.SpanID{2}}
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         cachedID,
+			TraceID:    TraceID{TraceID: trace.TraceID{1}},
+			StartTime:  time.Unix(1, 0),
+			EndTime:    time.Unix(2, 0),
+			CallDigest: dig,
+			Cached:     true,
+		},
+		{
+			ID:         liveID,
+			TraceID:    TraceID{TraceID: trace.TraceID{1}},
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: dig,
+		},
+	})
+
+	got := db.MostInterestingSpan(dig)
+	if got == nil {
+		t.Fatal("expected span")
+	}
+	if got.ID != liveID {
+		t.Fatalf("expected non-cached span %s, got %s", liveID, got.ID)
 	}
 }

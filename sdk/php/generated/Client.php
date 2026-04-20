@@ -26,10 +26,23 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Constructs a cache volume for a given cache key.
      */
-    public function cacheVolume(string $key): CacheVolume
-    {
+    public function cacheVolume(
+        string $key,
+        DirectoryId|Directory|null $source = null,
+        ?CacheSharingMode $sharing = null,
+        ?string $owner = '',
+    ): CacheVolume {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cacheVolume');
         $innerQueryBuilder->setArgument('key', $key);
+        if (null !== $source) {
+        $innerQueryBuilder->setArgument('source', $source);
+        }
+        if (null !== $sharing) {
+        $innerQueryBuilder->setArgument('sharing', $sharing);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -117,9 +130,12 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * The TypeDef representations of the objects currently being served in the session.
      */
-    public function currentTypeDefs(?bool $hideCore = null): array
+    public function currentTypeDefs(?bool $returnAllTypes = false, ?bool $hideCore = null): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTypeDefs');
+        if (null !== $returnAllTypes) {
+        $leafQueryBuilder->setArgument('returnAllTypes', $returnAllTypes);
+        }
         if (null !== $hideCore) {
         $leafQueryBuilder->setArgument('hideCore', $hideCore);
         }
@@ -289,6 +305,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
         string $url,
         ?string $name = null,
         ?int $permissions = null,
+        ?string $checksum = null,
         SecretId|Secret|null $authHeader = null,
         ServiceId|Service|null $experimentalServiceHost = null,
     ): File {
@@ -299,6 +316,9 @@ class Client extends Client\AbstractClient implements Client\IdAble
         }
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $checksum) {
+        $innerQueryBuilder->setArgument('checksum', $checksum);
         }
         if (null !== $authHeader) {
         $innerQueryBuilder->setArgument('authHeader', $authHeader);
@@ -400,6 +420,17 @@ class Client extends Client\AbstractClient implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCheckGroupFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a ClientFilesyncMirror from its ID.
+     */
+    public function loadClientFilesyncMirrorFromID(
+        ClientFilesyncMirrorId|ClientFilesyncMirror $id,
+    ): ClientFilesyncMirror {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadClientFilesyncMirrorFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ClientFilesyncMirror($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -674,6 +705,16 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Load a HTTPState from its ID.
+     */
+    public function loadHTTPStateFromID(HTTPStateId|HTTPState $id): HTTPState
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadHTTPStateFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\HTTPState($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a HealthcheckConfig from its ID.
      */
     public function loadHealthcheckConfigFromID(HealthcheckConfigId|HealthcheckConfig $id): HealthcheckConfig
@@ -831,6 +872,16 @@ class Client extends Client\AbstractClient implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadQueryFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Client($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a RemoteGitMirror from its ID.
+     */
+    public function loadRemoteGitMirrorFromID(RemoteGitMirrorId|RemoteGitMirror $id): RemoteGitMirror
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadRemoteGitMirrorFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\RemoteGitMirror($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

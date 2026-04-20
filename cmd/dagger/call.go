@@ -95,7 +95,10 @@ available functions.
 }
 
 func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer) error {
-	fns, skipped := GetSupportedFunctions(o)
+	fns, skipped, err := GetSupportedFunctions(o)
+	if err != nil {
+		return err
+	}
 
 	if len(fns) == 0 {
 		fmt.Fprintln(errWriter, "No functions found.")

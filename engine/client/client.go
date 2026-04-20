@@ -125,6 +125,8 @@ type Params struct {
 
 	EagerRuntime bool
 
+	LoadWorkspaceModules bool
+
 	SkipWorkspaceModules bool
 
 	// Workspace explicitly declares workspace binding for this client.
@@ -176,6 +178,16 @@ type Client struct {
 }
 
 func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
+	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
+		params.LoadWorkspaceModules,
+		params.SkipWorkspaceModules,
+	)
+	if err != nil {
+		return nil, err
+	}
+	params.LoadWorkspaceModules = loadWorkspaceModules
+	params.SkipWorkspaceModules = false
+
 	c := &Client{Params: params}
 
 	if c.ID == "" {
@@ -303,6 +315,16 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	return c, nil
 }
 
+func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {
+	if loadWorkspaceModules && skipWorkspaceModules {
+		return false, fmt.Errorf("load workspace modules and skip workspace modules are mutually exclusive")
+	}
+	if skipWorkspaceModules {
+		return false, nil
+	}
+	return loadWorkspaceModules, nil
+}
+
 type EngineToEngineParams struct {
 	Params
 
@@ -319,6 +341,16 @@ type EngineToEngineParams struct {
 // ConnectEngineToEngine connects a Dagger client to another Dagger engine using an existing session connection.
 // Session attachables are proxied back to the original client.
 func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ *Client, rerr error) {
+	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
+		params.LoadWorkspaceModules,
+		params.SkipWorkspaceModules,
+	)
+	if err != nil {
+		return nil, err
+	}
+	params.LoadWorkspaceModules = loadWorkspaceModules
+	params.SkipWorkspaceModules = false
+
 	c := &Client{
 		Params:                params.Params,
 		isCloudScaleOutClient: true,
@@ -1404,10 +1436,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 
 	if c.Module != "" {
 		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Entrypoint: true}}
-		md.SkipWorkspaceModules = true
 	}
-	if c.SkipWorkspaceModules {
-		md.SkipWorkspaceModules = true
+	if c.Module == "" && c.LoadWorkspaceModules {
+		md.LoadWorkspaceModules = true
 	}
 	if c.Workspace != nil {
 		md.Workspace = c.Workspace

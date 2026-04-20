@@ -42,7 +42,8 @@ Examples:
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
-			EnableCloudScaleOut: enableScaleOut,
+			EnableCloudScaleOut:  enableScaleOut,
+			LoadWorkspaceModules: true,
 		}
 		return withEngine(
 			cmd.Context(),

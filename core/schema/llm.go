@@ -9,14 +9,14 @@ import (
 )
 
 type llmSchema struct {
-	srv *dagql.Server
 }
 
 var _ SchemaResolvers = &llmSchema{}
 
 func (s llmSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.FuncWithCacheKey("llm", s.llm, dagql.CachePerSession).
+		dagql.Func("llm", s.llm).
+			WithInput(dagql.PerSessionInput).
 			Experimental("LLM support is not yet stabilized").
 			Doc(`Initialize a Large Language Model (LLM)`).
 			Args(
@@ -60,7 +60,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("prompt").Doc("The prompt to send"),
 			),
 		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
-			return dagql.Null[core.Void](), self.MCP(ctx, srv)
+			currentSrv, err := core.CurrentDagqlServer(ctx)
+			if err != nil {
+				return dagql.Null[core.Void](), err
+			}
+			return dagql.Null[core.Void](), self.MCP(ctx, currentSrv)
 		}).
 			Doc("instantiates an mcp server"),
 		dagql.Func("withPromptFile", s.withPromptFile).
@@ -88,14 +92,22 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
 			),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
+			currentSrv, err := core.CurrentDagqlServer(ctx)
+			if err != nil {
+				return res, err
+			}
 			var inst dagql.Result[*core.LLM]
-			if err := srv.Select(ctx, self, &inst, dagql.Selector{
+			if err := currentSrv.Select(ctx, self, &inst, dagql.Selector{
 				Field: "loop",
 			}); err != nil {
 				return res, err
 			}
-			id := dagql.NewID[*core.LLM](inst.ID())
-			return dagql.NewResultForCurrentID(ctx, id)
+			instID, err := inst.ID()
+			if err != nil {
+				return res, err
+			}
+			id := dagql.NewID[*core.LLM](instID)
+			return dagql.NewResultForCurrentCall(ctx, id)
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
@@ -121,7 +133,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	Env core.EnvID
 }) (*core.LLM, error) {
-	env, err := args.Env.Load(ctx, s.srv)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	env, err := args.Env.Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +217,11 @@ func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struc
 	Name    string
 	Service core.ServiceID
 }) (*core.LLM, error) {
-	svc, err := args.Service.Load(ctx, s.srv)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svc, err := args.Service.Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -211,11 +231,26 @@ func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struc
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
 	File core.FileID
 }) (*core.LLM, error) {
-	file, err := args.File.Load(ctx, s.srv)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithPromptFile(ctx, file.Self())
+	file, err := args.File.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, file); err != nil {
+		return nil, err
+	}
+	prompt, err := file.Self().Contents(ctx, file, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithPrompt(string(prompt)), nil
 }
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
@@ -223,7 +258,11 @@ func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*co
 }
 
 func (s *llmSchema) step(ctx context.Context, llm dagql.ObjectResult[*core.LLM], args struct{}) (id dagql.ID[*core.LLM], err error) {
-	err = s.srv.Select(ctx, llm, &id, dagql.Selector{
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return id, err
+	}
+	err = srv.Select(ctx, llm, &id, dagql.Selector{
 		Field: "__step",
 	}, dagql.Selector{
 		Field: "sync",
@@ -285,11 +324,19 @@ func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (strin
 func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {
 	Name string
 }) (dagql.Nullable[*core.Binding], error) {
-	return llm.BindResult(ctx, s.srv, args.Name)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.Null[*core.Binding](), err
+	}
+	return llm.BindResult(ctx, srv, args.Name)
 }
 
 func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLMTokenUsage, error) {
-	return llm.TokenUsage(ctx, s.srv)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return llm.TokenUsage(ctx, srv)
 }
 
 func (s *llmSchema) withoutMessageHistory(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLM, error) {

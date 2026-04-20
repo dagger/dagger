@@ -212,7 +212,9 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 	}
 
 	db := dagui.NewDB()
-	maps.Copy(db.Calls, dag.CallsByDigest)
+	if recipe := dag.GetRecipe(); recipe != nil {
+		maps.Copy(db.Calls, recipe.CallsByDigest)
+	}
 	r := newRenderer(db, -1, dagui.FrontendOpts{}, true)
 	if d.Newline != "" {
 		r.newline = d.Newline
@@ -377,7 +379,15 @@ func (r *renderer) renderCall( //nolint: gocyclo
 	if !specialTitle {
 		if call.ReceiverDigest != "" {
 			if !chained {
-				r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+				if span != nil {
+					if base := span.Base(); base != nil {
+						r.renderIDBase(out, base)
+					} else {
+						r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+					}
+				} else {
+					r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+				}
 			}
 			fmt.Fprint(out, out.String("."))
 		}

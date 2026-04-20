@@ -20,7 +20,8 @@ Expected stderr:
 ✔ .customSpan: String! X.Xs
 ┃ hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX
 ╰╴✔ custom span X.Xs
-  ├╴$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+  ├╴$ container: Container! X.Xs CACHED
+  ├╴$ .from(address: "alpine:latest"): Container! X.Xs CACHED
   ├╴✔ withExec echo 'hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX' X.Xs
   │ ┃ hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX
   ╰╴✔ .stdout: String! X.Xs
