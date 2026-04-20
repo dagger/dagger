@@ -11,8 +11,12 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
 )
 
 // TestWorkspaceSettingsCommandGrammar fixes the command shape before any
@@ -20,83 +24,70 @@ import (
 // an explicit module alias at every depth so it stays unambiguous.
 func (WorkspaceSuite) TestWorkspaceSettingsCommandGrammar(ctx context.Context, t *testctx.T) {
 	t.Run("settings supports exactly zero, one, two, or three positional args", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement command-grammar coverage for dagger settings.
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
+entrypoint = true
 
-The supported forms are:
+[modules.aws.settings]
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-  dagger settings
-  dagger settings MODULE
-  dagger settings MODULE KEY
-  dagger settings MODULE KEY VALUE
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "aws")
+		require.Contains(t, string(out), "region")
+		require.Contains(t, string(out), "us-west-2")
 
-Each form has distinct behavior:
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "NAME")
+		require.Contains(t, string(out), "region")
 
-  dagger settings
-    shows the discoverable settings surface for all installed modules
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 
-  dagger settings MODULE
-    shows the discoverable settings surface for one installed module
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region", "eu-central-1")
+		require.NoError(t, err)
 
-  dagger settings MODULE KEY
-    prints the current effective value for one setting
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "eu-central-1", strings.TrimSpace(string(out)))
 
-  dagger settings MODULE KEY VALUE
-    writes one setting in the current scope
-
-Any invocation with four or more positional args after "settings" should fail
-with usage guidance rather than guessing how to interpret extra words.`)
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region", "eu-central-1", "extra")
+		require.Error(t, err)
+		requireErrOut(t, err, "accepts at most 3 arg")
 	})
 
 	t.Run("module omission is never supported, even for a single entrypoint module", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement no-module-omission coverage for dagger settings.
-
-Given a workspace with exactly one installed module:
-
-[modules.greeter]
-source = "modules/greeter"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.greeter]
+source = "../modules/greeter"
 entrypoint = true
 
 [modules.greeter.settings]
 greeting = "hello"
+`, workspaceSettingsGreeterModule("modules/greeter", "greeter"))
 
-Running:
-
-  dagger settings greeting
-
-must not be interpreted as "read the greeting setting from the entrypoint
-module". It should fail as an unknown module selection, because the grammar
-always requires:
-
-  dagger settings MODULE KEY
-
-This keeps the command unambiguous and avoids special entrypoint-only rules.`)
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "greeting")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "greeting" is not installed in the workspace`)
 	})
 
 	t.Run("module selection always uses the workspace alias, not the module's intrinsic name", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement alias-selection coverage for dagger settings.
-
-Given:
-
-[modules.prod-aws]
-source = "github.com/dagger/aws"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.prod-aws]
+source = "../modules/aws"
 
 [modules.prod-aws.settings]
 region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Running:
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "prod-aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 
-  dagger settings prod-aws region
-
-should succeed.
-
-Running:
-
-  dagger settings aws region
-
-should fail clearly, even if the module loaded from github.com/dagger/aws has an
-intrinsic module name of "aws". The command must target the workspace-installed
-module alias, because that is the stable identity in config storage and env
-overlays.`)
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "aws" is not installed in the workspace`)
 	})
 }
 
@@ -104,102 +95,83 @@ overlays.`)
 // that `dagger settings` should provide on top of constructor introspection.
 func (WorkspaceSuite) TestWorkspaceSettingsDiscovery(ctx context.Context, t *testctx.T) {
 	t.Run("settings with no module arg lists installed modules in deterministic order", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement all-modules discovery coverage for dagger settings.
-
-Given:
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.vitest]
+source = "../modules/vitest"
 
 [modules.aws]
-source = "github.com/dagger/aws"
+source = "../modules/aws"
+`, workspaceSettingsAWSModule("modules/aws", "aws"), workspaceSettingsVitestModule("modules/vitest", "vitest"))
 
-[modules.vitest]
-source = "github.com/dagger/vitest"
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings")
+		require.NoError(t, err)
 
-Running:
-
-  dagger settings
-
-should list the installed modules in lexicographic alias order:
-
-  aws
-  vitest
-
-and, for each module, should expose that it has a discoverable settings surface.
-The exact formatting can evolve, but the output must be easy to scan and
-deterministic so users and tests can rely on it.`)
+		output := string(out)
+		require.Contains(t, output, "aws")
+		require.Contains(t, output, "vitest")
+		require.Contains(t, output, "region")
+		require.Contains(t, output, "failFast")
+		require.Less(t, strings.Index(output, "aws"), strings.Index(output, "vitest"))
 	})
 
 	t.Run("settings MODULE shows typed setting discovery with current effective values", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement per-module discovery coverage for dagger settings.
-
-Given a module whose constructor accepts settings like:
-
-  region string
-  secretKey string
-  failFast bool
-
-with descriptions on those constructor args, and given:
-
-[modules.aws]
-source = "github.com/dagger/aws"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
+entrypoint = true
 
 [modules.aws.settings]
 region = "us-west-2"
 secretKey = "op://vault/aws"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Running:
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws")
+		require.NoError(t, err)
 
-  dagger settings aws
-
-should show the discoverable settings surface for that module. At minimum, for
-each setting it should include:
-
-  the setting name
-  the type
-  the current effective value, if one is set
-  the description/help text derived from constructor introspection
-
-It should not expose workspace-owned fields like source or entrypoint in this
-view, because those are workspace config, not module settings.`)
+		output := string(out)
+		require.Contains(t, output, "NAME")
+		require.Contains(t, output, "TYPE")
+		require.Contains(t, output, "VALUE")
+		require.Contains(t, output, "DESCRIPTION")
+		require.Contains(t, output, "region")
+		require.Contains(t, output, "string")
+		require.Contains(t, output, "us-west-2")
+		require.Contains(t, output, "Region used by this module.")
+		require.Contains(t, output, "secretKey")
+		require.Contains(t, output, "op://vault/aws")
+		require.NotContains(t, output, "source")
+		require.NotContains(t, output, "entrypoint")
 	})
 
 	t.Run("settings MODULE in env scope shows effective values after overlay", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement env-scoped discovery coverage for dagger settings.
-
-Given:
-
-[modules.aws]
-source = "github.com/dagger/aws"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
 
 [modules.aws.settings]
-region = "us-west-2"
 format = "json"
+region = "us-west-2"
 
 [env.ci.modules.aws.settings]
 region = "us-east-1"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Running:
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws")
+		require.NoError(t, err)
 
-  dagger --env=ci settings aws
-
-should show:
-
-  region = us-east-1
-  format = json
-
-because discovery in env scope should reflect the effective active settings for
-that env, not just the raw override subtree. Values not overridden in the env
-must still appear via base fallback.`)
+		output := string(out)
+		require.Contains(t, output, "region")
+		require.Contains(t, output, "us-east-1")
+		require.Contains(t, output, "format")
+		require.Contains(t, output, "json")
+		require.NotContains(t, output, "us-west-2")
 	})
 
 	t.Run("unknown module fails clearly instead of printing an empty settings surface", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement unknown-module discovery coverage for dagger settings.
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Given a workspace with no module alias named "missing", running:
-
-  dagger settings missing
-
-should fail clearly. It must not print an empty block or silently succeed, or
-typos become indistinguishable from modules that simply have no settings.`)
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "missing")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "missing" is not installed in the workspace`)
 	})
 }
 
@@ -208,97 +180,67 @@ typos become indistinguishable from modules that simply have no settings.`)
 // env changes what value is considered active.
 func (WorkspaceSuite) TestWorkspaceSettingsReadSemantics(ctx context.Context, t *testctx.T) {
 	t.Run("settings MODULE KEY reads the base-scope effective value", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement base-scope settings read coverage.
-
-Given:
-
-[modules.aws]
-source = "github.com/dagger/aws"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Running:
-
-  dagger settings aws region
-
-should print:
-
-  us-west-2
-
-with no surrounding prose.`)
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 	})
 
 	t.Run("settings MODULE KEY with env reads the effective env value with base fallback", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement env-scoped settings read coverage.
-
-Given:
-
-[modules.aws]
-source = "github.com/dagger/aws"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
 
 [modules.aws.settings]
-region = "us-west-2"
 format = "json"
+region = "us-west-2"
 
 [env.ci.modules.aws.settings]
 region = "us-east-1"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Running:
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 
-  dagger --env=ci settings aws region
-
-should print:
-
-  us-east-1
-
-because that key is overridden in ci.
-
-Running:
-
-  dagger --env=ci settings aws format
-
-should print:
-
-  json
-
-because env reads are effective reads, not raw-override-only reads.`)
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "format")
+		require.NoError(t, err)
+		require.Equal(t, "json", strings.TrimSpace(string(out)))
 	})
 
 	t.Run("missing env fails clearly instead of silently falling back to base", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement missing-env settings read coverage.
-
-Given a workspace with no env.ci, running:
-
-  dagger --env=ci settings aws region
-
-should fail clearly. It must not silently behave like base-scope settings, or a
-typo in the env name becomes invisible.`)
-	})
-
-	t.Run("unknown setting fails clearly and does not expose non-setting metadata", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement unknown-setting read coverage for dagger settings.
-
-Given:
-
-[modules.aws]
-source = "github.com/dagger/aws"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Running:
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region")
+		require.Error(t, err)
+		requireErrOut(t, err, `workspace env "ci" is not defined`)
+	})
 
-  dagger settings aws missing
+	t.Run("unknown setting fails clearly and does not expose non-setting metadata", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
 
-should fail clearly as an unknown setting.
+[modules.aws.settings]
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Running:
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "missing")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "aws" has no setting "missing"`)
 
-  dagger settings aws source
-
-should also fail, because source is workspace config metadata, not a module
-setting exposed by constructor introspection.`)
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "source")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "aws" has no setting "source"`)
 	})
 }
 
@@ -306,111 +248,102 @@ setting exposed by constructor introspection.`)
 // effective in the selected scope; writes mutate that scope's stored settings.
 func (WorkspaceSuite) TestWorkspaceSettingsWriteSemantics(ctx context.Context, t *testctx.T) {
 	t.Run("base-scope writes update modules.<alias>.settings and affect later effective reads", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement base-scope settings write coverage.
-
-Given:
-
-[modules.aws]
-source = "github.com/dagger/aws"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Running:
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region", "eu-central-1")
+		require.NoError(t, err)
 
-  dagger settings aws region eu-central-1
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "eu-central-1", strings.TrimSpace(string(out)))
 
-should update the underlying workspace config to:
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.aws.settings.region")
+		require.NoError(t, err)
+		require.Equal(t, "eu-central-1", strings.TrimSpace(string(out)))
 
-[modules.aws.settings]
-region = "eu-central-1"
-
-Subsequent reads through either:
-
-  dagger settings aws region
-
-or:
-
-  dagger config modules.aws.settings.region
-
-should return:
-
-  eu-central-1`)
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "eu-central-1", cfg.Modules["aws"].Settings["region"])
 	})
 
 	t.Run("env-scoped writes update env.<name>.modules.<alias>.settings and leave base unchanged", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement env-scoped settings write coverage.
-
-Given:
-
-[modules.aws]
-source = "github.com/dagger/aws"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
 
 [env.ci]
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-Running:
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region", "us-east-1")
+		require.NoError(t, err)
 
-  dagger --env=ci settings aws region us-east-1
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "us-west-2", cfg.Modules["aws"].Settings["region"])
+		require.Equal(t, "us-east-1", cfg.Env["ci"].Modules["aws"].Settings["region"])
 
-should write:
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 
-[env.ci.modules.aws.settings]
-region = "us-east-1"
-
-and must leave the base value under [modules.aws.settings] unchanged.
-
-After that:
-
-  dagger settings aws region
-
-should still print:
-
-  us-west-2
-
-while:
-
-  dagger --env=ci settings aws region
-
-should print:
-
-  us-east-1`)
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 	})
 
 	t.Run("typed writes use the same coercion rules as config writes", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement typed settings write coverage.
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.vitest]
+source = "../modules/vitest"
+`, workspaceSettingsVitestModule("modules/vitest", "vitest"))
 
-Given constructor-backed settings like:
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "failFast", "true")
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "retries", "3")
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "tags", "smoke, regression")
+		require.NoError(t, err)
 
-  failFast bool
-  retries int
-  tags []string
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.vitest.settings.failFast")
+		require.NoError(t, err)
+		require.Equal(t, "true", strings.TrimSpace(string(out)))
 
-Running:
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.vitest.settings.retries")
+		require.NoError(t, err)
+		require.Equal(t, "3", strings.TrimSpace(string(out)))
 
-  dagger settings vitest failFast true
-  dagger settings vitest retries 3
-  dagger settings vitest tags smoke, regression
-
-should persist typed values under [modules.vitest.settings] using the same
-parsing/coercion rules that dagger config uses for scalar and list writes.`)
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.vitest.settings.tags")
+		require.NoError(t, err)
+		require.Equal(t, "[smoke, regression]", strings.TrimSpace(string(out)))
 	})
 
 	t.Run("writes reject unknown modules, unknown settings, and workspace-owned fields", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement write-validation coverage for dagger settings.
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
 
-These should all fail clearly:
+[modules.aws.settings]
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-  dagger settings missing region us-west-2
-  dagger settings aws missing value
-  dagger settings aws source github.com/acme/aws
-  dagger settings aws entrypoint true
+		tests := []struct {
+			args []string
+			err  string
+		}{
+			{[]string{"missing", "region", "us-west-2"}, `module "missing" is not installed in the workspace`},
+			{[]string{"aws", "missing", "value"}, `module "aws" has no setting "missing"`},
+			{[]string{"aws", "source", "github.com/acme/aws"}, `module "aws" has no setting "source"`},
+			{[]string{"aws", "entrypoint", "true"}, `module "aws" has no setting "entrypoint"`},
+		}
 
-The command must only allow writes to constructor-backed module settings. It
-must not become a second interface for mutating arbitrary workspace config
-metadata.`)
+		for _, tt := range tests {
+			_, err := hostDaggerExec(ctx, t, workdir, append([]string{"--silent", "settings"}, tt.args...)...)
+			require.Error(t, err)
+			requireErrOut(t, err, tt.err)
+		}
 	})
 }
 
@@ -419,50 +352,187 @@ metadata.`)
 // storage system with independent semantics.
 func (WorkspaceSuite) TestWorkspaceSettingsConfigProjection(ctx context.Context, t *testctx.T) {
 	t.Run("settings reads agree with config reads for the same effective value", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement config-projection read equivalence coverage.
-
-Given:
-
-[modules.aws]
-source = "github.com/dagger/aws"
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
 
 [env.ci.modules.aws.settings]
 region = "us-east-1"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-These two commands should agree in base scope:
+		settingsBase, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
+		require.NoError(t, err)
+		configBase, err := hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.aws.settings.region")
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(string(configBase)), strings.TrimSpace(string(settingsBase)))
 
-  dagger settings aws region
-  dagger config modules.aws.settings.region
-
-and these two commands should agree in ci scope:
-
-  dagger --env=ci settings aws region
-  dagger --env=ci config modules.aws.settings.region
-
-The point of dagger settings is better discovery and ergonomics, not a separate
-value model.`)
+		settingsEnv, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region")
+		require.NoError(t, err)
+		configEnv, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "config", "modules.aws.settings.region")
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(string(configEnv)), strings.TrimSpace(string(settingsEnv)))
 	})
 
 	t.Run("writes through settings are visible immediately through config and runtime behavior", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement config-projection write/runtime coverage.
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
+entrypoint = true
 
-After:
+[modules.aws.settings]
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-  dagger settings aws region eu-central-1
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region", "eu-central-1")
+		require.NoError(t, err)
 
-the new value should be visible through:
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.aws.settings.region")
+		require.NoError(t, err)
+		require.Equal(t, "eu-central-1", strings.TrimSpace(string(out)))
 
-  dagger config modules.aws.settings.region
-
-and should also affect any runtime surfaces that already derive defaults from
-module settings, such as constructor default values in help output or calls that
-use those settings implicitly.
-
-This locks in that dagger settings is the preferred typed UX for module
-settings, while dagger config remains the universal workspace-config escape
-hatch.`)
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "call", "region")
+		require.NoError(t, err)
+		require.Equal(t, "eu-central-1", strings.TrimSpace(string(out)))
 	})
+}
+
+type workspaceSettingsModuleFixture struct {
+	relDir string
+	name   string
+	main   string
+}
+
+func newWorkspaceSettingsWorkdir(ctx context.Context, t *testctx.T, configTOML string, modules ...workspaceSettingsModuleFixture) string {
+	t.Helper()
+
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	for _, module := range modules {
+		writeWorkspaceSettingsModule(t, workdir, module)
+	}
+	writeWorkspaceConfigFile(t, workdir, configTOML)
+	return workdir
+}
+
+func writeWorkspaceSettingsModule(t *testctx.T, workdir string, module workspaceSettingsModuleFixture) {
+	t.Helper()
+
+	moduleDir := filepath.Join(workdir, module.relDir)
+	require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+
+	sourceModule := testModule(t, "go", "defaults/superconstructor")
+	goMod, err := os.ReadFile(filepath.Join(sourceModule, "go.mod"))
+	require.NoError(t, err)
+	goMod = []byte(strings.Replace(string(goMod), "module dagger/superconstructor", "module dagger/"+module.name, 1))
+
+	goSum, err := os.ReadFile(filepath.Join(sourceModule, "go.sum"))
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "go.mod"), goMod, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "go.sum"), goSum, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "dagger.json"), []byte(`{
+  "name": "`+module.name+`",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "go"
+  },
+  "disableDefaultFunctionCaching": true
+}
+`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "main.go"), []byte(module.main), 0o644))
+}
+
+func workspaceSettingsAWSModule(relDir, name string) workspaceSettingsModuleFixture {
+	return workspaceSettingsModuleFixture{
+		relDir: relDir,
+		name:   name,
+		main: `package main
+
+type Aws struct {
+	RegionValue    string
+	FormatValue    string
+	SecretKeyValue string
+}
+
+func New(
+	// Region used by this module.
+	region string,
+	// Output format for commands.
+	// +default="json"
+	format string,
+	// Secret key reference for credentials.
+	// +optional
+	secretKey string,
+) *Aws {
+	return &Aws{
+		RegionValue:    region,
+		FormatValue:    format,
+		SecretKeyValue: secretKey,
+	}
+}
+
+func (m *Aws) Region() string {
+	return m.RegionValue
+}
+
+func (m *Aws) Format() string {
+	return m.FormatValue
+}
+`,
+	}
+}
+
+func workspaceSettingsGreeterModule(relDir, name string) workspaceSettingsModuleFixture {
+	return workspaceSettingsModuleFixture{
+		relDir: relDir,
+		name:   name,
+		main: `package main
+
+type Greeter struct {
+	GreetingValue string
+}
+
+func New(
+	// Greeting used by this module.
+	greeting string,
+) *Greeter {
+	return &Greeter{GreetingValue: greeting}
+}
+
+func (m *Greeter) Greeting() string {
+	return m.GreetingValue
+}
+`,
+	}
+}
+
+func workspaceSettingsVitestModule(relDir, name string) workspaceSettingsModuleFixture {
+	return workspaceSettingsModuleFixture{
+		relDir: relDir,
+		name:   name,
+		main: `package main
+
+type Vitest struct {
+	FailFast bool
+	Retries  int
+	Tags     []string
+}
+
+func New(
+	// Whether failed tests should stop the run.
+	failFast bool,
+	// Retry count for failed tests.
+	retries int,
+	// Test tags to select.
+	tags []string,
+) *Vitest {
+	return &Vitest{
+		FailFast: failFast,
+		Retries:  retries,
+		Tags:     tags,
+	}
+}
+`,
+	}
 }
