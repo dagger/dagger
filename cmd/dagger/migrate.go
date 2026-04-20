@@ -16,6 +16,7 @@ import (
 )
 
 var migrateList bool
+var migrateForce bool
 
 var migrateCmd = &cobra.Command{
 	Use:     "migrate",
@@ -33,7 +34,9 @@ var migrateCmd = &cobra.Command{
 		}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 
-			migration := dag.CurrentWorkspace().Migrate()
+			migration := dag.CurrentWorkspace().Migrate(dagger.WorkspaceMigrateOpts{
+				Force: migrateForce,
+			})
 			migrationID, err := migration.ID(ctx)
 			if err != nil {
 				return fmt.Errorf("migration failed: %w", err)
@@ -73,6 +76,7 @@ var migrateCmd = &cobra.Command{
 
 func init() {
 	migrateCmd.Flags().BoolVarP(&migrateList, "list", "l", false, "List migratable modules instead of performing migration")
+	migrateCmd.Flags().BoolVarP(&migrateForce, "force", "f", false, "Proceed even if modules cannot be loaded to generate settings hints")
 	setWorkspaceFlagPolicy(migrateCmd, workspaceFlagPolicyDisallow)
 }
 

@@ -175,6 +175,44 @@ type Myapp {
 		require.Contains(t, configOut, `# settings.greeting = "hello" # string`)
 	})
 
+	t.Run("failed migrated main module introspection requires force", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		mainModuleSrc := filepath.Join("testdata", "modules", "go", "defaults", "superconstructor")
+		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
+		legacyConfig := `{
+  "name": "futureapp",
+  "engineVersion": "v999.0.0",
+  "sdk": {"source": "go"},
+  "source": ".dagger",
+  "toolchains": [
+    {"name": "defaults", "source": "./toolchain"}
+  ]
+}`
+
+		ctr := legacyWorkspaceBase(t, c, legacyConfig, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithDirectory(".dagger", c.Host().Directory(mainModuleSrc)).
+				WithDirectory("toolchain", c.Host().Directory(toolchainSrc)).
+				WithNewFile("dagger.json", legacyConfig)
+		})
+
+		failedOut, err := ctr.With(daggerExecFail("migrate", "-y")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, failedOut, `could not load modules to generate settings hints; use --force to migrate anyway`)
+
+		migrate := ctr.With(daggerExec("migrate", "-f", "-y"))
+		stdout, err := migrate.Stdout(ctx)
+		require.NoError(t, err)
+		stderr, err := migrate.Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stdout+stderr, `Warning: could not generate workspace settings hints for module "futureapp"`)
+
+		configOut, err := migrate.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, `[modules.defaults]`)
+		require.Contains(t, configOut, `# settings.greeting = "hello" # string`)
+	})
+
 	t.Run("dot dagger source is pruned to workspace outputs", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := legacyWorkspaceBase(t, c, `{

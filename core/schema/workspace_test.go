@@ -108,6 +108,24 @@ func TestWorkspaceAPIPath(t *testing.T) {
 	})
 }
 
+func TestWorkspaceMigrationWarningsKeepsGapWarningsAggregated(t *testing.T) {
+	plan := &workspace.MigrationPlan{
+		Warnings: []string{
+			"migration gap one",
+			"migration gap two",
+		},
+		MigrationGapCount:   2,
+		MigrationReportPath: ".dagger/migration-report.md",
+	}
+
+	appendWorkspaceMigrationNonGapWarnings(plan, []string{"hint warning"})
+
+	require.Equal(t, []string{
+		"hint warning",
+		"2 migration gap(s) need manual review; see .dagger/migration-report.md",
+	}, workspaceMigrationWarnings(plan))
+}
+
 func TestWorkspaceFilterWithDirectoryArgs(t *testing.T) {
 	args := workspaceFilterWithDirectoryArgs(nil, core.CopyFilter{
 		Include: []string{"app/**"},

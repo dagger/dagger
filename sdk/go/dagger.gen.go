@@ -14813,11 +14813,23 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceMigrateOpts contains options for Workspace.Migrate
+type WorkspaceMigrateOpts struct {
+	// Proceed even if modules cannot be loaded to generate settings hints.
+	Force bool
+}
+
 // Plan the explicit migration needed for the current workspace.
 //
 // The returned plan has an empty changeset and no steps when no migration is needed.
-func (r *Workspace) Migrate() *WorkspaceMigration {
+func (r *Workspace) Migrate(opts ...WorkspaceMigrateOpts) *WorkspaceMigration {
 	q := r.query.Select("migrate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `force` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Force) {
+			q = q.Arg("force", opts[i].Force)
+		}
+	}
 
 	return &WorkspaceMigration{
 		query: q,

@@ -14,13 +14,16 @@ import (
 )
 
 type workspaceMigrateArgs struct {
+	// Proceed even if modules cannot be loaded to generate settings hints.
+	Force bool `default:"false"`
+
 	DagOpInternalArgs
 }
 
 func (s *workspaceSchema) migrate(
 	ctx context.Context,
 	ws *core.Workspace,
-	_ workspaceMigrateArgs,
+	args workspaceMigrateArgs,
 ) (migration *core.WorkspaceMigration, rerr error) {
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("workspace migration is local-only")
@@ -71,7 +74,14 @@ func (s *workspaceSchema) migrate(
 			updatedDir = preparedDir
 		}
 	}
-	if hints := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, plan.ProjectRoot, updatedDir); len(hints) > 0 {
+	hints, hintWarnings := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, plan.ProjectRoot, updatedDir)
+	if len(hintWarnings) > 0 {
+		if !args.Force {
+			return nil, fmt.Errorf("could not load modules to generate settings hints; use --force to migrate anyway")
+		}
+		appendWorkspaceMigrationNonGapWarnings(plan, hintWarnings)
+	}
+	if len(hints) > 0 {
 		updated, err := workspace.UpdateConfigBytesWithHints(plan.WorkspaceConfigData, cfg, hints)
 		if err != nil {
 			return nil, fmt.Errorf("render planned workspace config with hints: %w", err)
@@ -473,6 +483,23 @@ func workspaceMigrationProjectRootPath(ws *core.Workspace, plan *workspace.Migra
 		return "", fmt.Errorf("migration project root %q escapes workspace boundary %q", plan.ProjectRoot, ws.HostPath())
 	}
 	return rel, nil
+}
+
+func appendWorkspaceMigrationNonGapWarnings(plan *workspace.MigrationPlan, warnings []string) {
+	if plan == nil || len(warnings) == 0 {
+		return
+	}
+
+	gapStart := len(plan.Warnings) - plan.MigrationGapCount
+	if gapStart < 0 {
+		gapStart = 0
+	}
+
+	updated := make([]string, 0, len(plan.Warnings)+len(warnings))
+	updated = append(updated, plan.Warnings[:gapStart]...)
+	updated = append(updated, warnings...)
+	updated = append(updated, plan.Warnings[gapStart:]...)
+	plan.Warnings = updated
 }
 
 func workspaceMigrationWarnings(plan *workspace.MigrationPlan) []string {

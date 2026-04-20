@@ -69,15 +69,15 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 	cfg *workspace.Config,
 	projectRootPath string,
 	migratedDir dagql.ObjectResult[*core.Directory],
-) map[string][]workspace.ConstructorArgHint {
+) (map[string][]workspace.ConstructorArgHint, []string) {
 	if cfg == nil || len(cfg.Modules) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	ctx, srv, err := workspaceSettingsHintIntrospectionContext(ctx, ws)
 	if err != nil {
 		slog.Warn("could not prepare workspace settings hints", "error", err)
-		return nil
+		return nil, []string{fmt.Sprintf("could not generate workspace settings hints: %v", err)}
 	}
 
 	names := make([]string, 0, len(cfg.Modules))
@@ -87,6 +87,7 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 	sort.Strings(names)
 
 	hints := make(map[string][]workspace.ConstructorArgHint, len(cfg.Modules))
+	warnings := make([]string, 0)
 	for _, name := range names {
 		entry, ok := cfg.Modules[name]
 		if !ok || entry.Source == "" {
@@ -100,6 +101,7 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 				"source", entry.Source,
 				"error", err,
 			)
+			warnings = append(warnings, fmt.Sprintf("could not generate workspace settings hints for module %q from source %q: %v", name, entry.Source, err))
 			continue
 		}
 		if len(constructorHints) > 0 {
@@ -108,9 +110,9 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 	}
 
 	if len(hints) == 0 {
-		return nil
+		return nil, warnings
 	}
-	return hints
+	return hints, warnings
 }
 
 func workspaceSettingsHintIntrospectionContext(
