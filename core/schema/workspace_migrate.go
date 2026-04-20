@@ -77,7 +77,7 @@ func (s *workspaceSchema) migrate(
 	hints, hintWarnings := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, plan.ProjectRoot, updatedDir)
 	if len(hintWarnings) > 0 {
 		if !args.Force {
-			return nil, fmt.Errorf("could not load modules to generate settings hints; use --force to migrate anyway")
+			return nil, fmt.Errorf("could not load modules to generate settings hints: %s; use --force to migrate anyway", strings.Join(hintWarnings, "; "))
 		}
 		appendWorkspaceMigrationNonGapWarnings(plan, hintWarnings)
 	}

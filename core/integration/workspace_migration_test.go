@@ -198,7 +198,9 @@ type Myapp {
 
 		failedOut, err := ctr.With(daggerExecFail("migrate", "-y")).CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, failedOut, `could not load modules to generate settings hints; use --force to migrate anyway`)
+		require.Contains(t, failedOut, `could not load modules to generate settings hints:`)
+		require.Contains(t, failedOut, `could not generate workspace settings hints for module "futureapp"`)
+		require.Contains(t, failedOut, `use --force to migrate anyway`)
 
 		migrate := ctr.With(daggerExec("migrate", "-f", "-y"))
 		stdout, err := migrate.Stdout(ctx)
