@@ -16,7 +16,7 @@ When running a CI pipeline with Dagger using AWS CodeBuild, the general workflow
 1. AWS CodeBuild begins processing the build instructions in the `buildspec.yml` file.
 1. AWS CodeBuild downloads the Dagger CLI.
 1. AWS CodeBuild executes one (or more) Dagger CLI commands, such as `dagger call ...`.
-1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the GitLab runner.
+1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside AWS CodeBuild runner.
 1. The Dagger CLI calls the specified Dagger Function and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
 1. The AWS CodePipeline completes with success or failure. Logs appear in the AWS CodeBuild interface as usual.
 
