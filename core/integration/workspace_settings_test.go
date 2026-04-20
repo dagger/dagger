@@ -40,7 +40,10 @@ region = "us-west-2"
 
 		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws")
 		require.NoError(t, err)
-		require.Contains(t, string(out), "NAME")
+		require.Contains(t, string(out), "MODULE")
+		require.Contains(t, string(out), "KEY")
+		require.Contains(t, string(out), "VALUE")
+		require.Contains(t, string(out), "DESCRIPTION")
 		require.Contains(t, string(out), "region")
 
 		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
@@ -91,7 +94,7 @@ region = "us-west-2"
 	})
 }
 
-// TestWorkspaceSettingsDiscovery defines the high-level, typed, discoverable UX
+// TestWorkspaceSettingsDiscovery defines the high-level, compact settings UX
 // that `dagger settings` should provide on top of constructor introspection.
 func (WorkspaceSuite) TestWorkspaceSettingsDiscovery(ctx context.Context, t *testctx.T) {
 	t.Run("settings with no module arg lists installed modules in deterministic order", func(ctx context.Context, t *testctx.T) {
@@ -106,6 +109,10 @@ source = "../modules/aws"
 		require.NoError(t, err)
 
 		output := string(out)
+		require.Contains(t, output, "MODULE")
+		require.Contains(t, output, "KEY")
+		require.Contains(t, output, "VALUE")
+		require.Contains(t, output, "DESCRIPTION")
 		require.Contains(t, output, "aws")
 		require.Contains(t, output, "vitest")
 		require.Contains(t, output, "region")
@@ -113,7 +120,7 @@ source = "../modules/aws"
 		require.Less(t, strings.Index(output, "aws"), strings.Index(output, "vitest"))
 	})
 
-	t.Run("settings MODULE shows typed setting discovery with current effective values", func(ctx context.Context, t *testctx.T) {
+	t.Run("settings MODULE shows compact setting table with current effective values", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "../modules/aws"
 entrypoint = true
@@ -127,12 +134,13 @@ secretKey = "op://vault/aws"
 		require.NoError(t, err)
 
 		output := string(out)
-		require.Contains(t, output, "NAME")
-		require.Contains(t, output, "TYPE")
+		require.Contains(t, output, "MODULE")
+		require.Contains(t, output, "KEY")
 		require.Contains(t, output, "VALUE")
 		require.Contains(t, output, "DESCRIPTION")
+		require.NotContains(t, output, "TYPE")
+		require.Contains(t, output, "aws")
 		require.Contains(t, output, "region")
-		require.Contains(t, output, "string")
 		require.Contains(t, output, "us-west-2")
 		require.Contains(t, output, "Region used by this module.")
 		require.Contains(t, output, "secretKey")

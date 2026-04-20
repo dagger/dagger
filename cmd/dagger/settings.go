@@ -164,50 +164,57 @@ func workspaceSettingConfigKey(moduleName, argName string) string {
 }
 
 func writeWorkspaceSettingsOverview(ctx context.Context, out io.Writer, state *workspaceSettingsState) error {
-	for i, module := range state.Modules {
-		if i > 0 {
-			if _, err := fmt.Fprintln(out); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprintln(out, module.Name); err != nil {
-			return err
-		}
-		if err := writeWorkspaceModuleSettingsRows(ctx, out, state.Workspace, module); err != nil {
-			return err
-		}
-	}
-	return nil
+	return writeWorkspaceSettingsTable(ctx, out, state.Workspace, state.Modules)
 }
 
 func writeWorkspaceModuleSettings(ctx context.Context, out io.Writer, ws *dagger.Workspace, module workspaceSettingsModule) error {
-	return writeWorkspaceModuleSettingsRows(ctx, out, ws, module)
+	return writeWorkspaceSettingsTable(ctx, out, ws, []workspaceSettingsModule{module})
 }
 
-func writeWorkspaceModuleSettingsRows(ctx context.Context, out io.Writer, ws *dagger.Workspace, module workspaceSettingsModule) error {
-	if module.Constructor == nil || len(module.Constructor.Args) == 0 {
+type workspaceSettingsTableRow struct {
+	module      string
+	key         string
+	value       string
+	description string
+}
+
+func writeWorkspaceSettingsTable(ctx context.Context, out io.Writer, ws *dagger.Workspace, modules []workspaceSettingsModule) error {
+	var rows []workspaceSettingsTableRow
+	for _, module := range modules {
+		if module.Constructor == nil || len(module.Constructor.Args) == 0 {
+			continue
+		}
+		for _, arg := range module.Constructor.Args {
+			value, ok, err := readWorkspaceModuleSettingValue(ctx, ws, module.Name, arg.Name)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				value = ""
+			}
+			rows = append(rows, workspaceSettingsTableRow{
+				module:      module.Name,
+				key:         arg.Name,
+				value:       value,
+				description: arg.Short(),
+			})
+		}
+	}
+
+	if len(rows) == 0 {
 		_, err := fmt.Fprintln(out, "(no settings)")
 		return err
 	}
 
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "NAME\tTYPE\tVALUE\tDESCRIPTION"); err != nil {
+	if _, err := fmt.Fprintln(tw, "MODULE\tKEY\tVALUE\tDESCRIPTION"); err != nil {
 		return err
 	}
-
-	for _, arg := range module.Constructor.Args {
-		value, ok, err := readWorkspaceModuleSettingValue(ctx, ws, module.Name, arg.Name)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			value = ""
-		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", arg.Name, arg.TypeDef.String(), value, arg.Short()); err != nil {
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.module, row.key, row.value, row.description); err != nil {
 			return err
 		}
 	}
-
 	return tw.Flush()
 }
 
