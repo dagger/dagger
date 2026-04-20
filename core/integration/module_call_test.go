@@ -1385,30 +1385,15 @@ func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
 	})
 
 	t.Run("no implicit host access", func(ctx context.Context, t *testctx.T) {
-		// verify that a sneaky module can't use raw gql queries to access host sockets that they weren't passed
+		// verify that a socket ID from one session cannot be reused in another
+		// session to actually communicate with the host socket
 
-		runContainerQuery := `query Run($sockID: SocketID!) {
-	container {
-		from(address: "` + alpineImage + `") {
-			withExec(args: ["apk", "add", "netcat-openbsd"]) {
-				withUnixSocket(path: "/var/run/host.sock", source: $sockID) {
-					withExec(args: ["stat", "/var/run/host.sock"]) {
-						stdout
-					}
-				}
-			}
-		}
-	}
-}
-`
-
-		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+		idModDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(idModDir, "main.go"), []byte(`package main
 
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/Khan/genqlient/graphql"
 )
@@ -1416,38 +1401,59 @@ import (
 type Test struct{}
 
 type SocketIDResponse struct {
-	Host struct{
-		UnixSocket struct{
+	Host struct {
+		UnixSocket struct {
 			Id string
 		}
 	}
 }
 
-func (m *Test) Fn(ctx context.Context, sockPath string, runContainerQuery string) error {
+func (m *Test) Fn(ctx context.Context, sockPath string) (string, error) {
 	sockResp := &SocketIDResponse{}
 	resp := &graphql.Response{Data: sockResp}
 	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
 		Query: "{host{unixSocket(path:\""+sockPath+"\"){id}}}",
 	}, resp)
 	if err != nil {
-		return fmt.Errorf("get socket id req: %w", err)
+		return "", fmt.Errorf("get socket id req: %w", err)
 	}
-
-	sockID := sockResp.Host.UnixSocket.Id
-	if sockID == "" {
-		return fmt.Errorf("unexpected response: %+v", resp)
+	id := sockResp.Host.UnixSocket.Id
+	if id == "" {
+		return "", fmt.Errorf("unexpected response: %+v", resp)
 	}
+	return id, nil
+}
+`), 0o644)
+		require.NoError(t, err)
 
-	resp = &graphql.Response{}
-	err = dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
-		Query: runContainerQuery,
-		Variables: map[string]interface{}{"sockID": sockID},
-	}, resp)
+		_, err = hostDaggerExec(ctx, t, idModDir, "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+		sockID, err := hostDaggerExec(ctx, t, idModDir, "call", "fn", "--sockPath", sockPath)
+		require.NoError(t, err)
+
+		modDir := t.TempDir()
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) Fn(ctx context.Context, sockID string) error {
+	_, err := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"}).
+		WithUnixSocket("/var/run/host.sock", dag.LoadSocketFromID(dagger.SocketID(sockID))).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
+		Stdout(ctx)
 	if err == nil {
 		return fmt.Errorf("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), fmt.Sprintf("socket %s not found", sockPath)) {
-		return fmt.Errorf("unexpected error: %w", err)
 	}
 	return nil
 }
@@ -1457,10 +1463,7 @@ func (m *Test) Fn(ctx context.Context, sockPath string, runContainerQuery string
 		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
-		sockPath, cleanup := getHostSocket(t)
-		defer cleanup()
-
-		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sockPath", sockPath, "--runContainerQuery", runContainerQuery)
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sockID", strings.TrimSpace(string(sockID)))
 		require.NoError(t, err)
 	})
 }
@@ -2633,7 +2636,7 @@ from dagger import dag
 
 @dagger.enum_type
 class Language(enum.Enum):
-    GO = "GO"
+    GO = "GO" 
     PYTHON = "PYTHON"
     TYPESCRIPT = "TYPESCRIPT"
     PHP = "PHP"

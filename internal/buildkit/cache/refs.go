@@ -65,12 +65,6 @@ type ImmutableRef interface {
 	GetRemotes(ctx context.Context, createIfNeeded bool, cfg config.RefConfig, all bool, s session.Group) ([]*solver.Remote, error)
 	LayerChain() RefList
 	FileList(ctx context.Context, s session.Group) ([]string, error)
-	// EnsureLocal ensures that all layers in the ref's chain are stored in the
-	// local content store. This is needed for lazy blob refs whose descriptor
-	// handlers are session-scoped: if they are not materialized before the
-	// session closes, future cache lookups will fail because the handlers are
-	// gone and the blobs can't be fetched.
-	EnsureLocal(ctx context.Context, s session.Group) error
 }
 
 type MutableRef interface {
@@ -1091,19 +1085,6 @@ func (sr *immutableRef) Extract(ctx context.Context, s session.Group) (rerr erro
 	}
 
 	return sr.unlazy(ctx, sr.descHandlers, sr.progress, s, true, false)
-}
-
-func (sr *immutableRef) EnsureLocal(ctx context.Context, s session.Group) error {
-	for _, ref := range sr.LayerChain() {
-		ir, ok := ref.(*immutableRef)
-		if !ok {
-			continue
-		}
-		if err := ir.unlazy(ctx, ir.descHandlers, ir.progress, s, true, true); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (sr *immutableRef) withRemoteSnapshotLabelsStargzMode(ctx context.Context, s session.Group, f func()) error {

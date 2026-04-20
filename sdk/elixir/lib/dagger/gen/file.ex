@@ -185,6 +185,20 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Return file status
+  """
+  @spec stat(t()) :: Dagger.Stat.t() | nil
+  def stat(%__MODULE__{} = file) do
+    query_builder =
+      file.query_builder |> QB.select("stat")
+
+    %Dagger.Stat{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   Force evaluation in the engine.
   """
   @spec sync(t()) :: {:ok, Dagger.File.t()} | {:error, term()}

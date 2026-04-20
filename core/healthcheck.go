@@ -11,7 +11,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
@@ -19,13 +19,13 @@ import (
 )
 
 type portHealthChecker struct {
-	bk    *buildkit.Client
-	ns    buildkit.Namespaced
+	bk    *engineutil.Client
+	ns    engineutil.Namespaced
 	host  string
 	ports []Port
 }
 
-func newPortHealth(bk *buildkit.Client, ns buildkit.Namespaced, host string, ports []Port) *portHealthChecker {
+func newPortHealth(bk *engineutil.Client, ns engineutil.Namespaced, host string, ports []Port) *portHealthChecker {
 	return &portHealthChecker{
 		bk:    bk,
 		ns:    ns,
@@ -63,7 +63,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 			backoff.WithMaxInterval(10*time.Second),
 		)
 		endpoint, err := backoff.RetryWithData(func() (string, error) {
-			return buildkit.RunInNetNS(ctx, d.bk, d.ns, func() (string, error) {
+			return engineutil.RunInNetNS(ctx, d.bk, d.ns, func() (string, error) {
 				// NB(vito): it's a _little_ silly to dial a UDP network to see that it's
 				// up, since it'll be a false positive even if they're not listening yet,
 				// but it at least checks that we're able to resolve the container address.
@@ -92,14 +92,14 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 }
 
 type dockerHealthcheck struct {
-	args    []string
-	creator trace.SpanContext
-	ctr     *Container
-	exec    executor.Executor
-	svcID   string
+	args   []string
+	origin trace.SpanContext
+	ctr    *Container
+	exec   executor.Executor
+	svcID  string
 }
 
-func newDockerHealthcheck(exec executor.Executor, svcID string, ctr *Container, creator trace.SpanContext) (*dockerHealthcheck, error) {
+func newDockerHealthcheck(exec executor.Executor, svcID string, ctr *Container, origin trace.SpanContext) (*dockerHealthcheck, error) {
 	if ctr == nil || ctr.Config.Healthcheck == nil || len(ctr.Config.Healthcheck.Test) == 0 || ctr.Config.Healthcheck.Test[0] == "NONE" {
 		return nil, fmt.Errorf("container does not have a healthcheck command")
 	}
@@ -126,11 +126,11 @@ func newDockerHealthcheck(exec executor.Executor, svcID string, ctr *Container, 
 	}
 
 	return &dockerHealthcheck{
-		args:    args,
-		creator: creator,
-		ctr:     ctr,
-		exec:    exec,
-		svcID:   svcID,
+		args:   args,
+		origin: origin,
+		ctr:    ctr,
+		exec:   exec,
+		svcID:  svcID,
 	}, nil
 }
 
@@ -203,8 +203,8 @@ func (chk *dockerHealthcheck) check(ctx context.Context) error {
 	if err != nil {
 		var gwErr *gwpb.ExitError
 		if errors.As(err, &gwErr) {
-			return &buildkit.ExecError{
-				Err:      telemetry.TrackOrigin(gwErr, chk.creator),
+			return &ExecError{
+				Err:      telemetry.TrackOrigin(gwErr, chk.origin),
 				Cmd:      healthcheckMeta.Args,
 				ExitCode: int(gwErr.ExitCode),
 				Stdout:   stdoutBuf.String(),

@@ -117,7 +117,12 @@ type ClientMetadata struct {
 	// the Query root in addition to its namespaced constructor.
 	ExtraModules []ExtraModule `json:"extra_modules,omitempty"`
 
-	// SkipWorkspaceModules skips loading workspace modules when true.
+	// LoadWorkspaceModules opts this client into loading workspace modules.
+	// When false, only the core API is exposed by default.
+	LoadWorkspaceModules bool `json:"load_workspace_modules,omitempty"`
+
+	// SkipWorkspaceModules is a legacy compatibility input. New clients should
+	// use LoadWorkspaceModules instead.
 	SkipWorkspaceModules bool `json:"skip_workspace_modules,omitempty"`
 
 	// Workspace explicitly declares the workspace binding for this client.
@@ -155,12 +160,19 @@ func ClientMetadataFromHTTPHeaders(h http.Header) (*ClientMetadata, error) {
 		// fallback for old clients that don't send a client version!
 		m.ClientVersion = m.Labels["dagger.io/client.version"]
 	}
+	if err := m.normalizeWorkspaceModuleLoading(); err != nil {
+		return nil, err
+	}
 
 	return m, nil
 }
 
 func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
 	h = h.Clone()
+
+	if err := (&m).normalizeWorkspaceModuleLoading(); err != nil {
+		panic(err)
+	}
 
 	bs, err := json.Marshal(m)
 	if err != nil {
@@ -169,6 +181,31 @@ func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
 	h.Set(ClientMetadataMetaKey, base64.StdEncoding.EncodeToString(bs))
 
 	return h
+}
+
+func (m *ClientMetadata) normalizeWorkspaceModuleLoading() error {
+	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
+		m.LoadWorkspaceModules,
+		m.SkipWorkspaceModules,
+	)
+	if err != nil {
+		return err
+	}
+
+	m.LoadWorkspaceModules = loadWorkspaceModules
+	m.SkipWorkspaceModules = false
+
+	return nil
+}
+
+func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {
+	if loadWorkspaceModules && skipWorkspaceModules {
+		return false, fmt.Errorf("load_workspace_modules and skip_workspace_modules are mutually exclusive")
+	}
+	if skipWorkspaceModules {
+		return false, nil
+	}
+	return loadWorkspaceModules, nil
 }
 
 type LocalImportOpts struct {

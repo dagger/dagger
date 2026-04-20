@@ -238,6 +238,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\ClientFilesyncMirror",
+			"p": "Dagger/ClientFilesyncMirror.html",
+			"d": "<p>An internal persistent filesync mirror.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ClientFilesyncMirrorId",
+			"p": "Dagger/ClientFilesyncMirrorId.html",
+			"d": "<p>The <code>ClientFilesyncMirrorID</code> scalar type represents an identifier for an object of type ClientFilesyncMirror.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Client\\AbstractClient",
 			"p": "Dagger/Client/AbstractClient.html",
 			"d": null,
@@ -868,6 +888,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\HTTPState",
+			"p": "Dagger/HTTPState.html",
+			"d": "<p>An internal persistent HTTP state.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\HTTPStateId",
+			"p": "Dagger/HTTPStateId.html",
+			"d": "<p>The <code>HTTPStateID</code> scalar type represents an identifier for an object of type HTTPState.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\HealthcheckConfig",
 			"p": "Dagger/HealthcheckConfig.html",
 			"d": "<p>Image healthcheck configuration.</p>",
@@ -1211,6 +1251,26 @@
 			"n": "Dagger\\QueryId",
 			"p": "Dagger/QueryId.html",
 			"d": "<p>The <code>QueryID</code> scalar type represents an identifier for an object of type Query.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\RemoteGitMirror",
+			"p": "Dagger/RemoteGitMirror.html",
+			"d": "<p>An internal persistent bare git mirror.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\RemoteGitMirrorId",
+			"p": "Dagger/RemoteGitMirrorId.html",
+			"d": "<p>The <code>RemoteGitMirrorID</code> scalar type represents an identifier for an object of type RemoteGitMirror.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1690,6 +1750,12 @@
 			"n": "Dagger\\Binding::asGitRepository",
 			"p": "Dagger/Binding.html#method_asGitRepository",
 			"d": "<p>Retrieve the binding value, as type GitRepository</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asHTTPState",
+			"p": "Dagger/Binding.html#method_asHTTPState",
+			"d": "<p>Retrieve the binding value, as type HTTPState</p>"
 		},
 		{
 			"t": "M",
@@ -2221,6 +2287,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadClientFilesyncMirrorFromID",
+			"p": "Dagger/Client.html#method_loadClientFilesyncMirrorFromID",
+			"d": "<p>Load a ClientFilesyncMirror from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadCloudFromID",
 			"p": "Dagger/Client.html#method_loadCloudFromID",
 			"d": "<p>Load a Cloud from its ID.</p>"
@@ -2383,6 +2455,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadHTTPStateFromID",
+			"p": "Dagger/Client.html#method_loadHTTPStateFromID",
+			"d": "<p>Load a HTTPState from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadHealthcheckConfigFromID",
 			"p": "Dagger/Client.html#method_loadHealthcheckConfigFromID",
 			"d": "<p>Load a HealthcheckConfig from its ID.</p>"
@@ -2476,6 +2554,12 @@
 			"n": "Dagger\\Client::loadQueryFromID",
 			"p": "Dagger/Client.html#method_loadQueryFromID",
 			"d": "<p>Load a Query from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadRemoteGitMirrorFromID",
+			"p": "Dagger/Client.html#method_loadRemoteGitMirrorFromID",
+			"d": "<p>Load a RemoteGitMirror from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2620,6 +2704,12 @@
 			"n": "Dagger\\Client::with",
 			"p": "Dagger/Client.html#method_with",
 			"d": "<p>Configure the php-sdk constructor arguments.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ClientFilesyncMirror::id",
+			"p": "Dagger/ClientFilesyncMirror.html#method_id",
+			"d": "<p>A unique identifier for this ClientFilesyncMirror.</p>"
 		},
 		{
 			"t": "M",
@@ -3543,7 +3633,7 @@
 			"t": "M",
 			"n": "Dagger\\Engine::localCache",
 			"p": "Dagger/Engine.html#method_localCache",
-			"d": "<p>The local (on-disk) cache for the Dagger engine</p>"
+			"d": "<p>The local engine cache state tracked by dagql</p>"
 		},
 		{
 			"t": "M",
@@ -3699,7 +3789,7 @@
 			"t": "M",
 			"n": "Dagger\\EnumTypeDef::values",
 			"p": "Dagger/EnumTypeDef.html#method_values",
-			"d": null
+			"d": "<p>The members of the enum.</p>"
 		},
 		{
 			"t": "M",
@@ -3982,6 +4072,18 @@
 			"n": "Dagger\\Env::withGitRepositoryOutput",
 			"p": "Dagger/Env.html#method_withGitRepositoryOutput",
 			"d": "<p>Declare a desired GitRepository output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withHTTPStateInput",
+			"p": "Dagger/Env.html#method_withHTTPStateInput",
+			"d": "<p>Create or update a binding of type HTTPState in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withHTTPStateOutput",
+			"p": "Dagger/Env.html#method_withHTTPStateOutput",
+			"d": "<p>Declare a desired HTTPState output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -4683,7 +4785,7 @@
 			"t": "M",
 			"n": "Dagger\\Generator::changes",
 			"p": "Dagger/Generator.html#method_changes",
-			"d": "<p>The generated changeset</p>"
+			"d": "<p>The generated changeset from the last run</p>"
 		},
 		{
 			"t": "M",
@@ -4707,7 +4809,7 @@
 			"t": "M",
 			"n": "Dagger\\Generator::isEmpty",
 			"p": "Dagger/Generator.html#method_isEmpty",
-			"d": "<p>Wether changeset from the generator execution is empty or not</p>"
+			"d": "<p>Whether changeset from the last generator run is empty or not</p>"
 		},
 		{
 			"t": "M",
@@ -4737,7 +4839,7 @@
 			"t": "M",
 			"n": "Dagger\\GeneratorGroup::changes",
 			"p": "Dagger/GeneratorGroup.html#method_changes",
-			"d": "<p>The combined changes from the generators execution</p>"
+			"d": "<p>The combined changes from the last run of the generators</p>"
 		},
 		{
 			"t": "M",
@@ -4749,7 +4851,7 @@
 			"t": "M",
 			"n": "Dagger\\GeneratorGroup::isEmpty",
 			"p": "Dagger/GeneratorGroup.html#method_isEmpty",
-			"d": "<p>Whether the generated changeset is empty or not</p>"
+			"d": "<p>Whether the generated changeset from the last run is empty or not</p>"
 		},
 		{
 			"t": "M",
@@ -4858,6 +4960,12 @@
 			"n": "Dagger\\GitRepository::url",
 			"p": "Dagger/GitRepository.html#method_url",
 			"d": "<p>The URL of the git repository.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HTTPState::id",
+			"p": "Dagger/HTTPState.html#method_id",
+			"d": "<p>A unique identifier for this HTTPState.</p>"
 		},
 		{
 			"t": "M",
@@ -5781,7 +5889,7 @@
 			"t": "M",
 			"n": "Dagger\\ObjectTypeDef::constructor",
 			"p": "Dagger/ObjectTypeDef.html#method_constructor",
-			"d": "<p>The function used to construct new instances of this object, if any</p>"
+			"d": "<p>The function used to construct new instances of this object, if any.</p>"
 		},
 		{
 			"t": "M",
@@ -5902,6 +6010,12 @@
 			"n": "Dagger\\PortForward::__construct",
 			"p": "Dagger/PortForward.html#method___construct",
 			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\RemoteGitMirror::id",
+			"p": "Dagger/RemoteGitMirror.html#method_id",
+			"d": "<p>A unique identifier for this RemoteGitMirror.</p>"
 		},
 		{
 			"t": "M",
@@ -6220,6 +6334,12 @@
 			"n": "Dagger\\TypeDef::kind",
 			"p": "Dagger/TypeDef.html#method_kind",
 			"d": "<p>The kind of type this is (e.g. primitive, list, object).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TypeDef::name",
+			"p": "Dagger/TypeDef.html#method_name",
+			"d": "<p>The canonical non-optional name of the type.</p>"
 		},
 		{
 			"t": "M",

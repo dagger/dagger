@@ -1279,6 +1279,59 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		require.NoError(t, err)
 		require.Empty(t, exists2) // Should be empty
 	})
+
+	t.Run("empty directories in subdirectory target", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		beforeDir := c.Directory().
+			WithNewDirectory("base").
+			Directory("/base")
+
+		afterDir := c.Directory().
+			WithNewDirectory("base").
+			Directory("/base").
+			WithNewDirectory("new-empty")
+
+		changes := afterDir.Changes(beforeDir)
+
+		resultDir := c.Directory().
+			WithNewDirectory("subdir").
+			Directory("/subdir").
+			WithChanges(changes)
+
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "new-empty/")
+
+		parentEntries, err := resultDir.Directory("..").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"subdir/"}, parentEntries)
+	})
+
+	t.Run("file replaced by empty directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		beforeDir := c.Directory().
+			WithNewFile("node", "file")
+
+		afterDir := c.Directory().
+			WithNewDirectory("node")
+
+		changes := afterDir.Changes(beforeDir)
+
+		baseDir := c.Directory().
+			WithNewFile("node", "different base file")
+
+		resultDir := baseDir.WithChanges(changes)
+
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "node/")
+
+		nodeEntries, err := resultDir.Directory("node").Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, nodeEntries)
+	})
 }
 
 func (ChangesetSuite) TestEmpty(ctx context.Context, t *testctx.T) {

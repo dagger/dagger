@@ -1263,12 +1263,12 @@ func optionalModCmdWrapper(
 	presetSecretToken string,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, cmdArgs []string) error {
+		_, explicitModRefSet := getExplicitModuleSourceRef()
+
 		return withEngine(cmd.Context(), client.Params{
 			SecretToken:          presetSecretToken,
-			SkipWorkspaceModules: moduleNoURL,
+			LoadWorkspaceModules: !moduleNoURL && !explicitModRefSet,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			_, explicitModRefSet := getExplicitModuleSourceRef()
-
 			if moduleNoURL {
 				return fn(ctx, engineClient, nil, cmd, cmdArgs)
 			}
