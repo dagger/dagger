@@ -15,6 +15,7 @@ import (
 type ConstructorArgHint struct {
 	Name         string
 	TypeLabel    string
+	Description  string
 	ExampleValue string
 }
 
@@ -268,13 +269,15 @@ func insertWorkspaceSettingHintComments(data []byte, cfg *Config, hints map[stri
 			}
 		}
 
-		commentLines := make([]string, 0, len(moduleHints))
+		commentLines := make([]string, 0, len(moduleHints)*2)
 		for _, hint := range moduleHints {
 			if existingSettings[strings.ToLower(hint.Name)] {
 				continue
 			}
-			commentLines = append(commentLines,
-				fmt.Sprintf("# %s%s = %s # %s", hintPrefix, hint.Name, hint.ExampleValue, hint.TypeLabel))
+			if desc := hintDescriptionLine(hint.Description); desc != "" {
+				commentLines = append(commentLines, "# "+desc)
+			}
+			commentLines = append(commentLines, fmt.Sprintf("# %s%s = %s", hintPrefix, hint.Name, hint.ExampleValue))
 		}
 		if len(commentLines) == 0 {
 			continue
@@ -288,6 +291,16 @@ func insertWorkspaceSettingHintComments(data []byte, cfg *Config, hints map[stri
 	}
 
 	return []byte(strings.Join(lines, "\n"))
+}
+
+func hintDescriptionLine(description string) string {
+	for _, line := range strings.Split(description, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 func findModuleHintInsertionPoint(lines []string, moduleName string) (insertAfter int, hintPrefix string) {

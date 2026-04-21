@@ -330,11 +330,14 @@ source = "modules/greeter"
 			"greeter": {{
 				Name:         "greeting",
 				TypeLabel:    "string",
+				Description:  "Greeting to use.",
 				ExampleValue: `"hello"`,
 			}},
 		})
 		require.NoError(t, err)
-		require.Contains(t, string(updated), "# settings.greeting = \"hello\" # string")
+		out := string(updated)
+		require.Contains(t, out, "# Greeting to use.\n# settings.greeting = \"hello\"")
+		require.NotContains(t, out, "# settings.greeting = \"hello\" # string")
 	})
 
 	t.Run("adds setting hints inside existing settings sections", func(t *testing.T) {
@@ -362,8 +365,9 @@ source = "modules/greeter"
 
 		out := string(updated)
 		require.Contains(t, out, "[modules.greeter.settings]")
-		require.Contains(t, out, "# greeting = \"hello\" # string")
-		require.NotContains(t, out, "# settings.greeting = \"hello\" # string")
+		require.Contains(t, out, "# greeting = \"hello\"")
+		require.NotContains(t, out, "# greeting = \"hello\" # string")
+		require.NotContains(t, out, "# settings.greeting = \"hello\"")
 	})
 
 	t.Run("preserves comments across env removal", func(t *testing.T) {

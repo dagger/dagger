@@ -253,6 +253,7 @@ func buildHintFromArg(arg *core.FunctionArg) workspace.ConstructorArgHint {
 	return workspace.ConstructorArgHint{
 		Name:         arg.Name,
 		TypeLabel:    typeLabel,
+		Description:  arg.Description,
 		ExampleValue: exampleValue,
 	}
 }

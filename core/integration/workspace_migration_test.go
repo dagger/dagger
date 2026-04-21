@@ -146,8 +146,10 @@ type Myapp {
 		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `# settings.greeting = "hello" # string`)
-		require.Contains(t, configOut, `# settings.password = "env://MY_SECRET" # Secret`)
+		require.Contains(t, configOut, `# settings.greeting = "hello"`)
+		require.Contains(t, configOut, `# settings.password = "env://MY_SECRET"`)
+		require.NotContains(t, configOut, `# string`)
+		require.NotContains(t, configOut, `# Secret`)
 	})
 
 	t.Run("dot dagger source keeps toolchain and migrated main module hints", func(ctx context.Context, t *testctx.T) {
@@ -175,9 +177,11 @@ type Myapp {
 		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, `[modules.superconstructor]`)
-		require.Contains(t, configOut, `# settings.count = 42 # int`)
+		require.Contains(t, configOut, `# settings.count = 42`)
 		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `# settings.greeting = "hello" # string`)
+		require.Contains(t, configOut, `# settings.greeting = "hello"`)
+		require.NotContains(t, configOut, `# int`)
+		require.NotContains(t, configOut, `# string`)
 	})
 
 	t.Run("failed migrated main module introspection requires force", func(ctx context.Context, t *testctx.T) {
@@ -217,7 +221,8 @@ type Myapp {
 		configOut, err := migrate.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `# settings.greeting = "hello" # string`)
+		require.Contains(t, configOut, `# settings.greeting = "hello"`)
+		require.NotContains(t, configOut, `# string`)
 	})
 
 	t.Run("dot dagger source remains in place", func(ctx context.Context, t *testctx.T) {
