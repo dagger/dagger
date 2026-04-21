@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/dagger/dagger/core"
@@ -271,45 +270,6 @@ func isMounted(mountPath string) bool {
 	return bytes.Contains(data, needle)
 }
 
-func (m *sshfsManager) release(ctx context.Context, id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	ex, ok := m.mounts[id]
-	if !ok {
-		return fmt.Errorf("unknown sshfs mount id %s", id)
-	}
-	ex.refCount--
-	if ex.refCount > 0 {
-		logrus.WithFields(logrus.Fields{
-			"id":       id,
-			"refCount": ex.refCount,
-		}).Info("sshfs: mount still in use")
-		return nil
-	}
-	logrus.WithFields(logrus.Fields{
-		"id":        id,
-		"mountPath": ex.mountPath,
-	}).Info("sshfs: unmounting")
-	cmd := exec.CommandContext(ctx, "fusermount", "-u", ex.mountPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		logrus.WithError(err).Warn("sshfs: fusermount failed, falling back to umount")
-		cmd2 := exec.CommandContext(ctx, "umount", ex.mountPath)
-		cmd2.Stdout = os.Stdout
-		cmd2.Stderr = os.Stderr
-		_ = cmd2.Run()
-	}
-	delete(m.mounts, id)
-	if ex.proc != nil {
-		if err := ex.proc.Signal(os.Signal(syscall.Signal(0))); err == nil {
-			_ = ex.proc.Kill()
-		}
-	}
-	_ = os.RemoveAll(ex.mountPath)
-	logrus.WithField("id", id).Info("sshfs: unmounted and cleaned up")
-	return nil
-}
 
 // RegisterSSHFSVolume writes the key plaintexts to digest-named files under
 // the engine root (so repeat calls with the same keys reuse them) and mounts

@@ -1363,6 +1363,59 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 	}
 }
 
+func decodePersistedContainerMount(ctx context.Context, dag *dagql.Server, resultID uint64, index int, persistedMount persistedContainerMountPayload) (ContainerMount, decodedContainerMount, error) {
+	mnt := ContainerMount{
+		Target:   persistedMount.Target,
+		Readonly: persistedMount.Readonly,
+	}
+	decodedMount := decodedContainerMount{Kind: persistedMount.Kind}
+	switch persistedMount.Kind {
+	case persistedContainerMountKindDirectory:
+		mnt.DirectorySource = new(LazyAccessor[*Directory, *Container])
+		if len(persistedMount.Value) > 0 {
+			dirVal, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, fmt.Sprintf("mount_dir:%d", index), persistedMount.Value)
+			if err != nil {
+				return ContainerMount{}, decodedContainerMount{}, err
+			}
+			decodedMount.Kind = dirVal.Kind
+			if dirVal.Dir != nil {
+				mnt.DirectorySource.setValue(dirVal.Dir)
+			}
+		}
+	case persistedContainerMountKindFile:
+		mnt.FileSource = new(LazyAccessor[*File, *Container])
+		if len(persistedMount.Value) > 0 {
+			fileVal, err := decodePersistedContainerFileValue(ctx, dag, resultID, fmt.Sprintf("mount_file:%d", index), persistedMount.Value)
+			if err != nil {
+				return ContainerMount{}, decodedContainerMount{}, err
+			}
+			decodedMount.Kind = fileVal.Kind
+			if fileVal.File != nil {
+				mnt.FileSource.setValue(fileVal.File)
+			}
+		}
+	case persistedContainerMountKindCache:
+		cacheRes, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persistedMount.CacheSourceResultID, "container mount cache")
+		if err != nil {
+			return ContainerMount{}, decodedContainerMount{}, err
+		}
+		mnt.CacheSource = &CacheMountSource{Volume: cacheRes}
+	case persistedContainerMountKindTmpfs:
+		mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
+	case persistedContainerMountKindHost:
+		mnt.HostSource = &HostMountSource{Source: persistedMount.HostSource}
+	case persistedContainerMountKindVolume:
+		volRes, err := loadPersistedObjectResultByResultID[*Volume](ctx, dag, persistedMount.VolumeSourceResultID, "container mount volume")
+		if err != nil {
+			return ContainerMount{}, decodedContainerMount{}, err
+		}
+		mnt.VolumeSource = &VolumeMountSource{Volume: volRes}
+	default:
+		return ContainerMount{}, decodedContainerMount{}, fmt.Errorf("decode persisted container mount %q: unsupported kind %q", persistedMount.Target, persistedMount.Kind)
+	}
+	return mnt, decodedMount, nil
+}
+
 func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerFileValue, error) {
 	var wrapped persistedContainerFileValue
 	if err := json.Unmarshal(payload, &wrapped); err != nil {
@@ -1537,54 +1590,9 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	mounts := make(ContainerMounts, 0, len(persisted.Mounts))
 	decodedMounts := make([]decodedContainerMount, 0, len(persisted.Mounts))
 	for _, persistedMount := range persisted.Mounts {
-		mnt := ContainerMount{
-			Target:   persistedMount.Target,
-			Readonly: persistedMount.Readonly,
-		}
-		decodedMount := decodedContainerMount{Kind: persistedMount.Kind}
-		switch persistedMount.Kind {
-		case persistedContainerMountKindDirectory:
-			mnt.DirectorySource = new(LazyAccessor[*Directory, *Container])
-			if len(persistedMount.Value) > 0 {
-				dirVal, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, fmt.Sprintf("mount_dir:%d", len(mounts)), persistedMount.Value)
-				if err != nil {
-					return nil, err
-				}
-				decodedMount.Kind = dirVal.Kind
-				if dirVal.Dir != nil {
-					mnt.DirectorySource.setValue(dirVal.Dir)
-				}
-			}
-		case persistedContainerMountKindFile:
-			mnt.FileSource = new(LazyAccessor[*File, *Container])
-			if len(persistedMount.Value) > 0 {
-				fileVal, err := decodePersistedContainerFileValue(ctx, dag, resultID, fmt.Sprintf("mount_file:%d", len(mounts)), persistedMount.Value)
-				if err != nil {
-					return nil, err
-				}
-				decodedMount.Kind = fileVal.Kind
-				if fileVal.File != nil {
-					mnt.FileSource.setValue(fileVal.File)
-				}
-			}
-		case persistedContainerMountKindCache:
-			cacheRes, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persistedMount.CacheSourceResultID, "container mount cache")
-			if err != nil {
-				return nil, err
-			}
-			mnt.CacheSource = &CacheMountSource{Volume: cacheRes}
-		case persistedContainerMountKindTmpfs:
-			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
-		case persistedContainerMountKindHost:
-			mnt.HostSource = &HostMountSource{Source: persistedMount.HostSource}
-		case persistedContainerMountKindVolume:
-			volRes, err := loadPersistedObjectResultByResultID[*Volume](ctx, dag, persistedMount.VolumeSourceResultID, "container mount volume")
-			if err != nil {
-				return nil, err
-			}
-			mnt.VolumeSource = &VolumeMountSource{Volume: volRes}
-		default:
-			return nil, fmt.Errorf("decode persisted container mount %q: unsupported kind %q", persistedMount.Target, persistedMount.Kind)
+		mnt, decodedMount, err := decodePersistedContainerMount(ctx, dag, resultID, len(mounts), persistedMount)
+		if err != nil {
+			return nil, err
 		}
 		mounts = append(mounts, mnt)
 		decodedMounts = append(decodedMounts, decodedMount)
