@@ -3119,6 +3119,35 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 	}
 }
 
+// ContainerWithMountedHostDirectoryOpts contains options for Container.WithMountedHostDirectory
+type ContainerWithMountedHostDirectoryOpts struct {
+	// Mount the host directory read-only.
+	Readonly bool
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	Expand bool
+}
+
+// Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+func (r *Container) WithMountedHostDirectory(path string, source string, opts ...ContainerWithMountedHostDirectoryOpts) *Container {
+	q := r.query.Select("withMountedHostDirectory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `readonly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Readonly) {
+			q = q.Arg("readonly", opts[i].Readonly)
+		}
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithMountedSecretOpts contains options for Container.WithMountedSecret
 type ContainerWithMountedSecretOpts struct {
 	// A user:group to set for the mounted secret.

@@ -790,6 +790,18 @@ export type ContainerWithMountedFileOpts = {
   expand?: boolean
 }
 
+export type ContainerWithMountedHostDirectoryOpts = {
+  /**
+   * Mount the host directory read-only.
+   */
+  readonly?: boolean
+
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  expand?: boolean
+}
+
 export type ContainerWithMountedSecretOpts = {
   /**
    * A user:group to set for the mounted secret.
@@ -4959,6 +4971,26 @@ export class Container extends BaseClient {
     opts?: ContainerWithMountedFileOpts,
   ): Container => {
     const ctx = this._ctx.select("withMountedFile", { path, source, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+   * @param path Location of the mounted directory inside the container (e.g., "/mnt/host").
+   * @param source Absolute path on the engine host to bind-mount.
+   * @param opts.readonly Mount the host directory read-only.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  withMountedHostDirectory = (
+    path: string,
+    source: string,
+    opts?: ContainerWithMountedHostDirectoryOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withMountedHostDirectory", {
+      path,
+      source,
+      ...opts,
+    })
     return new Container(ctx)
   }
 

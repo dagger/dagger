@@ -348,6 +348,22 @@ type ContainerWithMountedTempLazy struct {
 	Size   int
 }
 
+type ContainerWithMountedHostDirectoryLazy struct {
+	LazyState
+	Parent   dagql.ObjectResult[*Container]
+	Target   string
+	Source   string
+	Readonly bool
+}
+
+type ContainerWithVolumeMountLazy struct {
+	LazyState
+	Parent   dagql.ObjectResult[*Container]
+	Target   string
+	Volume   dagql.ObjectResult[*Volume]
+	Readonly bool
+}
+
 type ContainerWithMountedSecretLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
@@ -415,6 +431,10 @@ type ContainerMount struct {
 	CacheSource *CacheMountSource
 	// The mounted tmpfs.
 	TmpfsSource *TmpfsMountSource
+	// A host directory bind-mounted from the engine's filesystem.
+	HostSource *HostMountSource
+	// An engine-managed volume (e.g. sshfs) bind-mounted at Target.
+	VolumeSource *VolumeMountSource
 }
 
 type CacheMountSource struct {
@@ -427,15 +447,28 @@ type TmpfsMountSource struct {
 	Size int
 }
 
+type HostMountSource struct {
+	// Absolute path on the engine host to bind-mount.
+	Source string
+}
+
+type VolumeMountSource struct {
+	// The engine-managed volume backing this mount. At exec time we
+	// desugar to an engine-side HostMount using the volume's MountPath.
+	Volume dagql.ObjectResult[*Volume]
+}
+
 type ContainerMounts []ContainerMount
 
 type persistedContainerMountPayload struct {
-	Target              string          `json:"target"`
-	Readonly            bool            `json:"readonly,omitempty"`
-	Kind                string          `json:"kind"`
-	Value               json.RawMessage `json:"value,omitempty"`
-	CacheSourceResultID uint64          `json:"cacheSourceResultID,omitempty"`
-	TmpfsSize           int             `json:"tmpfsSize,omitempty"`
+	Target               string          `json:"target"`
+	Readonly             bool            `json:"readonly,omitempty"`
+	Kind                 string          `json:"kind"`
+	Value                json.RawMessage `json:"value,omitempty"`
+	CacheSourceResultID  uint64          `json:"cacheSourceResultID,omitempty"`
+	TmpfsSize            int             `json:"tmpfsSize,omitempty"`
+	HostSource           string          `json:"hostSource,omitempty"`
+	VolumeSourceResultID uint64          `json:"volumeSourceResultID,omitempty"`
 }
 
 type persistedContainerSecretPayload struct {
@@ -462,6 +495,8 @@ const (
 	persistedContainerMountKindFile      = "file"
 	persistedContainerMountKindCache     = "cache"
 	persistedContainerMountKindTmpfs     = "tmpfs"
+	persistedContainerMountKindHost      = "host"
+	persistedContainerMountKindVolume    = "volume"
 )
 
 type persistedContainerDirectoryValue struct {
@@ -705,6 +740,20 @@ type persistedContainerWithMountedTempLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Target         string `json:"target"`
 	Size           int    `json:"size,omitempty"`
+}
+
+type persistedContainerWithMountedHostDirectoryLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Target         string `json:"target"`
+	Source         string `json:"source"`
+	Readonly       bool   `json:"readonly,omitempty"`
+}
+
+type persistedContainerWithVolumeMountLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Target         string `json:"target"`
+	VolumeResultID uint64 `json:"volumeResultID"`
+	Readonly       bool   `json:"readonly,omitempty"`
 }
 
 type persistedContainerWithMountedSecretLazy struct {
@@ -1417,6 +1466,16 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		case mnt.TmpfsSource != nil:
 			encoded.Kind = persistedContainerMountKindTmpfs
 			encoded.TmpfsSize = mnt.TmpfsSource.Size
+		case mnt.HostSource != nil:
+			encoded.Kind = persistedContainerMountKindHost
+			encoded.HostSource = mnt.HostSource.Source
+		case mnt.VolumeSource != nil:
+			encoded.Kind = persistedContainerMountKindVolume
+			id, err := encodePersistedObjectRef(cache, mnt.VolumeSource.Volume, fmt.Sprintf("volume mount %q", mnt.Target))
+			if err != nil {
+				return nil, err
+			}
+			encoded.VolumeSourceResultID = id
 		default:
 			return nil, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
 		}
@@ -1517,6 +1576,14 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			mnt.CacheSource = &CacheMountSource{Volume: cacheRes}
 		case persistedContainerMountKindTmpfs:
 			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
+		case persistedContainerMountKindHost:
+			mnt.HostSource = &HostMountSource{Source: persistedMount.HostSource}
+		case persistedContainerMountKindVolume:
+			volRes, err := loadPersistedObjectResultByResultID[*Volume](ctx, dag, persistedMount.VolumeSourceResultID, "container mount volume")
+			if err != nil {
+				return nil, err
+			}
+			mnt.VolumeSource = &VolumeMountSource{Volume: volRes}
 		default:
 			return nil, fmt.Errorf("decode persisted container mount %q: unsupported kind %q", persistedMount.Target, persistedMount.Kind)
 		}
@@ -1708,6 +1775,18 @@ func attachCacheVolumeResult(attach func(dagql.AnyResult) (dagql.AnyResult, erro
 	typed, ok := attached.(dagql.ObjectResult[*CacheVolume])
 	if !ok {
 		return dagql.ObjectResult[*CacheVolume]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
+	}
+	return typed, nil
+}
+
+func attachVolumeResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res dagql.ObjectResult[*Volume], label string) (dagql.ObjectResult[*Volume], error) {
+	attached, err := attach(res)
+	if err != nil {
+		return dagql.ObjectResult[*Volume]{}, fmt.Errorf("%s: %w", label, err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*Volume])
+	if !ok {
+		return dagql.ObjectResult[*Volume]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
 	}
 	return typed, nil
 }
@@ -3544,6 +3623,85 @@ func (lazy *ContainerWithMountedTempLazy) EncodePersisted(ctx context.Context, c
 	})
 }
 
+func (lazy *ContainerWithMountedHostDirectoryLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withMountedHostDirectory", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithMountedHostDirectory(ctx, lazy.Target, lazy.Source, lazy.Readonly); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithMountedHostDirectoryLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withMountedHostDirectory parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithMountedHostDirectoryLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedHostDirectory parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithMountedHostDirectoryLazy{
+		ParentResultID: parentID,
+		Target:         lazy.Target,
+		Source:         lazy.Source,
+		Readonly:       lazy.Readonly,
+	})
+}
+
+func (lazy *ContainerWithVolumeMountLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withVolumeMount", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithVolumeMount(ctx, lazy.Target, lazy.Volume, lazy.Readonly); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithVolumeMountLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withVolumeMount parent")
+	if err != nil {
+		return nil, err
+	}
+	vol, err := attachVolumeResult(attach, lazy.Volume, "attach container withVolumeMount volume")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Volume = vol
+	return []dagql.AnyResult{parent, vol}, nil
+}
+
+func (lazy *ContainerWithVolumeMountLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withVolumeMount parent")
+	if err != nil {
+		return nil, err
+	}
+	volID, err := encodePersistedObjectRef(cache, lazy.Volume, "container withVolumeMount volume")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithVolumeMountLazy{
+		ParentResultID: parentID,
+		Target:         lazy.Target,
+		VolumeResultID: volID,
+		Readonly:       lazy.Readonly,
+	})
+}
+
 func (lazy *ContainerWithMountedSecretLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withMountedSecret", func(ctx context.Context) error {
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
@@ -4410,6 +4568,44 @@ func decodePersistedContainerLazy(
 			Parent:    parent,
 			Target:    persisted.Target,
 			Size:      persisted.Size,
+		}
+		return nil
+	case "withMountedHostDirectory":
+		var persisted persistedContainerWithMountedHostDirectoryLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withMountedHostDirectory lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedHostDirectory parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithMountedHostDirectoryLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Target:    persisted.Target,
+			Source:    persisted.Source,
+			Readonly:  persisted.Readonly,
+		}
+		return nil
+	case "withVolumeMount":
+		var persisted persistedContainerWithVolumeMountLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withVolumeMount lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withVolumeMount parent")
+		if err != nil {
+			return err
+		}
+		vol, err := loadPersistedObjectResultByResultID[*Volume](ctx, dag, persisted.VolumeResultID, "container withVolumeMount volume")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithVolumeMountLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Target:    persisted.Target,
+			Volume:    vol,
+			Readonly:  persisted.Readonly,
 		}
 		return nil
 	case "withMountedSecret":
@@ -5309,6 +5505,43 @@ func (container *Container) WithMountedCache(
 	container.Mounts = container.Mounts.With(mount)
 
 	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithMountedHostDirectory(ctx context.Context, target, source string, readonly bool) (*Container, error) {
+	target = absPath(container.Config.WorkingDir, target)
+	source, err := filepath.Abs(source)
+	if err != nil {
+		return nil, fmt.Errorf("resolve host mount source: %w", err)
+	}
+
+	container.Mounts = container.Mounts.With(ContainerMount{
+		Target:     target,
+		Readonly:   readonly,
+		HostSource: &HostMountSource{Source: source},
+	})
+
+	container.ImageRef = ""
+
+	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithVolumeMount(ctx context.Context, target string, vol dagql.ObjectResult[*Volume], readonly bool) (*Container, error) {
+	if vol.Self() == nil {
+		return nil, fmt.Errorf("volume mount at %q has nil volume", target)
+	}
+	target = absPath(container.Config.WorkingDir, target)
+
+	container.Mounts = container.Mounts.With(ContainerMount{
+		Target:       target,
+		Readonly:     readonly,
+		VolumeSource: &VolumeMountSource{Volume: vol},
+	})
+
 	container.ImageRef = ""
 
 	return container, nil

@@ -130,6 +130,12 @@ type Server interface {
 	// of any releasable entries.
 	PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error)
 
+	// RegisterSSHFSVolume mounts an sshfs endpoint on the engine host and
+	// returns an opaque Volume handle that can be bind-mounted into
+	// containers via Container.WithVolumeMount. The private and public key
+	// Secrets are the credentials used for the SSH connection.
+	RegisterSSHFSVolume(ctx context.Context, endpoint string, privateKey, publicKey *Secret) (*Volume, error)
+
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *dagql.CachePrunePolicy
 

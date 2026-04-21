@@ -1313,6 +1313,28 @@ type Container {
   ): Container!
 
   """
+  Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+  """
+  withMountedHostDirectory(
+    """
+    Location of the mounted directory inside the container (e.g., "/mnt/host").
+    """
+    path: String!
+
+    """Absolute path on the engine host to bind-mount."""
+    source: String!
+
+    """Mount the host directory read-only."""
+    readonly: Boolean = false
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
   Retrieves this container plus a secret mounted into a file at the given path.
   """
   withMountedSecret(

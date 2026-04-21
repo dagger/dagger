@@ -3199,6 +3199,40 @@ class Container(Type):
         _ctx = self._select("withMountedFile", _args)
         return Container(_ctx)
 
+    def with_mounted_host_directory(
+        self,
+        path: str,
+        source: str,
+        *,
+        readonly: bool | None = False,
+        expand: bool | None = False,
+    ) -> Self:
+        """Retrieves this container plus a directory from the engine host bind-
+        mounted at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the mounted directory inside the container (e.g.,
+            "/mnt/host").
+        source:
+            Absolute path on the engine host to bind-mount.
+        readonly:
+            Mount the host directory read-only.
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+            Arg("readonly", readonly, False),
+            Arg("expand", expand, False),
+        ]
+        _ctx = self._select("withMountedHostDirectory", _args)
+        return Container(_ctx)
+
     def with_mounted_secret(
         self,
         path: str,

@@ -880,6 +880,27 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+     */
+    public function withMountedHostDirectory(
+        string $path,
+        string $source,
+        ?bool $readonly = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedHostDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $readonly) {
+        $innerQueryBuilder->setArgument('readonly', $readonly);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this container plus a secret mounted into a file at the given path.
      */
     public function withMountedSecret(

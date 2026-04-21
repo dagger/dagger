@@ -3139,6 +3139,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::withMountedHostDirectory",
+			"p": "Dagger/Container.html#method_withMountedHostDirectory",
+			"d": "<p>Retrieves this container plus a directory from the engine host bind-mounted at the given path.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::withMountedSecret",
 			"p": "Dagger/Container.html#method_withMountedSecret",
 			"d": "<p>Retrieves this container plus a secret mounted into a file at the given path.</p>"

@@ -3504,6 +3504,15 @@ pub struct ContainerWithMountedFileOpts<'a> {
     pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithMountedHostDirectoryOpts {
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+    /// Mount the host directory read-only.
+    #[builder(setter(into, strip_option), default)]
+    pub readonly: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedSecretOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
@@ -5034,6 +5043,55 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mounted directory inside the container (e.g., "/mnt/host").
+    /// * `source` - Absolute path on the engine host to bind-mount.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_host_directory(
+        &self,
+        path: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Container {
+        let mut query = self.selection.select("withMountedHostDirectory");
+        query = query.arg("path", path.into());
+        query = query.arg("source", source.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mounted directory inside the container (e.g., "/mnt/host").
+    /// * `source` - Absolute path on the engine host to bind-mount.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_host_directory_opts(
+        &self,
+        path: impl Into<String>,
+        source: impl Into<String>,
+        opts: ContainerWithMountedHostDirectoryOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withMountedHostDirectory");
+        query = query.arg("path", path.into());
+        query = query.arg("source", source.into());
+        if let Some(readonly) = opts.readonly {
+            query = query.arg("readonly", readonly);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);

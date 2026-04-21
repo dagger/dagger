@@ -267,6 +267,30 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		}
 	}
 
+	// Host and volume mounts bypass buildkit's mount machinery entirely — the
+	// engine worker applies them directly in setupHostMounts, keyed off
+	// execMD. VolumeSource desugars to a HostMount using the volume's
+	// engine-side MountPath.
+	for _, mnt := range container.Mounts {
+		switch {
+		case mnt.HostSource != nil:
+			execMD.HostMounts = append(execMD.HostMounts, engineutil.HostMount{
+				Source: mnt.HostSource.Source,
+				Target: mnt.Target,
+				RW:     !mnt.Readonly,
+			})
+		case mnt.VolumeSource != nil:
+			if mnt.VolumeSource.Volume.Self() == nil {
+				return nil, fmt.Errorf("volume mount at %q has nil volume", mnt.Target)
+			}
+			execMD.HostMounts = append(execMD.HostMounts, engineutil.HostMount{
+				Source: mnt.VolumeSource.Volume.Self().MountPath,
+				Target: mnt.Target,
+				RW:     !mnt.Readonly,
+			})
+		}
+	}
+
 	return &execMD, nil
 }
 
@@ -633,6 +657,12 @@ func prepareMounts(
 	}
 
 	for i, ctrMount := range container.Mounts {
+		// Host and volume bind mounts are applied by the engine worker via
+		// ExecutionMetadata.HostMounts; they have no buildkit mount.
+		if ctrMount.HostSource != nil || ctrMount.VolumeSource != nil {
+			continue
+		}
+
 		mountState := &execMountState{
 			Dest:      ctrMount.Target,
 			MountType: pb.MountType_BIND,

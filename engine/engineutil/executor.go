@@ -106,6 +106,18 @@ type ExecutionMetadata struct {
 	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
 	// to be at the specified version. Currently only used for integ testing.
 	ClientVersionOverride string
+
+	// Host paths to bind-mount into the container at exec time. Populated
+	// from Container.Mounts entries with HostSource or VolumeSource.
+	HostMounts []HostMount
+}
+
+// HostMount bind-mounts an absolute engine-host path at Target inside the
+// exec's mount namespace. RW controls whether the bind is writable.
+type HostMount struct {
+	Source string
+	Target string
+	RW     bool
 }
 
 func (w *Worker) Run(
@@ -128,6 +140,7 @@ func (w *Worker) Run(
 	return nil, w.run(ctx, state,
 		w.setupNetwork,
 		w.injectInit,
+		w.setupHostMounts,
 		w.generateBaseSpec,
 		w.filterEnvs,
 		w.setupRootfs,
