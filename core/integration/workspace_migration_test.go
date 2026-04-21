@@ -53,19 +53,23 @@ type Myapp {
 		}).With(migrateApply)
 
 		_, err := ctr.WithExec([]string{"test", "-d", "ci"}).Sync(ctx)
-		require.Error(t, err, "old source directory 'ci' should have been removed")
+		require.NoError(t, err, "source directory should remain in place")
 
 		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
-		require.NoError(t, err, "source file should exist at new location")
+		require.Error(t, err, "source file should not be copied to the migrated module config directory")
 
 		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, djson, `"name": "myapp"`)
-		require.NotContains(t, djson, `"source": "ci"`)
+		require.Contains(t, djson, `"source": "../../../ci"`)
 
 		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, "modules/myapp")
+
+		out, err := ctr.With(daggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from migrated source", strings.TrimSpace(out))
 
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
 		require.Error(t, err, "root dagger.json should have been removed")
@@ -75,10 +79,11 @@ type Myapp {
 // TestWorkspaceMigrateOutcomes should cover the main result classes of a
 // migration.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateOutcomes(ctx context.Context, t *testctx.T) {
-	t.Run("non-local source moves into a workspace module", func(ctx context.Context, t *testctx.T) {
+	t.Run("non-local source stays in place behind moved config", func(ctx context.Context, t *testctx.T) {
 		t.Fatal(`FIXME: implement non-local source migration coverage.
 
-Move the current coverage for migrating source = "ci" into this file.`)
+Move the current coverage for migrating source = "ci" into this file and
+verify the migrated dagger.json source points back to the original directory.`)
 	})
 
 	t.Run("sdk-only root-source modules are a no-op", func(ctx context.Context, t *testctx.T) {
@@ -215,7 +220,7 @@ type Myapp {
 		require.Contains(t, configOut, `# settings.greeting = "hello" # string`)
 	})
 
-	t.Run("dot dagger source is pruned to workspace outputs", func(ctx context.Context, t *testctx.T) {
+	t.Run("dot dagger source remains in place", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
@@ -237,20 +242,28 @@ type Myapp {
 		_, err := ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
 		require.NoError(t, err)
 
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
+		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
 		require.NoError(t, err)
+		require.Contains(t, djson, `"source": "../.."`)
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
+		require.Error(t, err, "source file should not be copied to the migrated module config directory")
 
 		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/go.mod"}).Sync(ctx)
-		require.NoError(t, err)
+		require.Error(t, err, "source metadata should not be copied to the migrated module config directory")
 
 		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/main.dang"}).Sync(ctx)
-		require.Error(t, err, "legacy root source file should be pruned")
+		require.NoError(t, err, "source file should remain in place")
 
 		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/go.mod"}).Sync(ctx)
-		require.Error(t, err, "legacy root source metadata should be pruned")
+		require.NoError(t, err, "source metadata should remain in place")
 
 		_, err = ctr.WithExec([]string{"test", "-d", ".dagger/modules/stale"}).Sync(ctx)
-		require.Error(t, err, "pre-existing workspace-root modules subtree should be pruned")
+		require.NoError(t, err, "existing source subtree should remain in place")
+
+		out, err := ctr.With(daggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from dot dagger source", strings.TrimSpace(out))
 	})
 }
 

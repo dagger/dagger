@@ -3,7 +3,6 @@ package workspace
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -34,10 +33,6 @@ type MigrationPlan struct {
 	WorkspaceConfigData      []byte
 	MigratedModuleConfigData []byte
 	MigratedModuleConfigPath string
-	SourceCopyPath           string
-	SourceCopyDest           string
-	PruneOldSourceToOutputs  bool
-	RemoveOldSource          bool
 	MigrationReportData      []byte
 	LockData                 []byte
 }
@@ -57,7 +52,6 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 
 	cfg := compatWorkspace.Config
 	hasSDK := cfg.SDK != nil && cfg.SDK.Source != ""
-	hasNonLocalSource := cfg.Source != "" && cfg.Source != "."
 	needsProjectModuleMigration := hasSDK
 
 	plan := &MigrationPlan{
@@ -66,31 +60,13 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 
 	if needsProjectModuleMigration {
 		modulePath := filepath.Join("modules", cfg.Name)
-		newJSON, err := buildMigratedModuleJSON(cfg, modulePath)
+		moduleDir := filepath.Join(LockDirName, modulePath)
+		newJSON, err := buildMigratedModuleJSON(cfg, moduleDir)
 		if err != nil {
 			return nil, fmt.Errorf("building migrated module JSON: %w", err)
 		}
 		plan.MigratedModuleConfigData = newJSON
-		plan.MigratedModuleConfigPath = filepath.Join(LockDirName, modulePath, ModuleConfigFileName)
-
-		if hasNonLocalSource {
-			sourcePath := filepath.Clean(cfg.Source)
-			plan.SourceCopyPath = sourcePath
-			plan.SourceCopyDest = filepath.Join(LockDirName, modulePath)
-
-			newFullPath := filepath.Join(LockDirName, modulePath)
-			switch {
-			case sourcePath == LockDirName:
-				plan.PruneOldSourceToOutputs = true
-			case strings.HasPrefix(newFullPath+"/", sourcePath+"/"):
-				slog.Warn("old source dir is ancestor of new location; skipping cleanup",
-					"oldSource", cfg.Source, "newLocation", newFullPath)
-				plan.Warnings = append(plan.Warnings,
-					fmt.Sprintf("old source dir %q is ancestor of new location; skipped cleanup", cfg.Source))
-			default:
-				plan.RemoveOldSource = true
-			}
-		}
+		plan.MigratedModuleConfigPath = filepath.Join(moduleDir, ModuleConfigFileName)
 	}
 
 	warnings := analyzeCustomizations(cfg.Toolchains)
@@ -162,14 +138,16 @@ func renderMigrationWorkspaceConfig(cfg *Config, mainModule *CompatMainModule) (
 }
 
 // buildMigratedModuleJSON creates the cleaned-up dagger.json for the migrated
-// module.
-func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([]byte, error) {
-	depth := len(strings.Split(filepath.ToSlash(newModulePath), "/")) + 1
-	prefix := strings.Repeat("../", depth)
+// module. newModuleDir is relative to the project root.
+func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModuleDir string) ([]byte, error) {
+	source, err := migratedModuleRelPath(newModuleDir, cfg.Source)
+	if err != nil {
+		return nil, fmt.Errorf("rebasing source path: %w", err)
+	}
 
-	source := ""
-	if cfg.Source == "." {
-		source = prefix
+	rootPrefix, err := migratedModuleRootPrefix(newModuleDir)
+	if err != nil {
+		return nil, fmt.Errorf("rebasing project root: %w", err)
 	}
 
 	deps := make([]*modules.ModuleConfigDependency, 0, len(cfg.Dependencies))
@@ -180,7 +158,10 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([
 
 		depSource := dep.Source
 		if isLocalRef(dep.Source, dep.Pin) {
-			depSource = filepath.Join(prefix, dep.Source)
+			depSource, err = migratedModuleRelPath(newModuleDir, dep.Source)
+			if err != nil {
+				return nil, fmt.Errorf("rebasing dependency %q source path: %w", dep.Name, err)
+			}
 		}
 
 		deps = append(deps, &modules.ModuleConfigDependency{
@@ -196,9 +177,9 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([
 	includes := make([]string, 0, len(cfg.Include))
 	for _, inc := range cfg.Include {
 		if strings.HasPrefix(inc, "!") {
-			includes = append(includes, "!"+prefix+inc[1:])
+			includes = append(includes, "!"+rootPrefix+inc[1:])
 		} else {
-			includes = append(includes, prefix+inc)
+			includes = append(includes, rootPrefix+inc)
 		}
 	}
 
@@ -220,6 +201,32 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModulePath string) ([
 	}
 	out = append(out, '\n')
 	return out, nil
+}
+
+func migratedModuleRelPath(newModuleDir, source string) (string, error) {
+	if source == "" {
+		source = "."
+	}
+	if filepath.IsAbs(source) {
+		return "", fmt.Errorf("source path %q is absolute", source)
+	}
+
+	rel, err := filepath.Rel(newModuleDir, filepath.Clean(source))
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+func migratedModuleRootPrefix(newModuleDir string) (string, error) {
+	rootRel, err := migratedModuleRelPath(newModuleDir, ".")
+	if err != nil {
+		return "", err
+	}
+	if rootRel == "." {
+		return "", nil
+	}
+	return rootRel + "/", nil
 }
 
 type migrationWarning struct {

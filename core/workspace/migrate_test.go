@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -106,20 +108,53 @@ func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
 	require.Contains(t, reportData, `"function": [`)
 }
 
-func TestPlanMigrationPrunesDotDaggerSourceToWorkspaceOutputs(t *testing.T) {
+func TestPlanMigrationRebasesMainModuleSource(t *testing.T) {
 	t.Parallel()
 
-	plan := testMigrationPlan(t, "repo", `{
+	for _, tc := range []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{name: "empty", source: "", want: "../../.."},
+		{name: "root", source: ".", want: "../../.."},
+		{name: "subdir", source: "ci", want: "../../../ci"},
+		{name: "nested subdir", source: "src/mod", want: "../../../src/mod"},
+		{name: "dot dagger", source: ".dagger", want: "../.."},
+		{name: "clean dot dagger", source: "./.dagger/", want: "../.."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			plan := testMigrationPlan(t, "repo", fmt.Sprintf(`{
   "name": "myapp",
   "sdk": {"source": "go"},
-  "source": "./.dagger/"
+  "source": %q,
+  "toolchains": [
+    {"name": "toolchain", "source": "github.com/acme/toolchain@main"}
+  ]
+}`, tc.source))
+
+			var cfg struct {
+				Source string `json:"source"`
+			}
+			require.NoError(t, json.Unmarshal(plan.MigratedModuleConfigData, &cfg))
+			require.Equal(t, tc.want, cfg.Source)
+		})
+	}
+}
+
+func TestPlanMigrationRejectsAbsoluteMainModuleSource(t *testing.T) {
+	t.Parallel()
+
+	compat := testCompatWorkspace(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": "/tmp"
 }`)
 
-	require.Equal(t, LockDirName, plan.SourceCopyPath)
-	require.Equal(t, filepath.Join(LockDirName, "modules", "myapp"), plan.SourceCopyDest)
-	require.True(t, plan.PruneOldSourceToOutputs)
-	require.False(t, plan.RemoveOldSource)
-	require.NotContains(t, plan.Warnings, `old source dir ".dagger" is ancestor of new location; skipped cleanup`)
+	_, err := PlanMigration(compat)
+	require.ErrorContains(t, err, `source path "/tmp" is absolute`)
 }
 
 func TestPlanMigrationWritesMainModuleFirst(t *testing.T) {
