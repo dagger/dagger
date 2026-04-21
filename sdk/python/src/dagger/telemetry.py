@@ -1,14 +1,12 @@
 import logging
 import os
-from collections.abc import Callable
-from typing import Final, Literal
+from typing import Final
 
 from opentelemetry import context, propagate, trace
 from opentelemetry._logs import get_logger_provider
 from opentelemetry.environment_variables import (
     _OTEL_PYTHON_LOGGER_PROVIDER,
     OTEL_LOGS_EXPORTER,
-    OTEL_METRICS_EXPORTER,
     OTEL_PYTHON_TRACER_PROVIDER,
     OTEL_TRACES_EXPORTER,
 )
@@ -25,15 +23,12 @@ from opentelemetry.sdk._configuration import (
     _get_exporter_names,
     _import_exporters,
     _init_logging,
-    _init_metrics,
 )
 from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_ENDPOINT,
     OTEL_EXPORTER_OTLP_INSECURE,
     OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
     OTEL_EXPORTER_OTLP_LOGS_INSECURE,
-    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
-    OTEL_EXPORTER_OTLP_METRICS_INSECURE,
     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
     OTEL_EXPORTER_OTLP_TRACES_INSECURE,
     OTEL_SDK_DISABLED,
@@ -206,13 +201,11 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
         for name in (
             OTEL_TRACES_EXPORTER,
             OTEL_LOGS_EXPORTER,
-            OTEL_METRICS_EXPORTER,
         ):
             os.environ.setdefault(name, ",".join(self.exporters))
 
         _vars = {
             OTEL_EXPORTER_OTLP_ENDPOINT: OTEL_EXPORTER_OTLP_INSECURE,
-            OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: OTEL_EXPORTER_OTLP_METRICS_INSECURE,
             OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: OTEL_EXPORTER_OTLP_LOGS_INSECURE,
             OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: OTEL_EXPORTER_OTLP_TRACES_INSECURE,
         }
@@ -221,25 +214,24 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
                 os.environ.setdefault(insecure, "true")
 
     def _initialize(self):
-        # NB: Fixed order, based on _import_exporters arguments.
-        initializers: dict[Literal["traces", "metrics", "logs"], Callable] = {
-            "traces": _init_tracing,
-            "metrics": _init_metrics,
-            "logs": _init_logging,
-        }
-        all_exporters = _import_exporters(
-            *(_get_exporter_names(t) for t in initializers)
+        # NB: Dagger's engine only accepts Gauge metrics today (engine-side
+        # exec resource monitoring). Emitting counters/histograms from modules
+        # produces 500s and retry noise, so skip metric initialization by
+        # passing an empty list for the metrics slot of _import_exporters.
+        trace_exporters, _, log_exporters = _import_exporters(
+            _get_exporter_names("traces"),
+            [],
+            _get_exporter_names("logs"),
         )
-
-        for (kind, init), exporters in zip(
-            initializers.items(), all_exporters, strict=True
+        for kind, init, exporters in (
+            ("traces", _init_tracing, trace_exporters),
+            ("logs", _init_logging, log_exporters),
         ):
             logger.debug(
                 "Initializing %s telemetry with exporters: %s",
                 kind,
                 ", ".join(exporters) if exporters else "none",
             )
-
             init(exporters)
 
         # The logging instrumentor injects the trace context into logs
