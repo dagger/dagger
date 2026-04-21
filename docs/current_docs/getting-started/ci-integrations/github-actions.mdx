@@ -113,6 +113,21 @@ More information is available in the [Dagger for GitHub page](https://github.com
 </TabItem>
 </Tabs>
 
+### Dagger Cloud Engines
+
+Instead of spinning up a Dagger Engine inside the GitHub Actions runner, you can offload execution to a managed Dagger Engine provided by Dagger Cloud. This gives you persistent caching and additional compute capacity without provisioning your own infrastructure.
+
+To use a Dagger Cloud Engine from a GitHub Actions workflow:
+
+1. In Dagger Cloud, navigate to the settings page using the cogwheel icon in the top navigation bar and open the **Tokens** sub-menu (the same location as the [Telemetry token](/reference/configuration/cloud#connect-your-ci-environment)). Copy the **Compute Token**. You can also use this URL pattern: `https://dagger.cloud/{Your Org Name}/settings?tab=Tokens`.
+
+1. In your GitHub repository, go to **Settings > Secrets and variables > Actions** and click **New repository secret**. Name it `DAGGER_CLOUD_TOKEN` and paste the Compute Token as the value.
+
+1. In your workflow, set `dagger-flags: "--cloud"` on the `dagger/dagger-for-github` step. The Dagger CLI will then connect to a Dagger Engine provided by Dagger Cloud instead of starting one inside the runner.
+
+```yaml title=".github/workflows/dagger.yml" file=./snippets/github-cloud-engine.yml
+```
+
 ### SSH configuration
 
 When using SSH keys in GitHub Actions, ensure proper SSH agent setup:
