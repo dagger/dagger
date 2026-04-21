@@ -14,8 +14,6 @@ type ServiceID = dagql.ID[*Service]
 
 type CacheVolumeID = dagql.ID[*CacheVolume]
 
-type VolumeID = dagql.ID[*Volume]
-
 type DirectoryID = dagql.ID[*Directory]
 
 type FileID = dagql.ID[*File]
@@ -31,6 +29,22 @@ type FunctionID = dagql.ID[*Function]
 type FunctionArgID = dagql.ID[*FunctionArg]
 
 type TypeDefID = dagql.ID[*TypeDef]
+
+type ListTypeDefID = dagql.ID[*ListTypeDef]
+
+type ObjectTypeDefID = dagql.ID[*ObjectTypeDef]
+
+type InterfaceTypeDefID = dagql.ID[*InterfaceTypeDef]
+
+type InputTypeDefID = dagql.ID[*InputTypeDef]
+
+type ScalarTypeDefID = dagql.ID[*ScalarTypeDef]
+
+type EnumTypeDefID = dagql.ID[*EnumTypeDef]
+
+type FieldTypeDefID = dagql.ID[*FieldTypeDef]
+
+type EnumMemberTypeDefID = dagql.ID[*EnumMemberTypeDef]
 
 type SourceMapID = dagql.ID[*SourceMap]
 

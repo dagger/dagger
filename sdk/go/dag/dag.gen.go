@@ -53,9 +53,9 @@ func Address(value string) *dagger.Address {
 }
 
 // Constructs a cache volume for a given cache key.
-func CacheVolume(key string) *dagger.CacheVolume {
+func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
 	client := initClient()
-	return client.CacheVolume(key)
+	return client.CacheVolume(key, opts...)
 }
 
 // Creates an empty changeset
@@ -248,6 +248,12 @@ func LoadCheckGroupFromID(id dagger.CheckGroupID) *dagger.CheckGroup {
 	return client.LoadCheckGroupFromID(id)
 }
 
+// Load a ClientFilesyncMirror from its ID.
+func LoadClientFilesyncMirrorFromID(id dagger.ClientFilesyncMirrorID) *dagger.ClientFilesyncMirror {
+	client := initClient()
+	return client.LoadClientFilesyncMirrorFromID(id)
+}
+
 // Load a Cloud from its ID.
 func LoadCloudFromID(id dagger.CloudID) *dagger.Cloud {
 	client := initClient()
@@ -410,6 +416,12 @@ func LoadGitRepositoryFromID(id dagger.GitRepositoryID) *dagger.GitRepository {
 	return client.LoadGitRepositoryFromID(id)
 }
 
+// Load a HTTPState from its ID.
+func LoadHTTPStateFromID(id dagger.HTTPStateID) *dagger.HTTPState {
+	client := initClient()
+	return client.LoadHTTPStateFromID(id)
+}
+
 // Load a HealthcheckConfig from its ID.
 func LoadHealthcheckConfigFromID(id dagger.HealthcheckConfigID) *dagger.HealthcheckConfig {
 	client := initClient()
@@ -500,6 +512,12 @@ func LoadQueryFromID(id dagger.QueryID) *dagger.Query {
 	return client.LoadQueryFromID(id)
 }
 
+// Load a RemoteGitMirror from its ID.
+func LoadRemoteGitMirrorFromID(id dagger.RemoteGitMirrorID) *dagger.RemoteGitMirror {
+	client := initClient()
+	return client.LoadRemoteGitMirrorFromID(id)
+}
+
 // Load a SDKConfig from its ID.
 func LoadSDKConfigFromID(id dagger.SDKConfigID) *dagger.SDKConfig {
 	client := initClient()
@@ -578,12 +596,6 @@ func LoadUpGroupFromID(id dagger.UpGroupID) *dagger.UpGroup {
 	return client.LoadUpGroupFromID(id)
 }
 
-// Load a Volume from its ID.
-func LoadVolumeFromID(id dagger.VolumeID) *dagger.Volume {
-	client := initClient()
-	return client.LoadVolumeFromID(id)
-}
-
 // Load a Workspace from its ID.
 func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
 	client := initClient()
@@ -620,12 +632,6 @@ func SetSecret(name string, plaintext string) *dagger.Secret {
 func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	client := initClient()
 	return client.SourceMap(filename, line, column)
-}
-
-// Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
-func SshfsVolume(endpoint string, privateKey *dagger.Secret, publicKey *dagger.Secret, opts ...dagger.SshfsVolumeOpts) *dagger.Volume {
-	client := initClient()
-	return client.SshfsVolume(endpoint, privateKey, publicKey, opts...)
 }
 
 // Create a new TypeDef.

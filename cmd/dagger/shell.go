@@ -256,7 +256,9 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 		)
 	}
 
-	h.registerCommands()
+	if err := h.registerCommands(); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -155,6 +155,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type HTTPState
+     */
+    public function asHTTPState(): HTTPState
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asHTTPState');
+        return new \Dagger\HTTPState($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type JSONValue
      */
     public function asJSONValue(): JsonValue
@@ -278,15 +287,6 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asUpGroup');
         return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type Volume
-     */
-    public function asVolume(): Volume
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asVolume');
-        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

@@ -41,6 +41,11 @@ class CheckID(Scalar):
     type Check."""
 
 
+class ClientFilesyncMirrorID(Scalar):
+    """The `ClientFilesyncMirrorID` scalar type represents an identifier
+    for an object of type ClientFilesyncMirror."""
+
+
 class CloudID(Scalar):
     """The `CloudID` scalar type represents an identifier for an object of
     type Cloud."""
@@ -176,6 +181,11 @@ class GitRepositoryID(Scalar):
     object of type GitRepository."""
 
 
+class HTTPStateID(Scalar):
+    """The `HTTPStateID` scalar type represents an identifier for an
+    object of type HTTPState."""
+
+
 class HealthcheckConfigID(Scalar):
     """The `HealthcheckConfigID` scalar type represents an identifier for
     an object of type HealthcheckConfig."""
@@ -261,6 +271,11 @@ class QueryID(Scalar):
     type Query."""
 
 
+class RemoteGitMirrorID(Scalar):
+    """The `RemoteGitMirrorID` scalar type represents an identifier for an
+    object of type RemoteGitMirror."""
+
+
 class SDKConfigID(Scalar):
     """The `SDKConfigID` scalar type represents an identifier for an
     object of type SDKConfig."""
@@ -329,11 +344,6 @@ class UpID(Scalar):
 class Void(Scalar):
     """The absence of a value.  A Null Void is used as a placeholder for
     resolvers that do not return anything."""
-
-
-class VolumeID(Scalar):
-    """The `VolumeID` scalar type represents an identifier for an object
-    of type Volume."""
 
 
 class WorkspaceID(Scalar):
@@ -863,6 +873,12 @@ class Binding(Type):
         _ctx = self._select("asGitRepository", _args)
         return GitRepository(_ctx)
 
+    def as_http_state(self) -> "HTTPState":
+        """Retrieve the binding value, as type HTTPState"""
+        _args: list[Arg] = []
+        _ctx = self._select("asHTTPState", _args)
+        return HTTPState(_ctx)
+
     def as_json_value(self) -> "JSONValue":
         """Retrieve the binding value, as type JSONValue"""
         _args: list[Arg] = []
@@ -955,12 +971,6 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asUpGroup", _args)
         return UpGroup(_ctx)
-
-    def as_volume(self) -> "Volume":
-        """Retrieve the binding value, as type Volume"""
-        _args: list[Arg] = []
-        _ctx = self._select("asVolume", _args)
-        return Volume(_ctx)
 
     def as_workspace(self) -> "Workspace":
         """Retrieve the binding value, as type Workspace"""
@@ -1587,6 +1597,35 @@ class CheckGroup(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class ClientFilesyncMirror(Type):
+    """An internal persistent filesync mirror."""
+
+    async def id(self) -> ClientFilesyncMirrorID:
+        """A unique identifier for this ClientFilesyncMirror.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ClientFilesyncMirrorID
+            The `ClientFilesyncMirrorID` scalar type represents an identifier
+            for an object of type ClientFilesyncMirror.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ClientFilesyncMirrorID)
 
 
 @typecheck
@@ -2652,6 +2691,7 @@ class Container(Type):
         gitignore: bool | None = False,
         owner: str | None = "",
         expand: bool | None = False,
+        permissions: int | None = None,
     ) -> Self:
         """Return a new container snapshot, with a directory added to its
         filesystem
@@ -2679,6 +2719,7 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        permissions:
         """
         _args = [
             Arg("path", path),
@@ -2688,6 +2729,7 @@ class Container(Type):
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
             Arg("expand", expand, False),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Container(_ctx)
@@ -3089,6 +3131,7 @@ class Container(Type):
         source: "Directory",
         *,
         owner: str | None = "",
+        read_only: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a directory mounted at the given path.
@@ -3104,6 +3147,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        read_only:
+            Mount the directory read-only.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3113,6 +3158,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("readOnly", read_only, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedDirectory", _args)
@@ -3151,25 +3197,6 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedFile", _args)
-        return Container(_ctx)
-
-    def with_mounted_host_directory(self, source: str, path: str) -> Self:
-        """Retrieves this container plus a host directory mounted at the given
-        path.
-
-        Parameters
-        ----------
-        source:
-            Source path of the host directory to mount (e.g.,
-            "/home/user/directory").
-        path:
-            Location of the mounted directory (e.g., "/mnt/directory").
-        """
-        _args = [
-            Arg("source", source),
-            Arg("path", path),
-        ]
-        _ctx = self._select("withMountedHostDirectory", _args)
         return Container(_ctx)
 
     def with_mounted_secret(
@@ -3449,24 +3476,6 @@ class Container(Type):
             Arg("name", name),
         ]
         _ctx = self._select("withUser", _args)
-        return Container(_ctx)
-
-    def with_volume_mount(self, path: str, volume: "Volume") -> Self:
-        """Retrieves this container plus an engine-managed volume mounted at the
-        given path.
-
-        Parameters
-        ----------
-        path:
-            Location where the volume will be mounted (e.g., "/mnt/volume").
-        volume:
-            Identifier of the volume to mount.
-        """
-        _args = [
-            Arg("path", path),
-            Arg("volume", volume),
-        ]
-        _ctx = self._select("withVolumeMount", _args)
         return Container(_ctx)
 
     def with_workdir(
@@ -4147,7 +4156,7 @@ class Directory(Type):
             Path of the directory to change ownership of (e.g., "/").
         owner:
             A user:group to set for the mounted directory and its contents.
-            The user and group must be an ID (1000:1000), not a name
+            The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         """
@@ -4681,6 +4690,7 @@ class Directory(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         owner: str | None = "",
+        permissions: int | None = None,
     ) -> Self:
         """Return a snapshot with a directory added
 
@@ -4700,9 +4710,12 @@ class Directory(Type):
             Apply .gitignore filter rules inside the directory
         owner:
             A user:group to set for the copied directory and its contents.
-            The user and group must be an ID (1000:1000), not a name
+            The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        permissions:
+            Permission given to the copied directory and contents (e.g.,
+            0755).
         """
         _args = [
             Arg("path", path),
@@ -4711,6 +4724,7 @@ class Directory(Type):
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -4751,7 +4765,7 @@ class Directory(Type):
             Permission given to the copied file (e.g., 0600).
         owner:
             A user:group to set for the copied directory and its contents.
-            The user and group must be an ID (1000:1000), not a name
+            The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         """
@@ -5014,7 +5028,7 @@ class Engine(Type):
         return await _ctx.execute(EngineID)
 
     def local_cache(self) -> "EngineCache":
-        """The local (on-disk) cache for the Dagger engine"""
+        """The local engine cache state tracked by dagql"""
         _args: list[Arg] = []
         _ctx = self._select("localCache", _args)
         return EngineCache(_ctx)
@@ -5551,8 +5565,10 @@ class EnumTypeDef(Type):
         return await _ctx.execute(str)
 
     async def values(self) -> list["EnumValueTypeDef"]:
-        """.. deprecated::
-        use members instead
+        """The members of the enum.
+
+        .. deprecated::
+            use members instead
         """
         warnings.warn(
             'Method "values" is deprecated: use members instead',
@@ -6485,6 +6501,48 @@ class Env(Type):
         _ctx = self._select("withGitRepositoryOutput", _args)
         return Env(_ctx)
 
+    def with_http_state_input(
+        self,
+        name: str,
+        value: "HTTPState",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type HTTPState in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The HTTPState value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withHTTPStateInput", _args)
+        return Env(_ctx)
+
+    def with_http_state_output(self, name: str, description: str) -> Self:
+        """Declare a desired HTTPState output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withHTTPStateOutput", _args)
+        return Env(_ctx)
+
     def with_json_value_input(
         self,
         name: str,
@@ -7068,48 +7126,6 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withUpOutput", _args)
-        return Env(_ctx)
-
-    def with_volume_input(
-        self,
-        name: str,
-        value: "Volume",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Volume in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Volume value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withVolumeInput", _args)
-        return Env(_ctx)
-
-    def with_volume_output(self, name: str, description: str) -> Self:
-        """Declare a desired Volume output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withVolumeOutput", _args)
         return Env(_ctx)
 
     def with_workspace(self, workspace: Directory) -> Self:
@@ -7712,7 +7728,7 @@ class File(Type):
         ----------
         owner:
             A user:group to set for the file.
-            The user and group must be an ID (1000:1000), not a name
+            The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         """
@@ -9403,6 +9419,35 @@ class GitRepository(Type):
         _args: list[Arg] = []
         _ctx = self._select("url", _args)
         return await _ctx.execute(str | None)
+
+
+@typecheck
+class HTTPState(Type):
+    """An internal persistent HTTP state."""
+
+    async def id(self) -> HTTPStateID:
+        """A unique identifier for this HTTPState.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        HTTPStateID
+            The `HTTPStateID` scalar type represents an identifier for an
+            object of type HTTPState.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(HTTPStateID)
 
 
 @typecheck
@@ -12023,7 +12068,7 @@ class ObjectTypeDef(Type):
     """A definition of a custom object defined in a Module."""
 
     def constructor(self) -> Function:
-        """The function used to construct new instances of this object, if any"""
+        """The function used to construct new instances of this object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("constructor", _args)
         return Function(_ctx)
@@ -12279,7 +12324,14 @@ class Query(Root):
         _ctx = self._select("address", _args)
         return Address(_ctx)
 
-    def cache_volume(self, key: str) -> CacheVolume:
+    def cache_volume(
+        self,
+        key: str,
+        *,
+        source: Directory | None = None,
+        sharing: CacheSharingMode | None = CacheSharingMode.SHARED,
+        owner: str | None = "",
+    ) -> CacheVolume:
         """Constructs a cache volume for a given cache key.
 
         Parameters
@@ -12287,9 +12339,21 @@ class Query(Root):
         key:
             A string identifier to target this cache volume (e.g., "modules-
             cache").
+        source:
+            Identifier of the directory to use as the cache volume's root.
+        sharing:
+            Sharing mode of the cache volume.
+        owner:
+            A user:group to set for the cache volume root.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("key", key),
+            Arg("source", source, None),
+            Arg("sharing", sharing, CacheSharingMode.SHARED),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("cacheVolume", _args)
         return CacheVolume(_ctx)
@@ -12366,13 +12430,19 @@ class Query(Root):
         return CurrentModule(_ctx)
 
     async def current_type_defs(
-        self, *, hide_core: bool | None = None
+        self,
+        *,
+        return_all_types: bool | None = False,
+        hide_core: bool | None = None,
     ) -> list["TypeDef"]:
         """The TypeDef representations of the objects currently being served in
         the session.
 
         Parameters
         ----------
+        return_all_types:
+            Return the full referenced typedef closure instead of only top-
+            level served typedefs.
         hide_core:
             Strip core API functions from the Query type, leaving only module-
             sourced functions (constructors, entrypoint proxies, etc.).
@@ -12380,6 +12450,7 @@ class Query(Root):
             and method chaining still work.
         """
         _args = [
+            Arg("returnAllTypes", return_all_types, False),
             Arg("hideCore", hide_core, None),
         ]
         _ctx = self._select("currentTypeDefs", _args)
@@ -12602,6 +12673,7 @@ class Query(Root):
         *,
         name: str | None = None,
         permissions: int | None = None,
+        checksum: str | None = None,
         auth_header: "Secret | None" = None,
         experimental_service_host: "Service | None" = None,
     ) -> File:
@@ -12616,6 +12688,8 @@ class Query(Root):
             URL.
         permissions:
             Permissions to set on the file.
+        checksum:
+            Expected digest of the downloaded content (e.g., "sha256:...").
         auth_header:
             Secret used to populate the Authorization HTTP header
         experimental_service_host:
@@ -12625,6 +12699,7 @@ class Query(Root):
             Arg("url", url),
             Arg("name", name, None),
             Arg("permissions", permissions, None),
+            Arg("checksum", checksum, None),
             Arg("authHeader", auth_header, None),
             Arg("experimentalServiceHost", experimental_service_host, None),
         ]
@@ -12733,6 +12808,16 @@ class Query(Root):
         ]
         _ctx = self._select("loadCheckGroupFromID", _args)
         return CheckGroup(_ctx)
+
+    def load_client_filesync_mirror_from_id(
+        self, id: ClientFilesyncMirrorID
+    ) -> ClientFilesyncMirror:
+        """Load a ClientFilesyncMirror from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadClientFilesyncMirrorFromID", _args)
+        return ClientFilesyncMirror(_ctx)
 
     def load_cloud_from_id(self, id: CloudID) -> Cloud:
         """Load a Cloud from its ID."""
@@ -12958,6 +13043,14 @@ class Query(Root):
         _ctx = self._select("loadGitRepositoryFromID", _args)
         return GitRepository(_ctx)
 
+    def load_http_state_from_id(self, id: HTTPStateID) -> HTTPState:
+        """Load a HTTPState from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadHTTPStateFromID", _args)
+        return HTTPState(_ctx)
+
     def load_healthcheck_config_from_id(
         self, id: HealthcheckConfigID
     ) -> HealthcheckConfig:
@@ -13084,6 +13177,16 @@ class Query(Root):
         _ctx = self._select("loadQueryFromID", _args)
         return Query(_ctx)
 
+    def load_remote_git_mirror_from_id(
+        self, id: RemoteGitMirrorID
+    ) -> "RemoteGitMirror":
+        """Load a RemoteGitMirror from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadRemoteGitMirrorFromID", _args)
+        return RemoteGitMirror(_ctx)
+
     def load_sdk_config_from_id(self, id: SDKConfigID) -> "SDKConfig":
         """Load a SDKConfig from its ID."""
         _args = [
@@ -13187,14 +13290,6 @@ class Query(Root):
         ]
         _ctx = self._select("loadUpGroupFromID", _args)
         return UpGroup(_ctx)
-
-    def load_volume_from_id(self, id: VolumeID) -> "Volume":
-        """Load a Volume from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadVolumeFromID", _args)
-        return Volume(_ctx)
 
     def load_workspace_from_id(self, id: WorkspaceID) -> "Workspace":
         """Load a Workspace from its ID."""
@@ -13323,38 +13418,6 @@ class Query(Root):
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
 
-    def sshfs_volume(
-        self,
-        endpoint: str,
-        private_key: "Secret",
-        public_key: "Secret",
-        *,
-        experimental_service_host: "Service | None" = None,
-    ) -> "Volume":
-        """Create or retrieve an engine-managed SSHFS volume. Endpoint must be a
-        parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
-
-        Parameters
-        ----------
-        endpoint:
-            SSH endpoint URL, e.g. ssh://user@host[:port]/absolute/path
-        private_key:
-            The private key to use for authentication
-        public_key:
-            The public key to use for authentication
-        experimental_service_host:
-            A service which must be started before the SSHFS volume is
-            mounted.
-        """
-        _args = [
-            Arg("endpoint", endpoint),
-            Arg("privateKey", private_key),
-            Arg("publicKey", public_key),
-            Arg("experimentalServiceHost", experimental_service_host, None),
-        ]
-        _ctx = self._select("sshfsVolume", _args)
-        return Volume(_ctx)
-
     def type_def(self) -> "TypeDef":
         """Create a new TypeDef."""
         _args: list[Arg] = []
@@ -13388,6 +13451,35 @@ class Query(Root):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class RemoteGitMirror(Type):
+    """An internal persistent bare git mirror."""
+
+    async def id(self) -> RemoteGitMirrorID:
+        """A unique identifier for this RemoteGitMirror.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        RemoteGitMirrorID
+            The `RemoteGitMirrorID` scalar type represents an identifier for
+            an object of type RemoteGitMirror.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(RemoteGitMirrorID)
 
 
 @typecheck
@@ -14488,6 +14580,27 @@ class TypeDef(Type):
         _ctx = self._select("kind", _args)
         return await _ctx.execute(TypeDefKind)
 
+    async def name(self) -> str:
+        """The canonical non-optional name of the type.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
     async def optional(self) -> bool:
         """Whether this type can be set to null. Defaults to false.
 
@@ -14909,35 +15022,6 @@ class UpGroup(Type):
 
 
 @typecheck
-class Volume(Type):
-    """A reference to an engine-managed volume."""
-
-    async def id(self) -> VolumeID:
-        """A unique identifier for this Volume.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        VolumeID
-            The `VolumeID` scalar type represents an identifier for an object
-            of type Volume.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(VolumeID)
-
-
-@typecheck
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory."""
 
@@ -15276,6 +15360,8 @@ __all__ = [
     "CheckGroupID",
     "CheckID",
     "Client",
+    "ClientFilesyncMirror",
+    "ClientFilesyncMirrorID",
     "Cloud",
     "CloudID",
     "Container",
@@ -15334,6 +15420,8 @@ __all__ = [
     "GitRefID",
     "GitRepository",
     "GitRepositoryID",
+    "HTTPState",
+    "HTTPStateID",
     "HealthcheckConfig",
     "HealthcheckConfigID",
     "Host",
@@ -15370,6 +15458,8 @@ __all__ = [
     "PortID",
     "Query",
     "QueryID",
+    "RemoteGitMirror",
+    "RemoteGitMirrorID",
     "ReturnType",
     "SDKConfig",
     "SDKConfigID",
@@ -15399,8 +15489,6 @@ __all__ = [
     "UpGroupID",
     "UpID",
     "Void",
-    "Volume",
-    "VolumeID",
     "Workspace",
     "WorkspaceID",
     "dag",

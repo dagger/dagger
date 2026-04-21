@@ -132,6 +132,9 @@ type Binding {
   """Retrieve the binding value, as type GitRepository"""
   asGitRepository: GitRepository!
 
+  """Retrieve the binding value, as type HTTPState"""
+  asHTTPState: HTTPState!
+
   """Retrieve the binding value, as type JSONValue"""
   asJSONValue: JSONValue!
 
@@ -170,9 +173,6 @@ type Binding {
 
   """Retrieve the binding value, as type UpGroup"""
   asUpGroup: UpGroup!
-
-  """Retrieve the binding value, as type Volume"""
-  asVolume: Volume!
 
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
@@ -414,6 +414,17 @@ scalar CheckGroupID
 The `CheckID` scalar type represents an identifier for an object of type Check.
 """
 scalar CheckID
+
+"""An internal persistent filesync mirror."""
+type ClientFilesyncMirror {
+  """A unique identifier for this ClientFilesyncMirror."""
+  id: ClientFilesyncMirrorID!
+}
+
+"""
+The `ClientFilesyncMirrorID` scalar type represents an identifier for an object of type ClientFilesyncMirror.
+"""
+scalar ClientFilesyncMirrorID
 
 """Dagger Cloud configuration and state"""
 type Cloud {
@@ -965,6 +976,8 @@ type Container {
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
+
+    permissions: Int
   ): Container!
 
   """
@@ -1265,6 +1278,9 @@ type Container {
     """
     owner: String = ""
 
+    """Mount the directory read-only."""
+    readOnly: Boolean = false
+
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
@@ -1294,19 +1310,6 @@ type Container {
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
-  ): Container!
-
-  """
-  Retrieves this container plus a host directory mounted at the given path.
-  """
-  withMountedHostDirectory(
-    """
-    Source path of the host directory to mount (e.g., "/home/user/directory").
-    """
-    source: String!
-
-    """Location of the mounted directory (e.g., "/mnt/directory")."""
-    path: String!
   ): Container!
 
   """
@@ -1496,17 +1499,6 @@ type Container {
   withUser(
     """The user to set (e.g., "root")."""
     name: String!
-  ): Container!
-
-  """
-  Retrieves this container plus an engine-managed volume mounted at the given path.
-  """
-  withVolumeMount(
-    """Location where the volume will be mounted (e.g., "/mnt/volume")."""
-    path: String!
-
-    """Identifier of the volume to mount."""
-    volume: VolumeID!
   ): Container!
 
   """Change the container's working directory. Like WORKDIR in Dockerfile."""
@@ -1823,7 +1815,7 @@ type Directory {
     """
     A user:group to set for the mounted directory and its contents.
 
-    The user and group must be an ID (1000:1000), not a name (foo:bar).
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
 
     If the group is omitted, it defaults to the same as the user.
     """
@@ -2090,11 +2082,14 @@ type Directory {
     """
     A user:group to set for the copied directory and its contents.
 
-    The user and group must be an ID (1000:1000), not a name (foo:bar).
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
 
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+
+    """Permission given to the copied directory and contents (e.g., 0755)."""
+    permissions: Int
   ): Directory!
 
   """Raise an error."""
@@ -2119,7 +2114,7 @@ type Directory {
     """
     A user:group to set for the copied directory and its contents.
 
-    The user and group must be an ID (1000:1000), not a name (foo:bar).
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
 
     If the group is omitted, it defaults to the same as the user.
     """
@@ -2242,7 +2237,7 @@ type Engine {
   """A unique identifier for this Engine."""
   id: EngineID!
 
-  """The local (on-disk) cache for the Dagger engine"""
+  """The local engine cache state tracked by dagql"""
   localCache: EngineCache!
 
   """The name of the engine instance."""
@@ -2383,6 +2378,7 @@ type EnumTypeDef {
   """
   sourceModuleName: String!
 
+  """The members of the enum."""
   values: [EnumValueTypeDef!]! @deprecated(reason: "use members instead")
 }
 
@@ -2800,6 +2796,27 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type HTTPState in the environment"""
+  withHTTPStateInput(
+    """The name of the binding"""
+    name: String!
+
+    """The HTTPState value to assign to the binding"""
+    value: HTTPStateID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired HTTPState output to be assigned in the environment"""
+  withHTTPStateOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type JSONValue in the environment"""
   withJSONValueInput(
     """The name of the binding"""
@@ -3097,27 +3114,6 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update a binding of type Volume in the environment"""
-  withVolumeInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Volume value to assign to the binding"""
-    value: VolumeID!
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Volume output to be assigned in the environment"""
-  withVolumeOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
   """Returns a new environment with the provided workspace"""
   withWorkspace(
     """The directory to set as the host filesystem"""
@@ -3340,7 +3336,7 @@ type File {
     """
     A user:group to set for the file.
 
-    The user and group must be an ID (1000:1000), not a name (foo:bar).
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
 
     If the group is omitted, it defaults to the same as the user.
     """
@@ -3928,6 +3924,17 @@ type GitRepository {
 The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
 """
 scalar GitRepositoryID
+
+"""An internal persistent HTTP state."""
+type HTTPState {
+  """A unique identifier for this HTTPState."""
+  id: HTTPStateID!
+}
+
+"""
+The `HTTPStateID` scalar type represents an identifier for an object of type HTTPState.
+"""
+scalar HTTPStateID
 
 """Image healthcheck configuration."""
 type HealthcheckConfig {
@@ -4837,7 +4844,7 @@ enum NetworkProtocol {
 
 """A definition of a custom object defined in a Module."""
 type ObjectTypeDef {
-  """The function used to construct new instances of this object, if any"""
+  """The function used to construct new instances of this object, if any."""
   constructor: Function
 
   """The reason this enum member is deprecated, if any."""
@@ -4936,6 +4943,21 @@ type Query {
     A string identifier to target this cache volume (e.g., "modules-cache").
     """
     key: String!
+
+    """Identifier of the directory to use as the cache volume's root."""
+    source: DirectoryID
+
+    """Sharing mode of the cache volume."""
+    sharing: CacheSharingMode = SHARED
+
+    """
+    A user:group to set for the cache volume root.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
   ): CacheVolume!
 
   """Creates an empty changeset"""
@@ -4985,6 +5007,11 @@ type Query {
   The TypeDef representations of the objects currently being served in the session.
   """
   currentTypeDefs(
+    """
+    Return the full referenced typedef closure instead of only top-level served typedefs.
+    """
+    returnAllTypes: Boolean = false
+
     """
     Strip core API functions from the Query type, leaving only module-sourced
     functions (constructors, entrypoint proxies, etc.).
@@ -5108,6 +5135,9 @@ type Query {
     """Permissions to set on the file."""
     permissions: Int
 
+    """Expected digest of the downloaded content (e.g., "sha256:...")."""
+    checksum: String
+
     """Secret used to populate the Authorization HTTP header"""
     authHeader: SecretID
 
@@ -5147,6 +5177,9 @@ type Query {
 
   """Load a CheckGroup from its ID."""
   loadCheckGroupFromID(id: CheckGroupID!): CheckGroup!
+
+  """Load a ClientFilesyncMirror from its ID."""
+  loadClientFilesyncMirrorFromID(id: ClientFilesyncMirrorID!): ClientFilesyncMirror!
 
   """Load a Cloud from its ID."""
   loadCloudFromID(id: CloudID!): Cloud!
@@ -5229,6 +5262,9 @@ type Query {
   """Load a GitRepository from its ID."""
   loadGitRepositoryFromID(id: GitRepositoryID!): GitRepository!
 
+  """Load a HTTPState from its ID."""
+  loadHTTPStateFromID(id: HTTPStateID!): HTTPState!
+
   """Load a HealthcheckConfig from its ID."""
   loadHealthcheckConfigFromID(id: HealthcheckConfigID!): HealthcheckConfig!
 
@@ -5274,6 +5310,9 @@ type Query {
   """Load a Query from its ID."""
   loadQueryFromID(id: QueryID!): Query!
 
+  """Load a RemoteGitMirror from its ID."""
+  loadRemoteGitMirrorFromID(id: RemoteGitMirrorID!): RemoteGitMirror!
+
   """Load a SDKConfig from its ID."""
   loadSDKConfigFromID(id: SDKConfigID!): SDKConfig
 
@@ -5312,9 +5351,6 @@ type Query {
 
   """Load a UpGroup from its ID."""
   loadUpGroupFromID(id: UpGroupID!): UpGroup!
-
-  """Load a Volume from its ID."""
-  loadVolumeFromID(id: VolumeID!): Volume!
 
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
@@ -5395,23 +5431,6 @@ type Query {
     column: Int!
   ): SourceMap!
 
-  """
-  Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
-  """
-  sshfsVolume(
-    """SSH endpoint URL, e.g. ssh://user@host[:port]/absolute/path"""
-    endpoint: String!
-
-    """The private key to use for authentication"""
-    privateKey: SecretID!
-
-    """The public key to use for authentication"""
-    publicKey: SecretID!
-
-    """A service which must be started before the SSHFS volume is mounted."""
-    experimentalServiceHost: ServiceID
-  ): Volume!
-
   """Create a new TypeDef."""
   typeDef: TypeDef!
 
@@ -5423,6 +5442,17 @@ type Query {
 The `QueryID` scalar type represents an identifier for an object of type Query.
 """
 scalar QueryID
+
+"""An internal persistent bare git mirror."""
+type RemoteGitMirror {
+  """A unique identifier for this RemoteGitMirror."""
+  id: RemoteGitMirrorID!
+}
+
+"""
+The `RemoteGitMirrorID` scalar type represents an identifier for an object of type RemoteGitMirror.
+"""
+scalar RemoteGitMirrorID
 
 """Expected return type of an execution"""
 enum ReturnType {
@@ -5738,6 +5768,9 @@ type TypeDef {
   """The kind of type this is (e.g. primitive, list, object)."""
   kind: TypeDefKind!
 
+  """The canonical non-optional name of the type."""
+  name: String!
+
   """Whether this type can be set to null. Defaults to false."""
   optional: Boolean!
 
@@ -6022,17 +6055,6 @@ The absence of a value.
 A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
-
-"""A reference to an engine-managed volume."""
-type Volume {
-  """A unique identifier for this Volume."""
-  id: VolumeID!
-}
-
-"""
-The `VolumeID` scalar type represents an identifier for an object of type Volume.
-"""
-scalar VolumeID
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {

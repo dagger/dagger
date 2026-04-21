@@ -148,6 +148,9 @@ type CheckGroupID string
 // The `CheckID` scalar type represents an identifier for an object of type Check.
 type CheckID string
 
+// The `ClientFilesyncMirrorID` scalar type represents an identifier for an object of type ClientFilesyncMirror.
+type ClientFilesyncMirrorID string
+
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
 type CloudID string
 
@@ -229,6 +232,9 @@ type GitRefID string
 // The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
 type GitRepositoryID string
 
+// The `HTTPStateID` scalar type represents an identifier for an object of type HTTPState.
+type HTTPStateID string
+
 // The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
 type HealthcheckConfigID string
 
@@ -282,6 +288,9 @@ type PortID string
 // The `QueryID` scalar type represents an identifier for an object of type Query.
 type QueryID string
 
+// The `RemoteGitMirrorID` scalar type represents an identifier for an object of type RemoteGitMirror.
+type RemoteGitMirrorID string
+
 // The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
 type SDKConfigID string
 
@@ -325,9 +334,6 @@ type UpID string
 //
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
-
-// The `VolumeID` scalar type represents an identifier for an object of type Volume.
-type VolumeID string
 
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 type WorkspaceID string
@@ -720,6 +726,15 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	}
 }
 
+// Retrieve the binding value, as type HTTPState
+func (r *Binding) AsHTTPState() *HTTPState {
+	q := r.query.Select("asHTTPState")
+
+	return &HTTPState{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type JSONValue
 func (r *Binding) AsJSONValue() *JSONValue {
 	q := r.query.Select("asJSONValue")
@@ -837,15 +852,6 @@ func (r *Binding) AsUpGroup() *UpGroup {
 	q := r.query.Select("asUpGroup")
 
 	return &UpGroup{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Volume
-func (r *Binding) AsVolume() *Volume {
-	q := r.query.Select("asVolume")
-
-	return &Volume{
 		query: q,
 	}
 }
@@ -1550,6 +1556,59 @@ func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
 	return &CheckGroup{
 		query: q,
 	}
+}
+
+// An internal persistent filesync mirror.
+type ClientFilesyncMirror struct {
+	query *querybuilder.Selection
+
+	id *ClientFilesyncMirrorID
+}
+
+func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *ClientFilesyncMirror {
+	return &ClientFilesyncMirror{
+		query: q,
+	}
+}
+
+// A unique identifier for this ClientFilesyncMirror.
+func (r *ClientFilesyncMirror) ID(ctx context.Context) (ClientFilesyncMirrorID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ClientFilesyncMirrorID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ClientFilesyncMirror) XXX_GraphQLType() string {
+	return "ClientFilesyncMirror"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ClientFilesyncMirror) XXX_GraphQLIDType() string {
+	return "ClientFilesyncMirrorID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ClientFilesyncMirror) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ClientFilesyncMirror) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // Dagger Cloud configuration and state
@@ -2562,6 +2621,8 @@ type ContainerWithDirectoryOpts struct {
 	Owner string
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
+
+	Permissions int
 }
 
 // Return a new container snapshot, with a directory added to its filesystem
@@ -2588,6 +2649,10 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)
@@ -2988,6 +3053,8 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Mount the directory read-only.
+	ReadOnly bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -3000,6 +3067,10 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3042,17 +3113,6 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Retrieves this container plus a host directory mounted at the given path.
-func (r *Container) WithMountedHostDirectory(source string, path string) *Container {
-	q := r.query.Select("withMountedHostDirectory")
-	q = q.Arg("source", source)
-	q = q.Arg("path", path)
 
 	return &Container{
 		query: q,
@@ -3287,18 +3347,6 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 func (r *Container) WithUser(name string) *Container {
 	q := r.query.Select("withUser")
 	q = q.Arg("name", name)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Retrieves this container plus an engine-managed volume mounted at the given path.
-func (r *Container) WithVolumeMount(path string, volume *Volume) *Container {
-	assertNotNil("volume", volume)
-	q := r.query.Select("withVolumeMount")
-	q = q.Arg("path", path)
-	q = q.Arg("volume", volume)
 
 	return &Container{
 		query: q,
@@ -4502,10 +4550,12 @@ type DirectoryWithDirectoryOpts struct {
 	Gitignore bool
 	// A user:group to set for the copied directory and its contents.
 	//
-	// The user and group must be an ID (1000:1000), not a name (foo:bar).
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Permission given to the copied directory and contents (e.g., 0755).
+	Permissions int
 }
 
 // Return a snapshot with a directory added
@@ -4528,6 +4578,10 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)
@@ -4554,7 +4608,7 @@ type DirectoryWithFileOpts struct {
 	Permissions int
 	// A user:group to set for the copied directory and its contents.
 	//
-	// The user and group must be an ID (1000:1000), not a name (foo:bar).
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
@@ -4794,7 +4848,7 @@ func (r *Engine) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The local (on-disk) cache for the Dagger engine
+// The local engine cache state tracked by dagql
 func (r *Engine) LocalCache() *EngineCache {
 	q := r.query.Select("localCache")
 
@@ -5380,6 +5434,8 @@ func (r *EnumTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The members of the enum.
+//
 // Deprecated: use members instead
 func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 	q := r.query.Select("values")
@@ -6130,6 +6186,30 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type HTTPState in the environment
+func (r *Env) WithHTTPStateInput(name string, value *HTTPState, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withHTTPStateInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired HTTPState output to be assigned in the environment
+func (r *Env) WithHTTPStateOutput(name string, description string) *Env {
+	q := r.query.Select("withHTTPStateOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type JSONValue in the environment
 func (r *Env) WithJSONValueInput(name string, value *JSONValue, description string) *Env {
 	assertNotNil("value", value)
@@ -6461,30 +6541,6 @@ func (r *Env) WithUpInput(name string, value *Up, description string) *Env {
 // Declare a desired Up output to be assigned in the environment
 func (r *Env) WithUpOutput(name string, description string) *Env {
 	q := r.query.Select("withUpOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Volume in the environment
-func (r *Env) WithVolumeInput(name string, value *Volume, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withVolumeInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Volume output to be assigned in the environment
-func (r *Env) WithVolumeOutput(name string, description string) *Env {
-	q := r.query.Select("withVolumeOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -8963,6 +9019,59 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// An internal persistent HTTP state.
+type HTTPState struct {
+	query *querybuilder.Selection
+
+	id *HTTPStateID
+}
+
+func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
+	return &HTTPState{
+		query: q,
+	}
+}
+
+// A unique identifier for this HTTPState.
+func (r *HTTPState) ID(ctx context.Context) (HTTPStateID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response HTTPStateID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *HTTPState) XXX_GraphQLType() string {
+	return "HTTPState"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *HTTPState) XXX_GraphQLIDType() string {
+	return "HTTPStateID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *HTTPState) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *HTTPState) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // Image healthcheck configuration.
@@ -11675,7 +11784,7 @@ func (r *ObjectTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ObjectTypeD
 	}
 }
 
-// The function used to construct new instances of this object, if any
+// The function used to construct new instances of this object, if any.
 func (r *ObjectTypeDef) Constructor() *Function {
 	q := r.query.Select("constructor")
 
@@ -11993,9 +12102,39 @@ func (r *Query) Address(value string) *Address {
 	}
 }
 
+// CacheVolumeOpts contains options for Query.CacheVolume
+type CacheVolumeOpts struct {
+	// Identifier of the directory to use as the cache volume's root.
+	Source *Directory
+	// Sharing mode of the cache volume.
+	//
+	// Default: SHARED
+	Sharing CacheSharingMode
+	// A user:group to set for the cache volume root.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
+}
+
 // Constructs a cache volume for a given cache key.
-func (r *Query) CacheVolume(key string) *CacheVolume {
+func (r *Query) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
 	q := r.query.Select("cacheVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `sharing` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Sharing) {
+			q = q.Arg("sharing", opts[i].Sharing)
+		}
+		// `owner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+		}
+	}
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
@@ -12081,6 +12220,8 @@ func (r *Query) CurrentModule() *CurrentModule {
 
 // CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
 type CurrentTypeDefsOpts struct {
+	// Return the full referenced typedef closure instead of only top-level served typedefs.
+	ReturnAllTypes bool
 	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
 	//
 	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
@@ -12091,6 +12232,10 @@ type CurrentTypeDefsOpts struct {
 func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `returnAllTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReturnAllTypes) {
+			q = q.Arg("returnAllTypes", opts[i].ReturnAllTypes)
+		}
 		// `hideCore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].HideCore) {
 			q = q.Arg("hideCore", opts[i].HideCore)
@@ -12350,6 +12495,8 @@ type HTTPOpts struct {
 	Name string
 	// Permissions to set on the file.
 	Permissions int
+	// Expected digest of the downloaded content (e.g., "sha256:...").
+	Checksum string
 	// Secret used to populate the Authorization HTTP header
 	AuthHeader *Secret
 	// A service which must be started before the URL is fetched.
@@ -12367,6 +12514,10 @@ func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
+		}
+		// `checksum` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Checksum) {
+			q = q.Arg("checksum", opts[i].Checksum)
 		}
 		// `authHeader` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AuthHeader) {
@@ -12515,6 +12666,16 @@ func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
 	q = q.Arg("id", id)
 
 	return &CheckGroup{
+		query: q,
+	}
+}
+
+// Load a ClientFilesyncMirror from its ID.
+func (r *Query) LoadClientFilesyncMirrorFromID(id ClientFilesyncMirrorID) *ClientFilesyncMirror {
+	q := r.query.Select("loadClientFilesyncMirrorFromID")
+	q = q.Arg("id", id)
+
+	return &ClientFilesyncMirror{
 		query: q,
 	}
 }
@@ -12789,6 +12950,16 @@ func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	}
 }
 
+// Load a HTTPState from its ID.
+func (r *Query) LoadHTTPStateFromID(id HTTPStateID) *HTTPState {
+	q := r.query.Select("loadHTTPStateFromID")
+	q = q.Arg("id", id)
+
+	return &HTTPState{
+		query: q,
+	}
+}
+
 // Load a HealthcheckConfig from its ID.
 func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
 	q := r.query.Select("loadHealthcheckConfigFromID")
@@ -12939,6 +13110,16 @@ func (r *Query) LoadQueryFromID(id QueryID) *Query {
 	}
 }
 
+// Load a RemoteGitMirror from its ID.
+func (r *Query) LoadRemoteGitMirrorFromID(id RemoteGitMirrorID) *RemoteGitMirror {
+	q := r.query.Select("loadRemoteGitMirrorFromID")
+	q = q.Arg("id", id)
+
+	return &RemoteGitMirror{
+		query: q,
+	}
+}
+
 // Load a SDKConfig from its ID.
 func (r *Query) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
 	q := r.query.Select("loadSDKConfigFromID")
@@ -13069,16 +13250,6 @@ func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
 	}
 }
 
-// Load a Volume from its ID.
-func (r *Query) LoadVolumeFromID(id VolumeID) *Volume {
-	q := r.query.Select("loadVolumeFromID")
-	q = q.Arg("id", id)
-
-	return &Volume{
-		query: q,
-	}
-}
-
 // Load a Workspace from its ID.
 func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	q := r.query.Select("loadWorkspaceFromID")
@@ -13189,32 +13360,6 @@ func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	}
 }
 
-// SshfsVolumeOpts contains options for Query.SshfsVolume
-type SshfsVolumeOpts struct {
-	// A service which must be started before the SSHFS volume is mounted.
-	ExperimentalServiceHost *Service
-}
-
-// Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
-func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, publicKey *Secret, opts ...SshfsVolumeOpts) *Volume {
-	assertNotNil("privateKey", privateKey)
-	assertNotNil("publicKey", publicKey)
-	q := r.query.Select("sshfsVolume")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `experimentalServiceHost` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
-			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
-		}
-	}
-	q = q.Arg("endpoint", endpoint)
-	q = q.Arg("privateKey", privateKey)
-	q = q.Arg("publicKey", publicKey)
-
-	return &Volume{
-		query: q,
-	}
-}
-
 // Create a new TypeDef.
 func (r *Query) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
@@ -13232,6 +13377,59 @@ func (r *Query) Version(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// An internal persistent bare git mirror.
+type RemoteGitMirror struct {
+	query *querybuilder.Selection
+
+	id *RemoteGitMirrorID
+}
+
+func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGitMirror {
+	return &RemoteGitMirror{
+		query: q,
+	}
+}
+
+// A unique identifier for this RemoteGitMirror.
+func (r *RemoteGitMirror) ID(ctx context.Context) (RemoteGitMirrorID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response RemoteGitMirrorID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *RemoteGitMirror) XXX_GraphQLType() string {
+	return "RemoteGitMirror"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *RemoteGitMirror) XXX_GraphQLIDType() string {
+	return "RemoteGitMirrorID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *RemoteGitMirror) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *RemoteGitMirror) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // The SDK config of the module.
@@ -14360,6 +14558,7 @@ type TypeDef struct {
 
 	id       *TypeDefID
 	kind     *TypeDefKind
+	name     *string
 	optional *bool
 }
 type WithTypeDefFunc func(r *TypeDef) *TypeDef
@@ -14479,6 +14678,19 @@ func (r *TypeDef) Kind(ctx context.Context) (TypeDefKind, error) {
 	q := r.query.Select("kind")
 
 	var response TypeDefKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The canonical non-optional name of the type.
+func (r *TypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14991,59 +15203,6 @@ func (r *UpGroup) Run() *UpGroup {
 	return &UpGroup{
 		query: q,
 	}
-}
-
-// A reference to an engine-managed volume.
-type Volume struct {
-	query *querybuilder.Selection
-
-	id *VolumeID
-}
-
-func (r *Volume) WithGraphQLQuery(q *querybuilder.Selection) *Volume {
-	return &Volume{
-		query: q,
-	}
-}
-
-// A unique identifier for this Volume.
-func (r *Volume) ID(ctx context.Context) (VolumeID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response VolumeID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Volume) XXX_GraphQLType() string {
-	return "Volume"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Volume) XXX_GraphQLIDType() string {
-	return "VolumeID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Volume) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Volume) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
 }
 
 // A Dagger workspace detected from the current working directory.

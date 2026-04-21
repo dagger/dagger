@@ -59,6 +59,7 @@
               <li><a href="#query-loadChangesetFromID">loadChangesetFromID</a></li>
               <li><a href="#query-loadCheckFromID">loadCheckFromID</a></li>
               <li><a href="#query-loadCheckGroupFromID">loadCheckGroupFromID</a></li>
+              <li><a href="#query-loadClientFilesyncMirrorFromID">loadClientFilesyncMirrorFromID</a></li>
               <li><a href="#query-loadCloudFromID">loadCloudFromID</a></li>
               <li><a href="#query-loadContainerFromID">loadContainerFromID</a></li>
               <li><a href="#query-loadCurrentModuleFromID">loadCurrentModuleFromID</a></li>
@@ -86,6 +87,7 @@
               <li><a href="#query-loadGeneratorGroupFromID">loadGeneratorGroupFromID</a></li>
               <li><a href="#query-loadGitRefFromID">loadGitRefFromID</a></li>
               <li><a href="#query-loadGitRepositoryFromID">loadGitRepositoryFromID</a></li>
+              <li><a href="#query-loadHTTPStateFromID">loadHTTPStateFromID</a></li>
               <li><a href="#query-loadHealthcheckConfigFromID">loadHealthcheckConfigFromID</a></li>
               <li><a href="#query-loadHostFromID">loadHostFromID</a></li>
               <li><a href="#query-loadInputTypeDefFromID">loadInputTypeDefFromID</a></li>
@@ -101,6 +103,7 @@
               <li><a href="#query-loadObjectTypeDefFromID">loadObjectTypeDefFromID</a></li>
               <li><a href="#query-loadPortFromID">loadPortFromID</a></li>
               <li><a href="#query-loadQueryFromID">loadQueryFromID</a></li>
+              <li><a href="#query-loadRemoteGitMirrorFromID">loadRemoteGitMirrorFromID</a></li>
               <li><a href="#query-loadSDKConfigFromID">loadSDKConfigFromID</a></li>
               <li><a href="#query-loadScalarTypeDefFromID">loadScalarTypeDefFromID</a></li>
               <li><a href="#query-loadSearchResultFromID">loadSearchResultFromID</a></li>
@@ -114,14 +117,12 @@
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
               <li><a href="#query-loadUpFromID">loadUpFromID</a></li>
               <li><a href="#query-loadUpGroupFromID">loadUpGroupFromID</a></li>
-              <li><a href="#query-loadVolumeFromID">loadVolumeFromID</a></li>
               <li><a href="#query-loadWorkspaceFromID">loadWorkspaceFromID</a></li>
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
               <li><a href="#query-sourceMap">sourceMap</a></li>
-              <li><a href="#query-sshfsVolume">sshfsVolume</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
               <li><a href="#query-version">version</a></li>
             </ul>
@@ -146,6 +147,8 @@
               <li><a href="#definition-CheckGroup">CheckGroup</a></li>
               <li><a href="#definition-CheckGroupID">CheckGroupID</a></li>
               <li><a href="#definition-CheckID">CheckID</a></li>
+              <li><a href="#definition-ClientFilesyncMirror">ClientFilesyncMirror</a></li>
+              <li><a href="#definition-ClientFilesyncMirrorID">ClientFilesyncMirrorID</a></li>
               <li><a href="#definition-Cloud">Cloud</a></li>
               <li><a href="#definition-CloudID">CloudID</a></li>
               <li><a href="#definition-Container">Container</a></li>
@@ -204,6 +207,8 @@
               <li><a href="#definition-GitRefID">GitRefID</a></li>
               <li><a href="#definition-GitRepository">GitRepository</a></li>
               <li><a href="#definition-GitRepositoryID">GitRepositoryID</a></li>
+              <li><a href="#definition-HTTPState">HTTPState</a></li>
+              <li><a href="#definition-HTTPStateID">HTTPStateID</a></li>
               <li><a href="#definition-HealthcheckConfig">HealthcheckConfig</a></li>
               <li><a href="#definition-HealthcheckConfigID">HealthcheckConfigID</a></li>
               <li><a href="#definition-Host">Host</a></li>
@@ -243,6 +248,8 @@
               <li><a href="#definition-PortForward">PortForward</a></li>
               <li><a href="#definition-PortID">PortID</a></li>
               <li><a href="#definition-QueryID">QueryID</a></li>
+              <li><a href="#definition-RemoteGitMirror">RemoteGitMirror</a></li>
+              <li><a href="#definition-RemoteGitMirrorID">RemoteGitMirrorID</a></li>
               <li><a href="#definition-ReturnType">ReturnType</a></li>
               <li><a href="#definition-SDKConfig">SDKConfig</a></li>
               <li><a href="#definition-SDKConfigID">SDKConfigID</a></li>
@@ -273,8 +280,6 @@
               <li><a href="#definition-UpGroupID">UpGroupID</a></li>
               <li><a href="#definition-UpID">UpID</a></li>
               <li><a href="#definition-Void">Void</a></li>
-              <li><a href="#definition-Volume">Volume</a></li>
-              <li><a href="#definition-VolumeID">VolumeID</a></li>
               <li><a href="#definition-Workspace">Workspace</a></li>
               <li><a href="#definition-WorkspaceID">WorkspaceID</a></li>
             </ul>
@@ -381,6 +386,28 @@
                           <span class="property-name"><code>key</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
                         <td> A string identifier to target this cache volume (e.g., "modules-cache"). </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID</code></a></span>
+                        </td>
+                        <td> Identifier of the directory to use as the cache volume's root. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>sharing</code></span> - <span class="property-type"><a href="#definition-CacheSharingMode"><code>CacheSharingMode</code></a></span>
+                        </td>
+                        <td> Sharing mode of the cache volume. Default = <code>SHARED</code> </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td>
+                          <p>A user:group to set for the cache volume root.</p>
+                          <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
+                          <p>If the group is omitted, it defaults to the same as the user. Default = <code>&quot;&quot;</code></p>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -668,6 +695,12 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>returnAllTypes</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td> Return the full referenced typedef closure instead of only top-level served typedefs. Default = <code>false</code> </td>
+                      </tr>
                       <tr>
                         <td>
                           <span class="property-name"><code>hideCore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
@@ -1403,6 +1436,12 @@
                       </tr>
                       <tr>
                         <td>
+                          <span class="property-name"><code>checksum</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> Expected digest of the downloaded content (e.g., "sha256:..."). </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <span class="property-name"><code>authHeader</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID</code></a></span>
                         </td>
                         <td> Secret used to populate the Authorization HTTP header </td>
@@ -1858,6 +1897,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-CheckGroupID"><code>CheckGroupID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadClientFilesyncMirrorFromID" class="operation operation-query" data-traverse-target="query-loadClientFilesyncMirrorFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadClientFilesyncMirrorFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a ClientFilesyncMirror from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-ClientFilesyncMirror"><code>ClientFilesyncMirror!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ClientFilesyncMirrorID"><code>ClientFilesyncMirrorID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -3306,6 +3398,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadHTTPStateFromID" class="operation operation-query" data-traverse-target="query-loadHTTPStateFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadHTTPStateFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a HTTPState from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-HTTPState"><code>HTTPState!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-HTTPStateID"><code>HTTPStateID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadHealthcheckConfigFromID" class="operation operation-query" data-traverse-target="query-loadHealthcheckConfigFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -4101,6 +4246,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadRemoteGitMirrorFromID" class="operation operation-query" data-traverse-target="query-loadRemoteGitMirrorFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadRemoteGitMirrorFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a RemoteGitMirror from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-RemoteGitMirror"><code>RemoteGitMirror!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-RemoteGitMirrorID"><code>RemoteGitMirrorID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadSDKConfigFromID" class="operation operation-query" data-traverse-target="query-loadSDKConfigFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -4790,59 +4988,6 @@
               </div>
             </div>
           </section>
-          <section id="query-loadVolumeFromID" class="operation operation-query" data-traverse-target="query-loadVolumeFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadVolumeFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a Volume from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Volume"><code>Volume!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-VolumeID"><code>VolumeID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-loadWorkspaceFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -5196,76 +5341,6 @@
               </div>
             </div>
           </section>
-          <section id="query-sshfsVolume" class="operation operation-query" data-traverse-target="query-sshfsVolume">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>sshfsVolume</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. &#39;ssh://user@host:2222/path&#39;.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Volume"><code>Volume!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>endpoint</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
-                        </td>
-                        <td> SSH endpoint URL, e.g. ssh://user@host[:port]/absolute/path </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>privateKey</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span>
-                        </td>
-                        <td> The private key to use for authentication </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>publicKey</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span>
-                        </td>
-                        <td> The public key to use for authentication </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>experimentalServiceHost</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID</code></a></span>
-                        </td>
-                        <td> A service which must be started before the SSHFS volume is mounted. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-typeDef" class="operation operation-query" data-traverse-target="query-typeDef">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -5535,6 +5610,10 @@
                         <td> Retrieve the binding value, as type GitRepository </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asHTTPState" href="#Binding-asHTTPState"><code>asHTTPState</code></a> - <span class="property-type"><a href="#definition-HTTPState"><code>HTTPState!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type HTTPState </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asJSONValue" href="#Binding-asJSONValue"><code>asJSONValue</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
                         <td> Retrieve the binding value, as type JSONValue </td>
                       </tr>
@@ -5585,10 +5664,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asUpGroup" href="#Binding-asUpGroup"><code>asUpGroup</code></a> - <span class="property-type"><a href="#definition-UpGroup"><code>UpGroup!</code></a></span> </td>
                         <td> Retrieve the binding value, as type UpGroup </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asVolume" href="#Binding-asVolume"><code>asVolume</code></a> - <span class="property-type"><a href="#definition-Volume"><code>Volume!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type Volume </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspace" href="#Binding-asWorkspace"><code>asWorkspace</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
@@ -6194,6 +6269,51 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>CheckID</code> scalar type represents an identifier for an object of type Check.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ClientFilesyncMirror" class="definition definition-object" data-traverse-target="definition-ClientFilesyncMirror">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ClientFilesyncMirror</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An internal persistent filesync mirror.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ClientFilesyncMirror-id" href="#ClientFilesyncMirror-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ClientFilesyncMirrorID"><code>ClientFilesyncMirrorID!</code></a></span> </td>
+                        <td> A unique identifier for this ClientFilesyncMirror. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ClientFilesyncMirrorID" class="definition definition-scalar" data-traverse-target="definition-ClientFilesyncMirrorID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ClientFilesyncMirrorID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>ClientFilesyncMirrorID</code> scalar type represents an identifier for an object of type ClientFilesyncMirror.</p>
                 </div>
               </div>
             </div>
@@ -6905,6 +7025,9 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -7286,6 +7409,10 @@
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>readOnly</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Mount the directory read-only.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
                               </div>
@@ -7319,27 +7446,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo.txt&quot;).</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Container-withMountedHostDirectory" href="#Container-withMountedHostDirectory"><code>withMountedHostDirectory</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container plus a host directory mounted at the given path. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Source path of the host directory to mount (e.g., &quot;/home/user/directory&quot;).</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the mounted directory (e.g., &quot;/mnt/directory&quot;).</p>
                               </div>
                             </div>
                           </div>
@@ -7598,27 +7704,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The user to set (e.g., &quot;root&quot;).</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Container-withVolumeMount" href="#Container-withVolumeMount"><code>withVolumeMount</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container plus an engine-managed volume mounted at the given path. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location where the volume will be mounted (e.g., &quot;/mnt/volume&quot;).</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>volume</code></span> - <span class="property-type"><a href="#definition-VolumeID"><code>VolumeID!</code></a></span></h6>
-                                <p>Identifier of the volume to mount.</p>
                               </div>
                             </div>
                           </div>
@@ -8260,7 +8345,7 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>A user:group to set for the mounted directory and its contents.</p>
-                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
                               </div>
                             </div>
@@ -8664,8 +8749,12 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the copied directory and its contents.</p>
-                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
+                                <p>Permission given to the copied directory and contents (e.g., 0755).</p>
                               </div>
                             </div>
                           </div>
@@ -8712,7 +8801,7 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the copied directory and its contents.</p>
-                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
                               </div>
                             </div>
@@ -8965,7 +9054,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Engine-localCache" href="#Engine-localCache"><code>localCache</code></a> - <span class="property-type"><a href="#definition-EngineCache"><code>EngineCache!</code></a></span> </td>
-                        <td> The local (on-disk) cache for the Dagger engine </td>
+                        <td> The local engine cache state tracked by dagql </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Engine-name" href="#Engine-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -9274,8 +9363,7 @@
                       </tr>
                       <tr>
                         <td data-property-name="" class="definition-deprecated"><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
-                        <td>
-                          <span class="deprecation-reason">use members instead</span>
+                        <td> The members of the enum. <span class="deprecation-reason">use members instead</span>
                         </td>
                       </tr>
                     </tbody>
@@ -10219,6 +10307,52 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withHTTPStateInput" href="#Env-withHTTPStateInput"><code>withHTTPStateInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type HTTPState in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-HTTPStateID"><code>HTTPStateID!</code></a></span></h6>
+                                <p>The HTTPState value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withHTTPStateOutput" href="#Env-withHTTPStateOutput"><code>withHTTPStateOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired HTTPState output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withJSONValueInput" href="#Env-withJSONValueInput"><code>withJSONValueInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type JSONValue in the environment </td>
                       </tr>
@@ -10856,52 +10990,6 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withVolumeInput" href="#Env-withVolumeInput"><code>withVolumeInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update a binding of type Volume in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-VolumeID"><code>VolumeID!</code></a></span></h6>
-                                <p>The Volume value to assign to the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The purpose of the input</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withVolumeOutput" href="#Env-withVolumeOutput"><code>withVolumeOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Declare a desired Volume output to be assigned in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>A description of the desired value of the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withWorkspace" href="#Env-withWorkspace"><code>withWorkspace</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Returns a new environment with the provided workspace </td>
                       </tr>
@@ -11496,7 +11584,7 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>A user:group to set for the file.</p>
-                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
                               </div>
                             </div>
@@ -12787,6 +12875,51 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>GitRepositoryID</code> scalar type represents an identifier for an object of type GitRepository.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-HTTPState" class="definition definition-object" data-traverse-target="definition-HTTPState">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">HTTPState</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An internal persistent HTTP state.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HTTPState-id" href="#HTTPState-id"><code>id</code></a> - <span class="property-type"><a href="#definition-HTTPStateID"><code>HTTPStateID!</code></a></span> </td>
+                        <td> A unique identifier for this HTTPState. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-HTTPStateID" class="definition definition-scalar" data-traverse-target="definition-HTTPStateID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">HTTPStateID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>HTTPStateID</code> scalar type represents an identifier for an object of type HTTPState.</p>
                 </div>
               </div>
             </div>
@@ -14989,7 +15122,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ObjectTypeDef-constructor" href="#ObjectTypeDef-constructor"><code>constructor</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function</code></a></span> </td>
-                        <td> The function used to construct new instances of this object, if any </td>
+                        <td> The function used to construct new instances of this object, if any. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ObjectTypeDef-deprecated" href="#ObjectTypeDef-deprecated"><code>deprecated</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
@@ -15230,6 +15363,51 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>QueryID</code> scalar type represents an identifier for an object of type Query.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-RemoteGitMirror" class="definition definition-object" data-traverse-target="definition-RemoteGitMirror">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">RemoteGitMirror</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An internal persistent bare git mirror.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="RemoteGitMirror-id" href="#RemoteGitMirror-id"><code>id</code></a> - <span class="property-type"><a href="#definition-RemoteGitMirrorID"><code>RemoteGitMirrorID!</code></a></span> </td>
+                        <td> A unique identifier for this RemoteGitMirror. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-RemoteGitMirrorID" class="definition definition-scalar" data-traverse-target="definition-RemoteGitMirrorID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">RemoteGitMirrorID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>RemoteGitMirrorID</code> scalar type represents an identifier for an object of type RemoteGitMirror.</p>
                 </div>
               </div>
             </div>
@@ -16020,6 +16198,10 @@
                         <td> The kind of type this is (e.g. primitive, list, object). </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="TypeDef-name" href="#TypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The canonical non-optional name of the type. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="TypeDef-optional" href="#TypeDef-optional"><code>optional</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
                         <td> Whether this type can be set to null. Defaults to false. </td>
                       </tr>
@@ -16633,51 +16815,6 @@
                   <h5>Description</h5>
                   <p>The absence of a value.</p>
                   <p>A Null Void is used as a placeholder for resolvers that do not return anything.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-Volume" class="definition definition-object" data-traverse-target="definition-Volume">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">Volume</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>A reference to an engine-managed volume.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Volume-id" href="#Volume-id"><code>id</code></a> - <span class="property-type"><a href="#definition-VolumeID"><code>VolumeID!</code></a></span> </td>
-                        <td> A unique identifier for this Volume. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-VolumeID" class="definition definition-scalar" data-traverse-target="definition-VolumeID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">VolumeID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>VolumeID</code> scalar type represents an identifier for an object of type Volume.</p>
                 </div>
               </div>
             </div>

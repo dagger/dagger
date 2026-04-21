@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"strings"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/dagger/dagger/engine"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -43,7 +45,7 @@ type Server struct {
 	schemaOnces   map[call.View]*sync.Once
 	schemaLock    *sync.Mutex
 
-	installLock  *sync.Mutex
+	installLock  *sync.RWMutex
 	installHooks []InstallHook
 
 	// View is the default view that is applied to queries on this server.
@@ -51,12 +53,6 @@ type Server struct {
 	// WARNING: this is *not* the view of the current query (for that, inspect
 	// the current id)
 	View call.View
-
-	// Cache is the inner cache used by the server. It can be replicated to
-	// another *Server to inherit and share caches.
-	//
-	// TODO: copy-on-write
-	Cache *SessionCache
 
 	// canonical, if set, is the server without entrypoint sugar.
 	// Entrypoint proxies flatten a module's methods onto the Query root
@@ -68,15 +64,6 @@ type Server struct {
 	canonical *Server
 }
 
-// Canonical returns the server without entrypoint sugar. For servers
-// with entrypoint proxies, this is the underlying server where
-// constructors and core fields live unshadowed. For all other servers,
-// it returns the receiver itself.
-//
-// Use Canonical() when you need to bypass proxy fields: in entrypoint
-// proxy resolvers (to call the real constructor), in SDK plumbing (to
-// reach core fields like "directory"), and for ID evaluation (so IDs
-// always encode the real call path, not the sugared one).
 func (s *Server) Canonical() *Server {
 	if s.canonical != nil {
 		return s.canonical
@@ -84,39 +71,19 @@ func (s *Server) Canonical() *Server {
 	return s
 }
 
-// SetCanonical sets the canonical (un-sugared) server. This is called
-// by SchemaBuilder when constructing the outer/inner server pair.
 func (s *Server) SetCanonical(canonical *Server) {
 	s.canonical = canonical
-}
-
-type ServerSchema struct {
-	inner Server
-}
-
-func (s *ServerSchema) WithCache(c *SessionCache) *Server {
-	inner := s.inner
-	inner.Cache = c
-	return &inner
-}
-
-func (s *ServerSchema) View() call.View {
-	return s.inner.View
-}
-
-func (s *Server) AsSchema() *ServerSchema {
-	return &ServerSchema{
-		inner: *s,
-	}
-}
-
-func (s *Server) WithCache(c *SessionCache) *Server {
-	return s.AsSchema().WithCache(c)
 }
 
 type InstallHook interface {
 	InstallObject(ObjectType, ...*ast.Directive)
 	// FIXME: add support for other install functions
+}
+
+// InstallHookForker is implemented by install hooks that carry server-specific
+// state and must be rebound when a server is forked.
+type InstallHookForker interface {
+	ForkInstallHook(*Server) InstallHook
 }
 
 // AroundFunc is a function that is called around every non-cached selection.
@@ -125,8 +92,7 @@ type InstallHook interface {
 // soon.
 type AroundFunc func(
 	context.Context,
-	AnyObjectResult,
-	*call.ID,
+	*CallRequest,
 ) (context.Context, func(res AnyResult, cached bool, err *error))
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
@@ -137,24 +103,14 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T, c *SessionCache) *Server {
-	srv := &Server{
-		Cache:         c,
-		objects:       map[string]ObjectType{},
-		scalars:       map[string]ScalarType{},
-		typeDefs:      map[string]TypeDef{},
-		directives:    map[string]DirectiveSpec{},
-		installLock:   &sync.Mutex{},
-		schemas:       make(map[call.View]*ast.Schema),
-		schemaDigests: make(map[call.View]digest.Digest),
-		schemaOnces:   make(map[call.View]*sync.Once),
-		schemaLock:    &sync.Mutex{},
-	}
+func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
+	srv := newBlankServer()
 	rootClass := NewClass(srv, ClassOpts[T]{})
-	srv.root = ObjectResult[T]{
+	rootRes := ObjectResult[T]{
 		Result: newDetachedResult(nil, root),
 		class:  rootClass,
 	}
+	srv.root = rootRes
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
 		srv.InstallScalar(scalar)
@@ -162,7 +118,73 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 	for _, directive := range coreDirectives {
 		srv.InstallDirective(directive)
 	}
-	return srv
+	return srv, nil
+}
+
+func newBlankServer() *Server {
+	return &Server{
+		objects:       map[string]ObjectType{},
+		scalars:       map[string]ScalarType{},
+		typeDefs:      map[string]TypeDef{},
+		directives:    map[string]DirectiveSpec{},
+		installLock:   &sync.RWMutex{},
+		schemas:       make(map[call.View]*ast.Schema),
+		schemaDigests: make(map[call.View]digest.Digest),
+		schemaOnces:   make(map[call.View]*sync.Once),
+		schemaLock:    &sync.Mutex{},
+	}
+}
+
+// Fork returns a new server that starts with a clone of the current server's
+// installed schema state but with an independent root object and independently
+// mutable object type tables.
+func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
+	out := newBlankServer()
+	out.telemetry = s.telemetry
+	out.View = s.View
+
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
+
+	for name, scalar := range s.scalars {
+		out.scalars[name] = scalar
+	}
+	for name, typeDef := range s.typeDefs {
+		out.typeDefs[name] = typeDef
+	}
+	for name, directive := range s.directives {
+		out.directives[name] = directive
+	}
+	for name, objectType := range s.objects {
+		forkable, ok := objectType.(ForkableObjectType)
+		if !ok {
+			return nil, fmt.Errorf("object type %q (%T) cannot be forked", name, objectType)
+		}
+		forkedType, err := forkable.ForkObjectType(out)
+		if err != nil {
+			return nil, fmt.Errorf("fork object type %q: %w", name, err)
+		}
+		out.objects[name] = forkedType
+	}
+	for _, hook := range s.installHooks {
+		forkable, ok := hook.(InstallHookForker)
+		if !ok {
+			return nil, fmt.Errorf("install hook %T cannot be forked", hook)
+		}
+		out.installHooks = append(out.installHooks, forkable.ForkInstallHook(out))
+	}
+
+	rootType, ok := out.objects[root.Type().Name()]
+	if !ok {
+		return nil, fmt.Errorf("forked root type %q not found", root.Type().Name())
+	}
+	rootObj, err := rootType.New(newDetachedResult(nil, root))
+	if err != nil {
+		return nil, fmt.Errorf("new forked root: %w", err)
+	}
+	out.root = rootObj
+
+	return out, nil
 }
 
 func (s *Server) invalidateSchemaCache() {
@@ -287,22 +309,31 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 					Type: idType,
 				},
 			),
-			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
 			Directives: directives,
 		}
 
-		s.Root().ObjectType().Extend(
+		s.Root().ObjectType().ExtendLoadByID(
 			spec,
 			func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
 				idable, ok := args["id"].(IDable)
 				if !ok {
 					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
 				}
-				id := idable.ID()
+				id, err := idable.ID()
+				if err != nil {
+					return nil, fmt.Errorf("expected valid ID: %w", err)
+				}
+				if id.Type() == nil {
+					return nil, fmt.Errorf("expected typed ID, got untyped ID")
+				}
 				if id.Type().ToAST().NamedType != class.TypeName() {
 					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
 				}
-				res, err := s.Load(ctx, idable.ID())
+				srv := CurrentDagqlServer(ctx)
+				if srv == nil {
+					return nil, fmt.Errorf("current dagql server not found")
+				}
+				res, err := srv.Load(ctx, id)
 				if err != nil {
 					return nil, fmt.Errorf("load: %w", err)
 				}
@@ -350,24 +381,24 @@ func (s *Server) InstallTypeDef(def TypeDef) {
 
 // ObjectType returns the ObjectType with the given name, if it exists.
 func (s *Server) ObjectType(name string) (ObjectType, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 	t, ok := s.objects[name]
 	return t, ok
 }
 
 // ScalarType returns the ScalarType with the given name, if it exists.
 func (s *Server) ScalarType(name string) (ScalarType, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 	t, ok := s.scalars[name]
 	return t, ok
 }
 
 // InputType returns the InputType with the given name, if it exists.
 func (s *Server) TypeDef(name string) (TypeDef, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 	t, ok := s.typeDefs[name]
 	return t, ok
 }
@@ -381,6 +412,7 @@ func (s *Server) Around(rec AroundFunc) {
 // without having to go through HTTP. This can be useful for introspection, for
 // example.
 func (s *Server) Query(ctx context.Context, query string, vars map[string]any) (map[string]any, error) {
+	ctx = srvToContext(ctx, s)
 	return s.ExecOp(ctx, &graphql.OperationContext{
 		RawQuery:  query,
 		Variables: vars,
@@ -395,6 +427,8 @@ func (s *Server) Schema() *ast.Schema {
 }
 
 func (s *Server) SchemaForView(view call.View) *ast.Schema {
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 	s.schemaLock.Lock()
 	defer s.schemaLock.Unlock()
 
@@ -500,12 +534,12 @@ func gqlErrs(err error) (errs gqlerror.List) {
 	return
 }
 
-func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (map[string]any, error) {
+func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (results map[string]any, rerr error) {
+	ctx = srvToContext(ctx, s)
 	if gqlOp.Doc == nil {
-		var err error
-		gqlOp.Doc, err = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
-		if err != nil {
-			return nil, gqlErrs(err)
+		gqlOp.Doc, rerr = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
+		if rerr != nil {
+			return nil, gqlErrs(rerr)
 		}
 
 		//nolint:staticcheck // annoying, but we can't easily switch to this without inconsistencies
@@ -517,20 +551,21 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			return nil, listErr
 		}
 	}
-	results := make(map[string]any)
+	results = make(map[string]any)
 	for _, op := range gqlOp.Doc.Operations {
 		switch op.Operation {
 		case ast.Query:
 			if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
 				continue
 			}
-			sels, err := s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
-			if err != nil {
-				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, err)
+			var sels []Selection
+			sels, rerr = s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
+			if rerr != nil {
+				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, rerr)
 			}
-			results, err = s.Resolve(ctx, s.root, sels...)
-			if err != nil {
-				return nil, err
+			results, rerr = s.Resolve(ctx, s.root, sels...)
+			if rerr != nil {
+				return nil, rerr
 			}
 		case ast.Mutation:
 			// TODO
@@ -548,6 +583,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 // Each selection is resolved in parallel, and the results are returned in a
 // map whose keys correspond to the selection's field name or alias.
 func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Selection) (map[string]any, error) {
+	ctx = srvToContext(ctx, s)
 	if len(sels) == 0 {
 		return nil, nil
 	}
@@ -590,6 +626,10 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
+	ctx = srvToContext(ctx, s)
+	if id == nil {
+		return nil, fmt.Errorf("load: nil ID")
+	}
 	// Delegate to the canonical server so IDs are always evaluated
 	// against the real schema, not the sugared one.
 	if c := s.canonical; c != nil {
@@ -602,57 +642,562 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 	return s.toSelectable(res)
 }
 
-func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+func (s *Server) loadNthValue(
+	ctx context.Context,
+	parent AnyResult,
+	nth int,
+	nullAsError bool,
+) (AnyResult, error) {
+	if parent == nil {
+		if nullAsError {
+			return nil, fmt.Errorf("item %d is null from enumerable", nth)
+		}
+		return nil, nil
+	}
+
+	res, err := parent.NthValue(ctx, nth)
+	if err != nil {
+		return nil, fmt.Errorf("nth %d: %w", nth, err)
+	}
+	if res == nil {
+		if nullAsError {
+			return nil, fmt.Errorf("item %d is null from enumerable", nth)
+		}
+		return nil, nil
+	}
+
+	res, ok := res.DerefValue()
+	if !ok || res == nil {
+		if nullAsError {
+			return nil, fmt.Errorf("item %d is null from enumerable", nth)
+		}
+		return nil, nil
+	}
+	return res, nil
+}
+
+func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr error) {
+	ctx = srvToContext(ctx, s)
+	if id == nil {
+		return nil, fmt.Errorf("load type: nil ID")
+	}
 	if c := s.canonical; c != nil {
 		return c.LoadType(ctx, id)
 	}
+
+	leaseCtx, release, err := withOperationLease(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: acquire operation lease: %w", id.Display(), err)
+	}
+	ctx = leaseCtx
+	defer func() {
+		if releaseErr := release(context.WithoutCancel(ctx)); releaseErr != nil && rerr == nil {
+			rerr = releaseErr
+		}
+	}()
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: current client metadata: %w", id.Display(), err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("load %s: empty session ID", id.Display())
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: current dagql cache: %w", id.Display(), err)
+	}
+	if id.IsHandle() {
+		res, err := cache.LoadResultByResultID(ctx, clientMetadata.SessionID, s, id.EngineResultID())
+		if err != nil {
+			return nil, err
+		}
+		if id.Type() != nil && id.Type().ToAST().NonNull {
+			if derefCapable, ok := res.(interface{ withDerefViewAny() AnyResult }); ok {
+				if shared := res.cacheSharedResult(); shared != nil {
+					payload := shared.loadPayloadState()
+					if inner, valid := derefTyped(payload.self); valid && inner != nil && inner.Type() != nil && inner.Type().Name() == id.Type().NamedType() {
+						res = derefCapable.withDerefViewAny()
+					}
+				}
+			}
+		}
+		if id.Type() != nil && !id.Type().ToAST().NonNull && res.Type() != nil && res.Type().NonNull && res.Type().Name() == id.Type().NamedType() {
+			res = res.NullableWrapped()
+		}
+		if id.Type() != nil && res.Type() != nil && res.Type().Name() != id.Type().NamedType() {
+			return nil, fmt.Errorf("load %s: expected %s, got %s", idInputDebugString(id), id.Type().ToAST(), res.Type())
+		}
+		return res, nil
+	}
+
+	state := &recipeLoadState{
+		ctx:       ctx,
+		srv:       s,
+		cache:     cache,
+		sessionID: clientMetadata.SessionID,
+		loads:     make(map[string]*recipeLoadFuture),
+	}
+	return state.load(id)
+}
+
+type recipeLoadFuture struct {
+	done chan struct{}
+	res  AnyResult
+	err  error
+}
+
+type recipeLoadState struct {
+	ctx       context.Context
+	srv       *Server
+	cache     *Cache
+	sessionID string
+
+	mu    sync.Mutex
+	loads map[string]*recipeLoadFuture
+}
+
+func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
+	if id == nil {
+		return nil, nil
+	}
+	if id.IsHandle() {
+		return state.srv.LoadType(state.ctx, id)
+	}
+
+	key := id.Digest().String()
+	state.mu.Lock()
+	if future := state.loads[key]; future != nil {
+		state.mu.Unlock()
+		<-future.done
+		return future.res, future.err
+	}
+	future := &recipeLoadFuture{done: make(chan struct{})}
+	state.loads[key] = future
+	state.mu.Unlock()
+
+	future.res, future.err = state.loadRecipeVertex(id)
+	close(future.done)
+	return future.res, future.err
+}
+
+func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
+	callCtx := state.ctx
+	if hit, ok, err := state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
+		return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
+	} else if ok {
+		return hit, nil
+	}
+
+	if nth := int(id.Nth()); nth != 0 {
+		receiver := id.Receiver()
+		if receiver == nil {
+			return nil, fmt.Errorf("load %s: nth selection missing receiver", idInputDebugString(id))
+		}
+		parent, err := state.load(receiver)
+		if err != nil {
+			return nil, fmt.Errorf("load %s: receiver: %w", idInputDebugString(id), err)
+		}
+		return state.srv.loadNthValue(callCtx, parent, nth, true)
+	}
+
+	inputIDs := directRecipeInputIDs(id)
+	loadedInputs := make(map[string]AnyResult, len(inputIDs))
+	var loadedMu sync.Mutex
+	eg, _ := errgroup.WithContext(state.ctx)
+	for _, inputID := range inputIDs {
+		inputID := inputID
+		eg.Go(func() error {
+			res, err := state.load(inputID)
+			if err != nil {
+				return err
+			}
+			loadedMu.Lock()
+			loadedInputs[inputID.Digest().String()] = res
+			loadedMu.Unlock()
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		if fallbackID, ok := rewriteWithFileRecipeToDirectoryFallback(id, err); ok {
+			return state.load(fallbackID)
+		}
+		return nil, fmt.Errorf("load %s: inputs: %w", idInputDebugString(id), err)
+	}
 	var base AnyResult
-	var err error
-	if id.Receiver() != nil {
-		nth := int(id.Nth())
-		if nth == 0 {
-			base, err = s.LoadType(ctx, id.Receiver())
+	if receiver := id.Receiver(); receiver != nil {
+		base = loadedInputs[receiver.Digest().String()]
+		if base == nil {
+			return nil, fmt.Errorf("load %s: missing loaded receiver", idInputDebugString(id))
+		}
+	} else {
+		base = state.srv.root
+	}
+
+	baseObj, err := state.srv.toSelectable(base)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: instantiate base: %w", idInputDebugString(id), err)
+	}
+	frame, err := state.loadedResultCallFromRecipeID(id, loadedInputs)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: build result call: %w", idInputDebugString(id), err)
+	}
+	callCtx = ContextWithCall(callCtx, frame)
+	sel, err := selectorFromLoadedCall(callCtx, frame, baseObj)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", idInputDebugString(id), err)
+	}
+	req := &CallRequest{ResultCall: frame}
+	if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.sessionID, state.srv, req); err != nil {
+		return nil, fmt.Errorf("load %s: structural cache lookup: %w", idInputDebugString(id), err)
+	} else if ok {
+		return hit, nil
+	}
+	return baseObj.Select(callCtx, state.srv, sel)
+}
+
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
+// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
+func rewriteWithFileRecipeToDirectoryFallback(id *call.ID, err error) (*call.ID, bool) {
+	if err == nil || id == nil || id.IsHandle() || id.Field() != "withFile" {
+		return nil, false
+	}
+	if !strings.Contains(err.Error(), "is a directory, not a file") {
+		return nil, false
+	}
+	if !recipeBoolArgIsTrue(id, "allowDirectorySourceFallback") {
+		return nil, false
+	}
+
+	receiver := id.Receiver()
+	if receiver == nil {
+		return nil, false
+	}
+
+	sourceArg := id.Arg("source")
+	if sourceArg == nil {
+		return nil, false
+	}
+	sourceLit, ok := sourceArg.Value().(*call.LiteralID)
+	if !ok {
+		return nil, false
+	}
+	dirSourceID, ok := directorySourceIDFromFileSourceIDForRecipeLoad(sourceLit.Value())
+	if !ok {
+		return nil, false
+	}
+
+	newArgs := make([]*call.Argument, 0, len(id.Args()))
+	for _, arg := range id.Args() {
+		switch arg.Name() {
+		case "allowDirectorySourceFallback":
+			continue
+		case "source":
+			newArgs = append(newArgs, call.NewArgument("source", call.NewLiteralID(dirSourceID), arg.IsSensitive()))
+		default:
+			newArgs = append(newArgs, arg)
+		}
+	}
+
+	opts := []call.IDOpt{
+		call.WithView(id.View()),
+		call.WithModule(id.Module()),
+		call.WithNth(int(id.Nth())),
+		call.WithEffectIDs(id.EffectIDs()),
+		call.WithArgs(newArgs...),
+		call.WithImplicitInputs(id.ImplicitInputs()...),
+	}
+	for _, extra := range id.ExtraDigests() {
+		opts = append(opts, call.WithExtraDigest(extra))
+	}
+
+	return receiver.Append(id.Type().ToAST(), "withDirectory", opts...), true
+}
+
+func recipeBoolArgIsTrue(id *call.ID, name string) bool {
+	if id == nil || id.IsHandle() {
+		return false
+	}
+	arg := id.Arg(name)
+	if arg == nil {
+		return false
+	}
+	lit, ok := arg.Value().(*call.LiteralBool)
+	return ok && lit.Value()
+}
+
+func directorySourceIDFromFileSourceIDForRecipeLoad(fileSourceID *call.ID) (*call.ID, bool) {
+	if fileSourceID == nil || fileSourceID.IsHandle() || fileSourceID.Field() != "file" {
+		return nil, false
+	}
+
+	receiver := fileSourceID.Receiver()
+	if receiver == nil {
+		return nil, false
+	}
+
+	pathArg := fileSourceID.Arg("path")
+	if pathArg == nil {
+		return nil, false
+	}
+	pathLit, ok := pathArg.Value().(*call.LiteralString)
+	if !ok {
+		return nil, false
+	}
+
+	return receiver.Append(
+		receiver.Type().ToAST(),
+		"directory",
+		call.WithArgs(call.NewArgument("path", call.NewLiteralString(pathLit.Value()), false)),
+	), true
+}
+
+func directRecipeInputIDs(id *call.ID) []*call.ID {
+	if id == nil || id.IsHandle() {
+		return nil
+	}
+
+	var inputIDs []*call.ID
+	if receiver := id.Receiver(); receiver != nil {
+		inputIDs = append(inputIDs, receiver)
+	}
+	if mod := id.Module(); mod != nil && mod.ID() != nil {
+		inputIDs = append(inputIDs, mod.ID())
+	}
+	for _, arg := range id.Args() {
+		if arg == nil {
+			continue
+		}
+		gatherRecipeLiteralInputIDs(arg.Value(), &inputIDs)
+	}
+	for _, input := range id.ImplicitInputs() {
+		if input == nil {
+			continue
+		}
+		gatherRecipeLiteralInputIDs(input.Value(), &inputIDs)
+	}
+	return inputIDs
+}
+
+func gatherRecipeLiteralInputIDs(lit call.Literal, inputIDs *[]*call.ID) {
+	switch v := lit.(type) {
+	case *call.LiteralID:
+		*inputIDs = append(*inputIDs, v.Value())
+	case *call.LiteralList:
+		for _, item := range v.Values() {
+			gatherRecipeLiteralInputIDs(item, inputIDs)
+		}
+	case *call.LiteralObject:
+		for _, field := range v.Args() {
+			if field == nil {
+				continue
+			}
+			gatherRecipeLiteralInputIDs(field.Value(), inputIDs)
+		}
+	}
+}
+
+func (state *recipeLoadState) loadedResultCallFromRecipeID(id *call.ID, loadedInputs map[string]AnyResult) (*ResultCall, error) {
+	if id == nil {
+		return nil, nil
+	}
+	if id.IsHandle() {
+		return nil, fmt.Errorf("handle-form IDs cannot be converted to result calls: %s", idInputDebugString(id))
+	}
+
+	var callType *ResultCallType
+	if id.Type() != nil {
+		callType = NewResultCallType(id.Type().ToAST())
+	}
+	frame := &ResultCall{
+		Kind:         ResultCallKindField,
+		Type:         callType,
+		Field:        id.Field(),
+		View:         id.View(),
+		Nth:          id.Nth(),
+		EffectIDs:    id.EffectIDs(),
+		ExtraDigests: id.ExtraDigests(),
+	}
+	if receiver := id.Receiver(); receiver != nil {
+		receiverRef, err := state.loadedResultCallRefForRecipeID(receiver, loadedInputs)
+		if err != nil {
+			return nil, fmt.Errorf("receiver: %w", err)
+		}
+		frame.Receiver = receiverRef
+	}
+	if mod := id.Module(); mod != nil {
+		modRef, err := state.loadedResultCallRefForRecipeID(mod.ID(), loadedInputs)
+		if err != nil {
+			return nil, fmt.Errorf("module: %w", err)
+		}
+		frame.Module = &ResultCallModule{
+			ResultRef: modRef,
+			Name:      mod.Name(),
+			Ref:       mod.Ref(),
+			Pin:       mod.Pin(),
+		}
+	}
+	for _, arg := range id.Args() {
+		converted, err := state.loadedResultCallArgFromRecipeArgument(arg, loadedInputs)
+		if err != nil {
+			return nil, fmt.Errorf("arg %q: %w", arg.Name(), err)
+		}
+		frame.Args = append(frame.Args, converted)
+	}
+	for _, input := range id.ImplicitInputs() {
+		converted, err := state.loadedResultCallArgFromRecipeArgument(input, loadedInputs)
+		if err != nil {
+			return nil, fmt.Errorf("implicit input %q: %w", input.Name(), err)
+		}
+		frame.ImplicitInputs = append(frame.ImplicitInputs, converted)
+	}
+	return frame, nil
+}
+
+func (state *recipeLoadState) loadedResultCallRefForRecipeID(id *call.ID, loadedInputs map[string]AnyResult) (*ResultCallRef, error) {
+	if id == nil {
+		return nil, nil
+	}
+	if id.IsHandle() {
+		return nil, fmt.Errorf("handle-form IDs cannot be used as recipe input refs: %s", idInputDebugString(id))
+	}
+
+	res := loadedInputs[id.Digest().String()]
+	if res == nil {
+		return nil, fmt.Errorf("missing loaded result for %s", id.Digest())
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return nil, fmt.Errorf("loaded result for %s is not attached", id.Digest())
+	}
+	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
+}
+
+func (state *recipeLoadState) loadedResultCallArgFromRecipeArgument(arg *call.Argument, loadedInputs map[string]AnyResult) (*ResultCallArg, error) {
+	if arg == nil {
+		return nil, nil
+	}
+	value, err := state.loadedResultCallLiteralFromRecipeLiteral(arg.Value(), loadedInputs)
+	if err != nil {
+		return nil, err
+	}
+	return &ResultCallArg{
+		Name:        arg.Name(),
+		IsSensitive: arg.IsSensitive(),
+		Value:       value,
+	}, nil
+}
+
+func (state *recipeLoadState) loadedResultCallLiteralFromRecipeLiteral(lit call.Literal, loadedInputs map[string]AnyResult) (*ResultCallLiteral, error) {
+	switch v := lit.(type) {
+	case nil:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+	case *call.LiteralNull:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+	case *call.LiteralBool:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBool, BoolValue: v.Value()}, nil
+	case *call.LiteralInt:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindInt, IntValue: v.Value()}, nil
+	case *call.LiteralFloat:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindFloat, FloatValue: v.Value()}, nil
+	case *call.LiteralString:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: v.Value()}, nil
+	case *call.LiteralEnum:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindEnum, EnumValue: v.Value()}, nil
+	case *call.LiteralDigestedString:
+		return &ResultCallLiteral{
+			Kind:                 ResultCallLiteralKindDigestedString,
+			DigestedStringValue:  v.Value(),
+			DigestedStringDigest: v.Digest(),
+		}, nil
+	case *call.LiteralID:
+		resultRef, err := state.loadedResultCallRefForRecipeID(v.Value(), loadedInputs)
+		if err != nil {
+			return nil, err
+		}
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindResultRef,
+			ResultRef: resultRef,
+		}, nil
+	case *call.LiteralList:
+		items := make([]*ResultCallLiteral, 0, v.Len())
+		for _, item := range v.Values() {
+			converted, err := state.loadedResultCallLiteralFromRecipeLiteral(item, loadedInputs)
 			if err != nil {
 				return nil, err
 			}
-		} else {
-			// we are selecting the nth element of an enumerable, load the list
-			// we are selecting from and then select the nth element from it rather
-			// than trying to call the field on the object
-			baseValue, err := s.LoadType(ctx, id.Receiver())
-			if err != nil {
-				return nil, fmt.Errorf("load base enumerable: %w", err)
-			}
-
-			res, err := baseValue.NthValue(nth)
-			if err != nil {
-				return nil, fmt.Errorf("nth %d: %w", nth, err)
-			}
-
-			var ok bool
-			res, ok = res.DerefValue()
-			if !ok {
-				// the nth element is nil, maybe this should be allowed but for now error out
-				return nil, fmt.Errorf("item %d is null from enumerable", nth)
-			}
-
-			return res, nil
+			items = append(items, converted)
 		}
-	} else {
-		base = s.root
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindList,
+			ListItems: items,
+		}, nil
+	case *call.LiteralObject:
+		fields := make([]*ResultCallArg, 0, v.Len())
+		for _, field := range v.Args() {
+			converted, err := state.loadedResultCallArgFromRecipeArgument(field, loadedInputs)
+			if err != nil {
+				return nil, fmt.Errorf("field %q: %w", field.Name(), err)
+			}
+			fields = append(fields, converted)
+		}
+		return &ResultCallLiteral{
+			Kind:         ResultCallLiteralKindObject,
+			ObjectFields: fields,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported recipe literal %T", lit)
 	}
+}
 
-	baseObj, err := s.toSelectable(base)
-	if err != nil {
-		return nil, fmt.Errorf("toSelectable: %w", err)
+func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyObjectResult) (Selector, error) {
+	if frame == nil {
+		return Selector{}, fmt.Errorf("nil result call")
 	}
-
-	return baseObj.Call(ctx, s, id)
+	view := frame.View
+	fieldSpec, ok := baseObj.ObjectType().FieldSpec(frame.Field, view)
+	if !ok {
+		return Selector{}, fmt.Errorf("field %q not found on %s", frame.Field, baseObj.Type().Name())
+	}
+	args := make([]NamedInput, 0, len(frame.Args))
+	for _, argSpec := range fieldSpec.Args.Inputs(view) {
+		var frameArg *ResultCallArg
+		for _, arg := range frame.Args {
+			if arg != nil && arg.Name == argSpec.Name {
+				frameArg = arg
+				break
+			}
+		}
+		if frameArg == nil {
+			continue
+		}
+		inputVal, err := inputValueFromResultCallLiteral(ctx, frameArg.Value)
+		if err != nil {
+			return Selector{}, fmt.Errorf("request arg %q literal input: %w", argSpec.Name, err)
+		}
+		input, err := argSpec.Type.Decoder().DecodeInput(inputVal)
+		if err != nil {
+			return Selector{}, fmt.Errorf("request arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+		}
+		args = append(args, NamedInput{Name: argSpec.Name, Value: input})
+	}
+	return Selector{
+		Field: frame.Field,
+		Args:  args,
+		Nth:   int(frame.Nth),
+		View:  view,
+	}, nil
 }
 
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
-func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
+//
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) (rerr error) {
+	ctx = srvToContext(ctx, s)
 	if isNonInternal(ctx) {
 		// We only want "non internal" to apply to the immediate call, so flip it
 		// from here on; it already did its job in avoiding the withInternal below.
@@ -668,6 +1213,17 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		ctx = withInternal(ctx)
 	}
 
+	leaseCtx, release, err := withOperationLease(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire operation lease: %w", err)
+	}
+	ctx = leaseCtx
+	defer func() {
+		if releaseErr := release(context.WithoutCancel(ctx)); releaseErr != nil && rerr == nil {
+			rerr = releaseErr
+		}
+	}()
+
 	var res AnyResult = self
 	for i, sel := range sels {
 		nth := sel.Nth
@@ -676,7 +1232,6 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		if nth != 0 {
 			sel.Nth = 0
 		}
-
 		var err error
 		res, err = self.Select(ctx, s, sel)
 		if err != nil {
@@ -687,11 +1242,46 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 			// null result; nothing to do
 			return nil
 		}
+		unwrap := res.Unwrap()
+		if unwrap == nil {
+			if shared := res.cacheSharedResult(); shared != nil {
+				state := shared.loadPayloadState()
+				if state.isObject {
+					typeName := sharedResultObjectTypeName(shared, state)
+					return fmt.Errorf(
+						"select %s returned unresolved object-typed result %q (shared result %d: hasValue=%t, persistedEnvelope=%t)",
+						sel.Field,
+						typeName,
+						shared.id,
+						state.hasValue,
+						state.persistedEnvelope != nil,
+					)
+				}
+			}
+			if _, ok := res.(AnyObjectResult); ok {
+				typeName := ""
+				if shared := res.cacheSharedResult(); shared != nil {
+					payload := shared.loadPayloadState()
+					typeName = sharedResultObjectTypeName(shared, payload)
+					return fmt.Errorf(
+						"select %s returned unresolved object result %q (shared result %d: hasValue=%t, persistedEnvelope=%t)",
+						sel.Field,
+						typeName,
+						shared.id,
+						payload.hasValue,
+						payload.persistedEnvelope != nil,
+					)
+				}
+				return fmt.Errorf("select %s returned unresolved object result %q", sel.Field, typeName)
+			}
+			// null scalar result; nothing to do
+			return nil
+		}
 
 		if nth != 0 {
-			res, err = res.NthValue(nth)
+			res, err = s.loadNthValue(ctx, res, nth, true)
 			if err != nil {
-				return fmt.Errorf("nth %d: %w", nth, err)
+				return err
 			}
 		}
 
@@ -714,12 +1304,11 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
 			}
 			for nth := 1; nth <= enum.Len(); nth++ {
-				val, err := res.NthValue(nth)
+				val, err := s.loadNthValue(ctx, res, nth, false)
 				if err != nil {
-					return fmt.Errorf("nth %d: %w", nth, err)
+					return err
 				}
-				val, ok := val.DerefValue()
-				if !ok {
+				if val == nil || val.Unwrap() == nil {
 					if err := appendAssign(destV, nil); err != nil {
 						return err
 					}
@@ -804,27 +1393,56 @@ func LoadIDResults[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]Ob
 	return out, nil
 }
 
-type idCtx struct{}
+type callCtx struct{}
 
-func idToContext(ctx context.Context, id *call.ID) context.Context {
-	return context.WithValue(ctx, idCtx{}, id)
+func ContextWithCall(ctx context.Context, call *ResultCall) context.Context {
+	return context.WithValue(ctx, callCtx{}, call)
 }
 
-func ContextWithID(ctx context.Context, id *call.ID) context.Context {
-	return idToContext(ctx, id)
-}
-
-func CurrentID(ctx context.Context) *call.ID {
-	val := ctx.Value(idCtx{})
+func CurrentCall(ctx context.Context) *ResultCall {
+	val := ctx.Value(callCtx{})
 	if val == nil {
 		return nil
 	}
-	return val.(*call.ID)
+	return val.(*ResultCall)
+}
+
+// ChildFieldCall derives the call frame for a child field selection while
+// preserving the receiver lineage, module, and view from the parent call.
+func ChildFieldCall(parent *ResultCall, field string, fieldType *ast.Type) *ResultCall {
+	if parent == nil {
+		return nil
+	}
+	return &ResultCall{
+		Kind:     ResultCallKindField,
+		Type:     NewResultCallType(fieldType),
+		Field:    field,
+		View:     parent.View,
+		Receiver: &ResultCallRef{Call: parent.clone()},
+		Module:   parent.Module.clone(),
+	}
 }
 
 type srvCtx struct{}
 
+type cacheCtx struct{}
+
+func ContextWithCache(ctx context.Context, cache *Cache) context.Context {
+	return context.WithValue(ctx, cacheCtx{}, cache)
+}
+
+func EngineCache(ctx context.Context) (*Cache, error) {
+	val := ctx.Value(cacheCtx{})
+	if val == nil {
+		return nil, fmt.Errorf("no dagql cache in context")
+	}
+	return val.(*Cache), nil
+}
+
 func srvToContext(ctx context.Context, srv *Server) context.Context {
+	if CurrentDagqlServer(ctx) == srv {
+		return ctx
+	}
 	return context.WithValue(ctx, srvCtx{}, srv)
 }
 
@@ -836,22 +1454,22 @@ func CurrentDagqlServer(ctx context.Context) *Server {
 	return val.(*Server)
 }
 
-// NewResultForCurrentID creates a new Result that's set to the current ID from
-// the given self value.
-func NewResultForCurrentID[T Typed](
+// NewResultForCurrentCall creates a new Result that's set to the current call
+// from the given self value.
+func NewResultForCurrentCall[T Typed](
 	ctx context.Context,
 	self T,
 ) (Result[T], error) {
-	return NewResultForID(self, CurrentID(ctx))
+	return NewResultForCall(self, CurrentCall(ctx))
 }
 
-// NewResultForID creates a new Result with the given ID and self value.
-func NewResultForID[T Typed](
+// NewResultForCall creates a new Result with the given call and self value.
+func NewResultForCall[T Typed](
 	self T,
-	id *call.ID,
+	call *ResultCall,
 ) (res Result[T], _ error) {
-	if id == nil {
-		return res, errors.New("id is nil")
+	if call == nil {
+		return res, errors.New("call is nil")
 	}
 
 	// check that we aren't trying to create a Result for a Result itself
@@ -859,21 +1477,21 @@ func NewResultForID[T Typed](
 		return res, fmt.Errorf("cannot create Result for %T, it is already a Result", self)
 	}
 
-	return newDetachedResult(id, self), nil
+	return newDetachedResult(call, self), nil
 }
 
-func NewObjectResultForCurrentID[T Typed](
+func NewObjectResultForCurrentCall[T Typed](
 	ctx context.Context,
 	srv *Server,
 	self T,
 ) (ObjectResult[T], error) {
-	return NewObjectResultForID(self, srv, CurrentID(ctx))
+	return NewObjectResultForCall(self, srv, CurrentCall(ctx))
 }
 
-func NewObjectResultForID[T Typed](
+func NewObjectResultForCall[T Typed](
 	self T,
 	srv *Server,
-	id *call.ID,
+	call *ResultCall,
 ) (res ObjectResult[T], _ error) {
 	objType, ok := srv.ObjectType(self.Type().Name())
 	if !ok {
@@ -884,7 +1502,7 @@ func NewObjectResultForID[T Typed](
 		return res, fmt.Errorf("not a Class: %T", objType)
 	}
 
-	inst, err := NewResultForID(self, id)
+	inst, err := NewResultForCall(self, call)
 	if err != nil {
 		return res, err
 	}
@@ -942,7 +1560,12 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		}
 
 		if rerr != nil {
-			queryPath := append(idToPath(self.ID()), ast.PathName(sel.Name()))
+			var queryPath ast.Path
+			if recipeID, err := self.RecipeID(ctx); err == nil {
+				queryPath = append(idToPath(recipeID), ast.PathName(sel.Name()))
+			} else {
+				queryPath = ast.Path{ast.PathName(sel.Name())}
+			}
 			rerr = gqlErr(rerr, queryPath)
 		}
 	}()
@@ -954,12 +1577,23 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		return nil, fmt.Errorf("cannot resolve selector path with nth")
 	}
 
+	leaseCtx, release, err := withOperationLease(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquire operation lease: %w", err)
+	}
+	ctx = leaseCtx
+	defer func() {
+		if releaseErr := release(context.WithoutCancel(ctx)); releaseErr != nil && rerr == nil {
+			rerr = releaseErr
+		}
+	}()
+
 	val, err := self.Select(ctx, s, sel.Selector)
 	if err != nil {
 		return nil, err
 	}
 
-	if val == nil {
+	if val == nil || val.Unwrap() == nil {
 		// a nil value ignores all sub-selections
 		return nil, nil
 	}
@@ -975,16 +1609,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		if len(sel.Subselections) == 0 {
 			// No subselections - resolve serially (fast path, no goroutine overhead)
 			for nth := 1; nth <= length; nth++ {
-				elemVal, err := val.NthValue(nth)
+				elemVal, err := s.loadNthValue(ctx, val, nth, false)
 				if err != nil {
 					return nil, err
 				}
-				if elemVal == nil {
-					results[nth-1] = nil
-					continue
-				}
-				elemVal, ok := elemVal.DerefValue()
-				if !ok || elemVal == nil {
+				if elemVal == nil || elemVal.Unwrap() == nil {
 					results[nth-1] = nil
 					continue
 				}
@@ -995,16 +1624,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 			p := pool.New().WithErrors()
 			for nth := 1; nth <= length; nth++ {
 				p.Go(func() error {
-					elemVal, err := val.NthValue(nth)
+					elemVal, err := s.loadNthValue(ctx, val, nth, false)
 					if err != nil {
 						return err
 					}
 					if elemVal == nil {
-						results[nth-1] = nil
-						return nil
-					}
-					elemVal, ok := elemVal.DerefValue()
-					if !ok || elemVal == nil {
 						results[nth-1] = nil
 						return nil
 					}
@@ -1073,7 +1697,12 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 		className := obj.Type().Name()
 		class, ok = s.ObjectType(className)
 		if ok {
-			val, err = NewResultForID(obj, val.ID())
+			shared := val.cacheSharedResult()
+			frame := shared.loadResultCall()
+			if shared == nil || frame == nil {
+				return nil, fmt.Errorf("toSelectable iface conversion: missing result call frame")
+			}
+			val, err = NewResultForCall(obj, frame)
 			if err != nil {
 				return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
 			}
@@ -1204,7 +1833,8 @@ func (f DecoderFunc) DecodeInput(val any) (Input, error) {
 }
 
 type InputObject[T Type] struct {
-	Value T
+	Value  T
+	fields []inputObjectField
 }
 
 var _ Input = InputObject[Type]{} // TODO
@@ -1224,22 +1854,34 @@ func (InputObject[T]) Decoder() InputDecoder {
 			return nil, fmt.Errorf("expected map[string]any, got %T", val)
 		}
 		var obj T
-		if err := setInputObjectFields(&obj, vals); err != nil {
+		fields, err := setInputObjectFields(&obj, vals)
+		if err != nil {
 			return nil, err
 		}
 		return InputObject[T]{
-			Value: obj,
+			Value:  obj,
+			fields: fields,
 		}, nil
 	})
 }
 
-func setInputObjectFields(obj any, vals map[string]any) error {
+type inputObjectField struct {
+	name  string
+	value Input
+}
+
+func (input InputObject[T]) resultCallInputObjectFields() []inputObjectField {
+	return input.fields
+}
+
+func setInputObjectFields(obj any, vals map[string]any) ([]inputObjectField, error) {
 	objT := reflect.TypeOf(obj).Elem()
 	objV := reflect.ValueOf(obj)
 	if objT.Kind() != reflect.Struct {
 		// TODO handle pointer?
-		return fmt.Errorf("object must be a struct, got %T", obj)
+		return nil, fmt.Errorf("object must be a struct, got %T", obj)
 	}
+	fields := make([]inputObjectField, 0, objT.NumField())
 	for i := range objT.NumField() {
 		fieldT := objT.Field(i)
 		fieldV := objV.Elem().Field(i)
@@ -1254,85 +1896,51 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 		if fieldT.Anonymous {
 			// embedded struct
 			val := reflect.New(fieldT.Type)
-			if err := setInputObjectFields(val.Interface(), vals); err != nil {
-				return err
+			embeddedFields, err := setInputObjectFields(val.Interface(), vals)
+			if err != nil {
+				return nil, err
 			}
 			fieldV.Set(val.Elem())
+			fields = append(fields, embeddedFields...)
 			continue
 		}
 		zeroInput, err := builtinOrInput(fieldI)
 		if err != nil {
-			return fmt.Errorf("arg %q: %w", fieldT.Name, err)
+			return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
 		}
 		var input Input
 		if val, ok := vals[name]; ok {
 			var err error
 			input, err = zeroInput.Decoder().DecodeInput(val)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		} else if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
 			var err error
 			input, err = zeroInput.Decoder().DecodeInput(inputDefStr)
 			if err != nil {
-				return fmt.Errorf("convert default value for arg %s: %w", name, err)
+				return nil, fmt.Errorf("convert default value for arg %s: %w", name, err)
 			}
 		} else if zeroInput.Type().NonNull {
-			return fmt.Errorf("missing required input field %q", name)
+			return nil, fmt.Errorf("missing required input field %q", name)
 		}
 		if input != nil { // will be nil for optional fields
 			if err := assign(fieldV, input); err != nil {
-				return fmt.Errorf("assign input object %q as %+v (%T): %w", fieldT.Name, input, input, err)
+				return nil, fmt.Errorf("assign input object %q as %+v (%T): %w", fieldT.Name, input, input, err)
 			}
+			fields = append(fields, inputObjectField{name: name, value: input})
 		}
 	}
-	return nil
+	return fields, nil
 }
 
 func (input InputObject[T]) ToLiteral() call.Literal {
-	obj := input.Value
-	args, err := collectLiteralArgs(obj)
-	if err != nil {
-		panic(fmt.Errorf("collectLiteralArgs: %w", err))
+	if input.fields == nil {
+		panic(fmt.Errorf("input object %T is missing decoded fields", input.Value))
+	}
+	args := make([]*call.Argument, 0, len(input.fields))
+	for _, field := range input.fields {
+		args = append(args, call.NewArgument(field.name, field.value.ToLiteral(), false))
 	}
 	return call.NewLiteralObject(args...)
-}
-
-func collectLiteralArgs(obj any) ([]*call.Argument, error) {
-	objT := reflect.TypeOf(obj)
-	objV := reflect.ValueOf(obj)
-	if objV.Kind() != reflect.Struct {
-		// TODO handle pointer?
-		return nil, fmt.Errorf("object must be a struct, got %T", obj)
-	}
-	args := []*call.Argument{}
-	for i := range objV.NumField() {
-		fieldT := objT.Field(i)
-		name := fieldT.Tag.Get("name")
-		if name == "" {
-			name = strcase.ToLowerCamel(fieldT.Name)
-		}
-		if name == "-" {
-			continue
-		}
-		fieldI := objV.Field(i).Interface()
-		if fieldT.Anonymous {
-			subArgs, err := collectLiteralArgs(fieldI)
-			if err != nil {
-				return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
-			}
-			args = append(args, subArgs...)
-			continue
-		}
-		input, err := builtinOrInput(fieldI)
-		if err != nil {
-			return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
-		}
-		args = append(args, call.NewArgument(
-			name,
-			input.ToLiteral(),
-			false,
-		))
-	}
-	return args, nil
 }

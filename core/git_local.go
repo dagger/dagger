@@ -6,14 +6,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/util/gitutil"
 )
 
@@ -73,7 +72,7 @@ func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*Fil
 		return nil, err
 	}
 
-	return repo.Directory.Self().File(ctx, filepath.Join(gitDir, filename))
+	return repo.Directory.Self().Subfile(ctx, repo.Directory, filepath.Join(gitDir, filename))
 }
 
 func (repo *LocalGitRepository) Dirty(ctx context.Context) (inst dagql.ObjectResult[*Directory], rerr error) {
@@ -86,33 +85,18 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 	if err != nil {
 		return inst, err
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, err
-	}
-	cache := query.BuildkitCache()
+	cache := query.SnapshotManager()
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return inst, fmt.Errorf("no buildkit session group in context")
-	}
-
-	llb := repo.Directory.Self().LLB
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{Definition: llb})
+	parent, err := repo.Directory.Self().Snapshot.GetOrEval(ctx, repo.Directory.Result)
 	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("get git directory snapshot: %w", err)
 	}
-	ref, err := res.SingleRef()
+	repoDirPath, err := repo.Directory.Self().Dir.GetOrEval(ctx, repo.Directory.Result)
 	if err != nil {
-		return inst, err
-	}
-	parent, err := ref.CacheRef(ctx)
-	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("get git directory path: %w", err)
 	}
 
-	bkref, err := cache.New(ctx, parent, bkSessionGroup,
-		bkcache.CachePolicyRetain,
+	bkref, err := cache.New(ctx, parent,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("git cleaned worktree"))
 
@@ -125,8 +109,8 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 		}
 	}()
 	skip := false
-	err = MountRef(ctx, bkref, bkSessionGroup, func(parentRoot string, _ *mount.Mount) error {
-		src, err := fs.RootPath(parentRoot, repo.Directory.Self().Dir)
+	err = MountRef(ctx, bkref, func(parentRoot string, _ *mount.Mount) error {
+		src, err := fs.RootPath(parentRoot, repoDirPath)
 		if err != nil {
 			return err
 		}
@@ -195,15 +179,26 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 		return repo.Directory, nil
 	}
 
-	dir := NewDirectory(nil, repo.Directory.Self().Dir, query.Platform(), nil)
 	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return inst, err
 	}
 	bkref = nil
-	dir.Result = snap
+	dir := &Directory{
+		Platform: query.Platform(),
+		Services: slices.Clone(repo.Directory.Self().Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	dir.Dir.setValue(repoDirPath)
+	dir.Snapshot.setValue(snap)
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		_ = dir.OnRelease(context.WithoutCancel(ctx))
+		return inst, err
+	}
+	return inst, nil
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
@@ -221,15 +216,24 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTag
 	}
 	defer detach()
 
-	return mountLLB(ctx, repo.Directory.Self().LLB, func(root string) error {
-		src, err := fs.RootPath(root, repo.Directory.Self().Dir)
+	ref, err := repo.Directory.Self().Snapshot.GetOrEval(ctx, repo.Directory.Result)
+	if err != nil {
+		return err
+	}
+	repoDirPath, err := repo.Directory.Self().Dir.GetOrEval(ctx, repo.Directory.Result)
+	if err != nil {
+		return err
+	}
+
+	return MountRef(ctx, ref, func(root string, _ *mount.Mount) error {
+		src, err := fs.RootPath(root, repoDirPath)
 		if err != nil {
 			return err
 		}
 
 		git := gitutil.NewGitCLI(gitutil.WithDir(src))
 		return fn(git)
-	})
+	}, mountRefAsReadOnly)
 }
 
 func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
@@ -241,15 +245,9 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	if err != nil {
 		return nil, err
 	}
-	cache := query.BuildkitCache()
+	cache := query.SnapshotManager()
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
-	bkref, err := cache.New(ctx, nil, bkSessionGroup,
-		bkcache.CachePolicyRetain,
+	bkref, err := cache.New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("git local checkout (%s %s)", ref.Ref.Name, ref.Ref.SHA)))
 	if err != nil {
@@ -267,7 +265,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not find git url: %w", err)
 		}
 
-		return MountRef(ctx, bkref, bkSessionGroup, func(checkoutDir string, _ *mount.Mount) error {
+		return MountRef(ctx, bkref, func(checkoutDir string, _ *mount.Mount) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err
@@ -284,12 +282,17 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		return nil, fmt.Errorf("failed to checkout %s: %w", ref.Ref.Name, err)
 	}
 
-	dir := NewDirectory(nil, "/", query.Platform(), nil)
 	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return nil, err
 	}
 	bkref = nil
-	dir.Result = snap
+	dir := &Directory{
+		Platform: query.Platform(),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	dir.Dir.setValue("/")
+	dir.Snapshot.setValue(snap)
 	return dir, nil
 }
