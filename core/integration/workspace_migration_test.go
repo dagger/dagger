@@ -152,6 +152,54 @@ type Myapp {
 		require.NotContains(t, configOut, `# Secret`)
 	})
 
+	t.Run("settings hints skip args not configurable from workspace settings", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
+
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "defaults", "source": "./toolchain"}
+  ]
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithDirectory("toolchain", c.Host().Directory(toolchainSrc)).
+				WithNewFile("toolchain/main.go", `package main
+
+import "dagger/defaults/internal/dagger"
+
+type Defaults struct{}
+
+func New(
+	// Greeting to use.
+	// +default="hello"
+	greeting string,
+	// Secret reference.
+	// +optional
+	secret *dagger.Secret,
+	// Source directory.
+	// +optional
+	dir *dagger.Directory,
+	// Workspace is injected by Dagger.
+	workspace *dagger.Workspace,
+	// Cache volume cannot be resolved from workspace settings.
+	cache *dagger.CacheVolume,
+) *Defaults {
+	return &Defaults{}
+}
+`)
+		}).With(daggerExec("migrate", "-y"))
+
+		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, `[modules.defaults]`)
+		require.Contains(t, configOut, `# settings.greeting = "hello"`)
+		require.Contains(t, configOut, `# settings.secret = "env://MY_SECRET"`)
+		require.Contains(t, configOut, `# settings.dir = "./path"`)
+		require.NotContains(t, configOut, `settings.workspace`)
+		require.NotContains(t, configOut, `settings.cache`)
+	})
+
 	t.Run("dot dagger source keeps toolchain and migrated main module hints", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		mainModuleSrc := filepath.Join("testdata", "modules", "go", "defaults", "superconstructor")

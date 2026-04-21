@@ -149,6 +149,37 @@ secretKey = "op://vault/aws"
 		require.NotContains(t, output, "entrypoint")
 	})
 
+	t.Run("settings MODULE skips args not configurable from workspace settings", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.resources]
+source = "../modules/resources"
+
+[modules.resources.settings]
+name = "demo"
+secret = "env://TOKEN"
+`, workspaceSettingsResourcesModule("modules/resources", "resources"))
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "resources")
+		require.NoError(t, err)
+
+		output := string(out)
+		require.Contains(t, output, "name")
+		require.Contains(t, output, "demo")
+		require.Contains(t, output, "secret")
+		require.Contains(t, output, "env://TOKEN")
+		require.Contains(t, output, "dir")
+		require.Contains(t, output, "labels")
+		require.NotContains(t, output, "workspace")
+		require.NotContains(t, output, "cache")
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "resources", "workspace")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "resources" has no setting "workspace"`)
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "resources", "cache")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "resources" has no setting "cache"`)
+	})
+
 	t.Run("settings MODULE in env scope shows effective values after overlay", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "../modules/aws"
@@ -540,6 +571,38 @@ func New(
 		Retries:  retries,
 		Tags:     tags,
 	}
+}
+`,
+	}
+}
+
+func workspaceSettingsResourcesModule(relDir, name string) workspaceSettingsModuleFixture {
+	return workspaceSettingsModuleFixture{
+		relDir: relDir,
+		name:   name,
+		main: `package main
+
+import "dagger/resources/internal/dagger"
+
+type Resources struct{}
+
+func New(
+	// Human-readable resource name.
+	name string,
+	// Secret reference.
+	// +optional
+	secret *dagger.Secret,
+	// Source directory.
+	// +optional
+	dir *dagger.Directory,
+	// Resource labels.
+	labels []string,
+	// Workspace is injected by Dagger.
+	workspace *dagger.Workspace,
+	// Cache volume cannot be resolved from workspace settings.
+	cache *dagger.CacheVolume,
+) *Resources {
+	return &Resources{}
 }
 `,
 	}

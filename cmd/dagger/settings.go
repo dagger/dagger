@@ -79,7 +79,7 @@ func (m workspaceSettingsModule) lookupArg(name string) (*modFunctionArg, error)
 	if m.Constructor == nil {
 		return nil, fmt.Errorf("module %q has no discoverable settings", m.Name)
 	}
-	for _, arg := range m.Constructor.Args {
+	for _, arg := range m.settingArgs() {
 		switch {
 		case strings.EqualFold(arg.Name, name):
 			return arg, nil
@@ -88,6 +88,79 @@ func (m workspaceSettingsModule) lookupArg(name string) (*modFunctionArg, error)
 		}
 	}
 	return nil, fmt.Errorf("module %q has no setting %q", m.Name, name)
+}
+
+func (m workspaceSettingsModule) settingArgs() []*modFunctionArg {
+	if m.Constructor == nil {
+		return nil
+	}
+	args := make([]*modFunctionArg, 0, len(m.Constructor.Args))
+	for _, arg := range m.Constructor.Args {
+		if !isWorkspaceSettingArg(arg) {
+			continue
+		}
+		args = append(args, arg)
+	}
+	return args
+}
+
+var addressSupportedWorkspaceSettingObjectTypes = map[string]struct{}{
+	Container:     {},
+	Directory:     {},
+	File:          {},
+	Secret:        {},
+	Service:       {},
+	Socket:        {},
+	GitRepository: {},
+	GitRef:        {},
+}
+
+func isWorkspaceSettingArg(arg *modFunctionArg) bool {
+	return arg != nil && isWorkspaceSettingType(arg.TypeDef)
+}
+
+func isWorkspaceSettingType(typeDef *modTypeDef) bool {
+	if typeDef == nil {
+		return false
+	}
+
+	if isWorkspaceSettingScalarKind(typeDef.Kind) {
+		return true
+	}
+
+	switch typeDef.Kind {
+	case dagger.TypeDefKindObjectKind:
+		if typeDef.AsObject == nil {
+			return false
+		}
+		_, ok := addressSupportedWorkspaceSettingObjectTypes[typeDef.AsObject.Name]
+		return ok
+	case dagger.TypeDefKindListKind:
+		if typeDef.AsList == nil {
+			return false
+		}
+		return isWorkspaceSettingListElementType(typeDef.AsList.ElementTypeDef)
+	default:
+		return false
+	}
+}
+
+func isWorkspaceSettingListElementType(typeDef *modTypeDef) bool {
+	return typeDef != nil && isWorkspaceSettingScalarKind(typeDef.Kind)
+}
+
+func isWorkspaceSettingScalarKind(kind dagger.TypeDefKind) bool {
+	switch kind {
+	case dagger.TypeDefKindStringKind,
+		dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindFloatKind,
+		dagger.TypeDefKindBooleanKind,
+		dagger.TypeDefKindScalarKind,
+		dagger.TypeDefKindEnumKind:
+		return true
+	default:
+		return false
+	}
 }
 
 type workspaceSettingsState struct {
@@ -111,6 +184,8 @@ func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client) (*works
 		return nil, err
 	}
 
+	// FIXME: Move settings discovery into a first-class engine API and have
+	// the CLI render that response instead of scanning currentTypeDefs here.
 	def, err := initializeWorkspace(ctx, dag, loadTypeDefsOpts{HideCore: true})
 	if err != nil {
 		return nil, err
@@ -181,10 +256,11 @@ type workspaceSettingsTableRow struct {
 func writeWorkspaceSettingsTable(ctx context.Context, out io.Writer, ws *dagger.Workspace, modules []workspaceSettingsModule) error {
 	var rows []workspaceSettingsTableRow
 	for _, module := range modules {
-		if module.Constructor == nil || len(module.Constructor.Args) == 0 {
+		args := module.settingArgs()
+		if len(args) == 0 {
 			continue
 		}
-		for _, arg := range module.Constructor.Args {
+		for _, arg := range args {
 			value, ok, err := readWorkspaceModuleSettingValue(ctx, ws, module.Name, arg.Name)
 			if err != nil {
 				return err

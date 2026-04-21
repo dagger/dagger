@@ -224,12 +224,16 @@ func constructorHintsFromModule(mod *core.Module) []workspace.ConstructorArgHint
 
 	hints := make([]workspace.ConstructorArgHint, 0, len(mainObj.Constructor.Value.Args))
 	for _, arg := range mainObj.Constructor.Value.Args {
-		hints = append(hints, buildHintFromArg(arg))
+		hint, ok := buildHintFromArg(arg)
+		if !ok {
+			continue
+		}
+		hints = append(hints, hint)
 	}
 	return hints
 }
 
-var configurableObjectTypes = map[string]string{
+var addressSupportedObjectSettingExamples = map[string]string{
 	"Container":     `"alpine:latest"`,
 	"Directory":     `"./path"`,
 	"File":          `"./file"`,
@@ -240,56 +244,63 @@ var configurableObjectTypes = map[string]string{
 	"Socket":        `"unix:///var/run/docker.sock"`,
 }
 
-func buildHintFromArg(arg *core.FunctionArg) workspace.ConstructorArgHint {
+func buildHintFromArg(arg *core.FunctionArg) (workspace.ConstructorArgHint, bool) {
 	typeLabel, exampleValue, configurable := typeInfoFromTypeDef(arg.TypeDef)
+	if !configurable {
+		return workspace.ConstructorArgHint{}, false
+	}
 	if arg.DefaultValue != nil {
 		if formatted := formatDefaultAsToml(arg.DefaultValue); formatted != "" {
 			exampleValue = formatted
 		}
-	}
-	if !configurable {
-		typeLabel += " (not configurable via settings)"
 	}
 	return workspace.ConstructorArgHint{
 		Name:         arg.Name,
 		TypeLabel:    typeLabel,
 		Description:  arg.Description,
 		ExampleValue: exampleValue,
-	}
+	}, true
 }
 
 func typeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, configurable bool) {
+	if td == nil {
+		return "", "", false
+	}
+
+	if isWorkspaceSettingScalarKind(td.Kind) {
+		switch td.Kind {
+		case core.TypeDefKindString:
+			return "string", `""`, true
+		case core.TypeDefKindInteger:
+			return "int", "0", true
+		case core.TypeDefKindFloat:
+			return "float", "0.0", true
+		case core.TypeDefKindBoolean:
+			return "bool", "false", true
+		case core.TypeDefKindEnum:
+			if td.AsEnum.Valid {
+				return td.AsEnum.Value.Name, `""`, true
+			}
+			return "enum", `""`, true
+		case core.TypeDefKindScalar:
+			if td.AsScalar.Valid {
+				return td.AsScalar.Value.Name, `""`, true
+			}
+			return "scalar", `""`, true
+		}
+	}
+
 	switch td.Kind {
-	case core.TypeDefKindString:
-		return "string", `""`, true
-	case core.TypeDefKindInteger:
-		return "int", "0", true
-	case core.TypeDefKindFloat:
-		return "float", "0.0", true
-	case core.TypeDefKindBoolean:
-		return "bool", "false", true
-	case core.TypeDefKindEnum:
-		if td.AsEnum.Valid {
-			return td.AsEnum.Value.Name, `""`, true
-		}
-		return "enum", `""`, true
-	case core.TypeDefKindScalar:
-		if td.AsScalar.Valid {
-			return td.AsScalar.Value.Name, `""`, true
-		}
-		return "scalar", `""`, true
 	case core.TypeDefKindObject:
 		if td.AsObject.Valid {
 			objName := td.AsObject.Value.Name
-			if example, ok := configurableObjectTypes[objName]; ok {
+			if example, ok := addressSupportedObjectSettingExamples[objName]; ok {
 				return objName, example, true
 			}
-			return objName, `"..."`, false
 		}
-		return "object", `"..."`, false
 	case core.TypeDefKindList:
 		if td.AsList.Valid {
-			elemLabel, _, elemConfigurable := typeInfoFromTypeDef(td.AsList.Value.ElementTypeDef)
+			elemLabel, _, elemConfigurable := listElementTypeInfoFromTypeDef(td.AsList.Value.ElementTypeDef)
 			example := `["..."]`
 			switch {
 			case elemConfigurable && td.AsList.Value.ElementTypeDef.Kind == core.TypeDefKindBoolean:
@@ -303,9 +314,28 @@ func typeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, conf
 			}
 			return "[]" + elemLabel, example, elemConfigurable
 		}
-		return "list", `["..."]`, false
+	}
+	return "", "", false
+}
+
+func listElementTypeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, configurable bool) {
+	if td != nil && isWorkspaceSettingScalarKind(td.Kind) {
+		return typeInfoFromTypeDef(td)
+	}
+	return "", "", false
+}
+
+func isWorkspaceSettingScalarKind(kind core.TypeDefKind) bool {
+	switch kind {
+	case core.TypeDefKindString,
+		core.TypeDefKindInteger,
+		core.TypeDefKindFloat,
+		core.TypeDefKindBoolean,
+		core.TypeDefKindEnum,
+		core.TypeDefKindScalar:
+		return true
 	default:
-		return string(td.Kind), `"..."`, false
+		return false
 	}
 }
 
