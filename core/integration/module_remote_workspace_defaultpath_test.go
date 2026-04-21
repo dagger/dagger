@@ -147,21 +147,7 @@ git --git-dir=/srv/repo.git update-server-info
 	shortHost, err := gitSrv.Hostname(ctx)
 	require.NoError(t, err)
 
-	// The vcs URL parser (engine/vcs/vcs.go) requires at least one dot
-	// in the host component. The auto-generated service hostname is
-	// dot-less ("<hash>"), but it IS registered in the session DNS via
-	// search-domain expansion to "<hash>.<sessionhash>.dagger.local".
-	// Resolve it to an IP in any container that shares the session DNS
-	// — buildkit already puts the session search domain in resolv.conf —
-	// and use the IP in the URL. IPs satisfy the vcs regex (they have
-	// dots) and need no DNS at all.
-	getentOut, err := c.Container().From(alpineImage).
-		WithExec([]string{"getent", "hosts", shortHost}).
-		Stdout(ctx)
-	require.NoError(t, err, "could not resolve git service hostname %q", shortHost)
-	fields := strings.Fields(getentOut)
-	require.NotEmpty(t, fields, "unexpected getent output: %q", getentOut)
-	serviceIP := fields[0]
+	serviceIP := resolveServiceIP(ctx, t, c, shortHost)
 
 	modPath := "http://" + serviceIP + "/repo.git@" + commit
 
@@ -220,6 +206,248 @@ git --git-dir=/srv/repo.git update-server-info
 			"explicit -m remote ref must take precedence over a local workspace missing the target subtree:\n%s", out)
 		require.Regexp(t, `read-check.*OK`, out)
 	})
+}
+
+// TestRemoteModuleSameRepoToolchainDefaultPath covers the remote-module shape
+// where the toolchain lives in the same repo as the module targeted by -m. No
+// Workspace argument is involved; this is plain +defaultPath resolution.
+func (ModuleSuite) TestRemoteModuleSameRepoToolchainDefaultPath(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const moduleFileContent = "hello from the remote module repo"
+	const localWorkspaceFileContent = "hello from the local workspace"
+
+	const greeterSource = `package main
+
+import (
+	"context"
+	"dagger/greeter/internal/dagger"
+)
+
+type Greeter struct {
+	Workspace *dagger.Directory
+}
+
+func New(
+	// +defaultPath="/"
+	workspace *dagger.Directory,
+) *Greeter {
+	return &Greeter{Workspace: workspace}
+}
+
+func (m *Greeter) Read(ctx context.Context) (string, error) {
+	return m.Workspace.
+		Directory("target-subdir/maven").
+		File("hello.txt").
+		Contents(ctx)
+}
+`
+
+	moduleRepo := func() *dagger.Container {
+		return goGitBase(t, c).
+			WithNewFile("/work/target-subdir/maven/hello.txt", moduleFileContent).
+			WithWorkdir("/work/toolchains/greeter").
+			With(daggerExec("init", "--sdk=go", "--name=greeter", "--source=.")).
+			With(sdkSource("go", greeterSource)).
+			WithWorkdir("/work").
+			With(daggerExec("init")).
+			With(daggerExec("toolchain", "install", "./toolchains/greeter")).
+			WithExec([]string{"sh", "-c", `git add . && git commit -m "init module"`})
+	}
+
+	moduleBareSetup := moduleRepo().
+		WithExec([]string{"sh", "-c", `
+set -eux
+git init --bare --initial-branch=main /srv/module.git
+git remote add origin /srv/module.git
+git push origin HEAD:refs/heads/main
+git --git-dir=/srv/module.git update-server-info
+`})
+
+	moduleCommitOut, err := moduleBareSetup.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	moduleCommit := strings.TrimSpace(moduleCommitOut)
+
+	moduleSrv, _ := gitSmartHTTPServiceDirAuth(
+		ctx, t, c,
+		"",
+		moduleBareSetup.Directory("/srv"),
+		"", nil,
+	)
+	moduleSrv, err = moduleSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = moduleSrv.Stop(ctx) })
+
+	moduleHost, err := moduleSrv.Hostname(ctx)
+	require.NoError(t, err)
+	modPath := "http://" + resolveServiceIP(ctx, t, c, moduleHost) + "/module.git@" + moduleCommit
+
+	t.Run("empty cwd", func(ctx context.Context, t *testctx.T) {
+		out, err := c.Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/empty").
+			With(daggerExec("-m", modPath, "--progress=report", "call", "greeter", "read")).
+			CombinedOutput(ctx)
+		require.NoError(t, err,
+			"module-local toolchain +defaultPath must resolve from the remote -m module repo:\n%s", out)
+		require.Contains(t, out, moduleFileContent)
+	})
+
+	t.Run("workspace cwd", func(ctx context.Context, t *testctx.T) {
+		out, err := moduleRepo().
+			WithNewFile("/work/target-subdir/maven/hello.txt", localWorkspaceFileContent).
+			With(daggerExec("-m", modPath, "--progress=report", "call", "greeter", "read")).
+			CombinedOutput(ctx)
+		require.NoError(t, err,
+			"explicit -m remote module must beat the local workspace for module-local toolchain +defaultPath:\n%s", out)
+		require.Contains(t, out, moduleFileContent)
+		require.NotContains(t, out, localWorkspaceFileContent)
+	})
+}
+
+// TestRemoteModuleCrossRepoToolchainDefaultPath covers the remote-module shape
+// where the toolchain is another remote git module from a different repo. No
+// Workspace argument is involved; plain +defaultPath must still resolve from
+// the remote module repo the user targeted with -m, not from the toolchain
+// repo.
+func (ModuleSuite) TestRemoteModuleCrossRepoToolchainDefaultPath(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const moduleFileContent = "hello from the remote module repo"
+	const toolchainFileContent = "hello from the remote toolchain repo"
+	const localWorkspaceFileContent = "hello from the local workspace"
+
+	const greeterSource = `package main
+
+import (
+	"context"
+	"dagger/greeter/internal/dagger"
+)
+
+type Greeter struct {
+	Workspace *dagger.Directory
+}
+
+func New(
+	// +defaultPath="/"
+	workspace *dagger.Directory,
+) *Greeter {
+	return &Greeter{Workspace: workspace}
+}
+
+func (m *Greeter) Read(ctx context.Context) (string, error) {
+	return m.Workspace.
+		Directory("target-subdir/maven").
+		File("hello.txt").
+		Contents(ctx)
+}
+`
+
+	toolchainBareSetup := goGitBase(t, c).
+		WithNewFile("/work/target-subdir/maven/hello.txt", toolchainFileContent).
+		With(daggerExec("init", "--sdk=go", "--name=greeter", "--source=.")).
+		With(sdkSource("go", greeterSource)).
+		WithExec([]string{"sh", "-c", `git add . && git commit -m "init toolchain"`}).
+		WithExec([]string{"sh", "-c", `
+set -eux
+git init --bare --initial-branch=main /srv/toolchain.git
+git remote add origin /srv/toolchain.git
+git push origin HEAD:refs/heads/main
+git --git-dir=/srv/toolchain.git update-server-info
+`})
+
+	toolchainCommitOut, err := toolchainBareSetup.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	toolchainCommit := strings.TrimSpace(toolchainCommitOut)
+
+	toolchainSrv, _ := gitSmartHTTPServiceDirAuth(
+		ctx, t, c,
+		"",
+		toolchainBareSetup.Directory("/srv"),
+		"", nil,
+	)
+	toolchainSrv, err = toolchainSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = toolchainSrv.Stop(ctx) })
+
+	toolchainHost, err := toolchainSrv.Hostname(ctx)
+	require.NoError(t, err)
+	toolchainRef := "http://" + resolveServiceIP(ctx, t, c, toolchainHost) + "/toolchain.git@" + toolchainCommit
+
+	moduleRepo := func() *dagger.Container {
+		return goGitBase(t, c).
+			WithNewFile("/work/target-subdir/maven/hello.txt", moduleFileContent).
+			With(daggerExec("init")).
+			With(daggerExec("toolchain", "install", "--name", "greeter", toolchainRef)).
+			WithExec([]string{"sh", "-c", `git add . && git commit -m "init module"`})
+	}
+
+	moduleBareSetup := moduleRepo().
+		WithExec([]string{"sh", "-c", `
+set -eux
+git init --bare --initial-branch=main /srv/module.git
+git remote add origin /srv/module.git
+git push origin HEAD:refs/heads/main
+git --git-dir=/srv/module.git update-server-info
+`})
+
+	moduleCommitOut, err := moduleBareSetup.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	moduleCommit := strings.TrimSpace(moduleCommitOut)
+
+	moduleSrv, _ := gitSmartHTTPServiceDirAuth(
+		ctx, t, c,
+		"",
+		moduleBareSetup.Directory("/srv"),
+		"", nil,
+	)
+	moduleSrv, err = moduleSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = moduleSrv.Stop(ctx) })
+
+	moduleHost, err := moduleSrv.Hostname(ctx)
+	require.NoError(t, err)
+	modPath := "http://" + resolveServiceIP(ctx, t, c, moduleHost) + "/module.git@" + moduleCommit
+
+	t.Run("empty cwd", func(ctx context.Context, t *testctx.T) {
+		out, err := c.Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/empty").
+			With(daggerExec("-m", modPath, "--progress=report", "call", "greeter", "read")).
+			CombinedOutput(ctx)
+		require.NoError(t, err,
+			"remote toolchain +defaultPath must resolve from the -m module repo, not the toolchain repo:\n%s", out)
+		require.Contains(t, out, moduleFileContent)
+		require.NotContains(t, out, toolchainFileContent)
+	})
+
+	t.Run("workspace cwd", func(ctx context.Context, t *testctx.T) {
+		out, err := moduleRepo().
+			WithNewFile("/work/target-subdir/maven/hello.txt", localWorkspaceFileContent).
+			With(daggerExec("-m", modPath, "--progress=report", "call", "greeter", "read")).
+			CombinedOutput(ctx)
+		require.NoError(t, err,
+			"explicit -m remote module must beat both the local workspace and the remote toolchain repo for +defaultPath:\n%s", out)
+		require.Contains(t, out, moduleFileContent)
+		require.NotContains(t, out, toolchainFileContent)
+		require.NotContains(t, out, localWorkspaceFileContent)
+	})
+}
+
+func resolveServiceIP(ctx context.Context, t *testctx.T, c *dagger.Client, hostname string) string {
+	t.Helper()
+
+	// The vcs URL parser (engine/vcs/vcs.go) requires at least one dot in the
+	// host component. Auto-generated service hostnames are dot-less, but they
+	// are registered in the session DNS via search-domain expansion. Resolve
+	// them to an IP so the URL is both parser-compatible and reachable.
+	getentOut, err := c.Container().From(alpineImage).
+		WithExec([]string{"getent", "hosts", hostname}).
+		Stdout(ctx)
+	require.NoError(t, err, "could not resolve git service hostname %q", hostname)
+	fields := strings.Fields(getentOut)
+	require.NotEmpty(t, fields, "unexpected getent output: %q", getentOut)
+	return fields[0]
 }
 
 var _ = dagger.ReturnTypeAny // keep the dagger import live for *dagger.Container types
