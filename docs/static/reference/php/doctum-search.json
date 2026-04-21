@@ -1538,6 +1538,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Volume",
+			"p": "Dagger/Volume.html",
+			"d": "<p>A reference to an engine-managed volume.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\VolumeId",
+			"p": "Dagger/VolumeId.html",
+			"d": "<p>The <code>VolumeID</code> scalar type represents an identifier for an object of type Volume.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Workspace",
 			"p": "Dagger/Workspace.html",
 			"d": "<p>A Dagger workspace detected from the current working directory.</p>",
@@ -1840,6 +1860,12 @@
 			"n": "Dagger\\Binding::asUpGroup",
 			"p": "Dagger/Binding.html#method_asUpGroup",
 			"d": "<p>Retrieve the binding value, as type UpGroup</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asVolume",
+			"p": "Dagger/Binding.html#method_asVolume",
+			"d": "<p>Retrieve the binding value, as type Volume</p>"
 		},
 		{
 			"t": "M",
@@ -2641,6 +2667,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadVolumeFromID",
+			"p": "Dagger/Client.html#method_loadVolumeFromID",
+			"d": "<p>Load a Volume from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadWorkspaceFromID",
 			"p": "Dagger/Client.html#method_loadWorkspaceFromID",
 			"d": "<p>Load a Workspace from its ID.</p>"
@@ -2686,6 +2718,12 @@
 			"n": "Dagger\\Client::sourceMap",
 			"p": "Dagger/Client.html#method_sourceMap",
 			"d": "<p>Creates source map metadata.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::sshfsVolume",
+			"p": "Dagger/Client.html#method_sshfsVolume",
+			"d": "<p>Create or retrieve an engine-managed SSHFS volume.</p>"
 		},
 		{
 			"t": "M",
@@ -3202,6 +3240,12 @@
 			"n": "Dagger\\Container::withUser",
 			"p": "Dagger/Container.html#method_withUser",
 			"d": "<p>Retrieves this container with a different command user.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::withVolumeMount",
+			"p": "Dagger/Container.html#method_withVolumeMount",
+			"d": "<p>Retrieves this container plus an engine-managed volume bind-mounted at the given path.</p>"
 		},
 		{
 			"t": "M",
@@ -4270,6 +4314,18 @@
 			"n": "Dagger\\Env::withUpOutput",
 			"p": "Dagger/Env.html#method_withUpOutput",
 			"d": "<p>Declare a desired Up output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withVolumeInput",
+			"p": "Dagger/Env.html#method_withVolumeInput",
+			"d": "<p>Create or update a binding of type Volume in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withVolumeOutput",
+			"p": "Dagger/Env.html#method_withVolumeOutput",
+			"d": "<p>Declare a desired Volume output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -6478,6 +6534,12 @@
 			"n": "Dagger\\UpGroup::run",
 			"p": "Dagger/UpGroup.html#method_run",
 			"d": "<p>Execute all selected service functions</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Volume::id",
+			"p": "Dagger/Volume.html#method_id",
+			"d": "<p>A unique identifier for this Volume.</p>"
 		},
 		{
 			"t": "M",

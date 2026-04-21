@@ -1246,6 +1246,28 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Retrieves this container plus an engine-managed volume bind-mounted at the given path.
+  """
+  @spec with_volume_mount(t(), String.t(), Dagger.Volume.t(), [
+          {:readonly, boolean() | nil},
+          {:expand, boolean() | nil}
+        ]) :: Dagger.Container.t()
+  def with_volume_mount(%__MODULE__{} = container, path, volume, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withVolumeMount")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("volume", Dagger.ID.id!(volume))
+      |> QB.maybe_put_arg("readonly", optional_args[:readonly])
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Change the container's working directory. Like WORKDIR in Dockerfile.
   """
   @spec with_workdir(t(), String.t(), [{:expand, boolean() | nil}]) :: Dagger.Container.t()

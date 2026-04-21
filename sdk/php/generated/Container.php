@@ -1062,6 +1062,27 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container plus an engine-managed volume bind-mounted at the given path.
+     */
+    public function withVolumeMount(
+        string $path,
+        VolumeId|Volume $volume,
+        ?bool $readonly = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolumeMount');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('volume', $volume);
+        if (null !== $readonly) {
+        $innerQueryBuilder->setArgument('readonly', $readonly);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Change the container's working directory. Like WORKDIR in Dockerfile.
      */
     public function withWorkdir(string $path, ?bool $expand = false): Container
