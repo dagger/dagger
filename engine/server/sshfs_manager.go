@@ -311,14 +311,10 @@ func (m *sshfsManager) release(ctx context.Context, id string) error {
 	return nil
 }
 
-// RegisterSSHFSVolume reads the two secrets' plaintexts, materializes them as
-// key files under the engine root, and mounts the endpoint via sshfs. Key
-// files are named by digest of the plaintext so repeat mounts with the same
-// keys reuse the same files (and the underlying mount refcounts correctly).
+// RegisterSSHFSVolume writes the key plaintexts to digest-named files under
+// the engine root (so repeat calls with the same keys reuse them) and mounts
+// the endpoint via sshfs.
 func (srv *Server) RegisterSSHFSVolume(ctx context.Context, endpoint string, privateKey, publicKey *core.Secret) (*core.Volume, error) {
-	if privateKey == nil || publicKey == nil {
-		return nil, fmt.Errorf("sshfs volume requires both privateKey and publicKey")
-	}
 	privPlain, err := privateKey.Plaintext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read sshfs private key plaintext: %w", err)
@@ -341,21 +337,9 @@ func (srv *Server) RegisterSSHFSVolume(ctx context.Context, endpoint string, pri
 		return nil, fmt.Errorf("write ssh public key: %w", err)
 	}
 
-	if srv.sshfsMgr == nil {
-		srv.sshfsMgr = newSSHFSManager(srv.rootDir)
-	}
 	id, mp, err := srv.sshfsMgr.ensureMounted(ctx, endpoint, privPath, pubPath)
 	if err != nil {
 		return nil, err
 	}
 	return &core.Volume{ID: id, MountPath: mp}, nil
-}
-
-// ReleaseSSHFSVolume decrements the refcount for the volume id and unmounts
-// if it reaches zero. Exposed for future cleanup hooks.
-func (srv *Server) ReleaseSSHFSVolume(ctx context.Context, id string) error {
-	if srv.sshfsMgr == nil {
-		return fmt.Errorf("sshfs manager not initialized")
-	}
-	return srv.sshfsMgr.release(ctx, id)
 }

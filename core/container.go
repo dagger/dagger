@@ -453,8 +453,7 @@ type HostMountSource struct {
 }
 
 type VolumeMountSource struct {
-	// The engine-managed volume backing this mount. At exec time we
-	// desugar to an engine-side HostMount using the volume's MountPath.
+	// The engine-managed volume backing this mount.
 	Volume dagql.ObjectResult[*Volume]
 }
 

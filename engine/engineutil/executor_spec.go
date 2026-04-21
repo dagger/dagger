@@ -306,11 +306,8 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 
 type hostBindMount struct {
 	srcPath string
-	// allowRW lets Mount() honor a caller's writable request. The injectInit
-	// path still mounts dagger-init read-only by leaving this false.
 	allowRW bool
-	// rw is the final read/write state decided by the mount's Mount() call.
-	rw bool
+	rw      bool
 }
 
 var _ executor.Mountable = (*hostBindMount)(nil)
@@ -355,11 +352,6 @@ func (w *Worker) injectInit(_ context.Context, state *execState) error {
 	return nil
 }
 
-// setupHostMounts appends engine-host bind mounts requested via
-// ExecutionMetadata.HostMounts. The source path is resolved/existence-checked
-// in the engine namespace; the OCI runtime then binds it into the container
-// at Target. allowRW on hostBindMount opts this path out of the default
-// readonly-only restriction that guards injectInit.
 func (w *Worker) setupHostMounts(_ context.Context, state *execState) error {
 	if w.execMD == nil || len(w.execMD.HostMounts) == 0 {
 		return nil

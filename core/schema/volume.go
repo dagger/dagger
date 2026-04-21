@@ -11,9 +11,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-// volumeSchema wires the Volume type and its constructors into the core
-// schema. Volumes are opaque — they have no own fields — but the engine
-// exposes sources for them as Query-level fields (currently just sshfsVolume).
 type volumeSchema struct{}
 
 var _ SchemaResolvers = &volumeSchema{}
@@ -104,9 +101,8 @@ func (s *volumeSchema) sshfsVolume(ctx context.Context, parent dagql.ObjectResul
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, vol)
 }
 
-// withSSHFSRunningHost rewrites the host component of an ssh endpoint to the
-// resolved host of a service dependency, preserving user, port, and path.
-// Supports both ssh://user@host[:port]/path and scp-style user@host[:port]/path.
+// withSSHFSRunningHost rewrites the host component of an ssh endpoint,
+// preserving user, port, and path. Accepts ssh:// and scp-style forms.
 func withSSHFSRunningHost(endpoint, host string) (string, error) {
 	if strings.HasPrefix(endpoint, "ssh://") {
 		u, err := url.Parse(endpoint)
