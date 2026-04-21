@@ -270,7 +270,6 @@ func isMounted(mountPath string) bool {
 	return bytes.Contains(data, needle)
 }
 
-
 // RegisterSSHFSVolume writes the key plaintexts to digest-named files under
 // the engine root (so repeat calls with the same keys reuse them) and mounts
 // the endpoint via sshfs.
