@@ -66,6 +66,28 @@ func (ModuleLoadingSuite) TestModuleSourceResolution(ctx context.Context, t *tes
 		require.JSONEq(t, `{"hello":"hello"}`, out)
 	})
 
+	t.Run("source may point to ancestor within context", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := goGitBase(t, c).
+			WithNewFile("source/main.dang", `
+type App {
+  pub hello: String! {
+    "hello from ancestor source"
+  }
+}
+`).
+			WithNewFile("configs/app/dagger.json", `{
+  "name": "app",
+  "sdk": {"source": "dang"},
+  "source": "../../source"
+}`)
+
+		out, err := ctr.With(daggerCallAt("configs/app", "hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from ancestor source", strings.TrimSpace(out))
+	})
+
 	t.Run("relative extra module path resolves from invocation cwd", func(ctx context.Context, t *testctx.T) {
 		t.Fatal(`FIXME: implement relative extra-module path coverage.
 

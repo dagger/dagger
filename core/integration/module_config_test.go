@@ -67,13 +67,13 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				requireErrOut(t, err, `source path ".." contains parent directory components`)
+				requireErrOut(t, err, `source path ".." escapes context from source root "."`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `source path ".." contains parent directory components`)
+				requireErrOut(t, err, `source path ".." escapes context from source root "."`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				requireErrOut(t, err, `source path ".." contains parent directory components`)
+				requireErrOut(t, err, `source path ".." escapes context from source root "."`)
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -89,13 +89,13 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
+				requireErrOut(t, err, `source path "/tmp" is absolute`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
+				requireErrOut(t, err, `source path "/tmp" is absolute`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
+				requireErrOut(t, err, `source path "/tmp" is absolute`)
 			})
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
@@ -105,7 +105,7 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					defer cleanup()
 
 					_, err := baseCtr(t, c).With(privateSetup).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
-					requireErrOut(t, err, `source path "../../../" contains parent directory components`)
+					requireErrOut(t, err, `source path "../../../" escapes context`)
 				})
 			})
 		})

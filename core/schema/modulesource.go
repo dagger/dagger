@@ -1252,11 +1252,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		}
 	}
 
-	// figure out source subpath
-	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
-		return fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
-	}
-
 	var sdkSource string
 	if modCfg.SDK != nil {
 		sdkSource = modCfg.SDK.Source
@@ -1272,7 +1267,14 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		src.SourceSubpath = src.SourceRootSubpath
 	case sdkSource != "" && modCfg.Source != "":
 		// sdk was set and source was too, get the full rel path under the context
-		src.SourceSubpath = filepath.Join(src.SourceRootSubpath, modCfg.Source)
+		if filepath.IsAbs(modCfg.Source) {
+			return fmt.Errorf("source path %q is absolute", modCfg.Source)
+		}
+		sourceSubpath := filepath.Join(src.SourceRootSubpath, modCfg.Source)
+		if !filepath.IsLocal(sourceSubpath) {
+			return fmt.Errorf("source path %q escapes context from source root %q", modCfg.Source, src.SourceRootSubpath)
+		}
+		src.SourceSubpath = sourceSubpath
 	}
 
 	// add the config file includes, rebasing them from being relative to the config file
