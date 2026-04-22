@@ -8,6 +8,7 @@ requiring all imports to be available.
 from __future__ import annotations
 
 import ast
+import logging
 import typing
 from typing import Any
 
@@ -15,6 +16,8 @@ import typing_extensions
 
 from dagger.mod._analyzer.errors import TypeResolutionError
 from dagger.mod._analyzer.metadata import LocationMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class StubType:
@@ -146,8 +149,15 @@ class StubNamespace:
                 if hasattr(dagger, name):
                     ns[name] = getattr(dagger, name)
 
-        except ImportError:
-            # dagger module not available, create stubs
+        except ImportError as e:
+            # Failing to import dagger itself means every dagger.* annotation
+            # will resolve to a stub; surface this loudly so the user doesn't
+            # silently get nonsense TypeDefs in their module.
+            logger.warning(
+                "Failed to import the dagger package during AST analysis (%s); "
+                "dagger.* type annotations will resolve to stubs.",
+                e,
+            )
             ns["dagger"] = StubType("dagger")
 
         return ns
@@ -175,8 +185,22 @@ class StubNamespace:
                 attr_name = parts[-1]
                 module = importlib.import_module(module_name)
                 self._namespace[key] = getattr(module, attr_name)
-        except (ImportError, AttributeError):
-            # Create a stub type for unavailable imports
+        except ImportError as e:
+            logger.debug(
+                "Import %r unavailable during AST analysis; using stub: %s",
+                name,
+                e,
+            )
+            self._namespace[key] = StubType(key, name)
+        except AttributeError as e:
+            # The module imported fine but the attribute does not exist — this
+            # is almost always a user typo, not a missing dependency.
+            logger.warning(
+                "Attribute %r missing on %r during AST analysis (%s); using stub.",
+                parts[-1] if len(parts) > 1 else name,
+                parts[0],
+                e,
+            )
             self._namespace[key] = StubType(key, name)
 
     def add_from_import(self, module: str, name: str, alias: str | None = None) -> None:
@@ -195,8 +219,22 @@ class StubNamespace:
 
             mod = importlib.import_module(module)
             self._namespace[key] = getattr(mod, name)
-        except (ImportError, AttributeError):
-            # Create a stub type
+        except ImportError as e:
+            logger.debug(
+                "from %s import %s unavailable during AST analysis; using stub: %s",
+                module,
+                name,
+                e,
+            )
+            self._namespace[key] = StubType(name, module)
+        except AttributeError as e:
+            logger.warning(
+                "from %s import %s: attribute missing during AST analysis (%s); "
+                "using stub — check for a typo in the import.",
+                module,
+                name,
+                e,
+            )
             self._namespace[key] = StubType(name, module)
 
     def add_declared_type(self, name: str) -> None:
