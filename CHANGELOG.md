@@ -983,8 +983,8 @@ Fixed a regression causing the LLM to see malformed non-string scalar responses.
 ### 🔥 Breaking Changes
 - To match automatic configuration, `insecure-entitlements` now includes `security.insecure` when configuring the engine manually by @jedevc in https://github.com/dagger/dagger/pull/9513
 - Module load performance is improved and related API refactored by @sipsma in https://github.com/dagger/dagger/pull/9505 \
-  Loading of modules (the `load module` step shown in progress output) is faster now in many cases. In particular:
-  - Cache utilization of module loading is greatly improved, which can decrease load times by up to a factor of 10 when re-calling functions after changing source code in a Daggerized repo.
+  Loading of modules (the `load module` step shown in progress output) is faster now in many cases. In particular: 
+  - Cache utilization of module loading is greatly improved, which can decrease load times by up to a factor of 10 when re-calling functions after changing source code in a Daggerized repo. 
   - Less extraneous files are loaded from the source repository
   
   Users of modules with large numbers of dependencies or in large git repositories are expected to see the most immediate benefit.
@@ -1772,7 +1772,7 @@ changes can be found in the PR descriptions linked above.
 
 ### Fixed
 - Restored `plain` progress output after removal in v0.11.0 by @morlay in https://github.com/dagger/dagger/pull/7069
-- Fixed various windows regressions by @jedevc in https://github.com/dagger/dagger/pull/7003 https://github.com/dagger/dagger/pull/7050 https://github.com/dagger/dagger/pull/7095
+- Fixed various windows regressions by @jedevc in https://github.com/dagger/dagger/pull/7003 https://github.com/dagger/dagger/pull/7050 https://github.com/dagger/dagger/pull/7095 
 - Git can now be used with dumb HTTP clones by @jedevc in https://github.com/dagger/dagger/pull/6992
 
 ### What to do next?
