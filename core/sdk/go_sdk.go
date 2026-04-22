@@ -213,6 +213,27 @@ func (sdk *goSDK) Codegen(
 		return nil, fmt.Errorf("failed to scope module source for go module sdk codegen: %w", err)
 	}
 
+	// Modules that opt into skip-codegen-at-runtime commit dagger.gen.go +
+	// internal/dagger/** and keep them in sync via explicit `dagger develop`.
+	// When generatedContextDirectory is resolved in that mode (e.g. when a
+	// downstream module's schema needs the builtin Python SDK's context),
+	// re-running codegen would overwrite those committed files with
+	// identical bytes and run `go mod tidy` every time. Short-circuit to
+	// the existing context directory.
+	if !useRuntimeCodegen(source) {
+		modName := source.Self().ModuleOriginalName
+		contextDir := source.Self().ContextDirectory
+		srcSubpath := source.Self().SourceSubpath
+		if err := requireGeneratedFiles(ctx, dag, contextDir, srcSubpath, modName); err != nil {
+			return nil, err
+		}
+		return &core.GeneratedCode{
+			Code:              contextDir,
+			VCSGeneratedPaths: goSDKVCSGeneratedPaths,
+			VCSIgnoredPaths:   goSDKVCSIgnoredPaths,
+		}, nil
+	}
+
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
@@ -232,21 +253,25 @@ func (sdk *goSDK) Codegen(
 	}
 
 	return &core.GeneratedCode{
-		Code: modifiedSrcDir,
-		VCSGeneratedPaths: []string{
-			"dagger.gen.go",
-			"internal/dagger/**",
-			"internal/querybuilder/**",
-			"internal/telemetry/**",
-		},
-		VCSIgnoredPaths: []string{
-			"dagger.gen.go",
-			"internal/dagger",
-			"internal/querybuilder",
-			"internal/telemetry",
-			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
-		},
+		Code:              modifiedSrcDir,
+		VCSGeneratedPaths: goSDKVCSGeneratedPaths,
+		VCSIgnoredPaths:   goSDKVCSIgnoredPaths,
 	}, nil
+}
+
+var goSDKVCSGeneratedPaths = []string{
+	"dagger.gen.go",
+	"internal/dagger/**",
+	"internal/querybuilder/**",
+	"internal/telemetry/**",
+}
+
+var goSDKVCSIgnoredPaths = []string{
+	"dagger.gen.go",
+	"internal/dagger",
+	"internal/querybuilder",
+	"internal/telemetry",
+	".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 }
 
 func (sdk *goSDK) Runtime(
