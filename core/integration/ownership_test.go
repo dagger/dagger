@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: File and directory ownership propagation across core filesystem operations.
+// Intent: Keep ownership semantics stable independently of module and workspace cleanup.
+
 import (
 	"context"
 	"strings"
