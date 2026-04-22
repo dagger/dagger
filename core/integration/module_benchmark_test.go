@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: mostly aligned; coverage targets post-workspace modules, but benchmarks still share historical module-suite helpers.
+// Scope: Module performance benchmarks for large APIs, dependency graphs, and generated code.
+// Intent: Track module performance regressions while helper cleanup proceeds separately from benchmark coverage.
+
 import (
 	"context"
 	"fmt"

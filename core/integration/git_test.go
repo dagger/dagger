@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Git repository integrations, refs, and auth-independent fetch behavior.
+// Intent: Keep Git source behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"encoding/base64"

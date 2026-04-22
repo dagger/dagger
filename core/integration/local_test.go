@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Local directory and local import behavior across sessions.
+// Intent: Keep local import behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"os"

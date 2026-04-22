@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: HTTP resource fetching and HTTP directory or file integration.
+// Intent: Keep HTTP behaviors stable independently of workspace cleanup.
+
 import (
 	"context"
 	"encoding/base64"

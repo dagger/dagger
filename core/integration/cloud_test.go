@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Cloud trace and reporting integration surfaced through the CLI and API.
+// Intent: Keep cloud-facing integration behavior stable without mixing in workspace concerns.
+
 import (
 	"context"
 	"testing"
