@@ -940,8 +940,12 @@ func (s *moduleSourceSchema) contextDirectory(
 	if err != nil {
 		return inst, err
 	}
+	contextSrc := mod.Self().GetContextSource()
+	if contextSrc == nil {
+		return inst, fmt.Errorf("module %q has no context source", args.Module)
+	}
 
-	dir, err := mod.Self().Source.Value.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
+	dir, err := contextSrc.LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
 	}
@@ -986,7 +990,12 @@ func (s *moduleSourceSchema) contextFile(
 	if err != nil {
 		return inst, err
 	}
-	f, err := mod.Self().Source.Value.Self().LoadContextFile(ctx, dag, args.Path)
+	contextSrc := mod.Self().GetContextSource()
+	if contextSrc == nil {
+		return inst, fmt.Errorf("module %q has no context source", args.Module)
+	}
+
+	f, err := contextSrc.LoadContextFile(ctx, dag, args.Path)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
 	}
@@ -1029,7 +1038,12 @@ func (s *moduleSourceSchema) contextGitRepository(
 	if err != nil {
 		return inst, err
 	}
-	f, err := mod.Self().Source.Value.Self().LoadContextGit(ctx, dag)
+	contextSrc := mod.Self().GetContextSource()
+	if contextSrc == nil {
+		return inst, fmt.Errorf("module %q has no context source", args.Module)
+	}
+
+	f, err := contextSrc.LoadContextGit(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
 	}
@@ -1069,7 +1083,12 @@ func (s *moduleSourceSchema) contextGitRef(
 	if err != nil {
 		return inst, err
 	}
-	f, err := mod.Self().Source.Value.Self().LoadContextGit(ctx, dag)
+	contextSrc := mod.Self().GetContextSource()
+	if contextSrc == nil {
+		return inst, fmt.Errorf("module %q has no context source", args.Module)
+	}
+
+	f, err := contextSrc.LoadContextGit(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual git ref: %w", err)
 	}
@@ -3053,6 +3072,7 @@ func (s *moduleSourceSchema) createBaseModule(
 
 	mod := &core.Module{
 		Source:                        dagql.NonNull(src),
+		ContextSource:                 dagql.NonNull(src),
 		NameField:                     src.Self().ModuleName,
 		OriginalName:                  src.Self().ModuleOriginalName,
 		SDKConfig:                     sdk,
@@ -3163,6 +3183,13 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// LegacyDefaultsFromDotEnv, when true and workspace config is set,
 		// also load .env defaults for args not found in WorkspaceConfig.
 		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
+
+		// DefaultPathContextSourceRef, when set, loads implementation code from
+		// the receiver but resolves +defaultPath inputs from this source ref.
+		DefaultPathContextSourceRef string `internal:"true" default:""`
+
+		// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
+		DefaultPathContextSourcePin string `internal:"true" default:""`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -3183,20 +3210,47 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
+	defaultPathContextSrc := src
+	if args.DefaultPathContextSourceRef != "" {
+		contextSourceArgs := []dagql.NamedInput{
+			{Name: "refString", Value: dagql.String(args.DefaultPathContextSourceRef)},
+		}
+		if args.DefaultPathContextSourcePin != "" {
+			contextSourceArgs = append(contextSourceArgs, dagql.NamedInput{
+				Name: "refPin", Value: dagql.String(args.DefaultPathContextSourcePin),
+			})
+		}
+		if err := dag.Select(ctx, dag.Root(), &defaultPathContextSrc, dagql.Selector{
+			Field: "moduleSource",
+			Args:  contextSourceArgs,
+		}); err != nil {
+			return inst, fmt.Errorf("failed to resolve defaultPath context source %q: %w", args.DefaultPathContextSourceRef, err)
+		}
+	}
+
 	// Create base module with dependencies
 	mod, err := s.createBaseModule(ctx, src)
 	if err != nil {
 		return inst, err
 	}
+	mod.ContextSource = dagql.NonNull(defaultPathContextSrc)
 
 	// Apply ForceDefaultFunctionCaching if requested
 	if args.ForceDefaultFunctionCaching {
 		mod.DisableDefaultFunctionCaching = false
 	}
+	defaultPathContextSourceVariant := ""
+	if args.DefaultPathContextSourceRef != "" {
+		defaultPathContextSourceVariant = hashutil.HashStrings(
+			args.DefaultPathContextSourceRef,
+			args.DefaultPathContextSourcePin,
+		).String()
+	}
 	// Keep the per-session content cache distinct for module variants produced
 	// from the same source with different internal asModule options.
 	mod.AsModuleVariantDigest = hashutil.HashStrings(
 		"asModuleVariant",
+		defaultPathContextSourceVariant,
 		fmt.Sprintf("%t", args.ForceDefaultFunctionCaching),
 		args.LegacyNameOverride,
 		fmt.Sprintf("%t", args.LegacyDefaultPath),

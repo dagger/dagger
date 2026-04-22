@@ -1132,6 +1132,11 @@ func (fn *ModuleFunction) loadContextualArg(
 		return fn.loadLegacyDefaultPathArg(ctx, dag, arg)
 	}
 
+	contextSrc := fn.mod.GetContextSource()
+	if contextSrc == nil {
+		return nil, fmt.Errorf("module %q has no context source", fn.mod.Name())
+	}
+
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
 		contentCacheKey := fn.mod.ContentDigestCacheKey()
@@ -1150,7 +1155,7 @@ func (fn *ModuleFunction) loadContextualArg(
 					},
 					{
 						Name:  "module",
-						Value: dagql.String(fn.mod.Source.Value.Self().AsString()),
+						Value: dagql.String(contextSrc.AsString()),
 					},
 					{
 						Name:  "digest",
@@ -1177,7 +1182,7 @@ func (fn *ModuleFunction) loadContextualArg(
 					},
 					{
 						Name:  "module",
-						Value: dagql.String(fn.mod.Source.Value.Self().AsString()),
+						Value: dagql.String(contextSrc.AsString()),
 					},
 					{
 						Name:  "digest",
@@ -1207,7 +1212,12 @@ func (fn *ModuleFunction) loadContextualGitArg(
 	dag *dagql.Server,
 	arg *FunctionArg,
 ) (dagql.IDType, error) {
-	isLocalMod := fn.mod.Source.Value.Self().Kind == ModuleSourceKindLocal
+	contextSrc := fn.mod.GetContextSource()
+	if contextSrc == nil {
+		return nil, fmt.Errorf("module %q has no context source", fn.mod.Name())
+	}
+
+	isLocalMod := contextSrc.Kind == ModuleSourceKindLocal
 	cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
 	isLocalGit := cleanedPath == "." || cleanedPath == ".git"
 
@@ -1222,7 +1232,7 @@ func (fn *ModuleFunction) loadContextualGitArg(
 				dagql.Selector{
 					Field: "_contextGitRepository",
 					Args: []dagql.NamedInput{
-						{Name: "module", Value: dagql.String(fn.mod.Source.Value.Self().AsString())},
+						{Name: "module", Value: dagql.String(contextSrc.AsString())},
 						{Name: "digest", Value: dagql.String(contentCacheKey)},
 					},
 				},
@@ -1238,7 +1248,7 @@ func (fn *ModuleFunction) loadContextualGitArg(
 				dagql.Selector{
 					Field: "_contextGitRef",
 					Args: []dagql.NamedInput{
-						{Name: "module", Value: dagql.String(fn.mod.Source.Value.Self().AsString())},
+						{Name: "module", Value: dagql.String(contextSrc.AsString())},
 						{Name: "digest", Value: dagql.String(contentCacheKey)},
 					},
 				},
@@ -1253,7 +1263,7 @@ func (fn *ModuleFunction) loadContextualGitArg(
 	var git dagql.ObjectResult[*GitRepository]
 	if isLocalGit {
 		var err error
-		git, err = fn.mod.Source.Value.Self().LoadContextGit(ctx, dag)
+		git, err = contextSrc.LoadContextGit(ctx, dag)
 		if err != nil {
 			return nil, err
 		}
