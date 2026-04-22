@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: LLM feature integration, tool-calling flows, and related CLI behavior.
+// Intent: Keep LLM feature behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"encoding/base64"

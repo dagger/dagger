@@ -1,6 +1,7 @@
 package core
 
 import (
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -11,6 +12,11 @@ type Workspace struct {
 	// Internal only — not exposed in GraphQL. Local workspaces resolve
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
+
+	// compatWorkspace stores the originating compat-workspace projection when
+	// this workspace was loaded from a legacy dagger.json instead of an explicit
+	// .dagger/config.toml. Internal only.
+	compatWorkspace *workspacepkg.CompatWorkspace
 
 	// Path is the workspace directory relative to the workspace boundary.
 	Path        string `field:"true" doc:"Workspace directory path relative to the workspace boundary."`
@@ -50,6 +56,17 @@ func (ws *Workspace) HostPath() string {
 // SetHostPath sets the internal host filesystem path.
 func (ws *Workspace) SetHostPath(p string) {
 	ws.hostPath = p
+}
+
+// CompatWorkspace returns the internal compat-workspace provenance for this
+// workspace. Nil means this workspace was not loaded from legacy compat mode.
+func (ws *Workspace) CompatWorkspace() *workspacepkg.CompatWorkspace {
+	return ws.compatWorkspace
+}
+
+// SetCompatWorkspace sets the internal compat-workspace provenance.
+func (ws *Workspace) SetCompatWorkspace(compat *workspacepkg.CompatWorkspace) {
+	ws.compatWorkspace = compat
 }
 
 func (*Workspace) Type() *ast.Type {

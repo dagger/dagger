@@ -1,4 +1,4 @@
-A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
+A new Dagger module is initialized by calling `dagger module init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument. Use `dagger init` to initialize a workspace.
 
 Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
 
@@ -13,7 +13,6 @@ The default template from `dagger develop` creates the following structure:
 
 ```
 .
-├── LICENSE
 ├── dagger.gen.go
 ├── go.mod
 ├── go.sum
@@ -42,7 +41,6 @@ For examples of modules written in Go, see [Daggerverse Modules in Go](https://d
 
 ```
 .
-├── LICENSE
 ├── pyproject.toml
 ├── uv.lock
 ├── sdk
@@ -72,7 +70,6 @@ For examples of modules written in Python, see [Daggerverse Modules in Python](h
 
 ```
 .
-├── LICENSE
 ├── package.json
 ├── sdk
 ├── src
@@ -97,7 +94,6 @@ For examples of modules written in Typescript, see [Daggerverse Modules in Types
 ├── composer.json
 ├── composer.lock
 ├── dagger.json
-├── LICENSE
 ├── README.md
 ├── sdk
 ├── src

@@ -12,6 +12,10 @@
 
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Service lifecycle, networking, and service consumption behavior.
+// Intent: Keep service behavior stable independently of workspace cleanup.
+
 import (
 	"bytes"
 	"context"

@@ -38,6 +38,7 @@ Examples:
   dagger generate                            # Generate all assets
   dagger generate -l                         # List all available generators
   dagger generate go:bin                     # Generate by selecting the generator function
+  dagger -W github.com/acme/ws generate go:bin  # Generate against explicit workspace
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {

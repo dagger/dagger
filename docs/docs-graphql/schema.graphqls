@@ -177,6 +177,15 @@ type Binding {
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
+  """Retrieve the binding value, as type WorkspaceMigration"""
+  asWorkspaceMigration: WorkspaceMigration!
+
+  """Retrieve the binding value, as type WorkspaceMigrationStep"""
+  asWorkspaceMigrationStep: WorkspaceMigrationStep!
+
+  """Retrieve the binding value, as type WorkspaceModule"""
+  asWorkspaceModule: WorkspaceModule!
+
   """Returns the digest of the binding value"""
   digest: String!
 
@@ -3142,6 +3151,79 @@ type Env {
     description: String!
   ): Env!
 
+  """
+  Create or update a binding of type WorkspaceMigration in the environment
+  """
+  withWorkspaceMigrationInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceMigration value to assign to the binding"""
+    value: WorkspaceMigrationID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceMigration output to be assigned in the environment
+  """
+  withWorkspaceMigrationOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """
+  Create or update a binding of type WorkspaceMigrationStep in the environment
+  """
+  withWorkspaceMigrationStepInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceMigrationStep value to assign to the binding"""
+    value: WorkspaceMigrationStepID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceMigrationStep output to be assigned in the environment
+  """
+  withWorkspaceMigrationStepOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type WorkspaceModule in the environment"""
+  withWorkspaceModuleInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceModule value to assign to the binding"""
+    value: WorkspaceModuleID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceModule output to be assigned in the environment
+  """
+  withWorkspaceModuleOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Declare a desired Workspace output to be assigned in the environment"""
   withWorkspaceOutput(
     """The name of the binding"""
@@ -4577,7 +4659,7 @@ type ModuleSource {
   asString: String!
 
   """The blueprint referenced by the module source."""
-  blueprint: ModuleSource!
+  blueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.")
 
   """
   The ref to clone the root of the git repo from. Only valid for git sources.
@@ -4701,7 +4783,7 @@ type ModuleSource {
   sync: ModuleSourceID!
 
   """The toolchains referenced by the module source."""
-  toolchains: [ModuleSource!]!
+  toolchains: [ModuleSource!]! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.")
 
   """User-defined defaults read from local .env files"""
   userDefaults: EnvFile!
@@ -5369,6 +5451,15 @@ type Query {
 
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
+
+  """Load a WorkspaceMigration from its ID."""
+  loadWorkspaceMigrationFromID(id: WorkspaceMigrationID!): WorkspaceMigration!
+
+  """Load a WorkspaceMigrationStep from its ID."""
+  loadWorkspaceMigrationStepFromID(id: WorkspaceMigrationStepID!): WorkspaceMigrationStep!
+
+  """Load a WorkspaceModule from its ID."""
+  loadWorkspaceModuleFromID(id: WorkspaceModuleID!): WorkspaceModule!
 
   """Create a new module."""
   module: Module!
@@ -6096,6 +6187,31 @@ type Workspace {
   configPath: String!
 
   """
+  Read a configuration value from config.toml.
+
+  If key is empty, returns the full config.
+
+  If key points to a scalar, returns the value.
+
+  If key points to a table, returns flattened dotted-key output.
+  """
+  configRead(
+    """Dotted key path (e.g. modules.greeter.source). Empty for full config."""
+    key: String = ""
+  ): String!
+
+  """Write a configuration value to config.toml."""
+  configWrite(
+    """Dotted key path (e.g. modules.greeter.source)."""
+    key: String!
+
+    """
+    Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+    """
+    value: String!
+  ): String!
+
+  """
   Returns a Directory from the workspace.
 
   Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
@@ -6121,6 +6237,21 @@ type Workspace {
     """Apply .gitignore filter rules inside the directory."""
     gitignore: Boolean = false
   ): Directory!
+
+  """Create a named workspace environment if it does not already exist."""
+  envCreate(
+    """Environment name."""
+    name: String!
+  ): String!
+
+  """List named environments defined in the workspace configuration."""
+  envList: [String!]!
+
+  """Remove a named workspace environment."""
+  envRemove(
+    """Environment name."""
+    name: String!
+  ): String!
 
   """
   Returns a File from the workspace.
@@ -6168,11 +6299,66 @@ type Workspace {
   """A unique identifier for this Workspace."""
   id: WorkspaceID!
 
+  """Initialize a new workspace, creating .dagger/config.toml."""
+  init: String!
+
   """Whether .dagger/config.toml exists."""
   initialized: Boolean!
 
+  """Install a module into the workspace, writing config.toml to the host."""
+  install(
+    """Module reference to install."""
+    ref: String!
+
+    """Override name for the installed module entry."""
+    name: String = ""
+  ): String!
+
+  """
+  Plan the explicit migration needed for the current workspace.
+
+  The returned plan has an empty changeset and no steps when no migration is needed.
+  """
+  migrate(force: Boolean = false): WorkspaceMigration!
+
+  """
+  Create a new module owned by the workspace and auto-install it in config.toml.
+  """
+  moduleInit(
+    """Name of the new module."""
+    name: String!
+
+    """SDK to use for the new module."""
+    sdk: String = ""
+
+    """Source subpath within the new module."""
+    source: String = ""
+
+    """Additional include patterns for the module."""
+    include: [String!] = []
+
+    """Blueprint module reference to apply to the new module."""
+    blueprint: String = ""
+
+    """Enable the self-calls experimental feature for the new module."""
+    selfCalls: Boolean = false
+  ): String!
+
+  """List modules defined in the workspace configuration."""
+  moduleList: [WorkspaceModule!]!
+
   """Workspace directory path relative to the workspace boundary."""
   path: String!
+
+  """
+  Refresh lock entries for selected workspace-config modules.
+
+  This layers selective workspace refresh on top of the lockfile base.
+  """
+  refreshModules(
+    """Workspace module names to refresh."""
+    moduleNames: [String!] = []
+  ): Changeset! @experimental(reason: "Experimental selective workspace lock refresh API.")
 
   """Return all services from modules loaded in the workspace."""
   services(
@@ -6192,5 +6378,67 @@ type Workspace {
 The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 """
 scalar WorkspaceID
+
+"""A planned workspace migration."""
+type WorkspaceMigration {
+  """Filesystem changes for the full migration plan."""
+  changes: Changeset!
+
+  """A unique identifier for this WorkspaceMigration."""
+  id: WorkspaceMigrationID!
+
+  """Logical migration steps, each identified by a stable code."""
+  steps: [WorkspaceMigrationStep!]!
+}
+
+"""
+The `WorkspaceMigrationID` scalar type represents an identifier for an object of type WorkspaceMigration.
+"""
+scalar WorkspaceMigrationID
+
+"""A single logical part of a workspace migration."""
+type WorkspaceMigrationStep {
+  """Filesystem changes for this step."""
+  changes: Changeset!
+
+  """Stable code identifying this logical migration step."""
+  code: String!
+
+  """Generic summary of this step's purpose and impact."""
+  description: String!
+
+  """A unique identifier for this WorkspaceMigrationStep."""
+  id: WorkspaceMigrationStepID!
+
+  """Non-fatal warnings raised while planning this step."""
+  warnings: [String!]!
+}
+
+"""
+The `WorkspaceMigrationStepID` scalar type represents an identifier for an object of type WorkspaceMigrationStep.
+"""
+scalar WorkspaceMigrationStepID
+
+"""A module entry in the workspace configuration."""
+type WorkspaceModule {
+  """
+  Whether the module is the workspace entrypoint (functions aliased to Query root).
+  """
+  entrypoint: Boolean!
+
+  """A unique identifier for this WorkspaceModule."""
+  id: WorkspaceModuleID!
+
+  """The module name."""
+  name: String!
+
+  """The module source path."""
+  source: String!
+}
+
+"""
+The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
+"""
+scalar WorkspaceModuleID
 
 

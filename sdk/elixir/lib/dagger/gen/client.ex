@@ -1379,6 +1379,53 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a WorkspaceMigration from its ID.
+  """
+  @spec load_workspace_migration_from_id(t(), Dagger.WorkspaceMigrationID.t()) ::
+          Dagger.WorkspaceMigration.t()
+  def load_workspace_migration_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadWorkspaceMigrationFromID") |> QB.put_arg("id", id)
+
+    %Dagger.WorkspaceMigration{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a WorkspaceMigrationStep from its ID.
+  """
+  @spec load_workspace_migration_step_from_id(t(), Dagger.WorkspaceMigrationStepID.t()) ::
+          Dagger.WorkspaceMigrationStep.t()
+  def load_workspace_migration_step_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder
+      |> QB.select("loadWorkspaceMigrationStepFromID")
+      |> QB.put_arg("id", id)
+
+    %Dagger.WorkspaceMigrationStep{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a WorkspaceModule from its ID.
+  """
+  @spec load_workspace_module_from_id(t(), Dagger.WorkspaceModuleID.t()) ::
+          Dagger.WorkspaceModule.t()
+  def load_workspace_module_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadWorkspaceModuleFromID") |> QB.put_arg("id", id)
+
+    %Dagger.WorkspaceModule{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new module.
   """
   @spec module(t()) :: Dagger.Module.t()

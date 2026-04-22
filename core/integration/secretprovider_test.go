@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Secret provider selection and provider-specific secret resolution behavior.
+// Intent: Keep secret provider behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	_ "embed"
