@@ -118,6 +118,10 @@ class ModuleParser:
         self._declared_enums: set[str] = set()
         self._declared_interfaces: set[str] = set()
 
+        # Per-file origin of the bare name ``field``; used to disambiguate
+        # ``dagger.field`` from ``dataclasses.field`` when called unqualified.
+        self._file_field_origin: dict[Path, str | None] = {}
+
     def parse(
         self,
     ) -> tuple[dict[str, ObjectTypeMetadata], dict[str, EnumTypeMetadata]]:
@@ -135,6 +139,9 @@ class ModuleParser:
 
         # Phase 2.5: Collect module-level constants for default resolution
         self._collect_module_constants()
+
+        # Record per-file origin of the unqualified ``field`` name.
+        self._track_field_origins()
 
         # Phase 3: Build namespace and resolver
         self._build_namespace()
@@ -252,6 +259,46 @@ class ModuleParser:
                         self._namespace.add_from_import(
                             module, alias.name, alias.asname
                         )
+
+    _NON_DAGGER_FIELD_MODULES = frozenset(
+        {"dataclasses", "attrs", "attr", "pydantic"}
+    )
+
+    def _bare_field_is_dagger(self, file_path: Path) -> bool:
+        """Return True when bare ``field`` in a file refers to dagger.field.
+
+        Defaults to True (dagger) when no import of ``field`` is found in the
+        file: that matches the common pattern of importing ``dagger`` as a
+        module and using ``dagger.field(...)`` elsewhere while declaring
+        ``field: Something = field()`` inline. Falls back to False only when
+        the file explicitly imports ``field`` from a non-dagger module.
+        """
+        origin = self._file_field_origin.get(file_path)
+        if origin is None:
+            return True
+        top = origin.split(".", 1)[0]
+        return top not in self._NON_DAGGER_FIELD_MODULES
+
+    def _track_field_origins(self) -> None:
+        """Record which module the unqualified ``field`` name came from.
+
+        A file that does ``from dataclasses import field`` (or from attrs,
+        pydantic, etc.) must not treat ``field(...)`` calls as dagger.field.
+        """
+        for file_path, tree in self._asts.items():
+            origin: str | None = None
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom):
+                    continue
+                module = node.module or ""
+                for alias in node.names:
+                    bound = alias.asname or alias.name
+                    if bound == "field":
+                        origin = module
+                        break
+                if origin is not None:
+                    break
+            self._file_field_origin[file_path] = origin
 
     def _extract_declarations(self) -> None:
         """Extract full declarations from all ASTs."""
@@ -434,7 +481,11 @@ class ModuleParser:
             func = node.value.func
             # Check for field(), dagger.field(), mod.field()
             # but NOT dataclasses.field() or other non-dagger field() calls
-            is_name_field = isinstance(func, ast.Name) and func.id == "field"
+            is_name_field = (
+                isinstance(func, ast.Name)
+                and func.id == "field"
+                and self._bare_field_is_dagger(file_path)
+            )
             is_attr_field = (
                 isinstance(func, ast.Attribute)
                 and func.attr == "field"
