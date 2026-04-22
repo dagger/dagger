@@ -11,6 +11,7 @@ This module handles:
 from __future__ import annotations
 
 import ast
+import collections.abc
 import enum
 import types
 import typing
@@ -507,9 +508,12 @@ class TypeResolver:
             if origin is typing.Union:
                 return self._resolve_union_args(args, location)
 
-            # Handle list, List, Sequence
-            if origin in (list, list) or (
-                hasattr(typing, "Sequence") and origin is typing.Sequence
+            # Handle list, Sequence, Iterable (typing.Sequence[T] yields
+            # collections.abc.Sequence as its origin, not typing.Sequence).
+            if origin in (
+                list,
+                collections.abc.Sequence,
+                collections.abc.Iterable,
             ):
                 if args:
                     element_type = self._resolve_evaluated(args[0], location)
