@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: EnvFile object semantics and namespace behavior.
+// Intent: Keep EnvFile behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"encoding/base64"
