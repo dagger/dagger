@@ -567,7 +567,7 @@ class ModuleParser:
             type_annotation=get_annotation_string(node.annotation),
             resolved_type=resolved_type,
             has_default=has_default,
-            default_value=self._serialize_default(default_value),
+            default_value=self._serialize_default(default_value, name=python_name),
             deprecated=field_kwargs.get("deprecated"),
             init=field_kwargs.get("init", True),
             doc=annotated_meta.doc,
@@ -685,7 +685,9 @@ class ModuleParser:
             is_nullable=resolved_type.is_optional,
             has_default=has_default,
             default_value=(
-                self._serialize_default(default_value) if has_default else None
+                self._serialize_default(default_value, name=python_name)
+                if has_default
+                else None
             ),
             doc=annotated_meta.doc if annotated_meta else None,
             ignore=annotated_meta.ignore if annotated_meta else None,
@@ -1099,7 +1101,9 @@ class ModuleParser:
                     is_nullable=resolved_type.is_optional,
                     has_default=has_default,
                     default_value=(
-                        self._serialize_default(default_value) if has_default else None
+                        self._serialize_default(default_value, name=python_name)
+                        if has_default
+                        else None
                     ),
                     doc=meta_doc,
                     ignore=meta_ignore,
@@ -1242,18 +1246,23 @@ class ModuleParser:
         # Can't evaluate - return None (will be handled at runtime)
         return None
 
-    def _serialize_default(self, value: Any) -> Any:
+    def _serialize_default(self, value: Any, *, name: str = "") -> Any:
         """Serialize a default value for JSON storage.
 
-        Complex values that can't be serialized are returned as None.
+        Returns None for values that cannot be represented in JSON, with a
+        warning so the user sees why the default didn't reach the engine.
         """
         if value is None:
             return None
 
-        # Try to serialize to JSON
         try:
             json.dumps(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "Default value for %r cannot be serialized to JSON (%s); "
+                "the parameter will behave as if no default were set.",
+                name or "<unknown>",
+                exc,
+            )
             return None
-        else:
-            return value
+        return value

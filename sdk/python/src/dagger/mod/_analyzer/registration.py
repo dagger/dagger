@@ -189,15 +189,15 @@ def _add_parameter(
     # Note: optionality from type (T | None) is already handled by
     # _resolved_type_to_typedef via resolved.is_optional.
 
-    # Convert default value to JSON if present
+    # Convert default value to JSON if present. The parser already validated
+    # that non-None defaults are JSON-serializable (and warned otherwise), so
+    # a JSON failure here indicates a parser bug and must not be suppressed.
     default_value = None
     if param_meta.has_default:
-        import contextlib
         import json
 
         if param_meta.default_value is not None:
-            with contextlib.suppress(TypeError, ValueError):
-                default_value = dagger.JSON(json.dumps(param_meta.default_value))
+            default_value = dagger.JSON(json.dumps(param_meta.default_value))
         elif param_meta.resolved_type.is_optional:
             # Type is already nullable, send explicit null
             default_value = dagger.JSON("null")
