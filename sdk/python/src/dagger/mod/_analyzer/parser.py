@@ -177,12 +177,21 @@ class ModuleParser:
                     ):
                         self._declared_enums.add(node.name)
 
+    _ENUM_BASE_NAMES = frozenset(
+        {"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "ReprEnum"}
+    )
+
     def _is_enum_subclass(self, node: ast.ClassDef) -> bool:
-        """Check if a class inherits from enum.Enum."""
+        """Check if a class inherits from a stdlib enum base.
+
+        Covers ``Enum`` as well as ``IntEnum``, ``StrEnum``, ``Flag``,
+        ``IntFlag`` and ``ReprEnum`` (all valid Dagger enum shapes),
+        whether imported bare or via ``enum.``.
+        """
         for base in node.bases:
-            if isinstance(base, ast.Attribute) and base.attr == "Enum":
+            if isinstance(base, ast.Attribute) and base.attr in self._ENUM_BASE_NAMES:
                 return True
-            if isinstance(base, ast.Name) and base.id == "Enum":
+            if isinstance(base, ast.Name) and base.id in self._ENUM_BASE_NAMES:
                 return True
         return False
 
