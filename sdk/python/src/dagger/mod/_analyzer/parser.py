@@ -847,13 +847,12 @@ class ModuleParser:
         parameters: list[ParameterMetadata] = []
         args = node.args
 
-        # Combine all parameter types
-        all_args = list(args.args)
-        if args.kwonlyargs:
-            all_args.extend(args.kwonlyargs)
+        # Positional-only come before regular positional; defaults in args.defaults
+        # are right-aligned against the combined sequence.
+        positional_args = list(args.posonlyargs) + list(args.args)
+        all_args = positional_args + list(args.kwonlyargs)
 
-        # Get defaults
-        defaults_offset = len(args.args) - len(args.defaults)
+        defaults_offset = len(positional_args) - len(args.defaults)
         kw_defaults = {
             arg.arg: default
             for arg, default in zip(args.kwonlyargs, args.kw_defaults, strict=False)
