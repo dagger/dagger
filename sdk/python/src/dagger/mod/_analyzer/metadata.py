@@ -21,8 +21,8 @@ ResolvedTypeKind = Literal[
 ]
 
 _LIST_KIND: ResolvedTypeKind = "list"
-_NAMED_KINDS: frozenset[ResolvedTypeKind] = frozenset(
-    {"object", "enum", "interface", "scalar"}
+_VALID_KINDS: frozenset[str] = frozenset(
+    {"primitive", "list", "object", "enum", "interface", "scalar", "void"}
 )
 
 
@@ -58,6 +58,12 @@ class ResolvedType:
     is_self: bool = False  # Whether this was typing.Self
 
     def __post_init__(self) -> None:
+        if self.kind not in _VALID_KINDS:
+            msg = (
+                f"ResolvedType.kind must be one of {sorted(_VALID_KINDS)}, "
+                f"got {self.kind!r}"
+            )
+            raise ValueError(msg)
         if self.kind == _LIST_KIND and self.element_type is None:
             msg = "ResolvedType(kind='list') requires an element_type"
             raise ValueError(msg)
