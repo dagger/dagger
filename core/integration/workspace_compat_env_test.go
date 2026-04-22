@@ -511,6 +511,7 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 		WithNewFile("/foo/hello.txt", "hello there!").
 		WithEnvVariable("PASSWORD", "topsecret").
 		WithServiceBinding("www", c.Container().From("nginx").AsService())
+	// FIXME: call lookupPrefix()
 	outerEnv := c.EnvFile().
 		WithVariable("SUPERCONSTRUCTOR_DIR", "/foo").
 		WithVariable("SUPERCONSTRUCTOR_FILE", "/foo/hello.txt").
