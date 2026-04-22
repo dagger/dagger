@@ -1440,6 +1440,10 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 		// Also serve toolchains so their functions are available in the
 		// client schema (e.g. when `dagger shell` `.cd`s into a module).
 		if src := mod.GetSource(); src != nil {
+			defaultPathContextSrc := mod.GetContextSource()
+			if defaultPathContextSrc == nil {
+				defaultPathContextSrc = src
+			}
 			for i, tcSrc := range src.Toolchains {
 				if tcSrc.Self() == nil {
 					continue
@@ -1448,7 +1452,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 				if i < len(src.ConfigToolchains) {
 					cfg = src.ConfigToolchains[i]
 				}
-				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pendingRelatedModule(src, tcSrc.Self(), cfg, false))
+				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pendingRelatedModule(defaultPathContextSrc, tcSrc.Self(), cfg, false))
 				if err != nil {
 					return fmt.Errorf("error resolving toolchain module: %w", err)
 				}

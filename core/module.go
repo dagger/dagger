@@ -26,6 +26,11 @@ type Module struct {
 	// The source of the module
 	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
 
+	// The source to resolve +defaultPath inputs from. Usually this is the
+	// module source itself, but related modules such as toolchains may load code
+	// from one source while resolving contextual inputs from a consuming module.
+	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
+
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
 
@@ -175,6 +180,13 @@ func (mod *Module) GetSource() *ModuleSource {
 		return nil
 	}
 	return mod.Source.Value.Self()
+}
+
+func (mod *Module) GetContextSource() *ModuleSource {
+	if mod.ContextSource.Valid {
+		return mod.ContextSource.Value.Self()
+	}
+	return mod.GetSource()
 }
 
 func (mod *Module) ContentDigestCacheKey() string {

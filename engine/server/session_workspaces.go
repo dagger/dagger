@@ -351,6 +351,11 @@ type pendingModule struct {
 	DefaultsFromDotEnv bool
 	ArgCustomizations  []*modules.ModuleConfigArgument
 
+	// If set, load this module's implementation from Ref but resolve
+	// +defaultPath inputs from this source ref instead.
+	DefaultPathContextSourceRef string
+	DefaultPathContextSourcePin string
+
 	// For legacy blueprints, the caller module's own .env should still behave
 	// like the "inner" env file even though the code now loads from the
 	// blueprint source tree.
@@ -735,6 +740,10 @@ func (srv *Server) resolveModuleLoad(
 	if src == nil {
 		return resolved, nil
 	}
+	defaultPathContextSrc := primary.GetContextSource()
+	if defaultPathContextSrc == nil {
+		defaultPathContextSrc = src
+	}
 
 	for i, toolchainSrc := range src.Toolchains {
 		if toolchainSrc.Self() == nil {
@@ -744,7 +753,7 @@ func (srv *Server) resolveModuleLoad(
 		if i < len(src.ConfigToolchains) {
 			cfg = src.ConfigToolchains[i]
 		}
-		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, toolchainSrc, pendingRelatedModule(src, toolchainSrc.Self(), cfg, false))
+		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, toolchainSrc, pendingRelatedModule(defaultPathContextSrc, toolchainSrc.Self(), cfg, false))
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving toolchain module: %w", err)
 		}
@@ -755,7 +764,7 @@ func (srv *Server) resolveModuleLoad(
 	}
 
 	if src.Blueprint.Self() != nil {
-		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, src.Blueprint, pendingRelatedModule(src, src.Blueprint.Self(), src.ConfigBlueprint, true))
+		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, src.Blueprint, pendingRelatedModule(defaultPathContextSrc, src.Blueprint.Self(), src.ConfigBlueprint, true))
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving blueprint module: %w", err)
 		}
@@ -779,8 +788,13 @@ func (srv *Server) resolveModuleLoad(
 // dependencies but still need the same legacy compat handling as modules loaded
 // from workspace discovery, such as legacy default-path resolution and
 // dagger.json argument customizations.
+//
+// defaultPathContextSrc is the consuming module source for +defaultPath
+// arguments. For a plain module this is the module source itself; for a module
+// already resolving +defaultPath through another source, it is that outer
+// context source.
 func pendingRelatedModule(
-	parent *core.ModuleSource,
+	defaultPathContextSrc *core.ModuleSource,
 	related *core.ModuleSource,
 	cfg *modules.ModuleConfigDependency,
 	entrypoint bool,
@@ -794,10 +808,11 @@ func pendingRelatedModule(
 		// +defaultPath must resolve against that entrypoint's repo (the
 		// -m argument), not against the session's currentWorkspace — the
 		// latter is the user's CWD, which may be empty, partial, or a
-		// different checkout entirely. The default _contextDirectory
-		// resolution already uses the module's own source, which for a
-		// toolchain/blueprint declared as a subdir of the -m module
-		// shares the entrypoint's clone (or local context) root.
+		// different checkout entirely.
+	}
+	if defaultPathContextSrc != nil {
+		mod.DefaultPathContextSourceRef = defaultPathContextSrc.AsString()
+		mod.DefaultPathContextSourcePin = defaultPathContextSrc.Pin()
 	}
 	if cfg != nil {
 		if cfg.Name != "" {
@@ -806,8 +821,8 @@ func pendingRelatedModule(
 		mod.ConfigDefaults = legacyConfigDefaults(cfg.Customizations)
 		mod.ArgCustomizations = cfg.Customizations
 	}
-	if entrypoint && parent != nil && parent.Kind == core.ModuleSourceKindLocal {
-		mod.LegacyCallerModuleDir = parent.AsString()
+	if entrypoint && defaultPathContextSrc != nil && defaultPathContextSrc.Kind == core.ModuleSourceKindLocal {
+		mod.LegacyCallerModuleDir = defaultPathContextSrc.AsString()
 	}
 	return mod
 }
@@ -871,6 +886,16 @@ func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error)
 		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
 			Name: "legacyDefaultPath", Value: dagql.Boolean(true),
 		})
+	}
+	if mod.DefaultPathContextSourceRef != "" {
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "defaultPathContextSourceRef", Value: dagql.String(mod.DefaultPathContextSourceRef),
+		})
+		if mod.DefaultPathContextSourcePin != "" {
+			asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+				Name: "defaultPathContextSourcePin", Value: dagql.String(mod.DefaultPathContextSourcePin),
+			})
+		}
 	}
 	if len(mod.ConfigDefaults) > 0 {
 		wsJSON, err := json.Marshal(mod.ConfigDefaults)
