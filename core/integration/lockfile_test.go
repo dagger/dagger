@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Workspace lockfile behavior, lock resolution, and config-to-lock interactions.
+// Intent: Keep lockfile coverage owned by workspace behavior rather than by legacy module config or compat detection.
+
 import (
 	"context"
 	"errors"
@@ -257,9 +261,8 @@ func (LockfileSuite) TestLiveNestedQuery(ctx context.Context, t *testctx.T) {
 		WithNewFile("query.graphql", containerFromQuery).
 		With(daggerExec("--silent", "--lock=live", "query", "--doc", "query.graphql"))
 
-	s, err := updated.Stdout(ctx)
+	_, err := updated.Stdout(ctx)
 	require.NoError(t, err)
-	t.Logf("%s", s)
 
 	lockContents, err := updated.File("/work/.dagger/lock").Contents(ctx)
 	require.NoError(t, err)
@@ -409,6 +412,167 @@ func (LockfileSuite) TestWorkspaceUpdateNestedQuery(ctx context.Context, t *test
 	require.NoError(t, err)
 	require.NotEqual(t, staleLock, lockContents)
 	assertContainerFromLockEntry(t, []byte(lockContents), workspace.PolicyFloat)
+}
+
+func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testctx.T) {
+	t.Run("top-level update is a no-op in an empty initialized workspace", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			With(daggerExec("workspace", "init"))
+
+		out, err := ctr.With(daggerExecRaw("update")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+
+		_, err = ctr.File(".dagger/lock").Contents(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("lock update refreshes only the selected workspace module entry", func(ctx context.Context, t *testctx.T) {
+		const (
+			wolfiSource = "github.com/dagger/dagger/modules/wolfi@main"
+			ghaSource   = "github.com/dagger/dagger/modules/gha@main"
+			wolfiPin    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			ghaPin      = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		)
+
+		lock := workspace.NewLock()
+		require.NoError(t, lock.SetModuleResolve(wolfiSource, workspace.LookupResult{
+			Value:  wolfiPin,
+			Policy: workspace.PolicyFloat,
+		}))
+		require.NoError(t, lock.SetModuleResolve(ghaSource, workspace.LookupResult{
+			Value:  ghaPin,
+			Policy: workspace.PolicyFloat,
+		}))
+		lockBytes, err := lock.Marshal()
+		require.NoError(t, err)
+
+		configTOML := `[modules.wolfi]
+source = "` + wolfiSource + `"
+
+[modules.gha]
+source = "` + ghaSource + `"
+`
+
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", configTOML).
+			WithNewFile(".dagger/lock", string(lockBytes))
+
+		updated := ctr.With(daggerExec("lock", "update", "wolfi"))
+		out, err := updated.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Updated .dagger/lock", strings.TrimSpace(out))
+
+		upToDate := updated.With(daggerExec("lock", "update", "wolfi"))
+		out, err = upToDate.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+
+		lockOut, err := upToDate.File(".dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+
+		wolfiEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), wolfiSource)
+		require.NotEqual(t, wolfiPin, wolfiEntry.Value)
+		require.Equal(t, workspace.PolicyFloat, wolfiEntry.Policy)
+
+		ghaEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), ghaSource)
+		require.Equal(t, ghaPin, ghaEntry.Value)
+		require.Equal(t, workspace.PolicyFloat, ghaEntry.Policy)
+	})
+
+	t.Run("explicit local modules error", func(ctx context.Context, t *testctx.T) {
+		configTOML := `[modules.counter]
+source = "../counter"
+`
+
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithExec([]string{"mkdir", "-p", "counter"}).
+			WithWorkdir("counter").
+			With(initStandaloneDangModule("counter", `
+type Counter {
+  pub value: String! {
+    "ok"
+  }
+}
+`)).
+			WithWorkdir("..").
+			WithNewFile(".dagger/config.toml", configTOML)
+
+		_, err := ctr.With(daggerExec("lock", "update", "counter")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, `module "counter" source "../counter" is not a git module`)
+	})
+
+	t.Run("unknown modules error", func(ctx context.Context, t *testctx.T) {
+		configTOML := `[modules.wolfi]
+source = "github.com/dagger/dagger/modules/wolfi@main"
+`
+
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", configTOML)
+
+		_, err := ctr.With(daggerExec("lock", "update", "missing")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "workspace module(s) not found: missing")
+	})
+
+	t.Run("top-level update refreshes the selected workspace module lock entry", func(ctx context.Context, t *testctx.T) {
+		const (
+			wolfiSource = "github.com/dagger/dagger/modules/wolfi@main"
+			ghaSource   = "github.com/dagger/dagger/modules/gha@main"
+			wolfiPin    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			ghaPin      = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		)
+
+		lock := workspace.NewLock()
+		require.NoError(t, lock.SetModuleResolve(wolfiSource, workspace.LookupResult{
+			Value:  wolfiPin,
+			Policy: workspace.PolicyFloat,
+		}))
+		require.NoError(t, lock.SetModuleResolve(ghaSource, workspace.LookupResult{
+			Value:  ghaPin,
+			Policy: workspace.PolicyFloat,
+		}))
+		lockBytes, err := lock.Marshal()
+		require.NoError(t, err)
+
+		configTOML := `[modules.wolfi]
+source = "` + wolfiSource + `"
+
+[modules.gha]
+source = "` + ghaSource + `"
+`
+
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", configTOML).
+			WithNewFile(".dagger/lock", string(lockBytes))
+
+		updated := ctr.With(daggerExecRaw("update", "wolfi"))
+		out, err := updated.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Updated .dagger/lock", strings.TrimSpace(out))
+
+		upToDate := updated.With(daggerExecRaw("update", "wolfi"))
+		out, err = upToDate.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+
+		lockOut, err := upToDate.File(".dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+
+		wolfiEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), wolfiSource)
+		require.NotEqual(t, wolfiPin, wolfiEntry.Value)
+		require.Equal(t, workspace.PolicyFloat, wolfiEntry.Policy)
+
+		ghaEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), ghaSource)
+		require.Equal(t, ghaPin, ghaEntry.Value)
+		require.Equal(t, workspace.PolicyFloat, ghaEntry.Policy)
+	})
 }
 
 func writeContainerFromQuery(t *testctx.T, workdir string) string {
@@ -575,6 +739,18 @@ func assertModuleResolveLockEntry(t *testctx.T, lockBytes []byte, source string,
 	}
 
 	require.True(t, found, "expected modules.resolve entry in lockfile")
+}
+
+func requireWorkspaceModuleResolveLockEntry(t *testctx.T, lockBytes []byte, source string) workspace.LookupResult {
+	t.Helper()
+
+	lock, err := workspace.ParseLock(lockBytes)
+	require.NoError(t, err)
+
+	entry, ok, err := lock.GetModuleResolve(source)
+	require.NoError(t, err)
+	require.True(t, ok)
+	return entry
 }
 
 func equalLockInputs(actual, expected []any) bool {

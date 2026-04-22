@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Multi-platform execution, emulation, and platform-aware image behavior.
+// Intent: Keep platform behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"fmt"

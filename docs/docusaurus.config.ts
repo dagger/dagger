@@ -167,15 +167,6 @@ const config: Config = {
   ],
   themes: ["@docusaurus/theme-mermaid"],
   themeConfig: {
-    // (jasonmccallister) leaving this in place for future use and reference
-    announcementBar: {
-      id: "new-docs-published-2025",
-      content:
-        `We've launched a brand-new docs site! 🎉 Still want the previous one? You can <a href="https://archive.docs.dagger.io/0.18/">find it in our archive</a>.`,
-      backgroundColor: "#131126",
-      textColor: "#ffffff",
-      isCloseable: true,
-    },
     sidebar: {
       autoCollapseCategories: false,
       hideable: false,

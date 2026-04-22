@@ -1,0 +1,60 @@
+---
+title: "Upgrading to Workspaces"
+slug: /reference/upgrade-to-workspaces
+description: "What changed in the workspace release and how to migrate"
+---
+
+# Upgrading to Workspaces
+
+:::note
+If you're new to Dagger, you can skip this page. It's for existing users encountering changes.
+:::
+
+## What changed
+
+In previous versions, `dagger.json` served double duty — it defined both your module's code _and_ your project's configuration (toolchains, blueprints, customizations). These are now separate:
+
+- **Module** (`dagger.json`) — A package of code. That's it.
+- **Workspace** (`.dagger/config.toml`) — Your project's Dagger configuration: which modules to use, how to configure them.
+
+## What happened to toolchains?
+
+They're now just modules installed in your workspace. `dagger install github.com/foo/bar` adds a module to `.dagger/config.toml`. Same functionality, simpler model.
+
+## What happened to blueprints?
+
+They're now workspace modules marked as `entrypoint = true` in `.dagger/config.toml`. The concept of "blueprint" as a distinct thing is gone — it's just a configuration flag.
+
+## What happened to customizations?
+
+The `customizations` array in `dagger.json` is deprecated. Module configuration now uses `config.*` in your workspace config:
+
+```toml
+[modules.go]
+source = "github.com/dagger/go"
+
+[modules.go.config]
+goVersion = "1.22"
+```
+
+## Do I need to migrate right now?
+
+No. Backwards compatibility will infer a workspace from your existing `dagger.json`. You'll see a warning, but everything will continue to work. When you're ready:
+
+```shell
+dagger migrate
+```
+
+This automatically converts your `dagger.json` workspace fields into `.dagger/config.toml`. If anything needs manual attention, it creates `.dagger/migration-report.md` with instructions.
+
+## Quick reference
+
+| Before | Now |
+|---|---|
+| `dagger -m <ref>` (with toolchains) | `dagger -W <ref>` |
+| `dagger toolchain install <module>` | `dagger install <module>` |
+| `dagger install <dep>` (code dependency) | `dagger module install <dep>` |
+| `toolchains` array in `dagger.json` | `[modules.*]` in `.dagger/config.toml` |
+| `blueprint` in `dagger.json` | `entrypoint = true` in `.dagger/config.toml` |
+| `customizations` in `dagger.json` | `[modules.*.config]` in `.dagger/config.toml` |
+| `.env` for constructor defaults | `[modules.*.config]` in `.dagger/config.toml` |

@@ -1,0 +1,472 @@
+---
+title: "Developing Modules — Python"
+slug: /extending/editions/python
+sidebar_label: "Python Edition"
+description: "Learn to develop Dagger modules using Python"
+---
+
+# Developing Modules — Python Edition
+
+See the [Base Edition](/extending/editions/dang) for the complete guide — the patterns are the same across all SDKs.
+
+## Recipes
+
+### Builds
+
+#### Build image from Dockerfile
+
+The following Dagger Function builds an image from a Dockerfile.
+
+```python file=./snippets/builds/dockerfile/main.py
+```
+
+#### Build image from Dockerfile using different build context
+
+The following function builds an image from a Dockerfile with a build context that is different than the current working directory.
+
+```python file=./snippets/builds/dockerfile-context/main.py
+```
+
+#### Perform a multi-stage build
+
+The following Dagger Function performs a multi-stage build.
+
+```python file=./snippets/builds/multi-stage-build/main.py
+```
+
+#### Perform a matrix build
+
+The following Dagger Function performs a matrix build.
+
+```python file=./snippets/builds/matrix-build/main.py
+```
+
+#### Build multi-arch image
+
+The following Dagger Function builds a single image for different CPU architectures using native emulation.
+
+```python file=./snippets/builds/multi-arch/main.py
+```
+
+#### Build multi-arch image with cross-compilation
+
+The following Dagger Function builds a single image for different CPU architectures using cross-compilation.
+
+```python file=./snippets/builds/multi-arch-cc/main.py
+```
+
+#### Add OCI labels to image
+
+The following Dagger Function adds OpenContainer Initiative (OCI) labels to an image.
+
+```python file=./snippets/builds/oci-labels/main.py
+```
+
+#### Add OCI annotations to image
+
+The following Dagger Function adds OpenContainer Initiative (OCI) annotations to an image.
+
+```python file=./snippets/builds/oci-annotations/main.py
+```
+
+#### Cache application dependencies
+
+The following Dagger Function uses a cache volume for application dependencies. This enables Dagger to reuse the contents of the cache across Dagger Function runs and reduce execution time.
+
+```python file=./snippets/cache-dependencies/main.py
+```
+
+#### Invalidate cache
+
+The following function demonstrates how to invalidate the Dagger layer cache and force execution of subsequent workflow steps, by introducing a volatile time variable at a specific point in the Dagger workflow.
+
+```python file=./snippets/builds/cache/main.py
+```
+
+#### Execute functions concurrently
+
+The following Dagger Function demonstrates how to use native-language concurrency features to execute other Dagger Functions concurrently.
+
+```python file=./snippets/execute-concurrently/main.py
+```
+
+#### Persist service state across runs
+
+The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
+
+```python file=./snippets/services/persist-service-state/main.py
+```
+
+### Container Images
+
+#### Export a container image to the host
+
+The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball.
+
+```python file=./snippets/export-container/main.py
+```
+
+#### Publish a container image to a private registry
+
+The following Dagger Function publishes a just-in-time container image to a private registry.
+
+```python file=./snippets/publish-image/main.py
+```
+
+#### Publish a container image to a private registry with multiple tags
+
+The following Dagger Function tags a just-in-time container image multiple times and publishes it to a private registry.
+
+```python file=./snippets/tag-publish-image/main.py
+```
+
+#### Set environment variables in a container
+
+The following Dagger Function demonstrates how to set a single environment variable in a container.
+
+```python file=./snippets/set-env-var/main.py
+```
+
+The following Dagger Function demonstrates how to set multiple environment variables in a container.
+
+```python file=./snippets/set-env-vars/main.py
+```
+
+### Filesystems
+
+#### Clone a remote Git repository into a container
+
+The following Dagger Function accepts a Git repository URL and a Git reference. It copies the repository at the specified reference to the `/src` path in a container and returns the modified container.
+
+```python file=./snippets/clone-git-repository/main.py
+```
+
+For SSH-based cloning:
+
+```python file=./snippets/clone-git-repository-ssh/main.py
+```
+
+#### Mount or copy a directory or remote repository to a container
+
+The following Dagger Function accepts a `Directory` argument and mounts it to the `/src` path in a container, returning the modified container.
+
+```python file=./snippets/mount-dir/main.py
+```
+
+#### Mount or copy a local or remote file to a container
+
+The following Dagger Function accepts a `File` argument and mounts it to a container in the `/src/` directory, returning the modified container.
+
+```python file=./snippets/mount-file/main.py
+```
+
+#### Copy a file to the Dagger module runtime container for custom processing
+
+The following Dagger Function accepts a `File` argument and copies the specified file to the Dagger module runtime container for manipulation using custom logic.
+
+```python file=./snippets/copy-file-runtime/main.py
+```
+
+#### Modify a copied directory or remote repository in a container
+
+The following Dagger Function accepts a `Directory` argument, copies it to the `/src` path in a container, adds a file to it, and returns the modified container.
+
+```python file=./snippets/copy-modify-dir/main.py
+```
+
+#### Copy a subset of a directory using pre-defined filters
+
+The following Dagger Function copies a directory to a container using pre-defined filter patterns to exclude specified sub-directories and files.
+
+```python file=./snippets/copy-filter-dir-pre/main.py
+```
+
+#### Copy a subset of a directory using filters specified at run-time
+
+The following Dagger Function copies a directory to a container using a filter pattern specified at call-time to exclude specified sub-directories and files.
+
+```python file=./snippets/copy-filter-dir-post/main.py
+```
+
+#### Export a directory or file to the host
+
+The following Dagger Functions return a just-in-time directory and file that can be exported to the host.
+
+```python file=./snippets/export-file-dir/main.py
+```
+
+#### Request a file over HTTP/HTTPS and save it in a container
+
+```python file=./snippets/read-file-http/main.py
+```
+
+#### Set a module-wide default path
+
+The following Dagger module uses a constructor to set a module-wide `Directory` argument and point it to a default path on the host.
+
+```python file=./snippets/set-common-default-path/main.py
+```
+
+### Services
+
+#### Bind and use services in Dagger Functions
+
+The following Dagger Function creates and returns an HTTP service, which is bound and used from a different Dagger Function via a service binding.
+
+```python file=./snippets/services/bind-services/main.py
+```
+
+#### Create a transient service for unit tests
+
+The following Dagger Function creates a service and binds it to an application container for unit testing.
+
+```python file=./snippets/services/test-against-db-service/main.py
+```
+
+#### Create interdependent services
+
+The following Dagger Function runs two services that depend on each other, set up with custom hostnames for inter-service communication.
+
+```python file=./snippets/services/create-interdependent-services/main.py
+```
+
+#### Expose host services to Dagger Functions
+
+The following Dagger Function accepts a `Service` running on the host, binds it using an alias, and creates a client to access it via the service binding.
+
+```python file=./snippets/services/expose-host-services-to-dagger/main.py
+```
+
+#### Expose services in Dagger Functions to the host
+
+The following Dagger Function creates and returns an HTTP service that can be used from the host.
+
+```python file=./snippets/services/expose-dagger-services-to-host/main.py
+```
+
+#### Start and stop services
+
+The following Dagger Function demonstrates how to control a service's lifecycle by explicitly starting and stopping a service.
+
+```python file=./snippets/services/start-stop-services/main.py
+```
+
+#### Use service endpoints
+
+The following Dagger Function starts a service manually, then retrieves its endpoint and sends a request.
+
+```python file=./snippets/services/use-endpoint/main.py
+```
+
+### Secrets
+
+#### Use secret variables
+
+The following Dagger Function accepts a GitHub personal access token as a `Secret` and uses it to authorize a request to the GitHub API.
+
+```python file=./snippets/secret-variable/main.py
+```
+
+#### Mount files as secrets
+
+The following Dagger Function accepts a GitHub hosts configuration file as a `Secret` and mounts it to a container to authorize a request to GitHub.
+
+```python file=./snippets/secret-file/main.py
+```
+
+#### Use secret in Dockerfile build
+
+The following Dagger Function demonstrates how to inject a secret into a Dockerfile build. The secret is automatically mounted in the build container at `/run/secrets/SECRET-ID`.
+
+```python file=./snippets/secret-dockerfile/main.py
+```
+
+### Errors & Debugging
+
+#### Terminate gracefully
+
+The following Dagger Function demonstrates how to handle errors in a workflow.
+
+```python file=./snippets/handle-errors/main.py
+```
+
+#### Continue using a container after command execution fails
+
+The following Dagger Function demonstrates how to continue using a container after a command executed within it fails.
+
+```python file=./snippets/continue-after-errors/main.py
+```
+
+#### Debug workflows with the interactive terminal
+
+The following Dagger Function opens an interactive terminal session at different stages in a Dagger workflow to debug a container build.
+
+```python file=./snippets/terminal-container/main.py
+```
+
+#### Inspect directories and files
+
+The following Dagger Function clones a GitHub repository and opens an interactive terminal session to inspect it.
+
+```python file=./snippets/terminal-directory-1/main.py
+```
+
+#### Create custom spans
+
+The following Dagger Function demonstrates how to emit custom OpenTelemetry spans for various tasks within a Dagger Function.
+
+```python file=./snippets/custom-spans/main.py
+```
+
+## IDE setup
+
+To get your IDE to recognize a Dagger Python module and any added Dagger module dependencies in the generated client, all dependencies must be installed in an activated [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) (for example, in `.venv`, next to `pyproject.toml`). This can either be done manually or transparently by a package manager.
+
+For example, to open Visual Studio Code from the terminal, with functioning autocompletions (assuming the [Python extensions](https://github.com/microsoft/vscode-python) are installed):
+
+```shell
+dagger develop
+uv run code .
+```
+
+For NeoVim, just replace `code` with `vim`, or any other terminal-based editor.
+
+:::note
+The `uv run` command works with a `uv.lock` file. If you need to use a `requirements.lock` or other, continue reading for more examples.
+:::
+
+### Project environment
+
+The following examples show how to get a working [project environment](https://docs.astral.sh/uv/concepts/projects/#project-environments) (`.venv`) from the terminal. Make sure to run `dagger develop` first to get the necessary `sdk` directory locally.
+
+<Tabs groupId="pytools">
+<TabItem value="uv">
+
+When using a `uv.lock`:
+
+```shell
+uv sync
+```
+
+If you have an older Dagger module without a `uv.lock` file, you can create it with:
+
+```shell
+uv add --editable ./sdk
+rm requirements.lock
+```
+
+:::note
+uv with `uv.lock` needs to have the SDK library (`dagger-io`, generated in `./sdk`) defined as a production dependency, unlike the other installation methods where it should be a development dependency.
+:::
+
+</TabItem>
+<TabItem value="uv pip">
+
+When using a `requirements.lock` file, uv provides a ["pip interface"](https://docs.astral.sh/uv/pip/) that replaces multiple tools while still being much faster. It can manage the Python installation, virtual environment creation, and dependency installation.
+
+For example:
+
+```shell
+uv venv
+uv pip install -r requirements.lock -e ./sdk -e .
+```
+
+:::note
+By default, `uv venv` will create an environment with Python 3.13. To pin Python 3.12 both locally and in Dagger, run this first:
+
+```shell
+echo 3.12 > .python-version
+```
+
+:::
+
+</TabItem>
+<TabItem value="pip">
+
+Make sure you have the same Python version that Dagger uses first. By default it's Python 3.13, unless it's overridden in `pyproject.toml` or in `.python-version`.
+
+```shell
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.lock -e ./sdk -e .
+```
+
+</TabItem>
+<TabItem value="hatch">
+
+First, update `pyproject.toml` to [allow direct references](https://hatch.pypa.io/latest/config/metadata/#allowing-direct-references), and add the [local](https://hatch.pypa.io/latest/config/dependency/#local) SDK library (`dagger-io`) as a `dev` dependency:
+
+```toml
+[project]
+name = "main"
+version = "0.0.0"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.envs.dev]
+dependencies = [
+  "dagger-io @ {root:uri}/sdk",
+]
+```
+
+Then, open the editor with the `dev` [Hatch environment](https://hatch.pypa.io/latest/config/environment/overview/):
+
+```shell
+hatch run dev:vim .
+```
+
+:::note
+Hatch manages the project environment in a central location by default instead of `.venv`.
+:::
+
+</TabItem>
+<TabItem value="poetry">
+
+First, add `./sdk` as a development dependency:
+
+```shell
+poetry add --group=dev -e ./sdk
+```
+
+Then, open the editor with:
+
+```shell
+poetry run vim .
+```
+
+:::note
+Poetry manages the project environment in a central location instead of `.venv`.
+:::
+
+</TabItem>
+</Tabs>
+
+:::tip
+If you place the virtual environment (`.venv`) inside the module, don't forget to add it to `.gitignore` and to `"include": ["!.venv"]` in `dagger.json` to avoid uploading those files to the runtime container unnecessarily.
+:::
+
+### IDE configuration
+
+<Tabs>
+<TabItem value="Visual Studio Code">
+
+The simplest way to get [autocompletions and IntelliSense](https://code.visualstudio.com/docs/python/editing#_autocomplete-and-intellisense) working is to open it with the directory that has `.venv` (next to `pyproject.toml`), because the IDE picks it up automatically when it's in the root of the [workspace](https://code.visualstudio.com/docs/python/python-tutorial#_start-vs-code-in-a-workspace-folder):
+
+```shell
+code .
+```
+
+VS Code doesn't need to be opened from the terminal though. The same directory can be opened with VS Code's **File** -> **Open Folder** from the graphical interface (GUI).
+
+The virtual environment can also be created and managed from within the IDE instead of from the terminal, if it supports the chosen lock file format. To know more, see [Visual Studio Code Python Environments](https://code.visualstudio.com/docs/python/environments).
+
+</TabItem>
+<TabItem value="PyCharm">
+
+PyCharm is a very popular IDE for Python projects. The simplest way for PyCharm to recognize the `dagger` package is to open the IDE in the directory that has `.venv` and `pyproject.toml`, via the terminal or the GUI.
+
+It can also create and manage the project environment, but may not support `uv.lock` yet, so best run `uv` from the terminal instead.
+
+</TabItem>
+</Tabs>

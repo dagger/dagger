@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Shared integration harness, middleware, connection setup, and package-wide test infrastructure.
+// Intent: Keep harness behavior centralized so feature suites can evolve without bespoke setup.
+
 import (
 	"archive/tar"
 	"bytes"
