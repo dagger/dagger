@@ -125,6 +125,11 @@ class ModuleParser:
         # ``dagger.field`` from ``dataclasses.field`` when called unqualified.
         self._file_field_origin: dict[Path, str | None] = {}
 
+        # Module-level constants collected for default value resolution.
+        # Initialized here so ``_eval_constant`` can rely on it existing even
+        # when called before ``_collect_module_constants`` has run.
+        self._module_constants: dict[str, ast.expr] = {}
+
     def parse(
         self,
     ) -> tuple[dict[str, ObjectTypeMetadata], dict[str, EnumTypeMetadata]]:
@@ -211,7 +216,6 @@ class ModuleParser:
         This allows resolving references like ``FAVES`` when used as
         default values in function signatures.
         """
-        self._module_constants: dict[str, ast.expr] = {}
         for tree in self._asts.values():
             for node in ast.iter_child_nodes(tree):
                 if isinstance(node, ast.Assign):
@@ -1126,9 +1130,15 @@ class ModuleParser:
             if node.id in name_map:
                 return name_map[node.id]
             # Try resolving module-level constants
-            if hasattr(self, "_module_constants") and node.id in self._module_constants:
+            if node.id in self._module_constants:
                 return self._eval_constant(self._module_constants[node.id])
-            return node.id  # Return as string
+            logger.warning(
+                "Unresolved name %r used in a constant expression at line %d; "
+                "falling back to the literal string.",
+                node.id,
+                getattr(node, "lineno", 0),
+            )
+            return node.id
         if isinstance(node, ast.Attribute):
             # Handle enum member references like Status.INACTIVE → "INACTIVE"
             return node.attr
