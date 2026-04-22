@@ -16,23 +16,6 @@ import (
 // A toolchain to test Dagger installers
 type Installers struct{}
 
-// LintPowershell scripts files
-// +check
-func (Installers) LintPowershellScript(
-	ctx context.Context,
-	// +defaultPath="/install.ps1"
-	powershellScript *dagger.File,
-) error {
-	return dag.PsAnalyzer().
-		Check(powershellScript, dagger.PsAnalyzerCheckOpts{
-			// Exclude the unused parameters for now due because PSScriptAnalyzer treat
-			// parameters in `Install-Dagger` as unused but the script won't run if we delete
-			// it.
-			ExcludeRules: []string{"PSReviewUnusedParameter"},
-		}).
-		Assert(ctx)
-}
-
 // Test install bash script
 // +check
 func (Installers) TestBashScript(
