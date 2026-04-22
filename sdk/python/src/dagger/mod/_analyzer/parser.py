@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,8 @@ from dagger.mod._analyzer.visitors.decorators import (
     has_decorator,
     is_classmethod,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_name(name: str) -> str:
@@ -943,8 +946,16 @@ class ModuleParser:
         }
 
         for i, arg in enumerate(all_args):
-            # Skip self/cls
-            if skip_first and i == 0 and arg.arg in ("self", "cls"):
+            # Skip the receiver (first positional) of a method/classmethod.
+            # Don't key this on the name — some users write ``this``/``mcs``,
+            # and the receiver should never leak into the Dagger API schema.
+            if skip_first and i == 0 and positional_args:
+                if arg.arg not in ("self", "cls"):
+                    logger.warning(
+                        "First parameter of method is named %r (expected "
+                        "'self' or 'cls'); skipping it as the receiver.",
+                        arg.arg,
+                    )
                 continue
 
             python_name = arg.arg
