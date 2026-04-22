@@ -8,7 +8,22 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from typing import Any
+from typing import Any, Literal
+
+ResolvedTypeKind = Literal[
+    "primitive",
+    "list",
+    "object",
+    "enum",
+    "interface",
+    "scalar",
+    "void",
+]
+
+_LIST_KIND: ResolvedTypeKind = "list"
+_NAMED_KINDS: frozenset[ResolvedTypeKind] = frozenset(
+    {"object", "enum", "interface", "scalar"}
+)
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
@@ -28,13 +43,35 @@ class ResolvedType:
     """Resolved type information.
 
     This represents a fully resolved type that can be converted to a TypeDef.
+
+    Invariants enforced in ``__post_init__``:
+
+    - ``kind`` must be one of the values in ``ResolvedTypeKind``.
+    - ``element_type`` is set if and only if ``kind == "list"``.
+    - ``is_self`` is only meaningful for object/interface kinds.
     """
 
-    kind: str  # "primitive", "list", "object", "enum", "interface", "scalar", "void"
+    kind: ResolvedTypeKind
     name: str  # Type name (e.g., "str", "Container", "MyObject")
     is_optional: bool = False  # Whether type is T | None
     element_type: ResolvedType | None = None  # For list types
     is_self: bool = False  # Whether this was typing.Self
+
+    def __post_init__(self) -> None:
+        if self.kind == _LIST_KIND and self.element_type is None:
+            msg = "ResolvedType(kind='list') requires an element_type"
+            raise ValueError(msg)
+        if self.kind != _LIST_KIND and self.element_type is not None:
+            msg = (
+                f"ResolvedType(kind={self.kind!r}) must not carry an element_type"
+            )
+            raise ValueError(msg)
+        if self.is_self and self.kind not in ("object", "interface"):
+            msg = (
+                f"ResolvedType(is_self=True) is only valid for object/interface "
+                f"kinds, got kind={self.kind!r}"
+            )
+            raise ValueError(msg)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
