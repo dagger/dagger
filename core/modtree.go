@@ -228,6 +228,13 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 // github.com/dagger/otel-go package which we cannot modify.
 const ServiceNameAttr = "dagger.io/service.name"
 
+func portScheme(port int) string {
+	if port == 443 {
+		return "https"
+	}
+	return "http"
+}
+
 // RunUp starts the service and returns a result that must be cleaned up.
 // It does NOT block — the caller (UpGroup.Run) handles the blocking wait.
 func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, portMappings []PortForward) (*runUpStartResult, error) {
@@ -276,12 +283,13 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 	if len(portMappings) > 0 {
 		portStrs = make([]string, 0, len(portMappings))
 		for _, pf := range portMappings {
-			portStrs = append(portStrs, fmt.Sprintf(":%d→%d", pf.FrontendOrBackendPort(), pf.Backend))
+			frontend := pf.FrontendOrBackendPort()
+			portStrs = append(portStrs, fmt.Sprintf("%s://localhost:%d→%d", portScheme(frontend), frontend, pf.Backend))
 		}
 	} else if svc := svcResult.Self(); svc != nil && svc.Container.Self() != nil {
 		portStrs = make([]string, 0, len(svc.Container.Self().Ports))
 		for _, p := range svc.Container.Self().Ports {
-			portStrs = append(portStrs, fmt.Sprintf(":%d", p.Port))
+			portStrs = append(portStrs, fmt.Sprintf("%s://localhost:%d", portScheme(p.Port), p.Port))
 		}
 	}
 	if len(portStrs) > 0 {

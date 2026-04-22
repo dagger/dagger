@@ -71,6 +71,11 @@ func (d DocsDev) Server() *dagger.Container {
 		WithExposedPort(8000)
 }
 
+// +up
+func (d DocsDev) Up() *dagger.Service {
+	return d.Server().AsService()
+}
+
 // +check
 // Lint documentation files
 func (d DocsDev) LintMarkdown(
