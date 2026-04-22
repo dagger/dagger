@@ -94,6 +94,15 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 				"-r", "/requirements.txt",
 			}).
 			File("/codegen"),
+		).
+		// bundle a precompiled Go runtime binary for the python-sdk module
+		// so `loadBuiltinSDK(python)` does not pay the ~8s cost of `go build`
+		// on first use. The runtime is a Go binary whose source (and
+		// committed dagger.gen.go / internal/dagger) lives in
+		// sdk/python/runtime. core/sdk/go_sdk.go detects this file and
+		// skips the in-container `go build` when it is present.
+		WithFile("runtime/.dagger-build/runtime",
+			build.pythonRuntimeBinary(),
 		)
 
 	sdkCtrTarball := dag.Container().
@@ -117,6 +126,32 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 		sdkDir:  sdkDir,
 		envName: distconsts.PythonSDKManifestDigestEnvName,
 	}, nil
+}
+
+// pythonRuntimeBinary cross-compiles the sdk/python/runtime Go module
+// for the engine target platform. The resulting file is shipped inside
+// the Python SDK rootfs at runtime/.dagger-build/runtime; see
+// pythonSDKContent above and core/sdk/go_sdk.go::Runtime for consumer
+// details.
+func (build *Builder) pythonRuntimeBinary() *dagger.File {
+	runtimeSrc := build.source.Directory("sdk/python/runtime")
+	return dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+		From(distconsts.GolangImage).
+		WithEnvVariable("GOOS", build.platformSpec.OS).
+		WithEnvVariable("GOARCH", build.platformSpec.Architecture).
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithMountedCache("/go/pkg/mod", dag.CacheVolume("gomod")).
+		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("gobuild")).
+		WithMountedDirectory("/src", runtimeSrc).
+		WithWorkdir("/src").
+		WithExec([]string{
+			"go", "build",
+			"-ldflags", "-s -w",
+			"-trimpath",
+			"-o", "/out/runtime",
+			".",
+		}).
+		File("/out/runtime")
 }
 
 const TypescriptSDKTSXVersion = "4.15.6"

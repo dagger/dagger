@@ -23,6 +23,14 @@ const (
 	goSDKDependenciesConfigPath = "/dependencies.json"
 	GoSDKModuleIDPath           = "typedefs.json"
 
+	// goSDKPrebuiltRuntimeRelPath is where a module-source-relative prebuilt
+	// runtime binary lives, if any. The engine image's builtin SDK content
+	// (toolchains/engine-dev/build/sdk.go::pythonSDKContent) writes the
+	// python-sdk runtime here so Runtime() can skip `go build` entirely.
+	// The ".dagger-build/" prefix is reserved for build-system outputs and
+	// is not part of any user-authored module layout.
+	goSDKPrebuiltRuntimeRelPath = ".dagger-build/runtime"
+
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
@@ -293,29 +301,53 @@ func (sdk *goSDK) Runtime(
 	}
 
 	var ctr dagql.ObjectResult[*core.Container]
+	var havePrebuilt bool
 	if useRuntimeCodegen(source) {
 		ctr, err = sdk.baseWithCodegen(ctx, deps, source)
 	} else {
 		ctr, err = sdk.baseForCommittedCodegen(ctx, source)
+		if err == nil {
+			havePrebuilt, err = hasPrebuiltRuntime(ctx, dag, source)
+		}
 	}
 	if err != nil {
 		return nil, err
 	}
-	if err := dag.Select(ctx, ctr, &ctr,
-		dagql.Selector{
+
+	installRuntime := dagql.Selector{
+		Field: "withExec",
+		Args: []dagql.NamedInput{
+			{
+				Name: "args",
+				Value: dagql.ArrayInput[dagql.String]{
+					"go", "build",
+					"-ldflags", "-s -w", // strip DWARF debug symbols to save a few MBs of space
+					"-o", goSDKRuntimePath,
+					".",
+				},
+			},
+		},
+	}
+	if havePrebuilt {
+		// Source is mounted at goSDKUserModContextDirPath by
+		// baseForCommittedCodegen; the workdir is the module's source
+		// subpath. Copy the prebuilt binary to the well-known runtime
+		// path — the binary was compiled for build.platform at engine
+		// image build time, so it is safe to run as-is.
+		installRuntime = dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
 				{
 					Name: "args",
 					Value: dagql.ArrayInput[dagql.String]{
-						"go", "build",
-						"-ldflags", "-s -w", // strip DWARF debug symbols to save a few MBs of space
-						"-o", goSDKRuntimePath,
-						".",
+						"cp", goSDKPrebuiltRuntimeRelPath, goSDKRuntimePath,
 					},
 				},
 			},
-		},
+		}
+	}
+	if err := dag.Select(ctx, ctr, &ctr,
+		installRuntime,
 		dagql.Selector{
 			Field: "withEntrypoint",
 			Args: []dagql.NamedInput{
@@ -597,6 +629,36 @@ func requireGeneratedFiles(
 		}
 	}
 	return nil
+}
+
+// hasPrebuiltRuntime reports whether the module source ships with a
+// precompiled Go runtime binary at goSDKPrebuiltRuntimeRelPath. This is
+// currently used by the builtin Python SDK (see
+// toolchains/engine-dev/build/sdk.go::pythonSDKContent) so the engine
+// does not pay the `go build` cost on every `load SDK: python`.
+//
+// Only meaningful when the module has already opted out of runtime
+// codegen; callers must check useRuntimeCodegen first.
+func hasPrebuiltRuntime(
+	ctx context.Context,
+	dag *dagql.Server,
+	src dagql.ObjectResult[*core.ModuleSource],
+) (bool, error) {
+	contextDir := src.Self().ContextDirectory
+	srcSubpath := src.Self().SourceSubpath
+	rel := filepath.Join(srcSubpath, goSDKPrebuiltRuntimeRelPath)
+	var exists dagql.Boolean
+	if err := dag.Select(ctx, contextDir, &exists,
+		dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(rel)},
+			},
+		},
+	); err != nil {
+		return false, fmt.Errorf("check prebuilt runtime %q: %w", rel, err)
+	}
+	return bool(exists), nil
 }
 
 // baseForCommittedCodegen prepares the runtime container when the module
