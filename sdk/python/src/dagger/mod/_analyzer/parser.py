@@ -134,6 +134,13 @@ class ModuleParser:
         # ``_eval_constant`` can scope name lookups to the containing file.
         self._current_file: Path | None = None
 
+        # Deferred external-constructor declarations, resolved in a second
+        # pass after every class has been parsed so the lookup does not
+        # depend on file/class iteration order.
+        self._pending_external_constructors: list[
+            tuple[str, ast.Assign, Path]
+        ] = []
+
     def parse(
         self,
     ) -> tuple[dict[str, ObjectTypeMetadata], dict[str, EnumTypeMetadata]]:
@@ -161,6 +168,9 @@ class ModuleParser:
         # Phase 4: Extract full declarations
         self._extract_declarations()
 
+        # Phase 5: Resolve external constructors once every class is known
+        self._resolve_external_constructors()
+
         return self._objects, self._enums
 
     def _parse_files(self) -> None:
@@ -183,18 +193,24 @@ class ModuleParser:
                 raise ParseError(msg) from e
 
     def _collect_declaration_names(self) -> None:
-        """Collect names of decorated classes for forward reference resolution."""
+        """Collect names of decorated top-level classes for forward references.
+
+        Only considers top-level classes: the module's public API surface lives
+        at module scope, and ``_extract_declarations`` is also top-level-only.
+        Previously this phase used ``ast.walk`` and would register nested
+        decorated classes that were never actually emitted as metadata,
+        leaving dangling type references.
+        """
         for tree in self._asts.values():
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ClassDef):
-                    if has_decorator(node, "object_type"):
-                        self._declared_objects.add(node.name)
-                    elif has_decorator(node, "interface"):
-                        self._declared_interfaces.add(node.name)
-                    elif has_decorator(node, "enum_type") or self._is_enum_subclass(
-                        node
-                    ):
-                        self._declared_enums.add(node.name)
+            for node in ast.iter_child_nodes(tree):
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                if has_decorator(node, "object_type"):
+                    self._declared_objects.add(node.name)
+                elif has_decorator(node, "interface"):
+                    self._declared_interfaces.add(node.name)
+                elif has_decorator(node, "enum_type") or self._is_enum_subclass(node):
+                    self._declared_enums.add(node.name)
 
     _ENUM_BASE_NAMES = frozenset(
         {"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "ReprEnum"}
@@ -411,9 +427,13 @@ class ModuleParser:
                     item, file_path, node.name, fields, init_params
                 )
             elif isinstance(item, ast.Assign):
-                ext_func = self._parse_external_constructor(item, file_path, node.name)
-                if ext_func is not None:
-                    functions.append(ext_func)
+                # Only defer assignments that look like external-constructor
+                # declarations. Everything else (plain class-level constants)
+                # is ignored at class scope.
+                if self._looks_like_external_constructor(item):
+                    self._pending_external_constructors.append(
+                        (node.name, item, file_path)
+                    )
             elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if item.name == "create" and is_classmethod(item):
                     constructor = self._parse_constructor(item, file_path, node.name)
@@ -675,6 +695,53 @@ class ModuleParser:
             alt_name=annotated_meta.name if annotated_meta else None,
             location=location,
         )
+
+    def _looks_like_external_constructor(self, node: ast.Assign) -> bool:
+        """Cheap pre-check for ``name = function(...)`` shape at class scope."""
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            return False
+        return isinstance(node.value, ast.Call)
+
+    def _resolve_external_constructors(self) -> None:
+        """Resolve deferred external-constructor declarations.
+
+        Runs after every class has been parsed, so a ``foo = function(Bar)``
+        in class A can reference a class Bar declared later in the file or
+        in a different source file without depending on iteration order.
+        """
+        for class_name, assign_node, file_path in self._pending_external_constructors:
+            owner = self._objects.get(class_name)
+            if owner is None:
+                continue
+            self._current_file = file_path
+            try:
+                func = self._parse_external_constructor(
+                    assign_node, file_path, class_name
+                )
+            finally:
+                self._current_file = None
+            if func is None:
+                target_name = self._external_constructor_target(assign_node)
+                logger.warning(
+                    "External constructor %r in %r references unknown target "
+                    "%r; skipping (is the target decorated with @object_type?).",
+                    assign_node.targets[0].id
+                    if isinstance(assign_node.targets[0], ast.Name)
+                    else "?",
+                    class_name,
+                    target_name or "?",
+                )
+                continue
+            owner.functions.append(func)
+
+    def _external_constructor_target(self, node: ast.Assign) -> str | None:
+        """Best-effort extraction of the target class name for logging."""
+        if not isinstance(node.value, ast.Call):
+            return None
+        match = self._match_function_constructor(node.value)
+        if match is None:
+            return None
+        return match[0]
 
     def _parse_external_constructor(
         self,
