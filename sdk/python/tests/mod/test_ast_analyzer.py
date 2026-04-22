@@ -911,3 +911,381 @@ import dagger
 class Foo
     pass
 """)
+
+
+# -- Regression tests for constructor / inheritance / enum fix commits -------
+
+
+def test_ast_initvar_not_exposed_as_field():
+    """``InitVar[T]`` must be a constructor param, never a field."""
+    metadata = _analyze("""
+import dagger
+from dataclasses import InitVar
+
+@dagger.object_type
+class Foo:
+    name: str = dagger.field()
+    secret: InitVar[str]
+""")
+    obj = metadata.objects["Foo"]
+    field_names = [f.python_name for f in obj.fields]
+    param_names = [p.python_name for p in obj.constructor.parameters]
+    assert field_names == ["name"]
+    assert "secret" in param_names
+
+
+def test_ast_initvar_dotted_form():
+    """``dataclasses.InitVar[T]`` (dotted form) is recognized."""
+    metadata = _analyze("""
+import dagger
+import dataclasses
+
+@dagger.object_type
+class Foo:
+    name: str = dagger.field()
+    token: dataclasses.InitVar[str]
+""")
+    obj = metadata.objects["Foo"]
+    assert [f.python_name for f in obj.fields] == ["name"]
+    assert "token" in [p.python_name for p in obj.constructor.parameters]
+
+
+def test_ast_explicit_init_overrides_autoderived():
+    """An explicit ``__init__`` supersedes field-derived constructor params."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    name: str = dagger.field()
+    count: int = dagger.field(default=0)
+
+    def __init__(self, name: str, *, flag: bool = False) -> None:
+        self.name = name
+        self.count = 0
+""")
+    ctor = metadata.objects["Foo"].constructor
+    names = [p.python_name for p in ctor.parameters]
+    assert names == ["name", "flag"]
+    assert ctor.is_constructor is True
+
+
+def test_ast_inherited_create_from_base_class():
+    """A ``create`` classmethod on a base class is used as the constructor."""
+    metadata = _analyze("""
+import dagger
+from typing import Self
+
+class Base:
+    @classmethod
+    def create(cls, name: str) -> Self:
+        return cls()
+
+@dagger.object_type
+class Foo(Base):
+    pass
+""")
+    ctor = metadata.objects["Foo"].constructor
+    assert [p.python_name for p in ctor.parameters] == ["name"]
+    assert ctor.is_constructor is True
+
+
+def test_ast_external_constructor_simple():
+    """``alt = function(Other)`` copies the target's constructor signature."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Other:
+    name: str = dagger.field(default="other")
+
+@dagger.object_type
+class Foo:
+    alt = dagger.function(Other)
+""")
+    funcs = {f.python_name: f for f in metadata.objects["Foo"].functions}
+    assert "alt" in funcs
+    assert funcs["alt"].resolved_return_type.name == "Other"
+    assert [p.python_name for p in funcs["alt"].parameters] == ["name"]
+
+
+def test_ast_external_constructor_with_kwargs():
+    """``alt = function(doc=...)(Other)`` propagates kwargs."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Other:
+    name: str = dagger.field(default="other")
+
+@dagger.object_type
+class Foo:
+    alt = dagger.function(doc="custom doc")(Other)
+""")
+    funcs = {f.python_name: f for f in metadata.objects["Foo"].functions}
+    assert "alt" in funcs
+    assert funcs["alt"].doc == "custom doc"
+
+
+def test_ast_external_constructor_forward_reference():
+    """``alt = function(Later)`` works when Later is declared afterward."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    alt = dagger.function(Later)
+
+@dagger.object_type
+class Later:
+    name: str = dagger.field(default="later")
+""")
+    funcs = {f.python_name: f for f in metadata.objects["Foo"].functions}
+    assert "alt" in funcs
+    assert funcs["alt"].resolved_return_type.name == "Later"
+
+
+def test_ast_legacy_enum_tuple_value_with_doc():
+    """``MEMBER = "value", "doc"`` sets both value and member doc."""
+    metadata = _analyze("""
+import dagger
+
+class Status(dagger.Enum):
+    ACTIVE = "A", "Active description"
+    INACTIVE = "I", "Inactive description"
+
+@dagger.object_type
+class Foo:
+    pass
+""")
+    members = {m.name: m for m in metadata.enums["Status"].members}
+    assert members["ACTIVE"].value == "A"
+    assert members["ACTIVE"].doc == "Active description"
+    assert members["INACTIVE"].value == "I"
+
+
+def test_ast_legacy_enum_one_tuple_value():
+    """``MEMBER = "value",`` (1-tuple) sets value, no doc."""
+    metadata = _analyze("""
+import dagger
+
+class Status(dagger.Enum):
+    ACTIVE = "A",
+
+@dagger.object_type
+class Foo:
+    pass
+""")
+    active = metadata.enums["Status"].members[0]
+    assert active.value == "A"
+    assert active.doc is None
+
+
+# -- Error paths covered by resolver raise sites -----------------------------
+
+
+def test_ast_general_union_is_rejected():
+    """``int | str`` is not a supported Dagger type."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError):
+        _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def fn(self, x: int | str) -> str:
+        return str(x)
+""")
+
+
+# -- Advanced defaults -------------------------------------------------------
+
+
+def test_ast_default_factory_list():
+    """``default_factory=list`` yields an empty list as the static default."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    tags: list[str] = dagger.field(default_factory=list)
+""")
+    field = metadata.objects["Foo"].fields[0]
+    assert field.python_name == "tags"
+    assert field.has_default is True
+    assert field.default_value == []
+
+
+def test_ast_module_level_constant_default():
+    """A module-level constant used as a default is resolved to its value."""
+    metadata = _analyze("""
+import dagger
+
+DEFAULT_NAME = "alice"
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def greet(self, name: str = DEFAULT_NAME) -> str:
+        return name
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    param = fn.parameters[0]
+    assert param.python_name == "name"
+    assert param.default_value == "alice"
+
+
+def test_ast_annassigned_constant_default():
+    """Annotated module-level constants also resolve."""
+    metadata = _analyze("""
+import dagger
+
+DEFAULT_COUNT: int = 5
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def count(self, n: int = DEFAULT_COUNT) -> int:
+        return n
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    assert fn.parameters[0].default_value == 5
+
+
+# -- New fixes in this review round ------------------------------------------
+
+
+def test_ast_positional_only_parameter():
+    """Parameters before ``/`` must be extracted, not silently dropped."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, name: str, /, count: int = 0) -> str:
+        return f"{name}:{count}"
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    names = [p.python_name for p in fn.parameters]
+    assert names == ["name", "count"]
+
+
+def test_ast_classvar_annotation_is_ignored():
+    """``ClassVar[...]`` at class scope is a class constant, not a field."""
+    metadata = _analyze("""
+import dagger
+from typing import ClassVar
+
+@dagger.object_type
+class Foo:
+    VERSION: ClassVar[int] = 1
+    name: str = dagger.field()
+""")
+    obj = metadata.objects["Foo"]
+    assert [f.python_name for f in obj.fields] == ["name"]
+    ctor_names = [p.python_name for p in obj.constructor.parameters]
+    assert "VERSION" not in ctor_names
+
+
+def test_ast_final_annotation_is_ignored():
+    """``Final[...]`` at class scope is skipped as well."""
+    metadata = _analyze("""
+import dagger
+from typing import Final
+
+@dagger.object_type
+class Foo:
+    MAX: Final[int] = 99
+    name: str = dagger.field()
+""")
+    obj = metadata.objects["Foo"]
+    assert [f.python_name for f in obj.fields] == ["name"]
+    assert "MAX" not in [p.python_name for p in obj.constructor.parameters]
+
+
+def test_ast_intenum_is_detected():
+    """``IntEnum`` subclasses are registered alongside plain ``Enum``."""
+    metadata = _analyze("""
+import dagger
+from enum import IntEnum
+
+class Priority(IntEnum):
+    LOW = 1
+    HIGH = 2
+
+@dagger.object_type
+class Foo:
+    pass
+""")
+    assert "Priority" in metadata.enums
+    names = {m.name for m in metadata.enums["Priority"].members}
+    assert names == {"LOW", "HIGH"}
+
+
+def test_ast_strenum_is_detected():
+    """``StrEnum`` subclasses are registered alongside plain ``Enum``."""
+    metadata = _analyze("""
+import dagger
+from enum import StrEnum
+
+class Color(StrEnum):
+    RED = "red"
+    BLUE = "blue"
+
+@dagger.object_type
+class Foo:
+    pass
+""")
+    assert "Color" in metadata.enums
+
+
+def test_ast_sequence_resolves_as_list():
+    """``Sequence[T]`` resolves to list kind, not a bare object."""
+    metadata = _analyze("""
+import dagger
+from collections.abc import Sequence
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def sum(self, xs: Sequence[int]) -> int:
+        return sum(xs)
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "list"
+    assert param.resolved_type.element_type.name == "int"
+
+
+def test_ast_dataclasses_field_is_not_dagger_field():
+    """Bare ``field()`` from ``dataclasses`` must not register a Dagger field."""
+    metadata = _analyze("""
+import dagger
+from dataclasses import field
+
+@dagger.object_type
+class Foo:
+    items: list[str] = field(default_factory=list)
+    name: str = dagger.field()
+""")
+    obj = metadata.objects["Foo"]
+    field_names = [f.python_name for f in obj.fields]
+    assert field_names == ["name"]
+
+
+def test_ast_first_method_param_skipped_by_position():
+    """The receiver is skipped by position, not by name match."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def call(this, x: int) -> int:
+        return x
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    names = [p.python_name for p in fn.parameters]
+    assert names == ["x"]
