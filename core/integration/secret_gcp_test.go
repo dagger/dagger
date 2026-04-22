@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: GCP-backed secret provider integration.
+// Intent: Keep GCP secret integration stable independently of workspace cleanup.
+
 import (
 	"context"
 	"fmt"

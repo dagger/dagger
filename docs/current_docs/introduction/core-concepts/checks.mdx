@@ -12,11 +12,9 @@ import TabItem from "@theme/TabItem";
 
 Checks are automated validations that run on every commit to ensure code quality, security, and standards compliance. They're the primary way Dagger helps you maintain quality in your codebase.
 
-**A check is a function that validates your code without requiring any arguments.** This means checks can run anywhere—locally before you commit, in CI on every push, by your coding agent, or before deploying to production—with a simple `dagger check` command.
+**A check is a function that validates your code without requiring any arguments.** This means checks can run anywhere — locally before you commit, in CI on every push, or before deploying to production — with a single `dagger check` command.
 
 ## Running Checks
-
-Use the `dagger check` command to run all available checks:
 
 ```shell
 # Run all checks concurrently
@@ -30,7 +28,7 @@ dagger check lint-*
 dagger check security-scan
 ```
 
-Checks are automatically executed in parallel for maximum performance. The command exits with a non-zero status if any check fails, making it easy to integrate into CI/CD pipelines:
+Checks run in parallel for maximum performance. The command exits with a non-zero status if any check fails:
 
 ```yaml
 # Example GitHub Actions
@@ -38,45 +36,36 @@ Checks are automatically executed in parallel for maximum performance. The comma
   run: dagger check
 ```
 
-Since checks are just Dagger Functions, they run consistently across all environments with full access to Dagger's caching and parallelization capabilities.
+## Checks from Installed Modules
 
-## Checks from Toolchains
-
-The easiest way to add checks to your project is by installing [toolchains](./toolchains.mdx) that provide them. Toolchain checks are automatically available when you run `dagger check`:
+The easiest way to add checks to your project is by installing modules that provide them:
 
 ```shell
-# Install toolchains that provide checks
-dagger toolchain install github.com/example/black
-dagger toolchain install github.com/example/pytest
-dagger toolchain install github.com/example/security-scanner
+# Install modules that provide checks
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
 
-# List all checks (including toolchain checks)
+# List all checks
 dagger check -l
 
 # Example output:
-# black:format
-# pytest:test
-# security-scanner:scan
-# security-scanner:dependency-check
+# eslint:lint
+# vitest:test
 ```
 
-Toolchain checks are namespaced with the toolchain name, making it easy to identify their source:
+Checks are namespaced with the module name:
 
 ```shell
-# Run all checks from the pytest toolchain
-dagger check pytest:*
+# Run all checks from a specific module
+dagger check eslint:*
 
-# Run a specific toolchain check
-dagger check security-scanner:scan
+# Run a specific check
+dagger check vitest:test
 ```
 
-This makes it easy to compose validation workflows by installing multiple tool-specific toolchains that each provide their own checks.
+## Filtering Checks
 
-## Filtering and Ignoring Checks
-
-### Filtering Checks
-
-You can use glob patterns to selectively run checks:
+Use glob patterns to selectively run checks:
 
 ```shell
 # Run all lint checks
@@ -89,39 +78,12 @@ dagger check security-*
 dagger check code-style
 ```
 
-When multiple patterns are provided, checks matching any pattern will run.
-
-### Ignoring Checks from Toolchains
-
-When you install a module as a [toolchain](./toolchains.mdx), you can ignore specific checks from that toolchain in your `dagger.json`:
-
-```json
-{
-  "name": "my-app",
-  "toolchains": [
-    {
-      "name": "scanner",
-      "source": "github.com/example/security-scanner",
-      "ignoreChecks": [
-        "dependency-scan",
-        "container-*"
-      ]
-    }
-  ]
-}
-```
-
-Check patterns in toolchain `ignoreChecks` are scoped to that toolchain, so you don't need to include the toolchain name prefix.
-
 ## Creating Checks
 
-To create a check, mark a Dagger Function with the check annotation. Checks must not require any arguments—they should validate the current state of the repository when run with no input. However, checks can accept **optional** arguments to customize behavior, such as filtering which tests to run or adjusting validation strictness. This design ensures checks can run automatically in any environment while still being flexible for advanced use cases.
-
-Checks can return an error (for pass/fail validation) or a container (for tools that produce exit codes).
+To create a check, mark a Dagger Function with the check annotation. Checks must not require any arguments — they should validate the current state of the repository. Checks can accept **optional** arguments to customize behavior.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
-Use the `+check` comment annotation:
 
 ```go
 // Runs linting checks on the code
@@ -133,78 +95,41 @@ func (m *MyModule) LintCode(ctx context.Context) error {
         Sync(ctx)
     return err
 }
-
-// Runs security scan with optional severity filter
-// +check
-func (m *MyModule) SecurityScan(
-    ctx context.Context,
-    // +optional
-    // +default="HIGH,CRITICAL"
-    severity string,
-) error {
-    _, err := dag.Container().
-        From("aquasec/trivy:latest").
-        WithExec([]string{"trivy", "fs", "--severity", severity, "."}).
-        Sync(ctx)
-    return err
-}
 ```
+
 </TabItem>
 <TabItem value="python" label="Python">
-Use the `@check` decorator:
 
 ```python
-from dagger import dag, check, function, object_type
-
-@object_type
-class MyModule:
-    @function
-    @check
-    async def lint_code(self) -> None:
-        """Runs linting checks on the code"""
-        await dag.container().from_("golangci/golangci-lint:latest").with_exec(["golangci-lint", "run"]).sync()
-
-    @function
-    @check
-    async def security_scan(self, severity: str = "HIGH,CRITICAL") -> None:
-        """Runs security scan with optional severity filter"""
-        await dag.container().from_("aquasec/trivy:latest").with_exec(["trivy", "fs", "--severity", severity, "."]).sync()
+@function
+@check
+async def lint_code(self) -> None:
+    """Runs linting checks on the code"""
+    await dag.container().from_("golangci/golangci-lint:latest").with_exec(["golangci-lint", "run"]).sync()
 ```
+
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
-Use the `@check()` decorator:
 
 ```typescript
-import { dag, object, func, check } from "@dagger.io/dagger";
-
-@object()
-class MyModule {
-  /**
-   * Runs linting checks on the code
-   */
-  @func()
-  @check()
-  async lintCode(): Promise<void> {
-    await dag
-      .container()
-      .from("golangci/golangci-lint:latest")
-      .withExec(["golangci-lint", "run"])
-      .sync();
-  }
-
-  /**
-   * Runs security scan with optional severity filter
-   */
-  @func()
-  @check()
-  async securityScan(severity: string = "HIGH,CRITICAL"): Promise<void> {
-    await dag
-      .container()
-      .from("aquasec/trivy:latest")
-      .withExec(["trivy", "fs", "--severity", severity, "."])
-      .sync();
-  }
+/**
+ * Runs linting checks on the code
+ */
+@func()
+@check()
+async lintCode(): Promise<void> {
+  await dag
+    .container()
+    .from("golangci/golangci-lint:latest")
+    .withExec(["golangci-lint", "run"])
+    .sync();
 }
 ```
+
 </TabItem>
 </Tabs>
+
+## Next Steps
+
+- **[Functions](/core-concepts/functions)** — Learn about functions
+- **[Developing Modules](/extending)** — Create your own checks and functions
