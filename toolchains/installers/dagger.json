@@ -17,10 +17,6 @@
     {
       "name": "ps-analyzer",
       "source": "../../modules/ps-analyzer"
-    },
-    {
-      "name": "shellcheck",
-      "source": "../../modules/shellcheck"
     }
   ]
 }

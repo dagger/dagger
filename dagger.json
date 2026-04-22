@@ -120,6 +120,11 @@
       ]
     },
     {
+      "name": "shellcheck",
+      "source": "github.com/dagger/shellcheck@main",
+      "pin": "34bcb268f4483fa31ea9e33b6a86aa7892144323"
+    },
+    {
       "name": "test-split",
       "source": "toolchains/test-split"
     },

@@ -16,18 +16,6 @@ import (
 // A toolchain to test Dagger installers
 type Installers struct{}
 
-// Lint install bash script
-// +check
-func (Installers) LintBashScript(
-	ctx context.Context,
-	// +defaultPath="/install.sh"
-	installShellScript *dagger.File,
-) error {
-	return dag.Shellcheck().
-		Check(installShellScript).
-		Assert(ctx)
-}
-
 // LintPowershell scripts files
 // +check
 func (Installers) LintPowershellScript(
