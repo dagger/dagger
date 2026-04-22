@@ -1,0 +1,36 @@
+---
+title: "Generating Code"
+slug: /using-dagger/generating
+description: "Run code generators and review changesets before applying them"
+---
+
+# Generating Code
+
+```shell
+dagger generate
+```
+
+Runs all generators in your workspace. Each generator produces a **changeset** — a diff you can review before it touches your working tree.
+
+## List generators
+
+```shell
+dagger generate -l
+```
+
+## Filter generators
+
+```shell
+dagger generate protobuf:*         # all generators from a module
+dagger generate changelog:generate  # a single generator
+```
+
+## Verify in CI
+
+Check that generated code is up to date:
+
+```yaml
+# GitHub Actions
+- run: dagger generate
+- run: git diff --exit-code
+```

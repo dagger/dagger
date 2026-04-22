@@ -7,6 +7,9 @@ import (
 )
 
 const (
+	// ConfigFileName is the workspace config filename inside .dagger/.
+	ConfigFileName = "config.toml"
+
 	// ModuleConfigFileName is the module config filename.
 	ModuleConfigFileName = "dagger.json"
 )
@@ -18,6 +21,9 @@ type Workspace struct {
 
 	// Path is the workspace location relative to Root (e.g., "apps/frontend" or ".").
 	Path string
+
+	// Initialized is true if .dagger/config.toml was found.
+	Initialized bool
 }
 
 // PathExistsFunc checks whether a filesystem path exists.
@@ -26,21 +32,31 @@ type PathExistsFunc func(ctx context.Context, path string) (parentDir string, ex
 
 // Detect finds the workspace boundary from the given working directory.
 //
-// Uses a 2-step fallback chain:
-//  1. FindUp .git → workspace root = directory containing .git
-//  2. No .git → cwd is workspace root
+// Uses a 3-step fallback chain:
+//  1. FindUp .dagger/config.toml → workspace root = parent of .dagger/
+//  2. FindUp .git → workspace root = current directory, sandbox root = directory containing .git
+//  3. No .git → cwd is workspace root
 func Detect(
 	ctx context.Context,
 	pathExists PathExistsFunc,
 	_ func(ctx context.Context, path string) ([]byte, error),
 	cwd string,
 ) (*Workspace, error) {
-	found, err := findUpAll(ctx, pathExists, cwd, ".git")
+	configPath := filepath.Join(LockDirName, ConfigFileName)
+	found, err := findUpAll(ctx, pathExists, cwd, configPath, ".git")
 	if err != nil {
 		return nil, fmt.Errorf("workspace detection: %w", err)
 	}
 
+	configDir, hasConfig := found[configPath]
 	gitDir, hasGit := found[".git"]
+
+	sandboxFor := func(workspaceDir string) string {
+		if hasGit {
+			return gitDir
+		}
+		return workspaceDir
+	}
 
 	relPath := func(sandboxRoot, workspaceDir string) string {
 		rel, err := filepath.Rel(sandboxRoot, workspaceDir)
@@ -50,7 +66,18 @@ func Detect(
 		return rel
 	}
 
-	// Step 1: .git found → workspace = CWD, sandbox = git root
+	// Step 1: config.toml found → workspace = parent of .dagger, sandbox = git root if present
+	if hasConfig {
+		workspaceDir := filepath.Dir(configDir)
+		sandbox := sandboxFor(workspaceDir)
+		return &Workspace{
+			Root:        sandbox,
+			Path:        relPath(sandbox, workspaceDir),
+			Initialized: true,
+		}, nil
+	}
+
+	// Step 2: .git found → workspace = CWD, sandbox = git root
 	if hasGit {
 		return &Workspace{
 			Root: gitDir,
@@ -58,7 +85,7 @@ func Detect(
 		}, nil
 	}
 
-	// Step 2: nothing found → cwd is both workspace and sandbox root
+	// Step 3: nothing found → cwd is both workspace and sandbox root
 	return &Workspace{
 		Root: cwd,
 		Path: ".",

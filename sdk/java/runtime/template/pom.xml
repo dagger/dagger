@@ -115,7 +115,7 @@
             <plugin>
                 <!--
                 This plugin configuration helps VS Code editor (and others) to find
-                the generated code created by `dagger init` and `dagger develop` and
+                the generated code created by `dagger module init` and `dagger develop` and
                 helps for code completion.
                 -->
                 <groupId>org.codehaus.mojo</groupId>
