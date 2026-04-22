@@ -208,6 +208,91 @@ git --git-dir=/srv/repo.git update-server-info
 	})
 }
 
+// TestLocalModuleRemoteToolchainDefaultPath covers the local-module shape
+// where the toolchain is a remote git module from another repo and the user
+// explicitly targets the local module with -m. The toolchain's +defaultPath
+// must resolve from that local module's source root, not from the parent
+// workspace or the remote toolchain repo.
+func (ModuleSuite) TestLocalModuleRemoteToolchainDefaultPath(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const moduleFileContent = "hello from the local module repo"
+	const parentWorkspaceFileContent = "hello from the parent workspace"
+	const toolchainFileContent = "hello from the remote toolchain repo"
+
+	const greeterSource = `package main
+
+import (
+	"context"
+	"dagger/greeter/internal/dagger"
+)
+
+type Greeter struct {
+	Workspace *dagger.Directory
+}
+
+func New(
+	// +defaultPath="."
+	workspace *dagger.Directory,
+) *Greeter {
+	return &Greeter{Workspace: workspace}
+}
+
+func (m *Greeter) Read(ctx context.Context) (string, error) {
+	return m.Workspace.
+		Directory("target-subdir/nested").
+		File("hello.txt").
+		Contents(ctx)
+}
+`
+
+	toolchainBareSetup := goGitBase(t, c).
+		WithNewFile("/work/target-subdir/nested/hello.txt", toolchainFileContent).
+		With(daggerExec("init", "--sdk=go", "--name=greeter", "--source=.")).
+		With(sdkSource("go", greeterSource)).
+		WithExec([]string{"sh", "-c", `git add . && git commit -m "init toolchain"`}).
+		WithExec([]string{"sh", "-c", `
+set -eux
+git init --bare --initial-branch=main /srv/toolchain.git
+git remote add origin /srv/toolchain.git
+git push origin HEAD:refs/heads/main
+git --git-dir=/srv/toolchain.git update-server-info
+`})
+
+	toolchainCommitOut, err := toolchainBareSetup.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	toolchainCommit := strings.TrimSpace(toolchainCommitOut)
+
+	toolchainSrv, _ := gitSmartHTTPServiceDirAuth(
+		ctx, t, c,
+		"",
+		toolchainBareSetup.Directory("/srv"),
+		"", nil,
+	)
+	toolchainSrv, err = toolchainSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = toolchainSrv.Stop(ctx) })
+
+	toolchainHost, err := toolchainSrv.Hostname(ctx)
+	require.NoError(t, err)
+	toolchainRef := "http://" + resolveServiceIP(ctx, t, c, toolchainHost) + "/toolchain.git@" + toolchainCommit
+
+	out, err := goGitBase(t, c).
+		WithNewFile("/work/target-subdir/nested/hello.txt", parentWorkspaceFileContent).
+		WithWorkdir("/work/local-module").
+		WithNewFile("/work/local-module/target-subdir/nested/hello.txt", moduleFileContent).
+		With(daggerExec("init")).
+		With(daggerExec("toolchain", "install", "--name", "greeter", toolchainRef)).
+		WithWorkdir("/work").
+		With(daggerExec("-m", "./local-module", "--progress=report", "call", "greeter", "read")).
+		CombinedOutput(ctx)
+	require.NoError(t, err,
+		"explicit -m ./local-module must resolve +defaultPath from the local module source root, not the parent workspace or remote toolchain repo:\n%s", out)
+	require.Contains(t, out, moduleFileContent)
+	require.NotContains(t, out, parentWorkspaceFileContent)
+	require.NotContains(t, out, toolchainFileContent)
+}
+
 // TestRemoteModuleSameRepoToolchainDefaultPath covers the remote-module shape
 // where the toolchain lives in the same repo as the module targeted by -m. No
 // Workspace argument is involved; this is plain +defaultPath resolution.
