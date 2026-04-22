@@ -331,6 +331,8 @@ class ModuleParser:
 
         for item in node.body:
             if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                if self._is_non_field_annotation(item.annotation):
+                    continue
                 self._process_annotated_assign(
                     item, file_path, node.name, fields, init_params
                 )
@@ -482,6 +484,27 @@ class ModuleParser:
         if isinstance(value, ast.Attribute):
             return value.attr == "InitVar"
         return isinstance(value, ast.Name) and value.id == "InitVar"
+
+    def _is_non_field_annotation(self, annotation: ast.expr) -> bool:
+        """True for annotations that don't declare a field or init parameter.
+
+        Covers ``ClassVar[...]`` and ``Final[...]`` (plus ``typing.`` prefixed
+        forms). These mark class-level constants, not Dagger fields.
+        """
+        names = {"ClassVar", "Final"}
+
+        def _matches(node: ast.expr) -> bool:
+            if isinstance(node, ast.Name):
+                return node.id in names
+            if isinstance(node, ast.Attribute):
+                return node.attr in names
+            return False
+
+        if _matches(annotation):
+            return True
+        if isinstance(annotation, ast.Subscript) and _matches(annotation.value):
+            return True
+        return False
 
     def _unwrap_initvar(self, annotation: ast.expr) -> ast.expr:
         """Unwrap InitVar[T] to get the inner type T."""
