@@ -79,6 +79,10 @@
       "source": "toolchains/java-sdk-dev"
     },
     {
+      "name": "markdown-lint",
+      "source": "modules/markdownlint"
+    },
+    {
       "name": "php-sdk",
       "source": "toolchains/php-sdk-dev"
     },

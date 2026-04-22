@@ -40,6 +40,7 @@ type CodeGenerator interface {
 | TypeScript | Hybrid AST + reflection | Runtime, no generated dispatch |
 
 **Go example output:**
+
 ```go
 func invoke(ctx context.Context, parentJSON []byte, parentName, fnName string, inputArgs map[string][]byte) (any, error) {
     switch parentName {
@@ -59,6 +60,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName, fnName string, i
 **What:** Builds the shipped SDK packages (`dagger.io/dagger` Go package, `dagger` Python package, etc.)
 
 **Implementation:** Same `CodeGenerator` interface, but:
+
 - No module context
 - No dependency handling
 - Different config paths

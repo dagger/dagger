@@ -428,26 +428,26 @@ Sketch:
 
 ```go
 func (s *thingSchema) thing(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Query],
-	args thingArgs,
+ ctx context.Context,
+ parent dagql.ObjectResult[*core.Query],
+ args thingArgs,
 ) (inst dagql.ObjectResult[*core.Thing], err error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
+ srv, err := core.CurrentDagqlServer(ctx)
+ if err != nil {
+  return inst, err
+ }
 
-	obj := &core.Thing{
-		Name: args.Name,
-	}
+ obj := &core.Thing{
+  Name: args.Name,
+ }
 
-	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, obj)
-	if err != nil {
-		return inst, err
-	}
+ inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, obj)
+ if err != nil {
+  return inst, err
+ }
 
-	dgst := hashutil.HashStrings(args.Name)
-	return inst.WithContentDigest(ctx, dgst)
+ dgst := hashutil.HashStrings(args.Name)
+ return inst.WithContentDigest(ctx, dgst)
 }
 ```
 

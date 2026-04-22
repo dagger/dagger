@@ -10,30 +10,29 @@ with all persistent caching going through purely dagql and NOT buildkit.
 5. We are working on a LARGE project with lots of moving parts that can't always move all at once. There are times where existing comments and unit tests are OUT OF DATE and can thus be SELECTIVELY disregarded. Unit tests and comments are NOTgospel. Known updated ones are a useful tool for understanding, but must be followed with caution.
 6. When you encounter anything not explicitly covered by our design — an ambiguity, an undocumented assumption, a deviation from what we discussed — treat it as a blocker and escalate. Do NOT make unilateral implementation decisions. Do NOT introduce ad hoc solutions. SURFACE the issue. We already did the design work. During implementation, any ambiguity, surprise, or hidden dependency is a blocker. Ambiguity is a tripwire: stop and escalate. NO silent assumptions. NO ad hoc workarounds. Treat local fixes to non-local problems as spec violations.
 
-
 Also, if I refer to a WHITEBOARD.md file where we collaborate on notes, TODOs, task progress, etc. you can find it in ./scratch/WHITEBOARD.md
 
 # DEBUGGING
 
 ./skills/cache-expert/references/debugging.md HAS CRUCIAL INFORMATION WHICH MUST BE READ AND NEVER FORGOTTEN!
 
-Additionally, you should make heavy use of subagents when running tests and parsing their output in order to keep your context more open. 
+Additionally, you should make heavy use of subagents when running tests and parsing their output in order to keep your context more open.
 
 # COMMIT MESSAGES
 
-Rules for commit messages: 
+Rules for commit messages:
 
 Please include a detailed commit message on the problem, the solution we went with and implementation details. Imagine that you are an LLM reading the commit message with no context on the change, include everything you'd need to get back up to speed.
 
 • Commit message formatting rule (important):
-  - Never put literal `\n` in `git commit -s -m "..."` expecting real newlines.
-  - Use a real multiline message via either:
+
+- Never put literal `\n` in `git commit -s -m "..."` expecting real newlines.
+- Use a real multiline message via either:
     1) multiple `-m` flags (one per paragraph), or
     2) a message file + `git commit -s -F <file>` (preferred for long messages).
 
 Preferred pattern:
+
   1. Write the message to a temp file with actual line breaks.
   2. Run `git commit -s --amend -F /tmp/commitmsg.txt` (or `git commit -F /tmp/commitmsg.txt`).
   3. Verify with `git log -1 --format=%B`.
-
-

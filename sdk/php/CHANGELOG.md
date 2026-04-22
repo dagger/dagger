@@ -13,9 +13,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.6`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.20.6
 
 ### Dependencies
+
 - Bump Engine to v0.20.6 by @tiborvass in https://github.com/dagger/dagger/pull/12990
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -26,9 +28,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.5`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.20.5
 
 ### Dependencies
+
 - Bump Engine to v0.20.5 by @tiborvass in https://github.com/dagger/dagger/pull/12946
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -39,12 +43,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.4`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.20.4
 
 ### Added
+
 - Add support for implicit getters by @charjr in https://github.com/dagger/dagger/pull/11689
 
 ### Dependencies
+
 - Bump Engine to v0.20.4 by @tiborvass in https://github.com/dagger/dagger/pull/12930
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -55,9 +62,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.3`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.20.3
 
 ### Dependencies
+
 - Bump Engine to v0.20.3 by @marcosnils in https://github.com/dagger/dagger/pull/12033
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -68,9 +77,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.2`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.20.2
 
 ### Dependencies
+
 - Bump Engine to v0.20.2 by @marcosnils in https://github.com/dagger/dagger/pull/12029
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -81,9 +92,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.1`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.20.1
 
 ### Dependencies
+
 - Bump Engine to v0.20.1 by @TomChv in https://github.com/dagger/dagger/pull/11968
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -94,13 +107,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.0`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.20.0
 
 ### Dependencies
+
 - Bump Engine to v0.20.0 by @vito in https://github.com/dagger/dagger/pull/11920
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @vito
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -111,9 +128,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.11`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.11
 
 ### Dependencies
+
 - Bump Engine to v0.19.11 by @sipsma in https://github.com/dagger/dagger/pull/11808
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -124,9 +143,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.10`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.10
 
 ### Dependencies
+
 - Bump Engine to v0.19.10 by @sipsma in https://github.com/dagger/dagger/pull/11693
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -137,9 +158,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.9`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.9
 
 ### Dependencies
+
 - Bump Engine to v0.19.9 by @sipsma in https://github.com/dagger/dagger/pull/11646
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -150,9 +173,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.8`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.8
 
 ### Dependencies
+
 - Bump Engine to v0.19.8 by @grouville in https://github.com/dagger/dagger/pull/11524
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -163,9 +188,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.7`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.7
 
 ### Dependencies
+
 - Bump Engine to v0.19.7 by @tiborvass in https://github.com/dagger/dagger/pull/11457
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -176,13 +203,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.6`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.6
 
 ### Dependencies
+
 - Bump Engine to v0.19.6 by @marcosnils in https://github.com/dagger/dagger/pull/11372
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @marcosnils
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -193,13 +224,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.5`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.5
 
 ### Dependencies
+
 - Bump Engine to v0.19.5 by @sipsma in https://github.com/dagger/dagger/pull/11362
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @sipsma
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -210,13 +245,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.4`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.4
 
 ### Dependencies
+
 - Bump Engine to v0.19.4 by @sipsma in https://github.com/dagger/dagger/pull/11333
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @sipsma
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -227,9 +266,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.3`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.3
 
 ### Dependencies
+
 - Bump Engine to v0.19.3 by @marcosnils in https://github.com/dagger/dagger/pull/11286
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -240,9 +281,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.2`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.2
 
 ### Dependencies
+
 - Bump Engine to v0.19.2 by @TomChv in https://github.com/dagger/dagger/pull/11202
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -253,9 +296,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.1`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.1
 
 ### Dependencies
+
 - Bump Engine to v0.19.1 by @grouville in https://github.com/dagger/dagger/pull/11196
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -266,25 +311,32 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.0`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.19.0
 
 ### 🔥 Breaking Changes
+
 - Removed deprecated Argument attribute, use Doc instead by @charjr in https://github.com/dagger/dagger/pull/10968
 - Sort arguments so that required arguments always come before optional arguments by @Neirda24 in https://github.com/dagger/dagger/pull/11131
 
 ### Changed
+
 - Update SDK runtime to PHP8.4 by @charjr in https://github.com/dagger/dagger/pull/11109
 - Change composer image to reduce download size of PHP modules by @Neirda24 in https://github.com/dagger/dagger/pull/11114
 
 ### Removed
+
 - Removed deprecated description argument from DaggerFunction attribute by @charjr in https://github.com/dagger/dagger/pull/9932 \
   Use Doc attribute instead.
 
 ### Dependencies
+
 - Bump Engine to v0.19.0 by @matipan in https://github.com/dagger/dagger/pull/11147
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @Neirda24
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -295,9 +347,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.19`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.19
 
 ### Dependencies
+
 - Bump Engine to v0.18.19 by @jedevc in https://github.com/dagger/dagger/pull/11089
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -308,9 +362,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.18`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.18
 
 ### Dependencies
+
 - Bump Engine to v0.18.18 by @jedevc in https://github.com/dagger/dagger/pull/11062
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -321,9 +377,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.17`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.17
 
 ### Dependencies
+
 - Bump Engine to v0.18.17 by @jedevc in https://github.com/dagger/dagger/pull/10986
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -334,9 +392,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.16`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.16
 
 ### Dependencies
+
 - Bump Engine to v0.18.16 by @jedevc in https://github.com/dagger/dagger/pull/10910
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -347,9 +407,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.15`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.15
 
 ### Dependencies
+
 - Bump Engine to v0.18.15 by @sipsma in https://github.com/dagger/dagger/pull/10901
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -360,9 +422,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.14`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.14
 
 ### Dependencies
+
 - Bump Engine to v0.18.14 by @vito in https://github.com/dagger/dagger/pull/10763
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -373,9 +437,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.13`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.13
 
 ### Dependencies
+
 - Bump Engine to v0.18.13 by @sipsma in https://github.com/dagger/dagger/pull/10758
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -386,9 +452,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.12`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.12
 
 ### Dependencies
+
 - Bump Engine to v0.18.12 by @sipsma in https://github.com/dagger/dagger/pull/10650
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -399,9 +467,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.11`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.11
 
 ### Dependencies
+
 - Bump Engine to v0.18.11 by @jedevc in https://github.com/dagger/dagger/pull/10639
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -412,9 +482,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.10`. [See what changed in th
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.10
 
 ### Dependencies
+
 - Bump Engine to v0.18.10 by @jedevc in https://github.com/dagger/dagger/pull/10559
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -425,9 +497,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.9`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.9
 
 ### Dependencies
+
 - Bump Engine to v0.18.9 by @jedevc in https://github.com/dagger/dagger/pull/10482
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -438,9 +512,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.8`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.8
 
 ### Dependencies
+
 - Bump Engine to v0.18.8 by @cwlbraa in https://github.com/dagger/dagger/pull/10405
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -451,9 +527,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.7`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.7
 
 ### Dependencies
+
 - Bump Engine to v0.18.7 by @jedevc in https://github.com/dagger/dagger/pull/10389
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -464,9 +542,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.6`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.6
 
 ### Dependencies
+
 - Bump Engine to v0.18.6 by @sipsma in https://github.com/dagger/dagger/pull/10337
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -477,9 +557,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.5`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.5
 
 ### Dependencies
+
 - Bump Engine to v0.18.5 by @sipsma in https://github.com/dagger/dagger/pull/10274
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -490,9 +572,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.4`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.4
 
 ### Dependencies
+
 - Bump Engine to v0.18.4 by @jedevc in https://github.com/dagger/dagger/pull/10235
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -503,9 +587,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.3`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.3
 
 ### Dependencies
+
 - Bump Engine to v0.18.3 by @jedevc in https://github.com/dagger/dagger/pull/10149
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -516,9 +602,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.2`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.2
 
 ### Dependencies
+
 - Bump Engine to v0.18.2 by @marcosnils in https://github.com/dagger/dagger/pull/10072
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -529,9 +617,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.1`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.1
 
 ### Dependencies
+
 - Bump Engine to v0.18.1 by @vito in https://github.com/dagger/dagger/pull/10041
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -542,9 +632,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.0`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.18.0
 
 ### Dependencies
+
 - Bump Engine to v0.18.0 by @sipsma in https://github.com/dagger/dagger/pull/10028
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -555,9 +647,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.17.2`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.17.2
 
 ### Dependencies
+
 - Bump Engine to v0.17.2 by @jedevc in https://github.com/dagger/dagger/pull/9989
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -568,9 +662,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.17.1`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.17.1
 
 ### Dependencies
+
 - Bump Engine to v0.17.1 by @cwlbraa in https://github.com/dagger/dagger/pull/9957
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -581,9 +677,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.17.0`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.17.0
 
 ### Dependencies
+
 - Bump Engine to v0.17.0 by @jedevc in https://github.com/dagger/dagger/pull/9918
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -594,9 +692,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.3`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.16.3
 
 ### Dependencies
+
 - Bump Engine to v0.16.3 by @jedevc in https://github.com/dagger/dagger/pull/9849
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -607,9 +707,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.2`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.16.2
 
 ### Dependencies
+
 - Bump Engine to v0.16.2 by @jedevc in https://github.com/dagger/dagger/pull/9728
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -620,9 +722,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.1`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.16.1
 
 ### Dependencies
+
 - Bump Engine to v0.16.1 by @sipsma in https://github.com/dagger/dagger/pull/9634
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -633,9 +737,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.0`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.16.0
 
 ### Dependencies
+
 - Bump Engine to v0.16.0 by @sipsma in https://github.com/dagger/dagger/pull/9629
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -646,9 +752,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.4`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.15.4
 
 ### Dependencies
+
 - Bump Engine to v0.15.4 by @jedevc in https://github.com/dagger/dagger/pull/9562
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -659,12 +767,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.3`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.15.3
 
 ### Added
+
 - Add float type support by @wingyplus in https://github.com/dagger/dagger/pull/9411
 
 ### Dependencies
+
 - Bump Engine to v0.15.3 by @jedevc in https://github.com/dagger/dagger/pull/9469
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -675,9 +786,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.2`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.15.2
 
 ### Dependencies
+
 - Bump Engine to v0.15.2 by @jedevc in https://github.com/dagger/dagger/pull/9383
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -688,9 +801,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.1`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.15.1
 
 ### Dependencies
+
 - Bump Engine to v0.15.1 by @cwlbraa in https://github.com/dagger/dagger/pull/9183
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -701,12 +816,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.0`. [See what changed in tha
 🐘 https://packagist.org/packages/dagger/dagger#v0.15.0
 
 ### Added
+
 - Add support for `TRACEPARENT`. The user will see what's function doing in the TUI by @wingyplus in https://github.com/dagger/dagger/pull/8896
 
 ### Dependencies
+
 - Bump Engine to v0.15.0 by @jedevc in https://github.com/dagger/dagger/pull/9158
 
 ### What to do next
+
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 
@@ -716,11 +834,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.14.0`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.14.0
 
-
 ### Dependencies
+
 - Bump Engine to v0.14.0 by @sipsma in https://github.com/dagger/dagger/pull/8900
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -731,11 +850,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.7`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.13.7
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.7 by @jedevc in https://github.com/dagger/dagger/pull/8829
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -746,11 +866,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.6`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.13.6
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.6 by @jedevc in https://github.com/dagger/dagger/pull/8770
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -761,11 +882,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.5`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.13.5
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.5 by @sipsma in https://github.com/dagger/dagger/pull/8679
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -776,11 +898,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.4`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.13.4
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.4 by @jedevc in https://github.com/dagger/dagger/pull/8661
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -791,11 +914,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.3`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.13.3
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.3 by @vito in https://github.com/dagger/dagger/pull/8523
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -806,11 +930,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.2`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.13.2
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.2 by @vito in https://github.com/dagger/dagger/pull/8514
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -821,11 +946,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.1`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.13.1
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.1 by @sipsma in https://github.com/dagger/dagger/pull/8488
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -836,11 +962,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.0`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.13.0
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.0 by @jedevc in https://github.com/dagger/dagger/pull/8408
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -851,11 +978,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.7`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.12.7
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.7 by @jedevc in https://github.com/dagger/dagger/pull/8299
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -866,8 +994,8 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.6`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.12.6
 
-
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -878,8 +1006,8 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.5`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.12.5
 
-
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -890,11 +1018,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.4`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.12.4
 
-
 ### Added
+
 - Support Dagger Modules written in PHP by @carnage in https://github.com/dagger/dagger/pull/7493
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -905,11 +1034,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.3`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.12.3
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.3 by @github-actions in https://github.com/dagger/dagger/pull/8039
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -920,11 +1050,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.2`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.12.2
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.2 by @github-actions in https://github.com/dagger/dagger/pull/8006
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -935,11 +1066,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.1`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.12.1
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.1 by @github-actions in https://github.com/dagger/dagger/pull/7978
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -950,11 +1082,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.0`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.12.0
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.0 by @github-actions in https://github.com/dagger/dagger/pull/7903
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -965,11 +1098,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.9`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.9
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.9 by @github-actions in https://github.com/dagger/dagger/pull/7746
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -980,11 +1114,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.8`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.8
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.8 by @github-actions in https://github.com/dagger/dagger/pull/7690
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -995,11 +1130,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.7`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.7
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.7 by @github-actions in https://github.com/dagger/dagger/pull/7615
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1010,11 +1146,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.6`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.6
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.6 by @github-actions in https://github.com/dagger/dagger/pull/7516
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1025,11 +1162,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.5`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.5
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.5 by @github-actions in https://github.com/dagger/dagger/pull/7482
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1040,11 +1178,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.4`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.4
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.4 by @github-actions in https://github.com/dagger/dagger/pull/7345
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1055,11 +1194,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.3`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.3
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.3 by @github-actions in https://github.com/dagger/dagger/pull/7318
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1070,11 +1210,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.2`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.2
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.2 by @github-actions in https://github.com/dagger/dagger/pull/7204
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1085,11 +1226,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.1`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.1
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.1 by @github-actions in https://github.com/dagger/dagger/pull/7100
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1100,11 +1242,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.0`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.11.0
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.0 by @github-actions in https://github.com/dagger/dagger/pull/7016
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1115,11 +1258,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.3`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.10.3
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.3 by @github-actions in https://github.com/dagger/dagger/pull/6936
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1130,11 +1274,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.2`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.10.2
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.2 by @github-actions in https://github.com/dagger/dagger/pull/6871
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1145,11 +1290,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.1`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.10.1
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.1 by @github-actions in https://github.com/dagger/dagger/pull/6826
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1160,11 +1306,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.0`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.10.0
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.0 by @github-actions in https://github.com/dagger/dagger/pull/6758
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1175,11 +1322,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.11`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.9.11
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.11 by @github-actions in https://github.com/dagger/dagger/pull/6700
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1190,11 +1338,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.10`. [See what changed in tha
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.9.10
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.10 by @github-actions in https://github.com/dagger/dagger/pull/6656
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1205,11 +1354,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.9`. [See what changed in that
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.9.9
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.9 by @github-actions in https://github.com/dagger/dagger/pull/6636
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1220,11 +1370,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.8`. [See what changed in that
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.9.8
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.8 by @github-actions in https://github.com/dagger/dagger/pull/6557
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1235,17 +1386,20 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.7`. [See what changed in that
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.9.7
 
-
 ### 🔥 Breaking Changes
+
 - Flatten namespaces by @zeroware in https://github.com/dagger/dagger/pull/6330
 
 ### Added
+
 - Added support for input object types by @zeroware in https://github.com/dagger/dagger/pull/6445
 
 ### Dependencies
+
 - Bump Engine to v0.9.7 by @github-actions in https://github.com/dagger/dagger/pull/6460
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1256,11 +1410,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.5`. [See what changed in that
 
 🐘 https://packagist.org/packages/dagger/dagger#v0.9.5
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.5 by @github-actions in https://github.com/dagger/dagger/pull/6309
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)

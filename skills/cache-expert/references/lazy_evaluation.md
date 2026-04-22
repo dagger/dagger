@@ -35,7 +35,7 @@ Any result can participate in lazy evaluation if its wrapped value implements:
 
 ```go
 type HasLazyEvaluation interface {
-	LazyEvalFunc() LazyEvalFunc
+ LazyEvalFunc() LazyEvalFunc
 }
 ```
 
@@ -197,9 +197,9 @@ The cache-level mechanism is only half the story. The object implementations use
 
 ```go
 type Lazy[T dagql.Typed] interface {
-	Evaluate(context.Context, T) error
-	AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error)
-	EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error)
+ Evaluate(context.Context, T) error
+ AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error)
+ EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error)
 }
 ```
 
@@ -209,8 +209,8 @@ Every concrete lazy type in `core` embeds a `LazyState`:
 
 ```go
 type LazyState struct {
-	LazyMu           *sync.Mutex
-	LazyInitComplete bool
+ LazyMu           *sync.Mutex
+ LazyInitComplete bool
 }
 ```
 

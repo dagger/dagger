@@ -6,7 +6,7 @@ This packages provides a tool to generate Elixir code Dagger GraphQL.
 
 Run the following commands below:
 
-```
-$ mix deps.get
-$ mix escript.build
+```bash
+mix deps.get
+mix escript.build
 ```
