@@ -52,7 +52,7 @@ class StubType:
 
 def is_stub_type(t: Any) -> bool:
     """Check if a type is a stub type."""
-    return getattr(t, "_is_stub", False)
+    return isinstance(t, StubType)
 
 
 class StubNamespace:
