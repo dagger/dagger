@@ -107,7 +107,7 @@ class Module:
         await dag.current_function_call().return_value(dagger.JSON(output))
 
     async def _typedefs(self) -> dagger.ModuleID:
-        """Register the module types using AST-based analysis."""
+        """Delegate to AST-based registration, translating RuntimeError."""
         from dagger.mod._discovery import ast_register
 
         try:

@@ -24,10 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 async def register_from_metadata(metadata: ModuleMetadata) -> dagger.ModuleID:
-    """Register a module with the Dagger engine using AST metadata.
-
-    This is the equivalent of Module._typedefs() but uses pre-analyzed
-    metadata instead of runtime introspection.
+    """Register a module with the Dagger engine from AST-derived metadata.
 
     Args:
         metadata: The module metadata from AST analysis.

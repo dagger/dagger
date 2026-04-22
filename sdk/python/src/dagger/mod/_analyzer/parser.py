@@ -74,9 +74,15 @@ def get_docstring(
 def _parse_docstring_deprecated(raw_doc: str) -> tuple[str | None, str | None]:
     """Parse a docstring that may contain a ``.. deprecated::`` directive.
 
-    Returns (doc, deprecated) where:
-    - doc is the non-deprecated portion (or None if only deprecation)
-    - deprecated is the deprecation message (or None if not deprecated)
+    Returns ``(doc, deprecated)`` with three-state semantics for
+    ``deprecated``:
+
+    - ``None`` when the docstring has no ``.. deprecated::`` directive.
+    - ``""`` when the directive is present but carries no message.
+    - The stripped message otherwise.
+
+    ``doc`` is the non-deprecated portion of the docstring (or None if
+    only the deprecation directive was present).
     """
     import re
 
@@ -554,8 +560,10 @@ class ModuleParser:
         has_default = "default" in field_kwargs or "default_factory" in field_kwargs
         default_value = field_kwargs.get("default")
         if default_value is None and "default_factory" in field_kwargs:
-            # default_factory is a callable; use its result as the default
-            # (e.g., default_factory=list → [])
+            # We don't invoke the factory; whatever _eval_constant returned
+            # becomes the static default. The name_map hard-codes list → []
+            # and dict → {}; other factories fall through to None and the
+            # parameter is registered as optional-without-default.
             default_value = field_kwargs["default_factory"]
 
         return FieldMetadata(

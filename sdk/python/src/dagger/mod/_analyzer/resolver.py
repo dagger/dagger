@@ -452,7 +452,7 @@ class TypeResolver:
             right.is_optional = True
             return right
 
-        # General union - not supported in Dagger, take first non-None type
+        # General union - not supported in Dagger
         msg = "Union types (other than T | None) are not supported in Dagger"
         raise TypeResolutionError(msg, annotation=ast.unparse(node), location=location)
 

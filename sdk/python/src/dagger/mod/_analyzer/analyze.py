@@ -29,6 +29,26 @@ def analyze_module(
     This is the main entry point for AST-based type analysis. It parses
     the source files, extracts decorated classes and functions, resolves
     type annotations, and returns structured metadata.
+
+    Args:
+        source_files: Paths to Python source files making up the module.
+            At least one file is required.
+        main_object_name: Name of the class decorated with
+            ``@dagger.object_type`` that represents the module's root.
+        module_name: Name recorded on the resulting ``ModuleMetadata``.
+            Defaults to ``main_object_name`` when not provided.
+
+    Returns
+    -------
+        Structured metadata describing the module's types and functions.
+
+    Raises
+    ------
+        AnalysisError: If ``source_files`` is empty or any listed path
+            is missing or not a file.
+        ParseError: If any source file has a Python syntax error.
+        ValidationError: If ``main_object_name`` is not a class decorated
+            with ``@dagger.object_type`` in the analyzed sources.
     """
     if not source_files:
         msg = "No source files provided"
@@ -123,7 +143,24 @@ def analyze_source_string(
 ) -> ModuleMetadata:
     """Analyze Python source code from a string.
 
-    This is useful for testing or when source is not in a file.
+    This is useful for testing or when source is not in a file. The
+    source is written to a temporary file and passed through
+    ``analyze_module``.
+
+    Args:
+        source: Python source code to analyze.
+        main_object_name: Name of the root ``@dagger.object_type`` class.
+        module_name: Name recorded on the resulting ``ModuleMetadata``.
+
+    Returns
+    -------
+        Structured metadata describing the module's types and functions.
+
+    Raises
+    ------
+        AnalysisError: See ``analyze_module``.
+        ParseError: If the source has a Python syntax error.
+        ValidationError: If ``main_object_name`` is not found.
     """
     import tempfile
 
