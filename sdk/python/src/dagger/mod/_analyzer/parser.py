@@ -369,28 +369,25 @@ class ModuleParser:
         """Parse an @object_type or @interface decorated class."""
         assert self._resolver is not None
 
-        self._resolver.set_current_class(node.name)
+        with self._resolver.in_class(node.name):
+            # Get decorator info for metadata
+            decorator_type = "interface" if is_interface else "object_type"
+            decorator = find_decorator(node, decorator_type)
+            decorator_info = extract_decorator_info(decorator) if decorator else None
 
-        # Get decorator info for metadata
-        decorator_type = "interface" if is_interface else "object_type"
-        decorator = find_decorator(node, decorator_type)
-        decorator_info = extract_decorator_info(decorator) if decorator else None
+            # Extract deprecation
+            deprecated = None
+            if decorator_info and "deprecated" in decorator_info.kwargs:
+                deprecated = decorator_info.kwargs["deprecated"]
 
-        # Extract deprecation
-        deprecated = None
-        if decorator_info and "deprecated" in decorator_info.kwargs:
-            deprecated = decorator_info.kwargs["deprecated"]
+            # Extract fields, functions, and constructor
+            fields, functions, init_params, constructor = self._extract_class_members(
+                node, file_path
+            )
 
-        # Extract fields, functions, and constructor
-        fields, functions, init_params, constructor = self._extract_class_members(
-            node, file_path
-        )
-
-        # Resolve constructor
-        if constructor is None and not is_interface:
-            constructor = self._resolve_constructor(node, file_path, init_params)
-
-        self._resolver.set_current_class(None)
+            # Resolve constructor
+            if constructor is None and not is_interface:
+                constructor = self._resolve_constructor(node, file_path, init_params)
 
         return ObjectTypeMetadata(
             name=node.name,

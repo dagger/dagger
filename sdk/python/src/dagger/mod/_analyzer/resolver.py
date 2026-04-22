@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import ast
 import collections.abc
+import contextlib
 import enum
 import logging
 import types
 import typing
-from typing import Any, get_args, get_origin
+from typing import Any, Iterator, get_args, get_origin
 
 import typing_extensions
 
@@ -120,8 +121,26 @@ class TypeResolver:
         self._current_class: str | None = None
 
     def set_current_class(self, class_name: str | None) -> None:
-        """Set the current class context for Self resolution."""
+        """Set the current class context for Self resolution.
+
+        Prefer ``in_class`` which scopes the change and restores the
+        previous value automatically.
+        """
         self._current_class = class_name
+
+    @contextlib.contextmanager
+    def in_class(self, class_name: str | None) -> Iterator[None]:
+        """Scope ``Self`` resolution to a class for the duration of the block.
+
+        Save-and-restore keeps nested or recursive usage safe and guarantees
+        the resolver returns to its prior state even if the body raises.
+        """
+        previous = self._current_class
+        self._current_class = class_name
+        try:
+            yield
+        finally:
+            self._current_class = previous
 
     def resolve(
         self,
