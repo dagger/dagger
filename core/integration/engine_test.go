@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Engine process lifecycle and integration-level engine behavior.
+// Intent: Keep engine behavior stable independently of workspace cleanup.
+
 import (
 	"bytes"
 	"context"
@@ -871,11 +875,11 @@ rm -rf /tmp/main
 mkdir -p /tmp/main
 cd /tmp/main
 
-dagger init --name main --sdk=go >/dev/null
+dagger module init --name main --sdk=go >/dev/null
 
 mkdir -p dep
 cd dep
-dagger init --name dep --sdk=python >/dev/null
+dagger module init --name dep --sdk=python >/dev/null
 
 cd /tmp/main
 dagger install ./dep >/dev/null

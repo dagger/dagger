@@ -1071,6 +1071,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	var loadWorkspaceModules bool
 	var eagerRuntime bool
 	var workspaceRef *string
+	var workspaceEnv *string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
 		clientMetadata.ClientVersion = md.ClientVersion
 		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
@@ -1084,12 +1085,17 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 		if md.LockMode != "" {
 			clientMetadata.LockMode = md.LockMode
 		}
+		if declaredEnv, ok := workspaceEnvFromClientMetadata(md); ok {
+			env := declaredEnv
+			workspaceEnv = &env
+		}
 	}
 
 	clientMetadata.ExtraModules = extraModules
 	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
 	clientMetadata.EagerRuntime = eagerRuntime
 	clientMetadata.Workspace = workspaceRef
+	clientMetadata.WorkspaceEnv = workspaceEnv
 	return &clientMetadata
 }
 
