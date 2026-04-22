@@ -203,6 +203,47 @@ DEFAULTS_MESSAGE_NAME=planete-outer
 	}
 }
 
+// TestObjectDefaultOverride keeps coverage for .env user defaults overriding
+// module defaults in compat mode. This regressed when a constructor arg's
+// schema default (for example Python's "= None") was treated as explicit input.
+func (WorkspaceCompatSuite) TestObjectDefaultOverride(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := daggerCliBase(t, c).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"}).
+		With(daggerInitPython()).
+		WithNewFile("src/test/main.py", `import dagger
+from dagger import dag, function, object_type
+
+@object_type
+class Test:
+    secret_with_default: dagger.Secret | None = None
+
+    @function
+    async def check(self) -> str:
+        if self.secret_with_default is None:
+            return "secret is None"
+        val = await self.secret_with_default.plaintext()
+        return f"secret is: {val}"
+`).
+		WithEnvVariable("MY_SECRET", "hello-from-env")
+
+	out, err := base.
+		With(daggerCall("check")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "secret is None", out)
+
+	// User defaults currently match the constructor arg's GraphQL name
+	// (`secretWithDefault`), not snake_case env-style names.
+	out, err = base.
+		WithNewFile(".env", "secretWithDefault=env://MY_SECRET").
+		With(daggerCall("check")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "secret is: hello-from-env", out)
+}
+
 func (WorkspaceCompatSuite) TestOuterEnvFile(ctx context.Context, t *testctx.T) {
 	tmp := tempDirWithEnvFile(t,
 		`DEFAULTS_GREETING=salutations`,
@@ -584,6 +625,7 @@ func (WorkspaceCompatSuite) TestSimple(ctx context.Context, t *testctx.T) {
 		command        []string
 		expect         dagger.ReturnType
 		stdout         string
+		prepare        func(ctr *dagger.Container) *dagger.Container
 	}{
 		{
 			"inner envfile",
@@ -596,6 +638,48 @@ MESSAGE_NAME=monde
 			[]string{"dagger", "call", "message"},
 			dagger.ReturnTypeSuccess,
 			"salut, monde!",
+			nil,
+		},
+		{
+			"inner envfile list",
+			"./defaults/.env",
+			`
+LIST=1,2,3
+`,
+			"./defaults",
+			[]string{"dagger", "call", "list-string"},
+			dagger.ReturnTypeSuccess,
+			"1\n2\n3\n",
+			nil,
+		},
+		{
+			"inner envfile secret list",
+			"./defaults/.env",
+			`
+SECRETS=env://FOO,env://BAR,env://BAZ
+`,
+			"./defaults",
+			[]string{"dagger", "call", "list-secrets"},
+			dagger.ReturnTypeSuccess,
+			"1\n2\n3\n",
+			func(c *dagger.Container) *dagger.Container {
+				c = c.WithEnvVariable("FOO", "1").
+					WithEnvVariable("BAR", "2").
+					WithEnvVariable("BAZ", "3")
+				return c
+			},
+		},
+		{
+			"inner string with commas",
+			"./defaults/.env",
+			`
+GREETING="one,two"
+`,
+			"./defaults",
+			[]string{"dagger", "call", "message"},
+			dagger.ReturnTypeSuccess,
+			"one,two, world!",
+			nil,
 		},
 		{
 			"outer envfile inner workdir",
@@ -608,6 +692,7 @@ DEFAULTS_MESSAGE_NAME=monde
 			[]string{"dagger", "call", "message"},
 			dagger.ReturnTypeSuccess,
 			"bonjour, monde!",
+			nil,
 		},
 		{
 			"outer envfile outer workdir",
@@ -620,11 +705,15 @@ DEFAULTS_MESSAGE_NAME=monde
 			[]string{"dagger", "-m", "./defaults", "call", "message"},
 			dagger.ReturnTypeSuccess,
 			"bonjour, monde!",
+			nil,
 		},
 	} {
-		tc := tc
 		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
-			stdout, err := ctr.
+			testCtr := ctr
+			if tc.prepare != nil {
+				testCtr = tc.prepare(testCtr)
+			}
+			stdout, err := testCtr.
 				WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
 				With(func(c *dagger.Container) *dagger.Container {
 					if tc.workdir != "" {
