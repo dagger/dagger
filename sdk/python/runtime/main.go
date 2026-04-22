@@ -387,29 +387,40 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
 	if introspectionJSON != nil {
-		ctr := m.Container
-		cmd := []string{"codegen"}
-
-		// When not using the bundled codegen executable we can revert to executing directly
-		if m.Discovery.SdkHasFile("dist/codegen") {
-			ctr = ctr.
-				WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
-				WithMountedFile("/usr/local/bin/codegen", m.SdkSourceDir.File("dist/codegen"))
+		var genFile *dagger.File
+		// The builtin engine ships a prebuilt gen.py at .dagger-build/gen.py,
+		// produced from this engine's schema at image build time (see
+		// toolchains/engine-dev/build/sdk.go::pythonGenPy). When present it
+		// is byte-identical to what codegen would emit for introspectionJSON
+		// from the same engine, so we skip the codegen exec entirely and
+		// save ~2.8s per cold Python module load.
+		if m.Discovery.SdkHasFile(".dagger-build/gen.py") {
+			genFile = m.SdkSourceDir.File(".dagger-build/gen.py")
 		} else {
-			ctr = ctr.
-				WithWorkdir("/sdk").
-				WithMountedDirectory("", m.SdkSourceDir)
-			cmd = []string{
-				"uv", "run", "--isolated", "--frozen", "--package", "codegen",
-				"python", "-m", "codegen",
-			}
-		}
+			ctr := m.Container
+			cmd := []string{"codegen"}
 
-		genFile := ctr.
-			// mounted schema as late as possible because it varies more often
-			WithMountedFile(SchemaPath, introspectionJSON).
-			WithExec(append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")).
-			File("/gen.py")
+			// When not using the bundled codegen executable we can revert to executing directly
+			if m.Discovery.SdkHasFile("dist/codegen") {
+				ctr = ctr.
+					WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
+					WithMountedFile("/usr/local/bin/codegen", m.SdkSourceDir.File("dist/codegen"))
+			} else {
+				ctr = ctr.
+					WithWorkdir("/sdk").
+					WithMountedDirectory("", m.SdkSourceDir)
+				cmd = []string{
+					"uv", "run", "--isolated", "--frozen", "--package", "codegen",
+					"python", "-m", "codegen",
+				}
+			}
+
+			genFile = ctr.
+				// mounted schema as late as possible because it varies more often
+				WithMountedFile(SchemaPath, introspectionJSON).
+				WithExec(append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")).
+				File("/gen.py")
+		}
 
 		genPath := UserGenPath
 
