@@ -42,7 +42,7 @@ You can regenerate the files by using the `./codegen` command
 
 ## Developing with the PHP SDK runtime
 
-From a parent directory of the PHP SDK, run `dagger init --sdk=<path to dagger repo>/sdk/php`.
+From a parent directory of the PHP SDK, run `dagger module init --sdk=<path to dagger repo>/sdk/php`.
 
 This will use the PHP SDK runtime with local source code which will make the feedback loop much faster than
 pulling changes from the remote repository.

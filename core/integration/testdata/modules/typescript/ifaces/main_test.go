@@ -1,5 +1,9 @@
 package main
 
+// Workspace alignment: fixture-only; not part of the main workspace-alignment cleanup.
+// Scope: Fixture-level TypeScript interface smoke tests used by the integration suite.
+// Intent: Keep test fixture modules self-validating without turning them into ownership points for workspace cleanup.
+
 import (
 	"context"
 	"dagger/caller/internal/dagger"
