@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Engine provisioning and driver selection behavior.
+// Intent: Keep provisioning behavior stable independently of workspace cleanup.
+
 import (
 	"cmp"
 	"context"

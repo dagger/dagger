@@ -56,6 +56,35 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Read a configuration value from config.toml.
+     *
+     * If key is empty, returns the full config.
+     *
+     * If key points to a scalar, returns the value.
+     *
+     * If key points to a table, returns flattened dotted-key output.
+     */
+    public function configRead(?string $key = ''): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configRead');
+        if (null !== $key) {
+        $leafQueryBuilder->setArgument('key', $key);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configRead');
+    }
+
+    /**
+     * Write a configuration value to config.toml.
+     */
+    public function configWrite(string $key, string $value): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configWrite');
+        $leafQueryBuilder->setArgument('key', $key);
+        $leafQueryBuilder->setArgument('value', $value);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configWrite');
+    }
+
+    /**
      * Returns a Directory from the workspace.
      *
      * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
@@ -78,6 +107,35 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create a named workspace environment if it does not already exist.
+     */
+    public function envCreate(string $name): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envCreate');
+        $leafQueryBuilder->setArgument('name', $name);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'envCreate');
+    }
+
+    /**
+     * List named environments defined in the workspace configuration.
+     */
+    public function envList(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envList');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'envList');
+    }
+
+    /**
+     * Remove a named workspace environment.
+     */
+    public function envRemove(string $name): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envRemove');
+        $leafQueryBuilder->setArgument('name', $name);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'envRemove');
     }
 
     /**
@@ -142,6 +200,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Initialize a new workspace, creating .dagger/config.toml.
+     */
+    public function init(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('init');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'init');
+    }
+
+    /**
      * Whether .dagger/config.toml exists.
      */
     public function initialized(): bool
@@ -151,12 +218,93 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Install a module into the workspace, writing config.toml to the host.
+     */
+    public function install(string $ref, ?string $name = ''): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('install');
+        $leafQueryBuilder->setArgument('ref', $ref);
+        if (null !== $name) {
+        $leafQueryBuilder->setArgument('name', $name);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'install');
+    }
+
+    /**
+     * Plan the explicit migration needed for the current workspace.
+     *
+     * The returned plan has an empty changeset and no steps when no migration is needed.
+     */
+    public function migrate(?bool $force = false): WorkspaceMigration
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('migrate');
+        if (null !== $force) {
+        $innerQueryBuilder->setArgument('force', $force);
+        }
+        return new \Dagger\WorkspaceMigration($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create a new module owned by the workspace and auto-install it in config.toml.
+     */
+    public function moduleInit(
+        string $name,
+        ?string $sdk = '',
+        ?string $source = '',
+        ?array $include = null,
+        ?string $blueprint = '',
+        ?bool $selfCalls = false,
+    ): string {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleInit');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $sdk) {
+        $leafQueryBuilder->setArgument('sdk', $sdk);
+        }
+        if (null !== $source) {
+        $leafQueryBuilder->setArgument('source', $source);
+        }
+        if (null !== $include) {
+        $leafQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $blueprint) {
+        $leafQueryBuilder->setArgument('blueprint', $blueprint);
+        }
+        if (null !== $selfCalls) {
+        $leafQueryBuilder->setArgument('selfCalls', $selfCalls);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'moduleInit');
+    }
+
+    /**
+     * List modules defined in the workspace configuration.
+     */
+    public function moduleList(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleList');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'moduleList');
+    }
+
+    /**
      * Workspace directory path relative to the workspace boundary.
      */
     public function path(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (string)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
+     * Refresh lock entries for selected workspace-config modules.
+     *
+     * This layers selective workspace refresh on top of the lockfile base.
+     */
+    public function refreshModules(?array $moduleNames = null): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('refreshModules');
+        if (null !== $moduleNames) {
+        $innerQueryBuilder->setArgument('moduleNames', $moduleNames);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
