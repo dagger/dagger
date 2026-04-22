@@ -52,7 +52,7 @@ func (s *fromContainerd) Mounts(ctx context.Context, key string) (Mountable, err
 	if err != nil {
 		return nil, err
 	}
-	return &staticMountable{mounts: mounts, id: key}, nil
+	return &staticMountable{mounts: mounts, idmap: s.idmap, id: key}, nil
 }
 
 func (s *fromContainerd) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) error {
@@ -64,7 +64,7 @@ func (s *fromContainerd) View(ctx context.Context, key, parent string, opts ...s
 	if err != nil {
 		return nil, err
 	}
-	return &staticMountable{mounts: mounts, id: key}, nil
+	return &staticMountable{mounts: mounts, idmap: s.idmap, id: key}, nil
 }
 func (s *fromContainerd) IdentityMapping() *idtools.IdentityMapping {
 	return s.idmap

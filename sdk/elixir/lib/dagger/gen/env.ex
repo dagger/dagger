@@ -737,41 +737,6 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  Create or update a binding of type HTTPState in the environment
-  """
-  @spec with_http_state_input(t(), String.t(), Dagger.HTTPState.t(), String.t()) :: Dagger.Env.t()
-  def with_http_state_input(%__MODULE__{} = env, name, value, description) do
-    query_builder =
-      env.query_builder
-      |> QB.select("withHTTPStateInput")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("value", Dagger.ID.id!(value))
-      |> QB.put_arg("description", description)
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: env.client
-    }
-  end
-
-  @doc """
-  Declare a desired HTTPState output to be assigned in the environment
-  """
-  @spec with_http_state_output(t(), String.t(), String.t()) :: Dagger.Env.t()
-  def with_http_state_output(%__MODULE__{} = env, name, description) do
-    query_builder =
-      env.query_builder
-      |> QB.select("withHTTPStateOutput")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("description", description)
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: env.client
-    }
-  end
-
-  @doc """
   Create or update a binding of type JSONValue in the environment
   """
   @spec with_json_value_input(t(), String.t(), Dagger.JSONValue.t(), String.t()) :: Dagger.Env.t()

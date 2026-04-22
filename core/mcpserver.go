@@ -212,14 +212,14 @@ func (s mcpServer) run(ctx context.Context) error {
 }
 
 func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
-	// Get engine client
+	// Get buildkit client
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get current query: %w", err)
 	}
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return fmt.Errorf("engine client error: %w", err)
+		return fmt.Errorf("buildkit client error: %w", err)
 	}
 
 	rwc, err := bk.OpenPipe(ctx)
@@ -227,14 +227,9 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("open pipe error: %w", err)
 	}
 
-	instructions, err := llm.mcp.DefaultSystemPrompt(ctx)
-	if err != nil {
-		return err
-	}
-
 	s := mcpServer{
 		mcpserver.NewMCPServer("Dagger", "0.0.1",
-			mcpserver.WithInstructions(instructions)),
+			mcpserver.WithInstructions(llm.mcp.DefaultSystemPrompt())),
 		dag,
 		llm.mcp,
 		rwc,

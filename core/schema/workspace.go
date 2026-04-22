@@ -20,15 +20,17 @@ var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.Func("currentWorkspace", s.currentWorkspace).
-			WithInput(dagql.PerCallInput).
+		dagql.FuncWithCacheKey("currentWorkspace", s.currentWorkspace, dagql.CachePerCall).
 			Doc("Detect and return the current workspace.").
 			Experimental("Highly experimental API extracted from a more ambitious workspace implementation."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
-		dagql.NodeFunc("directory", s.directory).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("directory",
+			DagOpDirectoryWrapper(
+				srv, s.directory,
+				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
+			), dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
 				`Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.`).
 			Args(
@@ -37,15 +39,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
-		dagql.NodeFunc("file", s.file).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
 				`Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.`),
 			),
-		dagql.NodeFunc("findUp", s.findUp).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the absolute workspace path if found, or null if not found.`,
 				`Relative start paths resolve from the workspace directory.`,
@@ -86,6 +86,12 @@ type workspaceDirectoryArgs struct {
 	core.CopyFilter
 
 	Gitignore bool `default:"false"`
+
+	DagOpInternalArgs
+}
+
+func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
 }
 
 // resolveRootfs returns a lazy directory reference for a resolved workspace path.
@@ -160,13 +166,9 @@ func (s *workspaceSchema) resolveRootfs(
 	}
 
 	if len(filter.Include) > 0 || len(filter.Exclude) > 0 {
-		ctxDirID, err := ctxDir.ID()
-		if err != nil {
-			return inst, fmt.Errorf("workspace directory %q: get filtered source id: %w", resolvedPath, err)
-		}
 		withDirArgs := []dagql.NamedInput{
 			{Name: "path", Value: dagql.NewString("/")},
-			{Name: "source", Value: dagql.NewID[*core.Directory](ctxDirID)},
+			{Name: "source", Value: dagql.NewID[*core.Directory](ctxDir.ID())},
 		}
 		if len(filter.Include) > 0 {
 			includes := make(dagql.ArrayInput[dagql.String], len(filter.Include))
@@ -206,6 +208,10 @@ func (s *workspaceSchema) directory(
 
 type workspaceFileArgs struct {
 	Path string
+}
+
+func (workspaceFileArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
 }
 
 func (s *workspaceSchema) file(
@@ -268,6 +274,10 @@ type workspaceFindUpArgs struct {
 	From string `default:"."`
 }
 
+func (workspaceFindUpArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
 func (s *workspaceSchema) findUp(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -285,7 +295,7 @@ func (s *workspaceSchema) findUp(
 	if err != nil {
 		return none, err
 	}
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return none, fmt.Errorf("buildkit: %w", err)
 	}
@@ -369,11 +379,11 @@ func (s *workspaceSchema) checks(
 
 	var allChecks []*core.Check
 	for _, mod := range mods {
-		checkGroup, err := core.NewCheckGroup(ctx, mod, nil)
+		checkGroup, err := mod.Checks(ctx, nil)
 		if err != nil {
-			return nil, fmt.Errorf("checks from module %q: %w", mod.Self().Name(), err)
+			return nil, fmt.Errorf("checks from module %q: %w", mod.Name(), err)
 		}
-		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Self().Name())
+		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Name())
 		filtered, err := filterNodesByInclude(
 			ctx,
 			checkGroup.Checks,
@@ -386,7 +396,7 @@ func (s *workspaceSchema) checks(
 			return nil, err
 		}
 		// Apply ignoreChecks exclusion for this toolchain's checks.
-		if exclude := ignoreChecks[mod.Self().Name()]; len(exclude) > 0 {
+		if exclude := ignoreChecks[mod.Name()]; len(exclude) > 0 {
 			filtered, err = filterNodesByExclude(
 				ctx,
 				filtered,
@@ -403,36 +413,6 @@ func (s *workspaceSchema) checks(
 	}
 
 	return &core.CheckGroup{Checks: allChecks}, nil
-}
-
-type workspaceGeneratorModule struct {
-	mod          dagql.ObjectResult[*core.Module]
-	name         string
-	group        *core.GeneratorGroup
-	sourceDigest string
-	isWrapper    bool
-}
-
-func selectVisibleGeneratorModules(entries []workspaceGeneratorModule) []workspaceGeneratorModule {
-	// If a wrapper module exposes generators from a blueprint/toolchain, hide the
-	// raw source module's generator namespace and keep the user-facing wrapper.
-	hasWrapperBySource := make(map[string]bool, len(entries))
-	for _, entry := range entries {
-		if entry.isWrapper {
-			hasWrapperBySource[entry.sourceDigest] = true
-		} else if _, ok := hasWrapperBySource[entry.sourceDigest]; !ok {
-			hasWrapperBySource[entry.sourceDigest] = false
-		}
-	}
-
-	visible := make([]workspaceGeneratorModule, 0, len(entries))
-	for _, entry := range entries {
-		if hasWrapperBySource[entry.sourceDigest] && !entry.isWrapper {
-			continue
-		}
-		visible = append(visible, entry)
-	}
-	return visible
 }
 
 func (s *workspaceSchema) generators(
@@ -458,60 +438,32 @@ func (s *workspaceSchema) generators(
 		return cfg.IgnoreGenerators
 	})
 
-	moduleGenerators := make([]workspaceGeneratorModule, 0, len(mods))
+	moduleGenerators := make([]struct {
+		mod   *core.Module
+		group *core.GeneratorGroup
+	}, 0, len(mods))
+	generatorModuleCount := 0
 	for _, mod := range mods {
-		generatorGroup, err := core.NewGeneratorGroup(ctx, mod, nil)
+		generatorGroup, err := mod.Generators(ctx, nil)
 		if err != nil {
-			return nil, fmt.Errorf("generators from module %q: %w", mod.Self().Name(), err)
+			return nil, fmt.Errorf("generators from module %q: %w", mod.Name(), err)
 		}
-		if len(generatorGroup.Generators) == 0 {
-			continue
+		if len(generatorGroup.Generators) > 0 {
+			generatorModuleCount++
 		}
-
-		source := mod.Self().GetSource()
-		if source == nil {
-			return nil, fmt.Errorf("generators from module %q: no module source available", mod.Self().Name())
-		}
-		sourceDigest, err := source.SourceImplementationDigest(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("generators from module %q: source implementation digest: %w", mod.Self().Name(), err)
-		}
-
-		isWrapper := false
-		contextSource := mod.Self().GetContextSource()
-		if contextSource != nil {
-			contextDigest, err := contextSource.SourceImplementationDigest(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("generators from module %q: context source implementation digest: %w", mod.Self().Name(), err)
-			}
-			isWrapper = sourceDigest != contextDigest
-		}
-
-		moduleGenerators = append(moduleGenerators, workspaceGeneratorModule{
-			mod:          mod,
-			name:         mod.Self().Name(),
-			group:        generatorGroup,
-			sourceDigest: sourceDigest.String(),
-			isWrapper:    isWrapper,
+		moduleGenerators = append(moduleGenerators, struct {
+			mod   *core.Module
+			group *core.GeneratorGroup
+		}{
+			mod:   mod,
+			group: generatorGroup,
 		})
 	}
 
-	rawIgnoreGeneratorsBySource := make(map[string][]string, len(moduleGenerators))
-	for _, entry := range moduleGenerators {
-		if entry.isWrapper {
-			continue
-		}
-		if exclude := ignoreGenerators[entry.name]; len(exclude) > 0 {
-			rawIgnoreGeneratorsBySource[entry.sourceDigest] = append(rawIgnoreGeneratorsBySource[entry.sourceDigest], exclude...)
-		}
-	}
-
-	moduleGenerators = selectVisibleGeneratorModules(moduleGenerators)
-
 	var allGenerators []*core.Generator
-	allowSingleModuleCompat := len(moduleGenerators) == 1
+	allowSingleModuleCompat := generatorModuleCount == 1
 	for _, entry := range moduleGenerators {
-		reparentWorkspaceTreeRoot(entry.group.Node, entry.name)
+		reparentWorkspaceTreeRoot(entry.group.Node, entry.mod.Name())
 		filtered, err := filterGeneratorsByInclude(
 			ctx,
 			entry.group.Generators,
@@ -521,13 +473,7 @@ func (s *workspaceSchema) generators(
 		if err != nil {
 			return nil, err
 		}
-		exclude := ignoreGenerators[entry.name]
-		if entry.isWrapper {
-			// Keep ignore behavior attached to the raw toolchain alias even when the
-			// workspace view hides that alias behind a wrapper module.
-			exclude = append(exclude, rawIgnoreGeneratorsBySource[entry.sourceDigest]...)
-		}
-		if len(exclude) > 0 {
+		if exclude := ignoreGenerators[entry.mod.Name()]; len(exclude) > 0 {
 			filtered, err = filterNodesByExclude(
 				ctx,
 				filtered,
@@ -572,11 +518,11 @@ func (s *workspaceSchema) services(
 
 	var allUps []*core.Up
 	for _, mod := range mods {
-		upGroup, err := core.NewUpGroup(ctx, mod, nil)
+		upGroup, err := mod.Services(ctx, nil)
 		if err != nil {
-			return nil, fmt.Errorf("services from module %q: %w", mod.Self().Name(), err)
+			return nil, fmt.Errorf("services from module %q: %w", mod.Name(), err)
 		}
-		reparentWorkspaceTreeRoot(upGroup.Node, mod.Self().Name())
+		reparentWorkspaceTreeRoot(upGroup.Node, mod.Name())
 		filtered, err := filterNodesByInclude(
 			ctx,
 			upGroup.Ups,
@@ -588,7 +534,7 @@ func (s *workspaceSchema) services(
 		if err != nil {
 			return nil, err
 		}
-		if exclude := ignoreServices[mod.Self().Name()]; len(exclude) > 0 {
+		if exclude := ignoreServices[mod.Name()]; len(exclude) > 0 {
 			filtered, err = filterNodesByExclude(
 				ctx,
 				filtered,
@@ -606,11 +552,10 @@ func (s *workspaceSchema) services(
 
 	// Resolve port mappings from toolchain config.
 	for _, mod := range mods {
-		modSelf := mod.Self()
-		if modSelf == nil || !modSelf.Source.Valid {
+		if !mod.Source.Valid {
 			continue
 		}
-		src := modSelf.Source.Value.Self()
+		src := mod.Source.Value.Self()
 		if src == nil {
 			continue
 		}
@@ -720,7 +665,7 @@ func matchWorkspaceIncludePath(
 	return false, nil
 }
 
-func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error) {
+func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -730,16 +675,16 @@ func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*
 		return nil, fmt.Errorf("current served deps: %w", err)
 	}
 
-	mods := make([]dagql.ObjectResult[*core.Module], 0, len(served.PrimaryMods()))
+	mods := make([]*core.Module, 0, len(served.PrimaryMods()))
 	for _, mod := range served.PrimaryMods() {
-		modResult := mod.ModuleResult()
-		if modResult.Self() == nil {
+		userMod, ok := mod.(*core.Module)
+		if !ok {
 			continue
 		}
-		if modResult.Self().Name() == core.ModuleName {
+		if userMod.Name() == core.ModuleName {
 			continue
 		}
-		mods = append(mods, modResult)
+		mods = append(mods, userMod)
 	}
 	return mods, nil
 }
@@ -747,16 +692,15 @@ func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*
 // toolchainIgnorePatterns builds a map of toolchain module name → ignore
 // patterns by scanning each module's source config for toolchain entries.
 func toolchainIgnorePatterns(
-	mods []dagql.ObjectResult[*core.Module],
+	mods []*core.Module,
 	getPatterns func(*modules.ModuleConfigDependency) []string,
 ) map[string][]string {
 	result := make(map[string][]string)
 	for _, mod := range mods {
-		modSelf := mod.Self()
-		if modSelf == nil || !modSelf.Source.Valid {
+		if !mod.Source.Valid {
 			continue
 		}
-		src := modSelf.Source.Value.Self()
+		src := mod.Source.Value.Self()
 		if src == nil {
 			continue
 		}

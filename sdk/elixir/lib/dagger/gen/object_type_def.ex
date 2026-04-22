@@ -16,7 +16,7 @@ defmodule Dagger.ObjectTypeDef do
   @type t() :: %__MODULE__{}
 
   @doc """
-  The function used to construct new instances of this object, if any.
+  The function used to construct new instances of this object, if any
   """
   @spec constructor(t()) :: Dagger.Function.t() | nil
   def constructor(%__MODULE__{} = object_type_def) do

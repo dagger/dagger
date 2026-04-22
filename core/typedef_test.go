@@ -8,63 +8,61 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-func sampleTypeDefs(t *testing.T) map[TypeDefKind]*TypeDef {
-	t.Helper()
-
-	dag := newTypeDefTestDag(t)
-	stringType := &TypeDef{Kind: TypeDefKindString}
-	stringTypeRes := newTypeDefDetachedResult(t, dag, "sampleStringTypeDef", stringType)
-	scalarRes := newTypeDefDetachedResult(t, dag, "sampleScalarTypeDef", &ScalarTypeDef{Name: "FooScalar"})
-	listRes := newTypeDefDetachedResult(t, dag, "sampleListTypeDef", &ListTypeDef{
-		ElementTypeDef: stringTypeRes,
-	})
-	objectRes := newTypeDefDetachedResult(t, dag, "sampleObjectTypeDef", &ObjectTypeDef{Name: "FooObject"})
-	interfaceRes := newTypeDefDetachedResult(t, dag, "sampleInterfaceTypeDef", &InterfaceTypeDef{Name: "FooInterface"})
-	enumRes := newTypeDefDetachedResult(t, dag, "sampleEnumTypeDef", &EnumTypeDef{Name: "FooEnum"})
-
-	return map[TypeDefKind]*TypeDef{
-		TypeDefKindString: {
-			Kind: TypeDefKindString,
-		},
-		TypeDefKindFloat: {
-			Kind: TypeDefKindFloat,
-		},
-		TypeDefKindInteger: {
-			Kind: TypeDefKindInteger,
-		},
-		TypeDefKindBoolean: {
-			Kind: TypeDefKindBoolean,
-		},
-		TypeDefKindScalar: {
-			Kind:     TypeDefKindScalar,
-			AsScalar: dagql.NonNull(scalarRes),
-		},
-		TypeDefKindList: {
-			Kind:   TypeDefKindList,
-			AsList: dagql.NonNull(listRes),
-		},
-		TypeDefKindObject: {
-			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(objectRes),
-		},
-		TypeDefKindInterface: {
-			Kind:        TypeDefKindInterface,
-			AsInterface: dagql.NonNull(interfaceRes),
-		},
-		TypeDefKindEnum: {
-			Kind:   TypeDefKindEnum,
-			AsEnum: dagql.NonNull(enumRes),
-		},
-		TypeDefKindVoid: {
-			Kind: TypeDefKindVoid,
-		},
-	}
+// Samples contains a valid type definition for each kind. If you add a new
+// TypeDefKind, add a sample here as a first step to getting the tests to pass.
+var Samples = map[TypeDefKind]*TypeDef{
+	TypeDefKindString: {
+		Kind: TypeDefKindString,
+	},
+	TypeDefKindFloat: {
+		Kind: TypeDefKindFloat,
+	},
+	TypeDefKindInteger: {
+		Kind: TypeDefKindInteger,
+	},
+	TypeDefKindBoolean: {
+		Kind: TypeDefKindBoolean,
+	},
+	TypeDefKindScalar: {
+		Kind: TypeDefKindScalar,
+		AsScalar: dagql.NonNull(&ScalarTypeDef{
+			Name: "FooScalar",
+		}),
+	},
+	TypeDefKindList: {
+		Kind: TypeDefKindList,
+		AsList: dagql.NonNull(&ListTypeDef{
+			ElementTypeDef: &TypeDef{
+				Kind: TypeDefKindString,
+			},
+		}),
+	},
+	TypeDefKindObject: {
+		Kind: TypeDefKindObject,
+		AsObject: dagql.NonNull(&ObjectTypeDef{
+			Name: "FooObject",
+		}),
+	},
+	TypeDefKindInterface: {
+		Kind: TypeDefKindInterface,
+		AsInterface: dagql.NonNull(&InterfaceTypeDef{
+			Name: "FooInterface",
+		}),
+	},
+	TypeDefKindEnum: {
+		Kind: TypeDefKindEnum,
+		AsEnum: dagql.NonNull(&EnumTypeDef{
+			Name: "FooEnum",
+		}),
+	},
+	TypeDefKindVoid: {
+		Kind: TypeDefKindVoid,
+	},
 }
 
 func TestTypeDefConversions(t *testing.T) {
-	samples := sampleTypeDefs(t)
 	for _, val := range TypeDefKinds.PossibleValues("") {
-		sample, ok := samples[TypeDefKind(val.Name)]
+		sample, ok := Samples[TypeDefKind(val.Name)]
 		if !ok {
 			if val.Name == TypeDefKindInput.String() {
 				// inputs are not needed for handling in conversion

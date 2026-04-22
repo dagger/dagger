@@ -5,12 +5,14 @@ import (
 	"sync/atomic"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/docker/docker/pkg/idtools"
 )
 
 type staticMountable struct {
 	count  int32
 	id     string
 	mounts []mount.Mount
+	idmap  *idtools.IdentityMapping
 }
 
 func (cm *staticMountable) Mount() ([]mount.Mount, func() error, error) {
@@ -32,4 +34,8 @@ func (cm *staticMountable) Mount() ([]mount.Mount, func() error, error) {
 		}
 		return nil
 	}, nil
+}
+
+func (cm *staticMountable) IdentityMapping() *idtools.IdentityMapping {
+	return cm.idmap
 }

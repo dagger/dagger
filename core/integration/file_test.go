@@ -16,8 +16,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/testctx"
 )
 
@@ -86,27 +86,6 @@ func (FileSuite) TestNewFile(ctx context.Context, t *testctx.T) {
 	contents, err := file.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
-}
-
-func (FileSuite) TestChownLookup(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	f := c.Container().
-		From(alpineImage).
-		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
-		Rootfs().
-		WithNewFile("owned.txt", "hello").
-		File("owned.txt").
-		Chown("auser:agroup")
-
-	out, err := c.Container().
-		From(alpineImage).
-		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
-		WithMountedFile("/mnt/owned.txt", f).
-		WithExec([]string{"stat", "-c", "%u:%g %U:%G", "/mnt/owned.txt"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "1234:4321 auser:agroup\n", out)
 }
 
 func (FileSuite) TestNewFileInvalid(ctx context.Context, t *testctx.T) {
@@ -341,7 +320,7 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 	t.Run("file larger than max chunk size", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
 		c := connect(ctx, t, dagger.WithWorkdir(wd))
-		maxChunkSize := engineutil.MaxFileContentsChunkSize
+		maxChunkSize := buildkit.MaxFileContentsChunkSize
 		fileSizeBytes := maxChunkSize*4 + 1 // +1 so it's not an exact number of chunks, to ensure we cover that case
 
 		file := c.Container().
@@ -404,10 +383,10 @@ func (FileSuite) TestContents(ctx context.Context, t *testctx.T) {
 		size int
 		hash string
 	}{
-		{size: engineutil.MaxFileContentsChunkSize / 2},
-		{size: engineutil.MaxFileContentsChunkSize},
-		{size: engineutil.MaxFileContentsChunkSize * 2},
-		{size: engineutil.MaxFileContentsSize + 1},
+		{size: buildkit.MaxFileContentsChunkSize / 2},
+		{size: buildkit.MaxFileContentsChunkSize},
+		{size: buildkit.MaxFileContentsChunkSize * 2},
+		{size: buildkit.MaxFileContentsSize + 1},
 	}
 	tempDir := t.TempDir()
 	for i, testFile := range testFiles {
@@ -431,7 +410,7 @@ func (FileSuite) TestContents(ctx context.Context, t *testctx.T) {
 		contents, err := alpine.File(filename).Contents(ctx)
 
 		// Assert error on larger files:
-		if testFile.size > engineutil.MaxFileContentsSize {
+		if testFile.size > buildkit.MaxFileContentsSize {
 			require.Error(t, err)
 			continue
 		}

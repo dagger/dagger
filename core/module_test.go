@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -11,9 +10,9 @@ import (
 func TestNamespaceSourceMap(t *testing.T) {
 	mod := &Module{NameField: "mymod"}
 
-	t.Run("leaves empty source map unchanged", func(t *testing.T) {
-		result, err := mod.namespaceSourceMap(context.Background(), "sub", dagql.Null[dagql.ObjectResult[*SourceMap]]())
-		require.NoError(t, err)
-		require.False(t, result.Valid)
+	t.Run("sets module name when SDK does not provide source map", func(t *testing.T) {
+		result := mod.namespaceSourceMap("sub", dagql.Null[*SourceMap]())
+		require.True(t, result.Valid)
+		require.Equal(t, "mymod", result.Value.Module)
 	})
 }

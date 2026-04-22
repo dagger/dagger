@@ -582,15 +582,7 @@ func (llm *LLM) WithPrompt(
 
 // WithPromptFile is like WithPrompt but reads the prompt from a file
 func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	fileRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, file)
-	if err != nil {
-		return nil, err
-	}
-	contents, err := file.Contents(ctx, fileRes, nil, nil)
+	contents, err := file.Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -671,22 +663,18 @@ func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 	return reply, nil
 }
 
-func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*ModelMessage, error) {
+func (llm *LLM) messagesWithSystemPrompt() []*ModelMessage {
 	var systemPrompt string
 	if !llm.disableDefaultSystemPrompt {
-		var err error
-		systemPrompt, err = llm.mcp.DefaultSystemPrompt(ctx)
-		if err != nil {
-			return nil, err
-		}
+		systemPrompt = llm.mcp.DefaultSystemPrompt()
 	}
 	if systemPrompt != "" {
 		return append([]*ModelMessage{{
 			Role:    "system",
 			Content: systemPrompt,
-		}}, llm.messages...), nil
+		}}, llm.messages...)
 	}
-	return llm.messages, nil
+	return llm.messages
 }
 
 type ModelFinishedError struct {
@@ -731,7 +719,7 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return err
 	}
@@ -788,7 +776,7 @@ func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -832,10 +820,7 @@ func (llm *LLM) loop(ctx context.Context) error {
 			return err
 		}
 
-		messagesToSend, err := llm.messagesWithSystemPrompt(ctx)
-		if err != nil {
-			return err
-		}
+		messagesToSend := llm.messagesWithSystemPrompt()
 
 		var newMessages []*ModelMessage
 		for _, msg := range slices.Backward(messagesToSend) {
@@ -979,7 +964,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		return fmt.Errorf("failed to figure out module while deciding if llm is allowed: %w", err)
 	}
 
-	src := module.Self().ContextSource.Value.Self()
+	src := module.Source.Value.Self()
 	if src.Kind != ModuleSourceKindGit {
 		return nil
 	}
@@ -996,7 +981,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		}
 	}
 
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("llm sync failed fetching bk client for llm allow prompting: %w", err)
 	}

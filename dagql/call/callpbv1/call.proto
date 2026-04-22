@@ -11,18 +11,7 @@ option go_package = "./callpbv1";
 // It may be binary=>base64-encoded to be used as a GraphQL ID value for
 // objects. Alternatively it may be stored in a database and referred to via an
 // RFC-6920 ni://sha-256;... URI.
-//
-// A DAG is either:
-// - a recipe DAG of Calls
-// - an opaque engine-local handle to a cached result
 message DAG {
-  oneof value {
-    RecipeDAG recipe = 1;
-    EngineResultRef engineResult = 2;
-  }
-}
-
-message RecipeDAG {
   // The digest of the Call representing the "root" of the DAG. All other Calls
   // in this message are referenced through the root Call's receiver, args or
   // module.
@@ -31,13 +20,6 @@ message RecipeDAG {
   // Map of Call digests to the Calls they represent. This structure
   // allows us to deduplicate occurrences of the same Call in the DAG.
   map<string, Call> callsByDigest = 2;
-}
-
-message EngineResultRef {
-  // Engine-local opaque shared-result handle.
-  uint64 resultID = 1;
-  // GraphQL type of the referenced result for boundary type checking.
-  Type rootType = 2;
 }
 
 // Call represents a function call, including all inputs necessary to call it
@@ -90,31 +72,17 @@ message Call {
   // called in.
   string view = 10;
 
+  // Whether the digest was set to a custom value, as opposed to the default
+  // "recipe-based" digest
+  bool isCustomDigest = 11;
+
+  // An optional digest of the "content" of this call, which is typically based
+  // on e.g. filesystem contents rather than the "recipe" of the call. This field
+  // does not affect the call's digest.
+  string contentDigest = 12;
+
   // Effect IDs associated with this call. These do not affect the call's digest.
   repeated string effectIds = 13;
-
-  // Extra digests attached to this call.
-  //
-  // The call's recipe digest is authoritative call identity.
-  // Extra digests are annotations that may be used by cache and equivalence
-  // systems, but do not affect the recipe digest.
-  repeated ExtraDigest extraDigests = 14;
-
-  // Implicit inputs are engine-computed call inputs that are not explicit
-  // GraphQL field arguments, but still contribute to recipe identity.
-  // During cache checking, ID-able implicit inputs are treated as equivalence
-  // set inputs, same as ID-able explicit arguments.
-  repeated Argument implicitInputs = 15;
-}
-
-// ExtraDigest is an attached digest annotation for a call.
-//
-// The label is informative and should not affect identity/hashing semantics.
-message ExtraDigest {
-  // digest value, e.g. "sha256:..."
-  string digest = 1;
-  // informative label, e.g. "content"
-  string label = 2;
 }
 
 // Module represents a self-contained logical module that can be dynamically
@@ -138,15 +106,6 @@ message Argument {
   Literal value = 2;
 }
 
-// A string literal with a digest fact used for call identity and equivalence.
-//
-// The value is runtime payload; digest is the identity input lane for this
-// literal.
-message DigestedString {
-  string value = 1;
-  string digest = 2;
-}
-
 // A value passed to an argument or contained in a list.
 message Literal {
   oneof value {
@@ -159,7 +118,6 @@ message Literal {
     string string = 7;
     List list = 8;
     Object object = 9;
-    DigestedString digestedString = 10;
   }
 }
 

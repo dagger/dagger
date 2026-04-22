@@ -11,11 +11,11 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-$ viztest: Viztest! X.Xs CACHED
+✔ viztest: Viztest! X.Xs
 ✘ .callBubblingDep: Void X.Xs ERROR
-├╴$ dep: Dep! X.Xs CACHED
+├╴✔ dep: Dep! X.Xs
 ╰╴✘ .bubblingFunction: Void X.Xs ERROR
-  ├╴$ nestedDep: NestedDep! X.Xs CACHED
+  ├╴✔ nestedDep: NestedDep! X.Xs
   ╰╴✘ .failingFunction: Void X.Xs ERROR
     ! im a failing nested function
 

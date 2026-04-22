@@ -19,12 +19,10 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 		dagql.Func("run", s.run).
 			Doc("Execute all selected generators"),
 
-		dagql.NodeFunc("isEmpty", s.groupIsEmpty).
-			IsPersistable().
+		dagql.NodeFunc("isEmpty", DagOpWrapper(srv, s.groupIsEmpty)).
 			Doc("Whether the generated changeset from the last run is empty or not"),
 
-		dagql.NodeFunc("changes", s.groupChanges).
-			IsPersistable().
+		dagql.NodeFunc("changes", DagOpChangesetWrapper(srv, s.groupChanges)).
 			Doc(`The combined changes from the last run of the generators`,
 				`If any conflict occurs, for instance if the same file is modified by multiple generators,
 				or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.`,
@@ -47,7 +45,7 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 		dagql.Func("originalModule", s.originalModule).
 			Doc("The original module in which the generator has been defined"),
 
-		dagql.NodeFunc("changes", s.changes).
+		dagql.NodeFunc("changes", DagOpChangesetWrapper(srv, s.changes)).
 			Doc("The generated changeset from the last run"),
 
 		dagql.Func("run", s.runSingleGenerator).
@@ -67,6 +65,7 @@ func (s generatorsSchema) run(ctx context.Context, parent *core.GeneratorGroup, 
 }
 
 type generatorsGroupIsEmptyArgs struct {
+	DagOpInternalArgs
 }
 
 func (s generatorsSchema) groupIsEmpty(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args generatorsGroupIsEmptyArgs) (dagql.Boolean, error) {
@@ -76,6 +75,7 @@ func (s generatorsSchema) groupIsEmpty(ctx context.Context, parent dagql.ObjectR
 
 type generatorsGroupChangesArgs struct {
 	OnConflict ChangesetsMergeConflict `default:"FAIL_EARLY"`
+	DagOpInternalArgs
 }
 
 func (s generatorsSchema) groupChanges(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args generatorsGroupChangesArgs) (*core.Changeset, error) {
@@ -99,7 +99,11 @@ func (s generatorsSchema) originalModule(_ context.Context, parent *core.Generat
 	return parent.OriginalModule(), nil
 }
 
-func (s generatorsSchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args struct{}) (*core.Changeset, error) {
+type generatorChangesArgs struct {
+	DagOpInternalArgs
+}
+
+func (s generatorsSchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args generatorChangesArgs) (*core.Changeset, error) {
 	return parent.Self().RequireChanges("changes")
 }
 

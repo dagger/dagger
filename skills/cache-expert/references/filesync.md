@@ -31,7 +31,7 @@ Wire protocol uses packetized stat/data/request frames:
 
 High-level flow:
 1. resolve client metadata and absolute input path via stat-only filesync
-2. get/create a `ClientFilesyncMirror`-owned mutable mirror snapshot
+2. get/create per-client mutable ref mirror (`getRef`)
 3. sync parent dirs when needed
 4. sync requested subtree into mirror and produce immutable snapshot
 
@@ -52,22 +52,14 @@ High-level flow:
 
 ## Filesync Cache Model (Current)
 
-There are two distinct cache layers involved now:
-
-1. The dagql-level mirror object:
-- `core.ClientFilesyncMirror`
-- persistable for stable clients via `_clientFilesyncMirror`
-- keyed by stable client ID plus drive
-- owns the mutable snapshot that acts as the long-lived mirror backing store
-
-2. The in-package filesync change cache:
+Filesync now uses a dedicated in-package typed cache:
 - `engine/filesync/change_cache.go`
+
+This cache is intentionally narrow:
 - key: local path (string)
 - value: `*ChangeWithStat`
 - behavior: in-memory singleflight + refcount + release
 - no TTL, no persistence, no content-key indexing, no generic adapters
-
-The dagql object owns the mirror snapshot's lifecycle. The in-package change cache only dedupes and validates mutations during active syncs against that mirror.
 
 ## Why the Change Cache Exists
 
@@ -98,20 +90,7 @@ After sync operations:
 - if matching immutable ref already exists, reuse it
 - otherwise copy changed paths into new ref and commit
 
-This is separate from dagql call cache; it is snapshot-content reuse at filesync layer on top of the mutable mirror.
-
-## Mirror Lifetime
-
-For stable clients, host imports route through a persistable `_clientFilesyncMirror` object keyed by stable client ID and drive. That object owns:
-
-- the long-lived mutable snapshot mirror
-- temporary mounted runtime state used while syncing (`MirrorSharedState`)
-
-For clients without a stable ID, the engine uses an ephemeral mirror object instead.
-
-Either way, each actual import still returns an immutable directory/file snapshot to the caller. The mutable mirror is just backing state that makes repeated syncs cheaper and more consistent.
-
-`noCache` does not bypass the mirror. It adds a filesync cache-buster so the sync result is treated as fresh while still using the existing mirror as the base state.
+This is separate from dagql call cache; it is snapshot-content reuse at filesync layer.
 
 ## Export Path (Engine -> Client)
 
@@ -124,7 +103,6 @@ Exports use client `FileSend` service:
 - Parent directory modtimes are not fully normalized to client today.
 - Device files and named pipes are skipped.
 - Filesync change cache is not durable state; it is lifecycle-scoped dedupe/consistency machinery.
-- The mirror itself is durable for stable clients, but the mounted runtime state around it is lazy and reference-counted during active syncs.
 
 ## Code Map
 

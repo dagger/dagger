@@ -2,26 +2,33 @@ package core
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/client/secretprovider"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/secrets"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
-	"golang.org/x/crypto/argon2"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Secret is a content-addressed secret.
 type Secret struct {
-	Handle         dagql.SessionResourceHandle
-	URIVal         string
-	NameVal        string
-	PlaintextVal   []byte `json:"-"`
-	SourceClientID string
+	// The URI of the secret, if it's stored in a remote store.
+	URI string
+
+	// The id of the buildkit session the secret will be retrieved through.
+	BuildkitSessionID string
+
+	// The user-designated name of the secret, if created by setSecret
+	Name string
+
+	// The secret plaintext, if created by setSecret
+	Plaintext []byte `json:"-"` // we shouldn't be json marshalling this, but disclude just in case
 }
 
 func (*Secret) Type() *ast.Type {
@@ -36,123 +43,177 @@ func (*Secret) TypeDescription() string {
 }
 
 func (secret *Secret) Clone() *Secret {
-	if secret == nil {
-		return nil
-	}
 	cp := *secret
-	if secret.PlaintextVal != nil {
-		cp.PlaintextVal = append([]byte(nil), secret.PlaintextVal...)
-	}
 	return &cp
 }
 
-type persistedSecretPayload struct {
-	Handle dagql.SessionResourceHandle `json:"handle,omitempty"`
-	Name   string                      `json:"name,omitempty"`
+type SecretStore struct {
+	bkSessionManager *bksession.Manager
+
+	// secrets are keyed by canonical digest (content digest when set,
+	// otherwise recipe digest).
+	secrets map[digest.Digest]dagql.ObjectResult[*Secret]
+	// aliases from any seen secret ID digest (recipe or canonical) to canonical.
+	canonicalDigestByIDDigest map[digest.Digest]digest.Digest
+
+	mu sync.RWMutex
 }
 
-func (secret *Secret) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	payload := persistedSecretPayload{}
-	if secret != nil {
-		payload.Handle = secret.Handle
-		payload.Name = secret.NameVal
+func NewSecretStore(bkSessionManager *bksession.Manager) *SecretStore {
+	return &SecretStore{
+		secrets:                   map[digest.Digest]dagql.ObjectResult[*Secret]{},
+		canonicalDigestByIDDigest: map[digest.Digest]digest.Digest{},
+		bkSessionManager:          bkSessionManager,
 	}
-	return json.Marshal(payload)
 }
 
-func (*Secret) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
-	var persisted persistedSecretPayload
-	if len(payload) > 0 {
-		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return nil, fmt.Errorf("decode persisted secret payload: %w", err)
+func SecretIDDigest(id *call.ID) digest.Digest {
+	if id == nil {
+		return ""
+	}
+	if contentDigest := id.ContentDigest(); contentDigest != "" {
+		return contentDigest
+	}
+	return id.Digest()
+}
+
+func SecretDigest(secret dagql.ObjectResult[*Secret]) digest.Digest {
+	return SecretIDDigest(secret.ID())
+}
+
+func (store *SecretStore) AddSecret(secret dagql.ObjectResult[*Secret]) error {
+	if secret.Self() == nil {
+		return fmt.Errorf("secret must not be nil")
+	}
+
+	if secret.Self().URI != "" {
+		_, _, err := secretprovider.ResolverForID(secret.Self().URI)
+		if err != nil {
+			return err
 		}
 	}
-	return &Secret{
-		Handle:  persisted.Handle,
-		NameVal: persisted.Name,
-	}, nil
+
+	canonicalDigest := SecretDigest(secret)
+	if canonicalDigest == "" {
+		return fmt.Errorf("secret must have a digest")
+	}
+	idDigest := secret.ID().Digest()
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.secrets[canonicalDigest] = secret
+	store.canonicalDigestByIDDigest[canonicalDigest] = canonicalDigest
+	if idDigest != "" {
+		store.canonicalDigestByIDDigest[idDigest] = canonicalDigest
+	}
+	return nil
 }
 
-//nolint:dupl // symmetric with resolveSessionSocket; sharing hides Secret vs Socket semantics
-func resolveSessionSecret(ctx context.Context, secret *Secret) (*Secret, error) {
-	if secret == nil {
-		return nil, nil
-	}
-	if secret.Handle == "" {
-		return secret, nil
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve session secret %q: current client metadata: %w", secret.Handle, err)
-	}
-	if clientMetadata.SessionID == "" {
-		return nil, fmt.Errorf("resolve session secret %q: empty session ID", secret.Handle)
-	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve session secret %q: current dagql cache: %w", secret.Handle, err)
-	}
-	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, secret.Handle)
-	if err != nil {
-		return nil, err
-	}
-	resolved, ok := resolvedAny.(*Secret)
+func (store *SecretStore) AddSecretFromOtherStore(srcStore *SecretStore, secret dagql.ObjectResult[*Secret]) error {
+	secretDgst := SecretDigest(secret)
+	srcSecret, ok := srcStore.GetSecret(secretDgst)
 	if !ok {
-		return nil, fmt.Errorf("resolve session secret %q: bound value is %T", secret.Handle, resolvedAny)
+		return fmt.Errorf("secret %s not found in source store", secretDgst)
 	}
-	if resolved.Handle != "" {
-		return nil, fmt.Errorf("resolve session secret %q: bound secret is still a handle", secret.Handle)
-	}
-	return resolved, nil
+	return store.AddSecret(srcSecret)
 }
 
-func (secret *Secret) Name(ctx context.Context) (string, error) {
-	resolved, err := resolveSessionSecret(ctx, secret)
-	if err != nil {
-		return "", err
+func (store *SecretStore) secretByDigest(idDgst digest.Digest) (dagql.ObjectResult[*Secret], bool) {
+	canonicalDigest, ok := store.canonicalDigestByIDDigest[idDgst]
+	if !ok {
+		canonicalDigest = idDgst
 	}
-	if resolved == nil {
-		return "", nil
-	}
-	return resolved.NameVal, nil
+	secret, ok := store.secrets[canonicalDigest]
+	return secret, ok
 }
 
-func (secret *Secret) URI(ctx context.Context) (string, error) {
-	resolved, err := resolveSessionSecret(ctx, secret)
-	if err != nil {
-		return "", err
-	}
-	if resolved == nil {
-		return "", nil
-	}
-	return resolved.URIVal, nil
+func (store *SecretStore) HasSecret(idDgst digest.Digest) bool {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	_, ok := store.secretByDigest(idDgst)
+	return ok
 }
 
-func (secret *Secret) Plaintext(ctx context.Context) ([]byte, error) {
-	resolved, err := resolveSessionSecret(ctx, secret)
+func (store *SecretStore) GetSecret(idDgst digest.Digest) (inst dagql.ObjectResult[*Secret], ok bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secretByDigest(idDgst)
+	if !ok {
+		return inst, false
+	}
+	return secret, true
+}
+
+func (store *SecretStore) GetSecretName(idDgst digest.Digest) (string, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secretByDigest(idDgst)
+	if !ok {
+		return "", false
+	}
+	return secret.Self().Name, true
+}
+
+func (store *SecretStore) GetSecretURI(idDgst digest.Digest) (string, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secretByDigest(idDgst)
+	if !ok {
+		return "", false
+	}
+	return secret.Self().URI, true
+}
+
+func (store *SecretStore) GetSecretNameOrURI(idDgst digest.Digest) (string, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secretByDigest(idDgst)
+	if !ok {
+		return "", false
+	}
+	if secret.Self().URI != "" {
+		return secret.Self().URI, true
+	}
+	if secret.Self().Name != "" {
+		return secret.Self().Name, true
+	}
+	return "", true
+}
+
+func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.Digest) ([]byte, error) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secretByDigest(idDgst)
+	if !ok {
+		return nil, fmt.Errorf("secret %s: %w", idDgst, secrets.ErrNotFound)
+	}
+
+	return store.GetSecretPlaintextDirect(ctx, secret.Self())
+}
+
+// GetSecretPlaintextDirect returns the plaintext of the given secret, even if it's not in the store yet.
+// Public to support retrieving the plaintext while deriving the cache key for it (after which it will be
+// put in the store).
+func (store *SecretStore) GetSecretPlaintextDirect(ctx context.Context, secret *Secret) ([]byte, error) {
+	// If the secret is stored locally (setSecret), return the plaintext.
+	if secret.URI == "" {
+		return secret.Plaintext, nil
+	}
+
+	buildkitSessionID := secret.BuildkitSessionID
+	if buildkitSessionID == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "missing buildkit session id")
+	}
+	caller, err := store.bkSessionManager.Get(ctx, buildkitSessionID, true)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to get buildkit session: %s", err)
 	}
-	if resolved == nil {
-		return nil, nil
+	if caller == nil {
+		return nil, status.Errorf(codes.Internal, "failed to get buildkit session %q: was nil", buildkitSessionID)
 	}
-	if resolved.URIVal == "" {
-		return append([]byte(nil), resolved.PlaintextVal...), nil
-	}
-	if resolved.SourceClientID == "" {
-		return nil, fmt.Errorf("secret %q: missing source client ID", resolved.URIVal)
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	conn, err := query.SpecificClientAttachableConn(ctx, resolved.SourceClientID)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := secrets.NewSecretsClient(conn).GetSecret(ctx, &secrets.GetSecretRequest{
-		ID: resolved.URIVal,
+
+	resp, err := secrets.NewSecretsClient(caller.Conn()).GetSecret(ctx, &secrets.GetSecretRequest{
+		ID: secret.URI,
 	})
 	if err != nil {
 		return nil, err
@@ -160,38 +221,17 @@ func (secret *Secret) Plaintext(ctx context.Context) ([]byte, error) {
 	return resp.Data, nil
 }
 
-func SecretHandleFromCacheKey(cacheKey string) dagql.SessionResourceHandle {
-	if cacheKey == "" {
-		return ""
-	}
-	return dagql.SessionResourceHandle(hashutil.HashStrings(cacheKey))
+func (store *SecretStore) AsBuildkitSecretStore() secrets.SecretStore {
+	return &buildkitSecretStore{inner: store}
 }
 
-func SetSecretHandle(name string, accessor string) dagql.SessionResourceHandle {
-	if name == "" || accessor == "" {
-		return ""
-	}
-	return dagql.SessionResourceHandle(hashutil.HashStrings(name, accessor))
+// adapts our SecretStore to the interface buildkit wants
+type buildkitSecretStore struct {
+	inner *SecretStore
 }
 
-func SecretHandleFromPlaintext(secretSalt []byte, plaintext []byte) dagql.SessionResourceHandle {
-	if len(plaintext) == 0 {
-		return ""
-	}
-	const (
-		timeCost = 10
-		memory   = 2 * 1024
-		threads  = 1
-		keySize  = 32
-	)
-	key := argon2.IDKey(
-		plaintext,
-		secretSalt,
-		timeCost,
-		memory,
-		threads,
-		keySize,
-	)
-	b64Key := base64.RawStdEncoding.EncodeToString(key)
-	return dagql.SessionResourceHandle(digest.Digest("argon2:" + b64Key))
+var _ secrets.SecretStore = &buildkitSecretStore{}
+
+func (bkStore *buildkitSecretStore) GetSecret(ctx context.Context, llbID string) ([]byte, error) {
+	return bkStore.inner.GetSecretPlaintext(ctx, digest.Digest(llbID))
 }

@@ -2,31 +2,23 @@ package schema
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
 
-	"github.com/containerd/containerd/v2/core/content"
-	"github.com/containerd/containerd/v2/core/images"
-	cerrdefs "github.com/containerd/errdefs"
-	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/distribution/reference"
-	"github.com/opencontainers/go-digest"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/filesync"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/util/ctrns"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type hostSchema struct{}
@@ -39,14 +31,15 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
 
-		dagql.NodeFunc("_builtinContainer", s.builtinContainer).
-			IsPersistable().
-			Doc("Retrieves a container builtin to the engine."),
+		dagql.NodeFunc("_builtinContainer", s.builtinContainer).Doc("Retrieves a container builtin to the engine."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
-		dagql.NodeFunc("directory", s.directory).
-			WithInput(dagql.RequestedCacheInput("noCache")).
+		dagql.NodeFuncWithCacheKey("directory",
+			DagOpDirectoryWrapper(
+				srv, s.directory,
+				WithHashContentDir[*core.Host, hostDirectoryArgs](),
+			), dagql.CacheAsRequested).
 			Doc(`Accesses a directory on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -56,37 +49,35 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
-		dagql.NodeFunc("file", s.file).
-			WithInput(dagql.RequestedCacheInput("noCache")).
+		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
 			Doc(`Accesses a file on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 				dagql.Arg("noCache").Doc(`If true, the file will always be reloaded from the host.`),
 			),
 
-		dagql.NodeFunc("findUp", s.findUp).
-			WithInput(dagql.RequestedCacheInput("noCache")).
+		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CacheAsRequested).
 			Doc(`Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null`).
 			Args(
 				dagql.Arg("name").Doc(`name of the file or directory to search for`),
 			),
 
-		dagql.NodeFunc("unixSocket", s.socket).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, dagql.CachePerClient).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 			),
 
-		dagql.NodeFunc("_sshAuthSocket", s.sshAuthSocket).
-			WithInput(dagql.PerCallInput).
+		dagql.NodeFuncWithCacheKey("_sshAuthSocket", s.sshAuthSocket, dagql.CachePerCall).
 			Doc(`Accesses the SSH auth socket on the host and returns a socket scoped to SSH identities.`).
 			Args(
 				dagql.Arg("source").Doc(`Optional source socket to scope. If not set, uses the caller's SSH_AUTH_SOCK.`),
 			),
 
-		dagql.Func("tunnel", s.tunnel).
-			WithInput(dagql.PerClientInput).
+		dagql.Func("__internalSocket", s.internalSocket).
+			Doc(`(Internal-only) Accesses a socket on the host (unix or ip) with the given internal client resource name.`),
+
+		dagql.FuncWithCacheKey("tunnel", s.tunnel, dagql.CachePerClient).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
 			Args(
 				dagql.Arg("service").Doc(`Service to send traffic from the tunnel.`),
@@ -103,9 +94,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 					`If ports are given and native is true, the ports are additive.`),
 			),
 
-		dagql.NodeFunc("service", s.service).
-			WithInput(dagql.PerSessionInput).     // host services shouldn't cross sessions
-			WithInput(core.CachePerCallerModule). // services should be shared from different function calls in a module
+		dagql.NodeFuncWithCacheKey("service", s.service, dagql.CachePerClient).
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			Args(
 				dagql.Arg("ports").Doc(
@@ -116,17 +105,22 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("host").Doc(`Upstream host to forward traffic to.`),
 			),
 
-		dagql.NodeFunc("containerImage", s.containerImage).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("containerImage", s.containerImage, dagql.CachePerClient).
 			Doc(`Accesses a container image on the host.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the image to access.`),
 			),
+
+		// hidden from external clients via the __ prefix
+		dagql.Func("__internalService", s.internalService).
+			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
 	}.Install(srv)
 }
 
 type builtinContainerArgs struct {
 	Digest string `doc:"Digest of the image manifest"`
+
+	ContainerDagOpInternalArgs
 }
 
 func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectResult[*core.Query], args builtinContainerArgs) (inst dagql.ObjectResult[*core.Container], err error) {
@@ -135,12 +129,39 @@ func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectRe
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
+	if !args.InDagOp() {
+		dummyCtr := core.NewContainer(parent.Self().Platform())
+		ctr, effectID, err := DagOpContainer(ctx, srv, dummyCtr, args, nil)
+		if err != nil {
+			return inst, err
+		}
+
+		err = core.BuiltInContainerUpdateConfig(ctx, ctr, args.Digest)
+		if err != nil {
+			return inst, err
+		}
+		if ctr.FS.Self().Dir == "" {
+			// Note that this is set inside the dagop; however it doesn't correctly get propagated back, so we need to reset it here
+			// containerSchema.from has the same issue and work-around
+			ctr.FS.Self().Dir = "/"
+		}
+
+		resultID := dagql.CurrentID(ctx)
+		if effectID != "" && resultID != nil {
+			resultID = resultID.AppendEffectIDs(effectID)
+		}
+		inst, err = dagql.NewObjectResultForID(ctr, srv, resultID)
+		if err != nil {
+			return inst, err
+		}
+		return inst, nil
+	}
+
 	ctr, err := core.BuiltInContainer(ctx, parent.Self().Platform(), args.Digest)
 	if err != nil {
 		return inst, err
 	}
-
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
 
 type hostDirectoryArgs struct {
@@ -149,12 +170,11 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 	HostDirCacheConfig
 
-	GitIgnoreRoot string   `internal:"true" default:""`
-	FollowPaths   []string `internal:"true" default:"[]"`
-	Gitignore     bool     `default:"false"`
+	GitIgnoreRoot string `internal:"true" default:""`
+	Gitignore     bool   `default:"false"`
+	DagOpInternalArgs
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -166,9 +186,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get current query: %w", err)
 	}
 
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get engine client: %w", err)
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	copyPath := path.Clean(args.Path)
@@ -255,84 +275,17 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		excludePatterns = append(excludePatterns, exclude)
 	}
 
-	followPaths := make([]string, 0, len(args.FollowPaths))
-	for _, followPath := range args.FollowPaths {
-		if !filepath.IsLocal(followPath) {
-			continue
-		}
-		followPaths = append(followPaths, filepath.Join(relPathFromRoot, followPath))
-	}
+	dir, err := host.Self().Directory(ctx, absRootCopyPath, core.CopyFilter{
+		Include:   includePatterns,
+		Exclude:   excludePatterns,
+		Gitignore: args.Gitignore,
+	}, args.NoCache, relPathFromRoot)
 
-	snapshotOpts := filesync.SnapshotOpts{
-		IncludePatterns: includePatterns,
-		ExcludePatterns: excludePatterns,
-		FollowPaths:     followPaths,
-		GitIgnore:       args.Gitignore,
-		RelativePath:    relPathFromRoot,
-	}
-	if args.NoCache {
-		snapshotOpts.CacheBuster = rand.Text()
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	callerConn, err := query.SpecificClientAttachableConn(ctx, clientMetadata.ClientID)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get caller attachable conn: %w", err)
-	}
-	drive := pathutil.GetDrive(absRootCopyPath)
-
-	var mirror *core.ClientFilesyncMirror
-	if clientMetadata.ClientStableID != "" {
-		var persistedMirror dagql.ObjectResult[*core.ClientFilesyncMirror]
-		if err := srv.Select(ctx, srv.Root(), &persistedMirror, dagql.Selector{
-			Field: "_clientFilesyncMirror",
-			Args: []dagql.NamedInput{
-				{Name: "stableClientID", Value: dagql.String(clientMetadata.ClientStableID)},
-				{Name: "drive", Value: dagql.String(drive)},
-			},
-		}); err != nil {
-			return inst, fmt.Errorf("failed to load client filesync mirror: %w", err)
-		}
-		mirror = persistedMirror.Self()
-	} else {
-		mirror = &core.ClientFilesyncMirror{
-			Drive:       drive,
-			EphemeralID: identity.NewID(),
-		}
-		if err := mirror.EnsureCreated(ctx, query); err != nil {
-			return inst, fmt.Errorf("failed to create ephemeral client filesync mirror: %w", err)
-		}
+		return inst, fmt.Errorf("failed to get directory: %w", err)
 	}
 
-	ref, contentDgst, err := mirror.Snapshot(ctx, query, callerConn, absRootCopyPath, snapshotOpts)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get snapshot: %w", err)
-	}
-	dagql.TraceEGraphDebug(ctx, "host_directory_snapshot", "phase", "runtime", "path", args.Path, "abs_root_copy_path", absRootCopyPath, "relative_path_from_root", relPathFromRoot, "no_cache", args.NoCache, "cache_buster", snapshotOpts.CacheBuster != "", "content_digest", contentDgst, "snapshot_ref_id", ref.SnapshotID(), "include_patterns", includePatterns, "exclude_patterns", excludePatterns, "follow_paths", followPaths, "gitignore", args.Gitignore)
-
-	dir := &core.Directory{
-		Platform: query.Platform(),
-		Dir:      new(core.LazyAccessor[string, *core.Directory]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
-	}
-	dir.Dir.SetValue("/")
-	dir.Snapshot.SetValue(ref)
-
-	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-	if err != nil {
-		_ = dir.OnRelease(context.WithoutCancel(ctx))
-		return inst, fmt.Errorf("failed to create directory result: %w", err)
-	}
-	inst, err = inst.WithContentDigest(ctx, contentDgst)
-	if err != nil {
-		_ = dir.OnRelease(context.WithoutCancel(ctx))
-		return inst, err
-	}
-
-	return inst, nil
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type hostSocketArgs struct {
@@ -344,51 +297,47 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return inst, err
 	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dagql cache: %w", err)
-	}
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client metadata: %w", err)
-	}
 
-	concreteVal := &core.Socket{
-		Kind:           core.SocketKindUnixOpaque,
-		URLVal:         (&url.URL{Scheme: "unix", Path: args.Path}).String(),
-		SourceClientID: clientMetadata.ClientID,
+	accessor, err := core.GetClientResourceAccessor(ctx, query, args.Path)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client resource name: %w", err)
 	}
+	dgst := hashutil.HashStrings(accessor)
 
-	handle, err := core.HostUnixSocketHandle(ctx, query, args.Path)
+	sock := &core.Socket{IDDigest: dgst}
+	inst, err = dagql.NewResultForCurrentID(ctx, sock)
 	if err != nil {
-		return inst, fmt.Errorf("failed to derive unix socket handle: %w", err)
+		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
-	if handle == "" {
-		return inst, fmt.Errorf("failed to derive unix socket handle")
-	}
+	inst = inst.WithContentDigest(dgst)
 
-	handleVal := &core.Socket{
-		Kind:   core.SocketKindUnixOpaque,
-		Handle: handle,
+	upsertSocket := func(ctx context.Context) error {
+		callerClientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		callerSocketStore, err := query.Sockets(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get socket store: %w", err)
+		}
+		nonModuleParentClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err == nil && nonModuleParentClientMetadata.ClientID != callerClientMetadata.ClientID {
+			// In nested module contexts, preserve any pre-imported socket mapping (e.g. an explicitly
+			// passed socket argument) instead of clobbering it with the nested client's session.
+			if callerSocketStore.HasSocket(sock.IDDigest) {
+				return nil
+			}
+		}
+		if err := callerSocketStore.AddUnixSocket(sock, callerClientMetadata.ClientID, args.Path); err != nil {
+			return fmt.Errorf("failed to add unix socket to store: %w", err)
+		}
+		return nil
 	}
-	inst, err = dagql.NewResultForCurrentCall(ctx, handleVal)
-	if err != nil {
-		return inst, fmt.Errorf("failed to create unix socket handle result: %w", err)
-	}
-	inst, err = inst.WithContentDigest(ctx, digest.Digest(handle))
-	if err != nil {
-		return inst, err
-	}
-	inst, err = inst.WithSessionResourceHandle(ctx, handle)
-	if err != nil {
-		return inst, err
-	}
-
-	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, concreteVal); err != nil {
+	if err := upsertSocket(ctx); err != nil {
 		return inst, err
 	}
 
-	return inst, nil
+	return inst.ResultWithPostCall(upsertSocket), nil
 }
 
 type hostSSHAuthSocketArgs struct {
@@ -404,9 +353,9 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 	if err != nil {
 		return inst, err
 	}
-	cache, err := dagql.EngineCache(ctx)
+	socketStore, err := query.Sockets(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get dagql cache: %w", err)
+		return inst, fmt.Errorf("failed to get socket store: %w", err)
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -414,72 +363,108 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-	var concreteSelf *core.Socket
+	var sourceSocket *core.Socket
 	if args.Source.Valid {
-		concrete, err := args.Source.Value.Load(ctx, srv)
+		sourceInst, err := args.Source.Value.Load(ctx, srv)
 		if err != nil {
 			return inst, fmt.Errorf("failed to load source socket: %w", err)
 		}
-		concreteSelf, _ = dagql.UnwrapAs[*core.Socket](concrete)
-		if concreteSelf == nil {
+		sourceSocket = sourceInst.Self()
+		if sourceSocket == nil {
 			return inst, errors.New("source socket is nil")
 		}
-		concreteSelf, err = core.ResolveSessionSocket(ctx, concreteSelf)
-		if err != nil {
-			return inst, fmt.Errorf("failed to resolve source socket: %w", err)
-		}
-		if concreteSelf == nil {
-			return inst, errors.New("resolved source socket is nil")
+		if !socketStore.HasSocket(sourceSocket.IDDigest) {
+			return inst, fmt.Errorf("source socket %s not found in socket store", sourceSocket.IDDigest)
 		}
 	} else {
 		if clientMetadata.SSHAuthSocketPath == "" {
 			return inst, errors.New("SSH_AUTH_SOCK is not set")
 		}
-		concreteVal := &core.Socket{
-			Kind:           core.SocketKindUnixOpaque,
-			URLVal:         (&url.URL{Scheme: "unix", Path: clientMetadata.SSHAuthSocketPath}).String(),
-			SourceClientID: clientMetadata.ClientID,
+		accessor, err := core.GetClientResourceAccessor(ctx, query, clientMetadata.SSHAuthSocketPath)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client resource accessor: %w", err)
 		}
-		concreteSelf = concreteVal
+		sourceSocket = &core.Socket{
+			IDDigest: hashutil.HashStrings(accessor),
+		}
+		if err := socketStore.AddUnixSocket(sourceSocket, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
+			return inst, fmt.Errorf("failed to register source SSH auth socket: %w", err)
+		}
 	}
 
-	fingerprints, err := concreteSelf.AgentFingerprints(ctx)
+	scopedDigest, err := core.ScopedSSHAuthSocketDigestFromStore(ctx, query, socketStore, sourceSocket.IDDigest)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get SSH auth socket fingerprints: %w", err)
-	}
-	handle := core.ScopedSSHAuthSocketHandle(query.SecretSalt(), fingerprints)
-	mainClientMetadata, err := query.MainClientCallerMetadata(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get main client metadata: %w", err)
-	}
-	if clientMetadata.ClientID != mainClientMetadata.ClientID {
-		handle = core.ScopedNestedSSHAuthSocketHandle(query.SecretSalt(), fingerprints, clientMetadata.ClientID)
-	}
-	if handle == "" {
-		return inst, fmt.Errorf("failed to derive SSH auth socket handle")
+		return inst, fmt.Errorf("failed to scope SSH auth socket from agent identities: %w", err)
 	}
 
-	handleVal := &core.Socket{
-		Kind:   core.SocketKindSSHHandle,
-		Handle: handle,
-	}
-	inst, err = dagql.NewResultForCurrentCall(ctx, handleVal)
+	scopedSocket := &core.Socket{IDDigest: scopedDigest}
+	inst, err = dagql.NewResultForCurrentID(ctx, scopedSocket)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
-	inst, err = inst.WithContentDigest(ctx, digest.Digest(handle))
-	if err != nil {
-		return inst, err
-	}
-	inst, err = inst.WithSessionResourceHandle(ctx, handle)
-	if err != nil {
-		return inst, err
-	}
-	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, concreteSelf); err != nil {
+	inst = inst.WithContentDigest(scopedDigest)
+
+	if err := upsertScopedSSHAuthSocket(ctx, query, args.Source.Valid, scopedSocket, sourceSocket); err != nil {
 		return inst, err
 	}
 
-	return inst, nil
+	// This postcall may run for different callers that hit the same cached
+	// Host._sshAuthSocket result. Resolve caller-specific SSH auth socket metadata
+	// at postcall execution time to avoid leaking a previous caller's session/path
+	// into a different caller's socket store.
+	return inst.ResultWithPostCall(func(ctx context.Context) error {
+		return upsertScopedSSHAuthSocket(ctx, query, args.Source.Valid, scopedSocket, sourceSocket)
+	}), nil
+}
+
+// upsertScopedSSHAuthSocket persists the scoped socket mapping in the caller store.
+// If a source socket was provided, it aliases scoped -> source. Otherwise it registers
+// the scoped socket as a unix socket using the caller SSH auth socket session/path.
+func upsertScopedSSHAuthSocket(
+	ctx context.Context,
+	query *core.Query,
+	hasSource bool,
+	scopedSocket *core.Socket,
+	sourceSocket *core.Socket,
+) error {
+	callerSocketStore, err := query.Sockets(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get caller socket store: %w", err)
+	}
+
+	if hasSource {
+		if err := callerSocketStore.AddSocketAlias(scopedSocket, sourceSocket.IDDigest); err != nil {
+			return fmt.Errorf("failed to alias scoped SSH auth socket: %w", err)
+		}
+		return nil
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if clientMetadata.SSHAuthSocketPath == "" {
+		// Cached post-call replay can happen in contexts that don't expose
+		// SSH_AUTH_SOCK (for example when loading IDs to transfer client
+		// resources). Treat this as a no-op so replay doesn't fail; direct
+		// Host._sshAuthSocket calls still fail earlier in the resolver.
+		return nil
+	}
+
+	nonModuleParentClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+	if err == nil && nonModuleParentClientMetadata.ClientID != clientMetadata.ClientID {
+		// In nested module contexts, keep an existing scoped socket mapping from the
+		// parent caller (for example an explicitly passed socket arg) instead of
+		// clobbering it with this nested client's own session/path.
+		if callerSocketStore.HasSocket(scopedSocket.IDDigest) {
+			return nil
+		}
+	}
+
+	if err := callerSocketStore.AddUnixSocket(scopedSocket, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
+		return fmt.Errorf("failed to register scoped SSH auth socket: %w", err)
+	}
+	return nil
 }
 
 type hostFileArgs struct {
@@ -489,6 +474,13 @@ type hostFileArgs struct {
 
 type HostDirCacheConfig struct {
 	NoCache bool `default:"false"`
+}
+
+func (cc HostDirCacheConfig) CacheType() dagql.CacheControlType {
+	if cc.NoCache {
+		return dagql.CacheTypePerCall
+	}
+	return dagql.CacheTypePerClient
 }
 
 func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFileArgs) (i dagql.Result[*core.File], err error) {
@@ -541,9 +533,9 @@ func (s *hostSchema) findUp(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return i, err
 	}
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return i, fmt.Errorf("failed to get engine client: %w", err)
+		return i, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 	cwd, err := bk.AbsPath(ctx, ".")
 	if err != nil {
@@ -583,14 +575,14 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 
 	svc := inst.Self()
 
-	if svc.Container.Self() == nil {
+	if svc.Container == nil {
 		return nil, errors.New("tunneling to non-Container services is not supported")
 	}
 
 	ports := []core.PortForward{}
 
 	if args.Native {
-		for _, port := range svc.Container.Self().Ports {
+		for _, port := range svc.Container.Ports {
 			frontend := port.Port
 			ports = append(ports, core.PortForward{
 				Frontend: &frontend,
@@ -605,7 +597,7 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 	}
 
 	if len(ports) == 0 {
-		for _, port := range svc.Container.Self().Ports {
+		for _, port := range svc.Container.Ports {
 			ports = append(ports, core.PortForward{
 				Frontend: nil, // pick a random port on the host
 				Backend:  port.Port,
@@ -619,6 +611,7 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 	}
 
 	return &core.Service{
+		Creator:        trace.SpanContextFromContext(ctx),
 		TunnelUpstream: inst,
 		TunnelPorts:    ports,
 	}, nil
@@ -626,80 +619,6 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 
 type hostContainerArgs struct {
 	Name string
-}
-
-func resolveHostStoreManifest(
-	ctx context.Context,
-	store content.Store,
-	desc ocispec.Descriptor,
-	platform ocispec.Platform,
-) (*ocispec.Descriptor, error) {
-	matcher := platforms.Only(platforms.Normalize(platform))
-	target, matched, err := resolveHostStoreManifestMatch(ctx, store, desc, matcher)
-	if err != nil {
-		return nil, err
-	}
-	if target != nil {
-		return target, nil
-	}
-	if matched {
-		return nil, fmt.Errorf("requested platform manifest %s is not present locally", platforms.Format(platform))
-	}
-	return nil, fmt.Errorf("no manifest for platform %s in host store", platforms.Format(platform))
-}
-
-func resolveHostStoreManifestMatch(
-	ctx context.Context,
-	store content.Store,
-	desc ocispec.Descriptor,
-	matcher platforms.MatchComparer,
-) (*ocispec.Descriptor, bool, error) {
-	switch desc.MediaType {
-	case ocispec.MediaTypeImageManifest, images.MediaTypeDockerSchema2Manifest:
-		if _, err := store.Info(ctx, desc.Digest); err != nil {
-			if cerrdefs.IsNotFound(err) {
-				return nil, true, nil
-			}
-			return nil, false, fmt.Errorf("stat host manifest %s: %w", desc.Digest, err)
-		}
-		return &desc, true, nil
-
-	case ocispec.MediaTypeImageIndex, images.MediaTypeDockerSchema2ManifestList:
-		indexBlob, err := content.ReadBlob(ctx, store, desc)
-		if err != nil {
-			return nil, false, fmt.Errorf("read host image index blob: %w", err)
-		}
-
-		var idx ocispec.Index
-		if err := json.Unmarshal(indexBlob, &idx); err != nil {
-			return nil, false, fmt.Errorf("unmarshal host image index: %w", err)
-		}
-
-		matched := false
-		for _, manifest := range idx.Manifests {
-			switch manifest.MediaType {
-			case ocispec.MediaTypeImageManifest, images.MediaTypeDockerSchema2Manifest,
-				ocispec.MediaTypeImageIndex, images.MediaTypeDockerSchema2ManifestList:
-			default:
-				continue
-			}
-			if manifest.Platform != nil && !matcher.Match(*manifest.Platform) {
-				continue
-			}
-			target, childMatched, err := resolveHostStoreManifestMatch(ctx, store, manifest, matcher)
-			if err != nil {
-				return nil, false, err
-			}
-			matched = matched || childMatched
-			if target != nil {
-				return target, true, nil
-			}
-		}
-		return nil, matched, nil
-
-	default:
-		return nil, false, fmt.Errorf("unsupported host image media type %s", desc.MediaType)
-	}
 }
 
 func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostContainerArgs) (inst dagql.Result[*core.Container], err error) {
@@ -713,9 +632,9 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get engine client: %w", err)
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	imageReader, err := bk.ReadImage(ctx, refName.String())
@@ -724,27 +643,43 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	if imageReader.ContentStore != nil && imageReader.ImagesStore != nil {
+		// create and use a lease to write to our content store, prevents
+		// content being cleaned up while we're writing
+		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, imageReader.LeaseManager, leaseutil.MakeTemporary)
+		if err != nil {
+			return inst, err
+		}
+		defer leaseDone(context.WithoutCancel(leaseCtx))
+		leaseID, _ := leases.FromContext(leaseCtx)
+
+		contentStore := ctrns.ContentStoreWithLease(imageReader.ContentStore, leaseID)
+
 		img, err := imageReader.ImagesStore.Get(ctx, refName.String())
 		if err != nil {
 			return inst, fmt.Errorf("failed to get image from host store: %w", err)
 		}
-		target, err := resolveHostStoreManifest(ctx, imageReader.ContentStore, img.Target, query.Platform().Spec())
+		target, err := core.ResolveIndex(ctx, contentStore, img.Target, query.Platform().Spec(), "")
 		if err != nil {
-			return inst, fmt.Errorf("failed to resolve host image manifest: %w", err)
+			return inst, fmt.Errorf("failed to resolve image index: %w", err)
 		}
 
-		err = contentutil.CopyChain(ctx, query.OCIStore(), imageReader.ContentStore, *target)
+		ctx, release, err := leaseutil.WithLease(ctx, query.LeaseManager(), leaseutil.MakeTemporary)
+		if err != nil {
+			return inst, err
+		}
+		defer release(context.WithoutCancel(ctx))
+		err = contentutil.CopyChain(ctx, query.OCIStore(), contentStore, *target)
 		if err != nil {
 			return inst, fmt.Errorf("failed to copy image content: %w", err)
 		}
 
 		ctr := core.NewContainer(query.Platform())
-		ctr, err = ctr.FromOCIStore(ctx, *target, refName.String())
+		ctr, err = ctr.FromInternal(ctx, *target)
 		if err != nil {
 			return inst, err
 		}
 
-		return dagql.NewResultForCurrentCall(ctx, ctr)
+		return dagql.NewResultForCurrentID(ctx, ctr)
 	}
 
 	if src := imageReader.Tarball; src != nil {
@@ -756,7 +691,7 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 			return inst, err
 		}
 
-		return dagql.NewResultForCurrentCall(ctx, ctr)
+		return dagql.NewResultForCurrentID(ctx, ctr)
 	}
 
 	return inst, errors.New("invalid save config")
@@ -767,7 +702,7 @@ type hostServiceArgs struct {
 	Ports []dagql.InputObject[core.PortForward]
 }
 
-func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostServiceArgs) (inst dagql.ObjectResult[*core.Service], err error) {
+func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostServiceArgs) (inst dagql.Result[*core.Service], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -777,25 +712,116 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 		return inst, errors.New("no ports specified")
 	}
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	socketStore, err := query.Sockets(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get socket store: %w", err)
+	}
+
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
 	ports := collectInputsSlice(args.Ports)
-	socks := make([]*core.Socket, 0, len(ports))
+	sockIDs := make([]dagql.ID[*core.Socket], 0, len(ports))
 	for _, port := range ports {
-		sock := &core.Socket{
-			Kind:           core.SocketKindHostIP,
-			URLVal:         (&url.URL{Scheme: port.Protocol.Network(), Host: fmt.Sprintf("%s:%d", args.Host, port.Backend)}).String(),
-			PortForwardVal: port,
-			SourceClientID: clientMetadata.ClientID,
+		accessor, err := core.GetHostIPSocketAccessor(ctx, query, args.Host, port)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get host ip socket accessor: %w", err)
 		}
-		socks = append(socks, sock)
+
+		var sockInst dagql.Result[*core.Socket]
+		err = srv.Select(ctx, srv.Root(), &sockInst,
+			dagql.Selector{
+				Field: "host",
+			},
+			dagql.Selector{
+				Field: "__internalSocket",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "accessor",
+						Value: dagql.NewString(accessor),
+					},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to select internal socket: %w", err)
+		}
+
+		if err := socketStore.AddIPSocket(sockInst.Self(), clientMetadata.ClientID, args.Host, port); err != nil {
+			return inst, fmt.Errorf("failed to add ip socket to store: %w", err)
+		}
+
+		sockIDs = append(sockIDs, dagql.NewID[*core.Socket](sockInst.ID()))
 	}
 
-	svc := &core.Service{
-		HostSockets: socks,
+	err = srv.Select(ctx, srv.Root(), &inst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "__internalService",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "socks",
+					Value: dagql.ArrayInput[dagql.ID[*core.Socket]](sockIDs),
+				},
+			},
+		},
+	)
+	return inst, err
+}
+
+type hostInternalServiceArgs struct {
+	Socks dagql.ArrayInput[dagql.ID[*core.Socket]]
+}
+
+func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, args hostInternalServiceArgs) (*core.Service, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)
+
+	if len(args.Socks) == 0 {
+		return nil, errors.New("no host sockets specified")
+	}
+
+	socks := make([]*core.Socket, 0, len(args.Socks))
+	for _, sockID := range args.Socks {
+		sockInst, err := sockID.Load(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load socket: %w", err)
+		}
+		socks = append(socks, sockInst.Self())
+	}
+
+	return &core.Service{
+		Creator:     trace.SpanContextFromContext(ctx),
+		HostSockets: socks,
+	}, nil
+}
+
+type hostInternalSocketArgs struct {
+	// Accessor is the scoped per-module name, which should guarantee uniqueness.
+	// It is used to ensure the dagql ID digest is unique per module; the digest is what's
+	// used as the actual key for the socket store.
+	Accessor string
+}
+
+func (s *hostSchema) internalSocket(ctx context.Context, host *core.Host, args hostInternalSocketArgs) (inst dagql.Result[*core.Socket], err error) {
+	if args.Accessor == "" {
+		return inst, errors.New("socket accessor must be provided")
+	}
+	dgst := hashutil.HashStrings(args.Accessor)
+	sock := &core.Socket{IDDigest: dgst}
+	inst, err = dagql.NewResultForCurrentID(ctx, sock)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+	return inst.WithContentDigest(dgst), nil
 }

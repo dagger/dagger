@@ -240,20 +240,6 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  Retrieve the binding value, as type HTTPState
-  """
-  @spec as_http_state(t()) :: Dagger.HTTPState.t()
-  def as_http_state(%__MODULE__{} = binding) do
-    query_builder =
-      binding.query_builder |> QB.select("asHTTPState")
-
-    %Dagger.HTTPState{
-      query_builder: query_builder,
-      client: binding.client
-    }
-  end
-
-  @doc """
   Retrieve the binding value, as type JSONValue
   """
   @spec as_json_value(t()) :: Dagger.JSONValue.t()

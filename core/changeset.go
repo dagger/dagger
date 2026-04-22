@@ -18,8 +18,9 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -110,6 +111,7 @@ func (*DiffStat) Type() *ast.Type {
 }
 
 // ComputePaths computes the added, modified, and removed paths using git diff.
+// This must be called from a dagql resolver context where buildkit session is available.
 func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
 	ch.pathsOnce.Do(func() {
 		ch.cachedPaths, ch.pathsErr = ch.computePathsOnce(ctx)
@@ -118,20 +120,12 @@ func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) 
 }
 
 func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, error) {
-	beforeDigest, err := ch.Before.ContentPreferredDigest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("before content-preferred digest: %w", err)
-	}
-	afterDigest, err := ch.After.ContentPreferredDigest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("after content-preferred digest: %w", err)
-	}
-	if beforeDigest == afterDigest {
+	if ch.Before.ID().Digest() == ch.After.ID().Digest() {
 		return &ChangesetPaths{}, nil
 	}
 
 	var result *ChangesetPaths
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) (err error) {
+	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) (err error) {
 		result, err = computeChangesetPaths(ctx, beforeDir, afterDir)
 		return err
 	})
@@ -178,41 +172,29 @@ func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*Ch
 
 // withMountedDirs mounts the before and after directories and calls fn with their paths.
 func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, afterDir string) error) error {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return err
-	}
-	if err := cache.Evaluate(ctx, ch.Before, ch.After); err != nil {
-		return fmt.Errorf("evaluate changeset directories: %w", err)
-	}
-
-	beforeRef, err := ch.Before.Self().Snapshot.GetOrEval(ctx, ch.Before.Result)
+	beforeRef, err := getRefOrEvaluate(ctx, ch.Before.Self())
 	if err != nil {
 		return fmt.Errorf("evaluate before: %w", err)
 	}
 
-	afterRef, err := ch.After.Self().Snapshot.GetOrEval(ctx, ch.After.Result)
+	afterRef, err := getRefOrEvaluate(ctx, ch.After.Self())
 	if err != nil {
 		return fmt.Errorf("evaluate after: %w", err)
 	}
 
-	beforeSelector, err := ch.Before.Self().Dir.GetOrEval(ctx, ch.Before.Result)
-	if err != nil {
-		return fmt.Errorf("evaluate before selector: %w", err)
-	}
-	afterSelector, err := ch.After.Self().Dir.GetOrEval(ctx, ch.After.Result)
-	if err != nil {
-		return fmt.Errorf("evaluate after selector: %w", err)
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return fmt.Errorf("no buildkit session group in context")
 	}
 
-	return MountRef(ctx, beforeRef, func(beforeMount string, _ *mount.Mount) error {
-		beforeDir, err := containerdfs.RootPath(beforeMount, beforeSelector)
+	return MountRef(ctx, beforeRef, bkSessionGroup, func(beforeMount string, _ *mount.Mount) error {
+		beforeDir, err := containerdfs.RootPath(beforeMount, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
 
-		return MountRef(ctx, afterRef, func(afterMount string, _ *mount.Mount) error {
-			afterDir, err := containerdfs.RootPath(afterMount, afterSelector)
+		return MountRef(ctx, afterRef, bkSessionGroup, func(afterMount string, _ *mount.Mount) error {
+			afterDir, err := containerdfs.RootPath(afterMount, ch.After.Self().Dir)
 			if err != nil {
 				return err
 			}
@@ -242,17 +224,9 @@ type changesetJSONEnvelope struct {
 
 // MarshalJSON implements custom JSON marshaling that stores directory IDs
 func (ch *Changeset) MarshalJSON() ([]byte, error) {
-	beforeID, err := ch.Before.ID()
-	if err != nil {
-		return nil, fmt.Errorf("before ID: %w", err)
-	}
-	afterID, err := ch.After.ID()
-	if err != nil {
-		return nil, fmt.Errorf("after ID: %w", err)
-	}
 	return json.Marshal(changesetJSONEnvelope{
-		BeforeID: dagql.NewID[*Directory](beforeID),
-		AfterID:  dagql.NewID[*Directory](afterID),
+		BeforeID: dagql.NewID[*Directory](ch.Before.ID()),
+		AfterID:  dagql.NewID[*Directory](ch.After.ID()),
 	})
 }
 
@@ -321,74 +295,21 @@ func (*Changeset) TypeDescription() string {
 	return "A comparison between two directories representing changes that can be applied."
 }
 
-var _ Syncable = (*Changeset)(nil)
-var _ dagql.HasDependencyResults = (*Changeset)(nil)
+var _ Evaluatable = (*Changeset)(nil)
 
-func (ch *Changeset) Evaluate(context.Context) error {
-	return nil
-}
-
-func (ch *Changeset) Sync(ctx context.Context) error {
-	return ch.Evaluate(ctx)
-}
-
-func (ch *Changeset) AttachDependencyResults(
-	ctx context.Context,
-	_ dagql.AnyResult,
-	attach func(dagql.AnyResult) (dagql.AnyResult, error),
-) ([]dagql.AnyResult, error) {
-	if ch == nil {
-		return nil, nil
-	}
-
-	var deps []dagql.AnyResult
-
-	if ch.Before.Self() != nil {
-		attached, err := attach(ch.Before)
-		if err != nil {
-			return nil, fmt.Errorf("attach changeset before: %w", err)
-		}
-		before, ok := attached.(dagql.ObjectResult[*Directory])
-		if !ok {
-			return nil, fmt.Errorf("attach changeset before: unexpected result %T", attached)
-		}
-		ch.Before = before
-		deps = append(deps, before)
-	}
-
-	if ch.After.Self() != nil {
-		attached, err := attach(ch.After)
-		if err != nil {
-			return nil, fmt.Errorf("attach changeset after: %w", err)
-		}
-		after, ok := attached.(dagql.ObjectResult[*Directory])
-		if !ok {
-			return nil, fmt.Errorf("attach changeset after: unexpected result %T", attached)
-		}
-		ch.After = after
-		deps = append(deps, after)
-	}
-
-	return deps, nil
+func (ch *Changeset) Evaluate(context.Context) (*buildkit.Result, error) {
+	return nil, nil
 }
 
 const ChangesetPatchFilename = "diff.patch"
 
 func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
-	beforeDigest, err := ch.Before.ContentPreferredDigest(ctx)
-	if err != nil {
-		return false, fmt.Errorf("before content-preferred digest: %w", err)
-	}
-	afterDigest, err := ch.After.ContentPreferredDigest(ctx)
-	if err != nil {
-		return false, fmt.Errorf("after content-preferred digest: %w", err)
-	}
-	if beforeDigest == afterDigest {
+	if ch.Before.ID().Digest() == ch.After.ID().Digest() {
 		return true, nil
 	}
 
 	var isEmpty bool
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
 		identical, err := directoriesAreIdentical(ctx, beforeDir, afterDir)
 		if err != nil {
 			return err
@@ -468,22 +389,19 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 }
 
 func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, ch.Before, ch.After); err != nil {
-		return nil, fmt.Errorf("evaluate changeset directories: %w", err)
-	}
-
-	beforeRef, err := ch.Before.Self().Snapshot.GetOrEval(ctx, ch.Before.Result)
+	beforeRef, err := getRefOrEvaluate(ctx, ch.Before.Self())
 	if err != nil {
 		return nil, err
 	}
 
-	afterRef, err := ch.After.Self().Snapshot.GetOrEval(ctx, ch.After.Result)
+	afterRef, err := getRefOrEvaluate(ctx, ch.After.Self())
 	if err != nil {
 		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -491,35 +409,31 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
-	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 
-	newRef, err := query.SnapshotManager().New(ctx, nil,
+	newRef, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("Changeset.asPatch"))
 	if err != nil {
 		return nil, err
 	}
-	beforeSelector, err := ch.Before.Self().Dir.GetOrEval(ctx, ch.Before.Result)
-	if err != nil {
-		return nil, err
-	}
-	afterSelector, err := ch.After.Self().Dir.GetOrEval(ctx, ch.After.Result)
-	if err != nil {
-		return nil, err
-	}
-	err = MountRef(ctx, beforeRef, func(before string, _ *mount.Mount) error {
-		beforeDir, err := containerdfs.RootPath(before, beforeSelector)
+	err = MountRef(ctx, beforeRef, bkSessionGroup, func(before string, _ *mount.Mount) error {
+		beforeDir, err := containerdfs.RootPath(before, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
-		return MountRef(ctx, afterRef, func(after string, _ *mount.Mount) error {
-			afterDir, err := containerdfs.RootPath(after, afterSelector)
+		return MountRef(ctx, afterRef, bkSessionGroup, func(after string, _ *mount.Mount) error {
+			afterDir, err := containerdfs.RootPath(after, ch.After.Self().Dir)
 			if err != nil {
 				return err
 			}
-			return MountRef(ctx, newRef, func(root string, _ *mount.Mount) (rerr error) {
+			return MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
 				beforeMount := filepath.Join(root, "a")
 				afterMount := filepath.Join(root, "b")
 				if err := os.Mkdir(beforeMount, 0755); err != nil {
@@ -553,7 +467,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 					var exitErr *exec.ExitError
 					// Check if it's exit code 1, which is expected for git diff when files differ
 					if errors.As(err, &exitErr) && exitErr.ExitCode() != 1 {
-						// NB: we could technically populate an ExecError here, but that
+						// NB: we could technically populate a buildkit.ExecError here, but that
 						// feels like it leaks implementation details; "exit status 128" isn't
 						// exactly clear
 						return fmt.Errorf("failed to generate patch: %w", err)
@@ -570,14 +484,11 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	file := &File{
+	return &File{
+		Result:   snap,
+		File:     ChangesetPatchFilename,
 		Platform: query.Platform(),
-		File:     new(LazyAccessor[string, *File]),
-		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
-	}
-	file.File.setValue(ChangesetPatchFilename)
-	file.Snapshot.setValue(snap)
-	return file, nil
+	}, nil
 }
 
 func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
@@ -586,61 +497,35 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		return fmt.Errorf("compute paths: %w", err)
 	}
 
-	srv, err := CurrentDagqlServer(ctx)
+	dir, err := ch.Before.Self().Diff(ctx, ch.After.Self())
 	if err != nil {
 		return err
-	}
-	var dir dagql.ObjectResult[*Directory]
-	afterID, err := ch.After.ID()
-	if err != nil {
-		return fmt.Errorf("after ID: %w", err)
-	}
-	if err := srv.Select(ctx, ch.Before, &dir,
-		dagql.Selector{
-			Field: "diff",
-			Args: []dagql.NamedInput{
-				{Name: "other", Value: dagql.NewID[*Directory](afterID)},
-			},
-		},
-	); err != nil {
-		return fmt.Errorf("get changeset diff directory: %w", err)
-	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return err
-	}
-	if err := cache.Evaluate(ctx, dir); err != nil {
-		return fmt.Errorf("evaluate changeset diff directory: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
 	}
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get engine client: %w", err)
+		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export changeset to host %s", destPath))
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dirSnapshot, err := dir.Self().Snapshot.GetOrEval(ctx, dir.Result)
+	root, closer, err := mountObj(ctx, dir)
 	if err != nil {
-		return fmt.Errorf("failed to evaluate changeset diff snapshot: %w", err)
+		return fmt.Errorf("failed to mount directory: %w", err)
 	}
-	dirSelector, err := dir.Self().Dir.GetOrEval(ctx, dir.Result)
+	defer closer(false)
+
+	root, err = containerdfs.RootPath(root, dir.Dir)
 	if err != nil {
-		return fmt.Errorf("failed to evaluate changeset diff selector: %w", err)
+		return err
 	}
 
-	return MountRef(ctx, dirSnapshot, func(root string, _ *mount.Mount) error {
-		root, err = containerdfs.RootPath(root, dirSelector)
-		if err != nil {
-			return err
-		}
-		return bk.LocalDirExport(ctx, root, destPath, true, paths.Removed)
-	}, mountRefAsReadOnly)
+	return bk.LocalDirExport(ctx, root, destPath, true, paths.Removed)
 }
 
 type ChangeType int
@@ -787,7 +672,9 @@ func (ch *Changeset) WithChangeset(
 
 	conflicts := ourPaths.CheckConflicts(theirPaths)
 
-	if !conflicts.IsEmpty() && onConflictStrategy == FailEarlyOnConflict {
+	if conflicts.IsEmpty() {
+		return mergeChangesetsWithoutGit(ctx, ch, other)
+	} else if onConflictStrategy == FailEarlyOnConflict {
 		return nil, conflicts.Error()
 	}
 
@@ -806,7 +693,7 @@ func (ch *Changeset) WithChangeset(
 	}
 
 	afterDir, err := gitMergeWithPatches(ctx,
-		before,
+		before.Self(),
 		ourPatch, theirPatch,
 		ourPaths.AllRemoved, theirPaths.AllRemoved,
 		conflicts,
@@ -845,7 +732,10 @@ func (ch *Changeset) WithChangesets(
 	}
 
 	err := checkAllPairwiseConflicts(ctx, ch, others)
-	if err != nil && onConflictStrategy == FailEarlyOnConflicts {
+
+	if err == nil {
+		return mergeChangesetsWithoutGit(ctx, ch, others...)
+	} else if onConflictStrategy == FailEarlyOnConflicts {
 		return nil, err
 	}
 
@@ -868,7 +758,7 @@ func (ch *Changeset) WithChangesets(
 		otherPatches[i] = patch
 	}
 
-	afterDir, err := gitOctopusMergeWithPatches(ctx, before, ourPatch, otherPatches)
+	afterDir, err := gitOctopusMergeWithPatches(ctx, before.Self(), ourPatch, otherPatches)
 	if err != nil {
 		return nil, err
 	}
@@ -886,18 +776,10 @@ func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Chang
 
 	selectors := []dagql.Selector{
 		{Field: "directory"},
+		withDirectorySelector(ch.Before.ID()),
 	}
-	beforeID, err := ch.Before.ID()
-	if err != nil {
-		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("before ID: %w", err)
-	}
-	selectors = append(selectors, withDirectorySelector(beforeID))
 	for _, other := range others {
-		otherBeforeID, err := other.Before.ID()
-		if err != nil {
-			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("other before ID: %w", err)
-		}
-		selectors = append(selectors, withDirectorySelector(otherBeforeID))
+		selectors = append(selectors, withDirectorySelector(other.Before.ID()))
 	}
 
 	selectors = append(selectors, dagql.Selector{
@@ -930,35 +812,16 @@ func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Direc
 		return nil, err
 	}
 
-	afterRef, _ := afterDir.Snapshot.Peek()
-	if afterRef == nil {
-		return nil, fmt.Errorf("evaluate merged directory snapshot: nil")
-	}
-	afterSelector, _ := afterDir.Dir.Peek()
-
-	after, err := dagql.NewObjectResultForCall(afterDir, srv, &dagql.ResultCall{
-		Kind:        dagql.ResultCallKindSynthetic,
-		Type:        dagql.NewResultCallType(afterDir.Type()),
-		SyntheticOp: "changeset_merge_output",
-		ImplicitInputs: []*dagql.ResultCallArg{
-			{
-				Name: "snapshotID",
-				Value: &dagql.ResultCallLiteral{
-					Kind:        dagql.ResultCallLiteralKindString,
-					StringValue: afterRef.SnapshotID(),
-				},
-			},
-			{
-				Name: "dir",
-				Value: &dagql.ResultCallLiteral{
-					Kind:        dagql.ResultCallLiteralKindString,
-					StringValue: afterSelector,
-				},
+	var after dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &after,
+		dagql.Selector{
+			Field: "__immutableRef",
+			Args: []dagql.NamedInput{
+				{Name: "ref", Value: dagql.NewString(afterDir.Result.ID())},
 			},
 		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create synthetic merged directory result: %w", err)
+	); err != nil {
+		return nil, fmt.Errorf("create after directory: %w", err)
 	}
 
 	return NewChangeset(ctx, before, after)
@@ -1000,22 +863,15 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 
 // withGitMergeWorkspace sets up a workspace for git merge operations, runs the provided
 // function, then commits and returns the resulting directory.
-func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directory], description string, fn func(workDir string) error) (*Directory, error) {
-	cache, err := dagql.EngineCache(ctx)
+func withGitMergeWorkspace(ctx context.Context, base *Directory, description string, fn func(workDir string) error) (*Directory, error) {
+	baseRef, err := getRefOrEvaluate(ctx, base)
 	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, base); err != nil {
 		return nil, fmt.Errorf("evaluate base: %w", err)
 	}
 
-	baseRef, err := base.Self().Snapshot.GetOrEval(ctx, base.Result)
-	if err != nil {
-		return nil, fmt.Errorf("evaluate base: %w", err)
-	}
-	baseSelector, err := base.Self().Dir.GetOrEval(ctx, base.Result)
-	if err != nil {
-		return nil, fmt.Errorf("evaluate base selector: %w", err)
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -1023,15 +879,15 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 		return nil, err
 	}
 
-	newRef, err := query.SnapshotManager().New(ctx, baseRef,
+	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(description))
 	if err != nil {
 		return nil, err
 	}
 
-	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
-		workDir, err := containerdfs.RootPath(root, baseSelector)
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
+		workDir, err := containerdfs.RootPath(root, base.Dir)
 		if err != nil {
 			return err
 		}
@@ -1045,20 +901,17 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 	if err != nil {
 		return nil, err
 	}
-	dir := &Directory{
+
+	return &Directory{
+		Result:   snap,
+		Dir:      base.Dir,
 		Platform: query.Platform(),
-		Services: slices.Clone(base.Self().Services),
-		Dir:      new(LazyAccessor[string, *Directory]),
-		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-	}
-	dir.Dir.setValue(baseSelector)
-	dir.Snapshot.setValue(snap)
-	return dir, nil
+	}, nil
 }
 
 func gitMergeWithPatches(
 	ctx context.Context,
-	base dagql.ObjectResult[*Directory],
+	base *Directory,
 	ourPatch, theirPatch *File,
 	ourRemoved, theirRemoved []string,
 	conflicts Conflicts,
@@ -1113,7 +966,7 @@ func gitMergeWithPatches(
 
 func gitOctopusMergeWithPatches(
 	ctx context.Context,
-	base dagql.ObjectResult[*Directory],
+	base *Directory,
 	ourPatch *File,
 	otherPatches []*File,
 ) (*Directory, error) {
@@ -1172,14 +1025,18 @@ func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 		return nil
 	}
 
-	patchRef, _ := patch.Snapshot.Peek()
-	if patchRef == nil {
-		return fmt.Errorf("evaluate patch ref: nil")
+	patchRef, err := getRefOrEvaluate(ctx, patch)
+	if err != nil {
+		return fmt.Errorf("evaluate patch ref: %w", err)
 	}
-	patchPathSelector, _ := patch.File.Peek()
 
-	return MountRef(ctx, patchRef, func(patchMount string, _ *mount.Mount) error {
-		patchPath, err := containerdfs.RootPath(patchMount, patchPathSelector)
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return fmt.Errorf("no buildkit session group in context")
+	}
+
+	return MountRef(ctx, patchRef, bkSessionGroup, func(patchMount string, _ *mount.Mount) error {
+		patchPath, err := containerdfs.RootPath(patchMount, patch.File)
 		if err != nil {
 			return err
 		}
@@ -1305,4 +1162,32 @@ func toSet(slice []string) map[string]struct{} {
 		set[s] = struct{}{}
 	}
 	return set
+}
+
+// mergeChangesetsWithoutGit merges changesets without using git by applying
+// each changeset sequentially. This is only safe when there are no file overlaps
+// between changesets.
+func mergeChangesetsWithoutGit(ctx context.Context, ch *Changeset, others ...*Changeset) (*Changeset, error) {
+	// Merge before directories (same as git path)
+	before, err := mergeBeforeDirectories(ctx, ch, others...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start with merged before and apply each changeset sequentially
+	afterDir := before.Self()
+
+	afterDir, err = afterDir.WithChanges(ctx, ch)
+	if err != nil {
+		return nil, fmt.Errorf("apply changeset: %w", err)
+	}
+
+	for i, other := range others {
+		afterDir, err = afterDir.WithChanges(ctx, other)
+		if err != nil {
+			return nil, fmt.Errorf("apply changeset %d: %w", i, err)
+		}
+	}
+
+	return newChangesetFromMerge(ctx, before, afterDir)
 }

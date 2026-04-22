@@ -164,7 +164,7 @@ func (e *logsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 		}
 
 		// Check if there are pending logs for this span and flush them
-		e.logs.flushResolvedLogsForSpan(id)
+		e.logs.flushPendingLogsForSpan(id)
 	}
 
 	return nil

@@ -63,53 +63,6 @@ func (ToolchainSuite) TestToolchainConstructor(ctx context.Context, t *testctx.T
 	})
 }
 
-func (ToolchainSuite) TestToolchainSemanticIsolation(ctx context.Context, t *testctx.T) {
-	t.Run("constructor customizations do not poison later plain installs", func(ctx context.Context, t *testctx.T) {
-		c1 := connect(ctx, t)
-		customized := toolchainTestEnv(t, c1).
-			WithWorkdir("app").
-			With(daggerExec("init")).
-			WithNewFile("dagger.json", `
-{
-  "name": "app",
-  "engineVersion": "v0.19.4",
-  "toolchains": [
-    {
-      "name": "hello",
-      "source": "../hello-with-constructor",
-      "customizations": [
-        {
-          "argument": "config",
-          "defaultPath": "./custom-config.txt"
-        }
-      ]
-    }
-  ]
-}
-				`).
-			WithNewFile("custom-config.txt", "this is custom configuration")
-
-		out, err := customized.
-			With(daggerExec("call", "hello", "field-config")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "this is custom configuration")
-
-		c2 := connect(ctx, t)
-		plain := toolchainTestEnv(t, c2).
-			WithWorkdir("app").
-			With(daggerExec("init")).
-			With(daggerExec("toolchain", "install", "../hello-with-constructor")).
-			WithNewFile("app-config.txt", "this is the app configuration")
-
-		out, err = plain.
-			With(daggerExec("call", "hello", "field-config")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "this is the app configuration")
-	})
-}
-
 func (ToolchainSuite) TestMultipleToolchains(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("install multiple toolchains", func(ctx context.Context, t *testctx.T) {

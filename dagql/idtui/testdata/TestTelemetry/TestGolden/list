@@ -17,14 +17,14 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-$ viztest: Viztest! X.Xs CACHED
+✔ viztest: Viztest! X.Xs
 ✔ .list(
-│ ┆ dir: Host.directory: Directory!
+│ ┆ dir: Address.directory: Directory!
 │ ): String! X.Xs
 ┃ test.txt
 ┃ test2.txt
 ┃ test3.txt
-╰╴✔ Directory.entries: [String!]! X.Xs
+╰╴$ Directory.entries: [String!]! X.Xs CACHED
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

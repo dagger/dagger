@@ -16,16 +16,12 @@ import (
 	"dagger/engine-dev/internal/dagger"
 )
 
-// TODO: updating filter for engine restart test, probably go back to original
 func New(
 	// +defaultPath="/"
 	// +ignore=[
 	// "*",
 	// "!.git",
-	// "!dagger.json",
-	// "!**/dagger.json",
 	// "!**/go.*",
-	// "!**/*.dang",
 	// "!version",
 	// "!core",
 	// "!engine",
@@ -39,9 +35,8 @@ func New(
 	// "!sdk",
 	// "sdk/**/examples",
 	// "!cmd",
-	// "!modules",
-	// "!toolchains",
-	// "!.changes"
+	// "!modules/wolfi",
+	// "!modules/alpine"
 	// ]
 	source *dagger.Directory,
 	// A configurable part of the IP subnet managed by the engine

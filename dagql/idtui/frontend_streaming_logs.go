@@ -40,10 +40,7 @@ func (s *streamingLogExporter) Export(ctx context.Context, records []sdklog.Reco
 	// Group records by span and either flush immediately if span exists, or store for later
 	spanGroups := make(map[dagui.SpanID][]sdklog.Record)
 	for _, record := range records {
-		spanID := s.db.LogTargetSpanID(record)
-		if !spanID.IsValid() {
-			continue
-		}
+		spanID := dagui.SpanID{SpanID: record.SpanID()}
 		spanGroups[spanID] = append(spanGroups[spanID], record)
 	}
 
@@ -126,13 +123,9 @@ func (s *streamingLogExporter) flushLogsForSpan(spanID dagui.SpanID, records []s
 	}
 }
 
-// flushResolvedLogsForSpan flushes any logs that became routable once the span
-// or its creator became available.
+// flushPendingLogsForSpan flushes any pending logs when a span becomes available.
 // The caller must hold the mutex.
-func (s *streamingLogExporter) flushResolvedLogsForSpan(spanID dagui.SpanID) {
-	if records := s.db.DrainResolvedLogs(spanID); len(records) > 0 {
-		s.flushLogsForSpan(spanID, records)
-	}
+func (s *streamingLogExporter) flushPendingLogsForSpan(spanID dagui.SpanID) {
 	if records, exists := s.pendingLogs[spanID]; exists {
 		s.flushLogsForSpan(spanID, records)
 		delete(s.pendingLogs, spanID)

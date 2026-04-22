@@ -13,9 +13,10 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/sysx"
-	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
+	"github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
@@ -29,6 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
+	"github.com/dagger/dagger/engine/contenthash"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -36,7 +38,7 @@ const (
 	hashXattrKey = "user.daggerContentHash"
 )
 
-// localFSSharedState is the state shared between all syncs for a given client.
+// localFSSharedState is the state shared between all syncs for a given client
 type localFSSharedState struct {
 	// rootPath is the abs path to the mounted cache ref that we sync all files/dirs for
 	// a given client
@@ -45,15 +47,6 @@ type localFSSharedState struct {
 	// changeCache is the cache we use to dedupe/cache changes made to the local fs across
 	// different syncs (see docs on localFS.Sync for more info)
 	changeCache *changeCache
-}
-
-type MirrorSharedState = localFSSharedState
-
-func NewMirrorSharedState(rootPath string) *MirrorSharedState {
-	return &MirrorSharedState{
-		rootPath:    rootPath,
-		changeCache: newChangeCache(),
-	}
 }
 
 type ChangeWithStat struct {
@@ -83,7 +76,7 @@ type localFS struct {
 	excludes []string // the exclude patterns we're using for this sync
 }
 
-func newLocalFS(sharedState *MirrorSharedState, subdir string, includes, excludes, followPaths []string, copyPath string) (*localFS, error) {
+func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string, copyPath string) (*localFS, error) {
 	baseFS, err := fsutil.NewFS(filepath.Join(sharedState.rootPath, subdir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
@@ -92,7 +85,6 @@ func newLocalFS(sharedState *MirrorSharedState, subdir string, includes, exclude
 	filterFS, err := fsutil.NewFilterFS(baseFS, &fsutil.FilterOpt{
 		IncludePatterns: includes,
 		ExcludePatterns: excludes,
-		FollowPaths:     followPaths,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create filter fs: %w", err)
@@ -130,17 +122,18 @@ func (local *localFS) Sync( //nolint:gocyclo
 	ctx context.Context,
 	remote ReadFS,
 	cacheManager bkcache.Accessor,
+	session session.Group,
 	forParents bool,
-) (_ bkcache.ImmutableRef, _ digest.Digest, rerr error) {
+) (_ bkcache.ImmutableRef, rerr error) {
 	var newCopyRef bkcache.MutableRef       // the mutable ref we will copy into with the frozen files+dirs if needed
 	var cacheCtx bkcontenthash.CacheContext // track file+dir hashes
 
 	// skip creating a cache ref if we're only syncing parent dirs
 	if !forParents {
 		var err error
-		newCopyRef, err = cacheManager.New(ctx, nil)
+		newCopyRef, err = cacheManager.New(ctx, nil, nil)
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to create new copy ref: %w", err)
+			return nil, fmt.Errorf("failed to create new copy ref: %w", err)
 		}
 		defer func() {
 			ctx := context.WithoutCancel(ctx)
@@ -151,13 +144,9 @@ func (local *localFS) Sync( //nolint:gocyclo
 			}
 		}()
 
-		newCopyMD, ok := any(newCopyRef).(bkcache.RefMetadata)
-		if !ok {
-			return nil, "", fmt.Errorf("copy ref metadata: unexpected ref type %T", newCopyRef)
-		}
-		cacheCtx, err = bkcontenthash.GetCacheContext(ctx, newCopyMD)
+		cacheCtx, err = bkcontenthash.GetCacheContext(ctx, newCopyRef)
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to get cache context: %w", err)
+			return nil, fmt.Errorf("failed to get cache context: %w", err)
 		}
 	}
 
@@ -445,12 +434,12 @@ func (local *localFS) Sync( //nolint:gocyclo
 	})
 
 	if err := eg.Wait(); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	for _, hardlink := range hardlinks {
 		appliedChange, err := local.Hardlink(ctx, hardlink.kind, hardlink.path, hardlink.upperStat)
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 		cachedResultsMu.Lock()
 		cachedResults = append(cachedResults, appliedChange)
@@ -466,14 +455,14 @@ func (local *localFS) Sync( //nolint:gocyclo
 			relPathFound = true
 			applied := appliedChange.result()
 			if err := cacheCtx.HandleChange(applied.kind, path, applied.stat, nil); err != nil {
-				return nil, "", fmt.Errorf("failed to handle change in content hasher: %w", err)
+				return nil, fmt.Errorf("failed to handle change in content hasher: %w", err)
 			}
 		}
 	}
 
 	if forParents {
 		// we created the parent dirs, nothing else to do now
-		return nil, "", nil
+		return nil, nil
 	}
 
 	ctx, copySpan := Tracer(ctx).Start(ctx, "copy")
@@ -481,38 +470,38 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 	// If we didn't find any files/dir in the given relative path, we can early return an error.
 	if local.copyPath != "" && !relPathFound {
-		return nil, "", fmt.Errorf("%s: no such file or directory", local.copyPath)
+		return nil, fmt.Errorf("%s: no such file or directory", local.copyPath)
 	}
 
-	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", bkcontenthash.ChecksumOpts{})
+	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", bkcontenthash.ChecksumOpts{}, session)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to checksum: %w", err)
+		return nil, fmt.Errorf("failed to checksum: %w", err)
 	}
 
 	// If we have already created a cache ref with the same content hash, use that instead of copying
 	// another equivalent one.
-	sis, err := bkcontenthash.SearchContentHash(ctx, cacheManager, dgst)
+	sis, err := contenthash.SearchContentHash(ctx, cacheManager, dgst)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to search content hash: %w", err)
+		return nil, fmt.Errorf("failed to search content hash: %w", err)
 	}
 	for _, si := range sis {
-		finalRef, err := cacheManager.GetBySnapshotID(ctx, si.SnapshotID())
+		finalRef, err := cacheManager.Get(ctx, si.ID(), nil)
 		if err == nil {
-			bklog.G(ctx).Debugf("reusing copy ref %s", si.SnapshotID())
-			return finalRef, dgst, nil
+			bklog.G(ctx).Debugf("reusing copy ref %s", si.ID())
+			return finalRef, nil
 		} else {
 			bklog.G(ctx).Debugf("failed to get cache ref: %v", err)
 		}
 	}
 
-	copyRefMntable, err := newCopyRef.Mount(ctx, false)
+	copyRefMntable, err := newCopyRef.Mount(ctx, false, session)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get mountable: %w", err)
+		return nil, fmt.Errorf("failed to get mountable: %w", err)
 	}
 	copyRefMnter := snapshot.LocalMounter(copyRefMntable)
 	copyRefMntPath, err := copyRefMnter.Mount()
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to mount: %w", err)
+		return nil, fmt.Errorf("failed to mount: %w", err)
 	}
 	defer func() {
 		if copyRefMnter != nil {
@@ -541,20 +530,19 @@ func (local *localFS) Sync( //nolint:gocyclo
 		copyRefMntPath, "/",
 		copyOpts...,
 	); err != nil {
-		return nil, "", fmt.Errorf("failed to copy %q: %w", local.subdir, err)
+		return nil, fmt.Errorf("failed to copy %q: %w", local.subdir, err)
 	}
 
 	if err := copyRefMnter.Unmount(); err != nil {
 		copyRefMnter = nil
-		return nil, "", fmt.Errorf("failed to unmount: %w", err)
+		return nil, fmt.Errorf("failed to unmount: %w", err)
 	}
 	copyRefMnter = nil
 
 	finalRef, err := newCopyRef.Commit(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to commit: %w", err)
+		return nil, fmt.Errorf("failed to commit: %w", err)
 	}
-	newCopyRef = nil
 	defer func() {
 		if rerr != nil {
 			if finalRef != nil {
@@ -566,23 +554,45 @@ func (local *localFS) Sync( //nolint:gocyclo
 		}
 	}()
 
-	finalMD, ok := any(finalRef).(bkcache.RefMetadata)
-	if !ok {
-		return nil, "", fmt.Errorf("final sync metadata: unexpected ref type %T", finalRef)
+	if err := finalRef.Finalize(ctx); err != nil {
+		return nil, fmt.Errorf("failed to finalize: %w", err)
 	}
 
-	if err := bkcontenthash.SetCacheContext(ctx, finalMD, cacheCtx); err != nil {
-		return nil, "", fmt.Errorf("failed to set cache context: %w", err)
+	// FIXME: when the ID of the ref given to SetCacheContext is different from the ID of the
+	// ref the cacheCtx was created with, buildkit just stores it in a in-memory LRU that's
+	// only hit by some code paths. This is probably a bug. To coerce it into actually storing
+	// the cacheCtx on finalRef, we have to do this little dance of setting it (so it's in the LRU)
+	// and then getting it+setting again.
+	if err := bkcontenthash.SetCacheContext(ctx, finalRef, cacheCtx); err != nil {
+		return nil, fmt.Errorf("failed to set cache context: %w", err)
+	}
+	cacheCtx, err = bkcontenthash.GetCacheContext(ctx, finalRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cache context: %w", err)
+	}
+	if err := bkcontenthash.SetCacheContext(ctx, finalRef, cacheCtx); err != nil {
+		return nil, fmt.Errorf("failed to set cache context: %w", err)
 	}
 
-	if err := (bkcontenthash.CacheRefMetadata{RefMetadata: finalMD}).SetContentHashKey(dgst); err != nil {
-		return nil, "", fmt.Errorf("failed to set content hash key: %w", err)
+	if err := (contenthash.CacheRefMetadata{RefMetadata: finalRef}).SetContentHashKey(dgst); err != nil {
+		return nil, fmt.Errorf("failed to set content hash key: %w", err)
 	}
-	if err := finalMD.SetDescription(fmt.Sprintf("local dir %s (include: %v) (exclude %v)", local.subdir, local.includes, local.excludes)); err != nil {
-		return nil, "", fmt.Errorf("failed to set description: %w", err)
+	if err := finalRef.SetDescription(fmt.Sprintf("local dir %s (include: %v) (exclude %v)", local.subdir, local.includes, local.excludes)); err != nil {
+		return nil, fmt.Errorf("failed to set description: %w", err)
 	}
 
-	return finalRef, dgst, nil
+	if err := finalRef.SetCachePolicyRetain(); err != nil {
+		return nil, fmt.Errorf("failed to set cache policy: %w", err)
+	}
+	// NOTE: this MUST be released after setting cache policy retain or bk cache manager decides to
+	// remove finalRef...
+	if err := newCopyRef.Release(ctx); err != nil {
+		newCopyRef = nil
+		return nil, fmt.Errorf("failed to release: %w", err)
+	}
+	newCopyRef = nil
+
+	return finalRef, nil
 }
 
 // the full absolute path on the local filesystem

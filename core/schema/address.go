@@ -26,29 +26,21 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Address]{
 		dagql.Func("value", s.value).
 			Doc(`The address value`),
-		dagql.NodeFunc("container", s.container).
-			WithInput(dagql.PerCallInput).
+		dagql.NodeFuncWithCacheKey("container", s.container, dagql.CachePerCall).
 			Doc(`Load a container from the address.`),
-		dagql.NodeFunc("directory", s.directory).
-			WithInput(dagql.RequestedCacheInput("noCache")).
+		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CacheAsRequested).
 			Doc(`Load a directory from the address.`),
-		dagql.NodeFunc("file", s.file).
-			WithInput(dagql.RequestedCacheInput("noCache")).
+		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
 			Doc(`Load a file from the address.`),
-		dagql.NodeFunc("gitRef", s.gitRef).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("gitRef", s.gitRef, dagql.CachePerClient).
 			Doc(`Load a git ref (branch, tag or commit) from the address.`),
-		dagql.NodeFunc("gitRepository", s.gitRepository).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("gitRepository", s.gitRepository, dagql.CachePerClient).
 			Doc(`Load a git repository from the address.`),
-		dagql.NodeFunc("secret", s.secret).
-			WithInput(dagql.PerCallInput).
+		dagql.NodeFuncWithCacheKey("secret", s.secret, dagql.CachePerCall).
 			Doc(`Load a secret from the address.`),
-		dagql.NodeFunc("service", s.service).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("service", s.service, dagql.CachePerClient).
 			Doc(`Load a service from the address.`),
-		dagql.NodeFunc("socket", s.socket).
-			WithInput(dagql.PerCallInput).
+		dagql.NodeFuncWithCacheKey("socket", s.socket, dagql.CachePerCall).
 			Doc(`Load a local socket from the address.`),
 	}.Install(srv)
 }
@@ -267,10 +259,7 @@ func (s *addressSchema) container(
 	if err != nil {
 		return inst, err
 	}
-	// Desugar through the canonical server so entrypoint proxies on the
-	// outer Query root cannot shadow the core container constructor.
-	coreSrv := srv.Canonical()
-	err = coreSrv.Select(ctx, coreSrv.Root(), &inst, q...)
+	err = srv.Select(ctx, srv.Root(), &inst, q...)
 	if err != nil {
 		return inst, err
 	}
@@ -451,6 +440,8 @@ func (s *addressSchema) secret(
 	if err != nil {
 		return inst, err
 	}
+	// FIXME: do we still need to add this result in the secret store,
+	// because it doesn't have the same ID?
 	return inst, nil
 }
 
@@ -505,19 +496,13 @@ func (s *addressSchema) service(
 	default:
 		return inst, fmt.Errorf("unsupported service address: %q. Must be a valid tcp:// or udp:// URL", u.Scheme)
 	}
-	portInputAny, err := (dagql.InputObject[core.PortForward]{}).Decoder().DecodeInput(map[string]any{
-		"frontend": nPort,
-		"backend":  nPort,
-		"protocol": string(protocol),
+	ports = append(ports, dagql.InputObject[core.PortForward]{
+		Value: core.PortForward{
+			Backend:  nPort,
+			Frontend: &nPort,
+			Protocol: protocol,
+		},
 	})
-	if err != nil {
-		return inst, fmt.Errorf("decode service address port forward input: %w", err)
-	}
-	portInput, ok := portInputAny.(dagql.InputObject[core.PortForward])
-	if !ok {
-		return inst, fmt.Errorf("decode service address port forward input: unexpected input %T", portInputAny)
-	}
-	ports = append(ports, portInput)
 	q := []dagql.Selector{
 		{
 			Field: "host",

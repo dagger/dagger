@@ -15,10 +15,10 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-$ viztest: Viztest! X.Xs CACHED
+✔ viztest: Viztest! X.Xs
 ✔ .httpreadme(remote: "https://github.com/dagger/dagger", version: "v0.18.6"): String! X.Xs
 ┃ ## What is Dagger?
-├╴✔ http(url: "https://raw.githubusercontent.com/dagger/dagger/v0.18.6/README.md"): File! X.Xs
+├╴$ http(url: "https://raw.githubusercontent.com/dagger/dagger/v0.18.6/README.md"): File! X.Xs CACHED
 ╰╴✔ .contents: String! X.Xs
   ┃ ## What is Dagger?
   ┃

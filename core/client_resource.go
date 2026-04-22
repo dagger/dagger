@@ -5,9 +5,7 @@ import (
 	"crypto/hmac"
 	"encoding/hex"
 	"errors"
-	"fmt"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -18,15 +16,8 @@ func GetClientResourceAccessor(ctx context.Context, parent *Query, externalName 
 	}
 
 	var scopeDigest digest.Digest
-	if m.Self() != nil {
-		scopedMod, err := ImplementationScopedModule(ctx, m)
-		if err != nil {
-			return "", err
-		}
-		scopeDigest, err = scopedMod.ContentPreferredDigest(ctx)
-		if err != nil {
-			return "", err
-		}
+	if m != nil {
+		scopeDigest = digest.Digest(m.Source.Value.Self().Digest)
 	}
 
 	// Use an HMAC, which allows us to keep the externalName un-inferrable.
@@ -35,36 +26,4 @@ func GetClientResourceAccessor(ctx context.Context, parent *Query, externalName 
 	h := hmac.New(digest.SHA256.Hash, []byte(scopeDigest))
 	dt := h.Sum([]byte(externalName))
 	return hex.EncodeToString(dt), nil
-}
-
-// CachePerCallerModule scopes a call ID per caller module (using the module's source content digest). If the caller is not in a module, the input is just an empty string.
-var CachePerCallerModule = dagql.ImplicitInput{
-	Name: "cachePerCallerModule",
-	Resolver: func(ctx context.Context, _ map[string]dagql.Input) (dagql.Input, error) {
-		q, err := CurrentQuery(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("current query: %w", err)
-		}
-		m, err := q.CurrentModule(ctx)
-		if errors.Is(err, ErrNoCurrentModule) {
-			return dagql.NewString("mainClient"), nil
-		}
-		if err != nil {
-			return dagql.NewString(""), fmt.Errorf("failed to get current module: %w", err)
-		}
-		if m.Self() == nil {
-			return dagql.NewString("mainClient"), nil
-		}
-
-		scopedMod, err := ImplementationScopedModule(ctx, m)
-		if err != nil {
-			return nil, err
-		}
-		scopeDigest, err := scopedMod.ContentPreferredDigest(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		return dagql.NewString(scopeDigest.String()), nil
-	},
 }

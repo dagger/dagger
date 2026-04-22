@@ -22,24 +22,14 @@ func (sdk *codeGeneratorModule) Codegen(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dag := sdk.mod.dag()
-
-	source, err := scopeSourceForSDKOperation(ctx, source, "codegen", dag)
+	dag, err := sdk.mod.dag(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scope module source for sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
-	}
-	sourceID, err := source.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get scoped module source ID for sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
-	}
-	schemaJSONFileID, err := schemaJSONFile.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json ID during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	var inst dagql.Result[*core.GeneratedCode]
@@ -48,11 +38,11 @@ func (sdk *codeGeneratorModule) Codegen(
 		Args: []dagql.NamedInput{
 			{
 				Name:  "modSource",
-				Value: dagql.NewID[*core.ModuleSource](sourceID),
+				Value: dagql.NewID[*core.ModuleSource](source.ID()),
 			},
 			{
 				Name:  "introspectionJson",
-				Value: dagql.NewID[*core.File](schemaJSONFileID),
+				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
 			},
 		},
 	})

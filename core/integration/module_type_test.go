@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -699,6 +700,11 @@ export class Test {
 			require.NoError(t, err)
 			id := gjson.Get(out, "set.id").String()
 
+			var idp call.ID
+			err = idp.Decode(id)
+			require.NoError(t, err)
+			require.Equal(t, idp.Display(), `test.set(data: "abc"): Test!`)
+
 			out, err = modGen.With(daggerQuery(`{loadTestFromID(id: "%s"){get}}`, id)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"loadTestFromID":{"get": "abc"}}`, out)
@@ -821,6 +827,10 @@ export class Test {
 			out, err := modGen.With(daggerQuery(`{sayHello(name: "world"){id}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			id := gjson.Get(out, "sayHello.id").String()
+			var idp call.ID
+			err = idp.Decode(id)
+			require.NoError(t, err)
+			require.Equal(t, `test.sayHello(name: "world"): TestMessage!`, idp.Display())
 
 			out, err = modGen.With(daggerQuery(`{upper(msg:"%s"){content}}`, id)).Stdout(ctx)
 			require.NoError(t, err)

@@ -2,16 +2,23 @@ package filesync
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
-	bkcache "github.com/dagger/dagger/engine/snapshots"
-	remotefilesync "github.com/dagger/dagger/internal/buildkit/session/filesync"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
-	"github.com/opencontainers/go-digest"
-	"google.golang.org/grpc"
+	"github.com/moby/locker"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -20,6 +27,9 @@ import (
 
 type FileSyncer struct {
 	cacheManager bkcache.Accessor
+	refs         map[string]*filesyncCacheRef
+	mu           sync.RWMutex
+	perClientMu  *locker.Locker
 }
 
 type FileSyncerOpt struct {
@@ -27,66 +37,80 @@ type FileSyncerOpt struct {
 }
 
 func NewFileSyncer(opt FileSyncerOpt) *FileSyncer {
-	return &FileSyncer{cacheManager: opt.CacheAccessor}
+	return &FileSyncer{
+		cacheManager: opt.CacheAccessor,
+		refs:         make(map[string]*filesyncCacheRef),
+		perClientMu:  locker.New(),
+	}
 }
 
 type SnapshotOpts struct {
 	IncludePatterns []string
 	ExcludePatterns []string
-	FollowPaths     []string
 	GitIgnore       bool
 	CacheBuster     string
-	RelativePath    string
+
+	// If set, the snapshot will be relative that path.
+	// This is required when `GitIgnore` is set so we don't returns
+	// the whole git repo but simply apply .gitignore rules on that path.
+	RelativePath string
 }
 
-func (ls *FileSyncer) Snapshot(
-	ctx context.Context,
-	sharedState *MirrorSharedState,
-	callerConn *grpc.ClientConn,
-	clientPath string,
-	opts SnapshotOpts,
-) (bkcache.ImmutableRef, digest.Digest, error) {
-	if sharedState == nil {
-		return nil, "", fmt.Errorf("filesync mirror shared state is nil")
+func (ls *FileSyncer) Snapshot(ctx context.Context, session session.Group, sm *session.Manager, clientPath string, opts SnapshotOpts) (bkcache.ImmutableRef, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if callerConn == nil {
-		return nil, "", fmt.Errorf("filesync caller conn is nil")
+
+	if clientMetadata.ClientID == "" {
+		return nil, fmt.Errorf("no clientID in the current session")
 	}
+
+	timeoutCtx, cancel := context.WithCancelCause(ctx)
+	timeoutCtx, _ = context.WithTimeoutCause(timeoutCtx, 5*time.Second, fmt.Errorf("timeout: %w", context.DeadlineExceeded))
+	defer cancel(context.Canceled)
+
+	caller, err := sm.Get(timeoutCtx, clientMetadata.ClientID, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+
+	// If relPath is ".", we want to use the root path so we can unset it
+	// See explanations: https://github.com/dagger/dagger/pull/10995#discussion_r2394255732
 	if opts.RelativePath == "." {
 		opts.RelativePath = ""
 	}
-	ref, dgst, err := ls.snapshot(ctx, sharedState, callerConn, clientPath, opts)
+
+	ref, err := ls.snapshot(ctx, session, caller, clientPath, opts)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to snapshot: %w", err)
+		return nil, fmt.Errorf("failed to snapshot: %w", err)
 	}
-	return ref, dgst, nil
+
+	return ref, nil
 }
 
-func (ls *FileSyncer) snapshot(
-	ctx context.Context,
-	sharedState *MirrorSharedState,
-	callerConn *grpc.ClientConn,
-	clientPath string,
-	opts SnapshotOpts,
-) (_ bkcache.ImmutableRef, _ digest.Digest, rerr error) {
+func (ls *FileSyncer) snapshot(ctx context.Context, session session.Group, caller session.Caller, clientPath string, opts SnapshotOpts) (_ bkcache.ImmutableRef, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "filesync")
 	defer telemetry.EndWithCause(span, &rerr)
 
+	// We need the full abs path since the cache ref we sync into holds every dir from this client's root.
+	// We also need to evaluate all symlinks so we only create the actual parent dirs and not any symlinks as dirs.
+	// Additionally, we need to see if this is a Windows client and thus needs drive handling
 	statCtx := engine.LocalImportOpts{
 		Path:              clientPath,
 		StatPathOnly:      true,
 		StatReturnAbsPath: true,
 		StatResolvePath:   true,
 	}.AppendToOutgoingContext(ctx)
-	diffCopyClient, err := remotefilesync.NewFileSyncClient(callerConn).DiffCopy(statCtx)
+	diffCopyClient, err := filesync.NewFileSyncClient(caller.Conn()).DiffCopy(statCtx)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create diff copy client: %w", err)
+		return nil, fmt.Errorf("failed to create diff copy client: %w", err)
 	}
 
 	var statMsg fstypes.Stat
 	if err := diffCopyClient.RecvMsg(&statMsg); err != nil {
 		diffCopyClient.CloseSend()
-		return nil, "", fmt.Errorf("failed to receive stat message: %w", err)
+		return nil, fmt.Errorf("failed to receive stat message: %w", err)
 	}
 	diffCopyClient.CloseSend()
 
@@ -96,23 +120,36 @@ func (ls *FileSyncer) snapshot(
 		clientPath = clientPath[len(drive):]
 	}
 
-	finalRef, dgst, err := ls.sync(ctx, sharedState, callerConn, drive, clientPath, opts)
+	ref, release, err := ls.getRef(ctx, session, drive)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to sync: %w", err)
+		return nil, err
 	}
-	return finalRef, dgst, nil
+	defer func() {
+		if err := release(ctx); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to release ref: %w", err))
+		}
+	}()
+
+	finalRef, err := ls.sync(ctx, ref, session, caller, drive, clientPath, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sync: %w", err)
+	}
+
+	return finalRef, nil
 }
 
 func (ls *FileSyncer) sync(
 	ctx context.Context,
-	sharedState *MirrorSharedState,
-	callerConn *grpc.ClientConn,
+	ref *filesyncCacheRef,
+	session session.Group,
+	caller session.Caller,
 	drive string,
 	clientPath string,
 	opts SnapshotOpts,
-) (_ bkcache.ImmutableRef, _ digest.Digest, rerr error) {
-	if err := ls.syncParentDirs(ctx, sharedState, callerConn, clientPath, drive, opts); err != nil {
-		return nil, "", fmt.Errorf("failed to sync parent dirs: %w", err)
+) (_ bkcache.ImmutableRef, rerr error) {
+	// first ensure that all the parent dirs under the client's rootfs (above the given clientPath) are synced in correctly
+	if err := ls.syncParentDirs(ctx, ref, caller, clientPath, drive, opts); err != nil {
+		return nil, fmt.Errorf("failed to sync parent dirs: %w", err)
 	}
 
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -120,18 +157,21 @@ func (ls *FileSyncer) sync(
 		cancel(rerr)
 	}()
 
-	remote := newRemoteFS(callerConn, drive+clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.FollowPaths, opts.GitIgnore)
-	local, err := newLocalFS(sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.FollowPaths, opts.RelativePath)
+	// now sync in the clientPath dir
+	remote := newRemoteFS(caller, drive+clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.GitIgnore)
+	// local mirror should not apply gitignore; remote stats carry ignore metadata.
+	local, err := newLocalFS(ref.sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.RelativePath)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create local fs: %w", err)
+		return nil, fmt.Errorf("failed to create local fs: %w", err)
 	}
-	return local.Sync(ctx, remote, ls.cacheManager, false)
+
+	return local.Sync(ctx, remote, ls.cacheManager, session, false)
 }
 
 func (ls *FileSyncer) syncParentDirs(
 	ctx context.Context,
-	sharedState *MirrorSharedState,
-	callerConn *grpc.ClientConn,
+	ref *filesyncCacheRef,
+	caller session.Caller,
 	clientPath string,
 	drive string,
 	opts SnapshotOpts,
@@ -141,8 +181,14 @@ func (ls *FileSyncer) syncParentDirs(
 		cancel(rerr)
 	}()
 
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("parentSync", "y"))
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
+		WithField("parentSync", "y"),
+	)
 
+	// include the parent dirs, and all the gitignores
+	// the gitignores are needed to ensure that the local gitignore state matches the remote gitignore state
+	// TODO: the client side implementation of all this isn't incredibly efficient, it stats every dirent under the
+	// the root rather than just sending us the stats of the parent dirs. Not a huge bottleneck most likely.
 	include := strings.TrimPrefix(strings.TrimSuffix(clientPath, "/"), "/")
 	includes := []string{include}
 	excludes := []string{include + "/*"}
@@ -151,14 +197,163 @@ func (ls *FileSyncer) syncParentDirs(
 		root = drive + "/"
 	}
 
-	remote := newRemoteFS(callerConn, root, includes, excludes, nil, false)
-	local, err := newLocalFS(sharedState, "/", includes, excludes, nil, opts.RelativePath)
+	remote := newRemoteFS(caller, root, includes, excludes, false)
+	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, opts.RelativePath)
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}
-	_, _, err = local.Sync(ctx, remote, ls.cacheManager, true)
+	_, err = local.Sync(ctx, remote, ls.cacheManager, nil, true)
 	if err != nil {
 		return fmt.Errorf("failed to sync to local fs: %w", err)
 	}
+
 	return nil
+}
+
+type filesyncCacheRef struct {
+	mutRef bkcache.MutableRef
+
+	mounter snapshot.Mounter
+	mntPath string
+
+	sharedState *localFSSharedState
+
+	usageCount int
+}
+
+func (ls *FileSyncer) getRef(
+	ctx context.Context,
+	session session.Group,
+	drive string, // only set for windows clients, otherwise ""
+) (_ *filesyncCacheRef, _ func(context.Context) error, rerr error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get requester session ID: %w", err)
+	}
+
+	clientKey := clientMetadata.ClientStableID
+	if clientKey == "" {
+		slog.WarnContext(ctx, "client stable ID not set, using random value")
+		clientKey = identity.NewID()
+	}
+	if drive != "" {
+		clientKey = drive + clientKey
+	}
+
+	ls.perClientMu.Lock(clientKey)
+	defer ls.perClientMu.Unlock(clientKey)
+
+	ls.mu.RLock()
+	ref, ok := ls.refs[clientKey]
+	ls.mu.RUnlock()
+	if !ok {
+		ref = &filesyncCacheRef{}
+		defer func() {
+			if rerr != nil {
+				if ref.mounter != nil && ref.mntPath != "" {
+					ref.mounter.Unmount()
+				}
+				if ref.mutRef != nil {
+					ref.mutRef.Release(context.WithoutCancel(ctx))
+				}
+			}
+		}()
+
+		sis, err := searchSharedKey(ctx, ls.cacheManager, clientKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to search shared key: %w", err)
+		}
+		for _, si := range sis {
+			if m, err := ls.cacheManager.GetMutable(ctx, si.ID()); err == nil {
+				bklog.G(ctx).Debugf("reusing ref for local: %s (%q)", m.ID(), clientKey)
+				ref.mutRef = m
+				break
+			} else {
+				bklog.G(ctx).Debugf("not reusing ref %s for local: %v (%q)", si.ID(), err, clientKey)
+			}
+		}
+
+		if ref.mutRef == nil {
+			ref.mutRef, err = ls.cacheManager.New(ctx, nil, nil,
+				bkcache.CachePolicyRetain,
+				bkcache.WithRecordType(bkclient.UsageRecordTypeLocalSource),
+				bkcache.WithDescription(fmt.Sprintf("local source for %s", clientKey)),
+			)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to create new mutable ref: %w", err)
+			}
+			if err := (CacheRefMetadata{ref.mutRef}).setSharedKey(clientKey); err != nil {
+				return nil, nil, fmt.Errorf("failed to set shared key: %w", err)
+			}
+			bklog.G(ctx).Debugf("new ref for local: %s (%q)", ref.mutRef.ID(), clientKey)
+		}
+
+		mntable, err := ref.mutRef.Mount(ctx, false, session)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get mountable: %w", err)
+		}
+		ref.mounter = snapshot.LocalMounter(mntable)
+
+		ref.mntPath, err = ref.mounter.Mount()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to mount: %w", err)
+		}
+
+		ref.sharedState = &localFSSharedState{
+			rootPath:    ref.mntPath,
+			changeCache: newChangeCache(),
+		}
+
+		ls.mu.Lock()
+		ls.refs[clientKey] = ref
+		ls.mu.Unlock()
+	}
+	ref.usageCount++
+
+	return ref, func(ctx context.Context) (rerr error) {
+		ls.perClientMu.Lock(clientKey)
+		defer ls.perClientMu.Unlock(clientKey)
+		ref.usageCount--
+		if ref.usageCount > 0 {
+			return nil
+		}
+
+		ls.mu.Lock()
+		delete(ls.refs, clientKey)
+		ls.mu.Unlock()
+
+		ctx = context.WithoutCancel(ctx)
+		if err := ref.mounter.Unmount(); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to unmount: %w", err))
+		}
+		if err := ref.mutRef.Release(ctx); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to release ref: %w", err))
+		}
+		return rerr
+	}, nil
+}
+
+const (
+	keySharedKey   = "local.sharedKey"
+	sharedKeyIndex = keySharedKey + ":"
+)
+
+func searchSharedKey(ctx context.Context, store bkcache.MetadataStore, k string) ([]CacheRefMetadata, error) {
+	var results []CacheRefMetadata
+	mds, err := store.Search(ctx, sharedKeyIndex+k, false)
+	if err != nil {
+		return nil, err
+	}
+	for _, md := range mds {
+		results = append(results, CacheRefMetadata{md})
+	}
+	return results, nil
+}
+
+type CacheRefMetadata struct {
+	bkcache.RefMetadata
+}
+
+func (md CacheRefMetadata) setSharedKey(key string) error {
+	return md.SetString(keySharedKey, key, sharedKeyIndex+key)
 }

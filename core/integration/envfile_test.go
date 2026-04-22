@@ -339,26 +339,6 @@ single_quoted_var="hello, nice '$animal'"
 	require.Equal(t, inputContents, outputContents)
 }
 
-func (EnvFileSuite) TestAsFileDoesNotAliasSelectedFile(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	env := c.EnvFile().
-		WithVariable("animal", "dog").
-		WithVariable("message", "hello")
-
-	contents1, err := env.AsFile().Contents(ctx)
-	require.NoError(t, err)
-	require.Contains(t, contents1, "animal=dog")
-
-	name, err := env.AsFile().Name(ctx)
-	require.NoError(t, err)
-	require.Equal(t, ".env", name)
-
-	contents2, err := env.AsFile().Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, contents1, contents2)
-}
-
 func (EnvFileSuite) TestRemoveReferencedVariable(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	env := c.EnvFile().

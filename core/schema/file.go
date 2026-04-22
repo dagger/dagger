@@ -3,12 +3,11 @@ package schema
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"path/filepath"
-	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type fileSchema struct{}
@@ -17,7 +16,7 @@ var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFunc("file", s.file).
+		dagql.NodeFunc("file", DagOpFileWrapper(srv, s.file, WithPathFn(newFilePath))).
 			Doc(`Creates a file with the specified contents.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the new file. Example: "foo.txt"`),
@@ -29,19 +28,19 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.File]{
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
-		dagql.NodeFunc("contents", s.contents).
+		dagql.Func("contents", s.contents).
 			Doc(`Retrieves the contents of the file.`).
 			Args(
 				dagql.Arg("offsetLines").Doc(`Start reading after this line`),
 				dagql.Arg("limitLines").Doc(`Maximum number of lines to read`),
 			),
-		dagql.NodeFunc("size", s.size).
+		dagql.Func("size", s.size).
 			Doc(`Retrieves the size of the file, in bytes.`),
-		dagql.NodeFunc("name", s.name).
+		dagql.Func("name", s.name).
 			Doc(`Retrieves the name of the file.`),
-		dagql.NodeFunc("stat", s.stat).
+		dagql.Func("stat", s.stat).
 			Doc(`Return file status`),
-		dagql.NodeFunc("digest", s.digest).
+		dagql.Func("digest", s.digest).
 			Doc(
 				`Return the file's digest.
 				The format of the digest is not guaranteed to be stable between releases of Dagger.
@@ -50,22 +49,21 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("excludeMetadata").Doc(`If true, exclude metadata from the digest.`),
 			),
-		dagql.NodeFunc("withName", s.withName).
-			IsPersistable().
+		dagql.NodeFunc("withName", DagOpFileWrapper(srv, s.withName, WithPathFn(fileWithNamePath))).
 			Doc(`Retrieves this file with its name set to the given name.`).
 			Args(
 				dagql.Arg("name").Doc(`Name to set file to.`),
 			),
-		dagql.NodeFunc("search", s.search).
-			IsPersistable().
+		dagql.NodeFunc("search", DagOpWrapper(srv, s.search)).
 			Doc(
 				// NOTE: sync with Directory.search
 				`Searches for content matching the given regular expression or literal string.`,
 				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
 			).
 			Args((core.SearchOpts{}).Args()...),
-		dagql.NodeFunc("withReplaced", s.withReplaced).
-			IsPersistable().
+		dagql.NodeFunc("withReplaced",
+			DagOpFileWrapper(srv, s.withReplaced,
+				WithPathFn(keepParentFile[fileReplaceArgs]))).
 			Doc(
 				`Retrieves the file with content replaced with the given text.`,
 				`If 'all' is true, all occurrences of the pattern will be replaced.`,
@@ -79,8 +77,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("all").Doc(`Replace all occurrences of the pattern.`),
 				dagql.Arg("firstFrom").Doc(`Replace the first match starting from the specified line.`),
 			),
-		dagql.NodeFunc("export", s.export).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.export), dagql.CachePerClient).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the file to a file path on the host.`).
@@ -90,26 +87,23 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 					`If allowParentDirPath is true, the path argument can be a directory
 				path, in which case the file will be created in that directory.`),
 			),
-		dagql.NodeFunc("export", s.exportLegacy).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.exportLegacy), dagql.CachePerClient).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
-		dagql.NodeFunc("withTimestamps", s.withTimestamps).
-			IsPersistable().
+		dagql.NodeFunc("withTimestamps", DagOpFileWrapper(srv, s.withTimestamps, WithPathFn(keepParentFile[fileWithTimestampsArgs]))).
 			Doc(`Retrieves this file with its created/modified timestamps set to the given time.`).
 			Args(
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
-		dagql.NodeFunc("chown", s.chown).
-			IsPersistable().
+		dagql.NodeFunc("chown", DagOpFileWrapper(srv, s.chown, WithPathFn(keepParentFile[fileChownArgs]))).
 			Doc(`Change the owner of the file recursively.`).
 			Args(
 				dagql.Arg("owner").Doc(`A user:group to set for the file.`,
-					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
+					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
-		dagql.NodeFunc("asJSON", s.asJSON).
+		dagql.Func("asJSON", s.asJSON).
 			Doc(`Parse the file contents as JSON.`),
 	}.Install(srv)
 }
@@ -118,6 +112,12 @@ type newFileArgs struct {
 	Name        string
 	Contents    string
 	Permissions int `default:"0644"`
+
+	FSDagOpInternalArgs `json:"-"`
+}
+
+func newFilePath(ctx context.Context, _ *core.Query, args newFileArgs) (string, error) {
+	return args.Name, nil
 }
 
 func (s *fileSchema) file(
@@ -125,40 +125,24 @@ func (s *fileSchema) file(
 	parent dagql.ObjectResult[*core.Query],
 	args newFileArgs,
 ) (inst dagql.ObjectResult[*core.File], err error) {
-	if dir, _ := filepath.Split(args.Name); dir != "" {
-		return inst, fmt.Errorf("file name %q must not contain a directory", args.Name)
-	}
-	if err := core.ValidateFileName(args.Name); err != nil {
-		return inst, err
-	}
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 
-	err = srv.Select(ctx, parent, &inst,
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(args.Name)},
-			{Name: "contents", Value: dagql.String(args.Contents)},
-			{Name: "permissions", Value: dagql.Int(args.Permissions)},
-		}},
-		dagql.Selector{Field: "file", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(args.Name)},
-		}},
-	)
+	f, err := core.NewFileWithContents(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Self().Platform())
 	if err != nil {
 		return inst, err
 	}
-	return inst, nil
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
 }
 
-func (s *fileSchema) contents(ctx context.Context, file dagql.ObjectResult[*core.File], args struct {
+func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct {
 	OffsetLines *int
 	LimitLines  *int
 }) (dagql.String, error) {
-	content, err := file.Self().Contents(ctx, file, args.OffsetLines, args.LimitLines)
+	content, err := file.Contents(ctx, args.OffsetLines, args.LimitLines)
 	if err != nil {
 		return "", err
 	}
@@ -166,8 +150,8 @@ func (s *fileSchema) contents(ctx context.Context, file dagql.ObjectResult[*core
 	return dagql.NewString(string(content)), nil
 }
 
-func (s *fileSchema) size(ctx context.Context, file dagql.ObjectResult[*core.File], args struct{}) (dagql.Int, error) {
-	info, err := file.Self().Stat(ctx, file)
+func (s *fileSchema) size(ctx context.Context, file *core.File, args struct{}) (dagql.Int, error) {
+	info, err := file.Stat(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -175,24 +159,20 @@ func (s *fileSchema) size(ctx context.Context, file dagql.ObjectResult[*core.Fil
 	return dagql.NewInt(info.Size), nil
 }
 
-func (s *fileSchema) name(ctx context.Context, file dagql.ObjectResult[*core.File], args struct{}) (dagql.String, error) {
-	filePath, err := file.Self().File.GetOrEval(ctx, file.Result)
-	if err != nil {
-		return "", err
-	}
-	return dagql.NewString(filepath.Base(filePath)), nil
+func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
+	return dagql.NewString(filepath.Base(file.File)), nil
 }
 
-func (s *fileSchema) stat(ctx context.Context, parent dagql.ObjectResult[*core.File], args struct{}) (*core.Stat, error) {
-	return parent.Self().Stat(ctx, parent)
+func (s *fileSchema) stat(ctx context.Context, parent *core.File, args struct{}) (*core.Stat, error) {
+	return parent.Stat(ctx)
 }
 
 type fileDigestArgs struct {
 	ExcludeMetadata bool `default:"false"`
 }
 
-func (s *fileSchema) digest(ctx context.Context, file dagql.ObjectResult[*core.File], args fileDigestArgs) (dagql.String, error) {
-	digest, err := file.Self().Digest(ctx, file, args.ExcludeMetadata)
+func (s *fileSchema) digest(ctx context.Context, file *core.File, args fileDigestArgs) (dagql.String, error) {
+	digest, err := file.Digest(ctx, args.ExcludeMetadata)
 	if err != nil {
 		return "", err
 	}
@@ -202,6 +182,12 @@ func (s *fileSchema) digest(ctx context.Context, file dagql.ObjectResult[*core.F
 
 type fileWithNameArgs struct {
 	Name string
+
+	FSDagOpInternalArgs
+}
+
+func fileWithNamePath(ctx context.Context, val *core.File, args fileWithNameArgs) (string, error) {
+	return args.Name, nil
 }
 
 func (s *fileSchema) withName(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileWithNameArgs) (inst dagql.ObjectResult[*core.File], err error) {
@@ -209,35 +195,24 @@ func (s *fileSchema) withName(ctx context.Context, parent dagql.ObjectResult[*co
 	if err != nil {
 		return inst, err
 	}
-	if dir, _ := filepath.Split(args.Name); dir != "" {
-		return inst, fmt.Errorf("file name %q must not contain a directory", args.Name)
+
+	file, err := parent.Self().WithName(ctx, args.Name)
+	if err != nil {
+		return inst, err
 	}
 
-	file := &core.File{
-		Platform: parent.Self().Platform,
-		Services: slices.Clone(parent.Self().Services),
-		Lazy: &core.FileWithNameLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Filename:  args.Name,
-		},
-		File:     new(core.LazyAccessor[string, *core.File]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
-	}
-	if parentPath, ok := parent.Self().File.Peek(); ok {
-		file.File.SetValue(filepath.Join(filepath.Dir(parentPath), args.Name))
-	}
-
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
 }
 
 type fileExportArgs struct {
 	Path               string
 	AllowParentDirPath bool `default:"false"`
+
+	RawDagOpInternalArgs
 }
 
 func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
-	return parent.Self().Search(ctx, parent, args.SearchOpts, true)
+	return parent.Self().Search(ctx, args.SearchOpts, true)
 }
 
 type fileReplaceArgs struct {
@@ -245,6 +220,8 @@ type fileReplaceArgs struct {
 	Replacement string
 	All         bool `default:"false"`
 	FirstFrom   *int
+
+	FSDagOpInternalArgs
 }
 
 func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileReplaceArgs) (inst dagql.ObjectResult[*core.File], _ error) {
@@ -253,37 +230,16 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 		return inst, err
 	}
 
-	file := &core.File{
-		Platform: parent.Self().Platform,
-		Services: slices.Clone(parent.Self().Services),
-		Lazy: &core.FileWithReplacedLazy{
-			LazyState:   core.NewLazyState(),
-			Parent:      parent,
-			Search:      args.Search,
-			Replacement: args.Replacement,
-			FirstFrom:   args.FirstFrom,
-			All:         args.All,
-		},
-		File:     new(core.LazyAccessor[string, *core.File]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
-	}
-	if parentPath, ok := parent.Self().File.Peek(); ok {
-		file.File.SetValue(parentPath)
+	file, err := parent.Self().WithReplaced(ctx, args.Search, args.Replacement, args.FirstFrom, args.All)
+	if err != nil {
+		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
 }
 
 func (s *fileSchema) export(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileExportArgs) (dagql.String, error) {
-	filePath, err := parent.Self().File.GetOrEval(ctx, parent.Result)
-	if err != nil {
-		return "", err
-	}
-	snapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
-	if err != nil {
-		return "", fmt.Errorf("failed to evaluate file: %w", err)
-	}
-	err = core.ExportFile(ctx, snapshot, filePath, args.Path, args.AllowParentDirPath)
+	err := parent.Self().Export(ctx, args.Path, args.AllowParentDirPath)
 	if err != nil {
 		return "", err
 	}
@@ -291,9 +247,9 @@ func (s *fileSchema) export(ctx context.Context, parent dagql.ObjectResult[*core
 	if err != nil {
 		return "", err
 	}
-	bk, err := query.Engine(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get engine client: %w", err)
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
 	if err != nil {
@@ -312,6 +268,8 @@ func (s *fileSchema) exportLegacy(ctx context.Context, parent dagql.ObjectResult
 
 type fileWithTimestampsArgs struct {
 	Timestamp int
+
+	DagOpInternalArgs
 }
 
 func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileWithTimestampsArgs) (inst dagql.ObjectResult[*core.File], err error) {
@@ -320,25 +278,21 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 		return inst, fmt.Errorf("failed to get Dagger server: %w", err)
 	}
 
-	f := &core.File{
-		Platform: parent.Self().Platform,
-		Services: slices.Clone(parent.Self().Services),
-		Lazy: &core.FileWithTimestampsLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Timestamp: args.Timestamp,
-		},
-		File:     new(core.LazyAccessor[string, *core.File]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+	f, err := parent.Self().WithTimestamps(ctx, args.Timestamp)
+	if err != nil {
+		return inst, err
 	}
-	if parentPath, ok := parent.Self().File.Peek(); ok {
-		f.File.SetValue(parentPath)
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
+}
+
+func keepParentFile[A any](_ context.Context, val *core.File, _ A) (string, error) {
+	return val.File, nil
 }
 
 type fileChownArgs struct {
 	Owner string
+
+	FSDagOpInternalArgs
 }
 
 func (s *fileSchema) chown(
@@ -351,25 +305,15 @@ func (s *fileSchema) chown(
 		return inst, err
 	}
 
-	f := &core.File{
-		Platform: parent.Self().Platform,
-		Services: slices.Clone(parent.Self().Services),
-		Lazy: &core.FileChownLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Owner:     args.Owner,
-		},
-		File:     new(core.LazyAccessor[string, *core.File]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+	f, err := parent.Self().Chown(ctx, args.Owner)
+	if err != nil {
+		return inst, err
 	}
-	if parentPath, ok := parent.Self().File.Peek(); ok {
-		f.File.SetValue(parentPath)
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
 }
 
-func (s *fileSchema) asJSON(ctx context.Context, parent dagql.ObjectResult[*core.File], args struct{}) (*core.JSONValue, error) {
-	json, err := parent.Self().AsJSON(ctx, parent)
+func (s *fileSchema) asJSON(ctx context.Context, parent *core.File, args struct{}) (*core.JSONValue, error) {
+	json, err := parent.AsJSON(ctx)
 	if err != nil {
 		return nil, err
 	}

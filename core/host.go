@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/rand"
 	"fmt"
 	"path/filepath"
 
-	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/filesync"
+
 	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -24,24 +26,24 @@ func (*Host) TypeDescription() string {
 	return "Information about the host environment."
 }
 
-func (*Host) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
-	return json.RawMessage(`{}`), nil
-}
-
-func (*Host) DecodePersistedObject(context.Context, *dagql.Server, uint64, *dagql.ResultCall, json.RawMessage) (dagql.Typed, error) {
-	return &Host{}, nil
-}
-
 // Lookup an environment variable in the host system from the current context
 func (Host) GetEnv(ctx context.Context, name string) string {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return ""
+	}
+	secretStore, err := query.Secrets(ctx)
+	if err != nil {
+		return ""
+	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return ""
 	}
-	plaintext, err := (&Secret{
-		URIVal:         "env://" + name,
-		SourceClientID: clientMetadata.ClientID,
-	}).Plaintext(ctx)
+	plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, &Secret{
+		URI:               "env://" + name,
+		BuildkitSessionID: clientMetadata.ClientID,
+	})
 	if err != nil {
 		return ""
 	}
@@ -102,6 +104,39 @@ func (Host) FindUpAll(
 	}
 
 	return found, nil
+}
+
+func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, noCache bool, relPath string) (*Directory, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	bkGroupSession, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	snapshotOpts := filesync.SnapshotOpts{
+		IncludePatterns: filter.Include,
+		ExcludePatterns: filter.Exclude,
+		GitIgnore:       filter.Gitignore,
+		RelativePath:    relPath,
+	}
+
+	if noCache {
+		snapshotOpts.CacheBuster = rand.Text()
+	}
+
+	ref, err := query.FileSyncer().Snapshot(ctx, bkGroupSession, query.BuildkitSession(), rootPath, snapshotOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get snapshot: %w", err)
+	}
+
+	dir := NewDirectory(nil, "/", query.Platform(), nil)
+	dir.Result = ref
+
+	return dir, nil
 }
 
 func (h *Host) Clone() *Host {

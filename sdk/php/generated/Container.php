@@ -555,7 +555,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?bool $gitignore = false,
         ?string $owner = '',
         ?bool $expand = false,
-        ?int $permissions = null,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
@@ -574,9 +573,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        if (null !== $permissions) {
-        $innerQueryBuilder->setArgument('permissions', $permissions);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -840,7 +836,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
         string $path,
         DirectoryId|Directory $source,
         ?string $owner = '',
-        ?bool $readOnly = false,
         ?bool $expand = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedDirectory');
@@ -848,9 +843,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('source', $source);
         if (null !== $owner) {
         $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        if (null !== $readOnly) {
-        $innerQueryBuilder->setArgument('readOnly', $readOnly);
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);

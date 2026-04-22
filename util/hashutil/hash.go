@@ -73,12 +73,6 @@ func (h *Hasher) WithInt64(i int64) *Hasher {
 	return h
 }
 
-func (h *Hasher) WithUint64(i uint64) *Hasher {
-	*h.bufPtr = binary.BigEndian.AppendUint64(*h.bufPtr, i)
-	*h.bufPtr = append(*h.bufPtr, 0)
-	return h
-}
-
 func (h *Hasher) WithInt32(i int32) *Hasher {
 	*h.bufPtr = binary.BigEndian.AppendUint32(*h.bufPtr, uint32(i))
 	*h.bufPtr = append(*h.bufPtr, 0)
@@ -108,14 +102,14 @@ func (h *Hasher) Close() {
 func (h *Hasher) DigestAndClose() string {
 	// format as a hex string; do it the efficient way rather than fmt.Sprintf
 	_, _ = h.xxh3.Write(*h.bufPtr) // docs say it never errors
-	var hashBuf [8]byte
-	binary.BigEndian.PutUint64(hashBuf[:], h.xxh3.Sum64())
-	var hexStr [5 + 16]byte // 5 for "xxh3:" + 16 for the hex
+	hashBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(hashBuf, h.xxh3.Sum64())
+	hexStr := make([]byte, 5+16) // 5 for "xxh3:" + 16 for the hex
 	hexStr[0], hexStr[1], hexStr[2], hexStr[3], hexStr[4] = 'x', 'x', 'h', '3', ':'
-	hex.Encode(hexStr[5:], hashBuf[:])
+	hex.Encode(hexStr[5:], hashBuf)
 
 	h.Close()
-	return string(hexStr[:])
+	return string(hexStr)
 }
 
 // HashStrings returns the xxh3 digest of the concatenation of the input

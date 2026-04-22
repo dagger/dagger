@@ -37,9 +37,6 @@ func Install[Root dagql.Typed](srv *dagql.Server) {
 			fmt.Fprintln(ioctx.Stdout(ctx), "reading from", self.Channel)
 			return <-self.Channel, nil
 		}).DoNotCache("Reads a value from internal state."),
-		dagql.Func("sync", func(context.Context, Pipe, struct{}) (dagql.String, error) {
-			return dagql.String(""), nil
-		}).DoNotCache("Forces evaluation of a do-not-cache object path without relying on an ID."),
 		dagql.Func("write", func(ctx context.Context, self Pipe, args struct {
 			Message dagql.String
 		}) (Pipe, error) {

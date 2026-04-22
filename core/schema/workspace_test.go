@@ -78,40 +78,6 @@ func TestFilterGeneratorsByInclude(t *testing.T) {
 	})
 }
 
-func TestSelectVisibleGeneratorModules(t *testing.T) {
-	names := func(entries []workspaceGeneratorModule) []string {
-		result := make([]string, 0, len(entries))
-		for _, entry := range entries {
-			result = append(result, entry.name)
-		}
-		return result
-	}
-
-	t.Run("wrapper hides raw blueprint alias", func(t *testing.T) {
-		visible := selectVisibleGeneratorModules([]workspaceGeneratorModule{
-			{name: "hello-with-generators", sourceDigest: "sha256:blueprint", isWrapper: false},
-			{name: "app", sourceDigest: "sha256:blueprint", isWrapper: true},
-		})
-		require.Equal(t, []string{"app"}, names(visible))
-	})
-
-	t.Run("single raw module remains visible", func(t *testing.T) {
-		visible := selectVisibleGeneratorModules([]workspaceGeneratorModule{
-			{name: "hello-with-generators", sourceDigest: "sha256:blueprint", isWrapper: false},
-		})
-		require.Equal(t, []string{"hello-with-generators"}, names(visible))
-	})
-
-	t.Run("multiple wrappers sharing one implementation remain visible", func(t *testing.T) {
-		visible := selectVisibleGeneratorModules([]workspaceGeneratorModule{
-			{name: "hello-with-generators", sourceDigest: "sha256:blueprint", isWrapper: false},
-			{name: "app", sourceDigest: "sha256:blueprint", isWrapper: true},
-			{name: "ci", sourceDigest: "sha256:blueprint", isWrapper: true},
-		})
-		require.Equal(t, []string{"app", "ci"}, names(visible))
-	})
-}
-
 func TestResolveWorkspacePath(t *testing.T) {
 	t.Run("relative path resolves from workspace directory", func(t *testing.T) {
 		require.Equal(t, "services/payment/src", resolveWorkspacePath("src", "services/payment"))

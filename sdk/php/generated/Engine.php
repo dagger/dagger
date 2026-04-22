@@ -32,7 +32,7 @@ class Engine extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The local engine cache state tracked by dagql
+     * The local (on-disk) cache for the Dagger engine
      */
     public function localCache(): EngineCache
     {

@@ -11,10 +11,9 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-$ typescript: Typescript! X.Xs CACHED
+✔ typescript: Typescript! X.Xs
 ✘ .failLog: Void X.Xs ERROR
-├╴$ container: Container! X.Xs CACHED
-├╴$ .from(address: "alpine"): Container! X.Xs CACHED
+├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
 ├╴✔ withEnvVariable NOW=XXXX-XX-XXTXX:XX:XX.XXXZ X.Xs
 ╰╴✘ withExec sh -c 'echo im doing a lot of work; echo and then failing; exit 1' X.Xs ERROR
   ┃ im doing a lot of work

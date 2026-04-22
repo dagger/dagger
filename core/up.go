@@ -22,7 +22,7 @@ type UpGroup struct {
 	Ups  []*Up        `json:"ups"`
 }
 
-func NewUpGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*UpGroup, error) {
+func NewUpGroup(ctx context.Context, mod *Module, include []string) (*UpGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
@@ -151,12 +151,12 @@ func (ug *UpGroup) checkPortCollisions(ctx context.Context) error {
 				return err
 			}
 			svc := svcResult.Self()
-			if svc == nil || svc.Container.Self() == nil {
+			if svc == nil || svc.Container == nil {
 				return nil
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			for _, p := range svc.Container.Self().Ports {
+			for _, p := range svc.Container.Ports {
 				allPorts = append(allPorts, servicePort{
 					name: up.Name(),
 					port: portKey{port: p.Port, protocol: p.Protocol},

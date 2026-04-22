@@ -46,29 +46,24 @@ func (node *ModTreeNode) Path() ModTreePath {
 	return path
 }
 
-func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeNode, error) {
-	main := mod.Self()
-	mainObj, ok := main.MainObject()
+func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
+	mainObj, ok := mod.MainObject()
 	if !ok {
-		return nil, fmt.Errorf("%q: no main object", main.Name())
+		return nil, fmt.Errorf("%q: no main object", mod.Name())
 	}
 	srv, err := dagqlServerForModule(ctx, mod)
 	if err != nil {
 		return nil, err
 	}
-	mainObjRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, mainObj)
-	if err != nil {
-		return nil, fmt.Errorf("wrap main object typedef %q: %w", mainObj.Name, err)
-	}
 	return &ModTreeNode{
 		DagqlServer:    srv,
-		Module:         main,
-		OriginalModule: main,
-		Type: (&TypeDef{
+		Module:         mod,
+		OriginalModule: mod,
+		Type: &TypeDef{
 			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(mainObjRes),
-		}).syncName(),
-		Description: main.Description,
+			AsObject: dagql.NonNull(mainObj),
+		},
+		Description: mod.Description,
 	}, nil
 }
 
@@ -278,9 +273,9 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 		for _, pf := range portMappings {
 			portStrs = append(portStrs, fmt.Sprintf(":%d→%d", pf.FrontendOrBackendPort(), pf.Backend))
 		}
-	} else if svc := svcResult.Self(); svc != nil && svc.Container.Self() != nil {
-		portStrs = make([]string, 0, len(svc.Container.Self().Ports))
-		for _, p := range svc.Container.Self().Ports {
+	} else if svc := svcResult.Self(); svc != nil && svc.Container != nil {
+		portStrs = make([]string, 0, len(svc.Container.Ports))
+		for _, p := range svc.Container.Ports {
 			portStrs = append(portStrs, fmt.Sprintf(":%d", p.Port))
 		}
 	}
@@ -295,35 +290,14 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 	}
 
 	var hostSvc dagql.Result[*Service]
-	svcID, err := svcResult.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get service ID: %w", err)
-	}
 	tunnelArgs := []dagql.NamedInput{
-		{Name: "service", Value: dagql.NewID[*Service](svcID)},
+		{Name: "service", Value: dagql.NewID[*Service](svcResult.ID())},
 	}
 	if len(portMappings) > 0 {
 		// Use explicit port mappings instead of native 1:1 tunneling.
 		portInputs := make([]dagql.InputObject[PortForward], len(portMappings))
 		for i, pf := range portMappings {
-			inputMap := map[string]any{
-				"backend": pf.Backend,
-			}
-			if pf.Frontend != nil {
-				inputMap["frontend"] = *pf.Frontend
-			}
-			if pf.Protocol != "" {
-				inputMap["protocol"] = string(pf.Protocol)
-			}
-			portInputAny, err := (dagql.InputObject[PortForward]{}).Decoder().DecodeInput(inputMap)
-			if err != nil {
-				return nil, fmt.Errorf("decode host tunnel port forward input: %w", err)
-			}
-			portInput, ok := portInputAny.(dagql.InputObject[PortForward])
-			if !ok {
-				return nil, fmt.Errorf("decode host tunnel port forward input: unexpected input %T", portInputAny)
-			}
-			portInputs[i] = portInput
+			portInputs[i] = dagql.InputObject[PortForward]{Value: pf}
 		}
 		tunnelArgs = append(tunnelArgs, dagql.NamedInput{
 			Name:  "ports",
@@ -351,11 +325,7 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	hostSvcDig, err := hostSvc.ContentPreferredDigest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get host service digest: %w", err)
-	}
-	runningSvc, err := svcs.Start(ctx, hostSvcDig, hostSvc.Self(), true)
+	runningSvc, err := svcs.Start(ctx, hostSvc.ID(), hostSvc.Self(), true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
@@ -483,11 +453,7 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 			Arg("refPin", modSrc.Git.Commit).
 			Arg("requireKind", modSrc.Kind)
 	case ModuleSourceKindDir:
-		dirID, err := modSrc.DirSrc.OriginalContextDir.ID()
-		if err != nil {
-			return nil, fmt.Errorf("get dir ID: %w", err)
-		}
-		dirIDEnc, err := dirID.Encode()
+		dirIDEnc, err := modSrc.DirSrc.OriginalContextDir.ID().Encode()
 		if err != nil {
 			return nil, fmt.Errorf("encode dir ID: %w", err)
 		}
@@ -499,31 +465,31 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 }
 
 // Initialize a standalone dagql server for querying the given module
-func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) (*dagql.Server, error) {
-	main := mod.Self()
+func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, error) {
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	srv, err := dagql.NewServer(ctx, q)
+	cache, err := q.Cache(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("create module dagql server: %w", err)
+		return nil, fmt.Errorf("%q: get dagql cache: %w", mod.Name(), err)
 	}
+	srv := dagql.NewServer(q, cache)
 	srv.Around(AroundFunc)
 	// Install default "dependencies" (ie the core)
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%q: load core schema: %w", main.Name(), err)
+		return nil, fmt.Errorf("%q: load core schema: %w", mod.Name(), err)
 	}
 	// Install dependencies
 	for _, defaultDep := range defaultDeps.Mods() {
 		if err := defaultDep.Install(ctx, srv); err != nil {
-			return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
+			return nil, fmt.Errorf("%q: serve core schema: %w", mod.Name(), err)
 		}
 	}
 	// Install the main module
-	if err := NewUserMod(mod).Install(ctx, srv); err != nil {
-		return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
+	if err := mod.Install(ctx, srv); err != nil {
+		return nil, fmt.Errorf("%q: serve module: %w", mod.Name(), err)
 	}
 	return srv, nil
 }
@@ -782,60 +748,51 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	var children []*ModTreeNode
 	if objType := node.ObjectType(); objType != nil {
 		nodeType := objType.Name
-		for _, fnRes := range objType.Functions {
-			fn := fnRes.Self()
+		for _, fn := range objType.Functions {
 			if functionRequiresArgs(fn) {
 				continue
 			}
-			returnType := fn.ReturnType.Self().ToType().Name()
+			returnType := fn.ReturnType.ToType().Name()
+			// always add the function itself as a child first
 			children = append(children, &ModTreeNode{
 				Parent:         node,
 				Name:           fn.Name,
 				DagqlServer:    node.DagqlServer,
 				Module:         node.Module,
 				OriginalModule: node.OriginalModule,
-				Type:           fn.ReturnType.Self(),
+				Type:           fn.ReturnType,
 				IsCheck:        fn.IsCheck,
 				IsGenerator:    fn.IsGenerator,
 				IsUp:           fn.IsUp,
 				Description:    fn.Description,
 			})
 			// if the type returned by the function is an object, also add the object subtree
-			if returnsObject := fn.ReturnType.Self().AsObject.Valid; returnsObject &&
-				// avoid cycles (X.withFoo: X)
+			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
 				returnType != nodeType {
-				if subObj, ok := node.OriginalModule.ObjectByName(fn.ReturnType.Self().ToType().Name()); ok {
-					subObjRes, err := dagql.NewObjectResultForCurrentCall(ctx, node.DagqlServer, subObj)
-					if err != nil {
-						return nil, fmt.Errorf("wrap child object typedef %q: %w", subObj.Name, err)
-					}
+				if subObj, ok := node.OriginalModule.ObjectByName(fn.ReturnType.ToType().Name()); ok {
 					children = append(children, &ModTreeNode{
 						Parent:         node,
 						Name:           fn.Name,
 						DagqlServer:    node.DagqlServer,
 						Module:         node.Module,
 						OriginalModule: node.OriginalModule,
-						Type: (&TypeDef{
-							Kind:     TypeDefKindObject,
-							AsObject: dagql.NonNull(subObjRes),
-						}).syncName(),
-						IsCheck:     false,
-						IsGenerator: false,
-						IsUp:        false,
-						Description: subObj.Description,
+						Type:           &TypeDef{AsObject: dagql.NonNull(subObj)},
+						IsCheck:        false,
+						IsGenerator:    false,
+						IsUp:           false,
+						Description:    subObj.Description,
 					})
 				}
 			}
 		}
-		for _, fieldRes := range objType.Fields {
-			field := fieldRes.Self()
+		for _, field := range objType.Fields {
 			children = append(children, &ModTreeNode{
 				Parent:         node,
 				Name:           field.Name,
 				DagqlServer:    node.DagqlServer,
 				Module:         node.Module,
 				OriginalModule: node.OriginalModule,
-				Type:           field.TypeDef.Self(),
+				Type:           field.TypeDef,
 				IsCheck:        false,
 				IsGenerator:    false,
 				IsUp:           false,
@@ -872,5 +829,8 @@ func (node *ModTreeNode) Child(ctx context.Context, name string) (*ModTreeNode, 
 }
 
 func (node *ModTreeNode) ObjectType() *ObjectTypeDef {
-	return node.Type.AsObject.Value.Self()
+	if node.Type == nil {
+		return nil
+	}
+	return node.Type.AsObject.Value
 }

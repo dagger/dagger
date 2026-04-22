@@ -74,7 +74,7 @@ func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args str
 	return parent.Run(ctx, args.FailFast.GetOr(false).Bool())
 }
 
-func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args struct{}) (dagql.ObjectResult[*core.File], error) {
+func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args struct{}) (*core.File, error) {
 	return parent.Report(ctx)
 }
 

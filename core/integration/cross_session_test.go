@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -178,68 +177,6 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 				}
 			})
 		}
-	})
-
-	t.Run("module object field id rebinds on function-cache hit", func(ctx context.Context, t *testctx.T) {
-		t.Skip("caller-specific ID rebinding is intentionally removed for now")
-
-		moduleSrc := `package main
-
-import (
-	"crypto/rand"
-
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-type Obj struct {
-	Dir *dagger.Directory
-	Token string
-}
-
-func (*Test) Wrap(dir *dagger.Directory) *Obj {
-	return &Obj{
-		Dir: dir,
-		Token: rand.Text(),
-	}
-}
-`
-
-		callMod := func(c *dagger.Client, dirPath string, selection ...string) (string, error) {
-			args := append([]string{"wrap", "--dir", dirPath}, selection...)
-			ctr := goGitBase(t, c).
-				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-				WithNewFile("main.go", moduleSrc).
-				WithNewFile("input-a/same.txt", "same-content\n").
-				WithNewFile("input-b/same.txt", "same-content\n").
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				With(daggerCall(args...))
-			stdout, err := ctr.Stdout(ctx)
-			if err == nil {
-				return stdout, nil
-			}
-			var execErr *dagger.ExecError
-			if errors.As(err, &execErr) {
-				return "", fmt.Errorf("%w\nstdout: %s\nstderr: %s", err, execErr.Stdout, execErr.Stderr)
-			}
-			return "", err
-		}
-
-		c1 := connect(ctx, t)
-		tokenA, err := callMod(c1, "./input-a", "token")
-		require.NoError(t, err)
-		dirIDA, err := callMod(c1, "./input-a", "dir", "sync")
-		require.NoError(t, err)
-
-		c2 := connect(ctx, t)
-		tokenB, err := callMod(c2, "./input-b", "token")
-		require.NoError(t, err)
-		require.Equal(t, tokenA, tokenB, "module object function result should hit cache for equivalent directory input")
-
-		dirIDB, err := callMod(c2, "./input-b", "dir", "sync")
-		require.NoError(t, err)
-		require.NotEqual(t, dirIDA, dirIDB, "module object field should present the current caller's directory ID, not leak the earlier caller's path")
 	})
 
 	t.Run("same schema but different implementations", func(ctx context.Context, t *testctx.T) {
@@ -701,8 +638,8 @@ func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, e
 }
 
 func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
-	// verify that setSecret-producing calls do not transfer cached secrets across
-	// sessions; each session should rerun and produce a fresh secret value
+	// verify that if a function call does SetSecret and is cached, the secret is
+	// successfully transferred to clients even if they are in a different session
 	t.Run("cached set-secret transfers", func(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client) (string, error) {
 			return goGitBase(t, c).
@@ -736,18 +673,17 @@ func (_ *Secreter) Make() *dagger.Secret {
 		out2, err := callMod(c2)
 		require.NoError(t, err)
 
-		require.NotEqual(t, out1, out2)
+		require.Equal(t, out1, out2)
 
-		// close original client and ensure a later session still reruns rather than
-		// reusing either earlier secret value
+		// close original client, ensure secret is still available
 		require.NoError(t, c1.Close())
 
 		c3 := connect(ctx, t)
 		out3, err := callMod(c3)
 		require.NoError(t, err)
 
-		require.NotEqual(t, out1, out3)
-		require.NotEqual(t, out2, out3)
+		require.Equal(t, out1, out3)
+		require.Equal(t, out2, out3)
 	})
 
 	t.Run("different secrets with same name do not cache", func(ctx context.Context, t *testctx.T) {

@@ -27,12 +27,11 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Engine]{
 		dagql.Func("localCache", s.localCache).
-			Doc("The local engine cache state tracked by dagql"),
+			Doc("The local (on-disk) cache for the Dagger engine"),
 	}.Install(srv)
 
 	dagql.Fields[*core.EngineCache]{
-		dagql.NodeFunc("entrySet", s.cacheEntrySet).
-			WithInput(dagql.PerCallInput).
+		dagql.NodeFuncWithCacheKey("entrySet", s.cacheEntrySet, dagql.CachePerCall).
 			Doc("The current set of entries in the cache"),
 		dagql.Func("prune", s.cachePrune).
 			DoNotCache("Mutates mutable state").
@@ -72,7 +71,7 @@ func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args
 	if err := query.RequireMainClient(ctx); err != nil {
 		return nil, err
 	}
-	policy := query.EngineLocalCachePolicy()
+	policy := query.Clone().EngineLocalCachePolicy()
 	if policy == nil {
 		return &core.EngineCache{}, nil
 	}
@@ -127,7 +126,7 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectRes
 		return inst, fmt.Errorf("failed to load cache entries: %w", err)
 	}
 
-	return dagql.NewResultForCurrentCall(ctx, entrySet)
+	return dagql.NewResultForCurrentID(ctx, entrySet)
 }
 
 func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache, args struct {

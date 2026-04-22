@@ -21,6 +21,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/source"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	"github.com/dagger/dagger/internal/fsutil"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/docker/docker/pkg/idtools"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/time/rate"
@@ -239,9 +241,24 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, caller session.Calle
 		ExcludePatterns: ls.src.ExcludePatterns,
 		FollowPaths:     ls.src.FollowPaths,
 		DestDir:         dest,
-		CacheUpdater:    &cacheUpdater{CacheContext: cc},
+		CacheUpdater:    &cacheUpdater{cc, mount.IdentityMapping()},
 		ProgressCb:      newProgressHandler(ctx, "transferring "+ls.src.Name+":"),
 		Differ:          ls.src.Differ,
+	}
+
+	if idmap := mount.IdentityMapping(); idmap != nil {
+		opt.Filter = func(p string, stat *fstypes.Stat) bool {
+			identity, err := idmap.ToHost(idtools.Identity{
+				UID: int(stat.Uid),
+				GID: int(stat.Gid),
+			})
+			if err != nil {
+				return false
+			}
+			stat.Uid = uint32(identity.UID)
+			stat.Gid = uint32(identity.GID)
+			return true
+		}
 	}
 
 	if err := filesync.FSSync(ctx, caller, opt); err != nil {
@@ -302,6 +319,7 @@ func newProgressHandler(ctx context.Context, id string) func(int, bool) {
 
 type cacheUpdater struct {
 	contenthash.CacheContext
+	idmap *idtools.IdentityMapping
 }
 
 func (cu *cacheUpdater) MarkSupported(bool) {

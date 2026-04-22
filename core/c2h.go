@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/sourcegraph/conc/pool"
 )
 
 type c2hTunnel struct {
-	bk    *engineutil.Client
-	ns    engineutil.Namespaced
-	socks []*Socket
+	bk        *buildkit.Client
+	ns        buildkit.Namespaced
+	socks     []*Socket
+	sockStore *SocketStore
 }
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
@@ -29,9 +30,9 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 		listenerPool.Go(func(ctx context.Context) error {
 			defer cancel(errors.New("tunnel listener done")) // if one exits, all should exit
 
-			port, err := sock.PortForward(ctx)
-			if err != nil {
-				return fmt.Errorf("c2h tunnel listener: socket port forward: %w", err)
+			port, ok := d.sockStore.GetSocketPortForward(sock.IDDigest)
+			if !ok {
+				return fmt.Errorf("socket not found: %s", sock.IDDigest)
 			}
 			frontend := port.FrontendOrBackendPort()
 
@@ -41,7 +42,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 				"backend", port.Backend,
 			)
 
-			listener, err := engineutil.RunInNetNS(ctx, d.bk, d.ns, func() (net.Listener, error) {
+			listener, err := buildkit.RunInNetNS(ctx, d.bk, d.ns, func() (net.Listener, error) {
 				return net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", frontend))
 			})
 			if err != nil {
@@ -70,12 +71,12 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 
 				connSlog.Debug("handling connection")
 
-				urlEncoded, err := sock.URL(ctx)
-				if err != nil {
-					connSlog.Error("failed to resolve socket URL", "error", err)
-					return fmt.Errorf("failed to resolve upstream socket URL: %w", err)
+				urlEncoded, ok := d.sockStore.GetSocketURLEncoded(sock.IDDigest)
+				if !ok {
+					connSlog.Error("socket not found", "id", sock.IDDigest)
+					return fmt.Errorf("socket not found: %s", sock.IDDigest)
 				}
-				upstreamClient, err := sock.ForwardAgentClient(ctx)
+				upstreamClient, err := d.sockStore.ConnectSocket(ctx, sock.IDDigest)
 				if err != nil {
 					connSlog.Error("failed to create upstream client", "id", urlEncoded, "error", err)
 					return fmt.Errorf("failed to create upstream client %s: %w", urlEncoded, err)

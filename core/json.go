@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -64,10 +63,6 @@ func (p JSON) MarshalJSON() ([]byte, error) {
 func (p *JSON) UnmarshalJSON(bs []byte) error {
 	if p == nil {
 		return fmt.Errorf("cannot unmarshal into nil JSON")
-	}
-	if bytes.Equal(bs, []byte("null")) {
-		*p = nil
-		return nil
 	}
 	// mirroring MarshalJSON, unmarshal to a *string*
 	var s string

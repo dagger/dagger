@@ -19,13 +19,13 @@ import (
 	"github.com/containerd/containerd/v2/pkg/rootfs"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
-	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	cacheconfig "github.com/dagger/dagger/internal/buildkit/cache/config"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/exporter"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
 	"github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
@@ -453,7 +453,7 @@ func (e *imageExporterInstance) unpackImage(ctx context.Context, img images.Imag
 	}
 
 	// get containerd snapshotter
-		ctrdSnapshotter, release := containerdsnapshot.NewContainerdSnapshotter(snapshotter)
+	ctrdSnapshotter, release := snapshot.NewContainerdSnapshotter(snapshotter)
 	defer release()
 
 	var chain []digest.Digest

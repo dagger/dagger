@@ -39,16 +39,16 @@ func TestRemoteFromCacheResultRejectsInvalidPayload(t *testing.T) {
 func TestRemoteMetadataCacheKeyIsolation(t *testing.T) {
 	ctx := context.Background()
 
-	cacheIface, err := dagql.NewCache(ctx, "", nil, nil)
+	cacheIface, err := dagql.NewCache(ctx, "")
 	require.NoError(t, err)
 
 	remotePayload := `{"refs":[]}`
-	_, err = cacheIface.GetOrInitArbitrary(ctx, "git-remote-test-session", "git-remote-test-dedicated-key", dagql.ArbitraryValueFunc(remotePayload))
+	_, err = cacheIface.GetOrInitArbitrary(ctx, "git-remote-test-dedicated-key", dagql.ArbitraryValueFunc(remotePayload))
 	require.NoError(t, err)
 
 	gitInitCalls := 0
 	gitPayload := `{"refs":[{"name":"refs/heads/main","sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}`
-	res, err := cacheIface.GetOrInitArbitrary(ctx, "git-remote-test-session", "git-current-call-key", func(context.Context) (any, error) {
+	res, err := cacheIface.GetOrInitArbitrary(ctx, "git-current-call-key", func(context.Context) (any, error) {
 		gitInitCalls++
 		return gitPayload, nil
 	})

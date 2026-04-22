@@ -9,15 +9,21 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
 
-// CollectedContent accumulates a rolling content hash while walking a module
-// function's value tree. The content hash is used to compute content-addressed
-// cache keys for Workspace-aware functions.
+// CollectedContent accumulates core object IDs and a rolling content hash
+// while walking a module function's return value. IDs are used for resource
+// transfer (secrets, sockets, etc.) and the content hash is used to compute
+// content-addressed cache keys for Workspace-aware functions.
 type CollectedContent struct {
+	// IDs maps recipe digest → resource ID for every core object (Directory,
+	// File, Container, …) found in the value tree.
+	IDs map[digest.Digest]*resource.ID
+
 	// hasher accumulates a rolling hash of all content found in the value
 	// tree — both core object content digests and primitive scalar values.
 	// Each implementor feeds its contribution directly, avoiding the need
@@ -29,6 +35,7 @@ type CollectedContent struct {
 
 func NewCollectedContent() *CollectedContent {
 	return &CollectedContent{
+		IDs:    map[digest.Digest]*resource.ID{},
 		hasher: hashutil.NewHasher(),
 	}
 }
@@ -43,59 +50,17 @@ func (content *CollectedContent) Digest() digest.Digest {
 }
 
 // CollectID collects an ID, indicating whether it came from an unknown field.
-func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, unknown bool) error {
-	if idp == nil {
-		return nil
+func (content *CollectedContent) CollectID(idp call.ID, unknown bool) {
+	rid := &resource.ID{
+		ID:       idp,
+		Optional: unknown, // mark this id as optional, since it's a best-guess attempt
 	}
-	if collectedContentInvalidID(idp) {
-		if unknown {
-			// Unknown/private fields are collected on a best-effort basis only.
-			// Some SDK paths can surface zero-value IDs for unset optional fields;
-			// treat those as absent rather than crashing the engine.
-			if err := content.CollectJSONable(nil); err != nil {
-				return fmt.Errorf("collect id unknown-invalid-id fallback jsonable nil: %w", err)
-			}
-			return nil
-		}
-		return fmt.Errorf("invalid ID")
-	}
-	// TODO: deeper integration with dagql/cache would be preferable but ContentPreferredDigest works
-	// for current workspace requirements.
-	// Deeper integration would allow full equivalence set cache hits on any IDs, whereas this approach
-	// is specific to just "content hash" extra digests.
-	var dgst digest.Digest
-	if idp.IsHandle() {
-		dag := dagql.CurrentDagqlServer(ctx)
-		if dag == nil {
-			return fmt.Errorf("current dagql server is nil")
-		}
-		res, err := dag.LoadType(ctx, idp)
-		if err != nil {
-			return fmt.Errorf("load handle type: %w", err)
-		}
-		call, err := res.ResultCall()
-		if err != nil {
-			return fmt.Errorf("result call: %w", err)
-		}
-		dgst, err = call.ContentPreferredDigest(ctx)
-		if err != nil {
-			return fmt.Errorf("content preferred digest: %w", err)
-		}
-	} else {
-		dgst = idp.ContentPreferredDigest()
+	content.IDs[idp.Digest()] = rid
+	dgst := rid.ContentDigest()
+	if dgst == "" {
+		dgst = rid.Digest()
 	}
 	content.hasher.WithString(string(dgst))
-	return nil
-}
-
-func collectedContentInvalidID(idp *call.ID) bool {
-	if idp == nil {
-		return true
-	}
-	if idp.IsHandle() {
-		return idp.EngineResultID() == 0 || idp.Type() == nil
-	}
-	return idp.Call() == nil
 }
 
 // CollectUnknown naively walks a typically JSON-decoded value, e.g. from a
@@ -103,28 +68,12 @@ func collectedContentInvalidID(idp *call.ID) bool {
 // encounters into IDs, and hashes everything into the rolling content hash.
 //
 // It is also used to content encode anything that is known to be JSONable.
-func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) error {
+func (content *CollectedContent) CollectUnknown(value any) error {
 	switch value := value.(type) {
-	case dagql.AnyResult:
-		id, err := value.ID()
-		if err != nil {
-			return err
-		}
-		return content.CollectID(ctx, id, true)
-	case dagql.IDable:
-		id, err := value.ID()
-		if err != nil {
-			return err
-		}
-		return content.CollectID(ctx, id, true)
-	case *call.ID:
-		return content.CollectID(ctx, value, true)
-	case call.ID:
-		return content.CollectID(ctx, &value, true)
 	case []any:
 		for i, value := range value {
 			if err := content.CollectIndexed(i, func() error {
-				return content.CollectUnknown(ctx, value)
+				return content.CollectUnknown(value)
 			}); err != nil {
 				return err
 			}
@@ -133,7 +82,7 @@ func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) 
 	case map[string]any:
 		for _, k := range slices.Sorted(maps.Keys(value)) {
 			if err := content.CollectKeyed(k, func() error {
-				return content.CollectUnknown(ctx, value[k])
+				return content.CollectUnknown(value[k])
 			}); err != nil {
 				return err
 			}
@@ -142,7 +91,8 @@ func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) 
 	case string:
 		var idp call.ID
 		if err := idp.Decode(value); err == nil {
-			return content.CollectID(ctx, &idp, true)
+			content.CollectID(idp, true)
+			return nil
 		} else {
 			return content.CollectJSONable(value)
 		}
@@ -155,7 +105,7 @@ func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) 
 func (content *CollectedContent) CollectJSONable(value any) error {
 	bytes, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("json marshal %T: %w", value, err)
+		return err
 	}
 	content.hasher.WithBytes(bytes...)
 	return nil
@@ -195,15 +145,17 @@ type ModType interface {
 	// by the SDK, which may include converting objects to their IDs
 	ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error)
 
-	// CollectContent walks the given value and hashes core object content and
-	// primitive scalar values into the provided CollectedContent.
+	// CollectContent walks the given value and collects core object IDs and
+	// primitive scalar values into the provided CollectedContent. This is
+	// used for resource transfer (IDs) and for computing content-addressed
+	// cache keys (IDs + Values).
 	CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error
 
 	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
 
 	// The core API TypeDef representation of this type
-	TypeDef(context.Context) (dagql.ObjectResult[*TypeDef], error)
+	TypeDef() *TypeDef
 }
 
 // PrimitiveType are the basic types like string, int, bool, void, etc.
@@ -217,21 +169,21 @@ func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (da
 	// NB: we lean on the fact that all primitive types are also dagql.Inputs
 	input := t.Def.ToInput()
 	if value == nil {
-		return dagql.NewResultForCurrentCall(ctx, input)
+		return dagql.NewResultForCurrentID(ctx, input)
 	}
 
 	retVal, err := input.Decoder().DecodeInput(value)
 	if err != nil {
 		return nil, err
 	}
-	return dagql.NewResultForCurrentCall(ctx, retVal)
+	return dagql.NewResultForCurrentID(ctx, retVal)
 }
 
 func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
 	return value, nil
 }
 
-func (t *PrimitiveType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
+func (t *PrimitiveType) CollectContent(_ context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
 		return content.CollectJSONable(nil)
 	}
@@ -242,36 +194,12 @@ func (t *PrimitiveType) SourceMod() Mod {
 	return nil
 }
 
-func (t *PrimitiveType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*TypeDef]{}, err
-	}
-	var inst dagql.ObjectResult[*TypeDef]
-	if err := dag.Select(ctx, dag.Root(), &inst,
-		dagql.Selector{Field: "typeDef"},
-		dagql.Selector{
-			Field: "withKind",
-			Args: []dagql.NamedInput{
-				{Name: "kind", Value: t.Def.Kind},
-			},
-		},
-	); err != nil {
-		return inst, err
-	}
-	if t.Def.Optional {
-		if err := dag.Select(ctx, inst, &inst, dagql.Selector{
-			Field: "withOptional",
-			Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
-		}); err != nil {
-			return inst, err
-		}
-	}
-	return inst, nil
+func (t *PrimitiveType) TypeDef() *TypeDef {
+	return t.Def
 }
 
 type ListType struct {
-	Elem       dagql.ObjectResult[*TypeDef]
+	Elem       *TypeDef
 	Underlying ModType
 }
 
@@ -279,12 +207,12 @@ var _ ModType = &ListType{}
 
 func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
 	arr := dagql.DynamicResultArrayOutput{
-		Elem: t.Elem.Self().ToTyped(),
+		Elem: t.Elem.ToTyped(),
 	}
 	if value == nil {
 		slog.Debug("ListType.ConvertFromSDKResult: got nil value")
 		// return an empty array, _not_ nil
-		return dagql.NewResultForCurrentCall(ctx, arr)
+		return dagql.NewResultForCurrentID(ctx, arr)
 	}
 	list, ok := value.([]any)
 	if !ok {
@@ -294,23 +222,17 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.A
 	for i, item := range list {
 		var err error
 
-		itemCtx := ctx
-		if curCall := dagql.CurrentCall(ctx); curCall != nil {
-			itemCall := cloneResultCall(curCall)
-			itemCall.Nth = int64(i + 1)
-			if itemCall.Type != nil {
-				itemCall.Type = itemCall.Type.Elem
-			}
-			itemCtx = dagql.ContextWithCall(ctx, itemCall)
-		}
+		curID := dagql.CurrentID(ctx)
+		itemID := curID.SelectNth(i + 1)
+		ctx := dagql.ContextWithID(ctx, itemID)
 
-		t, err := t.Underlying.ConvertFromSDKResult(itemCtx, item)
+		t, err := t.Underlying.ConvertFromSDKResult(ctx, item)
 		if err != nil {
 			return nil, err
 		}
 		arr.Values = append(arr.Values, t)
 	}
-	return dagql.NewResultForCurrentCall(ctx, arr)
+	return dagql.NewResultForCurrentID(ctx, arr)
 }
 
 func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -346,7 +268,7 @@ func (t *ListType) CollectContent(ctx context.Context, value dagql.AnyResult, co
 	}
 
 	for i := 1; i <= list.Len(); i++ {
-		item, err := value.NthValue(ctx, i)
+		item, err := value.NthValue(i)
 		if err != nil {
 			return err
 		}
@@ -354,17 +276,10 @@ func (t *ListType) CollectContent(ctx context.Context, value dagql.AnyResult, co
 			continue
 		}
 
-		itemCtx := ctx
-		itemCall, err := item.ResultCall()
-		if err != nil {
-			return err
-		}
-		if itemCall != nil {
-			itemCtx = dagql.ContextWithCall(ctx, itemCall)
-		}
+		ctx := dagql.ContextWithID(ctx, item.ID())
 
 		if err := content.CollectIndexed(i, func() error {
-			return t.Underlying.CollectContent(itemCtx, item, content)
+			return t.Underlying.CollectContent(ctx, item, content)
 		}); err != nil {
 			return err
 		}
@@ -376,48 +291,35 @@ func (t *ListType) SourceMod() Mod {
 	return t.Underlying.SourceMod()
 }
 
-func (t *ListType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*TypeDef]{}, err
+func (t *ListType) TypeDef() *TypeDef {
+	return &TypeDef{
+		Kind: TypeDefKindList,
+		AsList: dagql.NonNull(&ListTypeDef{
+			ElementTypeDef: t.Elem.Clone(),
+		}),
 	}
-	elemID, err := t.Elem.ID()
-	if err != nil {
-		return dagql.ObjectResult[*TypeDef]{}, err
-	}
-	var inst dagql.ObjectResult[*TypeDef]
-	if err := dag.Select(ctx, dag.Root(), &inst,
-		dagql.Selector{Field: "typeDef"},
-		dagql.Selector{
-			Field: "withListOf",
-			Args: []dagql.NamedInput{
-				{Name: "elementType", Value: dagql.NewID[*TypeDef](elemID)},
-			},
-		},
-	); err != nil {
-		return inst, err
-	}
-	return inst, nil
 }
 
 type NullableType struct {
-	InnerDef dagql.ObjectResult[*TypeDef]
+	InnerDef *TypeDef
 	Inner    ModType
 }
 
 var _ ModType = &NullableType{}
 
 func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
+	nullable := dagql.DynamicNullable{
+		Elem: t.InnerDef.ToTyped(),
+	}
 	if value != nil {
 		val, err := t.Inner.ConvertFromSDKResult(ctx, value)
 		if err != nil {
 			return nil, err
 		}
-		return val.NullableWrapped(), nil
+		nullable.Value = val
+		nullable.Valid = true
 	}
-	return dagql.NewResultForCurrentCall(ctx, dagql.DynamicNullable{
-		Elem: t.InnerDef.Self().ToTyped(),
-	})
+	return dagql.NewResultForCurrentID(ctx, nullable)
 }
 
 func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -454,17 +356,8 @@ func (t *NullableType) SourceMod() Mod {
 	return t.Inner.SourceMod()
 }
 
-func (t *NullableType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*TypeDef]{}, err
-	}
-	inst := t.InnerDef
-	if err := dag.Select(ctx, inst, &inst, dagql.Selector{
-		Field: "withOptional",
-		Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
-	}); err != nil {
-		return inst, err
-	}
-	return inst, nil
+func (t *NullableType) TypeDef() *TypeDef {
+	cp := t.InnerDef.Clone()
+	cp.Optional = true
+	return cp
 }

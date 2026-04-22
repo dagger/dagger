@@ -13,36 +13,23 @@ import (
 
 type ModuleEnumType struct {
 	typeDef *EnumTypeDef
-	mod     dagql.ObjectResult[*Module]
+	mod     *Module
 }
 
 var _ ModType = &ModuleEnumType{}
 
 func (m *ModuleEnumType) SourceMod() Mod {
-	if m.mod.Self() == nil {
+	if m.mod == nil {
 		return nil
 	}
-	return NewUserMod(m.mod)
+	return m.mod
 }
 
-func (m *ModuleEnumType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
-	var sourceMap dagql.Optional[dagql.ID[*SourceMap]]
-	if m.typeDef.SourceMap.Valid {
-		var err error
-		sourceMap, err = OptionalResultIDInput(m.typeDef.SourceMap.Value)
-		if err != nil {
-			return dagql.ObjectResult[*TypeDef]{}, err
-		}
+func (m *ModuleEnumType) TypeDef() *TypeDef {
+	return &TypeDef{
+		Kind:   TypeDefKindEnum,
+		AsEnum: dagql.NonNull(m.typeDef),
 	}
-	return SelectTypeDef(ctx, dagql.Selector{
-		Field: "withEnum",
-		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.String(m.typeDef.Name)},
-			{Name: "description", Value: dagql.String(m.typeDef.Description)},
-			{Name: "sourceMap", Value: sourceMap},
-			{Name: "sourceModuleName", Value: OptSourceModuleName(m.typeDef.SourceModuleName)},
-		},
-	})
 }
 
 func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
@@ -65,7 +52,7 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
 		}
 
-		return dagql.NewResultForCurrentCall(ctx, val)
+		return dagql.NewResultForCurrentID(ctx, val)
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for enum %q", value, m.typeDef.Name)
 	}
@@ -98,7 +85,7 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return enum.memberTypedef().Name, nil
 }
 
-func (m *ModuleEnumType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
+func (m *ModuleEnumType) CollectContent(_ context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
 		return content.CollectJSONable(nil)
 	}
@@ -107,7 +94,7 @@ func (m *ModuleEnumType) CollectContent(ctx context.Context, value dagql.AnyResu
 
 func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
 	// Check the dependencies
-	srv, err := m.mod.Self().Deps.Schema(ctx)
+	srv, err := m.mod.Deps.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%T.getDecoder: failed to get schema: %w", m, err)
 	}
@@ -122,9 +109,9 @@ func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
 	}
 
 	// If not check if the enum is part of its own module
-	for _, enumTypeDef := range m.mod.Self().EnumDefs {
-		if enumTypeDef.Self().AsEnum.Value.Self().Name == m.typeDef.Name {
-			return &ModuleEnum{TypeDef: enumTypeDef.Self().AsEnum.Value.Self(), Local: true}, nil
+	for _, enumTypeDef := range m.mod.EnumDefs {
+		if enumTypeDef.AsEnum.Value.Name == m.typeDef.Name {
+			return &ModuleEnum{TypeDef: enumTypeDef.AsEnum.Value, Local: true}, nil
 		}
 	}
 
@@ -165,7 +152,7 @@ func (e *ModuleEnum) TypeDefinition(view call.View) *ast.Definition {
 		Description: e.TypeDescription(),
 	}
 	if e.TypeDef.SourceMap.Valid {
-		def.Directives = append(def.Directives, e.TypeDef.SourceMap.Value.Self().TypeDirective())
+		def.Directives = append(def.Directives, e.TypeDef.SourceMap.Value.TypeDirective())
 	}
 	return def
 }
@@ -173,18 +160,17 @@ func (e *ModuleEnum) TypeDefinition(view call.View) *ast.Definition {
 func (e *ModuleEnum) PossibleValues() ast.EnumValueList {
 	var values ast.EnumValueList
 	for _, val := range e.TypeDef.Members {
-		member := val.Self()
-		name := member.Name
-		if e.Local && member.OriginalName != "" {
-			name = member.OriginalName
+		name := val.Name
+		if e.Local && val.OriginalName != "" {
+			name = val.OriginalName
 		}
 		def := &ast.EnumValueDefinition{
 			Name:        name,
-			Description: member.Description,
-			Directives:  member.EnumValueDirectives(),
+			Description: val.Description,
+			Directives:  val.EnumValueDirectives(),
 		}
-		if member.SourceMap.Valid {
-			def.Directives = append(def.Directives, member.SourceMap.Value.Self().TypeDirective())
+		if val.SourceMap.Valid {
+			def.Directives = append(def.Directives, val.SourceMap.Value.TypeDirective())
 		}
 		values = append(values, def)
 	}
@@ -219,15 +205,14 @@ func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
 		return nil, fmt.Errorf("enum %s has no members", e.TypeName())
 	}
 	for _, possible := range e.TypeDef.Members {
-		member := possible.Self()
-		name := member.Name
-		if e.Local && member.OriginalName != "" {
-			name = member.OriginalName
+		name := possible.Name
+		if e.Local && possible.OriginalName != "" {
+			name = possible.OriginalName
 		}
 		if val == name {
 			return &ModuleEnum{
 				TypeDef: e.TypeDef,
-				Name:    member.Name,
+				Name:    possible.Name,
 			}, nil
 		}
 	}
@@ -237,8 +222,8 @@ func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
 
 func (e *ModuleEnum) memberTypedef() *EnumMemberTypeDef {
 	for _, possible := range e.TypeDef.Members {
-		if possible.Self().Name == e.Name {
-			return possible.Self()
+		if possible.Name == e.Name {
+			return possible
 		}
 	}
 	return nil

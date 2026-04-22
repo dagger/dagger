@@ -15,18 +15,29 @@ This enables caching: since inputs are immutable and operations are deterministi
 
 DAGs of operations can be serialized as IDs, which have associated digests that serve as the operations' cache keys.
 
-THERE ARE NO REFERENCES RIGHT NOW BECAUSE THESE DOCS ARE VERY OLD. THE SOURCE OF TRUTH IS THE CODE.
+## Quick Reference
 
-The only exception to this is references/debugging.md, which HAS CRITICAL INSTRUCTIONS on running tests and debugging generally.
+Jump to the right doc for your task:
 
-## Scripts
+| Task | Read |
+|------|------|
+| Understand how IDs encode operations and digests | [ids.md](references/ids.md) |
+| Understand cache-relevant dagql execution flow | [dagql-api-server.md](references/dagql-api-server.md) |
+| Understand base/session cache storage and lifecycle | [cache-storage.md](references/cache-storage.md) |
+| Debug cache misses and cache behavior regressions | [debugging.md](references/debugging.md) |
+| Understand filesync cache behavior | [filesync.md](references/filesync.md) |
 
-- `scripts/dagql-cache-analyzer.go`
-  Analyze `/debug/dagql/cache` snapshot dumps offline and summarize retained
-  roots, result categories, and approximate cumulative closures.
+## Core References
 
-  Usage:
+To build cache expertise, read these in order:
 
-  ```bash
-  go run ./skills/cache-expert/scripts/dagql-cache-analyzer.go /tmp/dagql.cache.1
-  ```
+1. **[ids.md](references/ids.md)** - How IDs and digests define cache identity
+2. **[dagql-api-server.md](references/dagql-api-server.md)** - How `Select`/`preselect`/`call` drive cache usage
+3. **[cache-storage.md](references/cache-storage.md)** - How results are stored, indexed, released, and persisted
+
+## Optional References
+
+Load on-demand for specific tasks:
+
+- **[debugging.md](references/debugging.md)** - Practical debugging loop and instrumentation points
+- **[filesync.md](references/filesync.md)** - Host filesystem sync internals and filesync cache model

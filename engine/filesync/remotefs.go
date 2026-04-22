@@ -11,17 +11,16 @@ import (
 	"syscall"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/fsutil/types"
-	"google.golang.org/grpc"
 )
 
 type remoteFS struct {
-	callerConn   *grpc.ClientConn
+	caller       session.Caller
 	clientPath   string
 	includes     []string
 	excludes     []string
-	followPaths  []string
 	useGitIgnore bool
 
 	startOnce   sync.Once
@@ -32,19 +31,17 @@ type remoteFS struct {
 }
 
 func newRemoteFS(
-	callerConn *grpc.ClientConn,
+	caller session.Caller,
 	clientPath string,
 	includes, excludes []string,
-	followPaths []string,
 	useGitIgnore bool,
 ) *remoteFS {
 	return &remoteFS{
-		callerConn:   callerConn,
+		caller:       caller,
 		clientPath:   clientPath,
 		useGitIgnore: useGitIgnore,
 		includes:     includes,
 		excludes:     excludes,
-		followPaths:  followPaths,
 	}
 }
 
@@ -66,12 +63,11 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 	}
 
 	var err error
-	fs.client, err = filesync.NewFileSyncClient(fs.callerConn).DiffCopy(engine.LocalImportOpts{
+	fs.client, err = filesync.NewFileSyncClient(fs.caller.Conn()).DiffCopy(engine.LocalImportOpts{
 		Path:            fs.clientPath,
 		UseGitIgnore:    fs.useGitIgnore,
 		IncludePatterns: fs.includes,
 		ExcludePatterns: fs.excludes,
-		FollowPaths:     fs.followPaths,
 	}.AppendToOutgoingContext(ctx))
 	if err != nil {
 		return fmt.Errorf("failed to create diff copy client: %w", err)

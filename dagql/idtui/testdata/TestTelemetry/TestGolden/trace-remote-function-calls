@@ -11,9 +11,9 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-$ viztest: Viztest! X.Xs CACHED
+✔ viztest: Viztest! X.Xs
 ✔ .traceRemoteFunctionCalls: Void X.Xs
-├╴$ versioned: Versioned! X.Xs CACHED
+├╴✔ versioned: Versioned! X.Xs
 ╰╴✔ .hello: String! X.Xs
   ┃ version 3
 

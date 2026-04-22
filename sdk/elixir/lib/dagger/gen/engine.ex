@@ -38,7 +38,7 @@ defmodule Dagger.Engine do
   end
 
   @doc """
-  The local engine cache state tracked by dagql
+  The local (on-disk) cache for the Dagger engine
   """
   @spec local_cache(t()) :: Dagger.EngineCache.t()
   def local_cache(%__MODULE__{} = engine) do

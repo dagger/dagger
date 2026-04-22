@@ -14,7 +14,7 @@ namespace Dagger;
 class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The function used to construct new instances of this object, if any.
+     * The function used to construct new instances of this object, if any
      */
     public function constructor(): Function_
     {

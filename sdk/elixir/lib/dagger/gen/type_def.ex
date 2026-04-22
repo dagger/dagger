@@ -125,17 +125,6 @@ defmodule Dagger.TypeDef do
   end
 
   @doc """
-  The canonical non-optional name of the type.
-  """
-  @spec name(t()) :: {:ok, String.t()} | {:error, term()}
-  def name(%__MODULE__{} = type_def) do
-    query_builder =
-      type_def.query_builder |> QB.select("name")
-
-    Client.execute(type_def.client, query_builder)
-  end
-
-  @doc """
   Whether this type can be set to null. Defaults to false.
   """
   @spec optional(t()) :: {:ok, boolean()} | {:error, term()}

@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/appcontext"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
+	"github.com/dagger/dagger/internal/buildkit/util/profiler"
 	"github.com/dagger/dagger/internal/buildkit/util/stack"
 	"github.com/dagger/dagger/internal/buildkit/version"
 	"github.com/gofrs/flock"
@@ -44,9 +45,9 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
+	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/ebpf/filetracer"
 	"github.com/dagger/dagger/engine/ebpf/ovltracer"
-	"github.com/dagger/dagger/engine/engineutil/cacerts"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
@@ -439,6 +440,12 @@ func main() { //nolint:gocyclo
 
 		bklog.G(context.Background()).Infof("engine name: %s", engineName)
 
+		if bkcfg.GRPC.DebugAddress != "" {
+			if err := setupDebugHandlers(bkcfg.GRPC.DebugAddress); err != nil {
+				return err
+			}
+		}
+
 		bklog.G(ctx).Debug("creating engine GRPC server")
 		grpcServer := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 
@@ -477,34 +484,7 @@ func main() { //nolint:gocyclo
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
 		}
-		var httpServer *http.Server
-		shutdownServer := func(stopCtx context.Context) {
-			if srv == nil {
-				return
-			}
-			srv.BeginGracefulStop()
-			if httpServer != nil {
-				if err := httpServer.Shutdown(context.WithoutCancel(stopCtx)); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					slog.Error("http server shutdown", "error", err)
-				}
-			}
-			grpcServer.GracefulStop()
-			if err := srv.GracefulStop(context.WithoutCancel(stopCtx)); err != nil {
-				slog.Error("server graceful stop", "error", err)
-			}
-			srv = nil
-		}
-		defer func() {
-			srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
-			defer srvStopCancel()
-			shutdownServer(srvStopCtx)
-		}()
-
-		if bkcfg.GRPC.DebugAddress != "" {
-			if err := setupDebugHandlers(bkcfg.GRPC.DebugAddress, srv); err != nil {
-				return err
-			}
-		}
+		defer srv.Close()
 
 		// start Prometheus metrics server if configured
 		if metricsAddr := os.Getenv("_EXPERIMENTAL_DAGGER_METRICS_ADDR"); metricsAddr != "" {
@@ -522,7 +502,7 @@ func main() { //nolint:gocyclo
 		bklog.G(ctx).Debug("starting main engine api listeners")
 		srv.Register(grpcServer)
 		http2Server := &http2.Server{}
-		httpServer = &http.Server{
+		httpServer := &http.Server{
 			ReadHeaderTimeout: 30 * time.Second,
 			Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
@@ -563,10 +543,13 @@ func main() { //nolint:gocyclo
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
 		}
+		grpcServer.GracefulStop()
 
 		srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
 		defer srvStopCancel()
-		shutdownServer(srvStopCtx)
+		if err := srv.GracefulStop(srvStopCtx); err != nil {
+			slog.Error("server graceful stop", "error", err)
+		}
 
 		return err
 	}
@@ -577,6 +560,8 @@ func main() { //nolint:gocyclo
 		telemetry.Close()
 		return nil
 	}
+
+	profiler.Attach(app)
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "dagger-engine: %+v\n", err)

@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/introspection"
 )
 
@@ -15,40 +14,15 @@ type SchemaResolvers interface {
 	Install(*dagql.Server)
 }
 
-func Syncer[T dagql.Typed]() dagql.Field[T] {
-	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {
-		Recipe bool `default:"false" internal:"true"`
-	}) (res dagql.Result[dagql.ID[T]], _ error) {
-		if _, ok := dagql.UnwrapAs[dagql.HasLazyEvaluation](self); ok {
-			cache, err := dagql.EngineCache(ctx)
-			if err != nil {
-				return res, err
-			}
-			if err := cache.Evaluate(ctx, self); err != nil {
-				return res, err
-			}
-		} else {
-			syncable, ok := dagql.UnwrapAs[core.Syncable](self)
-			if !ok {
-				return res, fmt.Errorf("internal error: %T does not support sync", self.Self())
-			}
-			if err := syncable.Sync(ctx); err != nil {
-				return res, err
-			}
-		}
-		var selfID *call.ID
-		var err error
-		if args.Recipe {
-			selfID, err = self.RecipeID(ctx)
-		} else {
-			selfID, err = self.ID()
-		}
+func Syncer[T core.Evaluatable]() dagql.Field[T] {
+	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], _ struct{}) (res dagql.Result[dagql.ID[T]], _ error) {
+		_, err := self.Self().Evaluate(ctx)
 		if err != nil {
 			return res, err
 		}
-		id := dagql.NewID[T](selfID)
-		return dagql.NewResultForCurrentCall(ctx, id)
-	}).DoNotCache("sync is an operational boundary and each object already controls its own underlying lazy/cached state")
+		id := dagql.NewID[T](self.ID())
+		return dagql.NewResultForCurrentID(ctx, id)
+	})
 }
 
 func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {

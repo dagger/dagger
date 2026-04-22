@@ -11,9 +11,9 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-$ viztest: Viztest! X.Xs CACHED
+✔ viztest: Viztest! X.Xs
 ✘ .failLog: Void X.Xs ERROR
-├╴$ container: Container! X.Xs CACHED
+├╴✔ container: Container! X.Xs
 ├╴$ .from(address: "alpine"): Container! X.Xs CACHED
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
 ╰╴✘ withExec sh -c 'echo im doing a lot of work; echo and then failing; exit 1' X.Xs ERROR

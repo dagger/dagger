@@ -69,20 +69,3 @@ func (Platform) DecodeInput(val any) (dagql.Input, error) {
 func (p Platform) MarshalJSON() ([]byte, error) {
 	return json.Marshal(platforms.Format(specs.Platform(p)))
 }
-
-func (p *Platform) UnmarshalJSON(payload []byte) error {
-	var raw string
-	if err := json.Unmarshal(payload, &raw); err != nil {
-		return err
-	}
-	decoded, err := Platform{}.DecodeInput(raw)
-	if err != nil {
-		return err
-	}
-	plat, ok := decoded.(Platform)
-	if !ok {
-		return fmt.Errorf("platform JSON decoded to unexpected type %T", decoded)
-	}
-	*p = plat
-	return nil
-}

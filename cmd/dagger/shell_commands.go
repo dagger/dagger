@@ -280,7 +280,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 	}
 }
 
-func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
+func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 	var builtins []*ShellCommand
 
 	builtins = append(builtins,
@@ -580,12 +580,12 @@ Without arguments, the current working directory is replaced by the initial cont
 
 	// Add LLM commands
 	builtins = append(builtins, h.llmBuiltins()...)
+
 	slices.SortStableFunc(builtins, func(x, y *ShellCommand) int {
 		return cmp.Compare(x.Use, y.Use)
 	})
 
 	h.builtins = builtins
-	return nil
 }
 
 func cobraToShellCommand(c *cobra.Command) *ShellCommand {

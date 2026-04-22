@@ -114,13 +114,6 @@ linters:
         text: "idtools.IdentityMapping"
 
       - linters:
-          - staticcheck
-        # ArgsEscaped is a deprecated legacy docker/OCI field that we must
-        # still read to detect Windows images that rely on it.
-        text: "SA1019.*ArgsEscaped"
-        path: util/llbtodagger/
-
-      - linters:
           - gocyclo
           - dupl
           - unconvert

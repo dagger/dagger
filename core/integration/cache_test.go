@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
@@ -84,57 +82,6 @@ func (CacheSuite) TestVolumeWithSubmount(ctx context.Context, t *testctx.T) {
 			require.Equal(t, expectedContents, strings.TrimSpace(contents))
 		}
 	})
-}
-
-func (CacheSuite) TestLockedCacheVolumeSerializesWriters(ctx context.Context, t *testctx.T) {
-	const writers = 3
-
-	cacheKey := "locked-cache-" + identity.NewID()
-	clients := make([]*dagger.Client, writers)
-	for i := range clients {
-		clients[i] = connect(ctx, t)
-	}
-
-	start := make(chan struct{})
-	var eg errgroup.Group
-	for i := range writers {
-		i := i
-		eg.Go(func() error {
-			<-start
-			_, err := clients[i].
-				Container().
-				From(alpineImage).
-				WithEnvVariable("RUN_ID", fmt.Sprint(i)).
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				WithMountedCache("/cache", clients[i].CacheVolume(cacheKey, dagger.CacheVolumeOpts{
-					Sharing: dagger.CacheSharingModeLocked,
-				})).
-				WithExec([]string{
-					"sh",
-					"-euxc",
-					`mkdir /cache/in-use
-echo "$RUN_ID" >> /cache/order
-sleep 1
-rmdir /cache/in-use`,
-				}).
-				Sync(ctx)
-			return err
-		})
-	}
-
-	close(start)
-	require.NoError(t, eg.Wait())
-
-	out, err := clients[0].
-		Container().
-		From(alpineImage).
-		WithMountedCache("/cache", clients[0].CacheVolume(cacheKey, dagger.CacheVolumeOpts{
-			Sharing: dagger.CacheSharingModeLocked,
-		})).
-		WithExec([]string{"cat", "/cache/order"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Len(t, strings.Fields(strings.TrimSpace(out)), writers)
 }
 
 func (CacheSuite) TestLocalImportCacheReuse(ctx context.Context, t *testctx.T) {

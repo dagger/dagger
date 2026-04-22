@@ -12,10 +12,6 @@ type Module struct {
 }
 
 func NewModule(id *ID, name, ref, pin string) *Module {
-	if id == nil {
-		panic("call.Module requires non-nil recipe-form ID")
-	}
-	id.mustBeRecipe("NewModule")
 	return &Module{
 		pb: &callpbv1.Module{
 			Name:       name,
@@ -33,20 +29,6 @@ func (m *Module) ID() *ID {
 
 func (m *Module) Name() string {
 	return m.pb.Name
-}
-
-func (m *Module) Ref() string {
-	if m == nil || m.pb == nil {
-		return ""
-	}
-	return m.pb.Ref
-}
-
-func (m *Module) Pin() string {
-	if m == nil || m.pb == nil {
-		return ""
-	}
-	return m.pb.Pin
 }
 
 func (m *Module) gatherCalls(callsByDigest map[string]*callpbv1.Call) {

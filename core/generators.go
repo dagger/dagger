@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -69,7 +68,7 @@ type GeneratorGroup struct {
 	Generators []*Generator `json:"generators"`
 }
 
-func NewGeneratorGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*GeneratorGroup, error) {
+func NewGeneratorGroup(ctx context.Context, mod *Module, include []string) (*GeneratorGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
