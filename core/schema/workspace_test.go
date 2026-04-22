@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
 
@@ -138,6 +139,77 @@ func TestWorkspaceAPIPath(t *testing.T) {
 
 	t.Run("nested path is absolute from boundary", func(t *testing.T) {
 		require.Equal(t, "/services/payment", workspaceAPIPath("services/payment"))
+	})
+}
+
+func TestWorkspaceMigrationWarningsKeepsGapWarningsAggregated(t *testing.T) {
+	plan := &workspace.MigrationPlan{
+		Warnings: []string{
+			"migration gap one",
+			"migration gap two",
+		},
+		MigrationGapCount:   2,
+		MigrationReportPath: ".dagger/migration-report.md",
+	}
+
+	appendWorkspaceMigrationNonGapWarnings(plan, []string{"hint warning"})
+
+	require.Equal(t, []string{
+		"hint warning",
+		"2 migration gap(s) need manual review; see .dagger/migration-report.md",
+	}, workspaceMigrationWarnings(plan))
+}
+
+func TestWorkspaceFilterWithDirectoryArgs(t *testing.T) {
+	args := workspaceFilterWithDirectoryArgs(nil, core.CopyFilter{
+		Include: []string{"app/**"},
+		Exclude: []string{".git"},
+	})
+
+	require.Len(t, args, 4)
+	require.Equal(t, "path", args[0].Name)
+	require.Equal(t, "source", args[1].Name)
+	require.Equal(t, "include", args[2].Name)
+	require.Equal(t, "exclude", args[3].Name)
+	for _, arg := range args {
+		require.NotEqual(t, "directory", arg.Name)
+	}
+}
+
+func TestResolveWorkspaceRefreshModules(t *testing.T) {
+	t.Run("explicit selection keeps order and removes duplicates", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"alpha": {Source: "github.com/example/alpha@main"},
+				"beta":  {Source: "github.com/example/beta@main"},
+				"gamma": {Source: "github.com/example/gamma@main"},
+			},
+		}
+
+		mods, err := resolveWorkspaceRefreshModules(cfg, []string{"gamma", "alpha", "gamma"})
+		require.NoError(t, err)
+		require.Equal(t, []workspaceRefreshModule{
+			{Name: "gamma", Source: "github.com/example/gamma@main"},
+			{Name: "alpha", Source: "github.com/example/alpha@main"},
+		}, mods)
+	})
+
+	t.Run("missing modules return error", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"alpha": {Source: "github.com/example/alpha@main"},
+			},
+		}
+
+		_, err := resolveWorkspaceRefreshModules(cfg, []string{"alpha", "missing", "other"})
+		require.ErrorContains(t, err, "workspace module(s) not found: missing, other")
+	})
+
+	t.Run("selection is required", func(t *testing.T) {
+		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{}}
+
+		_, err := resolveWorkspaceRefreshModules(cfg, nil)
+		require.ErrorContains(t, err, "at least one workspace module name is required")
 	})
 }
 

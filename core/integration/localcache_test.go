@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Local cache GC, retention, and engine-side local cache configuration.
+// Intent: Keep local cache behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"fmt"

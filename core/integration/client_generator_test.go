@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Client generator output and generated-client dependency behavior.
+// Intent: Keep generated client behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"encoding/json"

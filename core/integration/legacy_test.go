@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; intentionally legacy-focused.
+// Scope: Frozen legacy compatibility behavior that is intentionally preserved outside the workspace-era model.
+// Intent: Keep explicitly legacy behavior isolated so newer workspace and module suites can evolve without ambiguity.
+
 import (
 	"context"
 	_ "embed"

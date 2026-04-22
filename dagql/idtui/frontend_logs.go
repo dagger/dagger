@@ -71,6 +71,9 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if cleanup != nil {
 		runErr = errors.Join(runErr, cleanup())
 	}
+	if _, ok := renderQuietError(fe.out, runErr); ok {
+		return normalizeFrontendExit(runErr, fe.db)
+	}
 	// Replay the primary output log to stdout/stderr.
 	if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
 		runErr = errors.Join(runErr, writeErr)

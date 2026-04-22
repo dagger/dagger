@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: mostly aligned; coverage targets post-workspace modules, but setup still relies on historical module helpers.
+// Scope: TypeScript SDK module initialization, codegen, and runtime behavior.
+// Intent: Keep TypeScript module behavior stable while helper and command cleanup proceed separately.
+
 import (
 	"context"
 	_ "embed"

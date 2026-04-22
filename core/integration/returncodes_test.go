@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: CLI exit code behavior and return code propagation.
+// Intent: Keep return-code behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"testing"
