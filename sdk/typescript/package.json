@@ -51,8 +51,8 @@
     "docs:fmt": "cd ../../docs/current_docs && eslint --fix -c ../../sdk/typescript/eslint-docs.config.js --max-warnings=0 ./**/*.ts"
   },
   "devDependencies": {
+    "@dagger.io/mocha": "^0.1.0",
     "@eslint/js": "^10.0.1",
-    "@otel-test-runner/mocha-test": "0.3.1",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/adm-zip": "^0.5.8",
     "@types/mocha": "^10.0.10",
