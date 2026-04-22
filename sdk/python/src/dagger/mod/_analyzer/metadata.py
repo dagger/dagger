@@ -68,9 +68,7 @@ class ResolvedType:
             msg = "ResolvedType(kind='list') requires an element_type"
             raise ValueError(msg)
         if self.kind != _LIST_KIND and self.element_type is not None:
-            msg = (
-                f"ResolvedType(kind={self.kind!r}) must not carry an element_type"
-            )
+            msg = f"ResolvedType(kind={self.kind!r}) must not carry an element_type"
             raise ValueError(msg)
         if self.is_self and self.kind not in ("object", "interface"):
             msg = (

@@ -143,9 +143,7 @@ class ModuleParser:
         # Deferred external-constructor declarations, resolved in a second
         # pass after every class has been parsed so the lookup does not
         # depend on file/class iteration order.
-        self._pending_external_constructors: list[
-            tuple[str, ast.Assign, Path]
-        ] = []
+        self._pending_external_constructors: list[tuple[str, ast.Assign, Path]] = []
 
     def parse(
         self,
@@ -296,9 +294,7 @@ class ModuleParser:
                             module, alias.name, alias.asname
                         )
 
-    _NON_DAGGER_FIELD_MODULES = frozenset(
-        {"dataclasses", "attrs", "attr", "pydantic"}
-    )
+    _NON_DAGGER_FIELD_MODULES = frozenset({"dataclasses", "attrs", "attr", "pydantic"})
 
     def _bare_field_is_dagger(self, file_path: Path) -> bool:
         """Return True when bare ``field`` in a file refers to dagger.field.
