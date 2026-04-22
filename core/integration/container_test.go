@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Core container object behavior.
+// Intent: Keep container semantics stable independently of module and workspace cleanup.
+
 import (
 	"bytes"
 	"context"
@@ -5324,7 +5328,7 @@ func (ContainerSuite) TestSaveInNested(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev")
 
 	out, err := dockerc.WithWorkdir("/src/test").
-		WithExec([]string{"dagger", "init", "--sdk=go"}).
+		WithExec([]string{"dagger", "module", "init", "--sdk=go"}).
 		WithNewFile("main.go", `package main
 
 import "context"

@@ -1,0 +1,73 @@
+---
+title: "Modules"
+slug: /core-concepts/modules
+description: "Packages of functions you install or develop"
+---
+
+# Modules
+
+Modules are packages of functions that add capabilities to your workspace. You can install pre-built modules from the community or write your own.
+
+## Using Modules
+
+Install a module into your workspace:
+
+```shell
+dagger install github.com/dagger/eslint
+```
+
+See what functions it provides:
+
+```shell
+dagger call eslint --help
+```
+
+Call its functions:
+
+```shell
+dagger call eslint lint
+```
+
+## Where Modules Come From
+
+Modules can be installed from:
+
+- **GitHub**: `dagger install github.com/dagger/eslint`
+- **Local paths**: `dagger install ./my-module`
+- **Any Git URL**: `dagger install github.com/org/repo/path@v1.0`
+
+## Module vs Workspace
+
+A module (`dagger.json`) is a package of code — functions, types, and dependencies. A workspace (`.dagger/config.toml`) is your project's configuration — which modules to use and how to configure them.
+
+You interact with modules through your workspace:
+
+```shell
+# Add a module to your workspace
+dagger install github.com/dagger/vitest
+
+# Configure it
+# Edit .dagger/config.toml to add [modules.vitest.config] settings
+
+# Use it
+dagger call vitest test
+dagger check
+```
+
+## Developing Your Own Modules
+
+When pre-built modules don't cover your needs, you can write your own:
+
+```shell
+dagger module init --sdk=go my-ci
+```
+
+This creates a local module in `.dagger/modules/my-ci/` that you can develop and use alongside installed modules.
+
+See [Developing Modules](/extending) for the full guide.
+
+## Next Steps
+
+- **[Functions](/core-concepts/functions)** — Learn about functions
+- **[Checks](/core-concepts/checks)** — Learn about checks
+- **[Developing Modules](/extending)** — Write your own modules

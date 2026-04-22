@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: mostly aligned; coverage targets post-workspace module interfaces, but setup still relies on historical module helpers.
+// Scope: Module interface definitions, implementations, and interface-valued APIs across SDKs.
+// Intent: Keep interface semantics stable while command and helper cleanup proceed separately.
+
 import (
 	"context"
 	"fmt"

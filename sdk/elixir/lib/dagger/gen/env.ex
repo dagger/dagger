@@ -1308,6 +1308,118 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type WorkspaceMigration in the environment
+  """
+  @spec with_workspace_migration_input(t(), String.t(), Dagger.WorkspaceMigration.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_workspace_migration_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceMigrationInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceMigration output to be assigned in the environment
+  """
+  @spec with_workspace_migration_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_migration_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceMigrationOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type WorkspaceMigrationStep in the environment
+  """
+  @spec with_workspace_migration_step_input(
+          t(),
+          String.t(),
+          Dagger.WorkspaceMigrationStep.t(),
+          String.t()
+        ) :: Dagger.Env.t()
+  def with_workspace_migration_step_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceMigrationStepInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceMigrationStep output to be assigned in the environment
+  """
+  @spec with_workspace_migration_step_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_migration_step_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceMigrationStepOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type WorkspaceModule in the environment
+  """
+  @spec with_workspace_module_input(t(), String.t(), Dagger.WorkspaceModule.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_workspace_module_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceModuleInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceModule output to be assigned in the environment
+  """
+  @spec with_workspace_module_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_module_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceModuleOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Declare a desired Workspace output to be assigned in the environment
   """
   @spec with_workspace_output(t(), String.t(), String.t()) :: Dagger.Env.t()
