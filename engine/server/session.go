@@ -1343,16 +1343,22 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 
 		// Also serve toolchains so their functions are available in the
 		// client schema (e.g. when `dagger shell` `.cd`s into a module).
-		if src := mod.Self().GetSource(); src != nil {
-			for i, tcSrc := range src.Toolchains {
+		if mod.Self().Source.Valid && mod.Self().Source.Value.Self() != nil {
+			src := mod.Self().Source.Value
+			defaultPathContextSrc := src
+			if mod.Self().ContextSource.Valid && mod.Self().ContextSource.Value.Self() != nil {
+				defaultPathContextSrc = mod.Self().ContextSource.Value
+			}
+			for i, tcSrc := range src.Self().Toolchains {
 				if tcSrc.Self() == nil {
 					continue
 				}
 				var cfg *modules.ModuleConfigDependency
-				if i < len(src.ConfigToolchains) {
-					cfg = src.ConfigToolchains[i]
+				if i < len(src.Self().ConfigToolchains) {
+					cfg = src.Self().ConfigToolchains[i]
 				}
-				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pendingRelatedModule(src, tcSrc.Self(), cfg, false))
+				pending := pendingRelatedModule(defaultPathContextSrc, tcSrc.Self(), cfg, false)
+				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pending)
 				if err != nil {
 					return fmt.Errorf("error resolving toolchain module: %w", err)
 				}
