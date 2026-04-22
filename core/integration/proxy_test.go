@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: System proxy propagation and proxy-aware networking behavior.
+// Intent: Keep proxy behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"fmt"

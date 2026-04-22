@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Host filesystem access and host-side integration semantics.
+// Intent: Keep host behavior stable independently of module and workspace cleanup.
+
 import (
 	"context"
 	"crypto/rand"
