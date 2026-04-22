@@ -1557,6 +1557,66 @@
 			}
 		},
 		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceMigration",
+			"p": "Dagger/WorkspaceMigration.html",
+			"d": "<p>A planned workspace migration.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceMigrationId",
+			"p": "Dagger/WorkspaceMigrationId.html",
+			"d": "<p>The <code>WorkspaceMigrationID</code> scalar type represents an identifier for an object of type WorkspaceMigration.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceMigrationStep",
+			"p": "Dagger/WorkspaceMigrationStep.html",
+			"d": "<p>A single logical part of a workspace migration.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceMigrationStepId",
+			"p": "Dagger/WorkspaceMigrationStepId.html",
+			"d": "<p>The <code>WorkspaceMigrationStepID</code> scalar type represents an identifier for an object of type WorkspaceMigrationStep.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceModule",
+			"p": "Dagger/WorkspaceModule.html",
+			"d": "<p>A module entry in the workspace configuration.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceModuleId",
+			"p": "Dagger/WorkspaceModuleId.html",
+			"d": "<p>The <code>WorkspaceModuleID</code> scalar type represents an identifier for an object of type WorkspaceModule.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
 			"t": "I",
 			"n": "Dagger\\Client\\IdAble",
 			"p": "Dagger/Client/IdAble.html",
@@ -1846,6 +1906,24 @@
 			"n": "Dagger\\Binding::asWorkspace",
 			"p": "Dagger/Binding.html#method_asWorkspace",
 			"d": "<p>Retrieve the binding value, as type Workspace</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asWorkspaceMigration",
+			"p": "Dagger/Binding.html#method_asWorkspaceMigration",
+			"d": "<p>Retrieve the binding value, as type WorkspaceMigration</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asWorkspaceMigrationStep",
+			"p": "Dagger/Binding.html#method_asWorkspaceMigrationStep",
+			"d": "<p>Retrieve the binding value, as type WorkspaceMigrationStep</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asWorkspaceModule",
+			"p": "Dagger/Binding.html#method_asWorkspaceModule",
+			"d": "<p>Retrieve the binding value, as type WorkspaceModule</p>"
 		},
 		{
 			"t": "M",
@@ -2644,6 +2722,24 @@
 			"n": "Dagger\\Client::loadWorkspaceFromID",
 			"p": "Dagger/Client.html#method_loadWorkspaceFromID",
 			"d": "<p>Load a Workspace from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceMigrationFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceMigrationFromID",
+			"d": "<p>Load a WorkspaceMigration from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceMigrationStepFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceMigrationStepFromID",
+			"d": "<p>Load a WorkspaceMigrationStep from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceModuleFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceModuleFromID",
+			"d": "<p>Load a WorkspaceModule from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -4276,6 +4372,42 @@
 			"n": "Dagger\\Env::withWorkspaceInput",
 			"p": "Dagger/Env.html#method_withWorkspaceInput",
 			"d": "<p>Create or update a binding of type Workspace in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceMigrationInput",
+			"p": "Dagger/Env.html#method_withWorkspaceMigrationInput",
+			"d": "<p>Create or update a binding of type WorkspaceMigration in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceMigrationOutput",
+			"p": "Dagger/Env.html#method_withWorkspaceMigrationOutput",
+			"d": "<p>Declare a desired WorkspaceMigration output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceMigrationStepInput",
+			"p": "Dagger/Env.html#method_withWorkspaceMigrationStepInput",
+			"d": "<p>Create or update a binding of type WorkspaceMigrationStep in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceMigrationStepOutput",
+			"p": "Dagger/Env.html#method_withWorkspaceMigrationStepOutput",
+			"d": "<p>Declare a desired WorkspaceMigrationStep output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceModuleInput",
+			"p": "Dagger/Env.html#method_withWorkspaceModuleInput",
+			"d": "<p>Create or update a binding of type WorkspaceModule in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceModuleOutput",
+			"p": "Dagger/Env.html#method_withWorkspaceModuleOutput",
+			"d": "<p>Declare a desired WorkspaceModule output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -6499,9 +6631,39 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::configRead",
+			"p": "Dagger/Workspace.html#method_configRead",
+			"d": "<p>Read a configuration value from config.toml.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::configWrite",
+			"p": "Dagger/Workspace.html#method_configWrite",
+			"d": "<p>Write a configuration value to config.toml.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::directory",
 			"p": "Dagger/Workspace.html#method_directory",
 			"d": "<p>Returns a Directory from the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::envCreate",
+			"p": "Dagger/Workspace.html#method_envCreate",
+			"d": "<p>Create a named workspace environment if it does not already exist.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::envList",
+			"p": "Dagger/Workspace.html#method_envList",
+			"d": "<p>List named environments defined in the workspace configuration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::envRemove",
+			"p": "Dagger/Workspace.html#method_envRemove",
+			"d": "<p>Remove a named workspace environment.</p>"
 		},
 		{
 			"t": "M",
@@ -6535,15 +6697,51 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::init",
+			"p": "Dagger/Workspace.html#method_init",
+			"d": "<p>Initialize a new workspace, creating .dagger/config.toml.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::initialized",
 			"p": "Dagger/Workspace.html#method_initialized",
 			"d": "<p>Whether .dagger/config.toml exists.</p>"
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::install",
+			"p": "Dagger/Workspace.html#method_install",
+			"d": "<p>Install a module into the workspace, writing config.toml to the host.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::migrate",
+			"p": "Dagger/Workspace.html#method_migrate",
+			"d": "<p>Plan the explicit migration needed for the current workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::moduleInit",
+			"p": "Dagger/Workspace.html#method_moduleInit",
+			"d": "<p>Create a new module owned by the workspace and auto-install it in config.toml.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::moduleList",
+			"p": "Dagger/Workspace.html#method_moduleList",
+			"d": "<p>List modules defined in the workspace configuration.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::path",
 			"p": "Dagger/Workspace.html#method_path",
 			"d": "<p>Workspace directory path relative to the workspace boundary.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::refreshModules",
+			"p": "Dagger/Workspace.html#method_refreshModules",
+			"d": "<p>Refresh lock entries for selected workspace-config modules.</p>"
 		},
 		{
 			"t": "M",
@@ -6556,6 +6754,78 @@
 			"n": "Dagger\\Workspace::update",
 			"p": "Dagger/Workspace.html#method_update",
 			"d": "<p>Refresh workspace-managed state and return the resulting changeset.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::changes",
+			"p": "Dagger/WorkspaceMigration.html#method_changes",
+			"d": "<p>Filesystem changes for the full migration plan.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::id",
+			"p": "Dagger/WorkspaceMigration.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceMigration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::steps",
+			"p": "Dagger/WorkspaceMigration.html#method_steps",
+			"d": "<p>Logical migration steps, each identified by a stable code.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigrationStep::changes",
+			"p": "Dagger/WorkspaceMigrationStep.html#method_changes",
+			"d": "<p>Filesystem changes for this step.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigrationStep::code",
+			"p": "Dagger/WorkspaceMigrationStep.html#method_code",
+			"d": "<p>Stable code identifying this logical migration step.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigrationStep::description",
+			"p": "Dagger/WorkspaceMigrationStep.html#method_description",
+			"d": "<p>Generic summary of this step's purpose and impact.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigrationStep::id",
+			"p": "Dagger/WorkspaceMigrationStep.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceMigrationStep.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigrationStep::warnings",
+			"p": "Dagger/WorkspaceMigrationStep.html#method_warnings",
+			"d": "<p>Non-fatal warnings raised while planning this step.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceModule::entrypoint",
+			"p": "Dagger/WorkspaceModule.html#method_entrypoint",
+			"d": "<p>Whether the module is the workspace entrypoint (functions aliased to Query root).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceModule::id",
+			"p": "Dagger/WorkspaceModule.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceModule.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceModule::name",
+			"p": "Dagger/WorkspaceModule.html#method_name",
+			"d": "<p>The module name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceModule::source",
+			"p": "Dagger/WorkspaceModule.html#method_source",
+			"d": "<p>The module source path.</p>"
 		},
 		{
 			"t": "M",

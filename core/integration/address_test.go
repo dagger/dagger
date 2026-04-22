@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Core Address value behavior, encoding, and API integration.
+// Intent: Keep address semantics stable without mixing in module or workspace boundary concerns.
+
 import (
 	"context"
 	"fmt"

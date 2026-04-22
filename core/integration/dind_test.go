@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Docker-in-Docker container behavior and engine integration.
+// Intent: Keep DIND support stable independently of module and workspace cleanup.
+
 import (
 	"context"
 

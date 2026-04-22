@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Core secret behavior, secret injection, and secret file or env integration.
+// Intent: Keep secret semantics stable independently of workspace cleanup.
+
 import (
 	"bytes"
 	"context"

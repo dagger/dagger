@@ -1,0 +1,38 @@
+---
+title: "Observability"
+slug: /adopting/observability
+description: "Trace, debug, and monitor your Dagger workflows"
+---
+
+# Observability
+
+Every Dagger operation emits OpenTelemetry traces. You get visibility into what's happening without adding instrumentation.
+
+## Dagger Cloud Traces
+
+[Dagger Cloud](https://dagger.cloud) collects traces from all your Dagger runs — local and CI — and presents them in a web interface.
+
+```shell
+dagger login
+```
+
+After logging in, every `dagger` command sends traces to your Dagger Cloud dashboard. You get:
+
+- **Timeline view**: See all operations with duration and status. Drill into individual traces to understand execution.
+- **Error highlighting**: Failed steps are surfaced immediately with context — not just the error, but the steps that led up to it.
+- **Flame graphs**: Understand where time is spent. Each operation shows its proportion of total duration.
+- **CI and local traces**: Both environments in one view, grouped by git commit. Traces from CI include repository metadata (branch, commit author, status).
+- **Search and navigation**: Search trace logs by keyword. Breadcrumbs show the full context of any span back to the root.
+
+Traces are useful for debugging failures, optimizing slow workflows, and understanding what your team's Dagger usage looks like across projects.
+
+## OpenTelemetry
+
+Dagger's telemetry is built on [OpenTelemetry](https://opentelemetry.io/). Each function call is a trace; each operation is a span. This means you can export traces to any OTel-compatible backend:
+
+- Jaeger
+- Honeycomb
+- Grafana Tempo
+- Any OTel collector
+
+Set custom resource attributes via the standard `OTEL_RESOURCE_ATTRIBUTES` environment variable.

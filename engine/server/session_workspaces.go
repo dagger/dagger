@@ -8,8 +8,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	telemetry "github.com/dagger/otel-go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -124,6 +126,18 @@ func workspaceRefFromClientMetadata(clientMD *engine.ClientMetadata) (string, bo
 	return "", false
 }
 
+// workspaceEnvFromClientMetadata returns the explicitly declared workspace
+// environment selection, if present.
+func workspaceEnvFromClientMetadata(clientMD *engine.ClientMetadata) (string, bool) {
+	if clientMD == nil {
+		return "", false
+	}
+	if clientMD.WorkspaceEnv != nil {
+		return *clientMD.WorkspaceEnv, true
+	}
+	return "", false
+}
+
 // inheritWorkspaceBinding copies the nearest available parent workspace binding
 // onto the current client. This keeps nested clients aligned with their parent
 // workspace for currentWorkspace() resolution.
@@ -165,7 +179,8 @@ func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *daggerClie
 }
 
 func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *daggerClient, hostPath string) error {
-	cwd, err := client.engineUtilClient.AbsPath(ctx, hostPath)
+	bk := client.engineUtilClient
+	cwd, err := bk.AbsPath(ctx, hostPath)
 	if err != nil {
 		return fmt.Errorf("workspace detection: %w", err)
 	}
@@ -175,8 +190,8 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 	}
 
 	return srv.detectAndLoadWorkspace(ctx, client,
-		core.NewCallerStatFS(client.engineUtilClient),
-		client.engineUtilClient.ReadCallerHostFile,
+		core.NewCallerStatFS(bk),
+		bk.ReadCallerHostFile,
 		cwd,
 		resolveLocalRef,
 		nil,
@@ -187,9 +202,10 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *daggerClient, workspaceRef string) error {
 	// Resolve as local path first (relative to the connecting client's cwd).
 	// If not found, fall back to parsing as a git workspace ref.
-	localPath, err := client.engineUtilClient.AbsPath(ctx, workspaceRef)
+	bk := client.engineUtilClient
+	localPath, err := bk.AbsPath(ctx, workspaceRef)
 	if err == nil {
-		localStat, statErr := client.engineUtilClient.StatCallerHostPath(ctx, localPath, true)
+		localStat, statErr := bk.StatCallerHostPath(ctx, localPath, true)
 		switch {
 		case statErr == nil:
 			if !localStat.IsDir() {
@@ -323,7 +339,17 @@ func (srv *Server) detectAndLoadWorkspace(
 
 // pendingModule represents a module to be loaded from compat parsing,
 // -m flags, or the implicit CWD module.
+type legacyWorkspaceFieldPolicy uint8
+
+const (
+	legacyWorkspaceFieldPolicyDirect legacyWorkspaceFieldPolicy = iota
+	legacyWorkspaceFieldPolicyRejectAsWorkspace
+	legacyWorkspaceFieldPolicyStripCompatMain
+)
+
 type pendingModule struct {
+	Kind moduleLoadKind
+
 	// Source reference (local path or git URL).
 	Ref string
 
@@ -355,6 +381,9 @@ type pendingModule struct {
 	// +defaultPath inputs from this source ref instead.
 	DefaultPathContextSourceRef string
 	DefaultPathContextSourcePin string
+	// How legacy workspace-only dagger.json fields should be handled before
+	// generic module loading.
+	legacyFieldPolicy legacyWorkspaceFieldPolicy
 
 	// For legacy blueprints, the caller module's own .env should still behave
 	// like the "inner" env file even though the code now loads from the
@@ -363,8 +392,7 @@ type pendingModule struct {
 }
 
 type moduleLoadRequest struct {
-	mod   pendingModule
-	extra bool
+	mod pendingModule
 }
 
 type resolvedModuleLoad struct {
@@ -377,6 +405,14 @@ type resolvedServedModule struct {
 	mod        dagql.ObjectResult[*core.Module]
 	entrypoint bool
 }
+
+type moduleLoadKind string
+
+const (
+	moduleLoadKindAmbient moduleLoadKind = "ambient"
+	moduleLoadKindCWD     moduleLoadKind = "cwd"
+	moduleLoadKindExtra   moduleLoadKind = "extra"
+)
 
 const maxParallelModuleResolves = 8
 
@@ -395,6 +431,75 @@ func cwdModuleName(ctx context.Context, readFile func(context.Context, string) (
 	return cfg.Name
 }
 
+func loadWorkspaceConfig(
+	ctx context.Context,
+	readFile func(context.Context, string) ([]byte, error),
+	ws *workspace.Workspace,
+) (*workspace.Config, error) {
+	configPath := filepath.Join(ws.Root, ws.Path, workspace.LockDirName, workspace.ConfigFileName)
+	data, err := readFile(ctx, configPath)
+	if err != nil {
+		if isWorkspaceNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading workspace config %s: %w", configPath, err)
+	}
+
+	cfg, err := workspace.ParseConfig(data)
+	if err != nil {
+		return nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
+	}
+	if cfg.Modules == nil {
+		cfg.Modules = map[string]workspace.ModuleEntry{}
+	}
+	return cfg, nil
+}
+
+func workspaceConfigPendingModules(
+	ws *workspace.Workspace,
+	cfg *workspace.Config,
+	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+) []pendingModule {
+	if cfg == nil || len(cfg.Modules) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(cfg.Modules))
+	for name := range cfg.Modules {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	pending := make([]pendingModule, 0, len(names))
+	for _, name := range names {
+		entry := cfg.Modules[name]
+		mod := pendingModule{
+			Kind:               moduleLoadKindAmbient,
+			Ref:                entry.Source,
+			Name:               name,
+			Entrypoint:         entry.Entrypoint,
+			LegacyDefaultPath:  entry.LegacyDefaultPath,
+			DisableFindUp:      true,
+			ConfigDefaults:     entry.Settings,
+			DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
+			legacyFieldPolicy:  legacyWorkspaceFieldPolicyRejectAsWorkspace,
+		}
+
+		if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
+			resolved := workspace.ResolveModuleEntrySource(workspace.LockDirName, entry.Source)
+			if filepath.IsAbs(resolved) {
+				mod.Ref = resolved
+			} else {
+				mod.Ref = resolveLocalRef(ws, resolved)
+			}
+		}
+
+		pending = append(pending, mod)
+	}
+
+	return pending
+}
+
 func pendingLegacyModule(
 	ws *workspace.Workspace,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
@@ -410,6 +515,7 @@ func pendingLegacyModule(
 	}
 
 	mod := pendingModule{
+		Kind:              moduleLoadKindAmbient,
 		Ref:               ref,
 		RefPin:            pin,
 		Name:              name,
@@ -417,6 +523,7 @@ func pendingLegacyModule(
 		LegacyDefaultPath: true,
 		ConfigDefaults:    configDefaults,
 		ArgCustomizations: argCustomizations,
+		legacyFieldPolicy: legacyWorkspaceFieldPolicyRejectAsWorkspace,
 	}
 	if kind == core.ModuleSourceKindLocal {
 		mod.RefPin = ""
@@ -429,6 +536,31 @@ func legacyCallerModuleDir(isLocal bool, moduleDir string) string {
 		return ""
 	}
 	return moduleDir
+}
+
+func hasPendingExtraModules(client *daggerClient) bool {
+	return len(client.pendingExtraModules) > 0
+}
+
+func suppressPendingCWDModules(mods []pendingModule) []pendingModule {
+	if len(mods) == 0 {
+		return nil
+	}
+	filtered := mods[:0]
+	for _, mod := range mods {
+		if mod.Kind == moduleLoadKindCWD {
+			continue
+		}
+		filtered = append(filtered, mod)
+	}
+	return filtered
+}
+
+func suppressCWDModuleForCompatWorkspace(compatWorkspace *workspace.CompatWorkspace, moduleDir string) bool {
+	if compatWorkspace == nil || compatWorkspace.ProjectRoot == "" || moduleDir == "" {
+		return false
+	}
+	return filepath.Clean(compatWorkspace.ProjectRoot) == filepath.Clean(moduleDir)
 }
 
 // detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection
@@ -451,7 +583,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
 ) error {
 	clientMD := client.clientMetadata
-	loadModules := client.pendingWorkspaceLoad && clientMD != nil && clientMD.LoadWorkspaceModules
+	loadModules := client.pendingWorkspaceLoad &&
+		clientMD != nil &&
+		clientMD.LoadWorkspaceModules &&
+		!clientMD.SkipWorkspaceModules
+	workspaceEnv, hasWorkspaceEnv := workspaceEnvFromClientMetadata(clientMD)
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
 	ws, err := workspace.Detect(ctx, func(ctx context.Context, path string) (string, bool, error) {
@@ -461,24 +597,33 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return err
 	}
 
-	// --- Compat mode: extract toolchains/blueprints from legacy dagger.json ---
-	// In the foundation split, initialized workspace config is deferred, so a
-	// nearby dagger.json is the only source of workspace-level enrichment.
-	var legacyToolchains []workspace.LegacyToolchain
-	var legacyBlueprint *workspace.LegacyBlueprint
+	var wsConfig *workspace.Config
+	if ws.Initialized {
+		wsConfig, err = loadWorkspaceConfig(ctx, readFile, ws)
+		if err != nil {
+			return err
+		}
+	}
+
+	// --- Compat mode: build the ambient compat workspace from legacy dagger.json ---
+	// Once an initialized workspace config exists, it owns ambient workspace
+	// module loading. Legacy dagger.json compatibility remains only for
+	// uninitialized workspaces.
+	var compatWorkspace *workspace.CompatWorkspace
 	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
 	legacyCallerDir := legacyCallerModuleDir(isLocal, moduleDir)
-	if hasModuleConfig {
+	if wsConfig == nil && hasModuleConfig {
 		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
 		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
-			legacyToolchains, _ = workspace.ParseLegacyToolchains(data)
-			legacyBlueprint, _ = workspace.ParseLegacyBlueprint(data)
+			compatWorkspace, _ = workspace.ParseCompatWorkspaceAt(data, cfgPath)
 		}
-		if len(legacyToolchains) > 0 || legacyBlueprint != nil {
-			slog.Warn("Inferring workspace behavior from legacy module config.",
+		if compatWorkspace != nil {
+			msg := legacyWorkspaceCompatMessage(cwd, cfgPath)
+			console(ctx, msg)
+			slog.Warn(msg,
 				"config", cfgPath)
 		}
-	} else {
+	} else if wsConfig == nil {
 		wsDir := filepath.Join(ws.Root, ws.Path)
 		slog.Info("No workspace modules detected.", "path", wsDir)
 	}
@@ -492,74 +637,74 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
 	}
+	coreWS.SetCompatWorkspace(compatWorkspace)
 	client.workspace = coreWS
 
 	if !loadModules {
 		return nil
 	}
 
+	if hasWorkspaceEnv {
+		if wsConfig == nil {
+			return fmt.Errorf("workspace env %q requires .dagger/config.toml", workspaceEnv)
+		}
+		if err := func() (rerr error) {
+			_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("applying env: %s", workspaceEnv))
+			defer telemetry.EndWithCause(span, &rerr)
+			wsConfig, rerr = workspace.ApplyEnvOverlay(wsConfig, workspaceEnv)
+			return rerr
+		}(); err != nil {
+			return err
+		}
+	}
+
 	// --- Gather all modules to load ---
 	var pending []pendingModule
 
-	// resolveConfigRef resolves module source paths declared in dagger.json
-	// relative to the config file location rather than the client's CWD.
-	// When a client connects from a subdirectory, ws.Path points there,
-	// but module sources in the config are relative to the config itself.
-	resolveConfigRef := resolveLocalRef
-	if hasModuleConfig && isLocal {
-		configDir := moduleDir
-		resolveConfigRef = func(_ *workspace.Workspace, relPath string) string {
-			return filepath.Join(configDir, relPath)
+	pending = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
+
+	// (1) Ambient compat-workspace modules projected from legacy dagger.json.
+	if compatWorkspace != nil {
+		for _, legacyMod := range compatWorkspace.Modules {
+			mod := pendingLegacyModule(
+				ws,
+				resolveLocalRef,
+				legacyMod.Name,
+				legacyMod.Source,
+				legacyMod.Pin,
+				legacyMod.Entry.Entrypoint,
+				legacyMod.Entry.Settings,
+				legacyMod.ArgCustomizations,
+			)
+			if legacyMod.Entry.Entrypoint {
+				mod.LegacyCallerModuleDir = legacyCallerDir
+			}
+			pending = append(pending, mod)
 		}
-	}
-
-	// (1a) Legacy toolchains (from compat mode, extracted above)
-	for _, tc := range legacyToolchains {
-		pending = append(pending, pendingLegacyModule(
-			ws,
-			resolveConfigRef,
-			tc.Name,
-			tc.Source,
-			tc.Pin,
-			false,
-			tc.ConfigDefaults,
-			tc.Customizations,
-		))
-	}
-
-	// (1b) Legacy blueprint (from compat mode, extracted above)
-	if legacyBlueprint != nil {
-		blueprint := pendingLegacyModule(
-			ws,
-			resolveConfigRef,
-			legacyBlueprint.Name,
-			legacyBlueprint.Source,
-			legacyBlueprint.Pin,
-			true,
-			nil,
-			nil,
-		)
-		blueprint.LegacyCallerModuleDir = legacyCallerDir
-		pending = append(pending, blueprint)
-	}
-
-	// (2) Implicit module (dagger.json near CWD)
-	{
-		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
-		if hasModuleConfig {
+		if compatWorkspace.MainModule != nil {
 			wsDir := filepath.Join(ws.Root, ws.Path)
 			rel, _ := filepath.Rel(wsDir, moduleDir)
-			name := cwdModuleName(ctx, readFile, moduleDir)
-			pending = append(pending, pendingModule{
-				Ref:  resolveLocalRef(ws, rel),
-				Name: name,
-				// If the root module references a separate blueprint, only that
-				// blueprint should contribute Query-root entrypoint proxies.
-				// The root app module still needs to be served, but only as a
-				// namespaced module.
-				Entrypoint: legacyBlueprint == nil,
-			})
+			mod := pendingModule{
+				Kind:              moduleLoadKindAmbient,
+				Ref:               resolveLocalRef(ws, rel),
+				Name:              compatWorkspace.MainModule.Name,
+				Entrypoint:        compatWorkspace.MainModule.Entry.Entrypoint,
+				legacyFieldPolicy: legacyWorkspaceFieldPolicyStripCompatMain,
+			}
+			pending = append(pending, mod)
 		}
+	}
+
+	// (2) CWD module (nearest dagger.json by find-up from the caller)
+	if hasModuleConfig && !hasPendingExtraModules(client) && !suppressCWDModuleForCompatWorkspace(compatWorkspace, moduleDir) {
+		wsDir := filepath.Join(ws.Root, ws.Path)
+		rel, _ := filepath.Rel(wsDir, moduleDir)
+		pending = append(pending, pendingModule{
+			Kind:       moduleLoadKindCWD,
+			Ref:        resolveLocalRef(ws, rel),
+			Name:       cwdModuleName(ctx, readFile, moduleDir),
+			Entrypoint: true,
+		})
 	}
 
 	// (3) Extra modules from -m flag are stored separately in
@@ -569,6 +714,21 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	client.pendingModules = pending
 
 	return nil
+}
+
+func console(ctx context.Context, msg string, args ...any) {
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
+	}
+	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
+}
+
+func legacyWorkspaceCompatMessage(cwd, cfgPath string) string {
+	relPath := cfgPath
+	if rel, err := filepath.Rel(cwd, cfgPath); err == nil {
+		relPath = rel
+	}
+	return fmt.Sprintf("No workspace config found, inferring from %s.\nRun 'dagger migrate' when ready. More info: https://docs.dagger.io/reference/upgrade-to-workspaces", relPath)
 }
 
 // buildCoreWorkspace converts the internal workspace detection result into
@@ -589,12 +749,17 @@ func (srv *Server) buildCoreWorkspace(
 	}
 
 	coreWS := &core.Workspace{
-		Address:  address,
-		Path:     detected.Path,
-		ClientID: clientMetadata.ClientID,
+		Address:     address,
+		Path:        detected.Path,
+		Initialized: detected.Initialized,
+		HasConfig:   detected.Initialized,
+		ClientID:    clientMetadata.ClientID,
 	}
 	if coreWS.Address == "" {
 		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Path)
+	}
+	if detected.Initialized {
+		coreWS.ConfigPath = filepath.Join(detected.Path, workspace.LockDirName, workspace.ConfigFileName)
 	}
 
 	if isLocal {
@@ -706,6 +871,13 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 		}
 	}
 
+	loads, resolvedLoads = dedupeResolvedModuleLoads(loads, resolvedLoads)
+	if err := arbitrateResolvedModuleLoads(loads, resolvedLoads); err != nil {
+		client.modulesErr = err
+		client.modulesLoaded = true
+		return client.modulesErr
+	}
+
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 	if err := srv.serveAllResolvedModuleLoads(client, loads, resolvedLoads); err != nil {
@@ -732,7 +904,7 @@ func (srv *Server) resolveModuleLoad(
 		primary:           primary,
 		primaryEntrypoint: load.mod.Entrypoint,
 	}
-	if !load.extra {
+	if load.mod.Kind != moduleLoadKindExtra {
 		return resolved, nil
 	}
 
@@ -774,12 +946,309 @@ func (srv *Server) resolveModuleLoad(
 			mod:        blueprintMod,
 			entrypoint: true,
 		})
-		// When the selected module points at a separate blueprint, only the
-		// blueprint should contribute Query-root entrypoint proxies.
 		resolved.primaryEntrypoint = false
 	}
 
 	return resolved, nil
+}
+
+// serveAllResolvedModuleLoads serves all resolved primary modules and their
+// related modules (blueprints, toolchains-of-toolchains).
+//
+// Transitive dependencies are only served for the entrypoint module — the one
+// the user is interacting with via `dagger call` or `dagger shell`. This is
+// needed so the client schema can resolve concrete types behind interfaces
+// (e.g. a Mallard backing a Duck). Toolchain deps are NOT served globally;
+// each module's deps are available in its own internal schema (mod.Deps) for
+// type resolution during function calls.
+func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
+	for i := range loads {
+		load := resolved[i]
+		for _, related := range load.related {
+			if err := srv.serveModule(client, core.NewUserMod(related.mod), core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
+				return fmt.Errorf("error serving related module %s: %w", related.mod.Self().Name(), err)
+			}
+		}
+		if err := srv.serveModule(client, core.NewUserMod(load.primary), core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
+			return moduleLoadErr(loads[i], err)
+		}
+		// For the entrypoint module (the one the user targets via dagger call),
+		// also serve its direct dependencies so the client schema can resolve
+		// concrete types behind interfaces. This mirrors the includeDependencies
+		// behavior from `main`. Toolchain/non-entrypoint deps stay internal.
+		if load.primaryEntrypoint {
+			for _, dep := range load.primary.Self().Deps.Mods() {
+				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
+					return fmt.Errorf("error serving entrypoint dependency %s: %w", dep.Name(), err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModule) []moduleLoadRequest {
+	loads := make([]moduleLoadRequest, 0, len(pending)+len(extras))
+	for _, mod := range pending {
+		loads = append(loads, moduleLoadRequest{mod: mod})
+	}
+	for _, extra := range extras {
+		loads = append(loads, moduleLoadRequest{
+			mod: pendingModule{
+				Kind:       moduleLoadKindExtra,
+				Ref:        extra.Ref,
+				Name:       extra.Name,
+				Entrypoint: extra.Entrypoint,
+			},
+		})
+	}
+	return loads
+}
+
+func moduleResolveParallelism(moduleCount int) int {
+	if moduleCount <= 1 {
+		return 1
+	}
+	if moduleCount > maxParallelModuleResolves {
+		return maxParallelModuleResolves
+	}
+	return moduleCount
+}
+
+func moduleProgressName(mod pendingModule) string {
+	if mod.Name != "" {
+		return mod.Name
+	}
+	if mod.Ref != "" {
+		return mod.Ref
+	}
+	return "<unknown>"
+}
+
+func moduleLoadJobName(load moduleLoadRequest) string {
+	prefix := "load module: "
+	if load.mod.Kind == moduleLoadKindExtra {
+		prefix = "load extra module: "
+	}
+	return prefix + moduleProgressName(load.mod)
+}
+
+func moduleLoadErr(load moduleLoadRequest, err error) error {
+	prefix := "loading module"
+	if load.mod.Kind == moduleLoadKindExtra {
+		prefix = "loading extra module"
+	}
+	return fmt.Errorf("%s %q: %w", prefix, load.mod.Ref, err)
+}
+
+func entrypointTierPriority(kind moduleLoadKind) int {
+	switch kind {
+	case moduleLoadKindExtra:
+		return 3
+	case moduleLoadKindCWD:
+		return 2
+	case moduleLoadKindAmbient:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func shouldPreferEntrypointNomination(
+	currentLoad moduleLoadRequest,
+	currentResolved resolvedModuleLoad,
+	nextLoad moduleLoadRequest,
+	nextResolved resolvedModuleLoad,
+) bool {
+	if !nextResolved.primaryEntrypoint {
+		return false
+	}
+	if !currentResolved.primaryEntrypoint {
+		return true
+	}
+	return entrypointTierPriority(nextLoad.mod.Kind) > entrypointTierPriority(currentLoad.mod.Kind)
+}
+
+func dedupeResolvedModuleLoads(
+	loads []moduleLoadRequest,
+	resolved []resolvedModuleLoad,
+) ([]moduleLoadRequest, []resolvedModuleLoad) {
+	if len(loads) <= 1 {
+		return loads, resolved
+	}
+
+	type dedupedLoad struct {
+		index    int
+		load     moduleLoadRequest
+		resolved resolvedModuleLoad
+	}
+
+	seen := make(map[string]int, len(loads))
+	deduped := make([]dedupedLoad, 0, len(loads))
+
+	for i := range loads {
+		key := resolvedModuleLoadIdentity(resolved[i].primary)
+		if existingIdx, ok := seen[key]; ok {
+			if shouldPreferEntrypointNomination(deduped[existingIdx].load, deduped[existingIdx].resolved, loads[i], resolved[i]) {
+				deduped[existingIdx].index = i
+				deduped[existingIdx].load = loads[i]
+				deduped[existingIdx].resolved = resolved[i]
+			}
+			continue
+		}
+		deduped = append(deduped, dedupedLoad{
+			index:    i,
+			load:     loads[i],
+			resolved: resolved[i],
+		})
+		seen[key] = len(deduped) - 1
+	}
+
+	slices.SortFunc(deduped, func(a, b dedupedLoad) int {
+		switch {
+		case a.index < b.index:
+			return -1
+		case a.index > b.index:
+			return 1
+		default:
+			return 0
+		}
+	})
+
+	dedupLoads := make([]moduleLoadRequest, len(deduped))
+	dedupResolved := make([]resolvedModuleLoad, len(deduped))
+	for i := range deduped {
+		dedupLoads[i] = deduped[i].load
+		dedupResolved[i] = deduped[i].resolved
+	}
+
+	return dedupLoads, dedupResolved
+}
+
+func arbitrateResolvedModuleLoads(
+	loads []moduleLoadRequest,
+	resolved []resolvedModuleLoad,
+) error {
+	if len(loads) == 0 {
+		return nil
+	}
+
+	candidatesByTier := map[moduleLoadKind][]int{
+		moduleLoadKindAmbient: nil,
+		moduleLoadKindCWD:     nil,
+		moduleLoadKindExtra:   nil,
+	}
+	for i := range loads {
+		if !resolved[i].primaryEntrypoint {
+			continue
+		}
+		candidatesByTier[loads[i].mod.Kind] = append(candidatesByTier[loads[i].mod.Kind], i)
+	}
+
+	for _, kind := range []moduleLoadKind{moduleLoadKindAmbient, moduleLoadKindCWD, moduleLoadKindExtra} {
+		if len(candidatesByTier[kind]) > 1 {
+			return entrypointConflictError(kind, candidatesByTier[kind], loads)
+		}
+	}
+
+	winner := -1
+	for _, kind := range []moduleLoadKind{moduleLoadKindExtra, moduleLoadKindCWD, moduleLoadKindAmbient} {
+		if len(candidatesByTier[kind]) == 1 {
+			winner = candidatesByTier[kind][0]
+			break
+		}
+	}
+
+	for i := range resolved {
+		resolved[i].primaryEntrypoint = i == winner
+	}
+
+	return nil
+}
+
+func entrypointConflictError(kind moduleLoadKind, indexes []int, loads []moduleLoadRequest) error {
+	names := make([]string, 0, len(indexes))
+	for _, i := range indexes {
+		names = append(names, moduleProgressName(loads[i].mod))
+	}
+	switch kind {
+	case moduleLoadKindAmbient:
+		return fmt.Errorf("invalid workspace configuration: multiple distinct ambient entrypoint modules: %s", strings.Join(names, ", "))
+	case moduleLoadKindExtra:
+		return fmt.Errorf("invalid extra-module request: multiple distinct extra-module entrypoints: %s", strings.Join(names, ", "))
+	case moduleLoadKindCWD:
+		return fmt.Errorf("internal error: multiple distinct cwd entrypoint modules: %s", strings.Join(names, ", "))
+	default:
+		return fmt.Errorf("multiple distinct entrypoint modules: %s", strings.Join(names, ", "))
+	}
+}
+
+func resolvedModuleLoadIdentity(mod dagql.ObjectResult[*core.Module]) string {
+	self := mod.Self()
+	if self == nil || self.GetSource() == nil {
+		if self == nil {
+			return ""
+		}
+		return "name:" + self.Name()
+	}
+	return canonicalModuleReference(self.GetSource()) + "|" + self.GetSource().Pin()
+}
+
+// resolveModule resolves a module through the dagql pipeline.
+// Handles all module sources uniformly: legacy compat modules,
+// implicit CWD modules, and -m flag modules.
+//
+// Legacy settings (LegacyDefaultPath, ArgCustomizations, WorkspaceConfig, etc.)
+// are passed as internal args to asModule so they are applied BEFORE the module
+// is installed into dagql — mutating the result after Select is incorrect because
+// dagql may return a cached (and already-installed) pointer.
+func (srv *Server) resolveModule(
+	ctx context.Context,
+	dag *dagql.Server,
+	mod pendingModule,
+) (dagql.ObjectResult[*core.Module], error) {
+	srcArgs := []dagql.NamedInput{
+		{Name: "refString", Value: dagql.String(mod.Ref)},
+	}
+	if mod.RefPin != "" {
+		srcArgs = append(srcArgs, dagql.NamedInput{Name: "refPin", Value: dagql.String(mod.RefPin)})
+	}
+	if mod.DisableFindUp {
+		srcArgs = append(srcArgs, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})
+	}
+
+	var src dagql.ObjectResult[*core.ModuleSource]
+	err := dag.Select(ctx, dag.Root(), &src,
+		dagql.Selector{Field: "moduleSource", Args: srcArgs},
+	)
+	if err != nil {
+		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+	}
+
+	if mod.LegacyCallerModuleDir != "" && mod.Entrypoint {
+		if err := srv.mergeLegacyCallerEnvDefaults(ctx, dag, src.Self(), mod.LegacyCallerModuleDir); err != nil {
+			return dagql.ObjectResult[*core.Module]{}, err
+		}
+	}
+	if src.Self().UsesLegacyWorkspaceFields() {
+		switch mod.legacyFieldPolicy {
+		case legacyWorkspaceFieldPolicyStripCompatMain:
+			srcCall, err := src.ResultCall()
+			if err != nil {
+				return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("failed to get module source call for %q: %w", mod.Ref, err)
+			}
+			stripped, err := dagql.NewObjectResultForCall(src.Self().StripLegacyWorkspaceFields(), dag, srcCall)
+			if err != nil {
+				return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("failed to strip legacy workspace fields from %q: %w", mod.Ref, err)
+			}
+			src = stripped
+		case legacyWorkspaceFieldPolicyRejectAsWorkspace:
+			return dagql.ObjectResult[*core.Module]{}, src.Self().NestedLegacyWorkspaceLoadError()
+		}
+	}
+
+	return srv.resolveModuleSourceAsModule(ctx, dag, src, mod)
 }
 
 // pendingRelatedModule adapts a related module of a primary module into the
@@ -802,6 +1271,7 @@ func pendingRelatedModule(
 	entrypoint bool,
 ) pendingModule {
 	mod := pendingModule{
+		Kind:       moduleLoadKindExtra,
 		Ref:        related.AsString(),
 		RefPin:     related.Pin(),
 		Entrypoint: entrypoint,
@@ -870,14 +1340,12 @@ func (srv *Server) resolveModuleSourceAsModule(
 		dagql.Selector{Field: "asModule", Args: asModuleArgs},
 	)
 	if err != nil {
-		return dagql.ObjectResult[*core.Module]{}, err
+		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 	return resolved, nil
 }
 
 func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error) {
-	// Build asModule args so legacy settings flow through dagql and are applied
-	// before Install runs inside moduleSourceAsModule.
 	asModuleArgs := []dagql.NamedInput{}
 	if mod.Name != "" {
 		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
@@ -923,135 +1391,6 @@ func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error)
 		})
 	}
 	return asModuleArgs, nil
-}
-
-// serveAllResolvedModuleLoads serves all resolved primary modules and their
-// related modules (blueprints, toolchains-of-toolchains).
-//
-// Transitive dependencies are only served for the entrypoint module — the one
-// the user is interacting with via `dagger call` or `dagger shell`. This is
-// needed so the client schema can resolve concrete types behind interfaces
-// (e.g. a Mallard backing a Duck). Toolchain deps are NOT served globally;
-// each module's deps are available in its own internal schema (mod.Deps) for
-// type resolution during function calls.
-func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
-	for i := range loads {
-		load := resolved[i]
-		for _, related := range load.related {
-			if err := srv.serveModule(client, core.NewUserMod(related.mod), core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
-				return fmt.Errorf("error serving related module %s: %w", related.mod.Self().Name(), err)
-			}
-		}
-		if err := srv.serveModule(client, core.NewUserMod(load.primary), core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
-			return moduleLoadErr(loads[i], err)
-		}
-		// For the entrypoint module (the one the user targets via dagger call),
-		// also serve its direct dependencies so the client schema can resolve
-		// concrete types behind interfaces. This mirrors the includeDependencies
-		// behavior from `main`. Toolchain/non-entrypoint deps stay internal.
-		if load.primaryEntrypoint {
-			for _, dep := range load.primary.Self().Deps.Mods() {
-				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
-					return fmt.Errorf("error serving entrypoint dependency %s: %w", dep.Name(), err)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModule) []moduleLoadRequest {
-	loads := make([]moduleLoadRequest, 0, len(pending)+len(extras))
-	for _, mod := range pending {
-		loads = append(loads, moduleLoadRequest{mod: mod})
-	}
-	for _, extra := range extras {
-		loads = append(loads, moduleLoadRequest{
-			mod: pendingModule{
-				Ref:        extra.Ref,
-				Name:       extra.Name,
-				Entrypoint: extra.Entrypoint,
-			},
-			extra: true,
-		})
-	}
-	return loads
-}
-
-func moduleResolveParallelism(moduleCount int) int {
-	if moduleCount <= 1 {
-		return 1
-	}
-	if moduleCount > maxParallelModuleResolves {
-		return maxParallelModuleResolves
-	}
-	return moduleCount
-}
-
-func moduleProgressName(mod pendingModule) string {
-	if mod.Name != "" {
-		return mod.Name
-	}
-	if mod.Ref != "" {
-		return mod.Ref
-	}
-	return "<unknown>"
-}
-
-func moduleLoadJobName(load moduleLoadRequest) string {
-	prefix := "load module: "
-	if load.extra {
-		prefix = "load extra module: "
-	}
-	return prefix + moduleProgressName(load.mod)
-}
-
-func moduleLoadErr(load moduleLoadRequest, err error) error {
-	prefix := "loading module"
-	if load.extra {
-		prefix = "loading extra module"
-	}
-	return fmt.Errorf("%s %q: %w", prefix, load.mod.Ref, err)
-}
-
-// resolveModule resolves a module through the dagql pipeline.
-// Handles all module sources uniformly: legacy compat modules,
-// implicit CWD modules, and -m flag modules.
-//
-// Legacy settings (LegacyDefaultPath, ArgCustomizations, WorkspaceConfig, etc.)
-// are passed as internal args to asModule so they are applied BEFORE the module
-// is installed into dagql — mutating the result after Select is incorrect because
-// dagql may return a cached (and already-installed) pointer.
-func (srv *Server) resolveModule(
-	ctx context.Context,
-	dag *dagql.Server,
-	mod pendingModule,
-) (dagql.ObjectResult[*core.Module], error) {
-	srcArgs := []dagql.NamedInput{
-		{Name: "refString", Value: dagql.String(mod.Ref)},
-	}
-	if mod.RefPin != "" {
-		srcArgs = append(srcArgs, dagql.NamedInput{Name: "refPin", Value: dagql.String(mod.RefPin)})
-	}
-	if mod.DisableFindUp {
-		srcArgs = append(srcArgs, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})
-	}
-
-	var src dagql.ObjectResult[*core.ModuleSource]
-	err := dag.Select(ctx, dag.Root(), &src,
-		dagql.Selector{Field: "moduleSource", Args: srcArgs},
-	)
-	if err != nil {
-		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
-	}
-
-	resolved, err := srv.resolveModuleSourceAsModule(ctx, dag, src, mod)
-	if err != nil {
-		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
-	}
-
-	return resolved, nil
 }
 
 func (srv *Server) mergeLegacyCallerEnvDefaults(

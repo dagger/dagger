@@ -1,0 +1,57 @@
+---
+title: "Workspace Setup"
+slug: /adopting/workspace-setup
+description: "Add a Dagger workspace to your project"
+---
+
+# Workspace Setup
+
+You've seen Dagger work on [hello-dagger](/quickstart). Now set it up on your own project.
+
+## Get started
+
+From the root of your repository:
+
+```shell
+dagger install github.com/dagger/setup
+dagger check
+```
+
+`dagger install` creates a workspace (`.dagger/config.toml`) and adds the [setup module](https://github.com/dagger/setup). `dagger check` runs it — and the setup module inspects your project, then reports what it finds as failing checks. Each failing check tells you what to do next.
+
+## The feedback loop
+
+Install what the setup module suggests, then run `dagger check` again:
+
+```shell
+dagger install github.com/dagger/eslint
+dagger check
+```
+
+The check that suggested ESLint turns green. New suggestions may appear for other tools the setup module detects. Repeat until you're happy with your coverage — you don't have to install everything at once.
+
+## Manual setup
+
+If you already know which modules you want, skip the setup module and install them directly:
+
+```shell
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+dagger install github.com/dagger/prettier
+```
+
+Browse available modules on the [Daggerverse](https://daggerverse.dev).
+
+## Multiple workspaces
+
+By default, your workspace covers the entire repository from the root. This is the right choice for most projects — it matches how developers and CI systems invoke Dagger.
+
+The only reason to create a workspace in a subdirectory is organizational: different teams own different parts of the repo and need independent Dagger configurations. If that's your situation, run `dagger install` from the subdirectory instead of the root. Dagger finds the nearest workspace by walking up from your current directory.
+
+Don't split workspaces for technical reasons (different languages, different build tools). A single workspace handles all of that — each module covers its own scope.
+
+## What's next
+
+- **Add to CI** — `dagger check` is a [single line](/using-dagger/checking#in-ci) in any CI provider
+- **Connect Dagger Cloud** — `dagger login` gives you traces for every run and unlocks [Cloud Checks](/adopting/triggers)
+- **Manage secrets** — if your checks need credentials, see [Secrets](/adopting/secrets)
