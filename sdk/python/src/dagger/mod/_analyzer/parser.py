@@ -125,10 +125,14 @@ class ModuleParser:
         # ``dagger.field`` from ``dataclasses.field`` when called unqualified.
         self._file_field_origin: dict[Path, str | None] = {}
 
-        # Module-level constants collected for default value resolution.
+        # Module-level constants per source file, keyed by (file, name).
         # Initialized here so ``_eval_constant`` can rely on it existing even
         # when called before ``_collect_module_constants`` has run.
-        self._module_constants: dict[str, ast.expr] = {}
+        self._module_constants: dict[Path, dict[str, ast.expr]] = {}
+
+        # File currently being extracted. Set by ``_extract_declarations`` so
+        # ``_eval_constant`` can scope name lookups to the containing file.
+        self._current_file: Path | None = None
 
     def parse(
         self,
@@ -214,20 +218,23 @@ class ModuleParser:
         """Collect module-level constant assignments for default value resolution.
 
         This allows resolving references like ``FAVES`` when used as
-        default values in function signatures.
+        default values in function signatures. Constants are scoped per
+        file so two files defining ``DEFAULT = ...`` with different values
+        don't silently overwrite one another.
         """
-        for tree in self._asts.values():
+        for file_path, tree in self._asts.items():
+            constants = self._module_constants.setdefault(file_path, {})
             for node in ast.iter_child_nodes(tree):
                 if isinstance(node, ast.Assign):
                     for target in node.targets:
                         if isinstance(target, ast.Name):
-                            self._module_constants[target.id] = node.value
+                            constants[target.id] = node.value
                 elif (
                     isinstance(node, ast.AnnAssign)
                     and isinstance(node.target, ast.Name)
                     and node.value is not None
                 ):
-                    self._module_constants[node.target.id] = node.value
+                    constants[node.target.id] = node.value
 
     def _build_namespace(self) -> None:
         """Build the namespace for type resolution."""
@@ -310,9 +317,13 @@ class ModuleParser:
     def _extract_declarations(self) -> None:
         """Extract full declarations from all ASTs."""
         for file_path, tree in self._asts.items():
-            for node in ast.iter_child_nodes(tree):
-                if isinstance(node, ast.ClassDef):
-                    self._extract_class(node, file_path)
+            self._current_file = file_path
+            try:
+                for node in ast.iter_child_nodes(tree):
+                    if isinstance(node, ast.ClassDef):
+                        self._extract_class(node, file_path)
+            finally:
+                self._current_file = None
 
     def _extract_class(self, node: ast.ClassDef, file_path: Path) -> None:
         """Extract a class declaration."""
@@ -1129,9 +1140,14 @@ class ModuleParser:
             }
             if node.id in name_map:
                 return name_map[node.id]
-            # Try resolving module-level constants
-            if node.id in self._module_constants:
-                return self._eval_constant(self._module_constants[node.id])
+            # Try resolving module-level constants (scoped to current file)
+            file_constants = (
+                self._module_constants.get(self._current_file, {})
+                if self._current_file is not None
+                else {}
+            )
+            if node.id in file_constants:
+                return self._eval_constant(file_constants[node.id])
             logger.warning(
                 "Unresolved name %r used in a constant expression at line %d; "
                 "falling back to the literal string.",
