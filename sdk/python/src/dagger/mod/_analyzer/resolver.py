@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import collections.abc
 import enum
+import logging
 import types
 import typing
 from typing import Any, get_args, get_origin
@@ -23,6 +24,8 @@ from dagger.mod._analyzer.errors import TypeResolutionError
 from dagger.mod._analyzer.metadata import LocationMetadata, ResolvedType
 from dagger.mod._analyzer.namespace import StubNamespace, is_stub_type
 from dagger.mod._analyzer.visitors.annotations import unwrap_annotated
+
+logger = logging.getLogger(__name__)
 
 # Known Dagger types from the API
 DAGGER_OBJECT_TYPES = {
@@ -272,8 +275,16 @@ class TypeResolver:
             evaled = self.namespace.eval_annotation(name, location=location)
             return self._resolve_evaluated(evaled, location)
         except TypeResolutionError:
-            # Unknown type - might be a forward reference or stub
-            # Assume it's an object type
+            # Unknown type - might be a forward reference or a user typo.
+            # Keep the permissive fallback so forward refs still work, but
+            # warn so that typos don't silently produce garbage TypeDefs.
+            logger.warning(
+                "Unresolved type %r%s; assuming it is an object type. If "
+                "this is a typo or a missing import, the engine will fail "
+                "at runtime.",
+                name,
+                f" at {location.file}:{location.line}" if location else "",
+            )
             return ResolvedType(kind="object", name=name)
 
     def _resolve_attribute(
@@ -350,6 +361,12 @@ class TypeResolver:
             evaled = self.namespace.eval_annotation(node, location=location)
             return self._resolve_evaluated(evaled, location)
         except TypeResolutionError:
+            logger.warning(
+                "Unsupported generic type %r%s; element types are lost. "
+                "Dagger supports list[T], Optional[T] and Union[T, None].",
+                ast.unparse(node),
+                f" at {location.file}:{location.line}" if location else "",
+            )
             return ResolvedType(kind="object", name=base_name)
 
     def _get_subscript_base_name(
