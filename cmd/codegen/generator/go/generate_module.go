@@ -274,7 +274,7 @@ func baseModuleSource(pkgInfo *PackageInfo, moduleName string) string {
 
 	return fmt.Sprintf(`// A generated module for %[1]s functions
 //
-// This module has been generated via dagger init and serves as a reference to
+// This module has been generated via dagger module init and serves as a reference to
 // basic module structure as you get started with Dagger.
 //
 // Two functions have been pre-created. You can modify, delete, or add to them,

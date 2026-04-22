@@ -136,6 +136,9 @@ type Params struct {
 	// Workspace explicitly declares workspace binding for this client.
 	Workspace *string
 
+	// WorkspaceEnv explicitly selects the workspace environment overlay for this client.
+	WorkspaceEnv *string
+
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
 }
@@ -1448,8 +1451,14 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	if c.LockMode != "" {
 		md.LockMode = c.LockMode
 	}
+	if c.LockMode != "" {
+		md.LockMode = c.LockMode
+	}
 	if c.Workspace != nil {
 		md.Workspace = c.Workspace
+	}
+	if c.WorkspaceEnv != nil {
+		md.WorkspaceEnv = c.WorkspaceEnv
 	}
 
 	return md

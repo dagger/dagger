@@ -70,6 +70,7 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
+	applyWorkspaceClientParams(&params)
 	if !moduleNoURL {
 		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
 			params.Module = modRef
@@ -157,6 +158,17 @@ func withEngine(
 	})
 }
 
+func applyWorkspaceClientParams(params *client.Params) {
+	if params.Workspace == nil && workspaceRef != "" {
+		ref := workspaceRef
+		params.Workspace = &ref
+	}
+	if params.WorkspaceEnv == nil && workspaceEnv != "" {
+		env := workspaceEnv
+		params.WorkspaceEnv = &env
+	}
+}
+
 func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
 	effective := paramLockMode
 	if effective == "" {
@@ -212,10 +224,14 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 
 	// Direct command stdout/stderr to span stdio via OpenTelemetry.
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	oldOut := rootCmd.OutOrStdout()
+	oldErr := rootCmd.ErrOrStderr()
 	rootCmd.SetOut(stdio.Stdout)
 	rootCmd.SetErr(stdio.Stderr)
 
 	return ctx, func(rerr error) {
+		rootCmd.SetOut(oldOut)
+		rootCmd.SetErr(oldErr)
 		stdio.Close()
 		telemetry.EndWithCause(span, &rerr)
 		telemetry.Close()
