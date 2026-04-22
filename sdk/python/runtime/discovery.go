@@ -344,10 +344,20 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		}
 		// quick check to avoid an unnecessary request
 		hasDist := d.SdkHasFile("dist/")
+		hasDaggerBuild := d.SdkHasFile(".dagger-build/")
 		d.mu.Unlock()
 
-		if hasDist {
-			entries, _ = m.SdkSourceDir.Glob(gctx, "dist/*")
+		for _, prefix := range []struct {
+			present bool
+			glob    string
+		}{
+			{hasDist, "dist/*"},
+			{hasDaggerBuild, ".dagger-build/*"},
+		} {
+			if !prefix.present {
+				continue
+			}
+			entries, _ = m.SdkSourceDir.Glob(gctx, prefix.glob)
 			d.mu.Lock()
 			for _, entry := range entries {
 				d.SdkFileSet[entry] = struct{}{}

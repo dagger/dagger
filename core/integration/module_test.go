@@ -6375,6 +6375,11 @@ export class Dep {
 	}
 }
 
+// TODO(yves): once PR 1 lands on main, extend this test to assert that
+// dagger.gen.go contains self-call method bindings for the module's
+// own types (e.g. the main object). Phase-1 AST scan + schematool.Merge
+// should produce them automatically when SELF_CALLS is enabled.
+// Cross-ref: hack/designs/no-codegen-at-runtime-pr1-plan.md Task 5.4.
 func (ModuleSuite) TestSelfCalls(ctx context.Context, t *testctx.T) {
 	tcs := []struct {
 		sdk    string
@@ -6481,6 +6486,66 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 			})
 		})
 	}
+}
+
+// TestGoCodegenPhase1Parity compares dagger.gen.go output produced by the
+// new AST-based Go codegen path (Phase 1 via astscan + schematool) against
+// the legacy packages.Load path built with -tags legacy_typedefs.
+//
+// Skipped until PR 2 adds the dual-build harness that lets the test
+// swap between the two cmd/codegen binaries within a single run.
+//
+// Tracked in hack/designs/no-codegen-at-runtime-pr1-plan.md
+// (see Task 5.3 in the "Commit 5" section).
+func (ModuleSuite) TestGoCodegenPhase1Parity(ctx context.Context, t *testctx.T) {
+	t.Skip("rebuild-with-tag harness not yet implemented; tracked in PR 2")
+}
+
+// TestGoSDKSkipCodegenAtRuntimeOptIn verifies that `dagger init --sdk=go`
+// writes codegen.legacyCodegenAtRuntime=false and
+// codegen.automaticGitignore=false into the generated dagger.json, and
+// that a subsequent `dagger call` succeeds without re-running codegen
+// (i.e. Runtime() takes the baseForCommittedCodegen path).
+//
+// TODO(yves): replace the Skip with a real harness run. The test should:
+//   - run `dagger init --sdk=go` in a temp context directory
+//   - assert the exported dagger.json contains both flags set to false
+//   - run `dagger call container-echo --string-arg "hi"` and assert success
+//   - ideally assert the span trace for the call has no
+//     `codegen generate-module` span for the module
+func (ModuleSuite) TestGoSDKSkipCodegenAtRuntimeOptIn(ctx context.Context, t *testctx.T) {
+	t.Skip("integration harness wiring added in a follow-up")
+}
+
+// TestGoSDKSkipCodegenAtRuntimeValidation verifies that setting
+// codegen.legacyCodegenAtRuntime=false without also setting
+// codegen.automaticGitignore=false produces a clear validation error
+// at module load.
+//
+// TODO(yves): replace the Skip with a real harness run. The test should:
+//   - create a Go module with hand-edited dagger.json containing
+//     `"codegen":{"legacyCodegenAtRuntime":false}` (automaticGitignore
+//     unset or true)
+//   - attempt to load it (e.g. `dagger functions`)
+//   - assert the error contains both `legacyCodegenAtRuntime` and
+//     `automaticGitignore=false`
+func (ModuleSuite) TestGoSDKSkipCodegenAtRuntimeValidation(ctx context.Context, t *testctx.T) {
+	t.Skip("integration harness wiring added in a follow-up")
+}
+
+// TestGoSDKSkipCodegenAtRuntimeMissingFiles verifies that when
+// codegen.legacyCodegenAtRuntime=false is set but the required generated
+// files (dagger.gen.go or internal/dagger/dagger.gen.go) are missing,
+// Runtime() returns the specific "run dagger develop" error rather than
+// a generic container / build failure.
+//
+// TODO(yves): replace the Skip with a real harness run. The test should:
+//   - init a Go module with the opt-in flags (via dagger init)
+//   - delete <srcSubpath>/dagger.gen.go from the module source
+//   - run `dagger call container-echo --string-arg "hi"` and assert the
+//     error message contains `dagger develop`
+func (ModuleSuite) TestGoSDKSkipCodegenAtRuntimeMissingFiles(ctx context.Context, t *testctx.T) {
+	t.Skip("integration harness wiring added in a follow-up")
 }
 
 func (ModuleSuite) TestModuleDeprecationIntrospection(ctx context.Context, t *testctx.T) {

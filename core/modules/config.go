@@ -283,15 +283,53 @@ type ModuleConfigView struct {
 type ModuleCodegenConfig struct {
 	// Whether to automatically generate a .gitignore file for this module.
 	AutomaticGitignore *bool `json:"automaticGitignore,omitempty"`
+
+	// LegacyCodegenAtRuntime controls whether the SDK runs codegen
+	// during runtime operations (dagger call, dagger functions, etc.).
+	// When explicitly false, the SDK trusts the committed generated
+	// files and skips the runtime codegen pass entirely. Codegen still
+	// runs on dagger init and dagger develop.
+	//
+	// Currently honored only by the Go SDK; other SDKs read but ignore
+	// this field.
+	//
+	// Default (nil or true): run codegen at runtime (legacy behavior).
+	LegacyCodegenAtRuntime *bool `json:"legacyCodegenAtRuntime,omitempty"`
 }
 
 func (cfg ModuleCodegenConfig) Clone() *ModuleCodegenConfig {
-	if cfg.AutomaticGitignore == nil {
-		return &cfg
+	if cfg.AutomaticGitignore != nil {
+		clone := *cfg.AutomaticGitignore
+		cfg.AutomaticGitignore = &clone
 	}
-	clone := *cfg.AutomaticGitignore
-	cfg.AutomaticGitignore = &clone
+	if cfg.LegacyCodegenAtRuntime != nil {
+		clone := *cfg.LegacyCodegenAtRuntime
+		cfg.LegacyCodegenAtRuntime = &clone
+	}
 	return &cfg
+}
+
+// Validate returns an error if the codegen config contains incompatible
+// settings. A nil receiver is always valid.
+//
+// Current rules:
+//   - If LegacyCodegenAtRuntime is explicitly false, AutomaticGitignore
+//     must also be explicitly false. Skipping runtime codegen requires
+//     the generated files to be committed to the repository; leaving
+//     AutomaticGitignore true would cause them to be ignored by git.
+func (cfg *ModuleCodegenConfig) Validate() error {
+	if cfg == nil {
+		return nil
+	}
+	if cfg.LegacyCodegenAtRuntime != nil && !*cfg.LegacyCodegenAtRuntime {
+		if cfg.AutomaticGitignore == nil || *cfg.AutomaticGitignore {
+			return fmt.Errorf(
+				"codegen.legacyCodegenAtRuntime=false requires " +
+					"codegen.automaticGitignore=false " +
+					"(generated files must be committed to the repo)")
+		}
+	}
+	return nil
 }
 
 type ModuleConfigClient struct {

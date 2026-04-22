@@ -71,29 +71,46 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			Include: []string{"uv*"},
 		})
 
+	codegenShiv := base.
+		WithWorkdir("/src").
+		WithDirectory("/usr/local/bin", rootfs.Directory("dist")).
+		WithMountedDirectory("", rootfs.Directory("codegen")).
+		WithEnvVariable("UV_NATIVE_TLS", "true").
+		WithExec([]string{
+			"uv", "export",
+			"--no-hashes",
+			"--no-editable",
+			"--package", "codegen",
+			"-o", "/requirements.txt",
+		}).
+		WithExec([]string{
+			"uvx", "shiv==1.0.8", // this version doesn't need to be constantly updated
+			"--reproducible",
+			"--compressed",
+			"-e", "codegen.cli:main",
+			"-o", "/codegen",
+			"-r", "/requirements.txt",
+		}).
+		File("/codegen")
+
 	rootfs = rootfs.
 		// bundle the codegen script and its dependencies into a single executable
-		WithFile("dist/codegen", base.
-			WithWorkdir("/src").
-			WithDirectory("/usr/local/bin", rootfs.Directory("dist")).
-			WithMountedDirectory("", rootfs.Directory("codegen")).
-			WithEnvVariable("UV_NATIVE_TLS", "true").
-			WithExec([]string{
-				"uv", "export",
-				"--no-hashes",
-				"--no-editable",
-				"--package", "codegen",
-				"-o", "/requirements.txt",
-			}).
-			WithExec([]string{
-				"uvx", "shiv==1.0.8", // this version doesn't need to be constantly updated
-				"--reproducible",
-				"--compressed",
-				"-e", "codegen.cli:main",
-				"-o", "/codegen",
-				"-r", "/requirements.txt",
-			}).
-			File("/codegen"),
+		WithFile("dist/codegen", codegenShiv).
+		// bundle the Python client bindings (gen.py) generated from this
+		// engine's introspection schema. PythonSdk.WithSDK detects this
+		// file and skips the runtime `codegen generate` exec, saving
+		// ~2.8s per cold Python module load.
+		WithFile(".dagger-build/gen.py",
+			build.pythonGenPy(base, codegenShiv),
+		).
+		// bundle a precompiled Go runtime binary for the python-sdk module
+		// so `loadBuiltinSDK(python)` does not pay the ~8s cost of `go build`
+		// on first use. The runtime is a Go binary whose source (and
+		// committed dagger.gen.go / internal/dagger) lives in
+		// sdk/python/runtime. core/sdk/go_sdk.go detects this file and
+		// skips the in-container `go build` when it is present.
+		WithFile("runtime/.dagger-build/runtime",
+			build.pythonRuntimeBinary(),
 		)
 
 	sdkCtrTarball := dag.Container().
@@ -117,6 +134,54 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 		sdkDir:  sdkDir,
 		envName: distconsts.PythonSDKManifestDigestEnvName,
 	}, nil
+}
+
+// pythonGenPy produces the Python client bindings (gen.py) at engine
+// build time. It uses cmd/introspect to dump the engine's schema JSON
+// in-process (no running engine needed), then invokes the shiv'd
+// codegen executable against that schema — the same binary that
+// PythonSdk.WithSDK runs at module-load time. The resulting gen.py is
+// byte-identical to what the runtime codegen would produce for this
+// engine, which is the correctness invariant PythonSdk relies on to
+// use the bundled file directly.
+func (build *Builder) pythonGenPy(base *dagger.Container, codegenShiv *dagger.File) *dagger.File {
+	schema := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+		From("alpine:latest").
+		WithMountedFile("/usr/local/bin/introspect", build.binary("./cmd/introspect", false, false)).
+		WithExec([]string{"sh", "-c", "introspect introspect > /schema.json"}).
+		File("/schema.json")
+
+	return base.
+		WithMountedFile("/usr/local/bin/codegen", codegenShiv).
+		WithMountedFile("/schema.json", schema).
+		WithExec([]string{"codegen", "generate", "-i", "/schema.json", "-o", "/gen.py"}).
+		File("/gen.py")
+}
+
+// pythonRuntimeBinary cross-compiles the sdk/python/runtime Go module
+// for the engine target platform. The resulting file is shipped inside
+// the Python SDK rootfs at runtime/.dagger-build/runtime; see
+// pythonSDKContent above and core/sdk/go_sdk.go::Runtime for consumer
+// details.
+func (build *Builder) pythonRuntimeBinary() *dagger.File {
+	runtimeSrc := build.source.Directory("sdk/python/runtime")
+	return dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+		From(distconsts.GolangImage).
+		WithEnvVariable("GOOS", build.platformSpec.OS).
+		WithEnvVariable("GOARCH", build.platformSpec.Architecture).
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithMountedCache("/go/pkg/mod", dag.CacheVolume("gomod")).
+		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("gobuild")).
+		WithMountedDirectory("/src", runtimeSrc).
+		WithWorkdir("/src").
+		WithExec([]string{
+			"go", "build",
+			"-ldflags", "-s -w",
+			"-trimpath",
+			"-o", "/out/runtime",
+			".",
+		}).
+		File("/out/runtime")
 }
 
 const TypescriptSDKTSXVersion = "4.15.6"
