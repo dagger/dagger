@@ -605,9 +605,7 @@ class ModuleParser:
 
         if _matches(annotation):
             return True
-        if isinstance(annotation, ast.Subscript) and _matches(annotation.value):
-            return True
-        return False
+        return isinstance(annotation, ast.Subscript) and _matches(annotation.value)
 
     def _unwrap_initvar(self, annotation: ast.expr) -> ast.expr:
         """Unwrap InitVar[T] to get the inner type T."""

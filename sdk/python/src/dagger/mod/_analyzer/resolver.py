@@ -17,7 +17,8 @@ import enum
 import logging
 import types
 import typing
-from typing import Any, Iterator, get_args, get_origin
+from collections.abc import Iterator
+from typing import Any, get_args, get_origin
 
 import typing_extensions
 
