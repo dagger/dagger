@@ -13,10 +13,6 @@
     {
       "name": "alpine",
       "source": "../../modules/alpine"
-    },
-    {
-      "name": "ps-analyzer",
-      "source": "../../modules/ps-analyzer"
     }
   ]
 }
