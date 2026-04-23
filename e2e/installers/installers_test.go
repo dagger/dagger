@@ -6,7 +6,6 @@ package installers
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -17,7 +16,7 @@ import (
 func TestBashScript(t *testing.T) {
 	ctx := t.Context()
 
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	client, err := dagger.Connect(ctx)
 	if err != nil {
 		t.Fatalf("connect to dagger: %v", err)
 	}
@@ -29,7 +28,7 @@ func TestBashScript(t *testing.T) {
 
 	installScript := client.CurrentWorkspace().
 		Directory("/", dagger.WorkspaceDirectoryOpts{Include: []string{"install.sh"}}).
-		File("install.sh")
+		File("/install.sh")
 	base := client.Container().
 		From("alpine").
 		WithExec([]string{"apk", "add", "--no-cache", "curl"}).
@@ -42,7 +41,6 @@ func TestBashScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve test container platform: %v", err)
 	}
-
 	tests := []struct {
 		name          string
 		env           map[string]string
