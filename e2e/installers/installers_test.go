@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,11 +27,9 @@ func TestBashScript(t *testing.T) {
 		}
 	})
 
-	installScriptPath, err := filepath.Abs("../../install.sh")
-	if err != nil {
-		t.Fatalf("resolve install.sh path: %v", err)
-	}
-	installScript := client.Host().File(installScriptPath)
+	installScript := client.CurrentWorkspace().
+		Directory("/", dagger.WorkspaceDirectoryOpts{Include: []string{"install.sh"}}).
+		File("install.sh")
 	base := client.Container().
 		From("alpine").
 		WithExec([]string{"apk", "add", "--no-cache", "curl"}).
