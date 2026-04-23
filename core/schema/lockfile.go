@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/engineutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -160,24 +159,6 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 
 func isWorkspaceLockNotFound(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
-}
-
-func exportLockToHost(ctx context.Context, bk *engineutil.Client, ws *core.Workspace, lock *workspace.Lock) error {
-	lockBytes, err := lock.Marshal()
-	if err != nil {
-		return fmt.Errorf("marshal lock: %w", err)
-	}
-
-	lockPath, err := lockHostPath(ws)
-	if err != nil {
-		return err
-	}
-
-	return exportWorkspaceFileToHost(ctx, bk, lockPath, lockBytes)
-}
-
-func ExportLockToHost(ctx context.Context, bk *engineutil.Client, ws *core.Workspace, lock *workspace.Lock) error {
-	return exportLockToHost(ctx, bk, ws, lock)
 }
 
 func resolveModuleSourceLookupResult(
