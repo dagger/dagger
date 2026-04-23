@@ -71,10 +71,6 @@
       "source": "toolchains/helm-dev"
     },
     {
-      "name": "installers",
-      "source": "toolchains/installers"
-    },
-    {
       "name": "java-sdk",
       "source": "toolchains/java-sdk-dev"
     },
