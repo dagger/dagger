@@ -83,6 +83,11 @@
       "source": "toolchains/php-sdk-dev"
     },
     {
+      "name": "ps-analyzer",
+      "source": "github.com/dagger/PsScriptAnalyzer@main",
+      "pin": "d87a12883dccd495bee98da9d2c20eb44b6f608d"
+    },
+    {
       "name": "python-sdk",
       "source": "toolchains/python-sdk-dev"
     },

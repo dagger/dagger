@@ -24,6 +24,11 @@
     Install specified dev build [commit].
 #>
 
+[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    "PSReviewUnusedParameter",
+    "",
+    Justification = "Installer parameters are public API and are consumed by Main through PowerShell scope lookup."
+)]
 Param (
     [Parameter(Mandatory = $false)][string]$DaggerVersion,
     [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:head|(?:[0-9a-fA-F]{40}))?$")]$DaggerCommit,
@@ -447,6 +452,11 @@ if ($isInvoked) {
     # Allow Invoke-Expression to customise the installation by producing the function Install-Dagger
     # This is because the Param of the Script file is not available unless the script is invoked
     function Install-Dagger {
+        [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+            "PSReviewUnusedParameter",
+            "",
+            Justification = "Install-Dagger parameters are public API and are consumed by Main through PowerShell scope lookup."
+        )]
         Param (
             [Parameter(Mandatory = $false)][System.Management.Automation.SemanticVersion]$DaggerVersion,
             [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:head|(?:[0-9a-fA-F]{40}))?$")]$DaggerCommit,
