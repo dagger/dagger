@@ -1453,9 +1453,6 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	if c.LockMode != "" {
 		md.LockMode = c.LockMode
 	}
-	if c.LockMode != "" {
-		md.LockMode = c.LockMode
-	}
 	if c.Workspace != nil {
 		md.Workspace = c.Workspace
 	}
