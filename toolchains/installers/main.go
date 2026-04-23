@@ -23,6 +23,7 @@ func (Installers) TestBashScript(
 	// +defaultPath="/install.sh"
 	installShellScript *dagger.File,
 ) error {
+	// FIXME: move to a native go test suite
 	ctr := dag.Alpine(
 		dagger.AlpineOpts{
 			Packages: []string{"curl"},
