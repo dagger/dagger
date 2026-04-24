@@ -503,7 +503,7 @@ func (m *MCP) loadServedModuleQueryTools(ctx context.Context, srv *dagql.Server,
 	if err := srv.Select(ctx, srv.Root(), &typeDefs, dagql.Selector{
 		Field: "currentTypeDefs",
 		Args: []dagql.NamedInput{
-			{Name: "hideCore", Value: dagql.Boolean(true)},
+			{Name: "hideCore", Value: dagql.Opt(dagql.Boolean(true))},
 		},
 	}); err != nil {
 		return fmt.Errorf("load current type defs: %w", err)
