@@ -11,9 +11,12 @@ require (
 	go.opentelemetry.io/otel/sdk v1.42.0
 	golang.org/x/mod v0.34.0
 	golang.org/x/sync v0.20.0
+	helm.sh/helm/v3 v3.18.4
+	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
+	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
