@@ -66,13 +66,13 @@ type Module struct {
 	// Used for legacy blueprints/toolchains migrated to workspace modules.
 	LegacyDefaultPath bool
 
-	// Config values from workspace config.toml [modules.<name>.config].
+	// Workspace setting values from workspace config.toml [modules.<name>.settings].
 	// Typed map: strings, bools, ints, floats as-is from TOML.
 	// When set, constructor args are resolved from this map first.
 	WorkspaceConfig map[string]any
 
-	// When true and WorkspaceConfig is set, also load .env defaults
-	// for args not found in WorkspaceConfig. Off by default.
+	// When true and workspace settings are set, also load .env defaults
+	// for args not found in those settings. Off by default.
 	DefaultsFromDotEnv bool
 
 	// Salts the module content cache key with internal asModule options that
@@ -244,7 +244,7 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 }
 
 // ApplyWorkspaceDefaultsToTypeDefs updates constructor arg typedefs based on
-// WorkspaceConfig, so that --help displays the correct default values.
+// workspace settings, so that --help displays the correct default values.
 // For primitive types (string, int, bool, float), it sets arg.DefaultValue
 // to the JSON representation. For object types (Secret, Directory, etc.),
 // it marks the arg as optional (since a default will be resolved at call time).
