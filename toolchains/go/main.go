@@ -498,7 +498,7 @@ func (p *Go) Modules(
 	return mods, nil
 }
 
-func (p *Go) TidyModule(ctx context.Context, module string) (*dagger.Changeset, error) {
+func (p *Go) TidyModule(module string) (*dagger.Changeset, error) {
 	tidyModDir := p.Env(defaultPlatform).
 		WithWorkdir(module).
 		WithExec([]string{"go", "mod", "tidy"}).
@@ -526,7 +526,7 @@ func (p *Go) Tidy(
 	for i, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
 			var err error
-			tidyModules[i], err = p.TidyModule(ctx, mod)
+			tidyModules[i], err = p.TidyModule(mod)
 			return err
 		})
 	}
@@ -578,7 +578,7 @@ func (p *Go) CheckTidy(
 		WithRollupSpans(true)
 	for _, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
-			diffTidy, err := p.TidyModule(ctx, mod)
+			diffTidy, err := p.TidyModule(mod)
 			if err != nil {
 				return err
 			}
