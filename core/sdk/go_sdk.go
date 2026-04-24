@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
-	"github.com/opencontainers/go-digest"
 )
 
 const (
@@ -28,8 +27,6 @@ const (
 	// Otherwise, update it to the latest known commit during release.
 	goSDKLibVersion = "7058e9313c720d82c6a07fefb6ce3fab60c7ec4e" // v0.20.6
 )
-
-var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
 
 /*
 goSDK is the one special sdk not implemented as module, instead the
@@ -591,8 +588,8 @@ func requireGeneratedFiles(
 		if !bool(exists) {
 			return fmt.Errorf(
 				"module %q has codegen.legacyCodegenAtRuntime=false "+
-					"but required generated file %q is missing. "+
-					"Run `dagger develop` to regenerate.",
+					"but required generated file %q is missing; "+
+					"run `dagger develop` to regenerate",
 				modName, rel)
 		}
 	}

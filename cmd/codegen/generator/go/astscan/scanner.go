@@ -110,7 +110,57 @@ func (s *scanner) run() (*schematool.ModuleTypes, error) {
 	// Pass 1: collect all top-level struct, interface, and candidate
 	// enum (typed-string) type names so later passes can resolve them
 	// as same-module references.
-	sameModule := map[string]string{} // type name → kind (OBJECT / INTERFACE / ENUM)
+	sameModule := s.collectSameModuleTypes()
+
+	// Pass 2: emit objects, interfaces, and enum declarations; collect
+	// methods by receiver name.
+	methods := map[string][]*ast.FuncDecl{} // receiver type name → methods
+	methodFiles := map[*ast.FuncDecl]*ast.File{}
+
+	// Track which enums have been declared, to know where to attach
+	// values later.
+	enumIndex := map[string]int{} // enum name → index in out.Enums
+
+	for _, f := range s.files {
+		imports := collectImports(f)
+		for _, decl := range f.Decls {
+			switch d := decl.(type) {
+			case *ast.GenDecl:
+				if err := s.walkGenDecl(out, d, imports, sameModule, enumIndex); err != nil {
+					return nil, err
+				}
+			case *ast.FuncDecl:
+				collectMethod(d, f, sameModule, methods, methodFiles)
+			}
+		}
+	}
+
+	// Pass 3: walk const groups to collect enum values.
+	s.collectEnumValues(out, enumIndex)
+
+	// Pass 4: attach methods to objects and interfaces.
+	for i, obj := range out.Objects {
+		for _, m := range methods[obj.Name] {
+			f := methodFiles[m]
+			fn, err := s.walkMethod(m, collectImports(f), sameModule)
+			if err != nil {
+				return nil, err
+			}
+			if fn != nil {
+				out.Objects[i].Functions = append(out.Objects[i].Functions, *fn)
+			}
+		}
+	}
+
+	return out, nil
+}
+
+// collectSameModuleTypes returns a map from every top-level
+// struct/interface/typed-string name declared in the scanned files to
+// its GraphQL kind (OBJECT/INTERFACE/ENUM). Used by later passes to
+// recognize same-module references.
+func (s *scanner) collectSameModuleTypes() map[string]string {
+	sameModule := map[string]string{}
 	for _, f := range s.files {
 		for _, decl := range f.Decls {
 			gd, ok := decl.(*ast.GenDecl)
@@ -136,143 +186,169 @@ func (s *scanner) run() (*schematool.ModuleTypes, error) {
 			}
 		}
 	}
+	return sameModule
+}
 
-	// Pass 2: emit objects, interfaces, and enum declarations; collect
-	// methods by receiver name.
-	methods := map[string][]*ast.FuncDecl{} // receiver type name → methods
-	methodFiles := map[*ast.FuncDecl]*ast.File{}
-
-	// Track which enums have been declared, to know where to attach
-	// values later.
-	enumIndex := map[string]int{} // enum name → index in out.Enums
-
-	for _, f := range s.files {
-		imports := collectImports(f)
-		for _, decl := range f.Decls {
-			switch d := decl.(type) {
-			case *ast.GenDecl:
-				if err := s.walkGenDecl(out, d, imports, sameModule, enumIndex); err != nil {
-					return nil, err
-				}
-			case *ast.FuncDecl:
-				if d.Recv == nil || len(d.Recv.List) == 0 {
-					continue
-				}
-				recvName := recvTypeName(d.Recv.List[0].Type)
-				if recvName == "" {
-					continue
-				}
-				if _, isSameMod := sameModule[recvName]; !isSameMod {
-					continue
-				}
-				methods[recvName] = append(methods[recvName], d)
-				methodFiles[d] = f
-			}
-		}
+// collectMethod records a FuncDecl as a method on its receiver when the
+// receiver is a same-module type. No-op for free functions and methods
+// on external types.
+func collectMethod(
+	d *ast.FuncDecl,
+	f *ast.File,
+	sameModule map[string]string,
+	methods map[string][]*ast.FuncDecl,
+	methodFiles map[*ast.FuncDecl]*ast.File,
+) {
+	if d.Recv == nil || len(d.Recv.List) == 0 {
+		return
 	}
+	recvName := recvTypeName(d.Recv.List[0].Type)
+	if recvName == "" {
+		return
+	}
+	if _, isSameMod := sameModule[recvName]; !isSameMod {
+		return
+	}
+	methods[recvName] = append(methods[recvName], d)
+	methodFiles[d] = f
+}
 
-	// Pass 3: walk const groups to collect enum values. Handles three
-	// shapes:
-	//   const StatusPending Status = "PENDING"              // vs.Type set
-	//   const (
-	//       StatusPending Status = "PENDING"                // vs.Type set
-	//       StatusActive         = "ACTIVE"                 // inherits Status via lastType
-	//   )
-	//   const StatusCancelled = Status("CANCELLED")         // explicit-conversion RHS
+// collectEnumValues walks const groups to collect enum values. Handles
+// three shapes:
+//
+//	const StatusPending Status = "PENDING"              // vs.Type set
+//	const (
+//	    StatusPending Status = "PENDING"                // vs.Type set
+//	    StatusActive         = "ACTIVE"                 // inherits Status via lastType
+//	)
+//	const StatusCancelled = Status("CANCELLED")         // explicit-conversion RHS
+func (s *scanner) collectEnumValues(out *schematool.ModuleTypes, enumIndex map[string]int) {
 	for _, f := range s.files {
 		for _, decl := range f.Decls {
 			gd, ok := decl.(*ast.GenDecl)
 			if !ok || gd.Tok != token.CONST {
 				continue
 			}
-			// lastType tracks the most recent explicit type seen in the
-			// current const block so bare specs can inherit it.
-			var lastType *ast.Ident
-			for _, spec := range gd.Specs {
-				vs, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				// Determine which enum (if any) this spec contributes to.
-				var enumName string
-				if vs.Type != nil {
-					if id, ok := vs.Type.(*ast.Ident); ok {
-						lastType = id
-						enumName = id.Name
-					} else {
-						// Not an Ident type; skip for enum purposes.
-						continue
-					}
-				} else if lastType != nil {
-					enumName = lastType.Name
-				}
-				// If vs.Type is nil, we may still be in Case B (explicit
-				// conversion RHS) where the enum name is determined
-				// per-value below. Only short-circuit on a confirmed non-
-				// enum name.
-				if enumName != "" {
-					if _, ok := enumIndex[enumName]; !ok {
-						continue
-					}
-				}
-				// Pair each Name with its Value and emit.
-				for i := range vs.Names {
-					if i >= len(vs.Values) {
-						break
-					}
-					value := vs.Values[i]
-					// Case A / simple: inherited or explicit Ident type
-					// with a BasicLit RHS.
-					if lit, ok := value.(*ast.BasicLit); ok && enumName != "" {
-						idx := enumIndex[enumName]
-						out.Enums[idx].Values = append(out.Enums[idx].Values, schematool.EnumValue{
-							Name:        trimQuotes(lit.Value),
-							Description: strings.TrimSpace(vs.Doc.Text()),
-						})
-						continue
-					}
-					// Case B: explicit conversion RHS, e.g. Status("X").
-					if call, ok := value.(*ast.CallExpr); ok && vs.Type == nil {
-						callIdent, ok := call.Fun.(*ast.Ident)
-						if !ok {
-							continue
-						}
-						idx, ok := enumIndex[callIdent.Name]
-						if !ok {
-							continue
-						}
-						if len(call.Args) != 1 {
-							continue
-						}
-						lit, ok := call.Args[0].(*ast.BasicLit)
-						if !ok {
-							continue
-						}
-						out.Enums[idx].Values = append(out.Enums[idx].Values, schematool.EnumValue{
-							Name:        trimQuotes(lit.Value),
-							Description: strings.TrimSpace(vs.Doc.Text()),
-						})
-					}
-				}
+			s.collectEnumValuesFromGroup(out, enumIndex, gd)
+		}
+	}
+}
+
+// collectEnumValuesFromGroup handles a single const(...) group, tracking
+// lastType for specs that inherit their type from an earlier sibling.
+func (s *scanner) collectEnumValuesFromGroup(
+	out *schematool.ModuleTypes,
+	enumIndex map[string]int,
+	gd *ast.GenDecl,
+) {
+	// lastType tracks the most recent explicit type seen in the current
+	// const block so bare specs can inherit it.
+	var lastType *ast.Ident
+	for _, spec := range gd.Specs {
+		vs, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		enumName, skip := enumNameForSpec(vs, &lastType)
+		if skip {
+			continue
+		}
+		// If vs.Type is nil, we may still be in Case B (explicit
+		// conversion RHS) where the enum name is determined per-value
+		// below. Only short-circuit on a confirmed non-enum name.
+		if enumName != "" {
+			if _, ok := enumIndex[enumName]; !ok {
+				continue
+			}
+		}
+		appendEnumSpecValues(out, enumIndex, vs, enumName)
+	}
+}
+
+// enumNameForSpec resolves the enum name for a ValueSpec, updating
+// lastType for inheritance by subsequent specs. skip=true means the
+// spec has a non-Ident type and must be ignored entirely.
+func enumNameForSpec(vs *ast.ValueSpec, lastType **ast.Ident) (name string, skip bool) {
+	if vs.Type != nil {
+		id, ok := vs.Type.(*ast.Ident)
+		if !ok {
+			return "", true
+		}
+		*lastType = id
+		return id.Name, false
+	}
+	if *lastType != nil {
+		return (*lastType).Name, false
+	}
+	return "", false
+}
+
+// appendEnumSpecValues pairs each Name with its Value and appends to
+// the matching enum. Supports BasicLit RHS (Case A) and
+// explicit-conversion CallExpr RHS like Status("X") (Case B).
+func appendEnumSpecValues(
+	out *schematool.ModuleTypes,
+	enumIndex map[string]int,
+	vs *ast.ValueSpec,
+	enumName string,
+) {
+	doc := strings.TrimSpace(vs.Doc.Text())
+	for i := range vs.Names {
+		if i >= len(vs.Values) {
+			break
+		}
+		value := vs.Values[i]
+		// Case A / simple: inherited or explicit Ident type with a
+		// BasicLit RHS.
+		if lit, ok := value.(*ast.BasicLit); ok && enumName != "" {
+			idx := enumIndex[enumName]
+			out.Enums[idx].Values = append(out.Enums[idx].Values, schematool.EnumValue{
+				Name:        trimQuotes(lit.Value),
+				Description: doc,
+			})
+			continue
+		}
+		// Case B: explicit conversion RHS, e.g. Status("X").
+		if vs.Type == nil {
+			if val, ok := enumValueFromCallExpr(value, enumIndex); ok {
+				out.Enums[val.idx].Values = append(out.Enums[val.idx].Values, schematool.EnumValue{
+					Name:        val.name,
+					Description: doc,
+				})
 			}
 		}
 	}
+}
 
-	// Pass 4: attach methods to objects and interfaces.
-	for i, obj := range out.Objects {
-		for _, m := range methods[obj.Name] {
-			f := methodFiles[m]
-			fn, err := s.walkMethod(m, collectImports(f), sameModule)
-			if err != nil {
-				return nil, err
-			}
-			if fn != nil {
-				out.Objects[i].Functions = append(out.Objects[i].Functions, *fn)
-			}
-		}
+type callEnumValue struct {
+	idx  int
+	name string
+}
+
+// enumValueFromCallExpr extracts the enum index and value name from an
+// expression of the form Status("X"). Returns ok=false for any other
+// shape.
+func enumValueFromCallExpr(value ast.Expr, enumIndex map[string]int) (callEnumValue, bool) {
+	call, ok := value.(*ast.CallExpr)
+	if !ok {
+		return callEnumValue{}, false
 	}
-
-	return out, nil
+	callIdent, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		return callEnumValue{}, false
+	}
+	idx, ok := enumIndex[callIdent.Name]
+	if !ok {
+		return callEnumValue{}, false
+	}
+	if len(call.Args) != 1 {
+		return callEnumValue{}, false
+	}
+	lit, ok := call.Args[0].(*ast.BasicLit)
+	if !ok {
+		return callEnumValue{}, false
+	}
+	return callEnumValue{idx: idx, name: trimQuotes(lit.Value)}, true
 }
 
 // walkGenDecl handles TYPE declarations: struct → ObjectDef,

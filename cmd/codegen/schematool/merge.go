@@ -65,7 +65,7 @@ func registerModuleConstructor(schema *introspection.Schema, mod *ModuleTypes) e
 
 	queryType := schema.Types.Get("Query")
 	if queryType == nil {
-		return fmt.Errorf("Query type not found in schema")
+		return fmt.Errorf("query type not found in schema")
 	}
 
 	fieldName := strcase.ToLowerCamel(mod.Name)
