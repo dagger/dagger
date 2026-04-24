@@ -113,6 +113,25 @@ class FindsDaggerEnumsTest extends TestCase
     }
 
     #[Test]
+    public function itFindsEnumsUsedAsFields(): void
+    {
+        $statusType = new ValueObject\Type(Status::class);
+        $daggerObjects = [
+            new ValueObject\DaggerObject(
+                name: 'AnyClass',
+                description: '',
+                fields: [new ValueObject\DaggerField('status', null, $statusType)],
+                functions: [],
+            ),
+        ];
+
+        $result = (new FindsDaggerEnums())($daggerObjects);
+
+        $fqns = array_map(fn(DaggerEnum $e) => $e->name, $result);
+        self::assertContains(Status::class, $fqns);
+    }
+
+    #[Test]
     public function itReturnsEmptyArrayWhenNoEnumsAreReferenced(): void
     {
         $result = (new FindsDaggerEnums())([]);
