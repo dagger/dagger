@@ -645,12 +645,8 @@ func (p *Go) LintModule(ctx context.Context, module string) error {
 	lintImageTag := "v2.11.4-alpine"
 	lintImageDigest := "sha256:72bcd68512b4e27540dd3a778a1b7afd45759d8145cfb3c089f1d7af53e718e9"
 	lintImage := lintImageRepo + ":" + lintImageTag + "@" + lintImageDigest
-	p, err := p.GenerateDaggerRuntime(ctx, module)
-	if err != nil {
-		return err
-	}
 	return parallel.Run(ctx, "lint", func(ctx context.Context) error {
-		_, err = dag.Container().
+		_, err := dag.Container().
 			From(lintImage).
 			WithMountedCache("/go/pkg/mod", p.ModuleCache).
 			WithMountedCache("/root/.cache/go-build", p.BuildCache).
