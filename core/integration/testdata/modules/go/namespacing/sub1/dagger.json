@@ -4,5 +4,8 @@
   "sdk": {
     "source": "go"
   },
-  "disableDefaultFunctionCaching": true
+  "disableDefaultFunctionCaching": true,
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

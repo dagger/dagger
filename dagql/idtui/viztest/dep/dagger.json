@@ -10,5 +10,8 @@
       "source": "nested-dep"
     }
   ],
-  "disableDefaultFunctionCaching": true
+  "disableDefaultFunctionCaching": true,
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

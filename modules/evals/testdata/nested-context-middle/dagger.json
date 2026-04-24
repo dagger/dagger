@@ -9,5 +9,8 @@
       "name": "nested-context-leaf",
       "source": "nested-context-leaf"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

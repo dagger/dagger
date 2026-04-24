@@ -10,5 +10,8 @@
       "source": "toy-workspace"
     }
   ],
-  "disableDefaultFunctionCaching": true
+  "disableDefaultFunctionCaching": true,
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

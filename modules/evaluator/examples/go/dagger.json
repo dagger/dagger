@@ -14,5 +14,8 @@
       "source": "../.."
     }
   ],
-  "disableDefaultFunctionCaching": true
+  "disableDefaultFunctionCaching": true,
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

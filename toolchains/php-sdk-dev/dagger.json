@@ -18,5 +18,8 @@
       "name": "git-releaser",
       "source": "../../modules/git-releaser"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

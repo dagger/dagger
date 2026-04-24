@@ -9,5 +9,8 @@
       "name": "eval-workspace",
       "source": "eval-workspace"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

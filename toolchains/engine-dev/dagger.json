@@ -40,5 +40,8 @@
       "name": "notify",
       "source": "notify"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }
