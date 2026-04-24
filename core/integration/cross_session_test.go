@@ -22,7 +22,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -463,40 +462,69 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ModuleSuite) TestCrossSessionContextDirectoryWithoutModuleCache(ctx context.Context, t *testctx.T) {
+// This covers the behavior previously checked through the private
+// _contextDirectory field. A Directory argument with +defaultPath="/" must
+// resolve from the module source context even after the client that first
+// loaded the module has closed, so the second client cannot depend on the first
+// client's in-memory module/context lookup state.
+func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
-	err := os.WriteFile(filepath.Join(modDir, "dagger.json"), []byte(`{"name":"test","engineVersion":"latest"}`), 0o644)
+
+	initCmd := hostDaggerModuleCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "foo.txt"), []byte("foo"), 0o644))
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (*Test) Entries(
+	ctx context.Context,
+	cacheBust string,
+	// +defaultPath="/"
+	dir *dagger.Directory,
+) ([]string, error) {
+	return dir.Entries(ctx)
+}
+`), 0o644)
 	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(modDir, "foo.txt"), []byte("foo"), 0o644)
-	require.NoError(t, err)
+
+	callEntries := func(c *dagger.Client, cacheBust string) []string {
+		mod, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+		require.NoError(t, err)
+		require.NoError(t, mod.Serve(ctx))
+
+		res, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Entries []string
+			}
+		}](c, t, `query Entries($cacheBust: String!) { test { entries(cacheBust: $cacheBust) } }`, &testutil.QueryOptions{
+			Operation: "Entries",
+			Variables: map[string]any{
+				"cacheBust": cacheBust,
+			},
+		})
+		require.NoError(t, err)
+		return res.Test.Entries
+	}
 
 	c1 := connect(ctx, t)
-	sourceRes, err := testutil.QueryWithClient[struct {
-		ModuleSource struct {
-			Digest string
-		}
-	}](c1, t, fmt.Sprintf(`{
-  moduleSource(refString: %q) {
-    digest
-  }
-}`, modDir), nil)
-	require.NoError(t, err)
-
-	contentDigest := hashutil.HashStrings(sourceRes.ModuleSource.Digest, "", "asModule").String()
+	entries1 := callEntries(c1, identity.NewID())
+	require.Contains(t, entries1, "dagger.json")
+	require.Contains(t, entries1, "foo.txt")
+	require.NoError(t, c1.Close())
 
 	c2 := connect(ctx, t)
-	dirRes, err := testutil.QueryWithClient[struct {
-		CtxDir struct {
-			Entries []string
-		}
-	}](c2, t, fmt.Sprintf(`{
-  ctxDir: _contextDirectory(path: "/", module: %q, pin: "", digest: %q) {
-    entries
-  }
-}`, modDir, contentDigest), nil)
-	require.NoError(t, err)
-	require.Contains(t, dirRes.CtxDir.Entries, "dagger.json")
-	require.Contains(t, dirRes.CtxDir.Entries, "foo.txt")
+	entries2 := callEntries(c2, identity.NewID())
+	require.Contains(t, entries2, "dagger.json")
+	require.Contains(t, entries2, "foo.txt")
 }
 
 func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T) {
