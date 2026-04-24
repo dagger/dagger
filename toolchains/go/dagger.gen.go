@@ -380,6 +380,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Go).GenerateDaggerRuntime(&parent, ctx, start)
+		case "GenerateDaggerRuntimes":
+			var parent Go
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Go).GenerateDaggerRuntimes(&parent, ctx)
 		case "Lint":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)

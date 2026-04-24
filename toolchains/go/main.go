@@ -536,6 +536,24 @@ func (p *Go) Tidy(
 	return dag.Changeset().WithChangesets(tidyModules), nil
 }
 
+// Generate Dagger runtime files for Go SDK modules in the configured source.
+// +generate
+func (p *Go) GenerateDaggerRuntimes(ctx context.Context) (*dagger.Changeset, error) {
+	before := p.Source
+
+	modules, err := p.Modules(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, module := range modules {
+		p, err = p.GenerateDaggerRuntime(ctx, module)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return p.Source.Changes(before), nil
+}
+
 // Check if 'go mod tidy' is up-to-date
 // +check
 func (p *Go) CheckTidy(
@@ -668,7 +686,7 @@ func (p *Go) LintModule(ctx context.Context, module string) error {
 func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, error) {
 	var isInside bool
 	var daggerModPath string
-	parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
+	if err := parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
 		// 1. Are we in a dagger module?
 		daggerJSONPath, err := p.Source.FindUp(ctx, "dagger.json", start)
 		if err != nil {
@@ -706,7 +724,9 @@ func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, erro
 		}
 		isInside = !strings.HasPrefix(rel, "..")
 		return nil
-	})
+	}); err != nil {
+		return nil, err
+	}
 	if isInside {
 		if err := parallel.Run(ctx, "generate dagger runtime: "+daggerModPath, func(ctx context.Context) error {
 			// 4. Match! Load the module and generate its files
