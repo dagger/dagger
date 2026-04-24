@@ -499,10 +499,6 @@ func (p *Go) Modules(
 }
 
 func (p *Go) TidyModule(ctx context.Context, module string) (*dagger.Changeset, error) {
-	p, err := p.GenerateDaggerRuntime(ctx, module)
-	if err != nil {
-		return nil, err
-	}
 	tidyModDir := p.Env(defaultPlatform).
 		WithWorkdir(module).
 		WithExec([]string{"go", "mod", "tidy"}).
