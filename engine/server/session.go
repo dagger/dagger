@@ -42,7 +42,6 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -929,11 +928,18 @@ func (srv *Server) getOrInitClient(
 				client.clientMetadata.Workspace = &ref
 			}
 		}
+		if client.clientMetadata.WorkspaceEnv == nil && !client.workspaceLoaded {
+			if workspaceEnv, ok := workspaceEnvFromClientMetadata(opts.ClientMetadata); ok {
+				env := workspaceEnv
+				client.clientMetadata.WorkspaceEnv = &env
+			}
+		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
 		// session attachable request already created the client without them.
 		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
 			client.clientMetadata.ExtraModules = opts.ExtraModules
 			client.pendingExtraModules = opts.ExtraModules
+			client.pendingModules = suppressPendingCWDModules(client.pendingModules)
 		}
 	}
 
@@ -1457,8 +1463,8 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 }
 
 // Stitch in the given module to the list being served to the current client.
-// When includeDependencies is true, dependency modules and toolchains are
-// also served with their constructors on the Query root.
+// When includeDependencies is true, dependency modules are also served with
+// their constructors on the Query root.
 // When entrypoint is true, the module's main-object methods are promoted
 // onto the Query root.
 func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core.Module], includeDependencies bool, entrypoint bool) error {
