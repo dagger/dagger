@@ -69,6 +69,8 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
+	applyWorkspaceClientParams(&params)
+
 	if !moduleNoURL {
 		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
 			params.Module = modRef
@@ -148,6 +150,13 @@ func withEngine(
 
 		return cleanup.Run, fn(ctx, sess)
 	})
+}
+
+func applyWorkspaceClientParams(params *client.Params) {
+	if params.Workspace == nil && workspaceRef != "" {
+		ref := workspaceRef
+		params.Workspace = &ref
+	}
 }
 
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {

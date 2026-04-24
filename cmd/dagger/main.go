@@ -54,7 +54,8 @@ var (
 		Title: "Execution Commands",
 	}
 
-	workdir string
+	workdir      string
+	workspaceRef string
 
 	silent                   bool
 	verbose                  int
@@ -333,6 +334,7 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Set the working directory")
+	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace to load")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
@@ -359,6 +361,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 
 	for _, fl := range []string{
 		"workdir",
+		"workspace",
 		"dot-output",
 		"dot-focus-field",
 		"dot-show-internal",
