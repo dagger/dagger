@@ -84,6 +84,7 @@ Expected: `codegen-legacy-at-runtime-config`
 ### Task 1.2: Add the `LegacyCodegenAtRuntime` field
 
 **Files:**
+
 - Modify: `core/modules/config.go`
 
 - [ ] **Step 1: Replace the `ModuleCodegenConfig` definition**
@@ -92,8 +93,8 @@ Open `core/modules/config.go`. Find the existing struct (around line 283):
 
 ```go
 type ModuleCodegenConfig struct {
-	// Whether to automatically generate a .gitignore file for this module.
-	AutomaticGitignore *bool `json:"automaticGitignore,omitempty"`
+    // Whether to automatically generate a .gitignore file for this module.
+    AutomaticGitignore *bool `json:"automaticGitignore,omitempty"`
 }
 ```
 
@@ -101,20 +102,20 @@ Replace with:
 
 ```go
 type ModuleCodegenConfig struct {
-	// Whether to automatically generate a .gitignore file for this module.
-	AutomaticGitignore *bool `json:"automaticGitignore,omitempty"`
+    // Whether to automatically generate a .gitignore file for this module.
+    AutomaticGitignore *bool `json:"automaticGitignore,omitempty"`
 
-	// LegacyCodegenAtRuntime controls whether the SDK runs codegen
-	// during runtime operations (dagger call, dagger functions, etc.).
-	// When explicitly false, the SDK trusts the committed generated
-	// files and skips the runtime codegen pass entirely. Codegen still
-	// runs on dagger init and dagger develop.
-	//
-	// Currently honored only by the Go SDK; other SDKs read but ignore
-	// this field.
-	//
-	// Default (nil or true): run codegen at runtime (legacy behavior).
-	LegacyCodegenAtRuntime *bool `json:"legacyCodegenAtRuntime,omitempty"`
+    // LegacyCodegenAtRuntime controls whether the SDK runs codegen
+    // during runtime operations (dagger call, dagger functions, etc.).
+    // When explicitly false, the SDK trusts the committed generated
+    // files and skips the runtime codegen pass entirely. Codegen still
+    // runs on dagger init and dagger develop.
+    //
+    // Currently honored only by the Go SDK; other SDKs read but ignore
+    // this field.
+    //
+    // Default (nil or true): run codegen at runtime (legacy behavior).
+    LegacyCodegenAtRuntime *bool `json:"legacyCodegenAtRuntime,omitempty"`
 }
 ```
 
@@ -124,12 +125,12 @@ Find:
 
 ```go
 func (cfg ModuleCodegenConfig) Clone() *ModuleCodegenConfig {
-	if cfg.AutomaticGitignore == nil {
-		return &cfg
-	}
-	clone := *cfg.AutomaticGitignore
-	cfg.AutomaticGitignore = &clone
-	return &cfg
+    if cfg.AutomaticGitignore == nil {
+        return &cfg
+    }
+    clone := *cfg.AutomaticGitignore
+    cfg.AutomaticGitignore = &clone
+    return &cfg
 }
 ```
 
@@ -137,15 +138,15 @@ Replace with:
 
 ```go
 func (cfg ModuleCodegenConfig) Clone() *ModuleCodegenConfig {
-	if cfg.AutomaticGitignore != nil {
-		clone := *cfg.AutomaticGitignore
-		cfg.AutomaticGitignore = &clone
-	}
-	if cfg.LegacyCodegenAtRuntime != nil {
-		clone := *cfg.LegacyCodegenAtRuntime
-		cfg.LegacyCodegenAtRuntime = &clone
-	}
-	return &cfg
+    if cfg.AutomaticGitignore != nil {
+        clone := *cfg.AutomaticGitignore
+        cfg.AutomaticGitignore = &clone
+    }
+    if cfg.LegacyCodegenAtRuntime != nil {
+        clone := *cfg.LegacyCodegenAtRuntime
+        cfg.LegacyCodegenAtRuntime = &clone
+    }
+    return &cfg
 }
 ```
 
@@ -161,6 +162,7 @@ Expected: no output (clean build).
 ### Task 1.3: Write failing tests for `Validate()`
 
 **Files:**
+
 - Create: `core/modules/config_test.go`
 
 - [ ] **Step 1: Write the test file**
@@ -169,74 +171,74 @@ Expected: no output (clean build).
 package modules_test
 
 import (
-	"strings"
-	"testing"
+    "strings"
+    "testing"
 
-	"github.com/dagger/dagger/core/modules"
+    "github.com/dagger/dagger/core/modules"
 )
 
 func TestModuleCodegenConfig_Validate(t *testing.T) {
-	tru := true
-	fal := false
+    tru := true
+    fal := false
 
-	cases := []struct {
-		name    string
-		cfg     *modules.ModuleCodegenConfig
-		wantErr string // empty means no error expected
-	}{
-		{
-			name:    "nil config is valid",
-			cfg:     nil,
-			wantErr: "",
-		},
-		{
-			name: "both nil is valid (legacy default)",
-			cfg:  &modules.ModuleCodegenConfig{},
-		},
-		{
-			name: "legacyCodegenAtRuntime=true, automaticGitignore=true is valid",
-			cfg: &modules.ModuleCodegenConfig{
-				AutomaticGitignore:     &tru,
-				LegacyCodegenAtRuntime: &tru,
-			},
-		},
-		{
-			name: "legacyCodegenAtRuntime=false, automaticGitignore=false is valid",
-			cfg: &modules.ModuleCodegenConfig{
-				AutomaticGitignore:     &fal,
-				LegacyCodegenAtRuntime: &fal,
-			},
-		},
-		{
-			name: "legacyCodegenAtRuntime=false, automaticGitignore=nil is invalid",
-			cfg: &modules.ModuleCodegenConfig{
-				LegacyCodegenAtRuntime: &fal,
-			},
-			wantErr: "automaticGitignore=false",
-		},
-		{
-			name: "legacyCodegenAtRuntime=false, automaticGitignore=true is invalid",
-			cfg: &modules.ModuleCodegenConfig{
-				AutomaticGitignore:     &tru,
-				LegacyCodegenAtRuntime: &fal,
-			},
-			wantErr: "automaticGitignore=false",
-		},
-	}
+    cases := []struct {
+        name    string
+        cfg     *modules.ModuleCodegenConfig
+        wantErr string // empty means no error expected
+    }{
+        {
+            name:    "nil config is valid",
+            cfg:     nil,
+            wantErr: "",
+        },
+        {
+            name: "both nil is valid (legacy default)",
+            cfg:  &modules.ModuleCodegenConfig{},
+        },
+        {
+            name: "legacyCodegenAtRuntime=true, automaticGitignore=true is valid",
+            cfg: &modules.ModuleCodegenConfig{
+                AutomaticGitignore:     &tru,
+                LegacyCodegenAtRuntime: &tru,
+            },
+        },
+        {
+            name: "legacyCodegenAtRuntime=false, automaticGitignore=false is valid",
+            cfg: &modules.ModuleCodegenConfig{
+                AutomaticGitignore:     &fal,
+                LegacyCodegenAtRuntime: &fal,
+            },
+        },
+        {
+            name: "legacyCodegenAtRuntime=false, automaticGitignore=nil is invalid",
+            cfg: &modules.ModuleCodegenConfig{
+                LegacyCodegenAtRuntime: &fal,
+            },
+            wantErr: "automaticGitignore=false",
+        },
+        {
+            name: "legacyCodegenAtRuntime=false, automaticGitignore=true is invalid",
+            cfg: &modules.ModuleCodegenConfig{
+                AutomaticGitignore:     &tru,
+                LegacyCodegenAtRuntime: &fal,
+            },
+            wantErr: "automaticGitignore=false",
+        },
+    }
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := tc.cfg.Validate()
-			switch {
-			case tc.wantErr == "" && err != nil:
-				t.Fatalf("expected no error, got: %v", err)
-			case tc.wantErr != "" && err == nil:
-				t.Fatalf("expected error containing %q, got nil", tc.wantErr)
-			case tc.wantErr != "" && !strings.Contains(err.Error(), tc.wantErr):
-				t.Fatalf("expected error containing %q, got: %v", tc.wantErr, err)
-			}
-		})
-	}
+    for _, tc := range cases {
+        t.Run(tc.name, func(t *testing.T) {
+            err := tc.cfg.Validate()
+            switch {
+            case tc.wantErr == "" && err != nil:
+                t.Fatalf("expected no error, got: %v", err)
+            case tc.wantErr != "" && err == nil:
+                t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+            case tc.wantErr != "" && !strings.Contains(err.Error(), tc.wantErr):
+                t.Fatalf("expected error containing %q, got: %v", tc.wantErr, err)
+            }
+        })
+    }
 }
 ```
 
@@ -248,6 +250,7 @@ Expected: FAIL — `Validate` undefined.
 ### Task 1.4: Implement `Validate()`
 
 **Files:**
+
 - Modify: `core/modules/config.go`
 
 - [ ] **Step 1: Add `Validate` below `Clone()`**
@@ -264,18 +267,18 @@ Insert after the `Clone()` method:
 //     the generated files to be committed to the repository; leaving
 //     AutomaticGitignore true would cause them to be ignored by git.
 func (cfg *ModuleCodegenConfig) Validate() error {
-	if cfg == nil {
-		return nil
-	}
-	if cfg.LegacyCodegenAtRuntime != nil && !*cfg.LegacyCodegenAtRuntime {
-		if cfg.AutomaticGitignore == nil || *cfg.AutomaticGitignore {
-			return fmt.Errorf(
-				"codegen.legacyCodegenAtRuntime=false requires " +
-					"codegen.automaticGitignore=false " +
-					"(generated files must be committed to the repo)")
-		}
-	}
-	return nil
+    if cfg == nil {
+        return nil
+    }
+    if cfg.LegacyCodegenAtRuntime != nil && !*cfg.LegacyCodegenAtRuntime {
+        if cfg.AutomaticGitignore == nil || *cfg.AutomaticGitignore {
+            return fmt.Errorf(
+                "codegen.legacyCodegenAtRuntime=false requires " +
+                    "codegen.automaticGitignore=false " +
+                    "(generated files must be committed to the repo)")
+        }
+    }
+    return nil
 }
 ```
 
@@ -287,6 +290,7 @@ Expected: all six sub-tests PASS.
 ### Task 1.5: Wire validation into config load
 
 **Files:**
+
 - Modify: `core/schema/modulesource.go`
 
 - [ ] **Step 1: Add the validation call**
@@ -294,10 +298,10 @@ Expected: all six sub-tests PASS.
 Find the line `src.CodegenConfig = modCfg.Codegen` (around line 930). Replace with:
 
 ```go
-	if err := modCfg.Codegen.Validate(); err != nil {
-		return fmt.Errorf("invalid codegen config in dagger.json: %w", err)
-	}
-	src.CodegenConfig = modCfg.Codegen
+    if err := modCfg.Codegen.Validate(); err != nil {
+        return fmt.Errorf("invalid codegen config in dagger.json: %w", err)
+    }
+    src.CodegenConfig = modCfg.Codegen
 ```
 
 - [ ] **Step 2: Verify it compiles**
@@ -364,6 +368,7 @@ Verify: `stg top` == `go-sdk-skip-codegen-at-runtime`.
 ### Task 2.2: Add the `useRuntimeCodegen` helper
 
 **Files:**
+
 - Modify: `core/sdk/go_sdk.go`
 
 - [ ] **Step 1: Locate the helper location**
@@ -382,11 +387,11 @@ Insert directly after the existing `baseWithCodegen` function:
 // codegen.legacyCodegenAtRuntime=false in dagger.json. This is also
 // the default for any module where the field is unset.
 func useRuntimeCodegen(src dagql.ObjectResult[*core.ModuleSource]) bool {
-	c := src.Self().CodegenConfig
-	if c == nil || c.LegacyCodegenAtRuntime == nil {
-		return true
-	}
-	return *c.LegacyCodegenAtRuntime
+    c := src.Self().CodegenConfig
+    if c == nil || c.LegacyCodegenAtRuntime == nil {
+        return true
+    }
+    return *c.LegacyCodegenAtRuntime
 }
 ```
 
@@ -398,6 +403,7 @@ Expected: clean.
 ### Task 2.3: Add `requireGeneratedFiles` helper
 
 **Files:**
+
 - Modify: `core/sdk/go_sdk.go`
 
 - [ ] **Step 1: Add the helper**
@@ -410,34 +416,34 @@ Insert after `useRuntimeCodegen`:
 // If either the module's dagger.gen.go or internal/dagger/dagger.gen.go
 // is missing, return a clear actionable error.
 func requireGeneratedFiles(
-	ctx context.Context,
-	dag *dagql.Server,
-	contextDir dagql.ObjectResult[*core.Directory],
-	srcSubpath, modName string,
+    ctx context.Context,
+    dag *dagql.Server,
+    contextDir dagql.ObjectResult[*core.Directory],
+    srcSubpath, modName string,
 ) error {
-	required := []string{
-		filepath.Join(srcSubpath, "dagger.gen.go"),
-		filepath.Join(srcSubpath, "internal", "dagger", "dagger.gen.go"),
-	}
-	for _, rel := range required {
-		var f dagql.Result[*core.File]
-		err := dag.Select(ctx, contextDir, &f,
-			dagql.Selector{
-				Field: "file",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.NewString(rel)},
-				},
-			},
-		)
-		if err != nil {
-			return fmt.Errorf(
-				"module %q has codegen.legacyCodegenAtRuntime=false "+
-					"but required generated file %q is missing. "+
-					"Run `dagger develop` to regenerate.",
-				modName, rel)
-		}
-	}
-	return nil
+    required := []string{
+        filepath.Join(srcSubpath, "dagger.gen.go"),
+        filepath.Join(srcSubpath, "internal", "dagger", "dagger.gen.go"),
+    }
+    for _, rel := range required {
+        var f dagql.Result[*core.File]
+        err := dag.Select(ctx, contextDir, &f,
+            dagql.Selector{
+                Field: "file",
+                Args: []dagql.NamedInput{
+                    {Name: "path", Value: dagql.NewString(rel)},
+                },
+            },
+        )
+        if err != nil {
+            return fmt.Errorf(
+                "module %q has codegen.legacyCodegenAtRuntime=false "+
+                    "but required generated file %q is missing. "+
+                    "Run `dagger develop` to regenerate.",
+                modName, rel)
+        }
+    }
+    return nil
 }
 ```
 
@@ -449,6 +455,7 @@ Expected: clean.
 ### Task 2.4: Add `baseForCommittedCodegen`
 
 **Files:**
+
 - Modify: `core/sdk/go_sdk.go`
 
 - [ ] **Step 1: Add the new base function**
@@ -462,54 +469,54 @@ Insert after `requireGeneratedFiles`:
 // verifies the expected generated files are present, and hands back a
 // container ready for `go build`.
 func (sdk *goSDK) baseForCommittedCodegen(
-	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
+    ctx context.Context,
+    src dagql.ObjectResult[*core.ModuleSource],
 ) (dagql.ObjectResult[*core.Container], error) {
-	var ctr dagql.ObjectResult[*core.Container]
+    var ctr dagql.ObjectResult[*core.Container]
 
-	dag, err := sdk.root.Server.Server(ctx)
-	if err != nil {
-		return ctr, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
-	}
+    dag, err := sdk.root.Server.Server(ctx)
+    if err != nil {
+        return ctr, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
+    }
 
-	modName := src.Self().ModuleOriginalName
-	contextDir := src.Self().ContextDirectory
-	srcSubpath := src.Self().SourceSubpath
+    modName := src.Self().ModuleOriginalName
+    contextDir := src.Self().ContextDirectory
+    srcSubpath := src.Self().SourceSubpath
 
-	if err := requireGeneratedFiles(ctx, dag, contextDir, srcSubpath, modName); err != nil {
-		return ctr, err
-	}
+    if err := requireGeneratedFiles(ctx, dag, contextDir, srcSubpath, modName); err != nil {
+        return ctr, err
+    }
 
-	ctr, err = sdk.base(ctx)
-	if err != nil {
-		return ctr, err
-	}
+    ctr, err = sdk.base(ctx)
+    if err != nil {
+        return ctr, err
+    }
 
-	contextDirID, err := contextDir.ID()
-	if err != nil {
-		return ctr, fmt.Errorf("failed to get module context directory ID: %w", err)
-	}
+    contextDirID, err := contextDir.ID()
+    if err != nil {
+        return ctr, fmt.Errorf("failed to get module context directory ID: %w", err)
+    }
 
-	if err := dag.Select(ctx, ctr, &ctr,
-		dagql.Selector{
-			Field: "withMountedDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(goSDKUserModContextDirPath)},
-				{Name: "source", Value: dagql.NewID[*core.Directory](contextDirID)},
-			},
-		},
-		dagql.Selector{
-			Field: "withWorkdir",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(
-					filepath.Join(goSDKUserModContextDirPath, srcSubpath))},
-			},
-		},
-	); err != nil {
-		return ctr, fmt.Errorf("mount module source: %w", err)
-	}
+    if err := dag.Select(ctx, ctr, &ctr,
+        dagql.Selector{
+            Field: "withMountedDirectory",
+            Args: []dagql.NamedInput{
+                {Name: "path", Value: dagql.NewString(goSDKUserModContextDirPath)},
+                {Name: "source", Value: dagql.NewID[*core.Directory](contextDirID)},
+            },
+        },
+        dagql.Selector{
+            Field: "withWorkdir",
+            Args: []dagql.NamedInput{
+                {Name: "path", Value: dagql.NewString(
+                    filepath.Join(goSDKUserModContextDirPath, srcSubpath))},
+            },
+        },
+    ); err != nil {
+        return ctr, fmt.Errorf("mount module source: %w", err)
+    }
 
-	return ctr, nil
+    return ctr, nil
 }
 ```
 
@@ -521,6 +528,7 @@ Expected: clean.
 ### Task 2.5: Branch `Runtime()` on the flag
 
 **Files:**
+
 - Modify: `core/sdk/go_sdk.go`
 
 - [ ] **Step 1: Find the current `Runtime()` call to `baseWithCodegen`**
@@ -528,10 +536,10 @@ Expected: clean.
 In `Runtime()`, locate:
 
 ```go
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
-	if err != nil {
-		return nil, err
-	}
+    ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+    if err != nil {
+        return nil, err
+    }
 ```
 
 - [ ] **Step 2: Replace with branching**
@@ -539,15 +547,15 @@ In `Runtime()`, locate:
 Change to:
 
 ```go
-	var ctr dagql.ObjectResult[*core.Container]
-	if useRuntimeCodegen(source) {
-		ctr, err = sdk.baseWithCodegen(ctx, deps, source)
-	} else {
-		ctr, err = sdk.baseForCommittedCodegen(ctx, source)
-	}
-	if err != nil {
-		return nil, err
-	}
+    var ctr dagql.ObjectResult[*core.Container]
+    if useRuntimeCodegen(source) {
+        ctr, err = sdk.baseWithCodegen(ctx, deps, source)
+    } else {
+        ctr, err = sdk.baseForCommittedCodegen(ctx, source)
+    }
+    if err != nil {
+        return nil, err
+    }
 ```
 
 `Codegen()` is unchanged — it continues to call `baseWithCodegen` unconditionally.
@@ -615,6 +623,7 @@ Verify: `stg top` == `dagger-init-skip-codegen-at-runtime`.
 ### Task 3.2: Add a helper to patch dagger.json
 
 **Files:**
+
 - Modify: `cmd/dagger/module.go`
 
 - [ ] **Step 1: Add imports**
@@ -622,7 +631,7 @@ Verify: `stg top` == `dagger-init-skip-codegen-at-runtime`.
 At the top of `cmd/dagger/module.go`, ensure these imports exist (add missing ones):
 
 ```go
-	"encoding/json"
+    "encoding/json"
 ```
 
 (Check first if `encoding/json` is already imported; if so, skip.)
@@ -642,33 +651,33 @@ Add at the end of the file (or near other similar helpers if any):
 // keys the engine emitted (clients, toolchains, etc.) without having
 // to round-trip them through every Go struct.
 func setGoSDKSkipRuntimeCodegen(configPath string) error {
-	raw, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("read dagger.json: %w", err)
-	}
-	var cfg map[string]any
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return fmt.Errorf("parse dagger.json: %w", err)
-	}
+    raw, err := os.ReadFile(configPath)
+    if err != nil {
+        return fmt.Errorf("read dagger.json: %w", err)
+    }
+    var cfg map[string]any
+    if err := json.Unmarshal(raw, &cfg); err != nil {
+        return fmt.Errorf("parse dagger.json: %w", err)
+    }
 
-	codegen, _ := cfg["codegen"].(map[string]any)
-	if codegen == nil {
-		codegen = map[string]any{}
-	}
-	codegen["automaticGitignore"] = false
-	codegen["legacyCodegenAtRuntime"] = false
-	cfg["codegen"] = codegen
+    codegen, _ := cfg["codegen"].(map[string]any)
+    if codegen == nil {
+        codegen = map[string]any{}
+    }
+    codegen["automaticGitignore"] = false
+    codegen["legacyCodegenAtRuntime"] = false
+    cfg["codegen"] = codegen
 
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("serialize dagger.json: %w", err)
-	}
-	// trailing newline matches what the engine's exporter writes
-	out = append(out, '\n')
-	if err := os.WriteFile(configPath, out, 0o644); err != nil {
-		return fmt.Errorf("write dagger.json: %w", err)
-	}
-	return nil
+    out, err := json.MarshalIndent(cfg, "", "  ")
+    if err != nil {
+        return fmt.Errorf("serialize dagger.json: %w", err)
+    }
+    // trailing newline matches what the engine's exporter writes
+    out = append(out, '\n')
+    if err := os.WriteFile(configPath, out, 0o644); err != nil {
+        return fmt.Errorf("write dagger.json: %w", err)
+    }
+    return nil
 }
 ```
 
@@ -680,6 +689,7 @@ Expected: clean.
 ### Task 3.3: Call the helper from `dagger init`
 
 **Files:**
+
 - Modify: `cmd/dagger/module.go`
 
 - [ ] **Step 1: Locate the post-export block**
@@ -687,13 +697,13 @@ Expected: clean.
 In the `initCmd` RunE (around line 356 based on spec exploration), find:
 
 ```go
-			// Export generated files, including dagger.json
-			_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
-			}
+            // Export generated files, including dagger.json
+            _, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
+            if err != nil {
+                return fmt.Errorf("failed to generate code: %w", err)
+            }
 
-			if sdk != "" {
+            if sdk != "" {
 ```
 
 - [ ] **Step 2: Insert the post-processing between Export and the SDK block**
@@ -701,25 +711,25 @@ In the `initCmd` RunE (around line 356 based on spec exploration), find:
 Change to:
 
 ```go
-			// Export generated files, including dagger.json
-			_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
-			}
+            // Export generated files, including dagger.json
+            _, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
+            if err != nil {
+                return fmt.Errorf("failed to generate code: %w", err)
+            }
 
-			// For new Go modules, opt into skip-codegen-at-runtime by
-			// default. This writes codegen.legacyCodegenAtRuntime=false
-			// and codegen.automaticGitignore=false to the freshly-
-			// exported dagger.json. Other SDKs don't support this mode
-			// yet, so we only apply it for --sdk=go.
-			if sdk == "go" {
-				configPath := filepath.Join(contextDirPath, srcRootSubPath, modules.Filename)
-				if err := setGoSDKSkipRuntimeCodegen(configPath); err != nil {
-					return fmt.Errorf("enable skip-codegen-at-runtime: %w", err)
-				}
-			}
+            // For new Go modules, opt into skip-codegen-at-runtime by
+            // default. This writes codegen.legacyCodegenAtRuntime=false
+            // and codegen.automaticGitignore=false to the freshly-
+            // exported dagger.json. Other SDKs don't support this mode
+            // yet, so we only apply it for --sdk=go.
+            if sdk == "go" {
+                configPath := filepath.Join(contextDirPath, srcRootSubPath, modules.Filename)
+                if err := setGoSDKSkipRuntimeCodegen(configPath); err != nil {
+                    return fmt.Errorf("enable skip-codegen-at-runtime: %w", err)
+                }
+            }
 
-			if sdk != "" {
+            if sdk != "" {
 ```
 
 - [ ] **Step 3: Verify compile**
@@ -779,6 +789,7 @@ Signed-off-by: Yves Brissaud <yves@dagger.io>" go-sdk-skip-codegen-at-runtime-in
 ### Task 4.2: Add the opt-in test
 
 **Files:**
+
 - Modify: `core/integration/module_test.go`
 
 - [ ] **Step 1: Append the test method**
@@ -787,15 +798,15 @@ Append at the end of the file (or adjacent to other Go-SDK-specific tests):
 
 ```go
 func (ModuleSuite) TestGoSDKSkipCodegenAtRuntimeOptIn(ctx context.Context, t *testctx.T) {
-	// dagger init --sdk=go should default to the opt-in config, and a
-	// subsequent dagger call should succeed without re-running codegen.
-	// We don't inspect the buildkit trace directly here — successful
-	// `dagger call` on a module whose dagger.json has
-	// legacyCodegenAtRuntime=false proves Runtime() took the new
-	// baseForCommittedCodegen path (otherwise it would have run
-	// codegen, which requires the schema JSON mount that new path
-	// doesn't provide).
-	t.Skip("integration harness wiring added in a follow-up")
+    // dagger init --sdk=go should default to the opt-in config, and a
+    // subsequent dagger call should succeed without re-running codegen.
+    // We don't inspect the buildkit trace directly here — successful
+    // `dagger call` on a module whose dagger.json has
+    // legacyCodegenAtRuntime=false proves Runtime() took the new
+    // baseForCommittedCodegen path (otherwise it would have run
+    // codegen, which requires the schema JSON mount that new path
+    // doesn't provide).
+    t.Skip("integration harness wiring added in a follow-up")
 }
 ```
 
@@ -809,16 +820,17 @@ Expected: clean.
 ### Task 4.3: Add the validation-error test
 
 **Files:**
+
 - Modify: `core/integration/module_test.go`
 
 - [ ] **Step 1: Append the test method**
 
 ```go
 func (ModuleSuite) TestGoSDKSkipCodegenAtRuntimeValidation(ctx context.Context, t *testctx.T) {
-	// codegen.legacyCodegenAtRuntime=false without
-	// codegen.automaticGitignore=false should produce a clear
-	// validation error at module load.
-	t.Skip("integration harness wiring added in a follow-up")
+    // codegen.legacyCodegenAtRuntime=false without
+    // codegen.automaticGitignore=false should produce a clear
+    // validation error at module load.
+    t.Skip("integration harness wiring added in a follow-up")
 }
 ```
 
@@ -828,9 +840,9 @@ func (ModuleSuite) TestGoSDKSkipCodegenAtRuntimeValidation(ctx context.Context, 
 
 ```go
 func (ModuleSuite) TestGoSDKSkipCodegenAtRuntimeMissingFiles(ctx context.Context, t *testctx.T) {
-	// Flag set to false, but dagger.gen.go missing: expect the
-	// specific "run dagger develop" error from Runtime().
-	t.Skip("integration harness wiring added in a follow-up")
+    // Flag set to false, but dagger.gen.go missing: expect the
+    // specific "run dagger develop" error from Runtime().
+    t.Skip("integration harness wiring added in a follow-up")
 }
 ```
 

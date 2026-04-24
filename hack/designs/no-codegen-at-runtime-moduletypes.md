@@ -443,14 +443,14 @@ Single commit, easy to revert if something is missed.
   introspection JSON (list-types, has-type, describe-type).
 - `cmd/codegen/generator/go/astscan/`: AST extraction tests against a corpus
   of minimal Go packages:
-    - single struct + method
-    - multiple structs with cross-references
-    - interface with methods
-    - string-based enum constants
-    - typed return values (`*dagger.Container`, `[]*dagger.File`,
+  - single struct + method
+  - multiple structs with cross-references
+  - interface with methods
+  - string-based enum constants
+  - typed return values (`*dagger.Container`, `[]*dagger.File`,
       `context.Context`)
-    - unknown external type → clean error
-    - deliberately-unsupported patterns (type alias to dagger type, generics
+  - unknown external type → clean error
+  - deliberately-unsupported patterns (type alias to dagger type, generics
       involving dagger types) → clean error with guidance
 
 ### Integration tests (PR 1, Go SDK)

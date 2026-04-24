@@ -248,12 +248,14 @@ In `cmd/dagger/module.go`'s init flow, when writing a fresh `dagger.json`:
 
 - When `--sdk=go` and no existing config exists (`IsInit=true` path):
   write both flags:
+
   ```json
   "codegen": {
     "automaticGitignore": false,
     "legacyCodegenAtRuntime": false
   }
   ```
+
 - Any other SDK: do not write these keys; preserve existing defaults.
 - `dagger develop` on an existing module: never auto-writes these flags.
   Users migrate existing modules manually (edit `dagger.json`, run

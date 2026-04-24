@@ -95,6 +95,7 @@ Expected: `schematool-foundation`
 ### Task 1.2: Define ModuleTypes input shape
 
 **Files:**
+
 - Create: `cmd/codegen/schematool/module_types.go`
 
 - [ ] **Step 1: Write the input struct**
@@ -109,9 +110,9 @@ Expected: `schematool-foundation`
 package schematool
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
+    "encoding/json"
+    "fmt"
+    "io"
 )
 
 // ModuleTypes is the language-agnostic input shape that a SDK's
@@ -119,79 +120,79 @@ import (
 // subset of core.Module: the module's name plus the types it
 // declares.
 type ModuleTypes struct {
-	Name        string        `json:"name"`
-	Description string        `json:"description,omitempty"`
-	Objects     []ObjectDef    `json:"objects,omitempty"`
-	Interfaces  []InterfaceDef `json:"interfaces,omitempty"`
-	Enums       []EnumDef      `json:"enums,omitempty"`
+    Name        string        `json:"name"`
+    Description string        `json:"description,omitempty"`
+    Objects     []ObjectDef    `json:"objects,omitempty"`
+    Interfaces  []InterfaceDef `json:"interfaces,omitempty"`
+    Enums       []EnumDef      `json:"enums,omitempty"`
 }
 
 // ObjectDef mirrors core.ObjectTypeDef to the extent the SDK needs
 // to expose via introspection.
 type ObjectDef struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description,omitempty"`
-	Constructor *Function  `json:"constructor,omitempty"`
-	Functions   []Function `json:"functions,omitempty"`
-	Fields      []FieldDef `json:"fields,omitempty"`
+    Name        string     `json:"name"`
+    Description string     `json:"description,omitempty"`
+    Constructor *Function  `json:"constructor,omitempty"`
+    Functions   []Function `json:"functions,omitempty"`
+    Fields      []FieldDef `json:"fields,omitempty"`
 }
 
 type InterfaceDef struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description,omitempty"`
-	Functions   []Function `json:"functions,omitempty"`
+    Name        string     `json:"name"`
+    Description string     `json:"description,omitempty"`
+    Functions   []Function `json:"functions,omitempty"`
 }
 
 type EnumDef struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description,omitempty"`
-	Values      []EnumValue `json:"values"`
+    Name        string     `json:"name"`
+    Description string     `json:"description,omitempty"`
+    Values      []EnumValue `json:"values"`
 }
 
 type EnumValue struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Value       string `json:"value,omitempty"`
+    Name        string `json:"name"`
+    Description string `json:"description,omitempty"`
+    Value       string `json:"value,omitempty"`
 }
 
 type FieldDef struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	TypeRef     *TypeRef `json:"type"`
+    Name        string   `json:"name"`
+    Description string   `json:"description,omitempty"`
+    TypeRef     *TypeRef `json:"type"`
 }
 
 type Function struct {
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Args        []FuncArg `json:"args,omitempty"`
-	ReturnType  *TypeRef  `json:"returnType"`
+    Name        string    `json:"name"`
+    Description string    `json:"description,omitempty"`
+    Args        []FuncArg `json:"args,omitempty"`
+    ReturnType  *TypeRef  `json:"returnType"`
 }
 
 type FuncArg struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description,omitempty"`
-	TypeRef      *TypeRef `json:"type"`
-	DefaultValue *string  `json:"defaultValue,omitempty"`
+    Name         string   `json:"name"`
+    Description  string   `json:"description,omitempty"`
+    TypeRef      *TypeRef `json:"type"`
+    DefaultValue *string  `json:"defaultValue,omitempty"`
 }
 
 // TypeRef is a reference to a type by name, optionally nested
 // (list / non-null). Mirrors introspection.TypeRef but carries
 // only the fields SDK-produced JSON needs to set.
 type TypeRef struct {
-	Kind    string   `json:"kind"` // OBJECT, INTERFACE, ENUM, SCALAR, LIST, NON_NULL
-	Name    string   `json:"name,omitempty"`
-	OfType  *TypeRef `json:"ofType,omitempty"`
+    Kind    string   `json:"kind"` // OBJECT, INTERFACE, ENUM, SCALAR, LIST, NON_NULL
+    Name    string   `json:"name,omitempty"`
+    OfType  *TypeRef `json:"ofType,omitempty"`
 }
 
 // DecodeModuleTypes reads a ModuleTypes JSON value from r.
 func DecodeModuleTypes(r io.Reader) (*ModuleTypes, error) {
-	var mt ModuleTypes
-	dec := json.NewDecoder(r)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&mt); err != nil {
-		return nil, fmt.Errorf("decode module types: %w", err)
-	}
-	return &mt, nil
+    var mt ModuleTypes
+    dec := json.NewDecoder(r)
+    dec.DisallowUnknownFields()
+    if err := dec.Decode(&mt); err != nil {
+        return nil, fmt.Errorf("decode module types: %w", err)
+    }
+    return &mt, nil
 }
 ```
 
@@ -209,6 +210,7 @@ Expected: no output (clean build).
 ### Task 1.3: Write failing test for Merge — single object
 
 **Files:**
+
 - Create: `cmd/codegen/schematool/testdata/single_object/schema.json`
 - Create: `cmd/codegen/schematool/testdata/single_object/module_types.json`
 - Create: `cmd/codegen/schematool/testdata/single_object/expected.json`
@@ -331,96 +333,96 @@ Expected: no output (clean build).
 package schematool_test
 
 import (
-	"bytes"
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"testing"
+    "bytes"
+    "encoding/json"
+    "os"
+    "path/filepath"
+    "testing"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/cmd/codegen/schematool"
+    "github.com/dagger/dagger/cmd/codegen/introspection"
+    "github.com/dagger/dagger/cmd/codegen/schematool"
 )
 
 func TestMerge(t *testing.T) {
-	cases := []string{
-		"single_object",
-	}
-	for _, name := range cases {
-		t.Run(name, func(t *testing.T) {
-			dir := filepath.Join("testdata", name)
+    cases := []string{
+        "single_object",
+    }
+    for _, name := range cases {
+        t.Run(name, func(t *testing.T) {
+            dir := filepath.Join("testdata", name)
 
-			schema := loadSchema(t, filepath.Join(dir, "schema.json"))
-			modTypes := loadModuleTypes(t, filepath.Join(dir, "module_types.json"))
+            schema := loadSchema(t, filepath.Join(dir, "schema.json"))
+            modTypes := loadModuleTypes(t, filepath.Join(dir, "module_types.json"))
 
-			if err := schematool.Merge(schema, modTypes); err != nil {
-				t.Fatalf("merge: %v", err)
-			}
+            if err := schematool.Merge(schema, modTypes); err != nil {
+                t.Fatalf("merge: %v", err)
+            }
 
-			got := marshal(t, schema)
-			want := readFile(t, filepath.Join(dir, "expected.json"))
-			assertJSONEqual(t, got, want)
-		})
-	}
+            got := marshal(t, schema)
+            want := readFile(t, filepath.Join(dir, "expected.json"))
+            assertJSONEqual(t, got, want)
+        })
+    }
 }
 
 func loadSchema(t *testing.T, path string) *introspection.Schema {
-	t.Helper()
-	data := readFile(t, path)
-	var resp introspection.Response
-	if err := json.Unmarshal(data, &resp); err != nil {
-		t.Fatalf("unmarshal schema: %v", err)
-	}
-	return resp.Schema
+    t.Helper()
+    data := readFile(t, path)
+    var resp introspection.Response
+    if err := json.Unmarshal(data, &resp); err != nil {
+        t.Fatalf("unmarshal schema: %v", err)
+    }
+    return resp.Schema
 }
 
 func loadModuleTypes(t *testing.T, path string) *schematool.ModuleTypes {
-	t.Helper()
-	data := readFile(t, path)
-	mt, err := schematool.DecodeModuleTypes(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("decode module types: %v", err)
-	}
-	return mt
+    t.Helper()
+    data := readFile(t, path)
+    mt, err := schematool.DecodeModuleTypes(bytes.NewReader(data))
+    if err != nil {
+        t.Fatalf("decode module types: %v", err)
+    }
+    return mt
 }
 
 func marshal(t *testing.T, schema *introspection.Schema) []byte {
-	t.Helper()
-	out := struct {
-		Schema        *introspection.Schema `json:"__schema"`
-		SchemaVersion string                `json:"__schemaVersion"`
-	}{Schema: schema, SchemaVersion: "test"}
-	b, err := json.Marshal(out)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	return b
+    t.Helper()
+    out := struct {
+        Schema        *introspection.Schema `json:"__schema"`
+        SchemaVersion string                `json:"__schemaVersion"`
+    }{Schema: schema, SchemaVersion: "test"}
+    b, err := json.Marshal(out)
+    if err != nil {
+        t.Fatalf("marshal: %v", err)
+    }
+    return b
 }
 
 func readFile(t *testing.T, path string) []byte {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	return b
+    t.Helper()
+    b, err := os.ReadFile(path)
+    if err != nil {
+        t.Fatalf("read %s: %v", path, err)
+    }
+    return b
 }
 
 // assertJSONEqual compares two JSON byte slices after canonical
 // re-marshalling so formatting differences don't cause false negatives.
 func assertJSONEqual(t *testing.T, got, want []byte) {
-	t.Helper()
-	var g, w any
-	if err := json.Unmarshal(got, &g); err != nil {
-		t.Fatalf("unmarshal got: %v", err)
-	}
-	if err := json.Unmarshal(want, &w); err != nil {
-		t.Fatalf("unmarshal want: %v", err)
-	}
-	gb, _ := json.MarshalIndent(g, "", "  ")
-	wb, _ := json.MarshalIndent(w, "", "  ")
-	if !bytes.Equal(gb, wb) {
-		t.Errorf("json mismatch\n---got---\n%s\n---want---\n%s", gb, wb)
-	}
+    t.Helper()
+    var g, w any
+    if err := json.Unmarshal(got, &g); err != nil {
+        t.Fatalf("unmarshal got: %v", err)
+    }
+    if err := json.Unmarshal(want, &w); err != nil {
+        t.Fatalf("unmarshal want: %v", err)
+    }
+    gb, _ := json.MarshalIndent(g, "", "  ")
+    wb, _ := json.MarshalIndent(w, "", "  ")
+    if !bytes.Equal(gb, wb) {
+        t.Errorf("json mismatch\n---got---\n%s\n---want---\n%s", gb, wb)
+    }
 }
 ```
 
@@ -432,6 +434,7 @@ Expected: fails with compile error (`schematool.Merge undefined`). That's the po
 ### Task 1.4: Implement minimal Merge to pass single_object
 
 **Files:**
+
 - Create: `cmd/codegen/schematool/merge.go`
 - Create: `cmd/codegen/schematool/schematool.go`
 
@@ -449,23 +452,23 @@ import "github.com/dagger/dagger/cmd/codegen/introspection"
 // Merge preserves directive metadata by stamping each inserted type
 // with a @sourceModuleName directive carrying mod.Name.
 func Merge(schema *introspection.Schema, mod *ModuleTypes) error {
-	return mergeInto(schema, mod)
+    return mergeInto(schema, mod)
 }
 
 // ListTypes returns the names of types in schema matching the given
 // kind filter. An empty kind matches all types.
 func ListTypes(schema *introspection.Schema, kind string) []string {
-	return listTypes(schema, kind)
+    return listTypes(schema, kind)
 }
 
 // HasType reports whether schema contains a type with the given name.
 func HasType(schema *introspection.Schema, name string) bool {
-	return schema.Types.Get(name) != nil
+    return schema.Types.Get(name) != nil
 }
 
 // DescribeType returns the schema.Type with the given name, or nil.
 func DescribeType(schema *introspection.Schema, name string) *introspection.Type {
-	return schema.Types.Get(name)
+    return schema.Types.Get(name)
 }
 ```
 
@@ -475,132 +478,132 @@ func DescribeType(schema *introspection.Schema, name string) *introspection.Type
 package schematool
 
 import (
-	"fmt"
+    "fmt"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
+    "github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
 func mergeInto(schema *introspection.Schema, mod *ModuleTypes) error {
-	if mod == nil {
-		return fmt.Errorf("module types: nil")
-	}
-	for _, obj := range mod.Objects {
-		if schema.Types.Get(obj.Name) != nil {
-			return fmt.Errorf("type %q already exists in schema", obj.Name)
-		}
-		schema.Types = append(schema.Types, convertObject(obj, mod.Name))
-	}
-	for _, iface := range mod.Interfaces {
-		if schema.Types.Get(iface.Name) != nil {
-			return fmt.Errorf("type %q already exists in schema", iface.Name)
-		}
-		schema.Types = append(schema.Types, convertInterface(iface, mod.Name))
-	}
-	for _, enum := range mod.Enums {
-		if schema.Types.Get(enum.Name) != nil {
-			return fmt.Errorf("type %q already exists in schema", enum.Name)
-		}
-		schema.Types = append(schema.Types, convertEnum(enum, mod.Name))
-	}
-	return nil
+    if mod == nil {
+        return fmt.Errorf("module types: nil")
+    }
+    for _, obj := range mod.Objects {
+        if schema.Types.Get(obj.Name) != nil {
+            return fmt.Errorf("type %q already exists in schema", obj.Name)
+        }
+        schema.Types = append(schema.Types, convertObject(obj, mod.Name))
+    }
+    for _, iface := range mod.Interfaces {
+        if schema.Types.Get(iface.Name) != nil {
+            return fmt.Errorf("type %q already exists in schema", iface.Name)
+        }
+        schema.Types = append(schema.Types, convertInterface(iface, mod.Name))
+    }
+    for _, enum := range mod.Enums {
+        if schema.Types.Get(enum.Name) != nil {
+            return fmt.Errorf("type %q already exists in schema", enum.Name)
+        }
+        schema.Types = append(schema.Types, convertEnum(enum, mod.Name))
+    }
+    return nil
 }
 
 func convertObject(obj ObjectDef, modName string) *introspection.Type {
-	t := &introspection.Type{
-		Kind:        introspection.TypeKindObject,
-		Name:        obj.Name,
-		Description: obj.Description,
-		Interfaces:  []*introspection.Type{},
-		Directives:  moduleDirectives(modName),
-	}
-	for _, fn := range obj.Functions {
-		t.Fields = append(t.Fields, convertFunction(fn))
-	}
-	for _, f := range obj.Fields {
-		t.Fields = append(t.Fields, &introspection.Field{
-			Name:        f.Name,
-			Description: f.Description,
-			TypeRef:     convertTypeRef(f.TypeRef),
-			Args:        introspection.InputValues{},
-			Directives:  introspection.Directives{},
-		})
-	}
-	return t
+    t := &introspection.Type{
+        Kind:        introspection.TypeKindObject,
+        Name:        obj.Name,
+        Description: obj.Description,
+        Interfaces:  []*introspection.Type{},
+        Directives:  moduleDirectives(modName),
+    }
+    for _, fn := range obj.Functions {
+        t.Fields = append(t.Fields, convertFunction(fn))
+    }
+    for _, f := range obj.Fields {
+        t.Fields = append(t.Fields, &introspection.Field{
+            Name:        f.Name,
+            Description: f.Description,
+            TypeRef:     convertTypeRef(f.TypeRef),
+            Args:        introspection.InputValues{},
+            Directives:  introspection.Directives{},
+        })
+    }
+    return t
 }
 
 func convertInterface(iface InterfaceDef, modName string) *introspection.Type {
-	t := &introspection.Type{
-		Kind:        introspection.TypeKindInterface,
-		Name:        iface.Name,
-		Description: iface.Description,
-		Interfaces:  []*introspection.Type{},
-		Directives:  moduleDirectives(modName),
-	}
-	for _, fn := range iface.Functions {
-		t.Fields = append(t.Fields, convertFunction(fn))
-	}
-	return t
+    t := &introspection.Type{
+        Kind:        introspection.TypeKindInterface,
+        Name:        iface.Name,
+        Description: iface.Description,
+        Interfaces:  []*introspection.Type{},
+        Directives:  moduleDirectives(modName),
+    }
+    for _, fn := range iface.Functions {
+        t.Fields = append(t.Fields, convertFunction(fn))
+    }
+    return t
 }
 
 func convertEnum(enum EnumDef, modName string) *introspection.Type {
-	t := &introspection.Type{
-		Kind:        introspection.TypeKindEnum,
-		Name:        enum.Name,
-		Description: enum.Description,
-		Interfaces:  []*introspection.Type{},
-		Directives:  moduleDirectives(modName),
-	}
-	for _, v := range enum.Values {
-		t.EnumValues = append(t.EnumValues, introspection.EnumValue{
-			Name:        v.Name,
-			Description: v.Description,
-		})
-	}
-	return t
+    t := &introspection.Type{
+        Kind:        introspection.TypeKindEnum,
+        Name:        enum.Name,
+        Description: enum.Description,
+        Interfaces:  []*introspection.Type{},
+        Directives:  moduleDirectives(modName),
+    }
+    for _, v := range enum.Values {
+        t.EnumValues = append(t.EnumValues, introspection.EnumValue{
+            Name:        v.Name,
+            Description: v.Description,
+        })
+    }
+    return t
 }
 
 func convertFunction(fn Function) *introspection.Field {
-	f := &introspection.Field{
-		Name:        fn.Name,
-		Description: fn.Description,
-		TypeRef:     convertTypeRef(fn.ReturnType),
-		Args:        introspection.InputValues{},
-		Directives:  introspection.Directives{},
-	}
-	for _, a := range fn.Args {
-		iv := introspection.InputValue{
-			Name:        a.Name,
-			Description: a.Description,
-			TypeRef:     convertTypeRef(a.TypeRef),
-		}
-		if a.DefaultValue != nil {
-			iv.DefaultValue = a.DefaultValue
-		}
-		f.Args = append(f.Args, iv)
-	}
-	return f
+    f := &introspection.Field{
+        Name:        fn.Name,
+        Description: fn.Description,
+        TypeRef:     convertTypeRef(fn.ReturnType),
+        Args:        introspection.InputValues{},
+        Directives:  introspection.Directives{},
+    }
+    for _, a := range fn.Args {
+        iv := introspection.InputValue{
+            Name:        a.Name,
+            Description: a.Description,
+            TypeRef:     convertTypeRef(a.TypeRef),
+        }
+        if a.DefaultValue != nil {
+            iv.DefaultValue = a.DefaultValue
+        }
+        f.Args = append(f.Args, iv)
+    }
+    return f
 }
 
 func convertTypeRef(ref *TypeRef) *introspection.TypeRef {
-	if ref == nil {
-		return nil
-	}
-	return &introspection.TypeRef{
-		Kind:   introspection.TypeKind(ref.Kind),
-		Name:   ref.Name,
-		OfType: convertTypeRef(ref.OfType),
-	}
+    if ref == nil {
+        return nil
+    }
+    return &introspection.TypeRef{
+        Kind:   introspection.TypeKind(ref.Kind),
+        Name:   ref.Name,
+        OfType: convertTypeRef(ref.OfType),
+    }
 }
 
 func moduleDirectives(modName string) introspection.Directives {
-	return introspection.Directives{
-		{
-			Name: "sourceModuleName",
-			Args: []introspection.DirectiveArg{
-				{Name: "name", Value: fmt.Sprintf("%q", modName)},
-			},
-		},
-	}
+    return introspection.Directives{
+        {
+            Name: "sourceModuleName",
+            Args: []introspection.DirectiveArg{
+                {Name: "name", Value: fmt.Sprintf("%q", modName)},
+            },
+        },
+    }
 }
 ```
 
@@ -623,14 +626,14 @@ package schematool
 import "github.com/dagger/dagger/cmd/codegen/introspection"
 
 func listTypes(schema *introspection.Schema, kind string) []string {
-	var out []string
-	for _, t := range schema.Types {
-		if kind != "" && string(t.Kind) != kind {
-			continue
-		}
-		out = append(out, t.Name)
-	}
-	return out
+    var out []string
+    for _, t := range schema.Types {
+        if kind != "" && string(t.Kind) != kind {
+            continue
+        }
+        out = append(out, t.Name)
+    }
+    return out
 }
 ```
 
@@ -642,6 +645,7 @@ Expected: PASS for `TestMerge/single_object`.
 ### Task 1.5: Add interface case
 
 **Files:**
+
 - Create: `cmd/codegen/schematool/testdata/interface/schema.json`
 - Create: `cmd/codegen/schematool/testdata/interface/module_types.json`
 - Create: `cmd/codegen/schematool/testdata/interface/expected.json`
@@ -681,17 +685,17 @@ Expected: PASS.
 
 ```go
 func TestMergeConflict(t *testing.T) {
-	dir := filepath.Join("testdata", "conflict")
-	schema := loadSchema(t, filepath.Join(dir, "schema.json"))
-	modTypes := loadModuleTypes(t, filepath.Join(dir, "module_types.json"))
+    dir := filepath.Join("testdata", "conflict")
+    schema := loadSchema(t, filepath.Join(dir, "schema.json"))
+    modTypes := loadModuleTypes(t, filepath.Join(dir, "module_types.json"))
 
-	err := schematool.Merge(schema, modTypes)
-	if err == nil {
-		t.Fatal("expected conflict error, got nil")
-	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("error does not mention conflict: %v", err)
-	}
+    err := schematool.Merge(schema, modTypes)
+    if err == nil {
+        t.Fatal("expected conflict error, got nil")
+    }
+    if !strings.Contains(err.Error(), "already exists") {
+        t.Errorf("error does not mention conflict: %v", err)
+    }
 }
 ```
 
@@ -705,45 +709,46 @@ Expected: PASS.
 ### Task 1.8: Inspect helper unit tests
 
 **Files:**
+
 - Modify: `cmd/codegen/schematool/schematool_test.go`
 
 - [ ] **Step 1: Write tests for ListTypes, HasType, DescribeType**
 
 ```go
 func TestInspect(t *testing.T) {
-	schema := loadSchema(t, filepath.Join("testdata", "single_object", "expected.json"))
+    schema := loadSchema(t, filepath.Join("testdata", "single_object", "expected.json"))
 
-	t.Run("ListTypes all", func(t *testing.T) {
-		got := schematool.ListTypes(schema, "")
-		if len(got) < 3 {
-			t.Errorf("expected >=3 types, got %d", len(got))
-		}
-	})
-	t.Run("ListTypes filter", func(t *testing.T) {
-		got := schematool.ListTypes(schema, "OBJECT")
-		for _, name := range got {
-			if schematool.DescribeType(schema, name).Kind != "OBJECT" {
-				t.Errorf("filter returned non-OBJECT type %q", name)
-			}
-		}
-	})
-	t.Run("HasType", func(t *testing.T) {
-		if !schematool.HasType(schema, "Echo") {
-			t.Error("Echo should exist")
-		}
-		if schematool.HasType(schema, "Nonexistent") {
-			t.Error("Nonexistent should not exist")
-		}
-	})
-	t.Run("DescribeType", func(t *testing.T) {
-		got := schematool.DescribeType(schema, "Echo")
-		if got == nil {
-			t.Fatal("Echo missing")
-		}
-		if got.Name != "Echo" {
-			t.Errorf("wrong name: %s", got.Name)
-		}
-	})
+    t.Run("ListTypes all", func(t *testing.T) {
+        got := schematool.ListTypes(schema, "")
+        if len(got) < 3 {
+            t.Errorf("expected >=3 types, got %d", len(got))
+        }
+    })
+    t.Run("ListTypes filter", func(t *testing.T) {
+        got := schematool.ListTypes(schema, "OBJECT")
+        for _, name := range got {
+            if schematool.DescribeType(schema, name).Kind != "OBJECT" {
+                t.Errorf("filter returned non-OBJECT type %q", name)
+            }
+        }
+    })
+    t.Run("HasType", func(t *testing.T) {
+        if !schematool.HasType(schema, "Echo") {
+            t.Error("Echo should exist")
+        }
+        if schematool.HasType(schema, "Nonexistent") {
+            t.Error("Nonexistent should not exist")
+        }
+    })
+    t.Run("DescribeType", func(t *testing.T) {
+        got := schematool.DescribeType(schema, "Echo")
+        if got == nil {
+            t.Fatal("Echo missing")
+        }
+        if got.Name != "Echo" {
+            t.Errorf("wrong name: %s", got.Name)
+        }
+    })
 }
 ```
 
@@ -755,6 +760,7 @@ Expected: all sub-tests PASS.
 ### Task 1.9: Wire `inspect-schema` CLI subcommand
 
 **Files:**
+
 - Create: `cmd/codegen/inspect_schema.go`
 - Modify: `cmd/codegen/main.go`
 
@@ -764,100 +770,100 @@ Expected: all sub-tests PASS.
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
+    "encoding/json"
+    "fmt"
+    "os"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/cmd/codegen/schematool"
-	"github.com/spf13/cobra"
+    "github.com/dagger/dagger/cmd/codegen/introspection"
+    "github.com/dagger/dagger/cmd/codegen/schematool"
+    "github.com/spf13/cobra"
 )
 
 var inspectSchemaCmd = &cobra.Command{
-	Use:   "inspect-schema",
-	Short: "Read-only queries against an introspection JSON file",
+    Use:   "inspect-schema",
+    Short: "Read-only queries against an introspection JSON file",
 }
 
 var (
-	inspectKind     string
-	inspectTypeName string
+    inspectKind     string
+    inspectTypeName string
 )
 
 var inspectListTypesCmd = &cobra.Command{
-	Use:  "list-types",
-	RunE: runInspectListTypes,
+    Use:  "list-types",
+    RunE: runInspectListTypes,
 }
 
 var inspectHasTypeCmd = &cobra.Command{
-	Use:  "has-type",
-	RunE: runInspectHasType,
+    Use:  "has-type",
+    RunE: runInspectHasType,
 }
 
 var inspectDescribeTypeCmd = &cobra.Command{
-	Use:  "describe-type",
-	RunE: runInspectDescribeType,
+    Use:  "describe-type",
+    RunE: runInspectDescribeType,
 }
 
 func init() {
-	inspectListTypesCmd.Flags().StringVar(&inspectKind, "kind", "",
-		"filter: OBJECT, INTERFACE, ENUM, SCALAR, INPUT_OBJECT")
-	inspectHasTypeCmd.Flags().StringVar(&inspectTypeName, "name", "", "type name")
-	_ = inspectHasTypeCmd.MarkFlagRequired("name")
-	inspectDescribeTypeCmd.Flags().StringVar(&inspectTypeName, "name", "", "type name")
-	_ = inspectDescribeTypeCmd.MarkFlagRequired("name")
+    inspectListTypesCmd.Flags().StringVar(&inspectKind, "kind", "",
+        "filter: OBJECT, INTERFACE, ENUM, SCALAR, INPUT_OBJECT")
+    inspectHasTypeCmd.Flags().StringVar(&inspectTypeName, "name", "", "type name")
+    _ = inspectHasTypeCmd.MarkFlagRequired("name")
+    inspectDescribeTypeCmd.Flags().StringVar(&inspectTypeName, "name", "", "type name")
+    _ = inspectDescribeTypeCmd.MarkFlagRequired("name")
 
-	inspectSchemaCmd.AddCommand(inspectListTypesCmd)
-	inspectSchemaCmd.AddCommand(inspectHasTypeCmd)
-	inspectSchemaCmd.AddCommand(inspectDescribeTypeCmd)
+    inspectSchemaCmd.AddCommand(inspectListTypesCmd)
+    inspectSchemaCmd.AddCommand(inspectHasTypeCmd)
+    inspectSchemaCmd.AddCommand(inspectDescribeTypeCmd)
 }
 
 func loadIntrospection() (*introspection.Schema, error) {
-	if introspectionJSONPath == "" {
-		return nil, fmt.Errorf("--introspection-json-path is required")
-	}
-	data, err := os.ReadFile(introspectionJSONPath)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", introspectionJSONPath, err)
-	}
-	var resp introspection.Response
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal: %w", err)
-	}
-	return resp.Schema, nil
+    if introspectionJSONPath == "" {
+        return nil, fmt.Errorf("--introspection-json-path is required")
+    }
+    data, err := os.ReadFile(introspectionJSONPath)
+    if err != nil {
+        return nil, fmt.Errorf("read %s: %w", introspectionJSONPath, err)
+    }
+    var resp introspection.Response
+    if err := json.Unmarshal(data, &resp); err != nil {
+        return nil, fmt.Errorf("unmarshal: %w", err)
+    }
+    return resp.Schema, nil
 }
 
 func runInspectListTypes(cmd *cobra.Command, _ []string) error {
-	schema, err := loadIntrospection()
-	if err != nil {
-		return err
-	}
-	names := schematool.ListTypes(schema, inspectKind)
-	return json.NewEncoder(cmd.OutOrStdout()).Encode(names)
+    schema, err := loadIntrospection()
+    if err != nil {
+        return err
+    }
+    names := schematool.ListTypes(schema, inspectKind)
+    return json.NewEncoder(cmd.OutOrStdout()).Encode(names)
 }
 
 func runInspectHasType(cmd *cobra.Command, _ []string) error {
-	schema, err := loadIntrospection()
-	if err != nil {
-		return err
-	}
-	has := schematool.HasType(schema, inspectTypeName)
-	fmt.Fprintln(cmd.OutOrStdout(), has)
-	if !has {
-		os.Exit(1)
-	}
-	return nil
+    schema, err := loadIntrospection()
+    if err != nil {
+        return err
+    }
+    has := schematool.HasType(schema, inspectTypeName)
+    fmt.Fprintln(cmd.OutOrStdout(), has)
+    if !has {
+        os.Exit(1)
+    }
+    return nil
 }
 
 func runInspectDescribeType(cmd *cobra.Command, _ []string) error {
-	schema, err := loadIntrospection()
-	if err != nil {
-		return err
-	}
-	t := schematool.DescribeType(schema, inspectTypeName)
-	if t == nil {
-		return fmt.Errorf("type %q not found", inspectTypeName)
-	}
-	return json.NewEncoder(cmd.OutOrStdout()).Encode(t)
+    schema, err := loadIntrospection()
+    if err != nil {
+        return err
+    }
+    t := schematool.DescribeType(schema, inspectTypeName)
+    if t == nil {
+        return fmt.Errorf("type %q not found", inspectTypeName)
+    }
+    return json.NewEncoder(cmd.OutOrStdout()).Encode(t)
 }
 ```
 
@@ -866,8 +872,8 @@ func runInspectDescribeType(cmd *cobra.Command, _ []string) error {
 Modify `cmd/codegen/main.go`'s `init` — add before the flag declarations:
 
 ```go
-	rootCmd.AddCommand(inspectSchemaCmd)
-	rootCmd.AddCommand(mergeSchemaCmd)
+    rootCmd.AddCommand(inspectSchemaCmd)
+    rootCmd.AddCommand(mergeSchemaCmd)
 ```
 
 - [ ] **Step 3: Verify builds**
@@ -878,6 +884,7 @@ Expected: fails because `mergeSchemaCmd` undefined. That's fine — we fill it i
 ### Task 1.10: Wire `merge-schema` CLI subcommand
 
 **Files:**
+
 - Create: `cmd/codegen/merge_schema.go`
 
 - [ ] **Step 1: Write the command**
@@ -886,66 +893,66 @@ Expected: fails because `mergeSchemaCmd` undefined. That's fine — we fill it i
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
+    "encoding/json"
+    "fmt"
+    "os"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/cmd/codegen/schematool"
-	"github.com/spf13/cobra"
+    "github.com/dagger/dagger/cmd/codegen/introspection"
+    "github.com/dagger/dagger/cmd/codegen/schematool"
+    "github.com/spf13/cobra"
 )
 
 var (
-	mergeModuleTypesPath string
-	mergeOutputPath      string
+    mergeModuleTypesPath string
+    mergeOutputPath      string
 )
 
 var mergeSchemaCmd = &cobra.Command{
-	Use:   "merge-schema",
-	Short: "Merge module-defined types into an introspection JSON",
-	RunE:  runMergeSchema,
+    Use:   "merge-schema",
+    Short: "Merge module-defined types into an introspection JSON",
+    RunE:  runMergeSchema,
 }
 
 func init() {
-	mergeSchemaCmd.Flags().StringVar(&mergeModuleTypesPath, "module-types-path", "",
-		"path to module types JSON (produced by SDK Phase-1 source analysis)")
-	_ = mergeSchemaCmd.MarkFlagRequired("module-types-path")
-	mergeSchemaCmd.Flags().StringVar(&mergeOutputPath, "output-path", "",
-		"path to write the merged introspection JSON (default: stdout)")
+    mergeSchemaCmd.Flags().StringVar(&mergeModuleTypesPath, "module-types-path", "",
+        "path to module types JSON (produced by SDK Phase-1 source analysis)")
+    _ = mergeSchemaCmd.MarkFlagRequired("module-types-path")
+    mergeSchemaCmd.Flags().StringVar(&mergeOutputPath, "output-path", "",
+        "path to write the merged introspection JSON (default: stdout)")
 }
 
 func runMergeSchema(cmd *cobra.Command, _ []string) error {
-	if introspectionJSONPath == "" {
-		return fmt.Errorf("--introspection-json-path is required")
-	}
-	introspectionData, err := os.ReadFile(introspectionJSONPath)
-	if err != nil {
-		return fmt.Errorf("read introspection JSON: %w", err)
-	}
-	var resp introspection.Response
-	if err := json.Unmarshal(introspectionData, &resp); err != nil {
-		return fmt.Errorf("unmarshal introspection JSON: %w", err)
-	}
-	modData, err := os.ReadFile(mergeModuleTypesPath)
-	if err != nil {
-		return fmt.Errorf("read module types: %w", err)
-	}
-	var mod schematool.ModuleTypes
-	if err := json.Unmarshal(modData, &mod); err != nil {
-		return fmt.Errorf("unmarshal module types: %w", err)
-	}
-	if err := schematool.Merge(resp.Schema, &mod); err != nil {
-		return fmt.Errorf("merge: %w", err)
-	}
-	out, err := json.Marshal(resp)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-	if mergeOutputPath == "" {
-		_, err := cmd.OutOrStdout().Write(out)
-		return err
-	}
-	return os.WriteFile(mergeOutputPath, out, 0o600)
+    if introspectionJSONPath == "" {
+        return fmt.Errorf("--introspection-json-path is required")
+    }
+    introspectionData, err := os.ReadFile(introspectionJSONPath)
+    if err != nil {
+        return fmt.Errorf("read introspection JSON: %w", err)
+    }
+    var resp introspection.Response
+    if err := json.Unmarshal(introspectionData, &resp); err != nil {
+        return fmt.Errorf("unmarshal introspection JSON: %w", err)
+    }
+    modData, err := os.ReadFile(mergeModuleTypesPath)
+    if err != nil {
+        return fmt.Errorf("read module types: %w", err)
+    }
+    var mod schematool.ModuleTypes
+    if err := json.Unmarshal(modData, &mod); err != nil {
+        return fmt.Errorf("unmarshal module types: %w", err)
+    }
+    if err := schematool.Merge(resp.Schema, &mod); err != nil {
+        return fmt.Errorf("merge: %w", err)
+    }
+    out, err := json.Marshal(resp)
+    if err != nil {
+        return fmt.Errorf("marshal: %w", err)
+    }
+    if mergeOutputPath == "" {
+        _, err := cmd.OutOrStdout().Write(out)
+        return err
+    }
+    return os.WriteFile(mergeOutputPath, out, 0o600)
 }
 ```
 
@@ -1061,6 +1068,7 @@ Signed-off-by: Yves Brissaud <yves@dagger.io>" astscan-go-typedefs
 ### Task 2.2: Scaffold the package
 
 **Files:**
+
 - Create: `cmd/codegen/generator/go/astscan/scanner.go`
 
 - [ ] **Step 1: Skeleton**
@@ -1076,14 +1084,14 @@ Signed-off-by: Yves Brissaud <yves@dagger.io>" astscan-go-typedefs
 package astscan
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
+    "go/ast"
+    "go/parser"
+    "go/token"
+    "os"
+    "path/filepath"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/cmd/codegen/schematool"
+    "github.com/dagger/dagger/cmd/codegen/introspection"
+    "github.com/dagger/dagger/cmd/codegen/schematool"
 )
 
 // Scan parses all .go files in dir (non-recursive, skipping _test.go)
@@ -1093,66 +1101,66 @@ import (
 // an introspection.Type in the schema. moduleName is the module's
 // name (as it will appear in the emitted ModuleTypes).
 func Scan(dir, moduleName string, schema *introspection.Schema) (*schematool.ModuleTypes, error) {
-	fset := token.NewFileSet()
-	pkg, err := parsePackage(fset, dir)
-	if err != nil {
-		return nil, err
-	}
-	return (&scanner{
-		fset:       fset,
-		pkg:        pkg,
-		schema:     schema,
-		moduleName: moduleName,
-	}).run()
+    fset := token.NewFileSet()
+    pkg, err := parsePackage(fset, dir)
+    if err != nil {
+        return nil, err
+    }
+    return (&scanner{
+        fset:       fset,
+        pkg:        pkg,
+        schema:     schema,
+        moduleName: moduleName,
+    }).run()
 }
 
 type scanner struct {
-	fset       *token.FileSet
-	pkg        *ast.Package
-	schema     *introspection.Schema
-	moduleName string
-	imports    map[string]string // local alias → import path, per-file scope
+    fset       *token.FileSet
+    pkg        *ast.Package
+    schema     *introspection.Schema
+    moduleName string
+    imports    map[string]string // local alias → import path, per-file scope
 }
 
 func parsePackage(fset *token.FileSet, dir string) (*ast.Package, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	pkgs := map[string]*ast.Package{}
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".go" {
-			continue
-		}
-		if len(e.Name()) > 8 && e.Name()[len(e.Name())-8:] == "_test.go" {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
-		if err != nil {
-			return nil, err
-		}
-		pkg, ok := pkgs[file.Name.Name]
-		if !ok {
-			pkg = &ast.Package{Name: file.Name.Name, Files: map[string]*ast.File{}}
-			pkgs[file.Name.Name] = pkg
-		}
-		pkg.Files[path] = file
-	}
-	// Prefer `main` if present (Dagger modules use `package main`).
-	if p, ok := pkgs["main"]; ok {
-		return p, nil
-	}
-	for _, p := range pkgs {
-		return p, nil
-	}
-	return &ast.Package{Name: "empty", Files: map[string]*ast.File{}}, nil
+    entries, err := os.ReadDir(dir)
+    if err != nil {
+        return nil, err
+    }
+    pkgs := map[string]*ast.Package{}
+    for _, e := range entries {
+        if e.IsDir() || filepath.Ext(e.Name()) != ".go" {
+            continue
+        }
+        if len(e.Name()) > 8 && e.Name()[len(e.Name())-8:] == "_test.go" {
+            continue
+        }
+        path := filepath.Join(dir, e.Name())
+        file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+        if err != nil {
+            return nil, err
+        }
+        pkg, ok := pkgs[file.Name.Name]
+        if !ok {
+            pkg = &ast.Package{Name: file.Name.Name, Files: map[string]*ast.File{}}
+            pkgs[file.Name.Name] = pkg
+        }
+        pkg.Files[path] = file
+    }
+    // Prefer `main` if present (Dagger modules use `package main`).
+    if p, ok := pkgs["main"]; ok {
+        return p, nil
+    }
+    for _, p := range pkgs {
+        return p, nil
+    }
+    return &ast.Package{Name: "empty", Files: map[string]*ast.File{}}, nil
 }
 
 func (s *scanner) run() (*schematool.ModuleTypes, error) {
-	out := &schematool.ModuleTypes{Name: s.moduleName}
-	// Future: walk s.pkg.Files, build struct/interface/enum defs.
-	return out, nil
+    out := &schematool.ModuleTypes{Name: s.moduleName}
+    // Future: walk s.pkg.Files, build struct/interface/enum defs.
+    return out, nil
 }
 ```
 
@@ -1164,6 +1172,7 @@ Expected: clean build.
 ### Task 2.3: Test — empty package returns empty ModuleTypes
 
 **Files:**
+
 - Create: `cmd/codegen/generator/go/astscan/testdata/empty/main.go`
 - Create: `cmd/codegen/generator/go/astscan/scanner_test.go`
 
@@ -1183,37 +1192,37 @@ func main() {}
 package astscan_test
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"testing"
+    "encoding/json"
+    "os"
+    "path/filepath"
+    "testing"
 
-	"github.com/dagger/dagger/cmd/codegen/generator/go/astscan"
-	"github.com/dagger/dagger/cmd/codegen/introspection"
+    "github.com/dagger/dagger/cmd/codegen/generator/go/astscan"
+    "github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
 func TestScan_Empty(t *testing.T) {
-	schema := loadSchema(t)
-	mt, err := astscan.Scan(filepath.Join("testdata", "empty"), "empty", schema)
-	if err != nil {
-		t.Fatalf("scan: %v", err)
-	}
-	if len(mt.Objects) != 0 || len(mt.Interfaces) != 0 || len(mt.Enums) != 0 {
-		t.Errorf("expected empty ModuleTypes, got %+v", mt)
-	}
+    schema := loadSchema(t)
+    mt, err := astscan.Scan(filepath.Join("testdata", "empty"), "empty", schema)
+    if err != nil {
+        t.Fatalf("scan: %v", err)
+    }
+    if len(mt.Objects) != 0 || len(mt.Interfaces) != 0 || len(mt.Enums) != 0 {
+        t.Errorf("expected empty ModuleTypes, got %+v", mt)
+    }
 }
 
 func loadSchema(t *testing.T) *introspection.Schema {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "schema.json"))
-	if err != nil {
-		t.Fatalf("read schema: %v", err)
-	}
-	var resp introspection.Response
-	if err := json.Unmarshal(data, &resp); err != nil {
-		t.Fatalf("unmarshal schema: %v", err)
-	}
-	return resp.Schema
+    t.Helper()
+    data, err := os.ReadFile(filepath.Join("testdata", "schema.json"))
+    if err != nil {
+        t.Fatalf("read schema: %v", err)
+    }
+    var resp introspection.Response
+    if err := json.Unmarshal(data, &resp); err != nil {
+        t.Fatalf("unmarshal schema: %v", err)
+    }
+    return resp.Schema
 }
 ```
 
@@ -1229,6 +1238,7 @@ Expected: PASS.
 ### Task 2.4: Test — single struct with method
 
 **Files:**
+
 - Create: `cmd/codegen/generator/go/astscan/testdata/single_struct/main.go`
 - Create: `cmd/codegen/generator/go/astscan/testdata/single_struct/expected.json`
 - Modify: `cmd/codegen/generator/go/astscan/scanner_test.go`
@@ -1246,7 +1256,7 @@ type Echo struct{}
 
 // Say returns the greeting.
 func (e *Echo) Say(ctx context.Context, msg string) string {
-	return "hello " + msg
+    return "hello " + msg
 }
 ```
 
@@ -1279,33 +1289,33 @@ Replace `TestScan_Empty` with a table test:
 
 ```go
 func TestScan(t *testing.T) {
-	cases := []struct {
-		name       string
-		moduleName string
-	}{
-		{"empty", "empty"},
-		{"single_struct", "echo"},
-	}
-	schema := loadSchema(t)
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := astscan.Scan(filepath.Join("testdata", tc.name), tc.moduleName, schema)
-			if err != nil {
-				t.Fatalf("scan: %v", err)
-			}
-			expectedPath := filepath.Join("testdata", tc.name, "expected.json")
-			expectedBytes, err := os.ReadFile(expectedPath)
-			if err != nil {
-				// empty case may not have expected.json
-				if len(got.Objects)+len(got.Interfaces)+len(got.Enums) == 0 {
-					return
-				}
-				t.Fatalf("read expected: %v", err)
-			}
-			gotBytes, _ := json.Marshal(got)
-			assertJSONEqual(t, gotBytes, expectedBytes)
-		})
-	}
+    cases := []struct {
+        name       string
+        moduleName string
+    }{
+        {"empty", "empty"},
+        {"single_struct", "echo"},
+    }
+    schema := loadSchema(t)
+    for _, tc := range cases {
+        t.Run(tc.name, func(t *testing.T) {
+            got, err := astscan.Scan(filepath.Join("testdata", tc.name), tc.moduleName, schema)
+            if err != nil {
+                t.Fatalf("scan: %v", err)
+            }
+            expectedPath := filepath.Join("testdata", tc.name, "expected.json")
+            expectedBytes, err := os.ReadFile(expectedPath)
+            if err != nil {
+                // empty case may not have expected.json
+                if len(got.Objects)+len(got.Interfaces)+len(got.Enums) == 0 {
+                    return
+                }
+                t.Fatalf("read expected: %v", err)
+            }
+            gotBytes, _ := json.Marshal(got)
+            assertJSONEqual(t, gotBytes, expectedBytes)
+        })
+    }
 }
 ```
 
@@ -1319,6 +1329,7 @@ Expected: FAIL — scanner returns empty, expected non-empty.
 ### Task 2.5: Implement struct and method extraction
 
 **Files:**
+
 - Modify: `cmd/codegen/generator/go/astscan/scanner.go`
 - Create: `cmd/codegen/generator/go/astscan/resolve.go`
 
@@ -1330,12 +1341,12 @@ Expected: FAIL — scanner returns empty, expected non-empty.
 package astscan
 
 import (
-	"fmt"
-	"go/ast"
-	"strings"
+    "fmt"
+    "go/ast"
+    "strings"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/cmd/codegen/schematool"
+    "github.com/dagger/dagger/cmd/codegen/introspection"
+    "github.com/dagger/dagger/cmd/codegen/schematool"
 )
 
 const daggerImportPath = "dagger.io/dagger"
@@ -1345,101 +1356,101 @@ const daggerImportPath = "dagger.io/dagger"
 // sameModuleTypes is the set of names declared in the module itself —
 // these resolve to OBJECT kind with an empty schema lookup.
 func (s *scanner) resolveType(expr ast.Expr, imports map[string]string, sameModuleTypes map[string]string) (*schematool.TypeRef, error) {
-	switch t := expr.(type) {
-	case *ast.StarExpr:
-		inner, err := s.resolveType(t.X, imports, sameModuleTypes)
-		if err != nil {
-			return nil, err
-		}
-		return inner, nil // pointer makes optional; we ignore pointer-ness here
-	case *ast.ArrayType:
-		inner, err := s.resolveType(t.Elt, imports, sameModuleTypes)
-		if err != nil {
-			return nil, err
-		}
-		return &schematool.TypeRef{
-			Kind: "NON_NULL",
-			OfType: &schematool.TypeRef{
-				Kind:   "LIST",
-				OfType: nonNull(inner),
-			},
-		}, nil
-	case *ast.Ident:
-		return s.resolveIdent(t, sameModuleTypes)
-	case *ast.SelectorExpr:
-		pkg, ok := t.X.(*ast.Ident)
-		if !ok {
-			return nil, fmt.Errorf("unsupported selector: %T", t.X)
-		}
-		return s.resolveSelector(pkg.Name, t.Sel.Name, imports)
-	}
-	return nil, fmt.Errorf("unsupported type expression: %T", expr)
+    switch t := expr.(type) {
+    case *ast.StarExpr:
+        inner, err := s.resolveType(t.X, imports, sameModuleTypes)
+        if err != nil {
+            return nil, err
+        }
+        return inner, nil // pointer makes optional; we ignore pointer-ness here
+    case *ast.ArrayType:
+        inner, err := s.resolveType(t.Elt, imports, sameModuleTypes)
+        if err != nil {
+            return nil, err
+        }
+        return &schematool.TypeRef{
+            Kind: "NON_NULL",
+            OfType: &schematool.TypeRef{
+                Kind:   "LIST",
+                OfType: nonNull(inner),
+            },
+        }, nil
+    case *ast.Ident:
+        return s.resolveIdent(t, sameModuleTypes)
+    case *ast.SelectorExpr:
+        pkg, ok := t.X.(*ast.Ident)
+        if !ok {
+            return nil, fmt.Errorf("unsupported selector: %T", t.X)
+        }
+        return s.resolveSelector(pkg.Name, t.Sel.Name, imports)
+    }
+    return nil, fmt.Errorf("unsupported type expression: %T", expr)
 }
 
 func (s *scanner) resolveIdent(id *ast.Ident, sameModuleTypes map[string]string) (*schematool.TypeRef, error) {
-	if kind, ok := builtinTypes[id.Name]; ok {
-		return nonNull(&schematool.TypeRef{Kind: kind, Name: scalarName(id.Name)}), nil
-	}
-	if kind, ok := sameModuleTypes[id.Name]; ok {
-		return nonNull(&schematool.TypeRef{Kind: kind, Name: id.Name}), nil
-	}
-	return nil, fmt.Errorf("unresolved identifier %q", id.Name)
+    if kind, ok := builtinTypes[id.Name]; ok {
+        return nonNull(&schematool.TypeRef{Kind: kind, Name: scalarName(id.Name)}), nil
+    }
+    if kind, ok := sameModuleTypes[id.Name]; ok {
+        return nonNull(&schematool.TypeRef{Kind: kind, Name: id.Name}), nil
+    }
+    return nil, fmt.Errorf("unresolved identifier %q", id.Name)
 }
 
 func (s *scanner) resolveSelector(pkgAlias, typeName string, imports map[string]string) (*schematool.TypeRef, error) {
-	path, ok := imports[pkgAlias]
-	if !ok {
-		return nil, fmt.Errorf("unknown import alias %q", pkgAlias)
-	}
-	if path == "context" && typeName == "Context" {
-		// Special-cased: contexts are a sentinel arg in Dagger; generator drops them.
-		return nil, errContextArg
-	}
-	if path == daggerImportPath {
-		t := s.schema.Types.Get(typeName)
-		if t == nil {
-			return nil, fmt.Errorf("type %s.%s not found in introspection schema", pkgAlias, typeName)
-		}
-		return nonNull(&schematool.TypeRef{Kind: string(t.Kind), Name: typeName}), nil
-	}
-	return nil, fmt.Errorf("unsupported external type %s.%s (import %q)", pkgAlias, typeName, path)
+    path, ok := imports[pkgAlias]
+    if !ok {
+        return nil, fmt.Errorf("unknown import alias %q", pkgAlias)
+    }
+    if path == "context" && typeName == "Context" {
+        // Special-cased: contexts are a sentinel arg in Dagger; generator drops them.
+        return nil, errContextArg
+    }
+    if path == daggerImportPath {
+        t := s.schema.Types.Get(typeName)
+        if t == nil {
+            return nil, fmt.Errorf("type %s.%s not found in introspection schema", pkgAlias, typeName)
+        }
+        return nonNull(&schematool.TypeRef{Kind: string(t.Kind), Name: typeName}), nil
+    }
+    return nil, fmt.Errorf("unsupported external type %s.%s (import %q)", pkgAlias, typeName, path)
 }
 
 var errContextArg = fmt.Errorf("context.Context")
 
 // builtinTypes maps Go primitives to GraphQL SCALAR kinds.
 var builtinTypes = map[string]string{
-	"string":  "SCALAR",
-	"int":     "SCALAR",
-	"int32":   "SCALAR",
-	"int64":   "SCALAR",
-	"float32": "SCALAR",
-	"float64": "SCALAR",
-	"bool":    "SCALAR",
+    "string":  "SCALAR",
+    "int":     "SCALAR",
+    "int32":   "SCALAR",
+    "int64":   "SCALAR",
+    "float32": "SCALAR",
+    "float64": "SCALAR",
+    "bool":    "SCALAR",
 }
 
 func scalarName(goName string) string {
-	switch goName {
-	case "string":
-		return "String"
-	case "int", "int32", "int64":
-		return "Int"
-	case "float32", "float64":
-		return "Float"
-	case "bool":
-		return "Boolean"
-	}
-	return goName
+    switch goName {
+    case "string":
+        return "String"
+    case "int", "int32", "int64":
+        return "Int"
+    case "float32", "float64":
+        return "Float"
+    case "bool":
+        return "Boolean"
+    }
+    return goName
 }
 
 func nonNull(t *schematool.TypeRef) *schematool.TypeRef {
-	if t == nil {
-		return nil
-	}
-	if strings.EqualFold(t.Kind, "NON_NULL") {
-		return t
-	}
-	return &schematool.TypeRef{Kind: "NON_NULL", OfType: t}
+    if t == nil {
+        return nil
+    }
+    if strings.EqualFold(t.Kind, "NON_NULL") {
+        return t
+    }
+    return &schematool.TypeRef{Kind: "NON_NULL", OfType: t}
 }
 ```
 
@@ -1449,189 +1460,189 @@ Replace `run()` and add helpers:
 
 ```go
 func (s *scanner) run() (*schematool.ModuleTypes, error) {
-	out := &schematool.ModuleTypes{Name: s.moduleName}
+    out := &schematool.ModuleTypes{Name: s.moduleName}
 
-	// Two-pass: first collect type names (for same-module lookup),
-	// then extract details.
-	sameModule := map[string]string{}
-	for _, f := range s.pkg.Files {
-		for _, decl := range f.Decls {
-			gd, ok := decl.(*ast.GenDecl)
-			if !ok || gd.Tok != token.TYPE {
-				continue
-			}
-			for _, spec := range gd.Specs {
-				ts := spec.(*ast.TypeSpec)
-				switch ts.Type.(type) {
-				case *ast.StructType:
-					sameModule[ts.Name.Name] = "OBJECT"
-				case *ast.InterfaceType:
-					sameModule[ts.Name.Name] = "INTERFACE"
-				}
-			}
-		}
-	}
+    // Two-pass: first collect type names (for same-module lookup),
+    // then extract details.
+    sameModule := map[string]string{}
+    for _, f := range s.pkg.Files {
+        for _, decl := range f.Decls {
+            gd, ok := decl.(*ast.GenDecl)
+            if !ok || gd.Tok != token.TYPE {
+                continue
+            }
+            for _, spec := range gd.Specs {
+                ts := spec.(*ast.TypeSpec)
+                switch ts.Type.(type) {
+                case *ast.StructType:
+                    sameModule[ts.Name.Name] = "OBJECT"
+                case *ast.InterfaceType:
+                    sameModule[ts.Name.Name] = "INTERFACE"
+                }
+            }
+        }
+    }
 
-	// Walk files.
-	methods := map[string][]*ast.FuncDecl{} // receiver name → methods
-	for _, f := range s.pkg.Files {
-		imports := collectImports(f)
-		for _, decl := range f.Decls {
-			switch d := decl.(type) {
-			case *ast.GenDecl:
-				if err := s.walkGenDecl(out, d, imports, sameModule); err != nil {
-					return nil, err
-				}
-			case *ast.FuncDecl:
-				if d.Recv == nil || len(d.Recv.List) == 0 {
-					continue
-				}
-				recvName := recvTypeName(d.Recv.List[0].Type)
-				if recvName == "" {
-					continue
-				}
-				if _, isSameMod := sameModule[recvName]; !isSameMod {
-					continue
-				}
-				methods[recvName] = append(methods[recvName], d)
-			}
-		}
-	}
+    // Walk files.
+    methods := map[string][]*ast.FuncDecl{} // receiver name → methods
+    for _, f := range s.pkg.Files {
+        imports := collectImports(f)
+        for _, decl := range f.Decls {
+            switch d := decl.(type) {
+            case *ast.GenDecl:
+                if err := s.walkGenDecl(out, d, imports, sameModule); err != nil {
+                    return nil, err
+                }
+            case *ast.FuncDecl:
+                if d.Recv == nil || len(d.Recv.List) == 0 {
+                    continue
+                }
+                recvName := recvTypeName(d.Recv.List[0].Type)
+                if recvName == "" {
+                    continue
+                }
+                if _, isSameMod := sameModule[recvName]; !isSameMod {
+                    continue
+                }
+                methods[recvName] = append(methods[recvName], d)
+            }
+        }
+    }
 
-	// Attach methods to the appropriate object/interface entries in out.
-	for i, obj := range out.Objects {
-		for _, m := range methods[obj.Name] {
-			fn, err := s.walkMethod(m, collectImports(findFile(s.pkg, m)), sameModule)
-			if err != nil {
-				return nil, err
-			}
-			if fn != nil {
-				out.Objects[i].Functions = append(out.Objects[i].Functions, *fn)
-			}
-		}
-	}
-	return out, nil
+    // Attach methods to the appropriate object/interface entries in out.
+    for i, obj := range out.Objects {
+        for _, m := range methods[obj.Name] {
+            fn, err := s.walkMethod(m, collectImports(findFile(s.pkg, m)), sameModule)
+            if err != nil {
+                return nil, err
+            }
+            if fn != nil {
+                out.Objects[i].Functions = append(out.Objects[i].Functions, *fn)
+            }
+        }
+    }
+    return out, nil
 }
 
 func findFile(pkg *ast.Package, decl *ast.FuncDecl) *ast.File {
-	for _, f := range pkg.Files {
-		for _, d := range f.Decls {
-			if d == decl {
-				return f
-			}
-		}
-	}
-	return nil
+    for _, f := range pkg.Files {
+        for _, d := range f.Decls {
+            if d == decl {
+                return f
+            }
+        }
+    }
+    return nil
 }
 
 func collectImports(f *ast.File) map[string]string {
-	imports := map[string]string{}
-	for _, imp := range f.Imports {
-		path := trimQuotes(imp.Path.Value)
-		alias := ""
-		if imp.Name != nil {
-			alias = imp.Name.Name
-		} else {
-			parts := strings.Split(path, "/")
-			alias = parts[len(parts)-1]
-		}
-		imports[alias] = path
-	}
-	return imports
+    imports := map[string]string{}
+    for _, imp := range f.Imports {
+        path := trimQuotes(imp.Path.Value)
+        alias := ""
+        if imp.Name != nil {
+            alias = imp.Name.Name
+        } else {
+            parts := strings.Split(path, "/")
+            alias = parts[len(parts)-1]
+        }
+        imports[alias] = path
+    }
+    return imports
 }
 
 func trimQuotes(s string) string {
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		return s[1 : len(s)-1]
-	}
-	return s
+    if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+        return s[1 : len(s)-1]
+    }
+    return s
 }
 
 func recvTypeName(expr ast.Expr) string {
-	switch t := expr.(type) {
-	case *ast.StarExpr:
-		return recvTypeName(t.X)
-	case *ast.Ident:
-		return t.Name
-	}
-	return ""
+    switch t := expr.(type) {
+    case *ast.StarExpr:
+        return recvTypeName(t.X)
+    case *ast.Ident:
+        return t.Name
+    }
+    return ""
 }
 
 func (s *scanner) walkGenDecl(out *schematool.ModuleTypes, gd *ast.GenDecl, imports map[string]string, sameModule map[string]string) error {
-	if gd.Tok != token.TYPE {
-		return nil
-	}
-	for _, spec := range gd.Specs {
-		ts := spec.(*ast.TypeSpec)
-		switch st := ts.Type.(type) {
-		case *ast.StructType:
-			out.Objects = append(out.Objects, schematool.ObjectDef{
-				Name:        ts.Name.Name,
-				Description: strings.TrimSpace(gd.Doc.Text()),
-			})
-			_ = st // fields not emitted in this commit
-		case *ast.InterfaceType:
-			out.Interfaces = append(out.Interfaces, schematool.InterfaceDef{
-				Name:        ts.Name.Name,
-				Description: strings.TrimSpace(gd.Doc.Text()),
-			})
-			_ = st // interface methods handled later
-		}
-	}
-	return nil
+    if gd.Tok != token.TYPE {
+        return nil
+    }
+    for _, spec := range gd.Specs {
+        ts := spec.(*ast.TypeSpec)
+        switch st := ts.Type.(type) {
+        case *ast.StructType:
+            out.Objects = append(out.Objects, schematool.ObjectDef{
+                Name:        ts.Name.Name,
+                Description: strings.TrimSpace(gd.Doc.Text()),
+            })
+            _ = st // fields not emitted in this commit
+        case *ast.InterfaceType:
+            out.Interfaces = append(out.Interfaces, schematool.InterfaceDef{
+                Name:        ts.Name.Name,
+                Description: strings.TrimSpace(gd.Doc.Text()),
+            })
+            _ = st // interface methods handled later
+        }
+    }
+    return nil
 }
 
 func (s *scanner) walkMethod(fd *ast.FuncDecl, imports map[string]string, sameModule map[string]string) (*schematool.Function, error) {
-	if !fd.Name.IsExported() {
-		return nil, nil
-	}
-	fn := &schematool.Function{
-		Name:        lowerFirst(fd.Name.Name),
-		Description: strings.TrimSpace(fd.Doc.Text()),
-	}
+    if !fd.Name.IsExported() {
+        return nil, nil
+    }
+    fn := &schematool.Function{
+        Name:        lowerFirst(fd.Name.Name),
+        Description: strings.TrimSpace(fd.Doc.Text()),
+    }
 
-	if fd.Type.Params != nil {
-		for _, field := range fd.Type.Params.List {
-			tref, err := s.resolveType(field.Type, imports, sameModule)
-			if err == errContextArg {
-				continue
-			}
-			if err != nil {
-				return nil, fmt.Errorf("method %s param: %w", fd.Name.Name, err)
-			}
-			for _, name := range field.Names {
-				fn.Args = append(fn.Args, schematool.FuncArg{
-					Name:    name.Name,
-					TypeRef: tref,
-				})
-			}
-		}
-	}
+    if fd.Type.Params != nil {
+        for _, field := range fd.Type.Params.List {
+            tref, err := s.resolveType(field.Type, imports, sameModule)
+            if err == errContextArg {
+                continue
+            }
+            if err != nil {
+                return nil, fmt.Errorf("method %s param: %w", fd.Name.Name, err)
+            }
+            for _, name := range field.Names {
+                fn.Args = append(fn.Args, schematool.FuncArg{
+                    Name:    name.Name,
+                    TypeRef: tref,
+                })
+            }
+        }
+    }
 
-	if fd.Type.Results == nil || len(fd.Type.Results.List) == 0 {
-		return nil, fmt.Errorf("method %s has no return type", fd.Name.Name)
-	}
-	// Use first non-error return as payload.
-	for _, res := range fd.Type.Results.List {
-		tref, err := s.resolveType(res.Type, imports, sameModule)
-		if err != nil {
-			// `error` return is fine; skip.
-			if ident, ok := res.Type.(*ast.Ident); ok && ident.Name == "error" {
-				continue
-			}
-			return nil, fmt.Errorf("method %s return: %w", fd.Name.Name, err)
-		}
-		fn.ReturnType = tref
-		break
-	}
-	return fn, nil
+    if fd.Type.Results == nil || len(fd.Type.Results.List) == 0 {
+        return nil, fmt.Errorf("method %s has no return type", fd.Name.Name)
+    }
+    // Use first non-error return as payload.
+    for _, res := range fd.Type.Results.List {
+        tref, err := s.resolveType(res.Type, imports, sameModule)
+        if err != nil {
+            // `error` return is fine; skip.
+            if ident, ok := res.Type.(*ast.Ident); ok && ident.Name == "error" {
+                continue
+            }
+            return nil, fmt.Errorf("method %s return: %w", fd.Name.Name, err)
+        }
+        fn.ReturnType = tref
+        break
+    }
+    return fn, nil
 }
 
 func lowerFirst(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToLower(s[:1]) + s[1:]
+    if s == "" {
+        return s
+    }
+    return strings.ToLower(s[:1]) + s[1:]
 }
 ```
 
@@ -1643,6 +1654,7 @@ Expected: PASS.
 ### Task 2.6: Interface fixture
 
 **Files:**
+
 - Create: `cmd/codegen/generator/go/astscan/testdata/interface/main.go`
 - Create: `cmd/codegen/generator/go/astscan/testdata/interface/expected.json`
 
@@ -1653,8 +1665,8 @@ package main
 
 // Animal is a thing that makes sound.
 type Animal interface {
-	// Sound produces a noise.
-	Sound() string
+    // Sound produces a noise.
+    Sound() string
 }
 ```
 
@@ -1674,6 +1686,7 @@ Expected: PASS.
 ### Task 2.7: Enum fixture (typed string constants)
 
 **Files:**
+
 - Create: `cmd/codegen/generator/go/astscan/testdata/enum/main.go`
 - Create: `cmd/codegen/generator/go/astscan/testdata/enum/expected.json`
 
@@ -1686,10 +1699,10 @@ package main
 type Status string
 
 const (
-	// StatusPending is the initial state.
-	StatusPending Status = "PENDING"
-	// StatusActive is the running state.
-	StatusActive Status = "ACTIVE"
+    // StatusPending is the initial state.
+    StatusPending Status = "PENDING"
+    // StatusActive is the running state.
+    StatusActive Status = "ACTIVE"
 )
 ```
 
@@ -1709,6 +1722,7 @@ Expected: PASS.
 ### Task 2.8: Error cases
 
 **Files:**
+
 - Create: `cmd/codegen/generator/go/astscan/testdata/unresolved_type/main.go`
 - Modify: `cmd/codegen/generator/go/astscan/scanner_test.go`
 
@@ -1728,14 +1742,14 @@ func (e *Echo) Use(x foreign.Thing) string { return "" }
 
 ```go
 func TestScan_UnresolvedType(t *testing.T) {
-	schema := loadSchema(t)
-	_, err := astscan.Scan(filepath.Join("testdata", "unresolved_type"), "echo", schema)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "unsupported external type") {
-		t.Errorf("unexpected error: %v", err)
-	}
+    schema := loadSchema(t)
+    _, err := astscan.Scan(filepath.Join("testdata", "unresolved_type"), "echo", schema)
+    if err == nil {
+        t.Fatal("expected error, got nil")
+    }
+    if !strings.Contains(err.Error(), "unsupported external type") {
+        t.Errorf("unexpected error: %v", err)
+    }
 }
 ```
 
@@ -1793,6 +1807,7 @@ Signed-off-by: Yves Brissaud <yves@dagger.io>" generate-module-ast-pilot
 ### Task 3.2: Move legacy generator files behind a build tag
 
 **Files:**
+
 - Modify: `cmd/codegen/generator/go/generate_module.go` → copy current content to `generate_module_legacy.go`, add build tag
 - Modify: `cmd/codegen/generator/go/generate_typedefs.go` → rename to `generate_typedefs_legacy.go`, add build tag
 
@@ -1843,6 +1858,7 @@ Expected: all PASS.
 ### Task 3.3: Rewrite `generate_module.go` to use astscan + schematool
 
 **Files:**
+
 - Modify: `cmd/codegen/generator/go/generate_module.go` (completely replaced)
 
 - [ ] **Step 1: Replace the file**
@@ -1862,104 +1878,104 @@ Full file content:
 package gogenerator
 
 import (
-	"context"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
+    "context"
+    "fmt"
+    "io/fs"
+    "os"
+    "path/filepath"
 
-	"github.com/dagger/dagger/cmd/codegen/generator"
-	"github.com/dagger/dagger/cmd/codegen/generator/go/astscan"
-	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/cmd/codegen/schematool"
-	"github.com/dschmidt/go-layerfs"
-	"github.com/psanford/memfs"
+    "github.com/dagger/dagger/cmd/codegen/generator"
+    "github.com/dagger/dagger/cmd/codegen/generator/go/astscan"
+    "github.com/dagger/dagger/cmd/codegen/introspection"
+    "github.com/dagger/dagger/cmd/codegen/schematool"
+    "github.com/dschmidt/go-layerfs"
+    "github.com/psanford/memfs"
 )
 
 func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
-	if g.Config.ModuleConfig == nil {
-		return nil, fmt.Errorf("generateModule is called but module config is missing")
-	}
+    if g.Config.ModuleConfig == nil {
+        return nil, fmt.Errorf("generateModule is called but module config is missing")
+    }
 
-	moduleConfig := g.Config.ModuleConfig
-	generator.SetSchema(schema)
+    moduleConfig := g.Config.ModuleConfig
+    generator.SetSchema(schema)
 
-	outDir := filepath.Clean(moduleConfig.ModuleSourcePath)
-	mfs := memfs.New()
-	layers := []fs.FS{mfs}
-	genSt := &generator.GeneratedState{}
+    outDir := filepath.Clean(moduleConfig.ModuleSourcePath)
+    mfs := memfs.New()
+    layers := []fs.FS{mfs}
+    genSt := &generator.GeneratedState{}
 
-	pkgInfo, partial, err := g.bootstrapMod(mfs, genSt, false)
-	if err != nil {
-		return nil, fmt.Errorf("bootstrap package: %w", err)
-	}
-	genSt.Overlay = layerfs.New(layers...)
+    pkgInfo, partial, err := g.bootstrapMod(mfs, genSt, false)
+    if err != nil {
+        return nil, fmt.Errorf("bootstrap package: %w", err)
+    }
+    genSt.Overlay = layerfs.New(layers...)
 
-	if outDir != "." {
-		_ = mfs.MkdirAll(outDir, 0700)
-		sub, err := mfs.Sub(outDir)
-		if err != nil {
-			return nil, err
-		}
-		mfs = sub.(*memfs.FS)
-	}
+    if outDir != "." {
+        _ = mfs.MkdirAll(outDir, 0700)
+        sub, err := mfs.Sub(outDir)
+        if err != nil {
+            return nil, err
+        }
+        mfs = sub.(*memfs.FS)
+    }
 
-	initialGoFiles, err := filepath.Glob(filepath.Join(g.Config.OutputDir, outDir, "*.go"))
-	if err != nil {
-		return nil, fmt.Errorf("glob go files: %w", err)
-	}
+    initialGoFiles, err := filepath.Glob(filepath.Join(g.Config.OutputDir, outDir, "*.go"))
+    if err != nil {
+        return nil, fmt.Errorf("glob go files: %w", err)
+    }
 
-	genFile := filepath.Join(g.Config.OutputDir, outDir, ClientGenFile)
-	if _, err := os.Stat(genFile); err != nil {
-		pkgInfo.PackageName = "main"
-		if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, nil, nil, 0); err != nil {
-			return nil, fmt.Errorf("generate code: %w", err)
-		}
-		partial = true
-	}
-	if len(initialGoFiles) == 0 {
-		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName)), 0600); err != nil {
-			return nil, err
-		}
-		partial = true
-	}
-	if partial {
-		genSt.NeedRegenerate = true
-		return genSt, nil
-	}
+    genFile := filepath.Join(g.Config.OutputDir, outDir, ClientGenFile)
+    if _, err := os.Stat(genFile); err != nil {
+        pkgInfo.PackageName = "main"
+        if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, nil, nil, 0); err != nil {
+            return nil, fmt.Errorf("generate code: %w", err)
+        }
+        partial = true
+    }
+    if len(initialGoFiles) == 0 {
+        if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName)), 0600); err != nil {
+            return nil, err
+        }
+        partial = true
+    }
+    if partial {
+        genSt.NeedRegenerate = true
+        return genSt, nil
+    }
 
-	// Phase 1: AST scan the user's source.
-	userSourceDir := filepath.Join(g.Config.OutputDir, outDir)
-	modTypes, err := astscan.Scan(userSourceDir, moduleConfig.ModuleName, schema)
-	if err != nil {
-		return nil, fmt.Errorf("astscan: %w", err)
-	}
+    // Phase 1: AST scan the user's source.
+    userSourceDir := filepath.Join(g.Config.OutputDir, outDir)
+    modTypes, err := astscan.Scan(userSourceDir, moduleConfig.ModuleName, schema)
+    if err != nil {
+        return nil, fmt.Errorf("astscan: %w", err)
+    }
 
-	// Phase 2: merge if self-calls enabled. The SDK runtime decides by
-	// setting ModuleConfig.SelfCalls; see Task 3.4 for wiring.
-	if moduleConfig.SelfCalls {
-		if err := schematool.Merge(schema, modTypes); err != nil {
-			return nil, fmt.Errorf("schematool merge: %w", err)
-		}
-	}
+    // Phase 2: merge if self-calls enabled. The SDK runtime decides by
+    // setting ModuleConfig.SelfCalls; see Task 3.4 for wiring.
+    if moduleConfig.SelfCalls {
+        if err := schematool.Merge(schema, modTypes); err != nil {
+            return nil, fmt.Errorf("schematool merge: %w", err)
+        }
+    }
 
-	// Phase 3: generate bindings from the (possibly merged) schema.
-	//
-	// The existing generateCode path is reused: it walks whatever the
-	// schema contains, which now includes self-types if self-calls on.
-	// We still need `pkg` and `fset` for the second pass, to emit the
-	// module's main.go stub and bindings; obtain them from the AST
-	// scanner rather than packages.Load.
-	pkg, fset, err := astscan.LoadPackage(userSourceDir)
-	if err != nil {
-		return nil, fmt.Errorf("load package %q: %w", outDir, err)
-	}
-	pkgInfo.PackageName = pkg.Name
+    // Phase 3: generate bindings from the (possibly merged) schema.
+    //
+    // The existing generateCode path is reused: it walks whatever the
+    // schema contains, which now includes self-types if self-calls on.
+    // We still need `pkg` and `fset` for the second pass, to emit the
+    // module's main.go stub and bindings; obtain them from the AST
+    // scanner rather than packages.Load.
+    pkg, fset, err := astscan.LoadPackage(userSourceDir)
+    if err != nil {
+        return nil, fmt.Errorf("load package %q: %w", outDir, err)
+    }
+    pkgInfo.PackageName = pkg.Name
 
-	if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, pkg, fset, 1); err != nil {
-		return nil, fmt.Errorf("generate code: %w", err)
-	}
-	return genSt, nil
+    if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, pkg, fset, 1); err != nil {
+        return nil, fmt.Errorf("generate code: %w", err)
+    }
+    return genSt, nil
 }
 ```
 
@@ -2003,6 +2019,7 @@ Expected: clean.
 ### Task 3.4: Add `--legacy-typedefs` flag + `--self-calls` flag
 
 **Files:**
+
 - Modify: `cmd/codegen/generate_module.go`
 - Modify: `cmd/codegen/main.go`
 
@@ -2051,6 +2068,7 @@ Both expected: clean.
 ### Task 3.5: Update Go SDK runtime to pass --self-calls when appropriate
 
 **Files:**
+
 - Modify: `core/sdk/go_sdk.go` (around `baseWithCodegen`)
 
 - [ ] **Step 1: Read current codegen arg list**
@@ -2128,6 +2146,7 @@ Signed-off-by: Yves Brissaud <yves@dagger.io>" go-sdk-drop-moduletypes
 ### Task 4.2: Modify `core/sdk/go_sdk.go`
 
 **Files:**
+
 - Modify: `core/sdk/go_sdk.go`
 
 - [ ] **Step 1: Change AsModuleTypes**
@@ -2136,7 +2155,7 @@ Replace:
 
 ```go
 func (sdk *goSDK) AsModuleTypes() (core.ModuleTypes, bool) {
-	return sdk, true
+    return sdk, true
 }
 ```
 
@@ -2144,10 +2163,10 @@ With:
 
 ```go
 func (sdk *goSDK) AsModuleTypes() (core.ModuleTypes, bool) {
-	// Go SDK handles type discovery entirely within generate-module
-	// (AST scan + schematool merge). The engine falls through to the
-	// Runtime + empty-function-name path at asModule time.
-	return nil, false
+    // Go SDK handles type discovery entirely within generate-module
+    // (AST scan + schematool merge). The engine falls through to the
+    // Runtime + empty-function-name path at asModule time.
+    return nil, false
 }
 ```
 
@@ -2221,6 +2240,7 @@ Expected: PASS. This is the most important single gate for the design.
 ### Task 5.3: Add parity test (new vs legacy)
 
 **Files:**
+
 - Modify: `core/integration/module_test.go`
 
 - [ ] **Step 1: Write the test**
@@ -2238,9 +2258,9 @@ Example skeleton (fill in using the same helpers the rest of `module_test.go` us
 
 ```go
 func (ModuleSuite) TestGoCodegenPhase1Parity(ctx context.Context, t *testctx.T) {
-	t.Skip("rebuild-with-tag harness not yet implemented; tracked in PR 2")
-	// TODO(yves, PR 2): wire a two-build compare once the dev harness
-	// exposes a `go build -tags legacy_typedefs` helper for cmd/codegen.
+    t.Skip("rebuild-with-tag harness not yet implemented; tracked in PR 2")
+    // TODO(yves, PR 2): wire a two-build compare once the dev harness
+    // exposes a `go build -tags legacy_typedefs` helper for cmd/codegen.
 }
 ```
 
@@ -2255,6 +2275,7 @@ Expected: PASS (skipped).
 ### Task 5.4: Add self-calls-on-new-path smoke test
 
 **Files:**
+
 - Modify: `core/integration/module_test.go`
 
 - [ ] **Step 1: Review existing self-calls test**
