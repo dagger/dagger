@@ -10,8 +10,8 @@
       "source": "../.."
     }
   ],
-  "disableDefaultFunctionCaching": true,
   "codegen": {
     "automaticGitignore": false
-  }
+  },
+  "disableDefaultFunctionCaching": true
 }

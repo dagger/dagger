@@ -1,11 +1,11 @@
 {
   "name": "only-codegen",
-  "engineVersion": "v0.20.1",
+  "engineVersion": "v0.20.6",
   "sdk": {
     "source": "go"
   },
-  "disableDefaultFunctionCaching": true,
   "codegen": {
     "automaticGitignore": false
-  }
+  },
+  "disableDefaultFunctionCaching": true
 }
