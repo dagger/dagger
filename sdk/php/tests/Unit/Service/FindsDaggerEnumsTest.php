@@ -84,6 +84,35 @@ class FindsDaggerEnumsTest extends TestCase
     }
 
     #[Test]
+    public function itFindsEnumsFromManuallyBuiltDaggerObjects(): void
+    {
+        // FindsDaggerEnums operates on DaggerObject value objects, not on PHP
+        // attributes. The referenced enum class itself needs no #[DaggerObject]
+        // annotation — only the type graph matters.
+        $statusType = new ValueObject\Type(Status::class);
+        $daggerObjects = [
+            new ValueObject\DaggerObject(
+                name: 'AnyClass',
+                description: '',
+                fields: [],
+                functions: [
+                    new ValueObject\DaggerFunction(
+                        name: 'handle',
+                        description: null,
+                        arguments: [new ValueObject\Argument('s', '', $statusType)],
+                        returnType: $statusType,
+                    ),
+                ],
+            ),
+        ];
+
+        $result = (new FindsDaggerEnums())($daggerObjects);
+
+        $fqns = array_map(fn(DaggerEnum $e) => $e->name, $result);
+        self::assertContains(Status::class, $fqns);
+    }
+
+    #[Test]
     public function itReturnsEmptyArrayWhenNoEnumsAreReferenced(): void
     {
         $result = (new FindsDaggerEnums())([]);
