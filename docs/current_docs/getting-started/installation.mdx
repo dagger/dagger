@@ -17,7 +17,7 @@ runtimes](../reference/container-runtimes/) for more information).
 
 To update the Dagger CLI, use the same method that you originally used to install it. This will overwrite your currently-installed version with the latest (or specified) version.
 
-Homebrew users can alternatively use the following commands:
+Homebrew and Nix users can alternatively use the following commands:
 
 ```shell
 brew update
@@ -36,6 +36,12 @@ Homebrew users can alternatively use the following command:
 
 ```shell
 brew uninstall dagger
+```
+
+Nix users can uninstall using:
+
+```shell
+nix profile remove github:dagger/nix#dagger
 ```
 
 Next, remove the Dagger container using the following commands:
