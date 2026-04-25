@@ -106,6 +106,14 @@ type ExecutionMetadata struct {
 	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
 	// to be at the specified version. Currently only used for integ testing.
 	ClientVersionOverride string
+
+	HostMounts []HostMount
+}
+
+type HostMount struct {
+	Source string
+	Target string
+	RW     bool
 }
 
 func (w *Worker) Run(
@@ -128,6 +136,7 @@ func (w *Worker) Run(
 	return nil, w.run(ctx, state,
 		w.setupNetwork,
 		w.injectInit,
+		w.setupHostMounts,
 		w.generateBaseSpec,
 		w.filterEnvs,
 		w.setupRootfs,

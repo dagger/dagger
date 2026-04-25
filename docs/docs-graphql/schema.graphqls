@@ -174,6 +174,9 @@ type Binding {
   """Retrieve the binding value, as type UpGroup"""
   asUpGroup: UpGroup!
 
+  """Retrieve the binding value, as type Volume"""
+  asVolume: Volume!
+
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
@@ -1313,6 +1316,28 @@ type Container {
   ): Container!
 
   """
+  Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+  """
+  withMountedHostDirectory(
+    """
+    Location of the mounted directory inside the container (e.g., "/mnt/host").
+    """
+    path: String!
+
+    """Absolute path on the engine host to bind-mount."""
+    source: String!
+
+    """Mount the host directory read-only."""
+    readonly: Boolean = false
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
   Retrieves this container plus a secret mounted into a file at the given path.
   """
   withMountedSecret(
@@ -1499,6 +1524,26 @@ type Container {
   withUser(
     """The user to set (e.g., "root")."""
     name: String!
+  ): Container!
+
+  """
+  Retrieves this container plus an engine-managed volume bind-mounted at the given path.
+  """
+  withVolumeMount(
+    """Location where the volume will be mounted (e.g., "/mnt/volume")."""
+    path: String!
+
+    """Identifier of the volume to mount."""
+    volume: VolumeID!
+
+    """Mount the volume read-only."""
+    readonly: Boolean = false
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
   ): Container!
 
   """Change the container's working directory. Like WORKDIR in Dockerfile."""
@@ -3107,6 +3152,27 @@ type Env {
 
   """Declare a desired Up output to be assigned in the environment"""
   withUpOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Volume in the environment"""
+  withVolumeInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Volume value to assign to the binding"""
+    value: VolumeID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Volume output to be assigned in the environment"""
+  withVolumeOutput(
     """The name of the binding"""
     name: String!
 
@@ -5352,6 +5418,9 @@ type Query {
   """Load a UpGroup from its ID."""
   loadUpGroupFromID(id: UpGroupID!): UpGroup!
 
+  """Load a Volume from its ID."""
+  loadVolumeFromID(id: VolumeID!): Volume!
+
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
@@ -5430,6 +5499,29 @@ type Query {
     """The column number within the line."""
     column: Int!
   ): SourceMap!
+
+  """
+  Create or retrieve an engine-managed SSHFS volume.
+
+  Endpoint must be a parseable SSH URL, e.g. "ssh://user@host:2222/path".
+  """
+  sshfsVolume(
+    """SSH endpoint URL, e.g. "ssh://user@host[:port]/absolute/path"."""
+    endpoint: String!
+
+    """The private key secret to use for authentication."""
+    privateKey: SecretID!
+
+    """The public key secret to use for authentication."""
+    publicKey: SecretID!
+
+    """
+    A service which must be started before the SSHFS volume is mounted.
+
+    The service's resolved host replaces the endpoint's host so that the engine reaches the right address.
+    """
+    experimentalServiceHost: ServiceID
+  ): Volume!
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -6055,6 +6147,17 @@ The absence of a value.
 A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
+
+"""A reference to an engine-managed volume."""
+type Volume {
+  """A unique identifier for this Volume."""
+  id: VolumeID!
+}
+
+"""
+The `VolumeID` scalar type represents an identifier for an object of type Volume.
+"""
+scalar VolumeID
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {

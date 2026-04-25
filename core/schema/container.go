@@ -378,6 +378,26 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
+		dagql.NodeFunc("withMountedHostDirectory", s.withMountedHostDirectory).
+			Doc(`Retrieves this container plus a directory from the engine host bind-mounted at the given path.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the mounted directory inside the container (e.g., "/mnt/host").`),
+				dagql.Arg("source").Doc(`Absolute path on the engine host to bind-mount.`),
+				dagql.Arg("readonly").Doc(`Mount the host directory read-only.`),
+				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
+					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+			),
+
+		dagql.NodeFunc("withVolumeMount", s.withVolumeMount).
+			Doc(`Retrieves this container plus an engine-managed volume bind-mounted at the given path.`).
+			Args(
+				dagql.Arg("path").Doc(`Location where the volume will be mounted (e.g., "/mnt/volume").`),
+				dagql.Arg("volume").Doc(`Identifier of the volume to mount.`),
+				dagql.Arg("readonly").Doc(`Mount the volume read-only.`),
+				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
+					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+			),
+
 		dagql.NodeFuncWithDynamicInputs("withMountedCache", s.withMountedCache, s.withMountedCacheDynamicInputs).
 			Doc(`Retrieves this container plus a cache volume mounted at the given path.`).
 			Args(
@@ -2454,6 +2474,84 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 		TmpfsSource: &core.TmpfsMountSource{
 			Size: args.Size.Value.Int(),
 		},
+	})
+	return ctr, nil
+}
+
+type containerWithMountedHostDirectoryArgs struct {
+	Path     string
+	Source   string
+	Readonly bool `default:"false"`
+	Expand   bool `default:"false"`
+}
+
+func (s *containerSchema) withMountedHostDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedHostDirectoryArgs) (*core.Container, error) {
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	source, err := filepath.Abs(args.Source)
+	if err != nil {
+		return nil, fmt.Errorf("resolve host mount source: %w", err)
+	}
+	ctr.Lazy = &core.ContainerWithMountedHostDirectoryLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Source:    source,
+		Readonly:  args.Readonly,
+	}
+	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+		Target:     target,
+		Readonly:   args.Readonly,
+		HostSource: &core.HostMountSource{Source: source},
+	})
+	return ctr, nil
+}
+
+type containerWithVolumeMountArgs struct {
+	Path     string
+	Volume   core.VolumeID
+	Readonly bool `default:"false"`
+	Expand   bool `default:"false"`
+}
+
+func (s *containerSchema) withVolumeMount(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithVolumeMountArgs) (*core.Container, error) {
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	vol, err := args.Volume.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	ctr.Lazy = &core.ContainerWithVolumeMountLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Volume:    vol,
+		Readonly:  args.Readonly,
+	}
+	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+		Target:       target,
+		Readonly:     args.Readonly,
+		VolumeSource: &core.VolumeMountSource{Volume: vol},
 	})
 	return ctr, nil
 }

@@ -119,6 +119,10 @@ func (s *currentTypeDefsTestServer) PruneEngineLocalCacheEntries(context.Context
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) RegisterSSHFSVolume(context.Context, string, *core.Secret, *core.Secret) (*core.Volume, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) EngineLocalCachePolicy() *dagql.CachePrunePolicy { return nil }
 
 func (s *currentTypeDefsTestServer) SnapshotManager() bkcache.SnapshotManager { return nil }

@@ -137,6 +137,10 @@ func (e LoadedEngine) Start(
 	args = append(args, []string{
 		"-v", name + ":" + distconsts.EngineDefaultStateDir,
 		"--name", name,
+		// expose /dev/fuse so SSHFS volume mounts (and anything else FUSE-backed)
+		// work inside the engine container; --privileged alone grants caps and
+		// relaxes apparmor but does not bind host devices.
+		"--device", "/dev/fuse",
 		"--privileged",
 	}...)
 	args = append(args, e.Image)
