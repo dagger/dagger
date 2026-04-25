@@ -263,7 +263,11 @@ func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
 }
 
 func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
-	srv, err := m.Server(ctx)
+	liveSrv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	envSrv, err := m.Server(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -275,22 +279,22 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 
 	callMethods := NewLLMToolSet()
 	if m.staticTools {
-		if err := m.loadServedModuleQueryTools(ctx, srv, callMethods); err != nil {
+		if err := m.loadServedModuleQueryTools(ctx, liveSrv, callMethods); err != nil {
 			return nil, err
 		}
-	} else if err := m.loadServedModuleQueryTools(ctx, srv, allTools); err != nil {
+	} else if err := m.loadServedModuleQueryTools(ctx, liveSrv, allTools); err != nil {
 		return nil, err
 	}
 	if m.staticTools {
-		if err := m.loadModuleTools(srv, callMethods); err != nil {
+		if err := m.loadModuleTools(envSrv, callMethods); err != nil {
 			return nil, err
 		}
-	} else if err := m.loadModuleTools(srv, allTools); err != nil {
+	} else if err := m.loadModuleTools(envSrv, allTools); err != nil {
 		return nil, err
 	}
 
 	objectMethods := NewLLMToolSet()
-	if err := m.loadReachableObjectMethods(ctx, srv, objectMethods); err != nil {
+	if err := m.loadReachableObjectMethods(ctx, envSrv, objectMethods); err != nil {
 		return nil, err
 	}
 	if m.staticTools {
@@ -305,7 +309,7 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 		callMethods = objectMethods
 	}
 
-	m.loadBuiltins(srv, allTools, callMethods)
+	m.loadBuiltins(envSrv, allTools, callMethods)
 	return allTools.Order, nil
 }
 

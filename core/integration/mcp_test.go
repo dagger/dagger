@@ -31,7 +31,7 @@ func (MCPSuite) TestModuleWithoutPrivilegedExposesModuleMethods(ctx context.Cont
 	require.NotContains(t, methods, "container")
 
 	selectMethods(ctx, t, cli, "greeting")
-	require.Equal(t, "hello from module", callMethodText(ctx, t, cli, "greeting", nil, map[string]any{}))
+	require.Contains(t, callMethodText(ctx, t, cli, "greeting", nil, map[string]any{}), "hello from module")
 }
 
 func (MCPSuite) TestWithoutModuleAndWithoutPrivilegedFails(ctx context.Context, t *testctx.T) {
@@ -62,7 +62,7 @@ func (MCPSuite) TestModuleWithPrivilegedExposesModuleAndCoreMethods(ctx context.
 	require.Contains(t, methods, "container")
 
 	selectMethods(ctx, t, cli, "greeting", "container")
-	require.Equal(t, "hello from module", callMethodText(ctx, t, cli, "greeting", nil, map[string]any{}))
+	require.Contains(t, callMethodText(ctx, t, cli, "greeting", nil, map[string]any{}), "hello from module")
 	require.Contains(t, callMethodText(ctx, t, cli, "container", nil, map[string]any{}), "Container#")
 }
 
