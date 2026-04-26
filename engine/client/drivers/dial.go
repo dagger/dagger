@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/engine/client/imageload"
 	connh "github.com/dagger/dagger/internal/buildkit/client/connhelper"
-	connhKube "github.com/dagger/dagger/internal/buildkit/client/connhelper/kubepod"
 	connhSSH "github.com/dagger/dagger/internal/buildkit/client/connhelper/ssh"
 )
 
@@ -17,7 +16,6 @@ func init() {
 	register("tcp", &dialDriver{})
 	register("unix", &dialDriver{})
 	register("ssh", &dialDriver{connhSSH.Helper, nil})
-	register("kube-pod", &dialDriver{connhKube.Helper, nil})
 	register("tls", &dialDriver{connhTLS, nil})
 }
 
