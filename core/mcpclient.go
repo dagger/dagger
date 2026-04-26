@@ -29,13 +29,11 @@ func (t *ServiceMCPTransport) Connect(ctx context.Context) (mcp.Connection, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
-	svc, err := svcs.StartWithIO(
+	svc, err := svcs.StartResultWithIO(
 		ctx,
-		t.Service.ID(),
-		t.Service.Self(),
+		t.Service,
 		true, // per-client instances
 		&ServiceIO{
 			Stdin:  stdinR,

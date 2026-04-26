@@ -62,10 +62,10 @@ func (d docker) ImageLoader(ctx context.Context) imageload.Backend {
 }
 
 func (d docker) ContainerRun(ctx context.Context, name string, opts runOpts) error {
-	args := []string{"run",
+	args := []string{
+		"run",
 		"--name", name,
 		"-d",
-		"--init",              // reap those zombies
 		"--restart", "always", // load-bearing to prevent https://github.com/dagger/dagger/issues/7785 from being fatal
 	}
 	for _, volume := range opts.volumes {
@@ -145,8 +145,8 @@ func (d docker) ContainerExists(ctx context.Context, name string) (bool, error) 
 	return false, err
 }
 
-func (d docker) ContainerLs(ctx context.Context) ([]container, error) {
-	cmd := exec.CommandContext(ctx, d.cmd, "ps", "-a", "--format", "{{.Names}} {{.Status}}")
+func (d docker) ContainerLs(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(ctx, d.cmd, "ps", "-a", "--format", "{{.Names}}")
 	stdout, _, err := traceexec.ExecOutput(ctx, cmd)
 	if err != nil {
 		return nil, err
@@ -154,16 +154,7 @@ func (d docker) ContainerLs(ctx context.Context) ([]container, error) {
 	if stdout == "" {
 		return nil, err
 	}
-	lines := strings.Split(stdout, "\n")
-	containers := make([]container, len(lines))
-	for i, line := range lines {
-		parts := strings.SplitN(line, " ", 2)
-		containers[i].name = parts[0]
-		if len(parts) == 2 {
-			containers[i].running = parts[1] == "Up"
-		}
-	}
-	return containers, nil
+	return strings.Split(stdout, "\n"), nil
 }
 
 func isContainerAlreadyInUseOutput(output string) bool {

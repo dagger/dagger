@@ -1,8 +1,10 @@
 Expected stderr:
 
 ✔ connect X.Xs
-╰╴✔ starting engine X.Xs
-  ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
 
 ✘ load workspace: . X.Xs ERROR
 ╰╴✘ loading type definitions X.Xs ERROR
@@ -14,7 +16,7 @@ Expected stderr:
       │   ┃
       │   ┃ Errors:
       │   ┃ - unknown built-in sdk
-      │   ┃ - local path "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown" does not exist [traceparent:00000000000000000000000000000000-0000000000000000]
+      │   ┃ - local path "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown" does not exist
       │   ┃
       │   ┃ The available SDKs are:
       │   ┃ - go

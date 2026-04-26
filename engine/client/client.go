@@ -125,6 +125,8 @@ type Params struct {
 
 	EagerRuntime bool
 
+	LoadWorkspaceModules bool
+
 	SkipWorkspaceModules bool
 
 	// Workspace explicitly declares workspace binding for this client.
@@ -176,6 +178,16 @@ type Client struct {
 }
 
 func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
+	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
+		params.LoadWorkspaceModules,
+		params.SkipWorkspaceModules,
+	)
+	if err != nil {
+		return nil, err
+	}
+	params.LoadWorkspaceModules = loadWorkspaceModules
+	params.SkipWorkspaceModules = false
+
 	c := &Client{Params: params}
 
 	if c.ID == "" {
@@ -303,6 +315,16 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	return c, nil
 }
 
+func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {
+	if loadWorkspaceModules && skipWorkspaceModules {
+		return false, fmt.Errorf("load workspace modules and skip workspace modules are mutually exclusive")
+	}
+	if skipWorkspaceModules {
+		return false, nil
+	}
+	return loadWorkspaceModules, nil
+}
+
 type EngineToEngineParams struct {
 	Params
 
@@ -319,6 +341,16 @@ type EngineToEngineParams struct {
 // ConnectEngineToEngine connects a Dagger client to another Dagger engine using an existing session connection.
 // Session attachables are proxied back to the original client.
 func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ *Client, rerr error) {
+	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
+		params.LoadWorkspaceModules,
+		params.SkipWorkspaceModules,
+	)
+	if err != nil {
+		return nil, err
+	}
+	params.LoadWorkspaceModules = loadWorkspaceModules
+	params.SkipWorkspaceModules = false
+
 	c := &Client{
 		Params:                params.Params,
 		isCloudScaleOutClient: true,
@@ -403,7 +435,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		return fmt.Errorf("parse runner host: %w", err)
 	}
 
-	matchedDrivers, err := drivers.GetDrivers(ctx, remote.Scheme)
+	driver, err := drivers.GetDriver(ctx, remote.Scheme)
 	if err != nil {
 		return err
 	}
@@ -425,64 +457,57 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 
 	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
 	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
-
-	var errSkipDriver = errors.New("skip driver")
-
-	startAndWait := func(driver drivers.Driver) error {
-		c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
-			DaggerCloudToken: cloudToken,
-			GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
-			Module:           params.Module,
-			Function:         params.Function,
-			ExecCmd:          params.ExecCmd,
-			ClientID:         c.ID,
-			CloudAuth:        params.CloudAuth,
-		})
-		if err != nil {
-			return fmt.Errorf("%w: provision: %w", errSkipDriver, err)
-		}
-		slog := slog.SpanLogger(provisionCtx, InstrumentationLibrary)
-		slog.Debug("connecting", "runner", c.RunnerHost)
-
-		bkClient, bkInfo, err := newBuildkitClient(provisionCtx, remote, c.connector)
-		if err != nil {
-			return fmt.Errorf("%w: new client: %w", errSkipDriver, err)
-		}
-		c.bkClient = bkClient
-		c.bkVersion = bkInfo.BuildkitVersion.Version
-		c.bkName = bkInfo.BuildkitVersion.Revision
-		c.numCPU = bkInfo.SystemInfo.NumCPU
-
-		slog.Info("connected", "name", c.bkName, "client-version", engine.Version, "server-version", c.bkVersion)
-
-		imageBackend := c.ImageLoaderBackend
-		if imageBackend == nil {
-			imageBackend = driver.ImageLoader(ctx)
-		}
-		if imageBackend == nil {
-			return nil
-		}
-		imgloadCtx, span := Tracer(provisionCtx).Start(ctx, "configuring image store")
-		defer telemetry.EndWithCause(span, &err)
-		c.imageLoader, err = imageBackend.Loader(imgloadCtx)
-		if err != nil {
-			return fmt.Errorf("%w: failed to get image loader: %w", errSkipDriver, err)
-		}
-		return nil
-	}
-
-	for _, driver := range matchedDrivers {
-		err = startAndWait(driver)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, errSkipDriver) {
-			break
-		}
-	}
+	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
+		DaggerCloudToken: cloudToken,
+		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
+		Module:           params.Module,
+		Function:         params.Function,
+		ExecCmd:          params.ExecCmd,
+		ClientID:         c.ID,
+		CloudAuth:        params.CloudAuth,
+	})
 	provisionCancel()
 	telemetry.EndWithCause(provisionSpan, &err)
-	return err
+	if err != nil {
+		return err
+	}
+
+	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	slog.Debug("connecting", "runner", c.RunnerHost)
+
+	bkCtx, span := Tracer(ctx).Start(ctx, "creating client")
+	bkClient, bkInfo, err := newBuildkitClient(bkCtx, remote, c.connector)
+	telemetry.EndWithCause(span, &err)
+	if err != nil {
+		return fmt.Errorf("new client: %w", err)
+	}
+	c.bkClient = bkClient
+	c.bkVersion = bkInfo.BuildkitVersion.Version
+	c.bkName = bkInfo.BuildkitVersion.Revision
+	c.numCPU = bkInfo.SystemInfo.NumCPU
+
+	slog.Info("connected", "name", c.bkName, "client-version", engine.Version, "server-version", c.bkVersion)
+
+	imageBackend := c.ImageLoaderBackend
+	if imageBackend == nil {
+		imageBackend = driver.ImageLoader(ctx)
+	}
+	if imageBackend != nil {
+		imgloadCtx, span := Tracer(ctx).Start(ctx, "configuring image store")
+		c.imageLoader, err = imageBackend.Loader(imgloadCtx)
+		if err != nil {
+			err = fmt.Errorf("failed to get image loader: %w", err)
+		}
+		telemetry.EndWithCause(span, &err)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
@@ -515,6 +540,9 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 }
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
+	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session", telemetry.Encapsulate())
+	defer telemetry.EndWithCause(sessionSpan, &rerr)
+
 	clientMetadata := c.clientMetadata()
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
 
@@ -680,6 +708,7 @@ func ConnectBuildkitSession(
 	if err := req.Write(conn); err != nil {
 		return nil, fmt.Errorf("write request: %w", err)
 	}
+
 	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
@@ -694,6 +723,7 @@ func ConnectBuildkitSession(
 		}
 		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
+
 	// We tell the server that we have fully read the response and will now switch to serving gRPC
 	// by sending a single byte ack. This prevents the server from starting to send gRPC client
 	// traffic while we are still reading the previous HTTP response.
@@ -1406,10 +1436,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 
 	if c.Module != "" {
 		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Entrypoint: true}}
-		md.SkipWorkspaceModules = true
 	}
-	if c.SkipWorkspaceModules {
-		md.SkipWorkspaceModules = true
+	if c.Module == "" && c.LoadWorkspaceModules {
+		md.LoadWorkspaceModules = true
 	}
 	if c.Workspace != nil {
 		md.Workspace = c.Workspace

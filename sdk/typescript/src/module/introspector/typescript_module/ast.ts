@@ -353,15 +353,32 @@ export class AST {
   }
 
   public typeToStringType(type: ts.Type): string {
-    const stringType = this.checker.typeToString(type)
+    const stringType = this.checker.typeToString(this.unwrapNullable(type))
 
     return this.stringTypeToUnwrappedType(stringType)
+  }
+
+  /**
+   * Strip `undefined` / `null` from a union type so the resolver sees the underlying
+   * type directly. Non-union types are returned as-is — in particular `void` must
+   * not be passed through `getNonNullableType`, which would collapse it to `never`.
+   */
+  private unwrapNullable(type: ts.Type): ts.Type {
+    if (type.flags & ts.TypeFlags.Union) {
+      return this.checker.getNonNullableType(type)
+    }
+    return type
   }
 
   public tsTypeToTypeDef(
     node: ts.Node,
     type: ts.Type,
   ): TypeDef<TypeDefKind> | undefined {
+    // Optional parameters/properties (e.g. `foo?: string`) are typed as `T | undefined`
+    // by the type checker. Strip the nullable parts so the downstream flag checks see
+    // the underlying `T` directly.
+    type = this.unwrapNullable(type)
+
     if (type.flags & ts.TypeFlags.String)
       return { kind: TypeDefKind.StringKind }
     if (type.flags & ts.TypeFlags.Number) {

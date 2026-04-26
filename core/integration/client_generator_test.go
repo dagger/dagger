@@ -394,6 +394,7 @@ main()
 			generator string
 			callCmd   []string
 			setup     dagger.WithContainerFunc
+			runSetup  dagger.WithContainerFunc
 			postSetup dagger.WithContainerFunc
 		}
 
@@ -427,9 +428,9 @@ import (
 func main() {
   ctx := context.Background()
 
-  dag, err := dagger.Connect(ctx)
+  dag, err := dagger.Connect(ctx, dagger.WithLoadWorkspaceModules())
   if err != nil {
-    panic(err)
+    panic(fmt.Errorf("connect: %w", err))
   }
 
   res, err := dag.Hello(ctx)
@@ -440,6 +441,33 @@ func main() {
   fmt.Println("result:", res)
 }
 		`))
+				},
+				runSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.WithNewFile("main.go", `package main
+
+import (
+  "context"
+  "fmt"
+
+  "test.com/test/dagger"
+)
+
+func main() {
+  ctx := context.Background()
+
+  dag, err := dagger.Connect(ctx)
+  if err != nil {
+    panic(fmt.Errorf("connect: %w", err))
+  }
+
+  res, err := dag.Hello(ctx)
+  if err != nil {
+    panic(err)
+  }
+
+  fmt.Println("result:", res)
+}
+		`)
 				},
 				postSetup: addSDKReplaceToClient(defaultGenDir),
 			},
@@ -466,11 +494,25 @@ async function main() {
     const res = await dag.hello()
 
     console.log("result:", res)
-  })
+  }, { LoadWorkspaceModules: true })
 }
 
 main()
 `, defaultGenDir))
+				},
+				runSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.WithNewFile("index.ts", `import { connection, dag } from "@my-app/dagger"
+
+async function main() {
+  await connection(async () => {
+    const res = await dag.hello()
+
+    console.log("result:", res)
+  })
+}
+
+main()
+`)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
@@ -500,7 +542,7 @@ main()
 				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
+					out, err := moduleSrc.With(tc.runSetup).With(daggerNonNestedRunWithWorkspaceModules(tc.callCmd...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
@@ -783,7 +825,7 @@ main()
 				}
 
 				out, err := regeneratedSrc.
-					With(daggerNonNestedRun(tc.callCmd...)).
+					With(daggerNonNestedRunWithWorkspaceModules(tc.callCmd...)).
 					Stdout(ctx)
 
 				require.NoError(t, err)
@@ -904,12 +946,13 @@ main()`, "./"+outputDir))
 						With(ts.setup).
 						With(daggerClientInstallAt(ts.generator, ts.outputDir))
 
-					// Mount SDK for go generator tests so SDK replace directives work
+					// Use local SDK for go generator tests so module proxy
+					// mismatches don't break the build.
 					if ts.generator == "go" {
-						moduleSrc = moduleSrc.WithDirectory(filepath.Join(ts.outputDir, "sdk"), c.Host().Directory("../../sdk/go"))
+						moduleSrc = moduleSrc.With(useLocalSDK(c, ts.outputDir))
+					} else {
+						moduleSrc = moduleSrc.With(ts.postSetup)
 					}
-
-					moduleSrc = moduleSrc.With(ts.postSetup)
 
 					t.Run(fmt.Sprintf("dagger run %s", strings.Join(ts.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 						out, err := moduleSrc.With(daggerNonNestedRun(ts.callCmd...)).
@@ -1002,8 +1045,13 @@ main()`, "."))
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
 					With(tc.setup).
-					With(daggerClientInstallAt(tc.generator, tc.outputDir)).
-					With(tc.postSetup)
+					With(daggerClientInstallAt(tc.generator, tc.outputDir))
+
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.With(useLocalSDK(c, tc.outputDir))
+				} else {
+					moduleSrc = moduleSrc.With(tc.postSetup)
+				}
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
@@ -1099,8 +1147,13 @@ main()`, "."))
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
 					With(tc.setup).
-					With(daggerClientInstallAt(tc.generator, tc.outputDir)).
-					With(tc.postSetup)
+					With(daggerClientInstallAt(tc.generator, tc.outputDir))
+
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.With(useLocalSDK(c, tc.outputDir))
+				} else {
+					moduleSrc = moduleSrc.With(tc.postSetup)
+				}
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
@@ -1741,13 +1794,13 @@ main()`, defaultGenDir))
 				With(tc.setup).
 				With(daggerClientInstall(tc.generator))
 
-			// Mount SDK for go generator tests so SDK replace directives work
 			if tc.generator == "go" {
-				moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+				moduleSrc = moduleSrc.With(useLocalSDK(c, defaultGenDir))
+			} else {
+				moduleSrc = moduleSrc.With(tc.postSetup)
 			}
 
 			moduleSrc = moduleSrc.
-				With(tc.postSetup).
 				WithDirectory("files", c.Directory().WithNewFile("file1.txt", "hello world"))
 
 			out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
@@ -1806,7 +1859,7 @@ func main() {
 
 	dag, err := dagger.Connect(ctx)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("connect: %w", err))
 	}
 
 	res, err := dag.With(dagger.WithOpts{Greeting: "hi"}).Message(ctx)
@@ -1822,7 +1875,7 @@ func main() {
 		With(addSDKReplaceToClient(defaultGenDir)).
 		WithExec([]string{"go", "mod", "tidy"})
 
-	out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "./cmd/main.go")).Stdout(ctx)
+	out, err := moduleSrc.With(daggerNonNestedRunWithWorkspaceModules("go", "run", "./cmd/main.go")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "result: hi, world!")
 }
@@ -1869,11 +1922,7 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 		}
 		`)).
 		With(daggerClientInstall("go")).
-		With(func(ctr *dagger.Container) *dagger.Container {
-			return ctr.
-				WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
-				WithExec([]string{"go", "mod", "tidy"})
-		}).
+		With(useLocalSDK(c, defaultGenDir)).
 		WithExec([]string{"apk", "add", "jq"}).
 		// Switch the dependency to @main and clear the pin so the engine
 		// resolves HEAD (a different commit than v1.2.3). The generated
@@ -1926,7 +1975,7 @@ func main() {
 	fmt.Println("result:", res)
 }
 `).
-			WithExec([]string{"go", "mod", "tidy"})
+			With(useLocalSDK(c, defaultGenDir))
 
 		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1963,7 +2012,7 @@ func main() {
 	fmt.Println("result:", res)
 }
 `).
-			WithExec([]string{"go", "mod", "tidy"})
+			With(useLocalSDK(c, defaultGenDir))
 
 		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 		require.NoError(t, err)
@@ -2069,13 +2118,32 @@ func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *test
 	})
 }
 
-// addSDKReplaceToClient adds SDK replace directive and runs go mod tidy for testing.
-// This is test-specific - production code doesn't need this.
+// useLocalSDK mounts the local Go SDK into the client directory and adds
+// replace directives so that both the client and parent module resolve
+// dagger.io/dagger from the local source instead of the module proxy.
+//
+// Go ignores replace directives in non-main modules, so we add the replace
+// in both the client's go.mod (for direct builds) and the parent go.mod
+// (for when the parent is the main module importing the client).
+func useLocalSDK(c *dagger.Client, clientDir string) func(*dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithDirectory(filepath.Join(clientDir, "sdk"), c.Host().Directory("../../sdk/go")).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", clientDir)}).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", clientDir)}).
+			WithExec([]string{"go", "mod", "edit", fmt.Sprintf("-replace=dagger.io/dagger=./%s/sdk", clientDir)}).
+			WithExec([]string{"go", "mod", "tidy"})
+	}
+}
+
+// addSDKReplaceToClient is a legacy wrapper around useLocalSDK for call sites
+// that mount the SDK directory separately. Prefer useLocalSDK for new code.
 func addSDKReplaceToClient(clientDir string) func(*dagger.Container) *dagger.Container {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", clientDir)}).
 			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", clientDir)}).
+			WithExec([]string{"go", "mod", "edit", fmt.Sprintf("-replace=dagger.io/dagger=./%s/sdk", clientDir)}).
 			WithExec([]string{"go", "mod", "tidy"})
 	}
 }

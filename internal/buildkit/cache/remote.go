@@ -18,7 +18,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/progress/logs"
-	"github.com/dagger/dagger/internal/buildkit/util/pull/pullprogress"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -358,10 +357,7 @@ func (p lazyRefProvider) Unlazy(ctx context.Context) error {
 		// For now, just pull down the whole content and then return a ReaderAt from the local content
 		// store. If efficient partial reads are desired in the future, something more like a "tee"
 		// that caches remote partial reads to a local store may need to replace this.
-		err := contentutil.Copy(ctx, p.ref.cm.ContentStore, &pullprogress.ProviderWithProgress{
-			Provider: p.dh.Provider(p.session),
-			Manager:  p.ref.cm.ContentStore,
-		}, p.desc, p.dh.Ref, logs.LoggerFromContext(ctx))
+		err := contentutil.Copy(ctx, p.ref.cm.ContentStore, p.dh.Provider(p.session), p.desc, p.dh.Ref, logs.LoggerFromContext(ctx))
 		if err != nil {
 			return struct{}{}, err
 		}

@@ -98,7 +98,7 @@ type containerBackend interface {
 	ContainerRemove(ctx context.Context, name string) error
 	ContainerStart(ctx context.Context, name string) error
 	ContainerExists(ctx context.Context, name string) (bool, error)
-	ContainerLs(ctx context.Context) ([]container, error)
+	ContainerLs(ctx context.Context) ([]string, error)
 }
 
 var errContainerAlreadyExists = errors.New("container already exists")
@@ -256,16 +256,13 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 			return nil, err
 		}
 		slog.Warn("failed to list containers", "error", err)
-		leftoverEngines = nil
+		leftoverEngines = []string{}
 	}
 
 	for i, leftoverEngine := range leftoverEngines {
 		// if we already have a container with that name, attempt to start it
-		if leftoverEngine.name == containerName {
-			if leftoverEngine.running {
-				break
-			}
-			if err := d.backend.ContainerStart(ctx, leftoverEngine.name); err != nil {
+		if leftoverEngine == containerName {
+			if err := d.backend.ContainerStart(ctx, leftoverEngine); err != nil {
 				return nil, fmt.Errorf("failed to start container: %w", err)
 			}
 			d.garbageCollectEngines(ctx, opts.cleanup, slices.Delete(leftoverEngines, i, i+1))
@@ -341,15 +338,15 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	return &url.URL{Host: containerName}, nil
 }
 
-func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, engines []container) {
+func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, engines []string) {
 	if !cleanup {
 		return
 	}
 	for _, engine := range engines {
-		if engine.name == "" {
+		if engine == "" {
 			continue
 		}
-		if err := d.backend.ContainerRemove(ctx, engine.name); err != nil {
+		if err := d.backend.ContainerRemove(ctx, engine); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
@@ -357,21 +354,16 @@ func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, e
 	}
 }
 
-type container struct {
-	name    string
-	running bool
-}
-
-func (d *imageDriver) collectLeftoverEngines(ctx context.Context, additionalNames ...string) ([]container, error) {
+func (d *imageDriver) collectLeftoverEngines(ctx context.Context, additionalNames ...string) ([]string, error) {
 	engines, err := d.backend.ContainerLs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list containers: %w", err)
+		return nil, fmt.Errorf("failed to list containers %s: %w", engines, err)
 	}
 
-	filteredEngines := make([]container, 0, len(engines))
-	for _, engine := range engines {
-		if strings.HasPrefix(engine.name, containerNamePrefix) || slices.Contains(additionalNames, engine.name) {
-			filteredEngines = append(filteredEngines, engine)
+	var filteredEngines []string
+	for _, name := range engines {
+		if strings.HasPrefix(name, containerNamePrefix) || slices.Contains(additionalNames, name) {
+			filteredEngines = append(filteredEngines, name)
 		}
 	}
 	return filteredEngines, nil

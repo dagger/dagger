@@ -231,6 +231,45 @@ func TestCompareDirectories_Integration(t *testing.T) {
 	require.True(t, identical)
 }
 
+// Regression test: the buildkit refs mounted for a Changeset's Before and
+// After can come from a git worktree checkout whose root is a `.git` FILE
+// (a one-line "gitdir:" pointer to an absolute host path). When
+// compareDirectories used to set cmd.Dir = oldDir, git's repository
+// discovery would pick up that pointer and bail out with
+//
+//	fatal: not a git repository: <host path>/.git/worktrees/<name>
+//
+// even though `git diff --no-index` doesn't need a repository at all.
+// This test reproduces that layout and asserts that the diff still
+// succeeds.
+func TestCompareDirectories_OldDirIsBrokenWorktree(t *testing.T) {
+	oldDir := t.TempDir()
+	newDir := t.TempDir()
+
+	// Plant a worktree-style .git pointer file at the root of both dirs,
+	// matching what a worktree checkout looks like on disk.
+	brokenPointer := []byte("gitdir: /does/not/exist\n")
+	require.NoError(t, os.WriteFile(filepath.Join(oldDir, ".git"), brokenPointer, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(newDir, ".git"), brokenPointer, 0644))
+
+	require.NoError(t, os.WriteFile(filepath.Join(oldDir, "file.txt"), []byte("v1"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(newDir, "file.txt"), []byte("v2"), 0644))
+
+	ctx := context.Background()
+
+	changes, err := compareDirectories(ctx, oldDir, newDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"file.txt"}, changes.Modified)
+
+	stats, err := compareDirectoriesNumStat(ctx, oldDir, newDir)
+	require.NoError(t, err)
+	require.Contains(t, stats, "file.txt")
+
+	identical, err := directoriesAreIdentical(ctx, oldDir, newDir)
+	require.NoError(t, err)
+	require.False(t, identical)
+}
+
 func TestCompareDirectoriesNumStat_Integration(t *testing.T) {
 	oldDir := t.TempDir()
 	newDir := t.TempDir()

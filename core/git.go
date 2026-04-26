@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -53,6 +54,14 @@ type GitRefBackend interface {
 	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
 }
 
+var _ dagql.PersistedObject = (*GitRepository)(nil)
+var _ dagql.PersistedObjectDecoder = (*GitRepository)(nil)
+var _ dagql.OnReleaser = (*GitRepository)(nil)
+var _ dagql.HasDependencyResults = (*GitRepository)(nil)
+var _ dagql.PersistedObject = (*GitRef)(nil)
+var _ dagql.PersistedObjectDecoder = (*GitRef)(nil)
+var _ dagql.HasDependencyResults = (*GitRef)(nil)
+
 func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
 	repo := &GitRepository{
 		Backend: backend,
@@ -91,6 +100,307 @@ func (*GitRef) Type() *ast.Type {
 
 func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
+}
+
+func (repo *GitRepository) OnRelease(ctx context.Context) error {
+	_ = ctx
+	return nil
+}
+
+func (repo *GitRepository) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	return nil
+}
+
+func (repo *GitRepository) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if repo == nil {
+		return nil, nil
+	}
+
+	var owned []dagql.AnyResult
+	switch backend := repo.Backend.(type) {
+	case *LocalGitRepository:
+		if backend.Directory.Self() != nil {
+			attached, err := attach(backend.Directory)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository directory: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository directory: unexpected result %T", attached)
+			}
+			backend.Directory = typed
+			owned = append(owned, typed)
+		}
+	case *RemoteGitRepository:
+		if backend.Mirror.Self() != nil {
+			attached, err := attach(backend.Mirror)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository remote mirror: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*RemoteGitMirror])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository remote mirror: unexpected result %T", attached)
+			}
+			backend.Mirror = typed
+			owned = append(owned, typed)
+		}
+		if backend.SSHAuthSocket.Self() != nil {
+			attached, err := attach(backend.SSHAuthSocket)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository ssh auth socket: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Socket])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository ssh auth socket: unexpected result %T", attached)
+			}
+			backend.SSHAuthSocket = typed
+			owned = append(owned, typed)
+		}
+		if backend.AuthToken.Self() != nil {
+			attached, err := attach(backend.AuthToken)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository auth token: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Secret])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository auth token: unexpected result %T", attached)
+			}
+			backend.AuthToken = typed
+			owned = append(owned, typed)
+		}
+		if backend.AuthHeader.Self() != nil {
+			attached, err := attach(backend.AuthHeader)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository auth header: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Secret])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository auth header: unexpected result %T", attached)
+			}
+			backend.AuthHeader = typed
+			owned = append(owned, typed)
+		}
+		for i := range backend.Services {
+			if backend.Services[i].Service.Self() == nil {
+				continue
+			}
+			attached, err := attach(backend.Services[i].Service)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository service binding %q: %w", backend.Services[i].Hostname, err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Service])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository service binding %q: unexpected result %T", backend.Services[i].Hostname, attached)
+			}
+			backend.Services[i].Service = typed
+			owned = append(owned, typed)
+		}
+	}
+
+	return owned, nil
+}
+
+func (ref *GitRef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if ref == nil || ref.Repo.Self() == nil {
+		return nil, nil
+	}
+	attached, err := attach(ref.Repo)
+	if err != nil {
+		return nil, fmt.Errorf("attach git ref repo: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*GitRepository])
+	if !ok {
+		return nil, fmt.Errorf("attach git ref repo: unexpected result %T", attached)
+	}
+	ref.Repo = typed
+	return []dagql.AnyResult{typed}, nil
+}
+
+const (
+	persistedGitRepositoryFormLocal  = "local"
+	persistedGitRepositoryFormRemote = "remote"
+)
+
+type persistedGitRepositoryPayload struct {
+	Form          string          `json:"form"`
+	DiscardGitDir bool            `json:"discardGitDir,omitempty"`
+	RemoteJSON    json.RawMessage `json:"remoteJson,omitempty"`
+
+	Local  *persistedLocalGitRepositoryPayload  `json:"local,omitempty"`
+	Remote *persistedRemoteGitRepositoryPayload `json:"remote,omitempty"`
+}
+
+type persistedLocalGitRepositoryPayload struct {
+	DirectoryResultID uint64 `json:"directoryResultID"`
+}
+
+type persistedRemoteGitRepositoryPayload struct {
+	URL           string   `json:"url"`
+	SSHKnownHosts string   `json:"sshKnownHosts,omitempty"`
+	AuthUsername  string   `json:"authUsername,omitempty"`
+	Platform      Platform `json:"platform"`
+}
+
+func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if repo == nil {
+		return nil, fmt.Errorf("encode persisted git repository: nil repository")
+	}
+	remoteJSON, err := json.Marshal(repo.Remote)
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted git repository remote: %w", err)
+	}
+	payload := persistedGitRepositoryPayload{
+		DiscardGitDir: repo.DiscardGitDir,
+		RemoteJSON:    remoteJSON,
+	}
+	switch backend := repo.Backend.(type) {
+	case *LocalGitRepository:
+		dirID, err := encodePersistedObjectRef(cache, backend.Directory, "git repository directory")
+		if err != nil {
+			return nil, err
+		}
+		payload.Form = persistedGitRepositoryFormLocal
+		payload.Local = &persistedLocalGitRepositoryPayload{
+			DirectoryResultID: dirID,
+		}
+	case *RemoteGitRepository:
+		if backend.URL == nil {
+			return nil, fmt.Errorf("encode persisted git repository: remote backend missing URL")
+		}
+		payload.Form = persistedGitRepositoryFormRemote
+		payload.Remote = &persistedRemoteGitRepositoryPayload{
+			URL:           backend.URL.String(),
+			SSHKnownHosts: backend.SSHKnownHosts,
+			AuthUsername:  backend.AuthUsername,
+			Platform:      backend.Platform,
+		}
+	default:
+		return nil, fmt.Errorf("encode persisted git repository: unsupported backend %T", repo.Backend)
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted git repository payload: %w", err)
+	}
+	return payloadJSON, nil
+}
+
+func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedGitRepositoryPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted git repository payload: %w", err)
+	}
+	var remote gitutil.Remote
+	if len(persisted.RemoteJSON) > 0 && string(persisted.RemoteJSON) != "null" {
+		if err := json.Unmarshal(persisted.RemoteJSON, &remote); err != nil {
+			return nil, fmt.Errorf("decode persisted git repository remote: %w", err)
+		}
+	}
+
+	repo := &GitRepository{
+		Remote:        &remote,
+		DiscardGitDir: persisted.DiscardGitDir,
+	}
+	switch persisted.Form {
+	case persistedGitRepositoryFormLocal:
+		if persisted.Local == nil {
+			return nil, fmt.Errorf("decode persisted git repository: missing local payload")
+		}
+		dir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.Local.DirectoryResultID, "git repository directory")
+		if err != nil {
+			return nil, err
+		}
+		repo.Backend = &LocalGitRepository{Directory: dir}
+	case persistedGitRepositoryFormRemote:
+		if persisted.Remote == nil {
+			return nil, fmt.Errorf("decode persisted git repository: missing remote payload")
+		}
+		parsedURL, err := gitutil.ParseURL(persisted.Remote.URL)
+		if err != nil {
+			return nil, fmt.Errorf("decode persisted git repository URL: %w", err)
+		}
+		backend := &RemoteGitRepository{
+			URL:           parsedURL,
+			SSHKnownHosts: persisted.Remote.SSHKnownHosts,
+			AuthUsername:  persisted.Remote.AuthUsername,
+			Platform:      persisted.Remote.Platform,
+		}
+		var mirror dagql.ObjectResult[*RemoteGitMirror]
+		if err := dag.Select(ctx, dag.Root(), &mirror, dagql.Selector{
+			Field: "_remoteGitMirror",
+			Args: []dagql.NamedInput{
+				{Name: "remoteURL", Value: dagql.String(parsedURL.Remote())},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("decode persisted git repository remote mirror: %w", err)
+		}
+		backend.Mirror = mirror
+		repo.Backend = backend
+		repo.URL = dagql.NonNull(dagql.String(parsedURL.String()))
+	default:
+		return nil, fmt.Errorf("decode persisted git repository: unsupported form %q", persisted.Form)
+	}
+	return repo, nil
+}
+
+type persistedGitRefPayload struct {
+	RepoResultID uint64 `json:"repoResultID"`
+	Name         string `json:"name,omitempty"`
+	SHA          string `json:"sha"`
+}
+
+func (ref *GitRef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if ref == nil {
+		return nil, fmt.Errorf("encode persisted git ref: nil ref")
+	}
+	if ref.Ref == nil {
+		return nil, fmt.Errorf("encode persisted git ref: missing ref")
+	}
+	repoID, err := encodePersistedObjectRef(cache, ref.Repo, "git ref repo")
+	if err != nil {
+		return nil, err
+	}
+	payloadJSON, err := json.Marshal(persistedGitRefPayload{
+		RepoResultID: repoID,
+		Name:         ref.Ref.Name,
+		SHA:          ref.Ref.SHA,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted git ref payload: %w", err)
+	}
+	return payloadJSON, nil
+}
+
+func (*GitRef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedGitRefPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted git ref payload: %w", err)
+	}
+	repo, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dag, persisted.RepoResultID, "git ref repo")
+	if err != nil {
+		return nil, err
+	}
+	ref := &gitutil.Ref{
+		Name: persisted.Name,
+		SHA:  persisted.SHA,
+	}
+	backend, err := repo.Self().Backend.Get(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return &GitRef{
+		Repo:    repo,
+		Backend: backend,
+		Ref:     ref,
+	}, nil
 }
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
@@ -197,7 +507,15 @@ func doGitCheckout(
 }
 
 func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
-	if ref1.Repo.ID() == ref2.Repo.ID() { // fast-path, just grab both refs from the same repo
+	ref1RepoDgst, err1 := ref1.Repo.RecipeDigest(ctx)
+	if err1 != nil {
+		return nil, fmt.Errorf("merge-base ref1 repo ID: %w", err1)
+	}
+	ref2RepoDgst, err2 := ref2.Repo.RecipeDigest(ctx)
+	if err2 != nil {
+		return nil, fmt.Errorf("merge-base ref2 repo ID: %w", err2)
+	}
+	if ref1RepoDgst == ref2RepoDgst { // fast-path, just grab both refs from the same repo
 		var mergeBase string
 		err := ref1.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref1.Backend, ref2.Backend}, func(git *gitutil.GitCLI) error {
 			out, err := git.Run(ctx, "merge-base", ref1.Ref.SHA, ref2.Ref.SHA)

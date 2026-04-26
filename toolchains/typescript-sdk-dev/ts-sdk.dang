@@ -74,7 +74,9 @@ type TypescriptSdkDev {
   pub testNodejs(nodeVersion: String!): Void! {
     daggerEngine
       .installClient(nodejsDevContainer(nodeVersion))
-      .withExec(["yarn", "--cwd", sourcePath, "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"])
+      .withWorkdir(sourcePath)
+      .withEnvVariable("NODE_OPTIONS", "--import @dagger.io/mocha/register")
+      .withExec(["yarn", "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"])
       .sync
 
     null

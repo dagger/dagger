@@ -162,6 +162,9 @@ func ShouldSkipFunction(obj, field string) bool {
 			// not useful until the CLI accepts ID inputs
 			"cacheVolume",
 			"setSecret",
+			// entrypoint routing — synthetic, the CLI reads its args
+			// directly to build root flags; users never call it
+			"with",
 			// deprecated
 			"pipeline",
 		},

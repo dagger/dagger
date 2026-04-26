@@ -10,7 +10,6 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -48,7 +47,8 @@ Examples:
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
-			EnableCloudScaleOut: enableScaleOut,
+			EnableCloudScaleOut:  enableScaleOut,
+			LoadWorkspaceModules: true,
 		}
 		return withEngine(
 			cmd.Context(),
@@ -74,9 +74,10 @@ Examples:
 // loadGroupListDetails fetches name+description for every item in a group
 // using a single batch GraphQL query.
 //
-// By default, nested spans are suppressed to keep list mode concise.
-// When verbosity is enabled (-v and above), preserve trace context so module
-// loading and selection internals remain visible for debugging.
+// The span encapsulates its children so the per-check name/description
+// resolvers don't spam the list-mode UI, but keeps them in the trace so
+// module loading and query work contribute activity to this span (and can
+// be revealed if it errors or with -v).
 func loadGroupListDetails(
 	ctx context.Context,
 	dag *dagger.Client,
@@ -85,15 +86,10 @@ func loadGroupListDetails(
 	query string,
 	opName string,
 ) ([]groupListItem, error) {
-	ctx, span := Tracer().Start(ctx, spanName)
+	ctx, span := Tracer().Start(ctx, spanName, telemetry.Encapsulate())
 	defer span.End()
 
-	queryCtx := ctx
-	if verbose == 0 {
-		queryCtx = trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
-	}
-
-	id, err := getID(queryCtx)
+	id, err := getID(ctx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
@@ -105,7 +101,7 @@ func loadGroupListDetails(
 		}
 	}
 
-	err = dag.Do(queryCtx, &dagger.Request{
+	err = dag.Do(ctx, &dagger.Request{
 		Query:  query,
 		OpName: opName,
 		Variables: map[string]any{

@@ -114,6 +114,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type DiffStat
+  """
+  @spec as_diff_stat(t()) :: Dagger.DiffStat.t()
+  def as_diff_stat(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asDiffStat")
+
+    %Dagger.DiffStat{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type Directory
   """
   @spec as_directory(t()) :: Dagger.Directory.t()
@@ -170,6 +184,34 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type Generator
+  """
+  @spec as_generator(t()) :: Dagger.Generator.t()
+  def as_generator(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asGenerator")
+
+    %Dagger.Generator{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type GeneratorGroup
+  """
+  @spec as_generator_group(t()) :: Dagger.GeneratorGroup.t()
+  def as_generator_group(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asGeneratorGroup")
+
+    %Dagger.GeneratorGroup{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type GitRef
   """
   @spec as_git_ref(t()) :: Dagger.GitRef.t()
@@ -192,6 +234,20 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asGitRepository")
 
     %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type HTTPState
+  """
+  @spec as_http_state(t()) :: Dagger.HTTPState.t()
+  def as_http_state(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asHTTPState")
+
+    %Dagger.HTTPState{
       query_builder: query_builder,
       client: binding.client
     }
@@ -324,6 +380,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type Stat
+  """
+  @spec as_stat(t()) :: Dagger.Stat.t() | nil
+  def as_stat(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asStat")
+
+    %Dagger.Stat{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Returns the binding's string value
   """
   @spec as_string(t()) :: {:ok, String.t() | nil} | {:error, term()}
@@ -332,6 +402,48 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asString")
 
     Client.execute(binding.client, query_builder)
+  end
+
+  @doc """
+  Retrieve the binding value, as type Up
+  """
+  @spec as_up(t()) :: Dagger.Up.t()
+  def as_up(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asUp")
+
+    %Dagger.Up{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type UpGroup
+  """
+  @spec as_up_group(t()) :: Dagger.UpGroup.t()
+  def as_up_group(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asUpGroup")
+
+    %Dagger.UpGroup{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Workspace
+  """
+  @spec as_workspace(t()) :: Dagger.Workspace.t()
+  def as_workspace(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asWorkspace")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: binding.client
+    }
   end
 
   @doc """

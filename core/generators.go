@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -11,7 +13,7 @@ import (
 type Generator struct {
 	Node      *ModTreeNode `json:"node"`
 	Completed bool         `field:"true" doc:"Whether the generator complete"`
-	Changes   *Changeset   `field:"true" doc:"The generated changeset"`
+	Changes   *Changeset   `json:"changes"`
 }
 
 func (*Generator) Type() *ast.Type {
@@ -52,12 +54,22 @@ func (g *Generator) Run(ctx context.Context) (*Generator, error) {
 	return g, nil
 }
 
+func (g *Generator) RequireChanges(field string) (*Changeset, error) {
+	if !g.Completed {
+		return nil, fmt.Errorf("generator %q must be run before querying %s", g.Name(), field)
+	}
+	if g.Changes == nil {
+		return nil, fmt.Errorf("generator %q did not produce a changeset result", g.Name())
+	}
+	return g.Changes, nil
+}
+
 type GeneratorGroup struct {
 	Node       *ModTreeNode `json:"node"`
 	Generators []*Generator `json:"generators"`
 }
 
-func NewGeneratorGroup(ctx context.Context, mod *Module, include []string) (*GeneratorGroup, error) {
+func NewGeneratorGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*GeneratorGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
@@ -114,12 +126,14 @@ func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 
 func (gg *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
 	for _, g := range gg.Generators {
-		if g.Changes != nil {
-			if empty, err := g.Changes.IsEmpty(ctx); err != nil {
-				return false, err
-			} else if !empty {
-				return false, nil
-			}
+		changes, err := g.RequireChanges("isEmpty")
+		if err != nil {
+			return false, err
+		}
+		if empty, err := changes.IsEmpty(ctx); err != nil {
+			return false, err
+		} else if !empty {
+			return false, nil
 		}
 	}
 	return true, nil
@@ -132,7 +146,11 @@ func (gg *GeneratorGroup) Changes(ctx context.Context, conflictStrategy WithChan
 	}
 	cs := make([]*Changeset, 0, len(gg.Generators))
 	for _, g := range gg.Generators {
-		cs = append(cs, g.Changes)
+		changes, err := g.RequireChanges("changes")
+		if err != nil {
+			return nil, err
+		}
+		cs = append(cs, changes)
 	}
 	return res.WithChangesets(ctx, cs, conflictStrategy)
 }

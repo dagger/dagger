@@ -190,6 +190,10 @@ export class Bin implements EngineConn {
       }
     })
 
+    if (opts.LoadWorkspaceModules) {
+      args.push("--load-workspace-modules")
+    }
+
     if (opts.LogOutput) {
       opts.LogOutput.write("Creating new Engine session... ")
     }

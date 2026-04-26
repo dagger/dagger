@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/zeebo/xxh3"
 )
@@ -30,11 +29,11 @@ func SessionDomain(sid string) string {
 	return HostHashStr(sid) + DomainSuffix
 }
 
-// SessionDomain is a session-wide domain suffix for a given session ID.
-func ModuleDomain(modID *call.ID, sid string) string {
+// ModuleDomain is a module-scoped domain suffix for a given module digest and session ID.
+func ModuleDomain(modDgst digest.Digest, sid string) string {
 	return fmt.Sprintf(
 		"%s.%s%s",
-		HostHash(modID.Digest()),
+		HostHash(modDgst),
 		HostHashStr(sid),
 		DomainSuffix,
 	)

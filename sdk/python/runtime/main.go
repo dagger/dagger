@@ -353,6 +353,19 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 		// this entire branch.
 		if !d.HasFile(ProjectCfg) {
 			projCfg := strings.ReplaceAll(tplToml, "main", m.ProjectName)
+			// Align the template's requires-python with the version the
+			// runtime actually selected (typically from .python-version),
+			// otherwise a freshly created pyproject can declare a higher
+			// minimum than the Python that ends up in the container and uv
+			// will refuse to lock.
+			if version := d.findPythonVersion(); version != "" {
+				projCfg = strings.Replace(
+					projCfg,
+					`requires-python = ">=3.14"`,
+					fmt.Sprintf(`requires-python = ">=%s"`, version),
+					1,
+				)
+			}
 			m.AddNewFile(ProjectCfg, VendorConfig(projCfg, m.VendorPath))
 		}
 		if !d.HasFile("*.py") {
