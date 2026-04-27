@@ -210,27 +210,13 @@ func (sdk *goSDK) Codegen(
 		return nil, fmt.Errorf("failed to scope module source for go module sdk codegen: %w", err)
 	}
 
-	// Modules that opt into skip-codegen-at-runtime commit dagger.gen.go +
-	// internal/dagger/** and keep them in sync via explicit `dagger develop`.
-	// When generatedContextDirectory is resolved in that mode (e.g. when a
-	// downstream module's schema needs the builtin Python SDK's context),
-	// re-running codegen would overwrite those committed files with
-	// identical bytes and run `go mod tidy` every time. Short-circuit to
-	// the existing context directory.
-	if !useRuntimeCodegen(source) {
-		modName := source.Self().ModuleOriginalName
-		contextDir := source.Self().ContextDirectory
-		srcSubpath := source.Self().SourceSubpath
-		if err := requireGeneratedFiles(ctx, dag, contextDir, srcSubpath, modName); err != nil {
-			return nil, err
-		}
-		return &core.GeneratedCode{
-			Code:              contextDir,
-			VCSGeneratedPaths: goSDKVCSGeneratedPaths,
-			VCSIgnoredPaths:   goSDKVCSIgnoredPaths,
-		}, nil
-	}
-
+	// Codegen always runs the generator: it is the path that produces
+	// fresh dagger.gen.go + internal/dagger/** for `dagger develop`,
+	// `dagger init`, and `dagger install`. The skip-codegen-at-runtime
+	// optimization lives in Runtime() (baseForCommittedCodegen), which
+	// is the path taken at module load time. Short-circuiting here
+	// would silently turn `dagger develop` into a no-op for modules
+	// that have opted into legacyCodegenAtRuntime=false.
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
