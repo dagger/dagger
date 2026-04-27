@@ -1,0 +1,23 @@
+{
+  "__schema": {
+    "queryType": { "name": "Query" },
+    "types": [
+      {
+        "kind": "OBJECT",
+        "name": "Query",
+        "fields": [],
+        "interfaces": [],
+        "directives": []
+      },
+      {
+        "kind": "OBJECT",
+        "name": "Container",
+        "fields": [],
+        "interfaces": [],
+        "directives": []
+      }
+    ],
+    "directives": []
+  },
+  "__schemaVersion": "test"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "status",
+  "enums": [
+    {
+      "name": "Status",
+      "description": "Status represents a state.",
+      "values": [
+        {
+          "name": "PENDING",
+          "description": "StatusPending is the initial state."
+        },
+        {
+          "name": "ACTIVE",
+          "description": "StatusActive is the running state."
+        }
+      ]
+    }
+  ]
+}
