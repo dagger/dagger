@@ -256,6 +256,14 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		}
 	}
 
+	for _, fwd := range container.LocalhostForwards {
+		execMD.LocalhostForwards = append(execMD.LocalhostForwards, engineutil.LocalhostForwardMD{
+			ServiceHostname: fwd.Hostname,
+			Port:            fwd.Port,
+			ServicePort:     fwd.ServicePort,
+		})
+	}
+
 	for i, secret := range container.Secrets {
 		switch {
 		case secret.EnvName != "":

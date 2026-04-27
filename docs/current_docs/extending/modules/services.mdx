@@ -92,6 +92,100 @@ The result will be:
 Hello, world!
 ```
 
+## Forward service ports to localhost
+
+Some applications and test frameworks expect services on `localhost` rather than a custom hostname. Instead of using `withServiceBinding` (which creates a hostname alias), you can use `withLocalhostForward` to forward a service port to `127.0.0.1` inside the container. This means applications can connect to `localhost` without any configuration changes.
+
+Here is the same example as above, but using `withLocalhostForward` instead of `withServiceBinding`. The HTTP service is forwarded to `127.0.0.1:8080` inside the container:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=./snippets/services/localhost-forward/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=./snippets/services/localhost-forward/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=./snippets/services/localhost-forward/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+:::tip
+Use `withLocalhostForward` when your application expects services on `localhost` (for example, a test suite that connects to `localhost:5432` for PostgreSQL). Use `withServiceBinding` when you want to access the service via a named hostname (for example, `db:5432`).
+:::
+
+If the service port differs from the port you want on localhost, use the `servicePort` argument:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go
+// Service listens on 15432, forward to localhost:5432
+ctr.WithLocalhostForward(5432, pgService, dagger.ContainerWithLocalhostForwardOpts{
+    ServicePort: 15432,
+})
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+# Service listens on 15432, forward to localhost:5432
+ctr.with_localhost_forward(5432, pg_service, service_port=15432)
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+// Service listens on 15432, forward to localhost:5432
+ctr.withLocalhostForward(5432, pgService, { servicePort: 15432 })
+```
+
+</TabItem>
+</Tabs>
+
+You can forward multiple services to different localhost ports:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go
+ctr.
+    WithLocalhostForward(5432, pgService).
+    WithLocalhostForward(6379, redisService)
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+ctr
+    .with_localhost_forward(5432, pg_service)
+    .with_localhost_forward(6379, redis_service)
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+ctr
+    .withLocalhostForward(5432, pgService)
+    .withLocalhostForward(6379, redisService)
+```
+
+</TabItem>
+</Tabs>
+
 ## Expose services returned by functions to the host
 
 Services returned by Dagger Functions can also be exposed directly to the host. This enables clients on the host to communicate with services running in Dagger.

@@ -818,6 +818,16 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("service").Doc(`The target service`),
 			),
 
+		dagql.NodeFunc("withLocalhostForward", s.withLocalhostForward).
+			Doc(`Forward a service port to localhost inside this container.`,
+				`The service will be started automatically when needed and detached when it is no longer needed.`,
+				`TCP traffic to 127.0.0.1:<port> inside the container will be forwarded to the specified port on the service.`).
+			Args(
+				dagql.Arg("port").Doc(`Port to listen on 127.0.0.1 inside this container`),
+				dagql.Arg("service").Doc(`The target service`),
+				dagql.Arg("servicePort").Doc(`Port on the service to forward to (defaults to same as port)`),
+			),
+
 		dagql.Func("withFocus", s.withFocus).
 			View(BeforeVersion("v0.13.4")).
 			Doc(`Indicate that subsequent operations should be featured more prominently in the UI.`),
@@ -3757,6 +3767,43 @@ func (s *containerSchema) withServiceBinding(ctx context.Context, parent dagql.O
 			Parent:    parent,
 			Service:   svc,
 			Alias:     args.Alias,
+		}
+	}
+	return ctr, nil
+}
+
+type containerWithLocalhostForwardArgs struct {
+	Port        int
+	Service     core.ServiceID
+	ServicePort int `default:"0"`
+}
+
+func (s *containerSchema) withLocalhostForward(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithLocalhostForwardArgs) (*core.Container, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	svc, err := args.Service.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	ctr, err = ctr.WithLocalhostForward(ctx, args.Port, svc, args.ServicePort)
+	if err != nil {
+		return nil, err
+	}
+	if parent.Self().Lazy != nil {
+		ctr.Lazy = &core.ContainerWithLocalhostForwardLazy{
+			LazyState:   core.NewLazyState(),
+			Parent:      parent,
+			Service:     svc,
+			Port:        args.Port,
+			ServicePort: args.ServicePort,
 		}
 	}
 	return ctr, nil
