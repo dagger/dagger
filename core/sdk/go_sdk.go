@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -33,6 +34,18 @@ const (
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
+
+// resolveGoSDKLibVersion returns the dagger.io/dagger library version to use
+// for code generation. For released engine versions, it uses the engine version
+// directly (e.g., "v0.11.9"). For dev versions, it falls back to the hardcoded
+// goSDKLibVersion commit hash.
+func resolveGoSDKLibVersion(engineVersion string) string {
+	if engineVersion != "" && !strings.Contains(engineVersion, "-dev") {
+		return engineVersion
+	}
+	
+	return goSDKLibVersion
+}
 
 /*
 goSDK is the one special sdk not implemented as module, instead the
@@ -112,10 +125,13 @@ func (sdk *goSDK) GenerateClient(
 		return inst, fmt.Errorf("failed to get module context directory ID: %w", err)
 	}
 
+	libVersion := resolveGoSDKLibVersion(modSource.Self().EngineVersion)
+
 	codegenArgs := dagql.ArrayInput[dagql.String]{
 		"generate-client",
 		"--output", dagql.String(filepath.Join(goSDKUserModContextDirPath, rootSourcePath)),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
+		"--lib-version", dagql.String(libVersion),
 		dagql.String(fmt.Sprintf("--module-source-id=%s", modSourceID)),
 		dagql.String(fmt.Sprintf("--client-dir=%s", outputDir)),
 	}
@@ -380,7 +396,7 @@ func (sdk *goSDK) ModuleTypes(
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
 						"--introspection-json-path", goSDKIntrospectionJSONPath,
-						"--lib-version", dagql.String(goSDKLibVersion),
+						"--lib-version", dagql.String(resolveGoSDKLibVersion(src.Self().EngineVersion)),
 						"--output", GoSDKModuleIDPath,
 					},
 				},
@@ -595,13 +611,15 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to get updated context directory ID during module sdk codegen: %w", err)
 	}
 
+	libVersion := resolveGoSDKLibVersion(src.Self().EngineVersion)
+
 	codegenArgs := dagql.ArrayInput[dagql.String]{
 		"generate-module",
 		"--output", dagql.String(goSDKUserModContextDirPath),
 		"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
-		"--lib-version", dagql.String(goSDKLibVersion),
+		"--lib-version", dagql.String(libVersion),
 	}
 	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")

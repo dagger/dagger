@@ -212,9 +212,15 @@ func (g *GoGenerator) writeClientGoMod(mfs *memfs.FS, clientGoModFilePath string
 		return fmt.Errorf("failed to parse client go.mod: %w", err)
 	}
 
+	// If it's a dev version, we use the lib version pinned in the engine
+	// Otherwise we can use the specified engine version
 	engineVersion := g.Config.ClientConfig.EngineVersion
-	if engineVersion != "" && !strings.Contains(engineVersion, "-dev") && !isDaggerPkgCustomReplaced(existingGoMod.Replace) {
-		existingGoMod.AddRequire("dagger.io/dagger", engineVersion)
+	if engineVersion != "" && !isDaggerPkgCustomReplaced(existingGoMod.Replace) {
+		if strings.Contains(engineVersion, "-dev") {
+			existingGoMod.AddRequire("dagger.io/dagger", g.Config.ClientConfig.LibVersion)
+		} else {
+			existingGoMod.AddRequire("dagger.io/dagger", engineVersion)
+		}
 	}
 
 	existingClientGoModData, err = existingGoMod.Format()
