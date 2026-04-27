@@ -43,6 +43,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
