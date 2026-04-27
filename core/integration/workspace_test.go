@@ -1300,3 +1300,50 @@ type HelloWorld {
 		require.Equal(t, "hello, dagger!", out)
 	})
 }
+
+// TestEntrypointWithFieldHidden verifies that the synthetic `with` field
+// installed on Query for entrypoint constructors with arguments is hidden
+// from user-facing CLI listings (`dagger functions`, `dagger call --help`)
+// while remaining callable and introspectable.
+func (WorkspaceSuite) TestEntrypointWithFieldHidden(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initDangBlueprint("greeter", `
+type Greeter {
+  pub msg: String!
+
+  new(name: String!) {
+    self.msg = "hello, " + name + "!"
+    self
+  }
+
+  pub greet: String! {
+    msg
+  }
+}
+`))
+
+	t.Run("dagger functions omits with", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		// The blueprint's real functions should appear.
+		require.Contains(t, out, "greet")
+		// The synthetic `with` field must not leak into user listings.
+		require.NotRegexp(t, `(?m)^with\b`, out)
+	})
+
+	t.Run("dagger call routes constructor args through with", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("--name=world", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, world!", strings.TrimSpace(out))
+	})
+
+	t.Run("with remains in graphql introspection", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{ __type(name: "Query") { fields { name } } }`)).Stdout(ctx)
+		require.NoError(t, err)
+		// `with` is callable via raw GraphQL; only user-facing CLI
+		// listings filter it.
+		require.Contains(t, out, `"name": "with"`)
+	})
+}

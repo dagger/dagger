@@ -28,11 +28,13 @@ Expected stderr:
 ┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line XXX, in execute
 ┃     raise error from e
 ┃ dagger.ExecError: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-├╴$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+├╴$ container: Container! X.Xs CACHED
+├╴$ .from(address: "alpine:latest"): Container! X.Xs CACHED
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX X.Xs
 ├╴✔ withExec sleep 1 X.Xs
 ├╴✘ withExec false X.Xs ERROR
 │ ! exit code: 1
-╰╴○ withExec sleep 1 X.Xs
+╰╴✘ withExec sleep 1 X.Xs ERROR
+  ! 2x exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -38,10 +38,6 @@ type DocsDev struct {
 	NginxConfig *dagger.File // +private
 }
 
-const (
-	markdownlintVersion = "0.31.1"
-)
-
 const cliZenFrontmatter = `---
 title: "CLI Reference"
 description: "Learn how to use the Dagger CLI to run composable workflows in containers."
@@ -69,29 +65,6 @@ func (d DocsDev) Server() *dagger.Container {
 		WithDefaultArgs([]string{"nginx", "-g", "daemon off;"}).
 		WithDirectory("/var/www", d.Site()).
 		WithExposedPort(8000)
-}
-
-// +check
-// Lint documentation files
-func (d DocsDev) LintMarkdown(
-	ctx context.Context,
-	// +defaultPath="/"
-	// +ignore=[
-	// "**/*",
-	// "!**/README.md",
-	// "!docs/**/*.md",
-	// "!**/.markdownlint.*",
-	// "!**/.markdownlintignore.*"
-	// ]
-	markdownFiles *dagger.Directory,
-) error {
-	_, err := dag.Container().
-		From("tmknom/markdownlint:"+markdownlintVersion).
-		WithWorkdir("/src").
-		WithMountedDirectory(".", markdownFiles).
-		WithExec([]string{"markdownlint", "docs"}).
-		Sync(ctx)
-	return err
 }
 
 // Regenerate the API schema and CLI reference docs

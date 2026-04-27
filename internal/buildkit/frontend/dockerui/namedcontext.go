@@ -4,17 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
 	"github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
-	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/pkg/errors"
@@ -53,62 +49,7 @@ func (bc *Client) namedContextRecursive(ctx context.Context, name string, nameWi
 	}
 	switch vv[0] {
 	case "docker-image":
-		ref := strings.TrimPrefix(vv[1], "//")
-		if ref == EmptyImageName {
-			st := llb.Scratch()
-			return &st, nil, nil
-		}
-
-		imgOpt := []llb.ImageOption{
-			llb.WithCustomName("[context " + nameWithPlatform + "] " + ref),
-		}
-		if opt.Platform != nil {
-			imgOpt = append(imgOpt, llb.Platform(*opt.Platform))
-		}
-
-		named, err := reference.ParseNormalizedNamed(ref)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		named = reference.TagNameOnly(named)
-
-		ref, dgst, data, err := bc.client.ResolveImageConfig(ctx, named.String(), sourceresolver.Opt{
-			LogName:  fmt.Sprintf("[context %s] load metadata for %s", nameWithPlatform, ref),
-			Platform: opt.Platform,
-			ImageOpt: &sourceresolver.ResolveImageOpt{
-				ResolveMode: opt.ResolveMode,
-			},
-		})
-		if err != nil {
-			e := &imageutil.ResolveToNonImageError{}
-			if errors.As(err, &e) {
-				before, after, ok := strings.Cut(e.Updated, "://")
-				if !ok {
-					return nil, nil, errors.Errorf("could not parse ref: %s", e.Updated)
-				}
-
-				bc.bopts.Opts[contextKey] = before + ":" + after
-				return bc.namedContextRecursive(ctx, name, nameWithPlatform, opt, count+1)
-			}
-			return nil, nil, err
-		}
-
-		var img dockerspec.DockerOCIImage
-		if err := json.Unmarshal(data, &img); err != nil {
-			return nil, nil, err
-		}
-		img.Created = nil
-
-		st := llb.Image(ref, imgOpt...)
-		st, err = st.WithImageConfig(data)
-		if err != nil {
-			return nil, nil, err
-		}
-		if opt.CaptureDigest != nil {
-			*opt.CaptureDigest = dgst
-		}
-		return &st, &img, nil
+		return nil, nil, errors.Errorf("dockerfile named-context image sources are not supported: %s", v)
 	case "git":
 		st, ok := DetectGitContext(v, true)
 		if !ok {
@@ -123,69 +64,7 @@ func (bc *Client) namedContextRecursive(ctx context.Context, name string, nameWi
 		}
 		return st, nil, nil
 	case "oci-layout":
-		refSpec := strings.TrimPrefix(vv[1], "//")
-		ref, err := reference.Parse(refSpec)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "could not parse oci-layout reference %q", refSpec)
-		}
-		named, ok := ref.(reference.Named)
-		if !ok {
-			return nil, nil, errors.Errorf("oci-layout reference %q has no name", ref.String())
-		}
-		dgstd, ok := named.(reference.Digested)
-		if !ok {
-			return nil, nil, errors.Errorf("oci-layout reference %q has no digest", named.String())
-		}
-
-		// for the dummy ref primarily used in log messages, we can use the
-		// original name, since the store key may not be significant
-		dummyRef, err := reference.ParseNormalizedNamed(name)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "could not parse oci-layout reference %q", name)
-		}
-		dummyRef, err = reference.WithDigest(dummyRef, dgstd.Digest())
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "could not wrap %q with digest", name)
-		}
-
-		_, dgst, data, err := bc.client.ResolveImageConfig(ctx, dummyRef.String(), sourceresolver.Opt{
-			LogName:  fmt.Sprintf("[context %s] load metadata for %s", nameWithPlatform, dummyRef.String()),
-			Platform: opt.Platform,
-			OCILayoutOpt: &sourceresolver.ResolveOCILayoutOpt{
-				Store: sourceresolver.ResolveImageConfigOptStore{
-					SessionID: bc.bopts.SessionID,
-					StoreID:   named.Name(),
-				},
-			},
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-
-		var img dockerspec.DockerOCIImage
-		if err := json.Unmarshal(data, &img); err != nil {
-			return nil, nil, errors.Wrap(err, "could not parse oci-layout image config")
-		}
-
-		ociOpt := []llb.OCILayoutOption{
-			llb.WithCustomName("[context " + nameWithPlatform + "] OCI load from client"),
-			llb.OCIStore(bc.bopts.SessionID, named.Name()),
-		}
-		if opt.Platform != nil {
-			ociOpt = append(ociOpt, llb.Platform(*opt.Platform))
-		}
-		st := llb.OCILayout(
-			dummyRef.String(),
-			ociOpt...,
-		)
-		st, err = st.WithImageConfig(data)
-		if err != nil {
-			return nil, nil, err
-		}
-		if opt.CaptureDigest != nil {
-			*opt.CaptureDigest = dgst
-		}
-		return &st, &img, nil
+		return nil, nil, errors.Errorf("dockerfile named-context OCI layout sources are not supported: %s", v)
 	case "local":
 		sessionID := bc.bopts.SessionID
 		if v, ok := bc.localsSessionIDs[vv[1]]; ok {

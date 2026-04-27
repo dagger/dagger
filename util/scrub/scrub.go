@@ -24,7 +24,24 @@ func Stabilize(out string) string {
 	for _, s := range scrubs {
 		out = s.re.ReplaceAllString(out, s.repl)
 	}
-	return out
+
+	lines := strings.SplitAfter(out, "\n")
+	stable := make([]string, 0, len(lines))
+	var lastPortNotReady string
+
+	for _, line := range lines {
+		if strings.Contains(line, "WRN port not ready") {
+			if line == lastPortNotReady {
+				continue
+			}
+			lastPortNotReady = line
+		} else {
+			lastPortNotReady = ""
+		}
+		stable = append(stable, line)
+	}
+
+	return strings.Join(stable, "")
 }
 
 var scrubs = []scrubber{
@@ -182,14 +199,6 @@ var scrubs = []scrubber{
 		regexp.MustCompile(`.+WARNING Memory overcommit.+\n`),
 		"# WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.\n",
 		"",
-	},
-	// Container constructor CACHED label; this is cached on the dagql level and can easily show up
-	// as either CACHED or not depending on anything else concurrently running against the engine.
-	// It's not something we particularly care about, so we just scrub it.
-	{
-		regexp.MustCompile(`\$ container: Container! X\.Xs CACHED`),
-		idtui.IconCached + " container: Container! X.Xs CACHED",
-		idtui.IconSuccess + " container: Container! X.Xs",
 	},
 	// Container.from cache status depends on whether the ref is pinned or not (which may be a bug)
 	{

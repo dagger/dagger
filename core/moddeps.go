@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 const (
@@ -21,21 +22,8 @@ const (
 
 var TypesToIgnoreForModuleIntrospection = []string{"Host"}
 
-// SchemaBuilder lazily constructs a dagql server from a set of modules
-// with per-module install policy. It is used both for a module's own
-// dependency graph and for the set of modules served to a client session.
-//
-// SchemaBuilder is immutable: all builder methods return a new instance.
-// The server and introspection results are lazily computed and cached on
-// first access.
-type SchemaBuilder struct {
-	root    *Query
-	entries []modDepEntry
-
-	// lazy cache — computed once per instance, never invalidated
-	lazilyLoadedServer *dagql.Server
-	loadSchemaErr      error
-	loadSchemaLock     sync.Mutex
+type coreSchemaForker interface {
+	ForkSchema(context.Context, *Query, call.View) (*dagql.Server, error)
 }
 
 type modDepEntry struct {
@@ -43,8 +31,18 @@ type modDepEntry struct {
 	opts InstallOpts
 }
 
-// NewSchemaBuilder creates a SchemaBuilder from a list of modules, each
-// installed with default (zero) InstallOpts.
+// SchemaBuilder lazily constructs a dagql server from a set of modules with
+// per-module install policy. It is used both for a module's own dependency
+// graph and for the set of modules served to a client session.
+type SchemaBuilder struct {
+	root    *Query
+	entries []modDepEntry
+
+	lazilyLoadedServer *dagql.Server
+	loadSchemaErr      error
+	loadSchemaLock     sync.Mutex
+}
+
 func NewSchemaBuilder(root *Query, mods []Mod) *SchemaBuilder {
 	entries := make([]modDepEntry, len(mods))
 	for i, m := range mods {
@@ -56,16 +54,22 @@ func NewSchemaBuilder(root *Query, mods []Mod) *SchemaBuilder {
 	}
 }
 
-// Clone returns a shallow copy with the same entries.
 func (b *SchemaBuilder) Clone() *SchemaBuilder {
+	if b == nil {
+		return nil
+	}
 	return &SchemaBuilder{
 		root:    b.root,
 		entries: slices.Clone(b.entries),
 	}
 }
 
-// Prepend returns a new SchemaBuilder with the given modules (default opts)
-// inserted before the existing entries.
+func (b *SchemaBuilder) WithRoot(root *Query) *SchemaBuilder {
+	cp := b.Clone()
+	cp.root = root
+	return cp
+}
+
 func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 	extra := make([]modDepEntry, len(mods))
 	for i, m := range mods {
@@ -77,8 +81,6 @@ func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 	}
 }
 
-// Append returns a new SchemaBuilder with the given modules (default opts)
-// appended after the existing entries.
 func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 	extra := make([]modDepEntry, len(mods))
 	for i, m := range mods {
@@ -90,15 +92,8 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 	}
 }
 
-// With returns a new SchemaBuilder that includes the given module with
-// the specified install options. If the module is already present (by
-// name), it is not duplicated — but its options are promoted to the less
-// restrictive combination of old and new.
 func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
-	cp := &SchemaBuilder{
-		root:    b.root,
-		entries: slices.Clone(b.entries),
-	}
+	cp := b.Clone()
 	for i, e := range cp.entries {
 		if e.mod.Name() == mod.Name() {
 			promoted := e.opts
@@ -116,7 +111,6 @@ func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 	return cp
 }
 
-// Lookup returns the module with the given name, if present.
 func (b *SchemaBuilder) Lookup(name string) (Mod, bool) {
 	for _, e := range b.entries {
 		if e.mod.Name() == name {
@@ -126,8 +120,10 @@ func (b *SchemaBuilder) Lookup(name string) (Mod, bool) {
 	return nil, false
 }
 
-// Mods returns the list of all modules (regardless of install policy).
 func (b *SchemaBuilder) Mods() []Mod {
+	if b == nil {
+		return nil
+	}
 	mods := make([]Mod, len(b.entries))
 	for i, e := range b.entries {
 		mods[i] = e.mod
@@ -135,8 +131,6 @@ func (b *SchemaBuilder) Mods() []Mod {
 	return mods
 }
 
-// PrimaryMods returns only the modules whose constructors should appear
-// on the Query root (i.e. those not installed with SkipConstructor).
 func (b *SchemaBuilder) PrimaryMods() []Mod {
 	var mods []Mod
 	for _, e := range b.entries {
@@ -147,38 +141,23 @@ func (b *SchemaBuilder) PrimaryMods() []Mod {
 	return mods
 }
 
-// Server builds and caches the dagql server for all modules. When any
-// module has Entrypoint set, entrypoint proxy fields are installed on
-// Query, and ID loading is delegated to an inner server without proxies
-// so that IDs are always evaluated against a clean schema.
-func (b *SchemaBuilder) Server(ctx context.Context) (*dagql.Server, error) {
+func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
 	srv, err := b.lazilyLoadSchema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load schema: %w", err)
 	}
-	dagqlCache, err := b.root.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cache: %w", err)
-	}
-	return srv.WithCache(dagqlCache), nil
+	return srv, nil
 }
 
-// SchemaIntrospectionJSONFile returns an introspection JSON file for the
-// schema, optionally hiding the given types. The dagql Select cache
-// (CachePerSchema) handles caching per-args, so different hiddenTypes
-// produce correctly different results.
 func (b *SchemaBuilder) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (dagql.Result[*File], error) {
-	dag, err := b.Server(ctx)
+	dag, err := b.Schema(ctx)
 	if err != nil {
 		return dagql.Result[*File]{}, err
 	}
 	return schemaJSONFileFromServer(ctx, dag, hiddenTypes)
 }
 
-// SchemaIntrospectionJSONFileForModule returns an introspection JSON file
-// with types hidden that should not be exposed to module SDKs.
 func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context) (dagql.Result[*File], error) {
-	// Include both the module-specific hidden types and the engine-internal types
 	hiddenTypes := append([]string{}, TypesToIgnoreForModuleIntrospection...)
 	for _, typed := range TypesHiddenFromModuleSDKs {
 		hiddenTypes = append(hiddenTypes, typed.Type().Name())
@@ -186,23 +165,22 @@ func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context
 	return b.SchemaIntrospectionJSONFile(ctx, hiddenTypes)
 }
 
-// SchemaIntrospectionJSONFileForClient returns an introspection JSON file
-// for standalone client generation. Unlike module SDKs, standalone clients
-// have access to Engine and other types that are hidden from modules.
 func (b *SchemaBuilder) SchemaIntrospectionJSONFileForClient(ctx context.Context) (dagql.Result[*File], error) {
 	return b.SchemaIntrospectionJSONFile(ctx, []string{})
 }
 
-// TypeDefs returns type definitions for all modules by introspecting the
-// combined schema. Directives in the schema carry module metadata
-// (SourceModuleName, defaultPath, etc.), so no merging step is required.
-func (b *SchemaBuilder) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
-	return TypeDefsFromSchema(dag, nil)
+func (b *SchemaBuilder) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
+	var typeDefs dagql.ObjectResultArray[*TypeDef]
+	for _, e := range b.entries {
+		modTypeDefs, err := e.mod.TypeDefs(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get type defs for module %q: %w", e.mod.Name(), err)
+		}
+		typeDefs = append(typeDefs, modTypeDefs...)
+	}
+	return typeDefs, nil
 }
 
-// ModTypeFor searches the modules for the given type def, returning the
-// ModType if found. This does not recurse to transitive dependencies; it
-// only returns types directly exposed by the schema of the top-level deps.
 func (b *SchemaBuilder) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bool, error) {
 	for _, e := range b.entries {
 		modType, ok, err := e.mod.ModTypeFor(ctx, typeDef, false)
@@ -216,10 +194,7 @@ func (b *SchemaBuilder) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModTy
 	return nil, false, nil
 }
 
-func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
-	loadedSchema *dagql.Server,
-	rerr error,
-) {
+func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dagql.Server, rerr error) {
 	b.loadSchemaLock.Lock()
 	defer b.loadSchemaLock.Unlock()
 	if b.lazilyLoadedServer != nil {
@@ -233,7 +208,6 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 		b.loadSchemaErr = rerr
 	}()
 
-	// Check if any entry has Entrypoint set.
 	var nonEntrypoints, entrypoints []modDepEntry
 	for _, e := range b.entries {
 		if e.opts.Entrypoint {
@@ -244,19 +218,13 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 	}
 
 	if len(entrypoints) == 0 {
-		// No entrypoints — single server suffices (inner == outer).
 		mods := make([]modInstall, len(b.entries))
 		for i, e := range b.entries {
 			mods[i] = modInstall(e)
 		}
-		dag, err := buildSchema(ctx, b.root, mods)
-		if err != nil {
-			return nil, err
-		}
-		return dag, nil
+		return buildSchema(ctx, b.root, mods)
 	}
 
-	// Build inner server: all modules with Entrypoint forced to false.
 	innerMods := make([]modInstall, len(b.entries))
 	for i, e := range b.entries {
 		opts := e.opts
@@ -268,7 +236,6 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 		return nil, err
 	}
 
-	// Build outer server: all modules with real Entrypoint flags.
 	outerMods := make([]modInstall, 0, len(b.entries))
 	for _, e := range nonEntrypoints {
 		outerMods = append(outerMods, modInstall(e))
@@ -280,10 +247,6 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (
 	if err != nil {
 		return nil, err
 	}
-
-	// Wire up delegation: the outer server's Load, LoadType, and
-	// Canonical() all route to the inner server, ensuring IDs are
-	// canonical and proxy resolvers can reach the real constructors.
 	outer.SetCanonical(inner)
 
 	return outer, nil

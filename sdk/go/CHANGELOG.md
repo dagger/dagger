@@ -13,9 +13,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.6`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.20.6
 
 ### Dependencies
+
 - Bump Engine to v0.20.6 by @tiborvass in https://github.com/dagger/dagger/pull/12990
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -27,9 +29,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.5`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.20.5
 
 ### Dependencies
+
 - Bump Engine to v0.20.5 by @tiborvass in https://github.com/dagger/dagger/pull/12946
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -41,9 +45,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.4`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.20.4
 
 ### Dependencies
+
 - Bump Engine to v0.20.4 by @tiborvass in https://github.com/dagger/dagger/pull/12930
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -55,9 +61,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.3`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.20.3
 
 ### Dependencies
+
 - Bump Engine to v0.20.3 by @marcosnils in https://github.com/dagger/dagger/pull/12033
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -69,9 +77,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.2`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.20.2
 
 ### Dependencies
+
 - Bump Engine to v0.20.2 by @marcosnils in https://github.com/dagger/dagger/pull/12029
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -83,9 +93,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.1`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.20.1
 
 ### Dependencies
+
 - Bump Engine to v0.20.1 by @TomChv in https://github.com/dagger/dagger/pull/11968
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -97,13 +109,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.20.0`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.20.0
 
 ### Dependencies
+
 - Bump Engine to v0.20.0 by @vito in https://github.com/dagger/dagger/pull/11920
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @vito
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -115,9 +131,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.11`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.11
 
 ### Dependencies
+
 - Bump Engine to v0.19.11 by @sipsma in https://github.com/dagger/dagger/pull/11808
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -129,9 +147,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.10`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.10
 
 ### Dependencies
+
 - Bump Engine to v0.19.10 by @sipsma in https://github.com/dagger/dagger/pull/11693
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -143,9 +163,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.9`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.9
 
 ### Dependencies
+
 - Bump Engine to v0.19.9 by @sipsma in https://github.com/dagger/dagger/pull/11646
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -157,9 +179,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.8`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.8
 
 ### Dependencies
+
 - Bump Engine to v0.19.8 by @grouville in https://github.com/dagger/dagger/pull/11524
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -171,9 +195,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.7`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.7
 
 ### Dependencies
+
 - Bump Engine to v0.19.7 by @tiborvass in https://github.com/dagger/dagger/pull/11457
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -185,13 +211,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.6`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.6
 
 ### Dependencies
+
 - Bump Engine to v0.19.6 by @marcosnils in https://github.com/dagger/dagger/pull/11372
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @marcosnils
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -203,13 +233,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.5`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.5
 
 ### Dependencies
+
 - Bump Engine to v0.19.5 by @sipsma in https://github.com/dagger/dagger/pull/11362
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @sipsma
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -221,13 +255,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.4`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.4
 
 ### Dependencies
+
 - Bump Engine to v0.19.4 by @sipsma in https://github.com/dagger/dagger/pull/11333
 
 ### Contributors
+
 Special thanks to our external contributors this release!
+
 - @sipsma
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -239,9 +277,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.3`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.3
 
 ### Dependencies
+
 - Bump Engine to v0.19.3 by @marcosnils in https://github.com/dagger/dagger/pull/11286
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -253,9 +293,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.2`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.2
 
 ### Dependencies
+
 - Bump Engine to v0.19.2 by @TomChv in https://github.com/dagger/dagger/pull/11202
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -267,9 +309,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.1`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.1
 
 ### Dependencies
+
 - Bump Engine to v0.19.1 by @grouville in https://github.com/dagger/dagger/pull/11196
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -281,9 +325,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.0`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.19.0
 
 ### Dependencies
+
 - Bump Engine to v0.19.0 by @matipan in https://github.com/dagger/dagger/pull/11147
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -295,10 +341,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.19`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.19
 
 ### Dependencies
+
 - Update go to 1.25.1 by @jedevc in https://github.com/dagger/dagger/pull/11059
 - Bump Engine to v0.18.19 by @jedevc in https://github.com/dagger/dagger/pull/11089
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -310,9 +358,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.18`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.18
 
 ### Dependencies
+
 - Bump Engine to v0.18.18 by @jedevc in https://github.com/dagger/dagger/pull/11062
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -324,10 +374,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.17`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.17
 
 ### Dependencies
+
 - Update go to 1.25 by @jedevc in https://github.com/dagger/dagger/pull/10872
 - Bump Engine to v0.18.17 by @jedevc in https://github.com/dagger/dagger/pull/10986
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -339,9 +391,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.16`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.16
 
 ### Dependencies
+
 - Bump Engine to v0.18.16 by @jedevc in https://github.com/dagger/dagger/pull/10910
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -353,9 +407,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.15`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.15
 
 ### Dependencies
+
 - Bump Engine to v0.18.15 by @sipsma in https://github.com/dagger/dagger/pull/10901
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -367,9 +423,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.14`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.14
 
 ### Dependencies
+
 - Bump Engine to v0.18.14 by @vito in https://github.com/dagger/dagger/pull/10763
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -381,9 +439,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.13`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.13
 
 ### Dependencies
+
 - Bump Engine to v0.18.13 by @sipsma in https://github.com/dagger/dagger/pull/10758
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -395,9 +455,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.12`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.12
 
 ### Dependencies
+
 - Bump Engine to v0.18.12 by @sipsma in https://github.com/dagger/dagger/pull/10650
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -409,13 +471,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.11`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.11
 
 ### Added
+
 - Both the enum name and the enum value are exposed to the engine by @jedevc in https://github.com/dagger/dagger/pull/9518
 - Allow multi-line arrays in arg pragmas like `ignore` by @jedevc in https://github.com/dagger/dagger/pull/10594
 
 ### Dependencies
+
 - Bump Engine to v0.18.11 by @jedevc in https://github.com/dagger/dagger/pull/10639
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -427,9 +492,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.10`. [See what changed in th
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.10
 
 ### Dependencies
+
 - Bump Engine to v0.18.10 by @jedevc in https://github.com/dagger/dagger/pull/10559
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -441,9 +508,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.9`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.9
 
 ### Dependencies
+
 - Bump Engine to v0.18.9 by @jedevc in https://github.com/dagger/dagger/pull/10482
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -455,9 +524,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.8`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.8
 
 ### Dependencies
+
 - Bump Engine to v0.18.8 by @cwlbraa in https://github.com/dagger/dagger/pull/10405
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -469,10 +540,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.7`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.7
 
 ### Dependencies
+
 - Bump Go to 1.24.3 by @jedevc in https://github.com/dagger/dagger/pull/10346
 - Bump Engine to v0.18.7 by @jedevc in https://github.com/dagger/dagger/pull/10389
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -484,9 +557,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.6`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.6
 
 ### Dependencies
+
 - Bump Engine to v0.18.6 by @sipsma in https://github.com/dagger/dagger/pull/10337
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -498,9 +573,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.5`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.5
 
 ### Dependencies
+
 - Bump Engine to v0.18.5 by @sipsma in https://github.com/dagger/dagger/pull/10274
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -512,12 +589,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.4`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.4
 
 ### Added
+
 - Added default value comments for improved documentation by @jedevc in github.com/dagger/dagger/pull/10100
 
 ### Dependencies
+
 - Bump Engine to v0.18.4 by @jedevc in https://github.com/dagger/dagger/pull/10235
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -529,9 +609,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.3`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.3
 
 ### Dependencies
+
 - Bump Engine to v0.18.3 by @jedevc in https://github.com/dagger/dagger/pull/10149
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -543,9 +625,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.2`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.2
 
 ### Dependencies
+
 - Bump Engine to v0.18.2 by @marcosnils in https://github.com/dagger/dagger/pull/10072
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -557,9 +641,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.1`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.1
 
 ### Dependencies
+
 - Bump Engine to v0.18.1 by @vito in https://github.com/dagger/dagger/pull/10041
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -571,9 +657,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.0`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.18.0
 
 ### Dependencies
+
 - Bump Engine to v0.18.0 by @sipsma in https://github.com/dagger/dagger/pull/10028
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -585,9 +673,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.17.2`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.17.2
 
 ### Dependencies
+
 - Bump Engine to v0.17.2 by @jedevc in https://github.com/dagger/dagger/pull/9989
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -599,9 +689,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.17.1`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.17.1
 
 ### Dependencies
+
 - Bump Engine to v0.17.1 by @cwlbraa in https://github.com/dagger/dagger/pull/9957
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -613,15 +705,18 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.17.0`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.17.0
 
 ### Added
+
 - New `sdk.config.goprivate` setting in `dagger.json` for go modules by @rajatjindal in https://github.com/dagger/dagger/pull/9323 \
   This setting allows configuring the `GOPRIVATE` env var in the context of building+running the module code, so that private dependencies can be loaded.
 - Automatic forwarding of .gitconfig `insteadOf` directives into go module runtime by @rajatjindal in https://github.com/dagger/dagger/pull/9323 \
   In combination with `goprivate`, this can be used to load private dependencies.
 
 ### Dependencies
+
 - Bump Engine to v0.17.0 by @jedevc in https://github.com/dagger/dagger/pull/9918
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -633,9 +728,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.3`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.16.3
 
 ### Dependencies
+
 - Bump Engine to v0.16.3 by @jedevc in https://github.com/dagger/dagger/pull/9849
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -647,9 +744,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.2`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.16.2
 
 ### Dependencies
+
 - Bump Engine to v0.16.2 by @jedevc in https://github.com/dagger/dagger/pull/9728
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -661,9 +760,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.1`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.16.1
 
 ### Dependencies
+
 - Bump Engine to v0.16.1 by @sipsma in https://github.com/dagger/dagger/pull/9634
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -675,9 +776,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.16.0`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.16.0
 
 ### Dependencies
+
 - Bump Engine to v0.16.0 by @sipsma in https://github.com/dagger/dagger/pull/9629
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -689,9 +792,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.4`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.15.4
 
 ### Dependencies
+
 - Bump Engine to v0.15.4 by @jedevc in https://github.com/dagger/dagger/pull/9562
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -703,9 +808,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.3`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.15.3
 
 ### Dependencies
+
 - Bump Engine to v0.15.3 by @jedevc in https://github.com/dagger/dagger/pull/9469
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -717,9 +824,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.2`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.15.2
 
 ### Dependencies
+
 - Bump Engine to v0.15.2 by @jedevc in https://github.com/dagger/dagger/pull/9383
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -731,9 +840,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.1`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.15.1
 
 ### Dependencies
+
 - Bump Engine to v0.15.1 by @cwlbraa in https://github.com/dagger/dagger/pull/9183
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -745,6 +856,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.0`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.15.0
 
 ### 🔥 Breaking Changes
+
 - Removed deprecated unscoped enum values by @jedevc in https://github.com/dagger/dagger/pull/8669 \
   Enum values must now be accessed with the name prefixed by the name of the
   enum type - for example, `dagger.Shared` becomes `dagger.CacheSharingModeLocked`.
@@ -752,9 +864,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.0`. [See what changed in tha
   When comparing error values for expected output, use the more specific values.
 
 ### Dependencies
+
 - Bump Engine to v0.15.0 by @jedevc in https://github.com/dagger/dagger/pull/9158
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -765,11 +879,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.14.0`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.14.0
 
-
 ### Dependencies
+
 - Bump Engine to v0.14.0 by @sipsma in https://github.com/dagger/dagger/pull/8900
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -780,16 +895,18 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.7`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.13.7
 
-
 ### Changed
+
 - Deprecate unscoped enum values by @jedevc in https://github.com/dagger/dagger/pull/8669 \
   Enum values should now be accessed with the name prefixed by the name of the
   enum type - for example, `dagger.Shared` should become `dagger.CacheSharingModeLocked`.
 
 ### Dependencies
+
 - Bump Engine to v0.13.7 by @jedevc in https://github.com/dagger/dagger/pull/8829
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -800,11 +917,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.6`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.13.6
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.6 by @jedevc in https://github.com/dagger/dagger/pull/8770
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -815,11 +933,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.5`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.13.5
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.5 by @sipsma in https://github.com/dagger/dagger/pull/8679
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -830,11 +949,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.4`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.13.4
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.4 by @jedevc in https://github.com/dagger/dagger/pull/8661
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -845,11 +965,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.3`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.13.3
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.3 by @vito in https://github.com/dagger/dagger/pull/8523
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -860,11 +981,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.2`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.13.2
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.2 by @vito in https://github.com/dagger/dagger/pull/8514
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -875,11 +997,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.1`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.13.1
 
-
 ### Dependencies
+
 - Bump Engine to v0.13.1 by @sipsma in https://github.com/dagger/dagger/pull/8488
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -890,16 +1013,18 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.0`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.13.0
 
-
 ### 🔥 Breaking Changes
+
 - Fix optional function arguments being generated as required in codegen by @helderco in https://github.com/dagger/dagger/pull/8106 \
   If there's a Module dependency that has a non-null Function argument with a default value,
   it will change from required to optional, in the generated client bindings.
 
 ### Dependencies
+
 - Bump Engine to v0.13.0 by @jedevc in https://github.com/dagger/dagger/pull/8408
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -910,11 +1035,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.7`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.12.7
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.7 by @jedevc in https://github.com/dagger/dagger/pull/8299
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -925,18 +1051,20 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.6`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.12.6
 
-
 ### Fixed
+
 - Correctly handle CRLF line endings during comment parsing by @jedevc in https://github.com/dagger/dagger/pull/8217 \
   This previously could result in function argument doc-strings not being
   correctly found, and would interferet st with pragma parsing (e.g. `// +optional`
   and `// +default`).
 
 ### Dependencies
+
 - Update to use [Go 1.23](https://go.dev/doc/go1.23) by @jedevc in https://github.com/dagger/dagger/pull/7670 \
   This allows using go 1.23 in modules.
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -947,8 +1075,8 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.5`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.12.5
 
-
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -959,8 +1087,8 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.4`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.12.4
 
-
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -971,11 +1099,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.3`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.12.3
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.3 by @github-actions in https://github.com/dagger/dagger/pull/8039
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -986,11 +1115,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.2`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.12.2
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.2 by @github-actions in https://github.com/dagger/dagger/pull/8006
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1001,11 +1131,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.1`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.12.1
 
-
 ### Dependencies
+
 - Bump Engine to v0.12.1 by @github-actions in https://github.com/dagger/dagger/pull/7978
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1016,16 +1147,18 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.12.0`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.12.0
 
-
 ### 🔥 Breaking Changes
+
 - Don't return `Void` by @helderco in https://github.com/dagger/dagger/pull/7773
 - Remove top level type aliases for modules by @jedevc in https://github.com/dagger/dagger/pull/7831 \
-  Modules must now use `*dagger.Container` (and similar) instead of `*Container` directly. 
+  Modules must now use `*dagger.Container` (and similar) instead of `*Container` directly.
 
 ### Dependencies
+
 - Bump Engine to v0.12.0 by @github-actions in https://github.com/dagger/dagger/pull/7903
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1036,11 +1169,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.9`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.9
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.9 by @github-actions in https://github.com/dagger/dagger/pull/7746
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1051,11 +1185,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.8`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.8
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.8 by @github-actions in https://github.com/dagger/dagger/pull/7690
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1066,15 +1201,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.7`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.8-rc.1
 
-
 ### Fixed
+
 - Retract v0.11.7 by @gerhard in https://github.com/dagger/dagger/pull/7642
 - Improve consistency of codegen ordering by @jedevc in https://github.com/dagger/dagger/pull/7543
 
 ### Dependencies
+
 - Bump Engine to v0.11.7 by @github-actions in https://github.com/dagger/dagger/pull/7615
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1085,11 +1222,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.6`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.6
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.6 by @github-actions in https://github.com/dagger/dagger/pull/7516
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1100,11 +1238,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.5`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.5
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.5 by @github-actions in https://github.com/dagger/dagger/pull/7482
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1115,11 +1254,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.4`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.4
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.4 by @github-actions in https://github.com/dagger/dagger/pull/7345
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1130,14 +1270,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.3`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.3
 
-
 ### Fixed
+
 - Respect existing go.mod during module initialization by @jedevc in https://github.com/dagger/dagger/pull/7194
 
 ### Dependencies
+
 - Bump Engine to v0.11.3 by @github-actions in https://github.com/dagger/dagger/pull/7318
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1149,13 +1291,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.2`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.2
 
 ### Fixed
+
 - Allow windows CRLF line-endings in go pragmas by @jedevc in https://github.com/dagger/dagger/pull/7121
 
 ### Dependencies
+
 - Bump Engine to v0.11.2 by @github-actions in https://github.com/dagger/dagger/pull/7204
 - Bump Dagger Modules go version to 1.22 by @jedevc in https://github.com/dagger/dagger/pull/7109
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1167,12 +1312,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.1`. [See what changed in tha
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.1
 
 ### Fixed
+
 - Automatically add `internal/telemetry` directory to generated `.gitignore` files by @yann-soubeyrand in https://github.com/dagger/dagger/issues/7019
 
 ### Dependencies
+
 - Bump Engine to v0.11.1 by @github-actions in https://github.com/dagger/dagger/pull/7100
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1183,11 +1331,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.11.0`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.11.0
 
-
 ### Dependencies
+
 - Bump Engine to v0.11.0 by @github-actions in https://github.com/dagger/dagger/pull/7016
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1198,11 +1347,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.3`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.10.3
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.3 by @github-actions in https://github.com/dagger/dagger/pull/6936
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1213,11 +1363,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.2`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.10.2
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.2 by @github-actions in https://github.com/dagger/dagger/pull/6871
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1228,11 +1379,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.1`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.10.1
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.1 by @github-actions in https://github.com/dagger/dagger/pull/6826
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1243,11 +1395,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.10.0`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.10.0
 
-
 ### Dependencies
+
 - Bump Engine to v0.10.0 by @github-actions in https://github.com/dagger/dagger/pull/6758
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1258,11 +1411,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.11`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.11
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.11 by @github-actions in https://github.com/dagger/dagger/pull/6700
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1273,11 +1427,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.10`. [See what changed in tha
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.10
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.10 by @github-actions in https://github.com/dagger/dagger/pull/6656
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1288,11 +1443,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.9`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.9
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.9 by @github-actions in https://github.com/dagger/dagger/pull/6636
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1303,11 +1459,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.8`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.8
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.8 by @github-actions in https://github.com/dagger/dagger/pull/6557
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1318,11 +1475,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.7`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.7
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.7 by @github-actions in https://github.com/dagger/dagger/pull/6460
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1333,14 +1491,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.6`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.6
 
-
 ### Added
+
 - Add a default global client at dagger.io/dagger/dag by @jedevc in https://github.com/dagger/dagger/pull/6326
 
 ### Dependencies
+
 - Bump Engine to v0.9.6 by @github-actions in https://github.com/dagger/dagger/pull/6410
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1351,11 +1511,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.5`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.5
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.5 by @github-actions in https://github.com/dagger/dagger/pull/6309
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1366,11 +1527,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.4`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.4
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.4 by @github-actions in https://github.com/dagger/dagger/pull/6239
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1381,11 +1543,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.3`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.3
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.3 by @github-actions in https://github.com/dagger/dagger/pull/6061
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1412,11 +1575,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.1`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.9.1
 
-
 ### Dependencies
+
 - Bump Engine to v0.9.1 by @github-actions in https://github.com/dagger/dagger/pull/5969
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1448,11 +1612,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.8`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.8.8
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.8 by @github-actions in https://github.com/dagger/dagger/pull/5877
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1463,11 +1628,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.7`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.8.7
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.7 by @github-actions in https://github.com/dagger/dagger/pull/5799
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1478,14 +1644,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.6`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.8.6
 
-
 ### Fixed
+
 - Check and panic if a nil pointer is sent as argument to a query by @TomChv in https://github.com/dagger/dagger/pull/5785
 
 ### Dependencies
+
 - Bump Engine to v0.8.6 by @github-actions in https://github.com/dagger/dagger/pull/5795
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1496,11 +1664,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.5`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.8.5
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.5 by @github-actions in https://github.com/dagger/dagger/pull/5779
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1511,11 +1680,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.4`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.8.4
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.4 by @github-actions in https://github.com/dagger/dagger/pull/5657
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1526,11 +1696,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.3`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.8.3
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.3 by @github-actions in https://github.com/dagger/dagger/pull/5643
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1541,14 +1712,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.2`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.8.2
 
-
 ### Fixed
+
 - Expand `~` to home when using custom CLI path by @wingyplus in https://github.com/dagger/dagger/pull/5555
 
 ### Dependencies
+
 - Bump Engine to v0.8.2 by @github-actions in https://github.com/dagger/dagger/pull/5613
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1559,11 +1732,12 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.1`. [See what changed in that
 
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.8.1
 
-
 ### Dependencies
+
 - Bump Engine to v0.8.1 by @github-actions in https://github.com/dagger/dagger/pull/5581
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1575,13 +1749,16 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.0`. [See what changed in that
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.8.0
 
 ### Added
+
 - Print progress status during automatic Engine provisioning and establishing client connection by @TomChv in https://github.com/dagger/dagger/pull/5488
 - Show warning on version mismatch between Engine and SDK by @TomChv in https://github.com/dagger/dagger/pull/5315
 
 ### Dependencies
+
 - Bump Engine to v0.8.0 by @github-actions in https://github.com/dagger/dagger/pull/5567
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1593,12 +1770,15 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.6.4`. [See what changed in that
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.7.4
 
 ### Added
+
 - Added the `With` method to more types by @helderco in https://github.com/dagger/dagger/pull/5447
 
 ### Dependencies
+
 - Bump Engine to v0.6.4 by @github-actions in https://github.com/dagger/dagger/pull/5489
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
@@ -1610,9 +1790,11 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.6.3`. [See what changed in that
 🐹 https://pkg.go.dev/dagger.io/dagger@v0.7.3
 
 ### Dependencies
+
 - Bump Engine to v0.6.3 by @github-actions in https://github.com/dagger/dagger/pull/5407
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/go)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)

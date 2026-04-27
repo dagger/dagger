@@ -52,6 +52,26 @@ defmodule Dagger.CurrentModule do
   end
 
   @doc """
+  Return all generators defined by the module
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec generators(t(), [{:include, [String.t()]}]) :: Dagger.GeneratorGroup.t()
+  def generators(%__MODULE__{} = current_module, optional_args \\ []) do
+    query_builder =
+      current_module.query_builder
+      |> QB.select("generators")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.GeneratorGroup{
+      query_builder: query_builder,
+      client: current_module.client
+    }
+  end
+
+  @doc """
   A unique identifier for this CurrentModule.
   """
   @spec id(t()) :: {:ok, Dagger.CurrentModuleID.t()} | {:error, term()}
