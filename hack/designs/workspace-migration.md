@@ -223,13 +223,13 @@ Product code must not contain a second migration applier that writes files direc
 
 ```go
 func daggerMigrate(ctx context.Context, dag *dagger.Client) error {
-	changes := dag.CurrentWorkspace().Migrate().Changes()
-	if changes.IsEmpty() {
-		fmt.Println("No migration needed.")
-		return nil
-	}
+    changes := dag.CurrentWorkspace().Migrate().Changes()
+    if changes.IsEmpty() {
+        fmt.Println("No migration needed.")
+        return nil
+    }
 
-	return renderOrApplyChangeset(changes)
+    return renderOrApplyChangeset(changes)
 }
 ```
 
