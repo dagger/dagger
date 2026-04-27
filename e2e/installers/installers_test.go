@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/containerd/platforms"
 	"golang.org/x/mod/semver"
 )
 
@@ -138,6 +139,10 @@ func checkDaggerVersion(ctx context.Context, ctr *dagger.Container, path string,
 		return err
 	}
 
+	return checkDaggerVersionOutput(out, platform, assertVersion)
+}
+
+func checkDaggerVersionOutput(out string, platform dagger.Platform, assertVersion func(string) error) error {
 	out = strings.TrimSpace(out)
 	fields := strings.Fields(out)
 	if len(fields) < 3 {
@@ -158,9 +163,56 @@ func checkDaggerVersion(ctx context.Context, ctr *dagger.Container, path string,
 	}
 
 	gotPlatform := fields[len(fields)-1]
-	if gotPlatform != string(platform) {
+	parsedGotPlatform, err := platforms.Parse(gotPlatform)
+	if err != nil {
+		return fmt.Errorf("malformed dagger version output %q: expected final field %q to be a valid platform: %w", out, gotPlatform, err)
+	}
+	parsedPlatform, err := platforms.Parse(string(platform))
+	if err != nil {
+		return fmt.Errorf("invalid container platform %q: %w", platform, err)
+	}
+	if !platforms.OnlyStrict(parsedPlatform).Match(parsedGotPlatform) {
 		return fmt.Errorf("malformed dagger version output %q: expected final field to match container platform %q", out, platform)
 	}
 
 	return nil
+}
+
+func TestCheckDaggerVersionOutputPlatformVariant(t *testing.T) {
+	tests := []struct {
+		name     string
+		out      string
+		platform dagger.Platform
+		wantErr  string
+	}{
+		{
+			name:     "arm64 v8 variant",
+			out:      "dagger v0.20.6 (image://registry.dagger.io/engine:v0.20.6) linux/arm64/v8",
+			platform: "linux/arm64",
+		},
+		{
+			name:     "compatible arm is not equal",
+			out:      "dagger v0.20.6 (image://registry.dagger.io/engine:v0.20.6) linux/arm/v8",
+			platform: "linux/arm64",
+			wantErr:  "expected final field to match container platform",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := checkDaggerVersionOutput(test.out, test.platform, nil)
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("check version output: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %q", test.wantErr)
+			}
+			if !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("expected error containing %q, got %q", test.wantErr, err)
+			}
+		})
+	}
 }
