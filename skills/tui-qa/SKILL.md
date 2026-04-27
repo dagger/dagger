@@ -27,12 +27,13 @@ Use `.cast` for time-sensitive behavior. Use text snapshots for "what the user s
 ## Workflow
 
 1. State the operator expectation before recording.
-- expected first visible response
-- expected milestones
-- expected final screen or files written
-- acceptable delays
 
-2. Record and analyze in one step when possible:
+   - expected first visible response
+   - expected milestones
+   - expected final screen or files written
+   - acceptable delays
+
+1. Record and analyze in one step when possible:
 
 ```bash
 python3 skills/tui-qa/scripts/tui_qa.py run \
@@ -45,17 +46,19 @@ python3 skills/tui-qa/scripts/tui_qa.py run \
   --milestone 'Installed module'
 ```
 
-3. Review:
-- `report.md` for the summary
-- `snapshots/*.txt` for point-in-time screens
-- `session.cast` with `asciinema play` when timing or redraw behavior matters
+1. Review:
 
-4. Classify issues:
-- content bug
-- timing bug
-- hard hang: no output for too long
-- semantic hang: output continues but no meaningful milestone progress
-- polish issue
+   - `report.md` for the summary
+   - `snapshots/*.txt` for point-in-time screens
+   - `session.cast` with `asciinema play` when timing or redraw behavior matters
+
+1. Classify issues:
+
+   - content bug
+   - timing bug
+   - hard hang: no output for too long
+   - semantic hang: output continues but no meaningful milestone progress
+   - polish issue
 
 ## Commands
 

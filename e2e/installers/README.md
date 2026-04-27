@@ -11,6 +11,6 @@ go test
 
 For pretty TUI output:
 
-```
+```sh
 dagger run go test
 ```
