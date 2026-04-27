@@ -979,14 +979,15 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			modGen := goGitBase(t, c).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/dep").
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
 				With(sdkSource("go", useInner)).
+				With(daggerExec("develop")).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=.")).
 				With(sdkSource(tc.sdk, tc.source)).
-				With(daggerExec("install", "./dep"))
+				With(daggerExec("install", "./dep")).
+				With(daggerExec("develop"))
 
 			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
@@ -997,6 +998,7 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 			modGen = modGen.
 				WithWorkdir("/work/dep").
 				With(sdkSource("go", newInner)).
+				With(daggerExec("develop")).
 				WithWorkdir("/work").
 				With(daggerExec("develop"))
 
