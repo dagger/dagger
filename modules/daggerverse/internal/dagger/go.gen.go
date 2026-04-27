@@ -207,13 +207,13 @@ func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../toolcha
 
 // GoCheckTidyOpts contains options for Go.CheckTidy
 type GoCheckTidyOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:547:2)
+	Include []string // go (../../../../toolchains/go/main.go:561:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:548:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:562:2)
 }
 
 // Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../toolchains/go/main.go:545:1)
+func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../toolchains/go/main.go:559:1)
 	if r.checkTidy != nil {
 		return nil
 	}
@@ -283,11 +283,20 @@ func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../..
 	return response, q.Execute(ctx)
 }
 
-func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../toolchains/go/main.go:676:1)
+func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../toolchains/go/main.go:686:1)
 	q := r.query.Select("generateDaggerRuntime")
 	q = q.Arg("start", start)
 
 	return &Go{
+		query: q,
+	}
+}
+
+// Generate Dagger runtime files for Go SDK modules in the configured source.
+func (r *Go) GenerateDaggerRuntimes() *Changeset { // go (../../../../toolchains/go/main.go:541:1)
+	q := r.query.Select("generateDaggerRuntimes")
+
+	return &Changeset{
 		query: q,
 	}
 }
@@ -375,13 +384,13 @@ func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../../../toolch
 
 // GoLintOpts contains options for Go.Lint
 type GoLintOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:617:2)
+	Include []string // go (../../../../toolchains/go/main.go:631:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:618:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:632:2)
 }
 
 // Lint the project
-func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../../toolchains/go/main.go:615:1)
+func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../../toolchains/go/main.go:629:1)
 	if r.lint != nil {
 		return nil
 	}
@@ -400,7 +409,7 @@ func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../
 	return q.Execute(ctx)
 }
 
-func (r *Go) LintModule(ctx context.Context, module string) error { // go (../../../../toolchains/go/main.go:643:1)
+func (r *Go) LintModule(ctx context.Context, module string) error { // go (../../../../toolchains/go/main.go:657:1)
 	if r.lintModule != nil {
 		return nil
 	}
@@ -618,12 +627,12 @@ func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { /
 
 // GoTidyOpts contains options for Go.Tidy
 type GoTidyOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:518:2)
+	Include []string // go (../../../../toolchains/go/main.go:514:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:519:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:515:2)
 }
 
-func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../toolchains/go/main.go:516:1)
+func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../toolchains/go/main.go:512:1)
 	q := r.query.Select("tidy")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
