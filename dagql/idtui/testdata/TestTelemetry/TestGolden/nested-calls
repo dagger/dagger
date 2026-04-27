@@ -17,7 +17,7 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
+$ viztest: Viztest! X.Xs CACHED
 ✔ .nestedCalls: [String!]! X.Xs
 ├╴$ file(name: "file", contents: "hey"): File! X.Xs CACHED
 │
@@ -36,7 +36,7 @@ Expected stderr:
 │   ┆ ): Directory!
 │   ): Directory! X.Xs CACHED
 │
-├╴✔ container: Container! X.Xs
+├╴$ container: Container! X.Xs CACHED
 ├╴$ .withDirectory(
 │   ┆ path: "/level-1"
 │   ┆ source: Directory.withFile(
@@ -57,7 +57,7 @@ Expected stderr:
 │   ┆ ): Directory!
 │   ): Container! X.Xs CACHED
 ├╴✔ .rootfs: Directory! X.Xs
-╰╴$ .entries: [String!]! X.Xs CACHED
+╰╴✔ .entries: [String!]! X.Xs
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

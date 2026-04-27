@@ -14,24 +14,36 @@ import (
 
 func Install[T dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[T]{
-		dagql.FuncWithCacheKey("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
-			return WrapSchema(srv.Schema()), nil
-		}, dagql.CachePerCall),
+		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
+			currentSrv := dagql.CurrentDagqlServer(ctx)
+			if currentSrv == nil {
+				return nil, fmt.Errorf("missing current dagql server")
+			}
+			return WrapSchema(currentSrv.Schema()), nil
+		}).WithInput(dagql.PerCallInput),
 
 		// custom dagger field
 		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
-			return string(dagql.CurrentID(ctx).View()), nil
+			call := dagql.CurrentCall(ctx)
+			if call == nil {
+				return "", fmt.Errorf("missing current call")
+			}
+			return string(call.View), nil
 		}).View(dagql.AllView{}),
 
-		dagql.FuncWithCacheKey("__type", func(ctx context.Context, self T, args struct {
+		dagql.Func("__type", func(ctx context.Context, self T, args struct {
 			Name string
 		}) (*Type, error) {
-			def, ok := srv.Schema().Types[args.Name]
+			currentSrv := dagql.CurrentDagqlServer(ctx)
+			if currentSrv == nil {
+				return nil, fmt.Errorf("missing current dagql server")
+			}
+			def, ok := currentSrv.Schema().Types[args.Name]
 			if !ok {
 				return nil, fmt.Errorf("unknown type: %q", args.Name)
 			}
-			return WrapTypeFromDef(srv.Schema(), def), nil
-		}, dagql.CachePerCall),
+			return WrapTypeFromDef(currentSrv.Schema(), def), nil
+		}).WithInput(dagql.PerCallInput),
 	}.Install(srv)
 
 	TypeKinds.Install(srv)

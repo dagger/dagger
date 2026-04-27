@@ -16,7 +16,7 @@ defmodule Dagger.Generator do
   @type t() :: %__MODULE__{}
 
   @doc """
-  The generated changeset
+  The generated changeset from the last run
   """
   @spec changes(t()) :: Dagger.Changeset.t()
   def changes(%__MODULE__{} = generator) do
@@ -63,7 +63,7 @@ defmodule Dagger.Generator do
   end
 
   @doc """
-  Wether changeset from the generator execution is empty or not
+  Whether changeset from the last generator run is empty or not
   """
   @spec empty?(t()) :: {:ok, boolean()} | {:error, term()}
   def empty?(%__MODULE__{} = generator) do

@@ -27,9 +27,7 @@ import (
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
-	"github.com/jedevc/diffparser"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -143,7 +141,7 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 	}
 }
 
-func (m *MCP) DefaultSystemPrompt() string {
+func (m *MCP) DefaultSystemPrompt(ctx context.Context) (string, error) {
 	env := m.env.Self()
 	var promptFiles []string
 	if len(env.inputsByName) > 0 ||
@@ -173,7 +171,11 @@ func (m *MCP) DefaultSystemPrompt() string {
 		prompt += string(content)
 	}
 	if !m.staticTools {
-		if values, err := m.userProvidedValues(); err == nil && len(values) > 0 {
+		values, err := m.userProvidedValues(ctx)
+		if err != nil {
+			return "", err
+		}
+		if len(values) > 0 {
 			if prompt != "" {
 				prompt += "\n\n"
 			}
@@ -182,7 +184,7 @@ func (m *MCP) DefaultSystemPrompt() string {
 			prompt += fmt.Sprintf("```\n%s\n```", values)
 		}
 	}
-	return prompt
+	return prompt, nil
 }
 
 func (m *MCP) Clone() *MCP {
@@ -251,7 +253,7 @@ func (m *MCP) LastResult() dagql.Typed {
 }
 
 func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
-	return m.env.Self().deps.Server(ctx)
+	return m.env.Self().deps.Schema(ctx)
 }
 
 func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
@@ -274,7 +276,7 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 		return nil, err
 	}
 	objectMethods := NewLLMToolSet()
-	if err := m.loadReachableObjectMethods(srv, objectMethods); err != nil {
+	if err := m.loadReachableObjectMethods(ctx, srv, objectMethods); err != nil {
 		return nil, err
 	}
 	if !m.staticTools {
@@ -378,6 +380,10 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	if err != nil {
 		return fmt.Errorf("get dagql server: %w", err)
 	}
+	workspaceID, err := workspace.ID()
+	if err != nil {
+		return fmt.Errorf("get workspace ID: %w", err)
+	}
 
 	var newEnv dagql.ObjectResult[*Env]
 	if err := srv.Select(ctx, m.env, &newEnv, dagql.Selector{
@@ -386,7 +392,7 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 		Args: []dagql.NamedInput{
 			{
 				Name:  "workspace",
-				Value: dagql.NewID[*Directory](workspace.ID()),
+				Value: dagql.NewID[*Directory](workspaceID),
 			},
 		},
 	}); err != nil {
@@ -396,7 +402,9 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	return nil
 }
 
-func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (string, error) {
+func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
+	// Try to return the raw patch so the LLM can see the actual diff.
+	// Fall back to a structured summary for large changesets.
 	var rawPatch string
 	if err := srv.Select(ctx, changes, &rawPatch, dagql.Selector{
 		View:  srv.View,
@@ -404,52 +412,28 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 	}, dagql.Selector{
 		View:  srv.View,
 		Field: "contents",
+	}); err == nil && rawPatch != "" && strings.Count(rawPatch, "\n") <= 100 {
+		return rawPatch
+	}
+
+	const summaryWidth = 80
+
+	var stats []*DiffStat
+	if err := srv.Select(ctx, changes, &stats, dagql.Selector{
+		View:  srv.View,
+		Field: "diffStats",
 	}); err != nil {
-		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err), nil
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
 	}
-	if rawPatch == "" {
-		// No changes; don't say anything, since saying "No changes" could be
-		// confusing depending on other context (like logs from a `git show`)
-		return "", nil
+
+	entries := make([]patchpreview.Entry, len(stats))
+	for i, s := range stats {
+		entries[i] = patchpreview.Entry{Path: s.Path, Kind: string(s.Kind), Added: s.AddedLines, Removed: s.RemovedLines}
+		if s.OldPath != nil {
+			entries[i].OldPath = *s.OldPath
+		}
 	}
-	if strings.Count(rawPatch, "\n") > 100 {
-		// If the patch is too large, show a summary instead
-		var addedPaths, removedPaths []string
-		if err := srv.Select(ctx, changes, &addedPaths, dagql.Selector{
-			View:  srv.View,
-			Field: "addedPaths",
-		}); err != nil {
-			return fmt.Sprintf("WARNING: failed to fetch added paths: %s", err), nil
-		}
-		if err := srv.Select(ctx, changes, &removedPaths, dagql.Selector{
-			View:  srv.View,
-			Field: "removedPaths",
-		}); err != nil {
-			return fmt.Sprintf("WARNING: failed to fetch removed paths: %s", err), nil
-		}
-		addedDirectories := slices.DeleteFunc(addedPaths, func(s string) bool {
-			return !strings.HasSuffix(s, "/")
-		})
-		removedDirectories := slices.DeleteFunc(removedPaths, func(s string) bool {
-			return !strings.HasSuffix(s, "/")
-		})
-		patch, err := diffparser.Parse(rawPatch)
-		if err != nil {
-			return "", fmt.Errorf("parse patch: %w", err)
-		}
-		preview := &patchpreview.PatchPreview{
-			Patch:       patch,
-			AddedDirs:   addedDirectories,
-			RemovedDirs: removedDirectories,
-		}
-		var res strings.Builder
-		llmOut := termenv.NewOutput(&res, termenv.WithProfile(termenv.Ascii))
-		if err := preview.Summarize(llmOut, 80); err != nil {
-			return fmt.Sprintf("WARNING: failed to render patch summary: %s", err), nil
-		}
-		return res.String(), nil
-	}
-	return rawPatch, nil
+	return patchpreview.SummarizeString(entries, summaryWidth)
 }
 
 func toAny(v any) (res map[string]any, rerr error) {
@@ -463,18 +447,20 @@ func toAny(v any) (res map[string]any, rerr error) {
 func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 	schema := srv.Schema()
 	for _, mod := range m.env.Self().installedModules {
-		modTypeName := strcase.ToCamel(mod.Name())
+		modSelf := mod.Self()
+		modTypeName := strcase.ToCamel(modSelf.Name())
 		modTypeDef := schema.Types[modTypeName]
-		for _, obj := range mod.ObjectDefs {
-			def := obj.AsObject.Value
+		for _, obj := range modSelf.ObjectDefs {
+			def := obj.Self().AsObject.Value.Self()
 			if strcase.ToCamel(def.Name) != modTypeName {
 				// we're only concerned with the entrypoint object
 				continue
 			}
 			var hasRequiredArgs bool
 			if def.Constructor.Valid {
-				for _, arg := range def.Constructor.Value.Args {
-					if !arg.TypeDef.Optional && arg.DefaultPath == "" && arg.DefaultValue == nil {
+				for _, arg := range def.Constructor.Value.Self().Args {
+					argSelf := arg.Self()
+					if !argSelf.TypeDef.Self().Optional && argSelf.DefaultPath == "" && argSelf.DefaultValue == nil {
 						hasRequiredArgs = true
 						break
 					}
@@ -482,7 +468,7 @@ func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 			}
 			if hasRequiredArgs {
 				// FIXME: better error
-				return fmt.Errorf("TODO: module %s constructor cannot have required arguments", mod.Name())
+				return fmt.Errorf("TODO: module %s constructor cannot have required arguments", modSelf.Name())
 			}
 			if err := m.typeTools(allTools, srv, schema, modTypeDef, def); err != nil {
 				return err
@@ -526,9 +512,12 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 	}
 }
 
-func (m *MCP) loadReachableObjectMethods(srv *dagql.Server, allTools *LLMToolSet) error {
+func (m *MCP) loadReachableObjectMethods(ctx context.Context, srv *dagql.Server, allTools *LLMToolSet) error {
 	schema := srv.Schema()
-	typeNames := m.Types()
+	typeNames, err := m.Types(ctx)
+	if err != nil {
+		return err
+	}
 	if m.env.Self().IsPrivileged() {
 		typeNames = append(typeNames, schema.Query.Name)
 	}
@@ -736,7 +725,11 @@ func (m *MCP) call(ctx context.Context,
 		if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
 			// Handle ID results by turning them back into Objects, since these are
 			// typically implementation details hinting to SDKs to unlazy the call.
-			syncedObj, err := srv.Load(ctx, id.ID())
+			syncedID, err := id.ID()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get synced object ID: %w", err)
+			}
+			syncedObj, err := srv.Load(ctx, syncedID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load synced object: %w", err)
 			}
@@ -766,6 +759,10 @@ func (m *MCP) call(ctx context.Context,
 	// NOTE: returning a Changeset behaves similarly to returning an Env; it is
 	// directly applied to the Env.
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
+		changesID, err := changes.ID()
+		if err != nil {
+			return "", fmt.Errorf("get changeset ID: %w", err)
+		}
 		var newWS dagql.ObjectResult[*Directory]
 		if err := srv.Select(ctx, m.env.Self().Workspace, &newWS, dagql.Selector{
 			View:  srv.View,
@@ -773,7 +770,7 @@ func (m *MCP) call(ctx context.Context,
 			Args: []dagql.NamedInput{
 				{
 					Name:  "changes",
-					Value: dagql.NewID[*Changeset](changes.ID()),
+					Value: dagql.NewID[*Changeset](changesID),
 				},
 			},
 		}); err != nil {
@@ -782,7 +779,7 @@ func (m *MCP) call(ctx context.Context,
 		if err := m.updateEnvWorkspace(ctx, newWS); err != nil {
 			return "", err
 		}
-		return m.summarizePatch(ctx, srv, changes)
+		return m.summarizePatch(ctx, srv, changes), nil
 	}
 
 	if autoConstruct != nil {
@@ -813,10 +810,14 @@ func (m *MCP) call(ctx context.Context,
 func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 		// Handle object returns specially
-		return m.toolObjectResponse(ctx, srv, obj, m.Ingest(obj, ""))
+		objID, err := m.Ingest(ctx, obj, "")
+		if err != nil {
+			return "", err
+		}
+		return m.toolObjectResponse(ctx, srv, obj, objID)
 	}
 
-	result, err := m.sanitizeResult(val)
+	result, err := m.sanitizeResult(ctx, val)
 	if err != nil {
 		return "", fmt.Errorf("failed to simplify result: %w", err)
 	}
@@ -837,15 +838,15 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 	})
 }
 
-func (m *MCP) sanitizeResult(val dagql.Typed) (any, error) {
+func (m *MCP) sanitizeResult(ctx context.Context, val dagql.Typed) (any, error) {
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 		// Handle objects by showing their LLM ID, i.e. Container#123
-		return m.Ingest(obj, ""), nil
+		return m.Ingest(ctx, obj, "")
 	}
 
 	if anyRes, ok := dagql.UnwrapAs[dagql.AnyResult](val); ok {
 		// Unwrap any Result[T]s so we don't encode a giant ID
-		return m.sanitizeResult(anyRes.Unwrap())
+		return m.sanitizeResult(ctx, anyRes.Unwrap())
 	}
 
 	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
@@ -856,7 +857,7 @@ func (m *MCP) sanitizeResult(val dagql.Typed) (any, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to get ID for object %d: %w", i, err)
 			}
-			simpl, err := m.sanitizeResult(val)
+			simpl, err := m.sanitizeResult(ctx, val)
 			if err != nil {
 				return nil, fmt.Errorf("failed to simplify list element %d: %w", i, err)
 			}
@@ -960,7 +961,11 @@ func (m *MCP) toolCallToSelections(
 				if !ok {
 					return nil, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
 				}
-				val = obj.ID()
+				objID, err := obj.ID()
+				if err != nil {
+					return nil, fmt.Errorf("arg %q: get object ID: %w", arg.Name, err)
+				}
+				val = objID
 			}
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
@@ -1088,7 +1093,11 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	result, err := tool.Call(EnvIDToContext(ctx, m.env.ID()), toolCall.Function.Arguments)
+	envID, err := m.env.ID()
+	if err != nil {
+		return toolErrorMessage(fmt.Errorf("failed to get env ID: %w", err)), true
+	}
+	result, err := tool.Call(EnvIDToContext(ctx, envID), toolCall.Function.Arguments)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}
@@ -1186,25 +1195,41 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
-	sess, ok := m.mcpSessions[serverName]
-	if !ok {
+	if _, ok := m.mcpSessions[serverName]; !ok {
 		// Fall back to individual calls if session not found
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
 	ctr := mcpSrv.Service.Self().Container
-	if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
+	if ctr.Self() == nil || ctr.Self().Config.WorkingDir == "" || ctr.Self().Config.WorkingDir == "/" {
 		// No workspace syncing needed - execute normally
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
 	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	serviceDigest, err := mcpSrv.Service.ContentPreferredDigest(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	running, err := query.Services(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	runningSvc, err := running.Get(ctx, serviceDigest, false)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
 	var results []*ModelMessage
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
-		sess.ID(),
-		ctr.Config.WorkingDir,
-		m.env.Self().Workspace.Self(),
+		runningSvc,
+		ctr.Self().Config.WorkingDir,
+		m.env.Self().Workspace,
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context
 			results = m.callBatchRegular(ctx, tools, toolCalls)
@@ -1666,7 +1691,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 			},
 			Strict: true,
 			Call: func(ctx context.Context, args any) (any, error) {
-				values, err := m.userProvidedValues()
+				values, err := m.userProvidedValues(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -1999,7 +2024,11 @@ func (m *MCP) chainMethodsTool(srv *dagql.Server, objectMethods *LLMToolSet) LLM
 				if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](m.LastResult()); ok {
 					// override, since the whole point is to chain from the previous
 					// value; any value here is surely mistaken or hallucinated
-					args["self"] = m.Ingest(obj, "")
+					self, err := m.Ingest(ctx, obj, "")
+					if err != nil {
+						return nil, err
+					}
+					args["self"] = self
 				}
 			} else {
 				args["self"] = toolArgs.Self
@@ -2068,7 +2097,7 @@ func (m *MCP) validateAndNormalizeChain(ctx context.Context, self string, calls 
 	return errs
 }
 
-func (m *MCP) userProvidedValues() (string, error) {
+func (m *MCP) userProvidedValues(ctx context.Context) (string, error) {
 	type valueDesc struct {
 		Description string `json:"description"`
 		Value       any    `json:"value"`
@@ -2080,8 +2109,12 @@ func (m *MCP) userProvidedValues() (string, error) {
 			description = input.Key
 		}
 		if obj, isObj := input.AsObject(); isObj {
+			value, err := m.Ingest(ctx, obj, input.Description)
+			if err != nil {
+				return "", fmt.Errorf("ingest user-provided value %q: %w", input.Key, err)
+			}
 			values = append(values, valueDesc{
-				Value:       m.Ingest(obj, input.Description),
+				Value:       value,
 				Description: description,
 			})
 		} else {
@@ -2248,7 +2281,8 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 		if !trivial {
 			continue
 		}
-		val, err := target.Select(ctx, srv, dagql.Selector{
+		var val dagql.AnyResult
+		err := srv.Select(ctx, target, &val, dagql.Selector{
 			View:  srv.View,
 			Field: field.Name,
 		})
@@ -2260,7 +2294,7 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 			// ModuleObjects
 			continue
 		}
-		datum, err := m.sanitizeResult(val)
+		datum, err := m.sanitizeResult(ctx, val)
 		if err != nil {
 			return "", err
 		}
@@ -2275,19 +2309,35 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 	return toolStructuredResponse(res)
 }
 
-func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
-	id := obj.ID()
-	if id == nil {
-		return ""
+func (m *MCP) Ingest(ctx context.Context, obj dagql.AnyObjectResult, desc string) (string, error) {
+	frame, err := obj.ResultCall()
+	if err != nil {
+		return "", fmt.Errorf("load %s result call: %w", obj.Type().Name(), err)
 	}
-	hash := id.Digest()
+	hash, err := frame.RecipeDigest(ctx)
+	if err != nil {
+		return "", fmt.Errorf("derive %s recipe digest: %w", obj.Type().Name(), err)
+	}
+	if desc == "" {
+		recipeID, err := frame.RecipeID(ctx)
+		if err != nil {
+			return "", fmt.Errorf("derive %s recipe ID: %w", obj.Type().Name(), err)
+		}
+		if recipeID == nil {
+			return "", fmt.Errorf("%s result call has no recipe ID", obj.Type().Name())
+		}
+		desc = m.describeLocked(recipeID)
+	}
 	return m.IngestBy(obj, desc, hash)
 }
 
-func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Digest) string {
-	id := obj.ID()
+func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Digest) (string, error) {
+	id, err := obj.ID()
+	if err != nil {
+		return "", fmt.Errorf("load %s handle ID: %w", obj.Type().Name(), err)
+	}
 	if id == nil {
-		return ""
+		return "", fmt.Errorf("%s has no handle ID", obj.Type().Name())
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -2296,9 +2346,6 @@ func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Diges
 	if !ok {
 		m.typeCounts[typeName]++
 		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
-		if desc == "" {
-			desc = m.describeLocked(id)
-		}
 		m.idByHash[hash] = llmID
 		m.objsByID[llmID] = func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error) {
 			return &Binding{
@@ -2309,7 +2356,7 @@ func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Diges
 			}, nil
 		}
 	}
-	return llmID
+	return llmID, nil
 }
 
 func (m *MCP) IngestContextual(
@@ -2403,14 +2450,16 @@ func (m *MCP) displayLitLocked(lit call.Literal) string {
 	}
 }
 
-func (m *MCP) Types() []string {
+func (m *MCP) Types(ctx context.Context) ([]string, error) {
 	// Make sure we count env inputs
 	for _, input := range m.env.Self().Inputs() {
 		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](input.Value); ok {
-			m.Ingest(obj, input.Description)
+			if _, err := m.Ingest(ctx, obj, input.Description); err != nil {
+				return nil, fmt.Errorf("ingest env input %q: %w", input.Key, err)
+			}
 		}
 	}
-	return slices.Collect(maps.Keys(m.TypeCounts()))
+	return slices.Collect(maps.Keys(m.TypeCounts())), nil
 }
 
 func toolStructuredResponse(val any) (string, error) {

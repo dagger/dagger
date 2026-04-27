@@ -34,8 +34,8 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
@@ -132,6 +132,23 @@ func (ContainerSuite) TestWithRootFS(ctx context.Context, t *testctx.T) {
 	require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(releaseStr))
 }
 
+func (ContainerSuite) TestScratchRootFSDoesNotAliasSelectedDirectory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	entries, err := c.Container().Rootfs().Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+
+	withFile := c.Container().Rootfs().WithNewFile("foo", "bar")
+	contents, err := withFile.File("foo").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar", contents)
+
+	entries, err = c.Container().Rootfs().Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
 //go:embed testdata/hello.go
 var helloSrc string
 
@@ -218,7 +235,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			_, err := testutil.Query[struct {
 				Container struct {
 					From struct {
-						WithError struct{}
+						WithError struct {
+							Sync string
+						}
 					}
 				}
 			}](t, tc.query, nil)
@@ -1211,6 +1230,61 @@ func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T
 	require.Equal(t, "sub-content", execRes.Container.From.WithMountedDirectory.WithExec.WithExec.Stdout)
 }
 
+func (ContainerSuite) TestWithMountedDirectoryReadOnly(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dirRes, err := testutil.QueryWithClient[struct {
+		Directory struct {
+			WithNewFile struct {
+				ID string
+			}
+		}
+	}](c, t,
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					id
+				}
+			}
+		}`, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.ID
+
+	execRes, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					WithExec struct {
+						Stdout   string
+						WithExec struct {
+							Stdout string
+						}
+					}
+				}
+			}
+		}
+	}](c, t,
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "`+alpineImage+`") {
+					withMountedDirectory(path: "/mnt", source: $id, readOnly: true) {
+						withExec(args: ["cat", "/mnt/some-file"]) {
+							stdout
+							withExec(args: ["sh", "-lc", "if touch /mnt/should-fail 2>/dev/null; then echo writable; else echo readonly; fi"]) {
+								stdout
+							}
+						}
+					}
+				}
+			}
+		}`, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, "some-content", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
+	require.Equal(t, "readonly\n", execRes.Container.From.WithMountedDirectory.WithExec.WithExec.Stdout)
+}
+
 func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	dirRes, err := testutil.QueryWithClient[struct {
@@ -2082,7 +2156,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						directory(path: "/mnt/dir/some-file") {
-							id
+							sync
 						}
 					}
 				}
@@ -2099,7 +2173,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						directory(path: "/mnt/dir/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2116,7 +2190,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedTemp(path: "/mnt/tmp") {
 						directory(path: "/mnt/tmp/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2132,7 +2206,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
 						directory(path: "/mnt/cache/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2308,7 +2382,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						file(path: "/mnt/dir/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2327,7 +2401,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						file(path: "/mnt/dir") {
-							id
+							sync
 						}
 					}
 				}
@@ -2346,7 +2420,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedTemp(path: "/mnt/tmp") {
 						file(path: "/mnt/tmp/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2364,7 +2438,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
 						file(path: "/mnt/cache/bogus") {
-							id
+							sync
 						}
 					}
 				}
@@ -2627,7 +2701,6 @@ func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Contains(t, execRes.Container.From.WithMountedDirectory.WithExec.From.WithExec.WithExec.Stdout, "v18.10.0\n")
 	require.Contains(t, execRes.Container.From.WithMountedDirectory.WithExec.From.WithExec.WithExec.Stdout, "go version go1.18.2")
 }
 
@@ -3295,7 +3368,7 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 		// size, then base64 encode it
 		// include some newlines to avoid https://github.com/dagger/dagger/issues/7786
 		var stdoutBuf bytes.Buffer
-		for i := range buildkit.MaxExecErrorOutputBytes + extraByteCount {
+		for i := range engineutil.MaxExecErrorOutputBytes + extraByteCount {
 			if i > 0 && i%100 == 0 {
 				stdoutBuf.WriteByte('\n')
 			} else {
@@ -3306,7 +3379,7 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 		encodedOutMsg := base64.StdEncoding.EncodeToString(stdoutBuf.Bytes())
 
 		var stderrBuf bytes.Buffer
-		for i := range buildkit.MaxExecErrorOutputBytes + extraByteCount {
+		for i := range engineutil.MaxExecErrorOutputBytes + extraByteCount {
 			if i > 0 && i%100 == 0 {
 				stderrBuf.WriteByte('\n')
 			} else {
@@ -3316,7 +3389,7 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 		stderrStr := stderrBuf.String()
 		encodedErrMsg := base64.StdEncoding.EncodeToString(stderrBuf.Bytes())
 
-		truncMsg := fmt.Sprintf(buildkit.TruncationMessage, extraByteCount)
+		truncMsg := fmt.Sprintf(engineutil.TruncationMessage, extraByteCount)
 
 		_, err := c.Container().
 			From(alpineImage).
@@ -5533,13 +5606,7 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 	require.NoError(t, err)
 	require.NoError(t, c2.Close())
 
-	// TODO: once https://github.com/dagger/dagger/issues/8955 is fixed, enable this test, and delete the tests below
-	// require.Equal(t, 1, int(numConnections.Load()), "socket should be accessed exactly once")
-
-	if int(numConnections.Load()) == 1 {
-		t.Errorf("Congrats you fixed the bug; please enable the above test and delete this line")
-	}
-	require.Positive(t, int(numConnections.Load()), "the socket was never connected to")
+	require.Equal(t, 1, int(numConnections.Load()), "socket should be accessed exactly once")
 }
 
 func (ContainerSuite) TestHealthcheckIsPublished(ctx context.Context, t *testctx.T) {

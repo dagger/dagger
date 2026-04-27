@@ -9,6 +9,8 @@
 > - Upcoming breaking changes
 > - Incomplete or out-of-date documentation
 
+<!-- -->
+
 > [!IMPORTANT]
 > The Dagger Java SDK requires Dagger v0.9.0 or later
 
@@ -182,7 +184,7 @@ Run the samples with this command:
 
 Then select the sample to run:
 
-```
+```text
 === Dagger.io Java SDK samples ===
    1  io.dagger.sample.RunContainer                   Run a binary in a container
    2  io.dagger.sample.GetDaggerWebsite               Fetch the Dagger website content and print the first 300 characters
@@ -283,7 +285,7 @@ For those who would like to test without having to build the SDK:
 > **Warning**
 > It is a zip file. Unzip it to retrieve the jar file.
 
-4. Compile and run your sample pipeline with this jar file in the classpath
+1. Compile and run your sample pipeline with this jar file in the classpath
 
 ```bash
 # Compile
@@ -292,7 +294,7 @@ javac -cp dagger-java-sdk-[version]-jar-with-dependencies.jar GetDaggerWebsite.j
 java -cp dagger-java-sdk-[version]-jar-with-dependencies.jar:. GetDaggerWebsite
 ```
 
-5. Enjoy 😁
+1. Enjoy 😁
 
 ## Contributing
 

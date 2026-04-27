@@ -114,6 +114,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type DiffStat
+  """
+  @spec as_diff_stat(t()) :: Dagger.DiffStat.t()
+  def as_diff_stat(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asDiffStat")
+
+    %Dagger.DiffStat{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type Directory
   """
   @spec as_directory(t()) :: Dagger.Directory.t()
@@ -220,6 +234,20 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asGitRepository")
 
     %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type HTTPState
+  """
+  @spec as_http_state(t()) :: Dagger.HTTPState.t()
+  def as_http_state(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asHTTPState")
+
+    %Dagger.HTTPState{
       query_builder: query_builder,
       client: binding.client
     }
@@ -377,70 +405,28 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  Retrieve the binding value, as type Sub1
+  Retrieve the binding value, as type Up
   """
-  @spec as_sub1(t()) :: Dagger.Sub1.t()
-  def as_sub1(%__MODULE__{} = binding) do
+  @spec as_up(t()) :: Dagger.Up.t()
+  def as_up(%__MODULE__{} = binding) do
     query_builder =
-      binding.query_builder |> QB.select("asSub1")
+      binding.query_builder |> QB.select("asUp")
 
-    %Dagger.Sub1{
+    %Dagger.Up{
       query_builder: query_builder,
       client: binding.client
     }
   end
 
   @doc """
-  Retrieve the binding value, as type Sub1Obj
+  Retrieve the binding value, as type UpGroup
   """
-  @spec as_sub1_obj(t()) :: Dagger.Sub1Obj.t()
-  def as_sub1_obj(%__MODULE__{} = binding) do
+  @spec as_up_group(t()) :: Dagger.UpGroup.t()
+  def as_up_group(%__MODULE__{} = binding) do
     query_builder =
-      binding.query_builder |> QB.select("asSub1Obj")
+      binding.query_builder |> QB.select("asUpGroup")
 
-    %Dagger.Sub1Obj{
-      query_builder: query_builder,
-      client: binding.client
-    }
-  end
-
-  @doc """
-  Retrieve the binding value, as type Sub2
-  """
-  @spec as_sub2(t()) :: Dagger.Sub2.t()
-  def as_sub2(%__MODULE__{} = binding) do
-    query_builder =
-      binding.query_builder |> QB.select("asSub2")
-
-    %Dagger.Sub2{
-      query_builder: query_builder,
-      client: binding.client
-    }
-  end
-
-  @doc """
-  Retrieve the binding value, as type Sub2Obj
-  """
-  @spec as_sub2_obj(t()) :: Dagger.Sub2Obj.t()
-  def as_sub2_obj(%__MODULE__{} = binding) do
-    query_builder =
-      binding.query_builder |> QB.select("asSub2Obj")
-
-    %Dagger.Sub2Obj{
-      query_builder: query_builder,
-      client: binding.client
-    }
-  end
-
-  @doc """
-  Retrieve the binding value, as type Test
-  """
-  @spec as_test(t()) :: Dagger.Test.t()
-  def as_test(%__MODULE__{} = binding) do
-    query_builder =
-      binding.query_builder |> QB.select("asTest")
-
-    %Dagger.Test{
+    %Dagger.UpGroup{
       query_builder: query_builder,
       client: binding.client
     }

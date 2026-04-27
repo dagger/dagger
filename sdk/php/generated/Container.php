@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * An OCI-compatible container, also known as a Docker container.
  */
-class Container extends Client\AbstractObject implements Client\IdAble, Node
+class Container extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
      * Turn the container into a Service.
@@ -556,6 +556,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Node
         ?bool $gitignore = false,
         ?string $owner = '',
         ?bool $expand = false,
+        ?int $permissions = null,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
@@ -574,6 +575,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -837,6 +841,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Node
         string $path,
         Directory $source,
         ?string $owner = '',
+        ?bool $readOnly = false,
         ?bool $expand = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedDirectory');
@@ -844,6 +849,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('source', $source);
         if (null !== $owner) {
         $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        if (null !== $readOnly) {
+        $innerQueryBuilder->setArgument('readOnly', $readOnly);
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);

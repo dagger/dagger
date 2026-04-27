@@ -53,6 +53,20 @@ linters:
         - G306
         # G107: Url provided to HTTP request as taint input
         - G107
+        # G117: Marshaled struct field matches secret pattern (e.g. SessionToken, AccessToken)
+        - G117
+        # G118: Goroutine uses context.Background/TODO in shutdown/cleanup handlers
+        - G118
+        # G122: Filesystem operation in filepath.WalkDir callback (symlink TOCTOU) -- engine operates on content-addressed data
+        - G122
+        # G602: Slice index out of range -- false positive on bounds-checked loops
+        - G602
+        # G702: Command injection via taint analysis -- same class as G204
+        - G702
+        # G703: Path traversal via taint analysis -- paths from config/env are intentional
+        - G703
+        # G704: SSRF via taint analysis -- same class as G107
+        - G704
 
     govet:
       disable:
@@ -64,6 +78,7 @@ linters:
         - "all"
         - "-QF1006" # could lift into loop condition
         - "-QF1008" # could remove embedded field from selector
+        - "-QF1012" # could use fmt.Fprintf instead of WriteString(fmt.Sprintf(...))
     revive:
       rules:
         - name: unused-parameter
@@ -97,6 +112,13 @@ linters:
       - linters:
           - staticcheck
         text: "idtools.IdentityMapping"
+
+      - linters:
+          - staticcheck
+        # ArgsEscaped is a deprecated legacy docker/OCI field that we must
+        # still read to detect Windows images that rely on it.
+        text: "SA1019.*ArgsEscaped"
+        path: util/llbtodagger/
 
       - linters:
           - gocyclo

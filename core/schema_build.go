@@ -7,59 +7,93 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
+	"github.com/dagger/dagger/engine"
 )
 
-// modInstall pairs a module with its install options for schema building.
 type modInstall struct {
 	mod  Mod
 	opts InstallOpts
 }
 
-// buildSchema creates a dagql server with the given modules installed and
-// wires up interface extensions.
 func buildSchema(
 	ctx context.Context,
 	root *Query,
 	mods []modInstall,
 ) (*dagql.Server, error) {
-	dagqlCache, err := root.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cache: %w", err)
-	}
-	dag := dagql.NewServer(root, dagqlCache)
-	for _, m := range mods {
-		if version, ok := m.mod.View(); ok {
-			dag.View = version
+	var coreMod coreSchemaForker
+	for _, mod := range mods {
+		if m, ok := mod.mod.(coreSchemaForker); ok {
+			coreMod = m
 			break
 		}
 	}
 
-	dag.Around(AroundFunc)
+	var view call.View
+	for _, mod := range mods {
+		if version, ok := mod.mod.View(); ok {
+			view = version
+			break
+		}
+	}
 
-	// Set up the node(id:) loader to resolve IDs through a server that
-	// has all the module dependencies the ID requires. Without this,
-	// node(id:) would try to replay the ID's call chain on the current
-	// server, which may not have the necessary modules installed.
+	var dag *dagql.Server
+	if coreMod != nil {
+		forked, err := coreMod.ForkSchema(ctx, root, view)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fork core schema base: %w", err)
+		}
+		dag = forked
+	} else {
+		var err error
+		dag, err = dagql.NewServer(ctx, root)
+		if err != nil {
+			return nil, fmt.Errorf("create schema server: %w", err)
+		}
+		dag.View = view
+		dag.Around(AroundFunc)
+		dagintro.Install[*Query](dag)
+	}
+
+	// Set up the node(id:) loader to resolve IDs through a server that has all
+	// the module dependencies the ID requires. Without this, node(id:) would try
+	// to replay the ID's call chain on the current server, which may not have the
+	// necessary modules installed.
 	dag.SetNodeLoader(func(ctx context.Context, id *call.ID) (dagql.AnyObjectResult, error) {
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			// No query in context — fall back to the local server.
 			return dag.Load(ctx, id)
 		}
-		deps, err := query.IDDeps(ctx, id)
+		if id == nil || id.EngineResultID() == 0 {
+			return dag.Load(ctx, id)
+		}
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("node: current client metadata: %w", err)
+		}
+		if clientMetadata.SessionID == "" {
+			return nil, fmt.Errorf("node: empty session ID")
+		}
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("node: engine cache: %w", err)
+		}
+		call, err := cache.ResultCallByResultID(ctx, clientMetadata.SessionID, id.EngineResultID())
+		if err != nil {
+			return nil, fmt.Errorf("node: load result call: %w", err)
+		}
+		deps, err := query.ModDepsForCall(ctx, call)
 		if err != nil {
 			return nil, fmt.Errorf("node: resolve deps: %w", err)
 		}
-		idServer, err := deps.Server(ctx)
+		idServer, err := deps.Schema(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("node: build server: %w", err)
 		}
 		return idServer.Load(ctx, id)
 	})
 
-	dagintro.Install[*Query](dag)
-
-	objects, ifaces, err := installModules(ctx, dag, mods)
+	objects, ifaces, err := installModules(ctx, dag, mods, coreMod)
 	if err != nil {
 		return nil, err
 	}
@@ -78,35 +112,38 @@ func installModules(
 	ctx context.Context,
 	dag *dagql.Server,
 	mods []modInstall,
+	coreMod coreSchemaForker,
 ) ([]*ModuleObjectType, []*InterfaceType, error) {
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
-	for _, m := range mods {
-		mod := m.mod
-		err := mod.Install(ctx, dag, m.opts)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
+	for _, mod := range mods {
+		if _, ok := mod.mod.(coreSchemaForker); ok && coreMod != nil {
+			continue
+		}
+		if err := mod.mod.Install(ctx, dag, mod.opts); err != nil {
+			return nil, nil, fmt.Errorf("failed to get schema for module %q: %w", mod.mod.Name(), err)
 		}
 
-		// TODO support core interfaces types
-		if userMod, ok := mod.(*Module); ok {
-			defs, err := mod.TypeDefs(ctx, dag)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
-			}
-			for _, def := range defs {
-				switch def.Kind {
-				case TypeDefKindObject:
-					objects = append(objects, &ModuleObjectType{
-						typeDef: def.AsObject.Value,
-						mod:     userMod,
-					})
-				case TypeDefKindInterface:
-					ifaces = append(ifaces, &InterfaceType{
-						typeDef: def.AsInterface.Value,
-						mod:     userMod,
-					})
-				}
+		userMod, ok := mod.mod.(*userMod)
+		if !ok {
+			continue
+		}
+		defs, err := mod.mod.TypeDefs(ctx, dag)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.mod.Name(), err)
+		}
+		for _, def := range defs {
+			switch def.Self().Kind {
+			case TypeDefKindObject:
+				objects = append(objects, &ModuleObjectType{
+					typeDef: def.Self().AsObject.Value.Self(),
+					mod:     userMod.res,
+				})
+			case TypeDefKindInterface:
+				ifaces = append(ifaces, &InterfaceType{
+					typeDef: def.Self().AsInterface.Value.Self(),
+					mod:     userMod.res,
+				})
 			}
 		}
 	}
@@ -203,8 +240,6 @@ func registerInterfaceToInterfaceImpls(
 	}
 }
 
-// schemaJSONFileFromServer generates an introspection JSON file from an
-// already-built dagql server, optionally hiding the given types.
 func schemaJSONFileFromServer(ctx context.Context, dag *dagql.Server, hiddenTypes []string) (dagql.Result[*File], error) {
 	var schemaJSONFile dagql.Result[*File]
 	if err := dag.Select(ctx, dag.Root(), &schemaJSONFile,

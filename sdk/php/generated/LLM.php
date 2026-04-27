@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class LLM extends Client\AbstractObject implements Client\IdAble, Node
+class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
      * create a branch in the LLM's history

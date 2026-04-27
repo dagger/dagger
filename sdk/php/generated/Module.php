@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A Dagger module.
  */
-class Module extends Client\AbstractObject implements Client\IdAble, Node
+class Module extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
      * Return the check defined by the module with the given name. Must match to exactly one check.

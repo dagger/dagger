@@ -146,13 +146,14 @@ func initializeClientGeneratorModule(
 
 // moduleDef is a representation of a dagger module.
 type moduleDef struct {
-	Name        string
-	Description string
-	MainObject  *modTypeDef
-	Objects     []*modTypeDef
-	Interfaces  []*modTypeDef
-	Enums       []*modTypeDef
-	Inputs      []*modTypeDef
+	Name           string
+	Description    string
+	MainObject     *modTypeDef
+	Objects        []*modTypeDef
+	Interfaces     []*modTypeDef
+	Enums          []*modTypeDef
+	Inputs         []*modTypeDef
+	typeDefsByName map[string]*modTypeDef
 
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
@@ -318,12 +319,38 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 		return fmt.Errorf("query module objects: %w", err)
 	}
 
+	m.MainObject = nil
+	m.Objects = nil
+	m.Interfaces = nil
+	m.Enums = nil
+	m.Inputs = nil
+	m.typeDefsByName = make(map[string]*modTypeDef, len(res.TypeDefs))
+
 	for _, typeDef := range res.TypeDefs {
+		if typeDef == nil {
+			return fmt.Errorf("currentTypeDefs returned nil TypeDef")
+		}
+		if typeDef.TypeName == "" {
+			return fmt.Errorf("currentTypeDefs returned %s without canonical name", typeDef.Kind)
+		}
+		if _, found := m.typeDefsByName[typeDef.TypeName]; found {
+			continue
+		}
+		m.typeDefsByName[typeDef.TypeName] = typeDef
+		typeDef.owner = m
 		switch typeDef.Kind {
 		case dagger.TypeDefKindObjectKind:
 			m.Objects = append(m.Objects, typeDef)
+			if typeDef.AsObject != nil {
+				typeDef.AsObject.owner = m
+				typeDef.AsObject.typeDef = typeDef
+			}
 		case dagger.TypeDefKindInterfaceKind:
 			m.Interfaces = append(m.Interfaces, typeDef)
+			if typeDef.AsInterface != nil {
+				typeDef.AsInterface.owner = m
+				typeDef.AsInterface.typeDef = typeDef
+			}
 		case dagger.TypeDefKindEnumKind:
 			m.Enums = append(m.Enums, typeDef)
 		case dagger.TypeDefKindInputKind:
@@ -332,9 +359,14 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 	}
 
 	rootType := m.GetTypeDef("Query")
+	if rootType == nil || rootType.AsObject == nil {
+		return fmt.Errorf("query typedef not found in currentTypeDefs")
+	}
 
 	for _, fn := range rootType.AsObject.Functions {
-		m.LoadFunctionTypeDefs(fn)
+		if err := m.LoadFunctionTypeDefs(fn); err != nil {
+			return fmt.Errorf("load query function typedefs for %q: %w", fn.Name, err)
+		}
 		if obj := fn.ReturnType.AsObject; obj != nil {
 			// Detect module constructors: a Query field is a constructor
 			// when its SourceModuleName matches the field name.
@@ -455,7 +487,9 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
 	for _, fn := range fp.GetFunctions() {
 		if fn.Name == functionName || fn.CmdName() == functionName {
-			m.LoadFunctionTypeDefs(fn)
+			if err := m.LoadFunctionTypeDefs(fn); err != nil {
+				return nil, err
+			}
 			return fn, nil
 		}
 	}
@@ -535,13 +569,13 @@ func (m *moduleDef) HasModule() bool {
 // is Query's synthetic "with" or no-op constructor.
 // Returns nil if no named constructor is available.
 func (m *moduleDef) ModuleConstructor() *modFunction {
-	if obj := m.GetObject(m.Name); obj != nil && obj.Constructor != nil {
+	if obj := m.GetObject(m.Name); obj != nil && obj.Constructor != nil && obj.Constructor.Name != "" {
 		return obj.Constructor
 	}
 	// Only fall back to MainObject's constructor if it's a real one
-	// (non-empty name). The no-op identity constructor can't produce
-	// a valid GraphQL call.
-	if c := m.MainObject.AsObject.Constructor; c != nil && c.Name != "" {
+	// or the Query-side shell constructor path. The object typedef constructor
+	// can be metadata-only with an empty name.
+	if c := m.MainObject.AsObject.Constructor; c != nil {
 		return c
 	}
 	return nil
@@ -573,52 +607,92 @@ func (m *moduleDef) HasFunction(fp functionProvider, name string) bool {
 	return fn != nil
 }
 
-// LoadTypeDef attempts to replace a function's return object type or argument's
-// object type with with one from the module's object type definitions, to
-// recover missing function definitions in those places when chaining functions.
-func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
+// LoadTypeDef rebinds shallow TypeDef refs onto the canonical typedefs loaded
+// from currentTypeDefs(returnAllTypes: true).
+func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) error {
+	if typeDef == nil {
+		return nil
+	}
+
 	typeDef.once.Do(func() {
-		if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil && typeDef.AsObject.Fields == nil {
-			obj := m.GetObject(typeDef.AsObject.Name)
-			if obj != nil {
-				typeDef.AsObject = obj
-			}
-		}
-		if typeDef.AsInterface != nil && typeDef.AsInterface.Functions == nil {
-			iface := m.GetInterface(typeDef.AsInterface.Name)
-			if iface != nil {
-				typeDef.AsInterface = iface
-			}
-		}
-		if typeDef.AsEnum != nil {
-			enum := m.GetEnum(typeDef.AsEnum.Name)
-			if enum != nil {
-				typeDef.AsEnum = enum
-			}
-		}
-		if typeDef.AsInput != nil && typeDef.AsInput.Fields == nil {
-			input := m.GetInput(typeDef.AsInput.Name)
-			if input != nil {
-				typeDef.AsInput = input
-			}
-		}
-		if typeDef.AsList != nil {
-			m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
-		}
+		typeDef.loadErr = m.loadTypeDef(typeDef)
 	})
+	return typeDef.loadErr
 }
 
-func (m *moduleDef) LoadFunctionTypeDefs(fn *modFunction) {
-	// We need to load references to types with their type definitions because
-	// the introspection doesn't recursively add them, just their names.
-	m.LoadTypeDef(fn.ReturnType)
-	for _, arg := range fn.Args {
-		m.LoadTypeDef(arg.TypeDef)
+func (m *moduleDef) loadTypeDef(typeDef *modTypeDef) error {
+	if typeDef.TypeName == "" {
+		return fmt.Errorf("typedef ref missing canonical name")
 	}
+	canonical := m.typeDefsByName[typeDef.TypeName]
+	if canonical == nil {
+		return fmt.Errorf("typedef %q not found in currentTypeDefs(returnAllTypes: true)", typeDef.TypeName)
+	}
+
+	optional := typeDef.Optional
+	typeDef.TypeName = canonical.TypeName
+	typeDef.Kind = canonical.Kind
+	typeDef.Optional = optional
+	typeDef.AsObject = canonical.AsObject
+	typeDef.AsInterface = canonical.AsInterface
+	typeDef.AsInput = canonical.AsInput
+	typeDef.AsList = canonical.AsList
+	typeDef.AsScalar = canonical.AsScalar
+	typeDef.AsEnum = canonical.AsEnum
+
+	switch typeDef.Kind {
+	case dagger.TypeDefKindStringKind,
+		dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindFloatKind,
+		dagger.TypeDefKindBooleanKind,
+		dagger.TypeDefKindVoidKind,
+		dagger.TypeDefKindInputKind,
+		dagger.TypeDefKindEnumKind,
+		dagger.TypeDefKindScalarKind:
+		return nil
+	case dagger.TypeDefKindListKind:
+		if typeDef.AsList == nil || typeDef.AsList.ElementTypeDef == nil {
+			return fmt.Errorf("list typedef %q missing element type", typeDef.TypeName)
+		}
+		return m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
+	case dagger.TypeDefKindObjectKind:
+		if typeDef.AsObject == nil {
+			return fmt.Errorf("object typedef %q missing object payload", typeDef.TypeName)
+		}
+		typeDef.AsObject.owner = m
+		typeDef.AsObject.typeDef = typeDef
+		return nil
+	case dagger.TypeDefKindInterfaceKind:
+		if typeDef.AsInterface == nil {
+			return fmt.Errorf("interface typedef %q missing interface payload", typeDef.TypeName)
+		}
+		typeDef.AsInterface.owner = m
+		typeDef.AsInterface.typeDef = typeDef
+		return nil
+	default:
+		return fmt.Errorf("unsupported typedef kind %s", typeDef.Kind)
+	}
+}
+
+func (m *moduleDef) LoadFunctionTypeDefs(fn *modFunction) error {
+	if fn == nil {
+		return nil
+	}
+
+	if err := m.LoadTypeDef(fn.ReturnType); err != nil {
+		return fmt.Errorf("load return type for function %q: %w", fn.Name, err)
+	}
+	for _, arg := range fn.Args {
+		if err := m.LoadTypeDef(arg.TypeDef); err != nil {
+			return fmt.Errorf("load arg type for function %q arg %q: %w", fn.Name, arg.Name, err)
+		}
+	}
+	return nil
 }
 
 // modTypeDef is a representation of dagger.TypeDef.
 type modTypeDef struct {
+	TypeName    string `json:"name"`
 	Kind        dagger.TypeDefKind
 	Optional    bool
 	AsObject    *modObject
@@ -629,7 +703,10 @@ type modTypeDef struct {
 	AsEnum      *modEnum
 
 	// once protects concurrent update from LoadTypeDef
-	once sync.Once
+	once    sync.Once
+	loadErr error
+
+	owner *moduleDef
 }
 
 func (t *modTypeDef) String() string {
@@ -739,18 +816,32 @@ type functionProvider interface {
 	IsCore() bool
 }
 
-func GetSupportedFunctions(fp functionProvider) ([]*modFunction, []string) {
+func GetSupportedFunctions(fp functionProvider) ([]*modFunction, []string, error) {
 	allFns := fp.GetFunctions()
 	fns := make([]*modFunction, 0, len(allFns))
 	skipped := make([]string, 0, len(allFns))
 	for _, fn := range allFns {
+		switch fp := fp.(type) {
+		case *modObject:
+			if fp != nil && fp.owner != nil {
+				if err := fp.owner.LoadFunctionTypeDefs(fn); err != nil {
+					return nil, nil, err
+				}
+			}
+		case *modInterface:
+			if fp != nil && fp.owner != nil {
+				if err := fp.owner.LoadFunctionTypeDefs(fn); err != nil {
+					return nil, nil, err
+				}
+			}
+		}
 		if dagui.ShouldSkipFunction(fp.ProviderName(), fn.Name) || fn.HasUnsupportedFlags() {
 			skipped = append(skipped, fn.CmdName())
 		} else {
 			fns = append(fns, fn)
 		}
 	}
-	return fns, skipped
+	return fns, skipped, nil
 }
 
 func GetSupportedFunction(md *moduleDef, fp functionProvider, name string) (*modFunction, error) {
@@ -758,7 +849,10 @@ func GetSupportedFunction(md *moduleDef, fp functionProvider, name string) (*mod
 	if err != nil {
 		return nil, err
 	}
-	_, skipped := GetSupportedFunctions(fp)
+	_, skipped, err := GetSupportedFunctions(fp)
+	if err != nil {
+		return nil, err
+	}
 	if slices.Contains(skipped, fn.CmdName()) {
 		return nil, fmt.Errorf("function %q in type %q is not supported", name, fp.ProviderName())
 	}
@@ -793,6 +887,8 @@ type modObject struct {
 	Fields           []*modField
 	Constructor      *modFunction
 	SourceModuleName string
+	owner            *moduleDef
+	typeDef          *modTypeDef
 }
 
 var _ functionProvider = (*modObject)(nil)
@@ -841,6 +937,8 @@ type modInterface struct {
 	Description      string
 	Functions        []*modFunction
 	SourceModuleName string
+	owner            *moduleDef
+	typeDef          *modTypeDef
 }
 
 var _ functionProvider = (*modInterface)(nil)
@@ -866,14 +964,16 @@ func (o *modInterface) GetFunctions() []*modFunction {
 }
 
 type modScalar struct {
-	Name        string
-	Description string
+	Name             string
+	Description      string
+	SourceModuleName string
 }
 
 type modEnum struct {
-	Name        string
-	Description string
-	Members     []*modEnumMember
+	Name             string
+	Description      string
+	Members          []*modEnumMember
+	SourceModuleName string
 }
 
 func (e *modEnum) Short() string {

@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A directory.
  */
-class Directory extends Client\AbstractObject implements Client\IdAble, Node
+class Directory extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
      * Converts this directory to a local git repository
@@ -364,6 +364,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Node
         ?array $include = [],
         ?bool $gitignore = false,
         ?string $owner = '',
+        ?int $permissions = null,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
@@ -379,6 +380,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $owner) {
         $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

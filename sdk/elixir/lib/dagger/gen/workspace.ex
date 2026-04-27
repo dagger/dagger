@@ -185,6 +185,22 @@ defmodule Dagger.Workspace do
 
     Client.execute(workspace.client, query_builder)
   end
+
+  @doc """
+  Return all services from modules loaded in the workspace.
+  """
+  @spec services(t(), [{:include, [String.t()]}]) :: Dagger.UpGroup.t()
+  def services(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("services")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.UpGroup{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Workspace do

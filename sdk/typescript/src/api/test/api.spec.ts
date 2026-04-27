@@ -1,7 +1,7 @@
-import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
 import { randomUUID } from "crypto"
 import fs from "fs"
+import { describe, it } from "mocha"
 
 import {
   ExecError,

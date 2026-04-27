@@ -462,6 +462,15 @@ func (r *Binding) AsContainer() *Container {
 	}
 }
 
+// Retrieve the binding value, as type DiffStat
+func (r *Binding) AsDiffStat() *DiffStat {
+	q := r.query.Select("asDiffStat")
+
+	return &DiffStat{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type Directory
 func (r *Binding) AsDirectory() *Directory {
 	q := r.query.Select("asDirectory")
@@ -530,6 +539,15 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	q := r.query.Select("asGitRepository")
 
 	return &GitRepository{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type HTTPState
+func (r *Binding) AsHTTPState() *HTTPState {
+	q := r.query.Select("asHTTPState")
+
+	return &HTTPState{
 		query: q,
 	}
 }
@@ -886,6 +904,39 @@ func (r *Changeset) Before() *Directory {
 	}
 }
 
+// Structured per-path diff statistics (kind and line counts) for this changeset.
+func (r *Changeset) DiffStats(ctx context.Context) ([]DiffStat, error) {
+	q := r.query.Select("diffStats")
+
+	q = q.Select("id")
+
+	type diffStats struct {
+		Id ID
+	}
+
+	convert := func(fields []diffStats) []DiffStat {
+		out := []DiffStat{}
+
+		for i := range fields {
+			val := DiffStat{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "DiffStat")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []diffStats
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Applies the diff represented by this changeset to a path on the host.
 func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
 	if r.export != nil {
@@ -1050,10 +1101,26 @@ func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithCh
 	}
 }
 
+// AsExportable returns this Changeset as a Exportable.
+// This is a local type conversion — no GraphQL call.
+func (r *Changeset) AsExportable() Exportable {
+	return &ExportableClient{
+		query: r.query,
+	}
+}
+
 // AsNode returns this Changeset as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Changeset) AsNode() Node {
 	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Changeset as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Changeset) AsSyncer() Syncer {
+	return &SyncerClient{
 		query: r.query,
 	}
 }
@@ -1359,6 +1426,67 @@ func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
 // AsNode returns this CheckGroup as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *CheckGroup) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// An internal persistent filesync mirror.
+type ClientFilesyncMirror struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *ClientFilesyncMirror {
+	return &ClientFilesyncMirror{
+		query: q,
+	}
+}
+
+// A unique identifier for this ClientFilesyncMirror.
+func (r *ClientFilesyncMirror) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ClientFilesyncMirror) XXX_GraphQLType() string {
+	return "ClientFilesyncMirror"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ClientFilesyncMirror) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ClientFilesyncMirror) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ClientFilesyncMirror) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// AsNode returns this ClientFilesyncMirror as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ClientFilesyncMirror) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -2382,6 +2510,8 @@ type ContainerWithDirectoryOpts struct {
 	Owner string
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
+
+	Permissions int
 }
 
 // Return a new container snapshot, with a directory added to its filesystem
@@ -2408,6 +2538,10 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)
@@ -2808,6 +2942,8 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Mount the directory read-only.
+	ReadOnly bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -2820,6 +2956,10 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3382,10 +3522,26 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsExportable returns this Container as a Exportable.
+// This is a local type conversion — no GraphQL call.
+func (r *Container) AsExportable() Exportable {
+	return &ExportableClient{
+		query: r.query,
+	}
+}
+
 // AsNode returns this Container as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Container) AsNode() Node {
 	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Container as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Container) AsSyncer() Syncer {
+	return &SyncerClient{
 		query: r.query,
 	}
 }
@@ -3578,6 +3734,136 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 // AsNode returns this CurrentModule as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *CurrentModule) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type DiffStat struct {
+	query *querybuilder.Selection
+
+	addedLines   *int
+	id           *ID
+	kind         *DiffStatKind
+	oldPath      *string
+	path         *string
+	removedLines *int
+}
+
+func (r *DiffStat) WithGraphQLQuery(q *querybuilder.Selection) *DiffStat {
+	return &DiffStat{
+		query: q,
+	}
+}
+
+// Number of added lines for this path.
+func (r *DiffStat) AddedLines(ctx context.Context) (int, error) {
+	if r.addedLines != nil {
+		return *r.addedLines, nil
+	}
+	q := r.query.Select("addedLines")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this DiffStat.
+func (r *DiffStat) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *DiffStat) XXX_GraphQLType() string {
+	return "DiffStat"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *DiffStat) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *DiffStat) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *DiffStat) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Type of change.
+func (r *DiffStat) Kind(ctx context.Context) (DiffStatKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response DiffStatKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Previous path of the file, set only for renames.
+func (r *DiffStat) OldPath(ctx context.Context) (string, error) {
+	if r.oldPath != nil {
+		return *r.oldPath, nil
+	}
+	q := r.query.Select("oldPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Path of the changed file or directory.
+func (r *DiffStat) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Number of removed lines for this path.
+func (r *DiffStat) RemovedLines(ctx context.Context) (int, error) {
+	if r.removedLines != nil {
+		return *r.removedLines, nil
+	}
+	q := r.query.Select("removedLines")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this DiffStat as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DiffStat) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -4193,10 +4479,12 @@ type DirectoryWithDirectoryOpts struct {
 	Gitignore bool
 	// A user:group to set for the copied directory and its contents.
 	//
-	// The user and group must be an ID (1000:1000), not a name (foo:bar).
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Permission given to the copied directory and contents (e.g., 0755).
+	Permissions int
 }
 
 // Return a snapshot with a directory added
@@ -4219,6 +4507,10 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)
@@ -4245,7 +4537,7 @@ type DirectoryWithFileOpts struct {
 	Permissions int
 	// A user:group to set for the copied directory and its contents.
 	//
-	// The user and group must be an ID (1000:1000), not a name (foo:bar).
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
@@ -4421,10 +4713,26 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 	}
 }
 
+// AsExportable returns this Directory as a Exportable.
+// This is a local type conversion — no GraphQL call.
+func (r *Directory) AsExportable() Exportable {
+	return &ExportableClient{
+		query: r.query,
+	}
+}
+
 // AsNode returns this Directory as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Directory) AsNode() Node {
 	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Directory as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Directory) AsSyncer() Syncer {
+	return &SyncerClient{
 		query: r.query,
 	}
 }
@@ -4493,7 +4801,7 @@ func (r *Engine) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The local (on-disk) cache for the Dagger engine
+// The local engine cache state tracked by dagql
 func (r *Engine) LocalCache() *EngineCache {
 	q := r.query.Select("localCache")
 
@@ -5111,6 +5419,8 @@ func (r *EnumTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The members of the enum.
+//
 // Deprecated: use members instead
 func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 	q := r.query.Select("values")
@@ -5483,7 +5793,8 @@ func (r *Env) Services(opts ...EnvServicesOpts) *UpGroup {
 }
 
 // Create or update a binding of type Address in the environment
-func (r *Env) WithAddressInput(name string, value ID, description string) *Env {
+func (r *Env) WithAddressInput(name string, value *Address, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withAddressInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5506,7 +5817,8 @@ func (r *Env) WithAddressOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type CacheVolume in the environment
-func (r *Env) WithCacheVolumeInput(name string, value ID, description string) *Env {
+func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withCacheVolumeInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5529,7 +5841,8 @@ func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Changeset in the environment
-func (r *Env) WithChangesetInput(name string, value ID, description string) *Env {
+func (r *Env) WithChangesetInput(name string, value *Changeset, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withChangesetInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5552,7 +5865,8 @@ func (r *Env) WithChangesetOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type CheckGroup in the environment
-func (r *Env) WithCheckGroupInput(name string, value ID, description string) *Env {
+func (r *Env) WithCheckGroupInput(name string, value *CheckGroup, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withCheckGroupInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5575,7 +5889,8 @@ func (r *Env) WithCheckGroupOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Check in the environment
-func (r *Env) WithCheckInput(name string, value ID, description string) *Env {
+func (r *Env) WithCheckInput(name string, value *Check, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withCheckInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5598,7 +5913,8 @@ func (r *Env) WithCheckOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Cloud in the environment
-func (r *Env) WithCloudInput(name string, value ID, description string) *Env {
+func (r *Env) WithCloudInput(name string, value *Cloud, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withCloudInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5621,7 +5937,8 @@ func (r *Env) WithCloudOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Container in the environment
-func (r *Env) WithContainerInput(name string, value ID, description string) *Env {
+func (r *Env) WithContainerInput(name string, value *Container, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withContainerInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5654,8 +5971,33 @@ func (r *Env) WithCurrentModule() *Env {
 	}
 }
 
+// Create or update a binding of type DiffStat in the environment
+func (r *Env) WithDiffStatInput(name string, value *DiffStat, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withDiffStatInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired DiffStat output to be assigned in the environment
+func (r *Env) WithDiffStatOutput(name string, description string) *Env {
+	q := r.query.Select("withDiffStatOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Directory in the environment
-func (r *Env) WithDirectoryInput(name string, value ID, description string) *Env {
+func (r *Env) WithDirectoryInput(name string, value *Directory, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withDirectoryInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5678,7 +6020,8 @@ func (r *Env) WithDirectoryOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type EnvFile in the environment
-func (r *Env) WithEnvFileInput(name string, value ID, description string) *Env {
+func (r *Env) WithEnvFileInput(name string, value *EnvFile, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withEnvFileInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5701,7 +6044,8 @@ func (r *Env) WithEnvFileOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Env in the environment
-func (r *Env) WithEnvInput(name string, value ID, description string) *Env {
+func (r *Env) WithEnvInput(name string, value *Env, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withEnvInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5724,7 +6068,8 @@ func (r *Env) WithEnvOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type File in the environment
-func (r *Env) WithFileInput(name string, value ID, description string) *Env {
+func (r *Env) WithFileInput(name string, value *File, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withFileInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5747,7 +6092,8 @@ func (r *Env) WithFileOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type GeneratorGroup in the environment
-func (r *Env) WithGeneratorGroupInput(name string, value ID, description string) *Env {
+func (r *Env) WithGeneratorGroupInput(name string, value *GeneratorGroup, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withGeneratorGroupInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5770,7 +6116,8 @@ func (r *Env) WithGeneratorGroupOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Generator in the environment
-func (r *Env) WithGeneratorInput(name string, value ID, description string) *Env {
+func (r *Env) WithGeneratorInput(name string, value *Generator, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withGeneratorInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5793,7 +6140,8 @@ func (r *Env) WithGeneratorOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type GitRef in the environment
-func (r *Env) WithGitRefInput(name string, value ID, description string) *Env {
+func (r *Env) WithGitRefInput(name string, value *GitRef, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withGitRefInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5816,7 +6164,8 @@ func (r *Env) WithGitRefOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type GitRepository in the environment
-func (r *Env) WithGitRepositoryInput(name string, value ID, description string) *Env {
+func (r *Env) WithGitRepositoryInput(name string, value *GitRepository, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withGitRepositoryInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5838,8 +6187,33 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type HTTPState in the environment
+func (r *Env) WithHTTPStateInput(name string, value *HTTPState, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withHTTPStateInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired HTTPState output to be assigned in the environment
+func (r *Env) WithHTTPStateOutput(name string, description string) *Env {
+	q := r.query.Select("withHTTPStateOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type JSONValue in the environment
-func (r *Env) WithJSONValueInput(name string, value ID, description string) *Env {
+func (r *Env) WithJSONValueInput(name string, value *JSONValue, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withJSONValueInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5890,7 +6264,8 @@ func (r *Env) WithModule(module *Module) *Env {
 }
 
 // Create or update a binding of type ModuleConfigClient in the environment
-func (r *Env) WithModuleConfigClientInput(name string, value ID, description string) *Env {
+func (r *Env) WithModuleConfigClientInput(name string, value *ModuleConfigClient, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withModuleConfigClientInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5913,7 +6288,8 @@ func (r *Env) WithModuleConfigClientOutput(name string, description string) *Env
 }
 
 // Create or update a binding of type Module in the environment
-func (r *Env) WithModuleInput(name string, value ID, description string) *Env {
+func (r *Env) WithModuleInput(name string, value *Module, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withModuleInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5936,7 +6312,8 @@ func (r *Env) WithModuleOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type ModuleSource in the environment
-func (r *Env) WithModuleSourceInput(name string, value ID, description string) *Env {
+func (r *Env) WithModuleSourceInput(name string, value *ModuleSource, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withModuleSourceInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5959,7 +6336,8 @@ func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type SearchResult in the environment
-func (r *Env) WithSearchResultInput(name string, value ID, description string) *Env {
+func (r *Env) WithSearchResultInput(name string, value *SearchResult, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withSearchResultInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -5982,7 +6360,8 @@ func (r *Env) WithSearchResultOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type SearchSubmatch in the environment
-func (r *Env) WithSearchSubmatchInput(name string, value ID, description string) *Env {
+func (r *Env) WithSearchSubmatchInput(name string, value *SearchSubmatch, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withSearchSubmatchInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -6005,7 +6384,8 @@ func (r *Env) WithSearchSubmatchOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Secret in the environment
-func (r *Env) WithSecretInput(name string, value ID, description string) *Env {
+func (r *Env) WithSecretInput(name string, value *Secret, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withSecretInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -6028,7 +6408,8 @@ func (r *Env) WithSecretOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Service in the environment
-func (r *Env) WithServiceInput(name string, value ID, description string) *Env {
+func (r *Env) WithServiceInput(name string, value *Service, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withServiceInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -6051,7 +6432,8 @@ func (r *Env) WithServiceOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Socket in the environment
-func (r *Env) WithSocketInput(name string, value ID, description string) *Env {
+func (r *Env) WithSocketInput(name string, value *Socket, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withSocketInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -6074,7 +6456,8 @@ func (r *Env) WithSocketOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Stat in the environment
-func (r *Env) WithStatInput(name string, value ID, description string) *Env {
+func (r *Env) WithStatInput(name string, value *Stat, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withStatInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -6120,7 +6503,8 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type UpGroup in the environment
-func (r *Env) WithUpGroupInput(name string, value ID, description string) *Env {
+func (r *Env) WithUpGroupInput(name string, value *UpGroup, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withUpGroupInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -6143,7 +6527,8 @@ func (r *Env) WithUpGroupOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Up in the environment
-func (r *Env) WithUpInput(name string, value ID, description string) *Env {
+func (r *Env) WithUpInput(name string, value *Up, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withUpInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -6177,7 +6562,8 @@ func (r *Env) WithWorkspace(workspace *Directory) *Env {
 }
 
 // Create or update a binding of type Workspace in the environment
-func (r *Env) WithWorkspaceInput(name string, value ID, description string) *Env {
+func (r *Env) WithWorkspaceInput(name string, value *Workspace, description string) *Env {
+	assertNotNil("value", value)
 	q := r.query.Select("withWorkspaceInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -7243,10 +7629,26 @@ func (r *File) WithTimestamps(timestamp int) *File {
 	}
 }
 
+// AsExportable returns this File as a Exportable.
+// This is a local type conversion — no GraphQL call.
+func (r *File) AsExportable() Exportable {
+	return &ExportableClient{
+		query: r.query,
+	}
+}
+
 // AsNode returns this File as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *File) AsNode() Node {
 	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this File as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *File) AsSyncer() Syncer {
+	return &SyncerClient{
 		query: r.query,
 	}
 }
@@ -8147,7 +8549,7 @@ func (r *Generator) WithGraphQLQuery(q *querybuilder.Selection) *Generator {
 	}
 }
 
-// The generated changeset
+// The generated changeset from the last run
 func (r *Generator) Changes() *Changeset {
 	q := r.query.Select("changes")
 
@@ -8222,7 +8624,7 @@ func (r *Generator) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Wether changeset from the generator execution is empty or not
+// Whether changeset from the last generator run is empty or not
 func (r *Generator) IsEmpty(ctx context.Context) (bool, error) {
 	if r.isEmpty != nil {
 		return *r.isEmpty, nil
@@ -8313,7 +8715,7 @@ type GeneratorGroupChangesOpts struct {
 	OnConflict ChangesetsMergeConflict
 }
 
-// The combined changes from the generators execution
+// The combined changes from the last run of the generators
 //
 // If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
 //
@@ -8372,7 +8774,7 @@ func (r *GeneratorGroup) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Whether the generated changeset is empty or not
+// Whether the generated changeset from the last run is empty or not
 func (r *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
 	if r.isEmpty != nil {
 		return *r.isEmpty, nil
@@ -8759,6 +9161,67 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 // AsNode returns this GitRepository as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *GitRepository) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// An internal persistent HTTP state.
+type HTTPState struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
+	return &HTTPState{
+		query: q,
+	}
+}
+
+// A unique identifier for this HTTPState.
+func (r *HTTPState) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *HTTPState) XXX_GraphQLType() string {
+	return "HTTPState"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *HTTPState) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *HTTPState) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *HTTPState) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// AsNode returns this HTTPState as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *HTTPState) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -10002,6 +10465,14 @@ func (r *LLM) AsNode() Node {
 	}
 }
 
+// AsSyncer returns this LLM as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *LLM) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 type LLMTokenUsage struct {
 	query *querybuilder.Selection
 
@@ -10750,6 +11221,14 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 // This is a local type conversion — no GraphQL call.
 func (r *Module) AsNode() Node {
 	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Module as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Module) AsSyncer() Syncer {
+	return &SyncerClient{
 		query: r.query,
 	}
 }
@@ -11553,6 +12032,14 @@ func (r *ModuleSource) AsNode() Node {
 	}
 }
 
+// AsSyncer returns this ModuleSource as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *ModuleSource) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef struct {
 	query *querybuilder.Selection
@@ -11570,7 +12057,7 @@ func (r *ObjectTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ObjectTypeD
 	}
 }
 
-// The function used to construct new instances of this object, if any
+// The function used to construct new instances of this object, if any.
 func (r *ObjectTypeDef) Constructor() *Function {
 	q := r.query.Select("constructor")
 
@@ -11896,9 +12383,39 @@ func (r *Query) Address(value string) *Address {
 	}
 }
 
+// CacheVolumeOpts contains options for Query.CacheVolume
+type CacheVolumeOpts struct {
+	// Identifier of the directory to use as the cache volume's root.
+	Source *Directory
+	// Sharing mode of the cache volume.
+	//
+	// Default: SHARED
+	Sharing CacheSharingMode
+	// A user:group to set for the cache volume root.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
+}
+
 // Constructs a cache volume for a given cache key.
-func (r *Query) CacheVolume(key string) *CacheVolume {
+func (r *Query) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
 	q := r.query.Select("cacheVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `sharing` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Sharing) {
+			q = q.Arg("sharing", opts[i].Sharing)
+		}
+		// `owner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+		}
+	}
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
@@ -11984,6 +12501,8 @@ func (r *Query) CurrentModule() *CurrentModule {
 
 // CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
 type CurrentTypeDefsOpts struct {
+	// Return the full referenced typedef closure instead of only top-level served typedefs.
+	ReturnAllTypes bool
 	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
 	//
 	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
@@ -11994,6 +12513,10 @@ type CurrentTypeDefsOpts struct {
 func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `returnAllTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReturnAllTypes) {
+			q = q.Arg("returnAllTypes", opts[i].ReturnAllTypes)
+		}
 		// `hideCore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].HideCore) {
 			q = q.Arg("hideCore", opts[i].HideCore)
@@ -12253,6 +12776,8 @@ type HTTPOpts struct {
 	Name string
 	// Permissions to set on the file.
 	Permissions int
+	// Expected digest of the downloaded content (e.g., "sha256:...").
+	Checksum string
 	// Secret used to populate the Authorization HTTP header
 	AuthHeader *Secret
 	// A service which must be started before the URL is fetched.
@@ -12270,6 +12795,10 @@ func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
+		}
+		// `checksum` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Checksum) {
+			q = q.Arg("checksum", opts[i].Checksum)
 		}
 		// `authHeader` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AuthHeader) {
@@ -12493,6 +13022,67 @@ func (r *Query) Version(ctx context.Context) (string, error) {
 // AsNode returns this Query as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Query) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// An internal persistent bare git mirror.
+type RemoteGitMirror struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGitMirror {
+	return &RemoteGitMirror{
+		query: q,
+	}
+}
+
+// A unique identifier for this RemoteGitMirror.
+func (r *RemoteGitMirror) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *RemoteGitMirror) XXX_GraphQLType() string {
+	return "RemoteGitMirror"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *RemoteGitMirror) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *RemoteGitMirror) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *RemoteGitMirror) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// AsNode returns this RemoteGitMirror as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *RemoteGitMirror) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -13312,6 +13902,14 @@ func (r *Service) AsNode() Node {
 	}
 }
 
+// AsSyncer returns this Service as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Service) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 // A Unix or TCP/IP socket that can be mounted into a container.
 type Socket struct {
 	query *querybuilder.Selection
@@ -13698,12 +14296,21 @@ func (r *Terminal) AsNode() Node {
 	}
 }
 
+// AsSyncer returns this Terminal as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Terminal) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
 	query *querybuilder.Selection
 
 	id       *ID
 	kind     *TypeDefKind
+	name     *string
 	optional *bool
 }
 type WithTypeDefFunc func(r *TypeDef) *TypeDef
@@ -13823,6 +14430,19 @@ func (r *TypeDef) Kind(ctx context.Context) (TypeDefKind, error) {
 	q := r.query.Select("kind")
 
 	var response TypeDefKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The canonical non-optional name of the type.
+func (r *TypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14652,6 +15272,114 @@ func (r *Workspace) AsNode() Node {
 	}
 }
 
+// An object that can be exported to the host.
+//
+// Calling export writes the object to a path on the host filesystem and returns the path that was written.
+type Exportable interface {
+	DaggerObject
+
+	Export(ctx context.Context, path string) (string, error)
+
+	ID(ctx context.Context) (ID, error)
+
+	// Concrete loads and returns the underlying concrete type of this
+	// interface, which can then be used with a type switch.
+	Concrete(ctx context.Context) (Node, error)
+}
+
+// ExportableClient is the query-builder for the Exportable interface.
+type ExportableClient struct {
+	query *querybuilder.Selection
+
+	export *string
+	id     *ID
+}
+
+func (r *ExportableClient) WithGraphQLQuery(q *querybuilder.Selection) *ExportableClient {
+	return &ExportableClient{
+		query: q,
+	}
+}
+
+func (r *ExportableClient) Export(ctx context.Context, path string) (string, error) {
+	if r.export != nil {
+		return *r.export, nil
+	}
+	q := r.query.Select("export")
+	q = q.Arg("path", path)
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *ExportableClient) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ExportableClient) XXX_GraphQLType() string {
+	return "Exportable"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ExportableClient) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ExportableClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ExportableClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Concrete loads and returns the underlying concrete type of this
+// interface, which can then be used with a type switch.
+func (r *ExportableClient) Concrete(ctx context.Context) (Node, error) {
+	// Query __typename to determine the concrete type.
+	var typeName string
+	q := r.query.Select("__typename")
+	q = q.Bind(&typeName)
+	if err := q.Execute(ctx); err != nil {
+		return nil, err
+	}
+	// Get the ID to load the concrete object.
+	id, err := r.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch typeName {
+	case "Changeset":
+		return &Changeset{query: selectNode(r.query.Root(), id, "Changeset")}, nil
+	case "Container":
+		return &Container{query: selectNode(r.query.Root(), id, "Container")}, nil
+	case "Directory":
+		return &Directory{query: selectNode(r.query.Root(), id, "Directory")}, nil
+	case "File":
+		return &File{query: selectNode(r.query.Root(), id, "File")}, nil
+	default:
+		return nil, fmt.Errorf("unknown Exportable implementation: %s", typeName)
+	}
+}
+
 // An object with a globally unique ID.
 type Node interface {
 	DaggerObject
@@ -14708,6 +15436,124 @@ func (r *NodeClient) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// An object that can be force-evaluated.
+//
+// Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
+type Syncer interface {
+	DaggerObject
+
+	ID(ctx context.Context) (ID, error)
+
+	Sync(ctx context.Context) (Syncer, error)
+
+	// Concrete loads and returns the underlying concrete type of this
+	// interface, which can then be used with a type switch.
+	Concrete(ctx context.Context) (Node, error)
+}
+
+// SyncerClient is the query-builder for the Syncer interface.
+type SyncerClient struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	sync *ID
+}
+
+func (r *SyncerClient) WithGraphQLQuery(q *querybuilder.Selection) *SyncerClient {
+	return &SyncerClient{
+		query: q,
+	}
+}
+
+func (r *SyncerClient) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *SyncerClient) XXX_GraphQLType() string {
+	return "Syncer"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *SyncerClient) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *SyncerClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *SyncerClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *SyncerClient) Sync(ctx context.Context) (Syncer, error) {
+	q := r.query.Select("sync")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &SyncerClient{
+		query: selectNode(q.Root(), id, "Syncer"),
+	}, nil
+}
+
+// Concrete loads and returns the underlying concrete type of this
+// interface, which can then be used with a type switch.
+func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
+	// Query __typename to determine the concrete type.
+	var typeName string
+	q := r.query.Select("__typename")
+	q = q.Bind(&typeName)
+	if err := q.Execute(ctx); err != nil {
+		return nil, err
+	}
+	// Get the ID to load the concrete object.
+	id, err := r.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch typeName {
+	case "Changeset":
+		return &Changeset{query: selectNode(r.query.Root(), id, "Changeset")}, nil
+	case "Container":
+		return &Container{query: selectNode(r.query.Root(), id, "Container")}, nil
+	case "Directory":
+		return &Directory{query: selectNode(r.query.Root(), id, "Directory")}, nil
+	case "File":
+		return &File{query: selectNode(r.query.Root(), id, "File")}, nil
+	case "LLM":
+		return &LLM{query: selectNode(r.query.Root(), id, "LLM")}, nil
+	case "Module":
+		return &Module{query: selectNode(r.query.Root(), id, "Module")}, nil
+	case "ModuleSource":
+		return &ModuleSource{query: selectNode(r.query.Root(), id, "ModuleSource")}, nil
+	case "Service":
+		return &Service{query: selectNode(r.query.Root(), id, "Service")}, nil
+	case "Terminal":
+		return &Terminal{query: selectNode(r.query.Root(), id, "Terminal")}, nil
+	default:
+		return nil, fmt.Errorf("unknown Syncer implementation: %s", typeName)
+	}
 }
 
 // Sharing mode of the cache volume.
@@ -14907,6 +15753,77 @@ const (
 
 	// Attempt the octopus merge and fail if git merge fails due to conflicts
 	ChangesetsMergeConflictFail ChangesetsMergeConflict = "FAIL"
+)
+
+// The type of change for a diff stat entry.
+type DiffStatKind string
+
+func (DiffStatKind) IsEnum() {}
+
+func (v DiffStatKind) Name() string {
+	switch v {
+	case DiffStatKindAdded:
+		return "ADDED"
+	case DiffStatKindModified:
+		return "MODIFIED"
+	case DiffStatKindRemoved:
+		return "REMOVED"
+	case DiffStatKindRenamed:
+		return "RENAMED"
+	default:
+		return ""
+	}
+}
+
+func (v DiffStatKind) Value() string {
+	return string(v)
+}
+
+func (v *DiffStatKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *DiffStatKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ADDED":
+		*v = DiffStatKindAdded
+	case "MODIFIED":
+		*v = DiffStatKindModified
+	case "REMOVED":
+		*v = DiffStatKindRemoved
+	case "RENAMED":
+		*v = DiffStatKindRenamed
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// A file or directory was added.
+	DiffStatKindAdded DiffStatKind = "ADDED"
+
+	// A file was modified.
+	DiffStatKindModified DiffStatKind = "MODIFIED"
+
+	// A file or directory was removed.
+	DiffStatKindRemoved DiffStatKind = "REMOVED"
+
+	// A file was renamed.
+	DiffStatKindRenamed DiffStatKind = "RENAMED"
 )
 
 // File type.

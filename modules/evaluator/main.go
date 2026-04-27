@@ -208,12 +208,13 @@ func (m *Evaluator) EvalsAcrossModels(
 		ctx, modelSpan := Tracer().Start(ctx, fmt.Sprintf("model: %s", model),
 			telemetry.Reveal())
 		p.Go(func() ModelResult {
+			var spanErr error
 			report := ModelResult{
 				ModelName: model,
 				// track model span ID so we can link to it
 				SpanID: modelSpan.SpanContext().SpanID().String(),
 			}
-			defer telemetry.End(modelSpan, report.Check) //nolint:staticcheck
+			defer telemetry.EndWithCause(modelSpan, &spanErr)
 			for _, name := range evals {
 				result := EvalResult{
 					Name: name,
@@ -265,6 +266,7 @@ func (m *Evaluator) EvalsAcrossModels(
 				}
 				report.EvalReports = append(report.EvalReports, result)
 			}
+			spanErr = report.Check()
 			return report
 		})
 	}

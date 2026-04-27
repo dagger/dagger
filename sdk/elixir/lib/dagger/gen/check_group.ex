@@ -66,10 +66,12 @@ defmodule Dagger.CheckGroup do
   @doc """
   Execute all selected checks
   """
-  @spec run(t()) :: Dagger.CheckGroup.t()
-  def run(%__MODULE__{} = check_group) do
+  @spec run(t(), [{:fail_fast, boolean() | nil}]) :: Dagger.CheckGroup.t()
+  def run(%__MODULE__{} = check_group, optional_args \\ []) do
     query_builder =
-      check_group.query_builder |> QB.select("run")
+      check_group.query_builder
+      |> QB.select("run")
+      |> QB.maybe_put_arg("failFast", optional_args[:fail_fast])
 
     %Dagger.CheckGroup{
       query_builder: query_builder,

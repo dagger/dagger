@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/dagger/util/patchpreview"
+	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -16,8 +16,8 @@ type DaggerDev struct{}
 
 // Verify that generated code is up to date
 // +check
-func (dev *DaggerDev) Generated(ctx context.Context) error {
-	generated := dag.CurrentModule().Generators().Run()
+func (dev *DaggerDev) Generated(ctx context.Context, ws *dagger.Workspace) error {
+	generated := ws.Generators().Run()
 	if empty, err := generated.IsEmpty(ctx); err != nil {
 		return err
 	} else if !empty {
@@ -26,11 +26,7 @@ func (dev *DaggerDev) Generated(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		preview, err := patchpreview.SummarizeString(ctx, rawPatch, changes)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(os.Stderr, preview)
+		fmt.Fprintln(os.Stderr, rawPatch)
 		return errors.New("generated files are not up-to-date")
 	}
 	return nil

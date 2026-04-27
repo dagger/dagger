@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * An interactive terminal that clients can connect to.
  */
-class Terminal extends Client\AbstractObject implements Client\IdAble, Node
+class Terminal extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
      * A unique identifier for this Terminal.

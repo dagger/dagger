@@ -86,6 +86,15 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The canonical non-optional name of the type.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
      * Whether this type can be set to null. Defaults to false.
      */
     public function optional(): bool

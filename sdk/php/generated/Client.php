@@ -26,10 +26,23 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     /**
      * Constructs a cache volume for a given cache key.
      */
-    public function cacheVolume(string $key): CacheVolume
-    {
+    public function cacheVolume(
+        string $key,
+        ?Directory $source = null,
+        ?CacheSharingMode $sharing = null,
+        ?string $owner = '',
+    ): CacheVolume {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cacheVolume');
         $innerQueryBuilder->setArgument('key', $key);
+        if (null !== $source) {
+        $innerQueryBuilder->setArgument('source', $source);
+        }
+        if (null !== $sharing) {
+        $innerQueryBuilder->setArgument('sharing', $sharing);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -117,9 +130,12 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     /**
      * The TypeDef representations of the objects currently being served in the session.
      */
-    public function currentTypeDefs(?bool $hideCore = null): array
+    public function currentTypeDefs(?bool $returnAllTypes = false, ?bool $hideCore = null): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTypeDefs');
+        if (null !== $returnAllTypes) {
+        $leafQueryBuilder->setArgument('returnAllTypes', $returnAllTypes);
+        }
         if (null !== $hideCore) {
         $leafQueryBuilder->setArgument('hideCore', $hideCore);
         }
@@ -289,6 +305,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         string $url,
         ?string $name = null,
         ?int $permissions = null,
+        ?string $checksum = null,
         ?Secret $authHeader = null,
         ?Service $experimentalServiceHost = null,
     ): File {
@@ -299,6 +316,9 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         }
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $checksum) {
+        $innerQueryBuilder->setArgument('checksum', $checksum);
         }
         if (null !== $authHeader) {
         $innerQueryBuilder->setArgument('authHeader', $authHeader);

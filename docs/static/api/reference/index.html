@@ -77,9 +77,12 @@
               <li><a href="#definition-ChangesetsMergeConflict">ChangesetsMergeConflict</a></li>
               <li><a href="#definition-Check">Check</a></li>
               <li><a href="#definition-CheckGroup">CheckGroup</a></li>
+              <li><a href="#definition-ClientFilesyncMirror">ClientFilesyncMirror</a></li>
               <li><a href="#definition-Cloud">Cloud</a></li>
               <li><a href="#definition-Container">Container</a></li>
               <li><a href="#definition-CurrentModule">CurrentModule</a></li>
+              <li><a href="#definition-DiffStat">DiffStat</a></li>
+              <li><a href="#definition-DiffStatKind">DiffStatKind</a></li>
               <li><a href="#definition-Directory">Directory</a></li>
               <li><a href="#definition-Engine">Engine</a></li>
               <li><a href="#definition-EngineCache">EngineCache</a></li>
@@ -93,6 +96,7 @@
               <li><a href="#definition-Error">Error</a></li>
               <li><a href="#definition-ErrorValue">ErrorValue</a></li>
               <li><a href="#definition-ExistsType">ExistsType</a></li>
+              <li><a href="#definition-Exportable">Exportable</a></li>
               <li><a href="#definition-FieldTypeDef">FieldTypeDef</a></li>
               <li><a href="#definition-File">File</a></li>
               <li><a href="#definition-FileType">FileType</a></li>
@@ -106,6 +110,7 @@
               <li><a href="#definition-GeneratorGroup">GeneratorGroup</a></li>
               <li><a href="#definition-GitRef">GitRef</a></li>
               <li><a href="#definition-GitRepository">GitRepository</a></li>
+              <li><a href="#definition-HTTPState">HTTPState</a></li>
               <li><a href="#definition-HealthcheckConfig">HealthcheckConfig</a></li>
               <li><a href="#definition-Host">Host</a></li>
               <li><a href="#definition-ID">ID</a></li>
@@ -132,6 +137,7 @@
               <li><a href="#definition-Platform">Platform</a></li>
               <li><a href="#definition-Port">Port</a></li>
               <li><a href="#definition-PortForward">PortForward</a></li>
+              <li><a href="#definition-RemoteGitMirror">RemoteGitMirror</a></li>
               <li><a href="#definition-ReturnType">ReturnType</a></li>
               <li><a href="#definition-SDKConfig">SDKConfig</a></li>
               <li><a href="#definition-ScalarTypeDef">ScalarTypeDef</a></li>
@@ -143,6 +149,7 @@
               <li><a href="#definition-SourceMap">SourceMap</a></li>
               <li><a href="#definition-Stat">Stat</a></li>
               <li><a href="#definition-String">String</a></li>
+              <li><a href="#definition-Syncer">Syncer</a></li>
               <li><a href="#definition-Terminal">Terminal</a></li>
               <li><a href="#definition-TypeDef">TypeDef</a></li>
               <li><a href="#definition-TypeDefKind">TypeDefKind</a></li>
@@ -254,6 +261,28 @@
                           <span class="property-name"><code>key</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
                         <td> A string identifier to target this cache volume (e.g., "modules-cache"). </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID</code></a></span>
+                        </td>
+                        <td> Identifier of the directory to use as the cache volume's root. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>sharing</code></span> - <span class="property-type"><a href="#definition-CacheSharingMode"><code>CacheSharingMode</code></a></span>
+                        </td>
+                        <td> Sharing mode of the cache volume. Default = <code>SHARED</code> </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td>
+                          <p>A user:group to set for the cache volume root.</p>
+                          <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
+                          <p>If the group is omitted, it defaults to the same as the user. Default = <code>&quot;&quot;</code></p>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -541,6 +570,12 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>returnAllTypes</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td> Return the full referenced typedef closure instead of only top-level served typedefs. Default = <code>false</code> </td>
+                      </tr>
                       <tr>
                         <td>
                           <span class="property-name"><code>hideCore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
@@ -1276,6 +1311,12 @@
                       </tr>
                       <tr>
                         <td>
+                          <span class="property-name"><code>checksum</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> Expected digest of the downloaded content (e.g., "sha256:..."). </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <span class="property-name"><code>authHeader</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID</code></a></span>
                         </td>
                         <td> Secret used to populate the Authorization HTTP header </td>
@@ -2002,6 +2043,10 @@
                         <td> Retrieve the binding value, as type Container </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asDiffStat" href="#Binding-asDiffStat"><code>asDiffStat</code></a> - <span class="property-type"><a href="#definition-DiffStat"><code>DiffStat!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type DiffStat </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asDirectory" href="#Binding-asDirectory"><code>asDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Directory </td>
                       </tr>
@@ -2032,6 +2077,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asGitRepository" href="#Binding-asGitRepository"><code>asGitRepository</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
                         <td> Retrieve the binding value, as type GitRepository </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asHTTPState" href="#Binding-asHTTPState"><code>asHTTPState</code></a> - <span class="property-type"><a href="#definition-HTTPState"><code>HTTPState!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type HTTPState </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asJSONValue" href="#Binding-asJSONValue"><code>asJSONValue</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
@@ -2297,6 +2346,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Changeset-before" href="#Changeset-before"><code>before</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> The older/lower snapshot to compare against. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-diffStats" href="#Changeset-diffStats"><code>diffStats</code></a> - <span class="property-type"><a href="#definition-DiffStat"><code>[DiffStat!]!</code></a></span> </td>
+                        <td> Structured per-path diff statistics (kind and line counts) for this changeset. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Changeset-export" href="#Changeset-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -2612,6 +2665,37 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ClientFilesyncMirror" class="definition definition-object" data-traverse-target="definition-ClientFilesyncMirror">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ClientFilesyncMirror</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An internal persistent filesync mirror.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ClientFilesyncMirror-id" href="#ClientFilesyncMirror-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this ClientFilesyncMirror. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -3312,6 +3396,9 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -3691,6 +3778,10 @@
                                 <p>A user:group to set for the mounted directory and its contents.</p>
                                 <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>readOnly</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Mount the directory read-only.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
@@ -4381,6 +4472,111 @@
               </div>
             </div>
           </section>
+          <section id="definition-DiffStat" class="definition definition-object" data-traverse-target="definition-DiffStat">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DiffStat</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-addedLines" href="#DiffStat-addedLines"><code>addedLines</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> Number of added lines for this path. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-id" href="#DiffStat-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this DiffStat. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-kind" href="#DiffStat-kind"><code>kind</code></a> - <span class="property-type"><a href="#definition-DiffStatKind"><code>DiffStatKind!</code></a></span> </td>
+                        <td> Type of change. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-oldPath" href="#DiffStat-oldPath"><code>oldPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> Previous path of the file, set only for renames. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-path" href="#DiffStat-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Path of the changed file or directory. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DiffStat-removedLines" href="#DiffStat-removedLines"><code>removedLines</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> Number of removed lines for this path. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DiffStatKind" class="definition definition-enum" data-traverse-target="definition-DiffStatKind">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DiffStatKind</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The type of change for a diff stat entry.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>ADDED</code></p>
+                        </td>
+                        <td> A file or directory was added. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>MODIFIED</code></p>
+                        </td>
+                        <td> A file was modified. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>REMOVED</code></p>
+                        </td>
+                        <td> A file or directory was removed. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>RENAMED</code></p>
+                        </td>
+                        <td> A file was renamed. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"ADDED"</span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-Directory" class="definition definition-object" data-traverse-target="definition-Directory">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -4478,7 +4674,7 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>A user:group to set for the mounted directory and its contents.</p>
-                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
                               </div>
                             </div>
@@ -4882,8 +5078,12 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the copied directory and its contents.</p>
-                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
+                                <p>Permission given to the copied directory and contents (e.g., 0755).</p>
                               </div>
                             </div>
                           </div>
@@ -4930,7 +5130,7 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the copied directory and its contents.</p>
-                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
                               </div>
                             </div>
@@ -5169,7 +5369,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Engine-localCache" href="#Engine-localCache"><code>localCache</code></a> - <span class="property-type"><a href="#definition-EngineCache"><code>EngineCache!</code></a></span> </td>
-                        <td> The local (on-disk) cache for the Dagger engine </td>
+                        <td> The local engine cache state tracked by dagql </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Engine-name" href="#Engine-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -5422,8 +5622,7 @@
                       </tr>
                       <tr>
                         <td data-property-name="" class="definition-deprecated"><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
-                        <td>
-                          <span class="deprecation-reason">use members instead</span>
+                        <td> The members of the enum. <span class="deprecation-reason">use members instead</span>
                         </td>
                       </tr>
                     </tbody>
@@ -5925,6 +6124,52 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withDiffStatInput" href="#Env-withDiffStatInput"><code>withDiffStatInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type DiffStat in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The DiffStat value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withDiffStatOutput" href="#Env-withDiffStatOutput"><code>withDiffStatOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired DiffStat output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withDirectoryInput" href="#Env-withDirectoryInput"><code>withDirectoryInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type Directory in the environment </td>
                       </tr>
@@ -6274,6 +6519,52 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withGitRepositoryOutput" href="#Env-withGitRepositoryOutput"><code>withGitRepositoryOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired GitRepository output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withHTTPStateInput" href="#Env-withHTTPStateInput"><code>withHTTPStateInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type HTTPState in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The HTTPState value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withHTTPStateOutput" href="#Env-withHTTPStateOutput"><code>withHTTPStateOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired HTTPState output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -7334,6 +7625,56 @@
               </div>
             </div>
           </section>
+          <section id="definition-Exportable" class="definition definition-interface" data-traverse-target="definition-Exportable">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Exportable</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An object that can be exported to the host.</p>
+                  <p>Calling export writes the object to a path on the host filesystem and returns the path that was written.</p>
+                </div>
+                <div class="definition-properties definition-fields doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Exportable-export" href="#Exportable-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Exportable-id" href="#Exportable-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-FieldTypeDef" class="definition definition-object" data-traverse-target="definition-FieldTypeDef">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -7440,7 +7781,7 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>A user:group to set for the file.</p>
-                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
                                 <p>If the group is omitted, it defaults to the same as the user.</p>
                               </div>
                             </div>
@@ -8265,7 +8606,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-changes" href="#Generator-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
-                        <td> The generated changeset </td>
+                        <td> The generated changeset from the last run </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-completed" href="#Generator-completed"><code>completed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
@@ -8281,7 +8622,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-isEmpty" href="#Generator-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Wether changeset from the generator execution is empty or not </td>
+                        <td> Whether changeset from the last generator run is empty or not </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Generator-name" href="#Generator-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -8325,7 +8666,7 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-changes" href="#GeneratorGroup-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
                         <td>
-                          <p>The combined changes from the generators execution</p>
+                          <p>The combined changes from the last run of the generators</p>
                           <p>If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.</p>
                           <p>Set &#39;continueOnConflicts&#39; flag to force to merge the changes in a &#39;last write wins&#39; strategy.</p>
                         </td>
@@ -8349,7 +8690,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-isEmpty" href="#GeneratorGroup-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Whether the generated changeset is empty or not </td>
+                        <td> Whether the generated changeset from the last run is empty or not </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GeneratorGroup-list" href="#GeneratorGroup-list"><code>list</code></a> - <span class="property-type"><a href="#definition-Generator"><code>[Generator!]!</code></a></span> </td>
@@ -8588,6 +8929,37 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitRepository-url" href="#GitRepository-url"><code>url</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
                         <td> The URL of the git repository. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-HTTPState" class="definition definition-object" data-traverse-target="definition-HTTPState">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">HTTPState</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An internal persistent HTTP state.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HTTPState-id" href="#HTTPState-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this HTTPState. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -10671,7 +11043,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ObjectTypeDef-constructor" href="#ObjectTypeDef-constructor"><code>constructor</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function</code></a></span> </td>
-                        <td> The function used to construct new instances of this object, if any </td>
+                        <td> The function used to construct new instances of this object, if any. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ObjectTypeDef-deprecated" href="#ObjectTypeDef-deprecated"><code>deprecated</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
@@ -10870,6 +11242,37 @@
                   <h5>Example</h5>
                   <pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
 </code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-RemoteGitMirror" class="definition definition-object" data-traverse-target="definition-RemoteGitMirror">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">RemoteGitMirror</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An internal persistent bare git mirror.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="RemoteGitMirror-id" href="#RemoteGitMirror-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this RemoteGitMirror. </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -11428,6 +11831,44 @@
               </div>
             </div>
           </section>
+          <section id="definition-Syncer" class="definition definition-interface" data-traverse-target="definition-Syncer">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Syncer</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An object that can be force-evaluated.</p>
+                  <p>Calling sync ensures that the object&#39;s entire dependency DAG has been evaluated, returning the object&#39;s ID once complete.</p>
+                </div>
+                <div class="definition-properties definition-fields doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Syncer-id" href="#Syncer-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Syncer-sync" href="#Syncer-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-Terminal" class="definition definition-object" data-traverse-target="definition-Terminal">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -11518,6 +11959,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="TypeDef-kind" href="#TypeDef-kind"><code>kind</code></a> - <span class="property-type"><a href="#definition-TypeDefKind"><code>TypeDefKind!</code></a></span> </td>
                         <td> The kind of type this is (e.g. primitive, list, object). </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TypeDef-name" href="#TypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The canonical non-optional name of the type. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="TypeDef-optional" href="#TypeDef-optional"><code>optional</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>

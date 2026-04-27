@@ -32,10 +32,22 @@ defmodule Dagger.Client do
   @doc """
   Constructs a cache volume for a given cache key.
   """
-  @spec cache_volume(t(), String.t()) :: Dagger.CacheVolume.t()
-  def cache_volume(%__MODULE__{} = client, key) do
+  @spec cache_volume(t(), String.t(), [
+          {:source, Dagger.Directory.t() | nil},
+          {:sharing, Dagger.CacheSharingMode.t() | nil},
+          {:owner, String.t() | nil}
+        ]) :: Dagger.CacheVolume.t()
+  def cache_volume(%__MODULE__{} = client, key, optional_args \\ []) do
     query_builder =
-      client.query_builder |> QB.select("cacheVolume") |> QB.put_arg("key", key)
+      client.query_builder
+      |> QB.select("cacheVolume")
+      |> QB.put_arg("key", key)
+      |> QB.maybe_put_arg(
+        "source",
+        if(optional_args[:source], do: Dagger.ID.id!(optional_args[:source]), else: nil)
+      )
+      |> QB.maybe_put_arg("sharing", optional_args[:sharing])
+      |> QB.maybe_put_arg("owner", optional_args[:owner])
 
     %Dagger.CacheVolume{
       query_builder: query_builder,
@@ -144,12 +156,15 @@ defmodule Dagger.Client do
   @doc """
   The TypeDef representations of the objects currently being served in the session.
   """
-  @spec current_type_defs(t(), [{:hide_core, boolean() | nil}]) ::
-          {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
+  @spec current_type_defs(t(), [
+          {:return_all_types, boolean() | nil},
+          {:hide_core, boolean() | nil}
+        ]) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
   def current_type_defs(%__MODULE__{} = client, optional_args \\ []) do
     query_builder =
       client.query_builder
       |> QB.select("currentTypeDefs")
+      |> QB.maybe_put_arg("returnAllTypes", optional_args[:return_all_types])
       |> QB.maybe_put_arg("hideCore", optional_args[:hide_core])
       |> QB.select("id")
 
@@ -294,14 +309,6 @@ defmodule Dagger.Client do
     }
   end
 
-  @spec fn_(t(), String.t()) :: {:ok, [String.t()]} | {:error, term()}
-  def fn_(%__MODULE__{} = client, s) do
-    query_builder =
-      client.query_builder |> QB.select("fn") |> QB.put_arg("s", s)
-
-    Client.execute(client.client, query_builder)
-  end
-
   @doc """
   Creates a function.
   """
@@ -410,6 +417,7 @@ defmodule Dagger.Client do
   @spec http(t(), String.t(), [
           {:name, String.t() | nil},
           {:permissions, integer() | nil},
+          {:checksum, String.t() | nil},
           {:auth_header, Dagger.Secret.t() | nil},
           {:experimental_service_host, Dagger.Service.t() | nil}
         ]) :: Dagger.File.t()
@@ -420,6 +428,7 @@ defmodule Dagger.Client do
       |> QB.put_arg("url", url)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+      |> QB.maybe_put_arg("checksum", optional_args[:checksum])
       |> QB.maybe_put_arg(
         "authHeader",
         if(optional_args[:auth_header], do: Dagger.ID.id!(optional_args[:auth_header]), else: nil)
@@ -587,28 +596,6 @@ defmodule Dagger.Client do
       |> QB.put_arg("column", column)
 
     %Dagger.SourceMap{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @spec sub1(t()) :: Dagger.Sub1.t()
-  def sub1(%__MODULE__{} = client) do
-    query_builder =
-      client.query_builder |> QB.select("sub1")
-
-    %Dagger.Sub1{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @spec sub2(t()) :: Dagger.Sub2.t()
-  def sub2(%__MODULE__{} = client) do
-    query_builder =
-      client.query_builder |> QB.select("sub2")
-
-    %Dagger.Sub2{
       query_builder: query_builder,
       client: client.client
     }

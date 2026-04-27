@@ -158,6 +158,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\ChangesetDiffStatEntry",
+			"p": "Dagger/ChangesetDiffStatEntry.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ChangesetDiffStatEntryId",
+			"p": "Dagger/ChangesetDiffStatEntryId.html",
+			"d": "<p>The <code>ChangesetDiffStatEntryID</code> scalar type represents an identifier for an object of type ChangesetDiffStatEntry.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\ChangesetId",
 			"p": "Dagger/ChangesetId.html",
 			"d": "<p>The <code>ChangesetID</code> scalar type represents an identifier for an object of type Changeset.</p>",
@@ -211,6 +231,26 @@
 			"n": "Dagger\\Client",
 			"p": "Dagger/Client.html",
 			"d": "<p>The root of the DAG.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ClientFilesyncMirror",
+			"p": "Dagger/ClientFilesyncMirror.html",
+			"d": "<p>An internal persistent filesync mirror.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ClientFilesyncMirrorId",
+			"p": "Dagger/ClientFilesyncMirrorId.html",
+			"d": "<p>The <code>ClientFilesyncMirrorID</code> scalar type represents an identifier for an object of type ClientFilesyncMirror.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -361,6 +401,26 @@
 			"n": "Dagger\\Dagger",
 			"p": "Dagger/Dagger.html",
 			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\DiffStat",
+			"p": "Dagger/DiffStat.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\DiffStatId",
+			"p": "Dagger/DiffStatId.html",
+			"d": "<p>The <code>DiffStatID</code> scalar type represents an identifier for an object of type DiffStat.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -608,6 +668,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Exportable",
+			"p": "Dagger/Exportable.html",
+			"d": "<p>An object that can be exported to the host.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ExportableClient",
+			"p": "Dagger/ExportableClient.html",
+			"d": "<p>Query-builder client for the Exportable interface.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\FieldTypeDef",
 			"p": "Dagger/FieldTypeDef.html",
 			"d": "<p>A definition of a field on a custom object defined in a Module.</p>",
@@ -831,6 +911,26 @@
 			"n": "Dagger\\GitRepositoryId",
 			"p": "Dagger/GitRepositoryId.html",
 			"d": "<p>The <code>GitRepositoryID</code> scalar type represents an identifier for an object of type GitRepository.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\HTTPState",
+			"p": "Dagger/HTTPState.html",
+			"d": "<p>An internal persistent HTTP state.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\HTTPStateId",
+			"p": "Dagger/HTTPStateId.html",
+			"d": "<p>The <code>HTTPStateID</code> scalar type represents an identifier for an object of type HTTPState.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1218,6 +1318,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\RemoteGitMirror",
+			"p": "Dagger/RemoteGitMirror.html",
+			"d": "<p>An internal persistent bare git mirror.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\RemoteGitMirrorId",
+			"p": "Dagger/RemoteGitMirrorId.html",
+			"d": "<p>The <code>RemoteGitMirrorID</code> scalar type represents an identifier for an object of type RemoteGitMirror.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\SDKConfig",
 			"p": "Dagger/SDKConfig.html",
 			"d": "<p>The SDK config of the module.</p>",
@@ -1398,6 +1518,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Syncer",
+			"p": "Dagger/Syncer.html",
+			"d": "<p>An object that can be force-evaluated.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\SyncerClient",
+			"p": "Dagger/SyncerClient.html",
+			"d": "<p>Query-builder client for the Syncer interface.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Terminal",
 			"p": "Dagger/Terminal.html",
 			"d": "<p>An interactive terminal that clients can connect to.</p>",
@@ -1507,8 +1647,26 @@
 		},
 		{
 			"t": "I",
+			"n": "Dagger\\Exportable",
+			"p": "Dagger/Exportable.html",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "I",
 			"n": "Dagger\\Node",
 			"p": "Dagger/Node.html",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "I",
+			"n": "Dagger\\Syncer",
+			"p": "Dagger/Syncer.html",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1648,6 +1806,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asDiffStat",
+			"p": "Dagger/Binding.html#method_asDiffStat",
+			"d": "<p>Retrieve the binding value, as type DiffStat</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asDirectory",
 			"p": "Dagger/Binding.html#method_asDirectory",
 			"d": "<p>Retrieve the binding value, as type Directory</p>"
@@ -1693,6 +1857,12 @@
 			"n": "Dagger\\Binding::asGitRepository",
 			"p": "Dagger/Binding.html#method_asGitRepository",
 			"d": "<p>Retrieve the binding value, as type GitRepository</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asHTTPState",
+			"p": "Dagger/Binding.html#method_asHTTPState",
+			"d": "<p>Retrieve the binding value, as type HTTPState</p>"
 		},
 		{
 			"t": "M",
@@ -1852,6 +2022,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::diffStats",
+			"p": "Dagger/Changeset.html#method_diffStats",
+			"d": "<p>Structured per-path diff statistics (kind and line counts) for this changeset.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Changeset::export",
 			"p": "Dagger/Changeset.html#method_export",
 			"d": "<p>Applies the diff represented by this changeset to a path on the host.</p>"
@@ -1903,6 +2079,36 @@
 			"n": "Dagger\\Changeset::withChangesets",
 			"p": "Dagger/Changeset.html#method_withChangesets",
 			"d": "<p>Add changes from multiple changesets using git octopus merge strategy</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ChangesetDiffStatEntry::addedLines",
+			"p": "Dagger/ChangesetDiffStatEntry.html#method_addedLines",
+			"d": "<p>Number of added lines for this path.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ChangesetDiffStatEntry::id",
+			"p": "Dagger/ChangesetDiffStatEntry.html#method_id",
+			"d": "<p>A unique identifier for this ChangesetDiffStatEntry.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ChangesetDiffStatEntry::kind",
+			"p": "Dagger/ChangesetDiffStatEntry.html#method_kind",
+			"d": "<p>Type of change.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ChangesetDiffStatEntry::path",
+			"p": "Dagger/ChangesetDiffStatEntry.html#method_path",
+			"d": "<p>Path of the changed file or directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ChangesetDiffStatEntry::removedLines",
+			"p": "Dagger/ChangesetDiffStatEntry.html#method_removedLines",
+			"d": "<p>Number of removed lines for this path.</p>"
 		},
 		{
 			"t": "M",
@@ -2215,6 +2421,12 @@
 			"n": "Dagger\\Client::with",
 			"p": "Dagger/Client.html#method_with",
 			"d": "<p>Configure the php-sdk constructor arguments.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ClientFilesyncMirror::id",
+			"p": "Dagger/ClientFilesyncMirror.html#method_id",
+			"d": "<p>A unique identifier for this ClientFilesyncMirror.</p>"
 		},
 		{
 			"t": "M",
@@ -2878,6 +3090,42 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\DiffStat::addedLines",
+			"p": "Dagger/DiffStat.html#method_addedLines",
+			"d": "<p>Number of added lines for this path.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::id",
+			"p": "Dagger/DiffStat.html#method_id",
+			"d": "<p>A unique identifier for this DiffStat.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::kind",
+			"p": "Dagger/DiffStat.html#method_kind",
+			"d": "<p>Type of change.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::oldPath",
+			"p": "Dagger/DiffStat.html#method_oldPath",
+			"d": "<p>Previous path of the file, set only for renames.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::path",
+			"p": "Dagger/DiffStat.html#method_path",
+			"d": "<p>Path of the changed file or directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\DiffStat::removedLines",
+			"p": "Dagger/DiffStat.html#method_removedLines",
+			"d": "<p>Number of removed lines for this path.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::asGit",
 			"p": "Dagger/Directory.html#method_asGit",
 			"d": "<p>Converts this directory to a local git repository</p>"
@@ -3108,7 +3356,7 @@
 			"t": "M",
 			"n": "Dagger\\Engine::localCache",
 			"p": "Dagger/Engine.html#method_localCache",
-			"d": "<p>The local (on-disk) cache for the Dagger engine</p>"
+			"d": "<p>The local engine cache state tracked by dagql</p>"
 		},
 		{
 			"t": "M",
@@ -3264,7 +3512,7 @@
 			"t": "M",
 			"n": "Dagger\\EnumTypeDef::values",
 			"p": "Dagger/EnumTypeDef.html#method_values",
-			"d": null
+			"d": "<p>The members of the enum.</p>"
 		},
 		{
 			"t": "M",
@@ -3442,6 +3690,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withDiffStatInput",
+			"p": "Dagger/Env.html#method_withDiffStatInput",
+			"d": "<p>Create or update a binding of type DiffStat in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withDiffStatOutput",
+			"p": "Dagger/Env.html#method_withDiffStatOutput",
+			"d": "<p>Declare a desired DiffStat output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withDirectoryInput",
 			"p": "Dagger/Env.html#method_withDirectoryInput",
 			"d": "<p>Create or update a binding of type Directory in the environment</p>"
@@ -3535,6 +3795,18 @@
 			"n": "Dagger\\Env::withGitRepositoryOutput",
 			"p": "Dagger/Env.html#method_withGitRepositoryOutput",
 			"d": "<p>Declare a desired GitRepository output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withHTTPStateInput",
+			"p": "Dagger/Env.html#method_withHTTPStateInput",
+			"d": "<p>Create or update a binding of type HTTPState in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withHTTPStateOutput",
+			"p": "Dagger/Env.html#method_withHTTPStateOutput",
+			"d": "<p>Declare a desired HTTPState output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -3853,6 +4125,30 @@
 			"n": "Dagger\\ErrorValue::value",
 			"p": "Dagger/ErrorValue.html#method_value",
 			"d": "<p>The value.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Exportable::export",
+			"p": "Dagger/Exportable.html#method_export",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Exportable::id",
+			"p": "Dagger/Exportable.html#method_id",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ExportableClient::export",
+			"p": "Dagger/ExportableClient.html#method_export",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ExportableClient::id",
+			"p": "Dagger/ExportableClient.html#method_id",
+			"d": null
 		},
 		{
 			"t": "M",
@@ -4236,7 +4532,7 @@
 			"t": "M",
 			"n": "Dagger\\Generator::changes",
 			"p": "Dagger/Generator.html#method_changes",
-			"d": "<p>The generated changeset</p>"
+			"d": "<p>The generated changeset from the last run</p>"
 		},
 		{
 			"t": "M",
@@ -4260,7 +4556,7 @@
 			"t": "M",
 			"n": "Dagger\\Generator::isEmpty",
 			"p": "Dagger/Generator.html#method_isEmpty",
-			"d": "<p>Wether changeset from the generator execution is empty or not</p>"
+			"d": "<p>Whether changeset from the last generator run is empty or not</p>"
 		},
 		{
 			"t": "M",
@@ -4290,7 +4586,7 @@
 			"t": "M",
 			"n": "Dagger\\GeneratorGroup::changes",
 			"p": "Dagger/GeneratorGroup.html#method_changes",
-			"d": "<p>The combined changes from the generators execution</p>"
+			"d": "<p>The combined changes from the last run of the generators</p>"
 		},
 		{
 			"t": "M",
@@ -4302,7 +4598,7 @@
 			"t": "M",
 			"n": "Dagger\\GeneratorGroup::isEmpty",
 			"p": "Dagger/GeneratorGroup.html#method_isEmpty",
-			"d": "<p>Whether the generated changeset is empty or not</p>"
+			"d": "<p>Whether the generated changeset from the last run is empty or not</p>"
 		},
 		{
 			"t": "M",
@@ -4411,6 +4707,12 @@
 			"n": "Dagger\\GitRepository::url",
 			"p": "Dagger/GitRepository.html#method_url",
 			"d": "<p>The URL of the git repository.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HTTPState::id",
+			"p": "Dagger/HTTPState.html#method_id",
+			"d": "<p>A unique identifier for this HTTPState.</p>"
 		},
 		{
 			"t": "M",
@@ -5346,7 +5648,7 @@
 			"t": "M",
 			"n": "Dagger\\ObjectTypeDef::constructor",
 			"p": "Dagger/ObjectTypeDef.html#method_constructor",
-			"d": "<p>The function used to construct new instances of this object, if any</p>"
+			"d": "<p>The function used to construct new instances of this object, if any.</p>"
 		},
 		{
 			"t": "M",
@@ -5467,6 +5769,12 @@
 			"n": "Dagger\\PortForward::__construct",
 			"p": "Dagger/PortForward.html#method___construct",
 			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\RemoteGitMirror::id",
+			"p": "Dagger/RemoteGitMirror.html#method_id",
+			"d": "<p>A unique identifier for this RemoteGitMirror.</p>"
 		},
 		{
 			"t": "M",
@@ -5728,6 +6036,30 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Syncer::id",
+			"p": "Dagger/Syncer.html#method_id",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Syncer::sync",
+			"p": "Dagger/Syncer.html#method_sync",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SyncerClient::id",
+			"p": "Dagger/SyncerClient.html#method_id",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SyncerClient::sync",
+			"p": "Dagger/SyncerClient.html#method_sync",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Terminal::id",
 			"p": "Dagger/Terminal.html#method_id",
 			"d": "<p>A unique identifier for this Terminal.</p>"
@@ -5785,6 +6117,12 @@
 			"n": "Dagger\\TypeDef::kind",
 			"p": "Dagger/TypeDef.html#method_kind",
 			"d": "<p>The kind of type this is (e.g. primitive, list, object).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TypeDef::name",
+			"p": "Dagger/TypeDef.html#method_name",
+			"d": "<p>The canonical non-optional name of the type.</p>"
 		},
 		{
 			"t": "M",
@@ -6004,8 +6342,32 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Exportable::export",
+			"p": "Dagger/Exportable.html#method_export",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Exportable::id",
+			"p": "Dagger/Exportable.html#method_id",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Node::id",
 			"p": "Dagger/Node.html#method_id",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Syncer::id",
+			"p": "Dagger/Syncer.html#method_id",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Syncer::sync",
+			"p": "Dagger/Syncer.html#method_sync",
 			"d": null
 		},
 		{

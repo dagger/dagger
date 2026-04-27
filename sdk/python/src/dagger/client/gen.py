@@ -71,6 +71,22 @@ class ChangesetsMergeConflict(Enum):
     """Fail before attempting merge if file-level conflicts are detected between any changesets"""
 
 
+class DiffStatKind(Enum):
+    """The type of change for a diff stat entry."""
+
+    ADDED = "ADDED"
+    """A file or directory was added."""
+
+    MODIFIED = "MODIFIED"
+    """A file was modified."""
+
+    REMOVED = "REMOVED"
+    """A file or directory was removed."""
+
+    RENAMED = "RENAMED"
+    """A file was renamed."""
+
+
 class ExistsType(Enum):
     """File type."""
 
@@ -312,6 +328,71 @@ class PortForward(Input):
 
 
 @runtime_checkable
+class Exportable(Protocol):
+    """An object that can be exported to the host.  Calling export writes
+    the object to a path on the host filesystem and returns the path that
+    was written."""
+
+    async def export(self, path: str) -> str: ...
+
+
+@typecheck
+class _ExportableClient(Type):
+    """Concrete client for Exportable interface."""
+
+    @classmethod
+    def _graphql_name(cls) -> str:
+        return "Exportable"
+
+    async def export(self, path: str) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("export", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+
+@runtime_checkable
 class Node(Protocol):
     """An object with a globally unique ID."""
 
@@ -348,6 +429,72 @@ class _NodeClient(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+
+@runtime_checkable
+class Syncer(Protocol):
+    """An object that can be force-evaluated.  Calling sync ensures that
+    the object's entire dependency DAG has been evaluated, returning the
+    object's ID once complete."""
+
+    async def sync(self) -> str: ...
+
+
+@typecheck
+class _SyncerClient(Type):
+    """Concrete client for Syncer interface."""
+
+    @classmethod
+    def _graphql_name(cls) -> str:
+        return "Syncer"
+
+    async def id(self) -> str:
+        """Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def sync(self) -> str:
+        """Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sync", _args)
         return await _ctx.execute(str)
 
 
@@ -523,6 +670,12 @@ class Binding(Type):
         _ctx = self._select("asContainer", _args)
         return Container(_ctx)
 
+    def as_diff_stat(self) -> "DiffStat":
+        """Retrieve the binding value, as type DiffStat"""
+        _args: list[Arg] = []
+        _ctx = self._select("asDiffStat", _args)
+        return DiffStat(_ctx)
+
     def as_directory(self) -> "Directory":
         """Retrieve the binding value, as type Directory"""
         _args: list[Arg] = []
@@ -570,6 +723,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asGitRepository", _args)
         return GitRepository(_ctx)
+
+    def as_http_state(self) -> "HTTPState":
+        """Retrieve the binding value, as type HTTPState"""
+        _args: list[Arg] = []
+        _ctx = self._select("asHTTPState", _args)
+        return HTTPState(_ctx)
 
     def as_json_value(self) -> "JSONValue":
         """Retrieve the binding value, as type JSONValue"""
@@ -857,6 +1016,14 @@ class Changeset(Type):
         _args: list[Arg] = []
         _ctx = self._select("before", _args)
         return Directory(_ctx)
+
+    async def diff_stats(self) -> list["DiffStat"]:
+        """Structured per-path diff statistics (kind and line counts) for this
+        changeset.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("diffStats", _args)
+        return await _ctx.execute_object_list(DiffStat)
 
     async def export(self, path: str) -> str:
         """Applies the diff represented by this changeset to a path on the host.
@@ -1301,6 +1468,39 @@ class CheckGroup(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class ClientFilesyncMirror(Type):
+    """An internal persistent filesync mirror."""
+
+    async def id(self) -> str:
+        """A unique identifier for this ClientFilesyncMirror.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -2374,6 +2574,7 @@ class Container(Type):
         gitignore: bool | None = False,
         owner: str | None = "",
         expand: bool | None = False,
+        permissions: int | None = None,
     ) -> Self:
         """Return a new container snapshot, with a directory added to its
         filesystem
@@ -2401,6 +2602,7 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        permissions:
         """
         _args = [
             Arg("path", path),
@@ -2410,6 +2612,7 @@ class Container(Type):
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
             Arg("expand", expand, False),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Container(_ctx)
@@ -2811,6 +3014,7 @@ class Container(Type):
         source: Type,
         *,
         owner: str | None = "",
+        read_only: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a directory mounted at the given path.
@@ -2826,6 +3030,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        read_only:
+            Mount the directory read-only.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -2835,6 +3041,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("readOnly", read_only, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedDirectory", _args)
@@ -3628,6 +3835,140 @@ class CurrentModule(Type):
 
 
 @typecheck
+class DiffStat(Type):
+    async def added_lines(self) -> int:
+        """Number of added lines for this path.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedLines", _args)
+        return await _ctx.execute(int)
+
+    async def id(self) -> str:
+        """A unique identifier for this DiffStat.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def kind(self) -> DiffStatKind:
+        """Type of change.
+
+        Returns
+        -------
+        DiffStatKind
+            The type of change for a diff stat entry.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(DiffStatKind)
+
+    async def old_path(self) -> str | None:
+        """Previous path of the file, set only for renames.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("oldPath", _args)
+        return await _ctx.execute(str | None)
+
+    async def path(self) -> str:
+        """Path of the changed file or directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
+
+    async def removed_lines(self) -> int:
+        """Number of removed lines for this path.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedLines", _args)
+        return await _ctx.execute(int)
+
+
+@typecheck
 class Directory(Type):
     """A directory."""
 
@@ -3706,7 +4047,7 @@ class Directory(Type):
             Path of the directory to change ownership of (e.g., "/").
         owner:
             A user:group to set for the mounted directory and its contents.
-            The user and group must be an ID (1000:1000), not a name
+            The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         """
@@ -4244,6 +4585,7 @@ class Directory(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         owner: str | None = "",
+        permissions: int | None = None,
     ) -> Self:
         """Return a snapshot with a directory added
 
@@ -4263,9 +4605,12 @@ class Directory(Type):
             Apply .gitignore filter rules inside the directory
         owner:
             A user:group to set for the copied directory and its contents.
-            The user and group must be an ID (1000:1000), not a name
+            The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        permissions:
+            Permission given to the copied directory and contents (e.g.,
+            0755).
         """
         _args = [
             Arg("path", path),
@@ -4274,6 +4619,7 @@ class Directory(Type):
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -4314,7 +4660,7 @@ class Directory(Type):
             Permission given to the copied file (e.g., 0600).
         owner:
             A user:group to set for the copied directory and its contents.
-            The user and group must be an ID (1000:1000), not a name
+            The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         """
@@ -4581,7 +4927,7 @@ class Engine(Type):
         return await _ctx.execute(str)
 
     def local_cache(self) -> "EngineCache":
-        """The local (on-disk) cache for the Dagger engine"""
+        """The local engine cache state tracked by dagql"""
         _args: list[Arg] = []
         _ctx = self._select("localCache", _args)
         return EngineCache(_ctx)
@@ -5134,8 +5480,10 @@ class EnumTypeDef(Type):
         return await _ctx.execute(str)
 
     async def values(self) -> list["EnumValueTypeDef"]:
-        """.. deprecated::
-        use members instead
+        """The members of the enum.
+
+        .. deprecated::
+            use members instead
         """
         warnings.warn(
             'Method "values" is deprecated: use members instead',
@@ -5696,6 +6044,48 @@ class Env(Type):
         _ctx = self._select("withCurrentModule", _args)
         return Env(_ctx)
 
+    def with_diff_stat_input(
+        self,
+        name: str,
+        value: Type,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type DiffStat in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The DiffStat value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDiffStatInput", _args)
+        return Env(_ctx)
+
+    def with_diff_stat_output(self, name: str, description: str) -> Self:
+        """Declare a desired DiffStat output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDiffStatOutput", _args)
+        return Env(_ctx)
+
     def with_directory_input(
         self,
         name: str,
@@ -6032,6 +6422,48 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withGitRepositoryOutput", _args)
+        return Env(_ctx)
+
+    def with_http_state_input(
+        self,
+        name: str,
+        value: Type,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type HTTPState in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The HTTPState value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withHTTPStateInput", _args)
+        return Env(_ctx)
+
+    def with_http_state_output(self, name: str, description: str) -> Self:
+        """Declare a desired HTTPState output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withHTTPStateOutput", _args)
         return Env(_ctx)
 
     def with_json_value_input(
@@ -7239,7 +7671,7 @@ class File(Type):
         ----------
         owner:
             A user:group to set for the file.
-            The user and group must be an ID (1000:1000), not a name
+            The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         """
@@ -8405,7 +8837,7 @@ class GeneratedCode(Type):
 @typecheck
 class Generator(Type):
     def changes(self) -> Changeset:
-        """The generated changeset"""
+        """The generated changeset from the last run"""
         _args: list[Arg] = []
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
@@ -8479,7 +8911,7 @@ class Generator(Type):
         return await _ctx.execute(str)
 
     async def is_empty(self) -> bool:
-        """Wether changeset from the generator execution is empty or not
+        """Whether changeset from the last generator run is empty or not
 
         Returns
         -------
@@ -8567,7 +8999,7 @@ class GeneratorGroup(Type):
         on_conflict: ChangesetsMergeConflict
         | None = ChangesetsMergeConflict.FAIL_EARLY,
     ) -> Changeset:
-        """The combined changes from the generators execution
+        """The combined changes from the last run of the generators
 
         If any conflict occurs, for instance if the same file is modified by
         multiple generators, or if a file is both modified and deleted, an
@@ -8616,7 +9048,7 @@ class GeneratorGroup(Type):
         return await _ctx.execute(str)
 
     async def is_empty(self) -> bool:
-        """Whether the generated changeset is empty or not
+        """Whether the generated changeset from the last run is empty or not
 
         Returns
         -------
@@ -8970,6 +9402,39 @@ class GitRepository(Type):
         _args: list[Arg] = []
         _ctx = self._select("url", _args)
         return await _ctx.execute(str | None)
+
+
+@typecheck
+class HTTPState(Type):
+    """An internal persistent HTTP state."""
+
+    async def id(self) -> str:
+        """A unique identifier for this HTTPState.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -11638,7 +12103,7 @@ class ObjectTypeDef(Type):
     """A definition of a custom object defined in a Module."""
 
     def constructor(self) -> Function:
-        """The function used to construct new instances of this object, if any"""
+        """The function used to construct new instances of this object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("constructor", _args)
         return Function(_ctx)
@@ -11902,7 +12367,14 @@ class Query(Root):
         _ctx = self._select("address", _args)
         return Address(_ctx)
 
-    def cache_volume(self, key: str) -> CacheVolume:
+    def cache_volume(
+        self,
+        key: str,
+        *,
+        source: Type | None = None,
+        sharing: CacheSharingMode | None = CacheSharingMode.SHARED,
+        owner: str | None = "",
+    ) -> CacheVolume:
         """Constructs a cache volume for a given cache key.
 
         Parameters
@@ -11910,9 +12382,21 @@ class Query(Root):
         key:
             A string identifier to target this cache volume (e.g., "modules-
             cache").
+        source:
+            Identifier of the directory to use as the cache volume's root.
+        sharing:
+            Sharing mode of the cache volume.
+        owner:
+            A user:group to set for the cache volume root.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("key", key),
+            Arg("source", source, None),
+            Arg("sharing", sharing, CacheSharingMode.SHARED),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("cacheVolume", _args)
         return CacheVolume(_ctx)
@@ -11989,13 +12473,19 @@ class Query(Root):
         return CurrentModule(_ctx)
 
     async def current_type_defs(
-        self, *, hide_core: bool | None = None
+        self,
+        *,
+        return_all_types: bool | None = False,
+        hide_core: bool | None = None,
     ) -> list["TypeDef"]:
         """The TypeDef representations of the objects currently being served in
         the session.
 
         Parameters
         ----------
+        return_all_types:
+            Return the full referenced typedef closure instead of only top-
+            level served typedefs.
         hide_core:
             Strip core API functions from the Query type, leaving only module-
             sourced functions (constructors, entrypoint proxies, etc.).
@@ -12003,6 +12493,7 @@ class Query(Root):
             and method chaining still work.
         """
         _args = [
+            Arg("returnAllTypes", return_all_types, False),
             Arg("hideCore", hide_core, None),
         ]
         _ctx = self._select("currentTypeDefs", _args)
@@ -12225,6 +12716,7 @@ class Query(Root):
         *,
         name: str | None = None,
         permissions: int | None = None,
+        checksum: str | None = None,
         auth_header: Type | None = None,
         experimental_service_host: Type | None = None,
     ) -> File:
@@ -12239,6 +12731,8 @@ class Query(Root):
             URL.
         permissions:
             Permissions to set on the file.
+        checksum:
+            Expected digest of the downloaded content (e.g., "sha256:...").
         auth_header:
             Secret used to populate the Authorization HTTP header
         experimental_service_host:
@@ -12248,6 +12742,7 @@ class Query(Root):
             Arg("url", url),
             Arg("name", name, None),
             Arg("permissions", permissions, None),
+            Arg("checksum", checksum, None),
             Arg("authHeader", auth_header, None),
             Arg("experimentalServiceHost", experimental_service_host, None),
         ]
@@ -12465,6 +12960,39 @@ class Query(Root):
         """
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class RemoteGitMirror(Type):
+    """An internal persistent bare git mirror."""
+
+    async def id(self) -> str:
+        """A unique identifier for this RemoteGitMirror.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
 
@@ -13610,6 +14138,27 @@ class TypeDef(Type):
         _ctx = self._select("kind", _args)
         return await _ctx.execute(TypeDefKind)
 
+    async def name(self) -> str:
+        """The canonical non-optional name of the type.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
     async def optional(self) -> bool:
         """Whether this type can be set to null. Defaults to false.
 
@@ -14374,9 +14923,12 @@ __all__ = [
     "Check",
     "CheckGroup",
     "Client",
+    "ClientFilesyncMirror",
     "Cloud",
     "Container",
     "CurrentModule",
+    "DiffStat",
+    "DiffStatKind",
     "Directory",
     "Engine",
     "EngineCache",
@@ -14390,6 +14942,7 @@ __all__ = [
     "Error",
     "ErrorValue",
     "ExistsType",
+    "Exportable",
     "FieldTypeDef",
     "File",
     "FileType",
@@ -14403,6 +14956,7 @@ __all__ = [
     "GeneratorGroup",
     "GitRef",
     "GitRepository",
+    "HTTPState",
     "HealthcheckConfig",
     "Host",
     "ImageLayerCompression",
@@ -14426,6 +14980,7 @@ __all__ = [
     "Port",
     "PortForward",
     "Query",
+    "RemoteGitMirror",
     "ReturnType",
     "SDKConfig",
     "ScalarTypeDef",
@@ -14436,6 +14991,7 @@ __all__ = [
     "Socket",
     "SourceMap",
     "Stat",
+    "Syncer",
     "Terminal",
     "TypeDef",
     "TypeDefKind",

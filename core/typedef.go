@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -19,13 +20,13 @@ import (
 
 type Function struct {
 	// Name is the standardized name of the function (lowerCamelCase), as used for the resolver in the graphql schema
-	Name        string         `field:"true" doc:"The name of the function."`
-	Description string         `field:"true" doc:"A doc string for the function, if any."`
-	Args        []*FunctionArg `field:"true" doc:"Arguments accepted by the function, if any."`
-	ReturnType  *TypeDef       `field:"true" doc:"The type returned by the function."`
-	Deprecated  *string        `field:"true" doc:"The reason this function is deprecated, if any."`
+	Name        string `field:"true" doc:"The name of the function." doNotCache:"simple field selection"`
+	Description string `field:"true" doc:"A doc string for the function, if any." doNotCache:"simple field selection"`
+	Args        dagql.ObjectResultArray[*FunctionArg]
+	ReturnType  dagql.ObjectResult[*TypeDef]
+	Deprecated  *string `field:"true" doc:"The reason this function is deprecated, if any."`
 
-	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this function declaration."`
+	SourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this function declaration."`
 
 	// SourceModuleName is set when the function is provided by a module (e.g. a module
 	// constructor or auto-alias on the Query root). Empty for core API functions.
@@ -52,9 +53,17 @@ type Function struct {
 	OriginalName string
 }
 
-func NewFunction(name string, returnType *TypeDef) *Function {
+var _ dagql.PersistedObject = (*Function)(nil)
+var _ dagql.PersistedObjectDecoder = (*Function)(nil)
+var _ dagql.HasDependencyResults = (*Function)(nil)
+
+func NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function {
+	gqlName := strcase.ToLowerCamel(name)
+	if strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID") && strings.HasSuffix(gqlName, "FromId") {
+		gqlName = strings.TrimSuffix(gqlName, "FromId") + "FromID"
+	}
 	return &Function{
-		Name:         strcase.ToLowerCamel(name),
+		Name:         gqlName,
 		ReturnType:   returnType,
 		OriginalName: name,
 	}
@@ -74,18 +83,83 @@ func (*Function) TypeDescription() string {
 	)
 }
 
+func (fn *Function) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if fn == nil {
+		return nil, fmt.Errorf("encode persisted function: nil function")
+	}
+	payload, err := encodePersistedFunction(cache, fn)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}
+
+func (*Function) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedFunction
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted function payload: %w", err)
+	}
+	return decodePersistedFunction(ctx, dag, &persisted)
+}
+
+func (fn *Function) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if fn == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 2+len(fn.Args))
+
+	if fn.ReturnType.Self() != nil {
+		attached, err := attach(fn.ReturnType)
+		if err != nil {
+			return nil, fmt.Errorf("attach function return type: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*TypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach function return type: unexpected result %T", attached)
+		}
+		fn.ReturnType = typed
+		owned = append(owned, typed)
+	}
+	if fn.SourceMap.Valid && fn.SourceMap.Value.Self() != nil {
+		attached, err := attach(fn.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach function source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach function source map: unexpected result %T", attached)
+		}
+		fn.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	for i, arg := range fn.Args {
+		if arg.Self() == nil {
+			continue
+		}
+		attached, err := attach(arg)
+		if err != nil {
+			return nil, fmt.Errorf("attach function arg %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*FunctionArg])
+		if !ok {
+			return nil, fmt.Errorf("attach function arg %d: unexpected result %T", i, attached)
+		}
+		fn.Args[i] = typed
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
+}
+
 func (fn Function) Clone() *Function {
 	cp := fn
-	cp.Args = make([]*FunctionArg, len(fn.Args))
-	for i, arg := range fn.Args {
-		cp.Args[i] = arg.Clone()
-	}
-	if fn.ReturnType != nil {
-		cp.ReturnType = fn.ReturnType.Clone()
-	}
-	if fn.SourceMap.Valid {
-		cp.SourceMap.Value = fn.SourceMap.Value.Clone()
-	}
+	cp.Args = append(dagql.ObjectResultArray[*FunctionArg](nil), fn.Args...)
 	return &cp
 }
 
@@ -96,6 +170,37 @@ func (fn *Function) Directives() []*ast.Directive {
 		directives = append(directives, &ast.Directive{
 			Name: "check",
 		})
+	}
+	if fn.IsUp {
+		directives = append(directives, &ast.Directive{
+			Name: "up",
+		})
+	}
+	hasNonDefaultCachePolicy := (fn.CachePolicy != "" && fn.CachePolicy != FunctionCachePolicyDefault)
+	if hasNonDefaultCachePolicy || fn.CacheTTLSeconds.Valid {
+		dir := &ast.Directive{
+			Name: "cache",
+		}
+		if hasNonDefaultCachePolicy {
+			dir.Arguments = append(dir.Arguments, &ast.Argument{
+				Name: "policy",
+				Value: &ast.Value{
+					Kind: ast.EnumValue,
+					Raw:  string(fn.CachePolicy),
+				},
+			})
+		}
+		if fn.CacheTTLSeconds.Valid {
+			ttl := time.Duration(fn.CacheTTLSeconds.Value.Int64()) * time.Second
+			dir.Arguments = append(dir.Arguments, &ast.Argument{
+				Name: "ttl",
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  ttl.String(),
+				},
+			})
+		}
+		directives = append(directives, dir)
 	}
 	return directives
 }
@@ -113,81 +218,101 @@ func (fn *Function) Directives() []*ast.Directive {
 //
 // This is typically called during module loading/registration when the Dagger engine builds
 // the complete GraphQL schema that clients will query against.
-func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec, error) {
+func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
 		Name:             fn.Name,
 		Description:      formatGqlDescription(fn.Description),
-		Type:             fn.ReturnType.ToTyped(),
+		Type:             fn.ReturnType.Self().ToTyped(),
 		DeprecatedReason: fn.Deprecated,
 	}
-	if fn.SourceMap.Valid {
-		spec.Directives = append(spec.Directives, fn.SourceMap.Value.TypeDirective())
+	module, err := mod.ResultCallModule(ctx)
+	if err != nil {
+		return spec, fmt.Errorf("failed to resolve module provenance for function %q: %w", fn.Name, err)
+	}
+	spec.Module = module
+	if fn.SourceMap.Valid && fn.SourceMap.Value.Self() != nil {
+		spec.Directives = append(spec.Directives, fn.SourceMap.Value.Self().TypeDirective())
 	}
 	spec.Directives = append(spec.Directives, fn.Directives()...)
 	for _, arg := range fn.Args {
-		modType, ok, err := mod.ModTypeFor(ctx, arg.TypeDef, true)
+		argSelf := arg.Self()
+		modType, ok, err := mod.ModTypeFor(ctx, argSelf.TypeDef.Self(), true)
 		if err != nil {
-			return spec, fmt.Errorf("failed to get typedef for arg %q: %w", arg.Name, err)
+			return spec, fmt.Errorf("failed to get typedef for arg %q: %w", argSelf.Name, err)
 		}
 		if !ok {
-			return spec, fmt.Errorf("failed to get typedef for arg %q", arg.Name)
+			return spec, fmt.Errorf("failed to get typedef for arg %q", argSelf.Name)
 		}
 
-		argTypeDef := modType.TypeDef()
+		argTypeDef, err := modType.TypeDef(ctx)
+		if err != nil {
+			return spec, fmt.Errorf("failed to resolve canonical typedef for arg %q: %w", argSelf.Name, err)
+		}
 
 		// Workspace arguments are always optional, regardless of how they're declared in code.
 		// They are automatically injected when not explicitly set.
-		if arg.IsWorkspace() {
-			argTypeDef = argTypeDef.WithOptional(true)
+		if argSelf.IsWorkspace() {
+			argTypeDef.Self().Optional = true
 		}
 
-		input := argTypeDef.ToInput()
+		input := argTypeDef.Self().ToInput()
 		var defaultVal dagql.Input
-		if arg.DefaultValue != nil {
+		if argSelf.DefaultValue != nil {
 			var val any
-			dec := json.NewDecoder(bytes.NewReader(arg.DefaultValue.Bytes()))
+			dec := json.NewDecoder(bytes.NewReader(argSelf.DefaultValue.Bytes()))
 			dec.UseNumber()
 			if err := dec.Decode(&val); err != nil {
-				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
+				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", argSelf.Name, err)
 			}
 
 			var err error
 			defaultVal, err = input.Decoder().DecodeInput(val)
 			if err != nil {
-				return spec, fmt.Errorf("failed to decode dagql default value for arg %q: %w", arg.Name, err)
+				return spec, fmt.Errorf("failed to decode dagql default value for arg %q: %w", argSelf.Name, err)
 			}
 		}
 
 		argSpec := dagql.InputSpec{
-			Name:             arg.Name,
-			Description:      formatGqlDescription(arg.Description),
+			Name:             argSelf.Name,
+			Description:      formatGqlDescription(argSelf.Description),
 			Type:             input,
 			Default:          defaultVal,
-			DeprecatedReason: arg.Deprecated,
+			DeprecatedReason: argSelf.Deprecated,
 		}
 		// Add @expectedType directive for ID-typed arguments (objects and interfaces).
 		// Walk through list wrappers to find the underlying object/interface type.
-		expectedTypeDef := argTypeDef
+		expectedTypeDef := argTypeDef.Self()
 		for expectedTypeDef.Kind == TypeDefKindList && expectedTypeDef.AsList.Valid {
-			expectedTypeDef = expectedTypeDef.AsList.Value.ElementTypeDef
+			expectedTypeDef = expectedTypeDef.AsList.Value.Self().ElementTypeDef.Self()
 		}
 		if expectedTypeDef.Kind == TypeDefKindObject && expectedTypeDef.AsObject.Valid {
-			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsObject.Value.Name))
+			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsObject.Value.Self().Name))
 		} else if expectedTypeDef.Kind == TypeDefKindInterface && expectedTypeDef.AsInterface.Valid {
-			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsInterface.Value.Name))
+			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsInterface.Value.Self().Name))
 		}
-		if arg.SourceMap.Valid {
-			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())
+		if argSelf.SourceMap.Valid && argSelf.SourceMap.Value.Self() != nil {
+			argSpec.Directives = append(argSpec.Directives, argSelf.SourceMap.Value.Self().TypeDirective())
 		}
-		argSpec.Directives = append(argSpec.Directives, arg.Directives()...)
+		argSpec.Directives = append(argSpec.Directives, argSelf.Directives()...)
 
 		spec.Args.Add(argSpec)
 	}
 
-	cachePolicy := fn.derivedCachePolicy(mod)
+	cachePolicy := fn.CachePolicy
+	if cachePolicy == "" {
+		cachePolicy = FunctionCachePolicyDefault
+	}
+	if modInst := mod.ModuleResult(); modInst.Self() != nil {
+		cachePolicy = fn.derivedCachePolicy(modInst.Self())
+	}
+	spec.IsPersistable = true
 	switch cachePolicy {
 	case FunctionCachePolicyNever:
 		spec.DoNotCache = "function explicitly marked as never cache"
+		spec.IsPersistable = false
+
+	case FunctionCachePolicyPerSession:
+		spec.IsPersistable = false
 
 	case FunctionCachePolicyDefault:
 		if fn.CacheTTLSeconds.Valid {
@@ -245,33 +370,35 @@ func (fn *Function) WithUp() *Function {
 	return fn
 }
 
-func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, defaultAddress string, ignore []string, sourceMap *SourceMap, deprecated *string) *Function {
+func (fn *Function) WithArg(arg dagql.ObjectResult[*FunctionArg]) *Function {
 	fn = fn.Clone()
-	arg := &FunctionArg{
-		Name:           strcase.ToLowerCamel(name),
-		Description:    desc,
-		TypeDef:        typeDef,
-		DefaultValue:   defaultValue,
-		OriginalName:   name,
-		DefaultPath:    defaultPath,
-		DefaultAddress: defaultAddress,
-		Ignore:         ignore,
-		Deprecated:     deprecated,
-	}
-	if arg.IsWorkspace() {
-		// Workspace arguments are always optional — they're automatically injected
-		// by the engine when not explicitly set by the caller.
-		arg.TypeDef = arg.TypeDef.WithOptional(true)
-	}
-	if sourceMap != nil {
-		arg.SourceMap = dagql.NonNull(sourceMap)
+	for i, existing := range fn.Args {
+		existingSelf := existing.Self()
+		argSelf := arg.Self()
+		if existingSelf == nil || argSelf == nil {
+			continue
+		}
+		switch {
+		case existingSelf.OriginalName != "" && argSelf.OriginalName != "" && existingSelf.OriginalName == argSelf.OriginalName:
+			fn.Args[i] = arg
+			return fn
+		case existingSelf.Name == argSelf.Name:
+			fn.Args[i] = arg
+			return fn
+		}
 	}
 	fn.Args = append(fn.Args, arg)
 	return fn
 }
 
-func (fn *Function) WithSourceMap(sourceMap *SourceMap) *Function {
-	if sourceMap == nil {
+func (fn *Function) WithReturnType(returnType dagql.ObjectResult[*TypeDef]) *Function {
+	fn = fn.Clone()
+	fn.ReturnType = returnType
+	return fn
+}
+
+func (fn *Function) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]) *Function {
+	if sourceMap.Self() == nil {
 		return fn
 	}
 	fn = fn.Clone()
@@ -285,12 +412,12 @@ func (fn *Function) IsSubtypeOf(otherFn *Function) bool {
 	}
 
 	// check return type
-	if !fn.ReturnType.IsSubtypeOf(otherFn.ReturnType) {
+	if !fn.ReturnType.Self().IsSubtypeOf(otherFn.ReturnType.Self()) {
 		return false
 	}
 
 	// check args
-	for i, otherFnArg := range otherFn.Args {
+	for i, otherFnArgRes := range otherFn.Args {
 		/* TODO: with more effort could probably relax and allow:
 		* arg names to not match (only types really matter in theory)
 		* mismatches in optional (provided defaults exist, etc.)
@@ -300,13 +427,14 @@ func (fn *Function) IsSubtypeOf(otherFn *Function) bool {
 		if i >= len(fn.Args) {
 			return false
 		}
-		fnArg := fn.Args[i]
+		fnArg := fn.Args[i].Self()
+		otherFnArg := otherFnArgRes.Self()
 
 		if fnArg.Name != otherFnArg.Name {
 			return false
 		}
 
-		if fnArg.TypeDef.Optional != otherFnArg.TypeDef.Optional {
+		if fnArg.TypeDef.Self().Optional != otherFnArg.TypeDef.Self().Optional {
 			return false
 		}
 
@@ -315,7 +443,7 @@ func (fn *Function) IsSubtypeOf(otherFn *Function) bool {
 		// However, if the fnArg asks for an Animal, we can provide a Cat because that's a subtype of Animal.
 		// Thus, we check that the otherFnArg is a subtype of the fnArg (inverse of the covariant matching done
 		// on function *return* types above).
-		if !otherFnArg.TypeDef.IsSubtypeOf(fnArg.TypeDef) {
+		if !otherFnArg.TypeDef.Self().IsSubtypeOf(fnArg.TypeDef.Self()) {
 			return false
 		}
 	}
@@ -323,13 +451,27 @@ func (fn *Function) IsSubtypeOf(otherFn *Function) bool {
 	return true
 }
 
-func (fn *Function) LookupArg(nameAnyCase string) (*FunctionArg, bool) {
+func (fn *Function) LookupArg(nameAnyCase string) (dagql.ObjectResult[*FunctionArg], bool) {
 	for _, arg := range fn.Args {
-		if strings.EqualFold(arg.Name, nameAnyCase) {
+		if strings.EqualFold(arg.Self().Name, nameAnyCase) {
 			return arg, true
 		}
 	}
-	return nil, false
+	return dagql.ObjectResult[*FunctionArg]{}, false
+}
+
+func NewFunctionArg(name string, typeDef dagql.ObjectResult[*TypeDef], desc string, defaultValue JSON, defaultPath string, defaultAddress string, ignore []string, deprecated *string) *FunctionArg {
+	return &FunctionArg{
+		Name:           strcase.ToLowerCamel(name),
+		Description:    desc,
+		TypeDef:        typeDef,
+		DefaultValue:   defaultValue,
+		DefaultPath:    defaultPath,
+		DefaultAddress: defaultAddress,
+		Ignore:         ignore,
+		Deprecated:     deprecated,
+		OriginalName:   name,
+	}
 }
 
 type FunctionCachePolicy string
@@ -363,15 +505,15 @@ func (proto FunctionCachePolicy) ToLiteral() call.Literal {
 
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
-	Name           string                     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
-	Description    string                     `field:"true" doc:"A doc string for the argument, if any."`
-	SourceMap      dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this arg declaration."`
-	TypeDef        *TypeDef                   `field:"true" doc:"The type of the argument."`
-	DefaultValue   JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
-	DefaultPath    string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
-	DefaultAddress string                     `field:"true" doc:"Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)"`
-	Ignore         []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
-	Deprecated     *string                    `field:"true" doc:"The reason this function is deprecated, if any."`
+	Name           string                                         `field:"true" doc:"The name of the argument in lowerCamelCase format." doNotCache:"simple field selection"`
+	Description    string                                         `field:"true" doc:"A doc string for the argument, if any." doNotCache:"simple field selection"`
+	SourceMap      dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this arg declaration."`
+	TypeDef        dagql.ObjectResult[*TypeDef]
+	DefaultValue   JSON     `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any." doNotCache:"simple field selection"`
+	DefaultPath    string   `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory" doNotCache:"simple field selection"`
+	DefaultAddress string   `field:"true" doc:"Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)" doNotCache:"simple field selection"`
+	Ignore         []string `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner." doNotCache:"simple field selection"`
+	Deprecated     *string  `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	// Below are not in public API
 
@@ -379,18 +521,116 @@ type FunctionArg struct {
 	OriginalName string
 }
 
+var _ dagql.PersistedObject = (*FunctionArg)(nil)
+var _ dagql.PersistedObjectDecoder = (*FunctionArg)(nil)
+var _ dagql.HasDependencyResults = (*FunctionArg)(nil)
+
+//nolint:dupl // symmetric with FieldTypeDef.AttachDependencyResults; each typedef kind walks its own fields
+func (arg *FunctionArg) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if arg == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 2)
+
+	if arg.TypeDef.Self() != nil {
+		attached, err := attach(arg.TypeDef)
+		if err != nil {
+			return nil, fmt.Errorf("attach function arg type def: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*TypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach function arg type def: unexpected result %T", attached)
+		}
+		arg.TypeDef = typed
+		owned = append(owned, typed)
+	}
+	if arg.SourceMap.Valid && arg.SourceMap.Value.Self() != nil {
+		attached, err := attach(arg.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach function arg source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach function arg source map: unexpected result %T", attached)
+		}
+		arg.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
+}
+
 func (arg FunctionArg) Clone() *FunctionArg {
 	cp := arg
-	if arg.TypeDef != nil {
-		cp.TypeDef = arg.TypeDef.Clone()
-	}
-	if arg.SourceMap.Valid {
-		cp.SourceMap.Value = arg.SourceMap.Value.Clone()
-	}
 	// NB(vito): don't bother copying DefaultValue, it's already 'any' so it's
 	// hard to imagine anything actually mutating it at runtime vs. replacing it
 	// wholesale.
 	return &cp
+}
+
+func (arg *FunctionArg) WithTypeDef(typeDef dagql.ObjectResult[*TypeDef]) *FunctionArg {
+	arg = arg.Clone()
+	arg.TypeDef = typeDef
+	return arg
+}
+
+func (arg *FunctionArg) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]) *FunctionArg {
+	if sourceMap.Self() == nil {
+		return arg
+	}
+	arg = arg.Clone()
+	arg.SourceMap = dagql.NonNull(sourceMap)
+	return arg
+}
+
+func (arg *FunctionArg) WithDefaultValue(defaultValue JSON) *FunctionArg {
+	if bytes.Equal(arg.DefaultValue.Bytes(), defaultValue.Bytes()) {
+		return arg
+	}
+	arg = arg.Clone()
+	arg.DefaultValue = defaultValue
+	return arg
+}
+
+func (arg *FunctionArg) WithDefaultPath(defaultPath string) *FunctionArg {
+	if arg.DefaultPath == defaultPath {
+		return arg
+	}
+	arg = arg.Clone()
+	arg.DefaultPath = defaultPath
+	return arg
+}
+
+func (arg *FunctionArg) WithDefaultAddress(defaultAddress string) *FunctionArg {
+	if arg.DefaultAddress == defaultAddress {
+		return arg
+	}
+	arg = arg.Clone()
+	arg.DefaultAddress = defaultAddress
+	return arg
+}
+
+func (arg *FunctionArg) WithIgnore(ignore []string) *FunctionArg {
+	if len(arg.Ignore) == len(ignore) {
+		same := true
+		for i := range ignore {
+			if arg.Ignore[i] != ignore[i] {
+				same = false
+				break
+			}
+		}
+		if same {
+			return arg
+		}
+	}
+	arg = arg.Clone()
+	arg.Ignore = append([]string(nil), ignore...)
+	return arg
 }
 
 // Type returns the GraphQL FunctionArg! type.
@@ -408,6 +648,26 @@ func (*FunctionArg) TypeDescription() string {
 		an argument passed at function call time.`)
 }
 
+func (arg *FunctionArg) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if arg == nil {
+		return nil, fmt.Errorf("encode persisted function arg: nil function arg")
+	}
+	payload, err := encodePersistedFunctionArg(cache, arg)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}
+
+func (*FunctionArg) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedFunctionArg
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted function arg payload: %w", err)
+	}
+	return decodePersistedFunctionArg(ctx, dag, &persisted)
+}
+
 func (arg *FunctionArg) isContextual() bool {
 	return arg.DefaultPath != "" || arg.DefaultAddress != ""
 }
@@ -415,11 +675,12 @@ func (arg *FunctionArg) isContextual() bool {
 // IsWorkspace returns true if the argument is of type Workspace.
 // Workspace arguments are always optional and automatically injected when not set.
 func (arg *FunctionArg) IsWorkspace() bool {
-	return arg.TypeDef.Kind == TypeDefKindObject &&
-		arg.TypeDef.AsObject.Value.Name == "Workspace" &&
+	typeDef := arg.TypeDef.Self()
+	return typeDef.Kind == TypeDefKindObject &&
+		typeDef.AsObject.Value.Self().Name == "Workspace" &&
 		// Functions can't currently accept types from other modules, but be
 		// explicit anyway.
-		arg.TypeDef.AsObject.Value.SourceModuleName == ""
+		typeDef.AsObject.Value.Self().SourceModuleName == ""
 }
 
 func (arg FunctionArg) Directives() []*ast.Directive {
@@ -479,37 +740,85 @@ func (arg FunctionArg) Directives() []*ast.Directive {
 }
 
 type TypeDef struct {
-	Kind        TypeDefKind                       `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)."`
-	Optional    bool                              `field:"true" doc:"Whether this type can be set to null. Defaults to false."`
-	AsList      dagql.Nullable[*ListTypeDef]      `field:"true" doc:"If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."`
-	AsObject    dagql.Nullable[*ObjectTypeDef]    `field:"true" doc:"If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."`
-	AsInterface dagql.Nullable[*InterfaceTypeDef] `field:"true" doc:"If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."`
-	AsInput     dagql.Nullable[*InputTypeDef]     `field:"true" doc:"If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."`
-	AsScalar    dagql.Nullable[*ScalarTypeDef]    `field:"true" doc:"If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."`
-	AsEnum      dagql.Nullable[*EnumTypeDef]      `field:"true" doc:"If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null."`
+	Name        string      `field:"true" doc:"The canonical non-optional name of the type." doNotCache:"simple field selection"`
+	Kind        TypeDefKind `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)." doNotCache:"simple field selection"`
+	Optional    bool        `field:"true" doc:"Whether this type can be set to null. Defaults to false." doNotCache:"simple field selection"`
+	AsList      dagql.Nullable[dagql.ObjectResult[*ListTypeDef]]
+	AsObject    dagql.Nullable[dagql.ObjectResult[*ObjectTypeDef]]
+	AsInterface dagql.Nullable[dagql.ObjectResult[*InterfaceTypeDef]]
+	AsInput     dagql.Nullable[dagql.ObjectResult[*InputTypeDef]]
+	AsScalar    dagql.Nullable[dagql.ObjectResult[*ScalarTypeDef]]
+	AsEnum      dagql.Nullable[dagql.ObjectResult[*EnumTypeDef]]
 }
+
+var _ dagql.PersistedObject = (*TypeDef)(nil)
+var _ dagql.PersistedObjectDecoder = (*TypeDef)(nil)
+var _ dagql.HasDependencyResults = (*TypeDef)(nil)
 
 func (typeDef TypeDef) Clone() *TypeDef {
 	cp := typeDef
-	if typeDef.AsList.Valid {
-		cp.AsList.Value = typeDef.AsList.Value.Clone()
-	}
-	if typeDef.AsObject.Valid {
-		cp.AsObject.Value = typeDef.AsObject.Value.Clone()
-	}
-	if typeDef.AsInterface.Valid {
-		cp.AsInterface.Value = typeDef.AsInterface.Value.Clone()
-	}
-	if typeDef.AsInput.Valid {
-		cp.AsInput.Value = typeDef.AsInput.Value.Clone()
-	}
-	if typeDef.AsScalar.Valid {
-		cp.AsScalar.Value = typeDef.AsScalar.Value.Clone()
-	}
-	if typeDef.AsEnum.Valid {
-		cp.AsEnum.Value = typeDef.AsEnum.Value.Clone()
-	}
 	return &cp
+}
+
+func (typeDef *TypeDef) typeName() string {
+	if typeDef == nil {
+		return ""
+	}
+	switch typeDef.Kind {
+	case TypeDefKindString:
+		return "String"
+	case TypeDefKindInteger:
+		return "Int"
+	case TypeDefKindFloat:
+		return "Float"
+	case TypeDefKindBoolean:
+		return "Boolean"
+	case TypeDefKindVoid:
+		return "Void"
+	case TypeDefKindScalar:
+		if typeDef.AsScalar.Valid && typeDef.AsScalar.Value.Self() != nil {
+			return typeDef.AsScalar.Value.Self().Name
+		}
+	case TypeDefKindEnum:
+		if typeDef.AsEnum.Valid && typeDef.AsEnum.Value.Self() != nil {
+			return typeDef.AsEnum.Value.Self().Name
+		}
+	case TypeDefKindInput:
+		if typeDef.AsInput.Valid && typeDef.AsInput.Value.Self() != nil {
+			return typeDef.AsInput.Value.Self().Name
+		}
+	case TypeDefKindObject:
+		if typeDef.AsObject.Valid && typeDef.AsObject.Value.Self() != nil {
+			return typeDef.AsObject.Value.Self().Name
+		}
+	case TypeDefKindInterface:
+		if typeDef.AsInterface.Valid && typeDef.AsInterface.Value.Self() != nil {
+			return typeDef.AsInterface.Value.Self().Name
+		}
+	case TypeDefKindList:
+		if typeDef.AsList.Valid && typeDef.AsList.Value.Self() != nil {
+			return "[" + typeDef.AsList.Value.Self().ElementTypeDef.Self().refTypeName() + "]"
+		}
+	}
+	return ""
+}
+
+func (typeDef *TypeDef) refTypeName() string {
+	name := typeDef.typeName()
+	if name == "" {
+		return ""
+	}
+	if typeDef != nil && typeDef.Optional {
+		return name + "?"
+	}
+	return name
+}
+
+func (typeDef *TypeDef) syncName() *TypeDef {
+	if typeDef != nil {
+		typeDef.Name = typeDef.typeName()
+	}
+	return typeDef
 }
 
 func (*TypeDef) Type() *ast.Type {
@@ -521,6 +830,113 @@ func (*TypeDef) Type() *ast.Type {
 
 func (*TypeDef) TypeDescription() string {
 	return "A definition of a parameter or return type in a Module."
+}
+
+func (typeDef *TypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if typeDef == nil {
+		return nil, fmt.Errorf("encode persisted type def: nil type def")
+	}
+	payload, err := encodePersistedTypeDef(cache, typeDef)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}
+
+func (*TypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedTypeDef
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted type def payload: %w", err)
+	}
+	return decodePersistedTypeDef(ctx, dag, &persisted)
+}
+
+func (typeDef *TypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if typeDef == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 6)
+
+	if typeDef.AsList.Valid && typeDef.AsList.Value.Self() != nil {
+		attached, err := attach(typeDef.AsList.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef list: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ListTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef list: unexpected result %T", attached)
+		}
+		typeDef.AsList = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsObject.Valid && typeDef.AsObject.Value.Self() != nil {
+		attached, err := attach(typeDef.AsObject.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef object: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ObjectTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef object: unexpected result %T", attached)
+		}
+		typeDef.AsObject = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsInterface.Valid && typeDef.AsInterface.Value.Self() != nil {
+		attached, err := attach(typeDef.AsInterface.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef interface: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*InterfaceTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef interface: unexpected result %T", attached)
+		}
+		typeDef.AsInterface = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsInput.Valid && typeDef.AsInput.Value.Self() != nil {
+		attached, err := attach(typeDef.AsInput.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef input: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*InputTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef input: unexpected result %T", attached)
+		}
+		typeDef.AsInput = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsScalar.Valid && typeDef.AsScalar.Value.Self() != nil {
+		attached, err := attach(typeDef.AsScalar.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef scalar: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ScalarTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef scalar: unexpected result %T", attached)
+		}
+		typeDef.AsScalar = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsEnum.Valid && typeDef.AsEnum.Value.Self() != nil {
+		attached, err := attach(typeDef.AsEnum.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef enum: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*EnumTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef enum: unexpected result %T", attached)
+		}
+		typeDef.AsEnum = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
 }
 
 func (typeDef *TypeDef) ToTyped() dagql.Typed {
@@ -535,19 +951,19 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 	case TypeDefKindBoolean:
 		typed = dagql.Boolean(false)
 	case TypeDefKindScalar:
-		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Name, dagql.String(""))
+		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Self().Name, dagql.String(""))
 	case TypeDefKindEnum:
-		typed = &ModuleEnum{TypeDef: typeDef.AsEnum.Value}
+		typed = &ModuleEnum{TypeDef: typeDef.AsEnum.Value.Self()}
 	case TypeDefKindList:
-		typed = dagql.DynamicArrayOutput{Elem: typeDef.AsList.Value.ElementTypeDef.ToTyped()}
+		typed = dagql.DynamicArrayOutput{Elem: typeDef.AsList.Value.Self().ElementTypeDef.Self().ToTyped()}
 	case TypeDefKindObject:
-		typed = &ModuleObject{TypeDef: typeDef.AsObject.Value}
+		typed = &ModuleObject{TypeDef: typeDef.AsObject.Value.Self()}
 	case TypeDefKindInterface:
-		typed = &interfaceTypedMarker{name: typeDef.AsInterface.Value.Name}
+		typed = &interfaceTypedMarker{name: typeDef.AsInterface.Value.Self().Name}
 	case TypeDefKindVoid:
 		typed = Void{}
 	case TypeDefKindInput:
-		typed = typeDef.AsInput.Value.ToInputObjectSpec()
+		typed = typeDef.AsInput.Value.Self().ToInputObjectSpec()
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
@@ -569,12 +985,12 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 	case TypeDefKindBoolean:
 		typed = dagql.Boolean(false)
 	case TypeDefKindScalar:
-		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Name, dagql.String(""))
+		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Self().Name, dagql.String(""))
 	case TypeDefKindEnum:
-		typed = &dagql.EnumValueName{Enum: typeDef.AsEnum.Value.Name}
+		typed = &dagql.EnumValueName{Enum: typeDef.AsEnum.Value.Self().Name}
 	case TypeDefKindList:
 		typed = dagql.DynamicArrayInput{
-			Elem: typeDef.AsList.Value.ElementTypeDef.ToInput(),
+			Elem: typeDef.AsList.Value.Self().ElementTypeDef.Self().ToInput(),
 		}
 	case TypeDefKindObject:
 		typed = dagql.AnyID{}
@@ -598,7 +1014,7 @@ func (typeDef *TypeDef) ToType() *ast.Type {
 func (typeDef *TypeDef) Underlying() *TypeDef {
 	switch typeDef.Kind {
 	case TypeDefKindList:
-		return typeDef.AsList.Value.ElementTypeDef.Underlying()
+		return typeDef.AsList.Value.Self().ElementTypeDef.Self().Underlying()
 	default:
 		return typeDef
 	}
@@ -607,153 +1023,85 @@ func (typeDef *TypeDef) Underlying() *TypeDef {
 func (typeDef *TypeDef) WithKind(kind TypeDefKind) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = kind
-	return typeDef
+	return typeDef.syncName()
 }
 
-func (typeDef *TypeDef) WithScalar(name string, desc string) *TypeDef {
+func (typeDef *TypeDef) WithScalar(scalar dagql.ObjectResult[*ScalarTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindScalar)
-	typeDef.AsScalar = dagql.NonNull(NewScalarTypeDef(name, desc))
-	return typeDef
+	typeDef.AsScalar = dagql.NonNull(scalar)
+	return typeDef.syncName()
 }
 
-func (typeDef *TypeDef) WithListOf(elem *TypeDef) *TypeDef {
+func (typeDef *TypeDef) WithScalarTypeDef(scalar dagql.ObjectResult[*ScalarTypeDef]) *TypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Kind = TypeDefKindScalar
+	typeDef.AsScalar = dagql.NonNull(scalar)
+	return typeDef.syncName()
+}
+
+func (typeDef *TypeDef) WithListOf(list dagql.ObjectResult[*ListTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindList)
-	typeDef.AsList = dagql.NonNull(&ListTypeDef{
-		ElementTypeDef: elem,
-	})
-	return typeDef
+	typeDef.AsList = dagql.NonNull(list)
+	return typeDef.syncName()
 }
 
-func (typeDef *TypeDef) WithObject(name, desc string, deprecated *string, sourceMap *SourceMap) *TypeDef {
+func (typeDef *TypeDef) WithListTypeDef(list dagql.ObjectResult[*ListTypeDef]) *TypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Kind = TypeDefKindList
+	typeDef.AsList = dagql.NonNull(list)
+	return typeDef.syncName()
+}
+
+func (typeDef *TypeDef) WithObject(obj dagql.ObjectResult[*ObjectTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindObject)
-	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc, deprecated).WithSourceMap(sourceMap))
-	return typeDef
+	typeDef.AsObject = dagql.NonNull(obj)
+	return typeDef.syncName()
 }
 
-func (typeDef *TypeDef) WithInterface(name, desc string, sourceMap *SourceMap) *TypeDef {
+func (typeDef *TypeDef) WithObjectTypeDef(obj dagql.ObjectResult[*ObjectTypeDef]) *TypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Kind = TypeDefKindObject
+	typeDef.AsObject = dagql.NonNull(obj)
+	return typeDef.syncName()
+}
+
+func (typeDef *TypeDef) WithInterface(iface dagql.ObjectResult[*InterfaceTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindInterface)
-	typeDef.AsInterface = dagql.NonNull(NewInterfaceTypeDef(name, desc).WithSourceMap(sourceMap))
-	return typeDef
+	typeDef.AsInterface = dagql.NonNull(iface)
+	return typeDef.syncName()
+}
+
+func (typeDef *TypeDef) WithInterfaceTypeDef(iface dagql.ObjectResult[*InterfaceTypeDef]) *TypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Kind = TypeDefKindInterface
+	typeDef.AsInterface = dagql.NonNull(iface)
+	return typeDef.syncName()
+}
+
+func (typeDef *TypeDef) WithInputTypeDef(input dagql.ObjectResult[*InputTypeDef]) *TypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Kind = TypeDefKindInput
+	typeDef.AsInput = dagql.NonNull(input)
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) WithOptional(optional bool) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Optional = optional
-	return typeDef
+	return typeDef.syncName()
 }
 
-func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string, sourceMap *SourceMap, deprecated *string) (*TypeDef, error) {
-	if !typeDef.AsObject.Valid {
-		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
-	}
-	typeDef = typeDef.Clone()
-
-	field := &FieldTypeDef{
-		Name:         strcase.ToLowerCamel(name),
-		OriginalName: name,
-		Description:  desc,
-		TypeDef:      fieldType,
-		Deprecated:   deprecated,
-	}
-	if sourceMap != nil {
-		field.SourceMap = dagql.NonNull(sourceMap)
-	}
-	typeDef.AsObject.Value.Fields = append(typeDef.AsObject.Value.Fields, field)
-	return typeDef, nil
-}
-
-func (typeDef *TypeDef) WithFunction(fn *Function) (*TypeDef, error) {
-	typeDef = typeDef.Clone()
-	fn = fn.Clone()
-	switch typeDef.Kind {
-	case TypeDefKindObject:
-		fn.ParentOriginalName = typeDef.AsObject.Value.OriginalName
-		typeDef.AsObject.Value.Functions = append(typeDef.AsObject.Value.Functions, fn)
-		return typeDef, nil
-	case TypeDefKindInterface:
-		fn.ParentOriginalName = typeDef.AsInterface.Value.OriginalName
-		typeDef.AsInterface.Value.Functions = append(typeDef.AsInterface.Value.Functions, fn)
-		return typeDef, nil
-	default:
-		return nil, fmt.Errorf("cannot add function to type: %s", typeDef.Kind)
-	}
-}
-
-func (typeDef *TypeDef) WithObjectConstructor(fn *Function) (*TypeDef, error) {
-	if !typeDef.AsObject.Valid {
-		return nil, fmt.Errorf("cannot add constructor function to non-object type: %s", typeDef.Kind)
-	}
-
-	typeDef = typeDef.Clone()
-	fn = fn.Clone()
-	fn.ParentOriginalName = typeDef.AsObject.Value.OriginalName
-	// Constructors are invoked by setting the ObjectName to the name of the object its constructing and the
-	// FunctionName to "", so ignore the name of the function.
-	// This is to be aligned with moduleSchema.typeDefWithObjectConstructor
-	fn.Name = ""
-	fn.OriginalName = ""
-	typeDef.AsObject.Value.Constructor = dagql.NonNull(fn)
-	return typeDef, nil
-}
-
-func (typeDef *TypeDef) WithEnum(name, desc string, sourceMap *SourceMap) *TypeDef {
+func (typeDef *TypeDef) WithEnum(enum dagql.ObjectResult[*EnumTypeDef]) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindEnum)
-	typeDef.AsEnum = dagql.NonNull(NewEnumTypeDef(name, desc, sourceMap))
-	return typeDef
+	typeDef.AsEnum = dagql.NonNull(enum)
+	return typeDef.syncName()
 }
 
-func (typeDef *TypeDef) WithEnumValue(name, value, desc string, deprecated *string, sourceMap *SourceMap) (*TypeDef, error) {
-	if !typeDef.AsEnum.Valid {
-		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
-	}
-	if err := typeDef.validateEnumMember(value, value); err != nil {
-		return nil, err
-	}
-
+func (typeDef *TypeDef) WithEnumTypeDef(enum dagql.ObjectResult[*EnumTypeDef]) *TypeDef {
 	typeDef = typeDef.Clone()
-	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumValueTypeDef(name, value, desc, deprecated, sourceMap))
-
-	return typeDef, nil
-}
-
-func (typeDef *TypeDef) WithEnumMember(name, value, desc string, deprecated *string, sourceMap *SourceMap) (*TypeDef, error) {
-	if !typeDef.AsEnum.Valid {
-		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
-	}
-	if err := typeDef.validateEnumMember(name, value); err != nil {
-		return nil, err
-	}
-
-	typeDef = typeDef.Clone()
-	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumMemberTypeDef(name, value, desc, deprecated, sourceMap))
-
-	return typeDef, nil
-}
-
-func (typeDef *TypeDef) validateEnumMember(name, value string) error {
-	// Validate if the enum follows GraphQL spec.
-	// A GraphQL enum should be: only letters, digits and underscores, and has to start with a letter or a single underscore.
-	// To do so, we can use a regular expression.
-	// ^            : Start of the string
-	// [a-zA-Z_]    : First character must be a letter or underscore
-	// [a-zA-Z0-9_]*: Following characters can be letters, digits, or underscores (zero or more times)
-	// $            : End of the string
-	pattern := `^[a-zA-Z_][a-zA-Z0-9_]*$`
-	if !regexp.MustCompile(pattern).MatchString(name) {
-		return fmt.Errorf("enum name %q is not valid (only letters, digits and underscores are allowed)", name)
-	}
-
-	// Verify if the enum value is duplicated.
-	for _, v := range typeDef.AsEnum.Value.Members {
-		if v.Name == name {
-			return fmt.Errorf("enum %q is already defined", name)
-		}
-		if v.Value != "" && v.Value == value {
-			return fmt.Errorf("enum %q is already defined with value %q", v.Name, value)
-		}
-	}
-
-	return nil
+	typeDef.Kind = TypeDefKindEnum
+	typeDef.AsEnum = dagql.NonNull(enum)
+	return typeDef.syncName()
 }
 
 func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
@@ -769,22 +1117,22 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
 		return typeDef.Kind == otherDef.Kind
 	case TypeDefKindScalar:
-		return typeDef.AsScalar.Value.Name == otherDef.AsScalar.Value.Name
+		return typeDef.AsScalar.Value.Self().Name == otherDef.AsScalar.Value.Self().Name
 	case TypeDefKindEnum:
-		return typeDef.AsEnum.Value.Name == otherDef.AsEnum.Value.Name
+		return typeDef.AsEnum.Value.Self().Name == otherDef.AsEnum.Value.Self().Name
 	case TypeDefKindList:
 		if otherDef.Kind != TypeDefKindList {
 			return false
 		}
-		return typeDef.AsList.Value.ElementTypeDef.IsSubtypeOf(otherDef.AsList.Value.ElementTypeDef)
+		return typeDef.AsList.Value.Self().ElementTypeDef.Self().IsSubtypeOf(otherDef.AsList.Value.Self().ElementTypeDef.Self())
 	case TypeDefKindObject:
 		switch otherDef.Kind {
 		case TypeDefKindObject:
 			// For now, assume that if the objects have the same name, they are the same object. This should be a safe assumption
 			// within the context of a single, already-namedspace schema, but not safe if objects are compared across schemas
-			return typeDef.AsObject.Value.Name == otherDef.AsObject.Value.Name
+			return typeDef.AsObject.Value.Self().Name == otherDef.AsObject.Value.Self().Name
 		case TypeDefKindInterface:
-			return typeDef.AsObject.Value.IsSubtypeOf(otherDef.AsInterface.Value)
+			return typeDef.AsObject.Value.Self().IsSubtypeOf(otherDef.AsInterface.Value.Self())
 		default:
 			return false
 		}
@@ -792,7 +1140,7 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 		if otherDef.Kind != TypeDefKindInterface {
 			return false
 		}
-		return typeDef.AsInterface.Value.IsSubtypeOf(otherDef.AsInterface.Value)
+		return typeDef.AsInterface.Value.Self().IsSubtypeOf(otherDef.AsInterface.Value.Self())
 	default:
 		return false
 	}
@@ -800,16 +1148,16 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 
 type ObjectTypeDef struct {
 	// Name is the standardized name of the object (CamelCase), as used for the object in the graphql schema
-	Name        string                     `field:"true" doc:"The name of the object."`
-	Description string                     `field:"true" doc:"The doc string for the object, if any."`
-	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this object declaration."`
-	Fields      []*FieldTypeDef            `field:"true" doc:"Static fields defined on this object, if any."`
-	Functions   []*Function                `field:"true" doc:"Functions defined on this object, if any."`
-	Constructor dagql.Nullable[*Function]  `field:"true" doc:"The function used to construct new instances of this object, if any"`
-	Deprecated  *string                    `field:"true" doc:"The reason this enum member is deprecated, if any."`
+	Name        string                                         `field:"true" doc:"The name of the object." doNotCache:"simple field selection"`
+	Description string                                         `field:"true" doc:"The doc string for the object, if any." doNotCache:"simple field selection"`
+	SourceMap   dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this object declaration."`
+	Fields      dagql.ObjectResultArray[*FieldTypeDef]
+	Functions   dagql.ObjectResultArray[*Function]
+	Constructor dagql.Nullable[dagql.ObjectResult[*Function]]
+	Deprecated  *string `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
-	SourceModuleName string `field:"true" doc:"If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."`
+	SourceModuleName string `field:"true" doc:"If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise." doNotCache:"simple field selection"`
 
 	// Below are not in public API
 
@@ -826,13 +1174,13 @@ type ObjectTypeDef struct {
 
 func (obj ObjectTypeDef) functions() iter.Seq[*Function] {
 	return func(yield func(*Function) bool) {
-		if obj.Constructor.Valid {
-			if !yield(obj.Constructor.Value) {
+		if obj.Constructor.Valid && obj.Constructor.Value.Self() != nil {
+			if !yield(obj.Constructor.Value.Self()) {
 				return
 			}
 		}
 		for _, objFn := range obj.Functions {
-			if !yield(objFn) {
+			if !yield(objFn.Self()) {
 				return
 			}
 		}
@@ -850,6 +1198,97 @@ func (*ObjectTypeDef) TypeDescription() string {
 	return "A definition of a custom object defined in a Module."
 }
 
+var _ dagql.HasDependencyResults = (*ObjectTypeDef)(nil)
+
+func (obj *ObjectTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if obj == nil {
+		return nil, fmt.Errorf("encode persisted object type def: nil object type def")
+	}
+	payload, err := encodePersistedObjectTypeDef(cache, obj)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}
+
+func (*ObjectTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedObjectTypeDef
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted object type def payload: %w", err)
+	}
+	return decodePersistedObjectTypeDef(ctx, dag, &persisted)
+}
+
+func (obj *ObjectTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if obj == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 2+len(obj.Fields)+len(obj.Functions))
+
+	if obj.SourceMap.Valid && obj.SourceMap.Value.Self() != nil {
+		attached, err := attach(obj.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach object typedef source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach object typedef source map: unexpected result %T", attached)
+		}
+		obj.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	for i, field := range obj.Fields {
+		if field.Self() == nil {
+			continue
+		}
+		attached, err := attach(field)
+		if err != nil {
+			return nil, fmt.Errorf("attach object typedef field %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*FieldTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach object typedef field %d: unexpected result %T", i, attached)
+		}
+		obj.Fields[i] = typed
+		owned = append(owned, typed)
+	}
+	for i, fn := range obj.Functions {
+		if fn.Self() == nil {
+			continue
+		}
+		attached, err := attach(fn)
+		if err != nil {
+			return nil, fmt.Errorf("attach object typedef function %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Function])
+		if !ok {
+			return nil, fmt.Errorf("attach object typedef function %d: unexpected result %T", i, attached)
+		}
+		obj.Functions[i] = typed
+		owned = append(owned, typed)
+	}
+	if obj.Constructor.Valid && obj.Constructor.Value.Self() != nil {
+		attached, err := attach(obj.Constructor.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach object typedef constructor: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Function])
+		if !ok {
+			return nil, fmt.Errorf("attach object typedef constructor: unexpected result %T", attached)
+		}
+		obj.Constructor = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
+}
+
 func NewObjectTypeDef(name, description string, deprecated *string) *ObjectTypeDef {
 	return &ObjectTypeDef{
 		Name:         strcase.ToCamel(name),
@@ -861,30 +1300,13 @@ func NewObjectTypeDef(name, description string, deprecated *string) *ObjectTypeD
 
 func (obj ObjectTypeDef) Clone() *ObjectTypeDef {
 	cp := obj
-
-	cp.Fields = make([]*FieldTypeDef, len(obj.Fields))
-	for i, field := range obj.Fields {
-		cp.Fields[i] = field.Clone()
-	}
-
-	cp.Functions = make([]*Function, len(obj.Functions))
-	for i, fn := range obj.Functions {
-		cp.Functions[i] = fn.Clone()
-	}
-
-	if cp.Constructor.Valid {
-		cp.Constructor.Value = obj.Constructor.Value.Clone()
-	}
-
-	if cp.SourceMap.Valid {
-		cp.SourceMap.Value = cp.SourceMap.Value.Clone()
-	}
-
+	cp.Fields = append(dagql.ObjectResultArray[*FieldTypeDef](nil), obj.Fields...)
+	cp.Functions = append(dagql.ObjectResultArray[*Function](nil), obj.Functions...)
 	return &cp
 }
 
-func (obj *ObjectTypeDef) WithSourceMap(sourceMap *SourceMap) *ObjectTypeDef {
-	if sourceMap == nil {
+func (obj *ObjectTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]) *ObjectTypeDef {
+	if sourceMap.Self() == nil {
 		return obj
 	}
 	obj = obj.Clone()
@@ -892,10 +1314,22 @@ func (obj *ObjectTypeDef) WithSourceMap(sourceMap *SourceMap) *ObjectTypeDef {
 	return obj
 }
 
+func (obj *ObjectTypeDef) WithName(name string) *ObjectTypeDef {
+	obj = obj.Clone()
+	obj.Name = strcase.ToCamel(name)
+	return obj
+}
+
+func (obj *ObjectTypeDef) WithSourceModuleName(sourceModuleName string) *ObjectTypeDef {
+	obj = obj.Clone()
+	obj.SourceModuleName = sourceModuleName
+	return obj
+}
+
 func (obj *ObjectTypeDef) FieldByName(name string) (*FieldTypeDef, bool) {
 	for _, field := range obj.Fields {
-		if field.Name == name {
-			return field, true
+		if field.Self().Name == name {
+			return field.Self(), true
 		}
 	}
 	return nil, false
@@ -903,8 +1337,8 @@ func (obj *ObjectTypeDef) FieldByName(name string) (*FieldTypeDef, bool) {
 
 func (obj *ObjectTypeDef) FieldByOriginalName(name string) (*FieldTypeDef, bool) {
 	for _, field := range obj.Fields {
-		if field.OriginalName == name {
-			return field, true
+		if field.Self().OriginalName == name {
+			return field.Self(), true
 		}
 	}
 	return nil, false
@@ -912,8 +1346,8 @@ func (obj *ObjectTypeDef) FieldByOriginalName(name string) (*FieldTypeDef, bool)
 
 func (obj *ObjectTypeDef) FunctionByName(name string) (*Function, bool) {
 	for _, fn := range obj.Functions {
-		if fn.Name == gqlFieldName(name) {
-			return fn, true
+		if fn.Self().Name == gqlFieldName(name) {
+			return fn.Self(), true
 		}
 	}
 	return nil, false
@@ -926,14 +1360,15 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 
 	objFnByName := make(map[string]*Function)
 	for _, fn := range obj.Functions {
-		objFnByName[fn.Name] = fn
+		objFnByName[fn.Self().Name] = fn.Self()
 	}
 	objFieldByName := make(map[string]*FieldTypeDef)
 	for _, field := range obj.Fields {
-		objFieldByName[field.Name] = field
+		objFieldByName[field.Self().Name] = field.Self()
 	}
 
-	for _, ifaceFn := range iface.Functions {
+	for _, ifaceFnRes := range iface.Functions {
+		ifaceFn := ifaceFnRes.Self()
 		objFn, objFnExists := objFnByName[ifaceFn.Name]
 		objField, objFieldExists := objFieldByName[ifaceFn.Name]
 
@@ -943,7 +1378,7 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 
 		if objFieldExists {
 			// check return type of field
-			return objField.TypeDef.IsSubtypeOf(ifaceFn.ReturnType)
+			return objField.TypeDef.Self().IsSubtypeOf(ifaceFn.ReturnType.Self())
 		}
 
 		// otherwise there can only be a match on the objFn
@@ -955,12 +1390,60 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 	return true
 }
 
-type FieldTypeDef struct {
-	Name        string   `field:"true" doc:"The name of the field in lowerCamelCase format."`
-	Description string   `field:"true" doc:"A doc string for the field, if any."`
-	TypeDef     *TypeDef `field:"true" doc:"The type of the field."`
+func (obj *ObjectTypeDef) WithField(field dagql.ObjectResult[*FieldTypeDef]) *ObjectTypeDef {
+	obj = obj.Clone()
+	for i, existing := range obj.Fields {
+		existingSelf := existing.Self()
+		fieldSelf := field.Self()
+		if existingSelf == nil || fieldSelf == nil {
+			continue
+		}
+		switch {
+		case existingSelf.OriginalName != "" && fieldSelf.OriginalName != "" && existingSelf.OriginalName == fieldSelf.OriginalName:
+			obj.Fields[i] = field
+			return obj
+		case existingSelf.Name == fieldSelf.Name:
+			obj.Fields[i] = field
+			return obj
+		}
+	}
+	obj.Fields = append(obj.Fields, field)
+	return obj
+}
 
-	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this field declaration."`
+func (obj *ObjectTypeDef) WithFunction(fn dagql.ObjectResult[*Function]) *ObjectTypeDef {
+	obj = obj.Clone()
+	for i, existing := range obj.Functions {
+		existingSelf := existing.Self()
+		fnSelf := fn.Self()
+		if existingSelf == nil || fnSelf == nil {
+			continue
+		}
+		switch {
+		case existingSelf.OriginalName != "" && fnSelf.OriginalName != "" && existingSelf.OriginalName == fnSelf.OriginalName:
+			obj.Functions[i] = fn
+			return obj
+		case existingSelf.Name == fnSelf.Name:
+			obj.Functions[i] = fn
+			return obj
+		}
+	}
+	obj.Functions = append(obj.Functions, fn)
+	return obj
+}
+
+func (obj *ObjectTypeDef) WithConstructor(fn dagql.ObjectResult[*Function]) *ObjectTypeDef {
+	obj = obj.Clone()
+	obj.Constructor = dagql.NonNull(fn)
+	return obj
+}
+
+type FieldTypeDef struct {
+	Name        string `field:"true" doc:"The name of the field in lowerCamelCase format." doNotCache:"simple field selection"`
+	Description string `field:"true" doc:"A doc string for the field, if any." doNotCache:"simple field selection"`
+	TypeDef     dagql.ObjectResult[*TypeDef]
+
+	SourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this field declaration."`
 
 	Deprecated *string `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
@@ -969,6 +1452,16 @@ type FieldTypeDef struct {
 	// The original name of the object as provided by the SDK that defined it, used
 	// when invoking the SDK so it doesn't need to think as hard about case conversions
 	OriginalName string
+}
+
+func NewFieldTypeDef(name string, typeDef dagql.ObjectResult[*TypeDef], description string, deprecated *string) *FieldTypeDef {
+	return &FieldTypeDef{
+		Name:         strcase.ToLowerCamel(name),
+		Description:  description,
+		TypeDef:      typeDef,
+		Deprecated:   deprecated,
+		OriginalName: name,
+	}
 }
 
 func (*FieldTypeDef) Type() *ast.Type {
@@ -986,25 +1479,96 @@ func (*FieldTypeDef) TypeDescription() string {
 		arguments).`)
 }
 
-func (typeDef FieldTypeDef) Clone() *FieldTypeDef {
-	cp := typeDef
-	if typeDef.TypeDef != nil {
-		cp.TypeDef = typeDef.TypeDef.Clone()
+var _ dagql.HasDependencyResults = (*FieldTypeDef)(nil)
+
+func (field *FieldTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if field == nil {
+		return nil, fmt.Errorf("encode persisted field type def: nil field type def")
 	}
-	if typeDef.SourceMap.Valid {
-		cp.SourceMap.Value = typeDef.SourceMap.Value.Clone()
+	payload, err := encodePersistedFieldTypeDef(cache, field)
+	if err != nil {
+		return nil, err
 	}
+	return json.Marshal(payload)
+}
+
+func (*FieldTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedFieldTypeDef
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted field type def payload: %w", err)
+	}
+	return decodePersistedFieldTypeDef(ctx, dag, &persisted)
+}
+
+//nolint:dupl // symmetric with FunctionArg.AttachDependencyResults; each typedef kind walks its own fields
+func (field *FieldTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if field == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 2)
+
+	if field.TypeDef.Self() != nil {
+		attached, err := attach(field.TypeDef)
+		if err != nil {
+			return nil, fmt.Errorf("attach field typedef type: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*TypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach field typedef type: unexpected result %T", attached)
+		}
+		field.TypeDef = typed
+		owned = append(owned, typed)
+	}
+	if field.SourceMap.Valid && field.SourceMap.Value.Self() != nil {
+		attached, err := attach(field.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach field typedef source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach field typedef source map: unexpected result %T", attached)
+		}
+		field.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
+}
+
+func (field FieldTypeDef) Clone() *FieldTypeDef {
+	cp := field
 	return &cp
+}
+
+func (field *FieldTypeDef) WithTypeDef(typeDef dagql.ObjectResult[*TypeDef]) *FieldTypeDef {
+	field = field.Clone()
+	field.TypeDef = typeDef
+	return field
+}
+
+func (field *FieldTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]) *FieldTypeDef {
+	if sourceMap.Self() == nil {
+		return field
+	}
+	field = field.Clone()
+	field.SourceMap = dagql.NonNull(sourceMap)
+	return field
 }
 
 type InterfaceTypeDef struct {
 	// Name is the standardized name of the interface (CamelCase), as used for the interface in the graphql schema
-	Name        string                     `field:"true" doc:"The name of the interface."`
-	Description string                     `field:"true" doc:"The doc string for the interface, if any."`
-	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this interface declaration."`
-	Functions   []*Function                `field:"true" doc:"Functions defined on this interface, if any."`
+	Name        string                                         `field:"true" doc:"The name of the interface." doNotCache:"simple field selection"`
+	Description string                                         `field:"true" doc:"The doc string for the interface, if any." doNotCache:"simple field selection"`
+	SourceMap   dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this interface declaration."`
+	Functions   dagql.ObjectResultArray[*Function]
 	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
-	SourceModuleName string `field:"true" doc:"If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise."`
+	SourceModuleName string `field:"true" doc:"If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise." doNotCache:"simple field selection"`
 
 	// Below are not in public API
 
@@ -1032,26 +1596,95 @@ func (*InterfaceTypeDef) TypeDescription() string {
 	return "A definition of a custom interface defined in a Module."
 }
 
+var _ dagql.HasDependencyResults = (*InterfaceTypeDef)(nil)
+
+func (iface *InterfaceTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if iface == nil {
+		return nil, fmt.Errorf("encode persisted interface type def: nil interface type def")
+	}
+	payload, err := encodePersistedInterfaceTypeDef(cache, iface)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}
+
+func (*InterfaceTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedInterfaceTypeDef
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted interface type def payload: %w", err)
+	}
+	return decodePersistedInterfaceTypeDef(ctx, dag, &persisted)
+}
+
+//nolint:dupl // symmetric with EnumTypeDef.AttachDependencyResults; each typedef kind walks its own fields
+func (iface *InterfaceTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if iface == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 1+len(iface.Functions))
+
+	if iface.SourceMap.Valid && iface.SourceMap.Value.Self() != nil {
+		attached, err := attach(iface.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach interface typedef source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach interface typedef source map: unexpected result %T", attached)
+		}
+		iface.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	for i, fn := range iface.Functions {
+		if fn.Self() == nil {
+			continue
+		}
+		attached, err := attach(fn)
+		if err != nil {
+			return nil, fmt.Errorf("attach interface typedef function %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Function])
+		if !ok {
+			return nil, fmt.Errorf("attach interface typedef function %d: unexpected result %T", i, attached)
+		}
+		iface.Functions[i] = typed
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
+}
+
 func (iface InterfaceTypeDef) Clone() *InterfaceTypeDef {
 	cp := iface
-
-	cp.Functions = make([]*Function, len(iface.Functions))
-	for i, fn := range iface.Functions {
-		cp.Functions[i] = fn.Clone()
-	}
-	if cp.SourceMap.Valid {
-		cp.SourceMap.Value = cp.SourceMap.Value.Clone()
-	}
-
+	cp.Functions = append(dagql.ObjectResultArray[*Function](nil), iface.Functions...)
 	return &cp
 }
 
-func (iface *InterfaceTypeDef) WithSourceMap(sourceMap *SourceMap) *InterfaceTypeDef {
-	if sourceMap == nil {
+func (iface *InterfaceTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]) *InterfaceTypeDef {
+	if sourceMap.Self() == nil {
 		return iface
 	}
 	iface = iface.Clone()
 	iface.SourceMap = dagql.NonNull(sourceMap)
+	return iface
+}
+
+func (iface *InterfaceTypeDef) WithName(name string) *InterfaceTypeDef {
+	iface = iface.Clone()
+	iface.Name = strcase.ToCamel(name)
+	return iface
+}
+
+func (iface *InterfaceTypeDef) WithSourceModuleName(sourceModuleName string) *InterfaceTypeDef {
+	iface = iface.Clone()
+	iface.SourceModuleName = sourceModuleName
 	return iface
 }
 
@@ -1062,10 +1695,11 @@ func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {
 
 	ifaceFnByName := make(map[string]*Function)
 	for _, fn := range iface.Functions {
-		ifaceFnByName[fn.Name] = fn
+		ifaceFnByName[fn.Self().Name] = fn.Self()
 	}
 
-	for _, otherIfaceFn := range otherIface.Functions {
+	for _, otherIfaceFnRes := range otherIface.Functions {
+		otherIfaceFn := otherIfaceFnRes.Self()
 		ifaceFn, ok := ifaceFnByName[otherIfaceFn.Name]
 		if !ok {
 			return false
@@ -1079,14 +1713,35 @@ func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {
 	return true
 }
 
+func (iface *InterfaceTypeDef) WithFunction(fn dagql.ObjectResult[*Function]) *InterfaceTypeDef {
+	iface = iface.Clone()
+	for i, existing := range iface.Functions {
+		existingSelf := existing.Self()
+		fnSelf := fn.Self()
+		if existingSelf == nil || fnSelf == nil {
+			continue
+		}
+		switch {
+		case existingSelf.OriginalName != "" && fnSelf.OriginalName != "" && existingSelf.OriginalName == fnSelf.OriginalName:
+			iface.Functions[i] = fn
+			return iface
+		case existingSelf.Name == fnSelf.Name:
+			iface.Functions[i] = fn
+			return iface
+		}
+	}
+	iface.Functions = append(iface.Functions, fn)
+	return iface
+}
+
 type ScalarTypeDef struct {
-	Name        string `field:"true" doc:"The name of the scalar."`
-	Description string `field:"true" doc:"A doc string for the scalar, if any."`
+	Name        string `field:"true" doc:"The name of the scalar." doNotCache:"simple field selection"`
+	Description string `field:"true" doc:"A doc string for the scalar, if any." doNotCache:"simple field selection"`
 
 	OriginalName string
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Scalars field on Module
-	SourceModuleName string `field:"true" doc:"If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise."`
+	SourceModuleName string `field:"true" doc:"If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise." doNotCache:"simple field selection"`
 }
 
 func NewScalarTypeDef(name, description string) *ScalarTypeDef {
@@ -1108,12 +1763,31 @@ func (typeDef *ScalarTypeDef) TypeDescription() string {
 	return "A definition of a custom scalar defined in a Module."
 }
 
+func (typeDef *ScalarTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	_ = cache
+	if typeDef == nil {
+		return nil, fmt.Errorf("encode persisted scalar type def: nil scalar type def")
+	}
+	return json.Marshal(encodePersistedScalarTypeDef(typeDef))
+}
+
+func (*ScalarTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var persisted persistedScalarTypeDef
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted scalar type def payload: %w", err)
+	}
+	return decodePersistedScalarTypeDef(&persisted), nil
+}
+
 func (typeDef ScalarTypeDef) Clone() *ScalarTypeDef {
 	return &typeDef
 }
 
 type ListTypeDef struct {
-	ElementTypeDef *TypeDef `field:"true" doc:"The type of the elements in the list."`
+	ElementTypeDef dagql.ObjectResult[*TypeDef]
 }
 
 func (*ListTypeDef) Type() *ast.Type {
@@ -1127,17 +1801,62 @@ func (*ListTypeDef) TypeDescription() string {
 	return "A definition of a list type in a Module."
 }
 
-func (typeDef ListTypeDef) Clone() *ListTypeDef {
-	cp := typeDef
-	if typeDef.ElementTypeDef != nil {
-		cp.ElementTypeDef = typeDef.ElementTypeDef.Clone()
+var _ dagql.HasDependencyResults = (*ListTypeDef)(nil)
+
+func (typeDef *ListTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if typeDef == nil {
+		return nil, fmt.Errorf("encode persisted list type def: nil list type def")
 	}
-	return &cp
+	payload, err := encodePersistedListTypeDef(cache, typeDef)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}
+
+func (*ListTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedListTypeDef
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted list type def payload: %w", err)
+	}
+	return decodePersistedListTypeDef(ctx, dag, &persisted)
+}
+
+func (typeDef *ListTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if typeDef == nil || typeDef.ElementTypeDef.Self() == nil {
+		return nil, nil
+	}
+
+	attached, err := attach(typeDef.ElementTypeDef)
+	if err != nil {
+		return nil, fmt.Errorf("attach list typedef element type: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*TypeDef])
+	if !ok {
+		return nil, fmt.Errorf("attach list typedef element type: unexpected result %T", attached)
+	}
+	typeDef.ElementTypeDef = typed
+	return []dagql.AnyResult{typed}, nil
+}
+
+func (typeDef ListTypeDef) Clone() *ListTypeDef {
+	return &typeDef
+}
+
+func (typeDef *ListTypeDef) WithElementTypeDef(elementTypeDef dagql.ObjectResult[*TypeDef]) *ListTypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.ElementTypeDef = elementTypeDef
+	return typeDef
 }
 
 type InputTypeDef struct {
-	Name   string          `field:"true" doc:"The name of the input object."`
-	Fields []*FieldTypeDef `field:"true" doc:"Static fields defined on this input object, if any."`
+	Name   string `field:"true" doc:"The name of the input object." doNotCache:"simple field selection"`
+	Fields dagql.ObjectResultArray[*FieldTypeDef]
 }
 
 func (*InputTypeDef) Type() *ast.Type {
@@ -1154,14 +1873,59 @@ in the core API. It is not used by user modules and shouldn't ever be as user
 module accept input objects via their id rather than graphql input types.`
 }
 
-func (typeDef InputTypeDef) Clone() *InputTypeDef {
-	cp := typeDef
+var _ dagql.HasDependencyResults = (*InputTypeDef)(nil)
 
-	cp.Fields = make([]*FieldTypeDef, len(typeDef.Fields))
-	for i, field := range typeDef.Fields {
-		cp.Fields[i] = field.Clone()
+func (typeDef *InputTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if typeDef == nil {
+		return nil, fmt.Errorf("encode persisted input type def: nil input type def")
+	}
+	payload, err := encodePersistedInputTypeDef(cache, typeDef)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}
+
+func (*InputTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedInputTypeDef
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted input type def payload: %w", err)
+	}
+	return decodePersistedInputTypeDef(ctx, dag, &persisted)
+}
+
+func (typeDef *InputTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if typeDef == nil {
+		return nil, nil
 	}
 
+	owned := make([]dagql.AnyResult, 0, len(typeDef.Fields))
+	for i, field := range typeDef.Fields {
+		if field.Self() == nil {
+			continue
+		}
+		attached, err := attach(field)
+		if err != nil {
+			return nil, fmt.Errorf("attach input typedef field %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*FieldTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach input typedef field %d: unexpected result %T", i, attached)
+		}
+		typeDef.Fields[i] = typed
+		owned = append(owned, typed)
+	}
+	return owned, nil
+}
+
+func (typeDef InputTypeDef) Clone() *InputTypeDef {
+	cp := typeDef
+	cp.Fields = append(dagql.ObjectResultArray[*FieldTypeDef](nil), typeDef.Fields...)
 	return &cp
 }
 
@@ -1170,24 +1934,31 @@ func (typeDef *InputTypeDef) ToInputObjectSpec() dagql.InputObjectSpec {
 		Name: typeDef.Name,
 	}
 	for _, field := range typeDef.Fields {
+		fieldSelf := field.Self()
 		spec.Fields.Add(dagql.InputSpec{
-			Name:        field.Name,
-			Description: field.Description,
-			Type:        field.TypeDef.ToInput(),
+			Name:        fieldSelf.Name,
+			Description: fieldSelf.Description,
+			Type:        fieldSelf.TypeDef.Self().ToInput(),
 		})
 	}
 	return spec
 }
 
+func (typeDef *InputTypeDef) WithField(field dagql.ObjectResult[*FieldTypeDef]) *InputTypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Fields = append(typeDef.Fields, field)
+	return typeDef
+}
+
 type EnumTypeDef struct {
 	// Name is the standardized name of the enum (CamelCase), as used for the enum in the graphql schema
-	Name        string                     `field:"true" doc:"The name of the enum."`
-	Description string                     `field:"true" doc:"A doc string for the enum, if any."`
-	Members     []*EnumMemberTypeDef       `field:"true" doc:"The members of the enum."`
-	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this enum declaration."`
+	Name        string `field:"true" doc:"The name of the enum." doNotCache:"simple field selection"`
+	Description string `field:"true" doc:"A doc string for the enum, if any." doNotCache:"simple field selection"`
+	Members     dagql.ObjectResultArray[*EnumMemberTypeDef]
+	SourceMap   dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this enum declaration."`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Enum field on Module
-	SourceModuleName string `field:"true" doc:"If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise."`
+	SourceModuleName string `field:"true" doc:"If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise." doNotCache:"simple field selection"`
 
 	// Below are not in public API
 
@@ -1207,13 +1978,78 @@ func (*EnumTypeDef) TypeDescription() string {
 	return "A definition of a custom enum defined in a Module."
 }
 
-func NewEnumTypeDef(name, description string, sourceMap *SourceMap) *EnumTypeDef {
+var _ dagql.HasDependencyResults = (*EnumTypeDef)(nil)
+
+func (enum *EnumTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if enum == nil {
+		return nil, fmt.Errorf("encode persisted enum type def: nil enum type def")
+	}
+	payload, err := encodePersistedEnumTypeDef(cache, enum)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}
+
+func (*EnumTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedEnumTypeDef
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted enum type def payload: %w", err)
+	}
+	return decodePersistedEnumTypeDef(ctx, dag, &persisted)
+}
+
+//nolint:dupl // symmetric with InterfaceTypeDef.AttachDependencyResults; each typedef kind walks its own fields
+func (enum *EnumTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if enum == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 1+len(enum.Members))
+
+	if enum.SourceMap.Valid && enum.SourceMap.Value.Self() != nil {
+		attached, err := attach(enum.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach enum typedef source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach enum typedef source map: unexpected result %T", attached)
+		}
+		enum.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	for i, member := range enum.Members {
+		if member.Self() == nil {
+			continue
+		}
+		attached, err := attach(member)
+		if err != nil {
+			return nil, fmt.Errorf("attach enum typedef member %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*EnumMemberTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach enum typedef member %d: unexpected result %T", i, attached)
+		}
+		enum.Members[i] = typed
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
+}
+
+func NewEnumTypeDef(name, description string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumTypeDef {
 	typedef := &EnumTypeDef{
 		Name:         strcase.ToCamel(name),
 		OriginalName: name,
 		Description:  description,
 	}
-	if sourceMap != nil {
+	if sourceMap.Self() != nil {
 		typedef.SourceMap = dagql.NonNull(sourceMap)
 	}
 	return typedef
@@ -1221,24 +2057,88 @@ func NewEnumTypeDef(name, description string, sourceMap *SourceMap) *EnumTypeDef
 
 func (enum EnumTypeDef) Clone() *EnumTypeDef {
 	cp := enum
-
-	cp.Members = make([]*EnumMemberTypeDef, len(enum.Members))
-	for i, value := range enum.Members {
-		cp.Members[i] = value.Clone()
-	}
-	if enum.SourceMap.Valid {
-		cp.SourceMap.Value = enum.SourceMap.Value.Clone()
-	}
-
+	cp.Members = append(dagql.ObjectResultArray[*EnumMemberTypeDef](nil), enum.Members...)
 	return &cp
 }
 
+func (enum *EnumTypeDef) WithName(name string) *EnumTypeDef {
+	enum = enum.Clone()
+	enum.Name = strcase.ToCamel(name)
+	return enum
+}
+
+func (enum *EnumTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]) *EnumTypeDef {
+	if sourceMap.Self() == nil {
+		return enum
+	}
+	enum = enum.Clone()
+	enum.SourceMap = dagql.NonNull(sourceMap)
+	return enum
+}
+
+func (enum *EnumTypeDef) WithSourceModuleName(sourceModuleName string) *EnumTypeDef {
+	enum = enum.Clone()
+	enum.SourceModuleName = sourceModuleName
+	return enum
+}
+
+func (enum *EnumTypeDef) WithMember(member dagql.ObjectResult[*EnumMemberTypeDef]) (*EnumTypeDef, error) {
+	enum = enum.Clone()
+	memberSelf := member.Self()
+	if memberSelf == nil {
+		return enum, nil
+	}
+
+	replacementIdx := -1
+	for i, existing := range enum.Members {
+		existingSelf := existing.Self()
+		if existingSelf == nil {
+			continue
+		}
+		switch {
+		case existingSelf.OriginalName != "" && memberSelf.OriginalName != "" && existingSelf.OriginalName == memberSelf.OriginalName:
+			replacementIdx = i
+		case existingSelf.Name == memberSelf.Name:
+			replacementIdx = i
+		}
+		if replacementIdx != -1 {
+			break
+		}
+	}
+
+	pattern := `^[a-zA-Z_][a-zA-Z0-9_]*$`
+	if !regexp.MustCompile(pattern).MatchString(memberSelf.Name) {
+		return nil, fmt.Errorf("enum name %q is not valid (only letters, digits and underscores are allowed)", memberSelf.Name)
+	}
+	for i, existing := range enum.Members {
+		if i == replacementIdx {
+			continue
+		}
+		existingSelf := existing.Self()
+		if existingSelf == nil {
+			continue
+		}
+		if existingSelf.Name == memberSelf.Name {
+			return nil, fmt.Errorf("enum %q is already defined", memberSelf.Name)
+		}
+		if memberSelf.Value != "" && existingSelf.Value == memberSelf.Value {
+			return nil, fmt.Errorf("enum %q is already defined with value %q", existingSelf.Name, memberSelf.Value)
+		}
+	}
+	if replacementIdx != -1 {
+		enum.Members[replacementIdx] = member
+		return enum, nil
+	}
+	enum.Members = append(enum.Members, member)
+	return enum, nil
+}
+
 type EnumMemberTypeDef struct {
-	Name        string                     `field:"true" doc:"The name of the enum member."`
-	Value       string                     `field:"true" doc:"The value of the enum member"`
-	Description string                     `field:"true" doc:"A doc string for the enum member, if any."`
-	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this enum member declaration."`
-	Deprecated  *string                    `field:"true" doc:"The reason this enum member is deprecated, if any."`
+	Name        string                                         `field:"true" doc:"The name of the enum member." doNotCache:"simple field selection"`
+	Value       string                                         `field:"true" doc:"The value of the enum member" doNotCache:"simple field selection"`
+	Description string                                         `field:"true" doc:"A doc string for the enum member, if any." doNotCache:"simple field selection"`
+	SourceMap   dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this enum member declaration."`
+	Deprecated  *string                                        `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	OriginalName string
 }
@@ -1256,7 +2156,50 @@ func (*EnumMemberTypeDef) TypeDescription() string {
 	return "A definition of a value in a custom enum defined in a Module."
 }
 
-func NewEnumMemberTypeDef(name, value, description string, deprecated *string, sourceMap *SourceMap) *EnumMemberTypeDef {
+var _ dagql.HasDependencyResults = (*EnumMemberTypeDef)(nil)
+
+func (enumValue *EnumMemberTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if enumValue == nil {
+		return nil, fmt.Errorf("encode persisted enum member type def: nil enum member type def")
+	}
+	payload, err := encodePersistedEnumMemberTypeDef(cache, enumValue)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}
+
+func (*EnumMemberTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedEnumMemberTypeDef
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted enum member type def payload: %w", err)
+	}
+	return decodePersistedEnumMemberTypeDef(ctx, dag, &persisted)
+}
+
+func (enumValue *EnumMemberTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if enumValue == nil || !enumValue.SourceMap.Valid || enumValue.SourceMap.Value.Self() == nil {
+		return nil, nil
+	}
+
+	attached, err := attach(enumValue.SourceMap.Value)
+	if err != nil {
+		return nil, fmt.Errorf("attach enum member source map: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+	if !ok {
+		return nil, fmt.Errorf("attach enum member source map: unexpected result %T", attached)
+	}
+	enumValue.SourceMap = dagql.NonNull(typed)
+	return []dagql.AnyResult{typed}, nil
+}
+
+func NewEnumMemberTypeDef(name, value, description string, deprecated *string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
 	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
 		Name:         strcase.ToScreamingSnake(name),
@@ -1264,13 +2207,13 @@ func NewEnumMemberTypeDef(name, value, description string, deprecated *string, s
 		Description:  description,
 		Deprecated:   deprecated,
 	}
-	if sourceMap != nil {
+	if sourceMap.Self() != nil {
 		typedef.SourceMap = dagql.NonNull(sourceMap)
 	}
 	return typedef
 }
 
-func NewEnumValueTypeDef(name, value, description string, deprecated *string, sourceMap *SourceMap) *EnumMemberTypeDef {
+func NewEnumValueTypeDef(name, value, description string, deprecated *string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
 	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
 		Name:         value,
@@ -1278,20 +2221,29 @@ func NewEnumValueTypeDef(name, value, description string, deprecated *string, so
 		Description:  description,
 		Deprecated:   deprecated,
 	}
-	if sourceMap != nil {
+	if sourceMap.Self() != nil {
 		typedef.SourceMap = dagql.NonNull(sourceMap)
 	}
 	return typedef
 }
 
 func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
-	cp := enumValue
+	return &enumValue
+}
 
-	if enumValue.SourceMap.Valid {
-		cp.SourceMap.Value = enumValue.SourceMap.Value.Clone()
+func (enumValue *EnumMemberTypeDef) WithName(name string) *EnumMemberTypeDef {
+	enumValue = enumValue.Clone()
+	enumValue.Name = strcase.ToScreamingSnake(name)
+	return enumValue
+}
+
+func (enumValue *EnumMemberTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
+	if sourceMap.Self() == nil {
+		return enumValue
 	}
-
-	return &cp
+	enumValue = enumValue.Clone()
+	enumValue.SourceMap = dagql.NonNull(sourceMap)
+	return enumValue
 }
 
 func (enumValue *EnumMemberTypeDef) EnumValueDirectives() []*ast.Directive {
@@ -1416,9 +2368,12 @@ type FunctionCall struct {
 
 	ParentID *call.ID
 	EnvID    *call.ID
-
-	Module *Module `json:"-"`
 }
+
+type persistedFunctionCall FunctionCall
+
+var _ dagql.PersistedObject = (*FunctionCall)(nil)
+var _ dagql.PersistedObjectDecoder = (*FunctionCall)(nil)
 
 func (*FunctionCall) Type() *ast.Type {
 	return &ast.Type{
@@ -1431,6 +2386,26 @@ func (*FunctionCall) TypeDescription() string {
 	return "An active function call."
 }
 
+func (fnCall *FunctionCall) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	_ = cache
+	if fnCall == nil {
+		return nil, fmt.Errorf("encode persisted function call: nil function call")
+	}
+	return json.Marshal(persistedFunctionCall(*fnCall))
+}
+
+func (*FunctionCall) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var persisted persistedFunctionCall
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted function call payload: %w", err)
+	}
+	fnCall := FunctionCall(persisted)
+	return &fnCall, nil
+}
+
 func (fnCall *FunctionCall) ReturnValue(ctx context.Context, val JSON) error {
 	// The return is implemented by exporting the result back to the caller's
 	// filesystem. This ensures that the result is cached as part of the module
@@ -1440,9 +2415,9 @@ func (fnCall *FunctionCall) ReturnValue(ctx context.Context, val JSON) error {
 	if err != nil {
 		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("get buildkit client: %w", err)
+		return fmt.Errorf("get engine client: %w", err)
 	}
 	return bk.IOReaderExport(
 		ctx,
@@ -1461,9 +2436,9 @@ func (fnCall *FunctionCall) ReturnError(ctx context.Context, errID dagql.ID[*Err
 	if err != nil {
 		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("get buildkit client: %w", err)
+		return fmt.Errorf("get engine client: %w", err)
 	}
 	enc, err := errID.Encode()
 	if err != nil {
@@ -1482,6 +2457,11 @@ type FunctionCallArgValue struct {
 	Value JSON   `field:"true" doc:"The value of the argument represented as a JSON serialized string."`
 }
 
+type persistedFunctionCallArgValue FunctionCallArgValue
+
+var _ dagql.PersistedObject = (*FunctionCallArgValue)(nil)
+var _ dagql.PersistedObjectDecoder = (*FunctionCallArgValue)(nil)
+
 func (*FunctionCallArgValue) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "FunctionCallArgValue",
@@ -1493,6 +2473,26 @@ func (*FunctionCallArgValue) TypeDescription() string {
 	return "A value passed as a named argument to a function call."
 }
 
+func (arg *FunctionCallArgValue) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	_ = cache
+	if arg == nil {
+		return nil, fmt.Errorf("encode persisted function call arg value: nil function call arg value")
+	}
+	return json.Marshal(persistedFunctionCallArgValue(*arg))
+}
+
+func (*FunctionCallArgValue) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var persisted persistedFunctionCallArgValue
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted function call arg value payload: %w", err)
+	}
+	arg := FunctionCallArgValue(persisted)
+	return &arg, nil
+}
+
 type SourceMap struct {
 	Module   string `field:"true" doc:"The module dependency this was declared in."`
 	Filename string `field:"true" doc:"The filename from the module source."`
@@ -1500,6 +2500,9 @@ type SourceMap struct {
 	Column   int    `field:"true" doc:"The column number within the line."`
 	URL      string `field:"true" doc:"The URL to the file, if any. This can be used to link to the source map in the browser."`
 }
+
+var _ dagql.PersistedObject = (*SourceMap)(nil)
+var _ dagql.PersistedObjectDecoder = (*SourceMap)(nil)
 
 func (*SourceMap) Type() *ast.Type {
 	return &ast.Type{
@@ -1510,6 +2513,25 @@ func (*SourceMap) Type() *ast.Type {
 
 func (*SourceMap) TypeDescription() string {
 	return "Source location information."
+}
+
+func (sourceMap *SourceMap) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	_ = cache
+	if sourceMap == nil {
+		return nil, fmt.Errorf("encode persisted source map: nil source map")
+	}
+	return json.Marshal(encodePersistedSourceMap(sourceMap))
+}
+
+func (*SourceMap) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var persisted persistedSourceMap
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted source map payload: %w", err)
+	}
+	return decodePersistedSourceMap(&persisted), nil
 }
 
 func (sourceMap SourceMap) Clone() *SourceMap {
@@ -1572,4 +2594,769 @@ func (sourceMap *SourceMap) TypeDirective() *ast.Directive {
 		})
 	}
 	return directive
+}
+
+type persistedSourceMap struct {
+	Module   string `json:"module,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	Line     int    `json:"line,omitempty"`
+	Column   int    `json:"column,omitempty"`
+	URL      string `json:"url,omitempty"`
+}
+
+type persistedFunctionArg struct {
+	Name              string   `json:"name,omitempty"`
+	Description       string   `json:"description,omitempty"`
+	SourceMapResultID uint64   `json:"sourceMapResultID,omitempty"`
+	TypeDefResultID   uint64   `json:"typeDefResultID,omitempty"`
+	DefaultValue      JSON     `json:"defaultValue,omitempty"`
+	DefaultPath       string   `json:"defaultPath,omitempty"`
+	DefaultAddress    string   `json:"defaultAddress,omitempty"`
+	Ignore            []string `json:"ignore,omitempty"`
+	Deprecated        *string  `json:"deprecated,omitempty"`
+	OriginalName      string   `json:"originalName,omitempty"`
+}
+
+type persistedFunction struct {
+	Name               string              `json:"name,omitempty"`
+	Description        string              `json:"description,omitempty"`
+	ArgResultIDs       []uint64            `json:"argResultIDs,omitempty"`
+	ReturnTypeResultID uint64              `json:"returnTypeResultID,omitempty"`
+	Deprecated         *string             `json:"deprecated,omitempty"`
+	SourceMapResultID  uint64              `json:"sourceMapResultID,omitempty"`
+	CachePolicy        FunctionCachePolicy `json:"cachePolicy,omitempty"`
+	CacheTTLSeconds    *int64              `json:"cacheTTLSeconds,omitempty"`
+	IsCheck            bool                `json:"isCheck,omitempty"`
+	IsGenerator        bool                `json:"isGenerator,omitempty"`
+	IsUp               bool                `json:"isUp,omitempty"`
+	ParentOriginalName string              `json:"parentOriginalName,omitempty"`
+	OriginalName       string              `json:"originalName,omitempty"`
+}
+
+type persistedTypeDef struct {
+	Kind                TypeDefKind `json:"kind,omitempty"`
+	Optional            bool        `json:"optional,omitempty"`
+	AsListResultID      uint64      `json:"asListResultID,omitempty"`
+	AsObjectResultID    uint64      `json:"asObjectResultID,omitempty"`
+	AsInterfaceResultID uint64      `json:"asInterfaceResultID,omitempty"`
+	AsInputResultID     uint64      `json:"asInputResultID,omitempty"`
+	AsScalarResultID    uint64      `json:"asScalarResultID,omitempty"`
+	AsEnumResultID      uint64      `json:"asEnumResultID,omitempty"`
+}
+
+type persistedObjectTypeDef struct {
+	Name                string   `json:"name,omitempty"`
+	Description         string   `json:"description,omitempty"`
+	SourceMapResultID   uint64   `json:"sourceMapResultID,omitempty"`
+	FieldResultIDs      []uint64 `json:"fieldResultIDs,omitempty"`
+	FunctionResultIDs   []uint64 `json:"functionResultIDs,omitempty"`
+	ConstructorResultID uint64   `json:"constructorResultID,omitempty"`
+	Deprecated          *string  `json:"deprecated,omitempty"`
+	SourceModuleName    string   `json:"sourceModuleName,omitempty"`
+	OriginalName        string   `json:"originalName,omitempty"`
+}
+
+type persistedFieldTypeDef struct {
+	Name              string  `json:"name,omitempty"`
+	Description       string  `json:"description,omitempty"`
+	TypeDefResultID   uint64  `json:"typeDefResultID,omitempty"`
+	SourceMapResultID uint64  `json:"sourceMapResultID,omitempty"`
+	Deprecated        *string `json:"deprecated,omitempty"`
+	OriginalName      string  `json:"originalName,omitempty"`
+}
+
+type persistedInterfaceTypeDef struct {
+	Name              string   `json:"name,omitempty"`
+	Description       string   `json:"description,omitempty"`
+	SourceMapResultID uint64   `json:"sourceMapResultID,omitempty"`
+	FunctionResultIDs []uint64 `json:"functionResultIDs,omitempty"`
+	SourceModuleName  string   `json:"sourceModuleName,omitempty"`
+	OriginalName      string   `json:"originalName,omitempty"`
+}
+
+type persistedScalarTypeDef struct {
+	Name             string `json:"name,omitempty"`
+	Description      string `json:"description,omitempty"`
+	OriginalName     string `json:"originalName,omitempty"`
+	SourceModuleName string `json:"sourceModuleName,omitempty"`
+}
+
+type persistedListTypeDef struct {
+	ElementTypeDefResultID uint64 `json:"elementTypeDefResultID,omitempty"`
+}
+
+type persistedInputTypeDef struct {
+	Name           string   `json:"name,omitempty"`
+	FieldResultIDs []uint64 `json:"fieldResultIDs,omitempty"`
+}
+
+type persistedEnumTypeDef struct {
+	Name              string   `json:"name,omitempty"`
+	Description       string   `json:"description,omitempty"`
+	MemberResultIDs   []uint64 `json:"memberResultIDs,omitempty"`
+	SourceMapResultID uint64   `json:"sourceMapResultID,omitempty"`
+	SourceModuleName  string   `json:"sourceModuleName,omitempty"`
+	OriginalName      string   `json:"originalName,omitempty"`
+}
+
+type persistedEnumMemberTypeDef struct {
+	Name              string  `json:"name,omitempty"`
+	Value             string  `json:"value,omitempty"`
+	Description       string  `json:"description,omitempty"`
+	SourceMapResultID uint64  `json:"sourceMapResultID,omitempty"`
+	Deprecated        *string `json:"deprecated,omitempty"`
+	OriginalName      string  `json:"originalName,omitempty"`
+}
+
+func encodePersistedSourceMap(sourceMap *SourceMap) *persistedSourceMap {
+	if sourceMap == nil {
+		return nil
+	}
+	return &persistedSourceMap{
+		Module:   sourceMap.Module,
+		Filename: sourceMap.Filename,
+		Line:     sourceMap.Line,
+		Column:   sourceMap.Column,
+		URL:      sourceMap.URL,
+	}
+}
+
+func decodePersistedSourceMap(sourceMap *persistedSourceMap) *SourceMap {
+	if sourceMap == nil {
+		return nil
+	}
+	return &SourceMap{
+		Module:   sourceMap.Module,
+		Filename: sourceMap.Filename,
+		Line:     sourceMap.Line,
+		Column:   sourceMap.Column,
+		URL:      sourceMap.URL,
+	}
+}
+
+func encodePersistedFunctionArg(cache dagql.PersistedObjectCache, arg *FunctionArg) (*persistedFunctionArg, error) {
+	if arg == nil {
+		return nil, nil
+	}
+	payload := &persistedFunctionArg{
+		Name:           arg.Name,
+		Description:    arg.Description,
+		DefaultValue:   arg.DefaultValue,
+		DefaultPath:    arg.DefaultPath,
+		DefaultAddress: arg.DefaultAddress,
+		Ignore:         append([]string(nil), arg.Ignore...),
+		Deprecated:     arg.Deprecated,
+		OriginalName:   arg.OriginalName,
+	}
+	typeDefID, err := encodePersistedObjectRef(cache, arg.TypeDef, "function arg type def")
+	if err != nil {
+		return nil, err
+	}
+	payload.TypeDefResultID = typeDefID
+	if arg.SourceMap.Valid && arg.SourceMap.Value.Self() != nil {
+		sourceMapID, err := encodePersistedObjectRef(cache, arg.SourceMap.Value, "function arg source map")
+		if err != nil {
+			return nil, err
+		}
+		payload.SourceMapResultID = sourceMapID
+	}
+	return payload, nil
+}
+
+func decodePersistedFunctionArg(ctx context.Context, dag *dagql.Server, arg *persistedFunctionArg) (*FunctionArg, error) {
+	if arg == nil {
+		return nil, nil
+	}
+	typeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, arg.TypeDefResultID, "function arg type def")
+	if err != nil {
+		return nil, err
+	}
+	decoded := &FunctionArg{
+		Name:           arg.Name,
+		Description:    arg.Description,
+		TypeDef:        typeDef,
+		DefaultValue:   arg.DefaultValue,
+		DefaultPath:    arg.DefaultPath,
+		DefaultAddress: arg.DefaultAddress,
+		Ignore:         append([]string(nil), arg.Ignore...),
+		Deprecated:     arg.Deprecated,
+		OriginalName:   arg.OriginalName,
+	}
+	if arg.SourceMapResultID != 0 {
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, arg.SourceMapResultID, "function arg source map")
+		if err != nil {
+			return nil, err
+		}
+		decoded.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return decoded, nil
+}
+
+func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*persistedFunction, error) {
+	if fn == nil {
+		return nil, nil
+	}
+	payload := &persistedFunction{
+		Name:               fn.Name,
+		Description:        fn.Description,
+		Deprecated:         fn.Deprecated,
+		CachePolicy:        fn.CachePolicy,
+		IsCheck:            fn.IsCheck,
+		IsGenerator:        fn.IsGenerator,
+		IsUp:               fn.IsUp,
+		ParentOriginalName: fn.ParentOriginalName,
+		OriginalName:       fn.OriginalName,
+	}
+	returnTypeID, err := encodePersistedObjectRef(cache, fn.ReturnType, "function return type")
+	if err != nil {
+		return nil, err
+	}
+	payload.ReturnTypeResultID = returnTypeID
+	if fn.SourceMap.Valid && fn.SourceMap.Value.Self() != nil {
+		sourceMapID, err := encodePersistedObjectRef(cache, fn.SourceMap.Value, "function source map")
+		if err != nil {
+			return nil, err
+		}
+		payload.SourceMapResultID = sourceMapID
+	}
+	if fn.CacheTTLSeconds.Valid {
+		ttl := int64(fn.CacheTTLSeconds.Value)
+		payload.CacheTTLSeconds = &ttl
+	}
+	payload.ArgResultIDs = make([]uint64, 0, len(fn.Args))
+	for _, arg := range fn.Args {
+		argID, err := encodePersistedObjectRef(cache, arg, "function arg")
+		if err != nil {
+			return nil, err
+		}
+		payload.ArgResultIDs = append(payload.ArgResultIDs, argID)
+	}
+	return payload, nil
+}
+
+func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persistedFunction) (*Function, error) {
+	if fn == nil {
+		return nil, nil
+	}
+	returnType, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, fn.ReturnTypeResultID, "function return type")
+	if err != nil {
+		return nil, err
+	}
+	decoded := &Function{
+		Name:               fn.Name,
+		Description:        fn.Description,
+		ReturnType:         returnType,
+		Deprecated:         fn.Deprecated,
+		CachePolicy:        fn.CachePolicy,
+		IsCheck:            fn.IsCheck,
+		IsGenerator:        fn.IsGenerator,
+		IsUp:               fn.IsUp,
+		ParentOriginalName: fn.ParentOriginalName,
+		OriginalName:       fn.OriginalName,
+	}
+	if fn.SourceMapResultID != 0 {
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, fn.SourceMapResultID, "function source map")
+		if err != nil {
+			return nil, err
+		}
+		decoded.SourceMap = dagql.NonNull(sourceMap)
+	}
+	if fn.CacheTTLSeconds != nil {
+		decoded.CacheTTLSeconds = dagql.NonNull(dagql.Int(*fn.CacheTTLSeconds))
+	}
+	decoded.Args = make(dagql.ObjectResultArray[*FunctionArg], 0, len(fn.ArgResultIDs))
+	for _, argID := range fn.ArgResultIDs {
+		arg, err := loadPersistedObjectResultByResultID[*FunctionArg](ctx, dag, argID, "function arg")
+		if err != nil {
+			return nil, err
+		}
+		decoded.Args = append(decoded.Args, arg)
+	}
+	return decoded, nil
+}
+
+func encodePersistedTypeDef(cache dagql.PersistedObjectCache, typeDef *TypeDef) (*persistedTypeDef, error) {
+	if typeDef == nil {
+		return nil, nil
+	}
+	payload := &persistedTypeDef{
+		Kind:     typeDef.Kind,
+		Optional: typeDef.Optional,
+	}
+	if typeDef.AsList.Valid {
+		resultID, err := encodePersistedObjectRef(cache, typeDef.AsList.Value, "typedef list")
+		if err != nil {
+			return nil, err
+		}
+		payload.AsListResultID = resultID
+	}
+	if typeDef.AsObject.Valid {
+		resultID, err := encodePersistedObjectRef(cache, typeDef.AsObject.Value, "typedef object")
+		if err != nil {
+			return nil, err
+		}
+		payload.AsObjectResultID = resultID
+	}
+	if typeDef.AsInterface.Valid {
+		resultID, err := encodePersistedObjectRef(cache, typeDef.AsInterface.Value, "typedef interface")
+		if err != nil {
+			return nil, err
+		}
+		payload.AsInterfaceResultID = resultID
+	}
+	if typeDef.AsInput.Valid {
+		resultID, err := encodePersistedObjectRef(cache, typeDef.AsInput.Value, "typedef input")
+		if err != nil {
+			return nil, err
+		}
+		payload.AsInputResultID = resultID
+	}
+	if typeDef.AsScalar.Valid {
+		resultID, err := encodePersistedObjectRef(cache, typeDef.AsScalar.Value, "typedef scalar")
+		if err != nil {
+			return nil, err
+		}
+		payload.AsScalarResultID = resultID
+	}
+	if typeDef.AsEnum.Valid {
+		resultID, err := encodePersistedObjectRef(cache, typeDef.AsEnum.Value, "typedef enum")
+		if err != nil {
+			return nil, err
+		}
+		payload.AsEnumResultID = resultID
+	}
+	return payload, nil
+}
+
+func decodePersistedTypeDef(ctx context.Context, dag *dagql.Server, typeDef *persistedTypeDef) (*TypeDef, error) {
+	if typeDef == nil {
+		return nil, nil
+	}
+	decoded := &TypeDef{
+		Kind:     typeDef.Kind,
+		Optional: typeDef.Optional,
+	}
+	if typeDef.AsListResultID != 0 {
+		list, err := loadPersistedObjectResultByResultID[*ListTypeDef](ctx, dag, typeDef.AsListResultID, "typedef list")
+		if err != nil {
+			return nil, err
+		}
+		decoded.AsList = dagql.NonNull(list)
+	}
+	if typeDef.AsObjectResultID != 0 {
+		obj, err := loadPersistedObjectResultByResultID[*ObjectTypeDef](ctx, dag, typeDef.AsObjectResultID, "typedef object")
+		if err != nil {
+			return nil, err
+		}
+		decoded.AsObject = dagql.NonNull(obj)
+	}
+	if typeDef.AsInterfaceResultID != 0 {
+		iface, err := loadPersistedObjectResultByResultID[*InterfaceTypeDef](ctx, dag, typeDef.AsInterfaceResultID, "typedef interface")
+		if err != nil {
+			return nil, err
+		}
+		decoded.AsInterface = dagql.NonNull(iface)
+	}
+	if typeDef.AsInputResultID != 0 {
+		input, err := loadPersistedObjectResultByResultID[*InputTypeDef](ctx, dag, typeDef.AsInputResultID, "typedef input")
+		if err != nil {
+			return nil, err
+		}
+		decoded.AsInput = dagql.NonNull(input)
+	}
+	if typeDef.AsScalarResultID != 0 {
+		scalar, err := loadPersistedObjectResultByResultID[*ScalarTypeDef](ctx, dag, typeDef.AsScalarResultID, "typedef scalar")
+		if err != nil {
+			return nil, err
+		}
+		decoded.AsScalar = dagql.NonNull(scalar)
+	}
+	if typeDef.AsEnumResultID != 0 {
+		enum, err := loadPersistedObjectResultByResultID[*EnumTypeDef](ctx, dag, typeDef.AsEnumResultID, "typedef enum")
+		if err != nil {
+			return nil, err
+		}
+		decoded.AsEnum = dagql.NonNull(enum)
+	}
+	return decoded.syncName(), nil
+}
+
+func encodePersistedObjectTypeDef(cache dagql.PersistedObjectCache, obj *ObjectTypeDef) (*persistedObjectTypeDef, error) {
+	if obj == nil {
+		return nil, nil
+	}
+	payload := &persistedObjectTypeDef{
+		Name:              obj.Name,
+		Description:       obj.Description,
+		Deprecated:        obj.Deprecated,
+		SourceModuleName:  obj.SourceModuleName,
+		OriginalName:      obj.OriginalName,
+		FieldResultIDs:    make([]uint64, 0, len(obj.Fields)),
+		FunctionResultIDs: make([]uint64, 0, len(obj.Functions)),
+	}
+	if obj.SourceMap.Valid && obj.SourceMap.Value.Self() != nil {
+		sourceMapID, err := encodePersistedObjectRef(cache, obj.SourceMap.Value, "object typedef source map")
+		if err != nil {
+			return nil, err
+		}
+		payload.SourceMapResultID = sourceMapID
+	}
+	for _, field := range obj.Fields {
+		fieldID, err := encodePersistedObjectRef(cache, field, "object typedef field")
+		if err != nil {
+			return nil, err
+		}
+		payload.FieldResultIDs = append(payload.FieldResultIDs, fieldID)
+	}
+	for _, fn := range obj.Functions {
+		fnID, err := encodePersistedObjectRef(cache, fn, "object typedef function")
+		if err != nil {
+			return nil, err
+		}
+		payload.FunctionResultIDs = append(payload.FunctionResultIDs, fnID)
+	}
+	if obj.Constructor.Valid {
+		constructorID, err := encodePersistedObjectRef(cache, obj.Constructor.Value, "object typedef constructor")
+		if err != nil {
+			return nil, err
+		}
+		payload.ConstructorResultID = constructorID
+	}
+	return payload, nil
+}
+
+func decodePersistedObjectTypeDef(ctx context.Context, dag *dagql.Server, obj *persistedObjectTypeDef) (*ObjectTypeDef, error) {
+	if obj == nil {
+		return nil, nil
+	}
+	decoded := &ObjectTypeDef{
+		Name:             obj.Name,
+		Description:      obj.Description,
+		Deprecated:       obj.Deprecated,
+		SourceModuleName: obj.SourceModuleName,
+		OriginalName:     obj.OriginalName,
+		Fields:           make(dagql.ObjectResultArray[*FieldTypeDef], 0, len(obj.FieldResultIDs)),
+		Functions:        make(dagql.ObjectResultArray[*Function], 0, len(obj.FunctionResultIDs)),
+	}
+	if obj.SourceMapResultID != 0 {
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, obj.SourceMapResultID, "object typedef source map")
+		if err != nil {
+			return nil, err
+		}
+		decoded.SourceMap = dagql.NonNull(sourceMap)
+	}
+	for _, fieldID := range obj.FieldResultIDs {
+		field, err := loadPersistedObjectResultByResultID[*FieldTypeDef](ctx, dag, fieldID, "object typedef field")
+		if err != nil {
+			return nil, err
+		}
+		decoded.Fields = append(decoded.Fields, field)
+	}
+	for _, fnID := range obj.FunctionResultIDs {
+		fn, err := loadPersistedObjectResultByResultID[*Function](ctx, dag, fnID, "object typedef function")
+		if err != nil {
+			return nil, err
+		}
+		decoded.Functions = append(decoded.Functions, fn)
+	}
+	if obj.ConstructorResultID != 0 {
+		constructor, err := loadPersistedObjectResultByResultID[*Function](ctx, dag, obj.ConstructorResultID, "object typedef constructor")
+		if err != nil {
+			return nil, err
+		}
+		decoded.Constructor = dagql.NonNull(constructor)
+	}
+	return decoded, nil
+}
+
+func encodePersistedFieldTypeDef(cache dagql.PersistedObjectCache, field *FieldTypeDef) (*persistedFieldTypeDef, error) {
+	if field == nil {
+		return nil, nil
+	}
+	payload := &persistedFieldTypeDef{
+		Name:         field.Name,
+		Description:  field.Description,
+		Deprecated:   field.Deprecated,
+		OriginalName: field.OriginalName,
+	}
+	typeDefID, err := encodePersistedObjectRef(cache, field.TypeDef, "field typedef type")
+	if err != nil {
+		return nil, err
+	}
+	payload.TypeDefResultID = typeDefID
+	if field.SourceMap.Valid && field.SourceMap.Value.Self() != nil {
+		sourceMapID, err := encodePersistedObjectRef(cache, field.SourceMap.Value, "field typedef source map")
+		if err != nil {
+			return nil, err
+		}
+		payload.SourceMapResultID = sourceMapID
+	}
+	return payload, nil
+}
+
+func decodePersistedFieldTypeDef(ctx context.Context, dag *dagql.Server, field *persistedFieldTypeDef) (*FieldTypeDef, error) {
+	if field == nil {
+		return nil, nil
+	}
+	typeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, field.TypeDefResultID, "field typedef type")
+	if err != nil {
+		return nil, err
+	}
+	decoded := &FieldTypeDef{
+		Name:         field.Name,
+		Description:  field.Description,
+		TypeDef:      typeDef,
+		Deprecated:   field.Deprecated,
+		OriginalName: field.OriginalName,
+	}
+	if field.SourceMapResultID != 0 {
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, field.SourceMapResultID, "field typedef source map")
+		if err != nil {
+			return nil, err
+		}
+		decoded.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return decoded, nil
+}
+
+func encodePersistedInterfaceTypeDef(cache dagql.PersistedObjectCache, iface *InterfaceTypeDef) (*persistedInterfaceTypeDef, error) {
+	if iface == nil {
+		return nil, nil
+	}
+	payload := &persistedInterfaceTypeDef{
+		Name:              iface.Name,
+		Description:       iface.Description,
+		SourceModuleName:  iface.SourceModuleName,
+		OriginalName:      iface.OriginalName,
+		FunctionResultIDs: make([]uint64, 0, len(iface.Functions)),
+	}
+	if iface.SourceMap.Valid && iface.SourceMap.Value.Self() != nil {
+		sourceMapID, err := encodePersistedObjectRef(cache, iface.SourceMap.Value, "interface typedef source map")
+		if err != nil {
+			return nil, err
+		}
+		payload.SourceMapResultID = sourceMapID
+	}
+	for _, fn := range iface.Functions {
+		fnID, err := encodePersistedObjectRef(cache, fn, "interface typedef function")
+		if err != nil {
+			return nil, err
+		}
+		payload.FunctionResultIDs = append(payload.FunctionResultIDs, fnID)
+	}
+	return payload, nil
+}
+
+//nolint:dupl // symmetric with decodePersistedEnumTypeDef; each typedef kind rehydrates its own fields
+func decodePersistedInterfaceTypeDef(ctx context.Context, dag *dagql.Server, iface *persistedInterfaceTypeDef) (*InterfaceTypeDef, error) {
+	if iface == nil {
+		return nil, nil
+	}
+	decoded := &InterfaceTypeDef{
+		Name:             iface.Name,
+		Description:      iface.Description,
+		SourceModuleName: iface.SourceModuleName,
+		OriginalName:     iface.OriginalName,
+		Functions:        make(dagql.ObjectResultArray[*Function], 0, len(iface.FunctionResultIDs)),
+	}
+	if iface.SourceMapResultID != 0 {
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, iface.SourceMapResultID, "interface typedef source map")
+		if err != nil {
+			return nil, err
+		}
+		decoded.SourceMap = dagql.NonNull(sourceMap)
+	}
+	for _, fnID := range iface.FunctionResultIDs {
+		fn, err := loadPersistedObjectResultByResultID[*Function](ctx, dag, fnID, "interface typedef function")
+		if err != nil {
+			return nil, err
+		}
+		decoded.Functions = append(decoded.Functions, fn)
+	}
+	return decoded, nil
+}
+
+func encodePersistedScalarTypeDef(typeDef *ScalarTypeDef) *persistedScalarTypeDef {
+	if typeDef == nil {
+		return nil
+	}
+	return &persistedScalarTypeDef{
+		Name:             typeDef.Name,
+		Description:      typeDef.Description,
+		OriginalName:     typeDef.OriginalName,
+		SourceModuleName: typeDef.SourceModuleName,
+	}
+}
+
+func decodePersistedScalarTypeDef(typeDef *persistedScalarTypeDef) *ScalarTypeDef {
+	if typeDef == nil {
+		return nil
+	}
+	return &ScalarTypeDef{
+		Name:             typeDef.Name,
+		Description:      typeDef.Description,
+		OriginalName:     typeDef.OriginalName,
+		SourceModuleName: typeDef.SourceModuleName,
+	}
+}
+
+func encodePersistedListTypeDef(cache dagql.PersistedObjectCache, typeDef *ListTypeDef) (*persistedListTypeDef, error) {
+	if typeDef == nil {
+		return nil, nil
+	}
+	elementTypeDefID, err := encodePersistedObjectRef(cache, typeDef.ElementTypeDef, "list typedef element type")
+	if err != nil {
+		return nil, err
+	}
+	return &persistedListTypeDef{
+		ElementTypeDefResultID: elementTypeDefID,
+	}, nil
+}
+
+func decodePersistedListTypeDef(ctx context.Context, dag *dagql.Server, typeDef *persistedListTypeDef) (*ListTypeDef, error) {
+	if typeDef == nil {
+		return nil, nil
+	}
+	elementTypeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, typeDef.ElementTypeDefResultID, "list typedef element type")
+	if err != nil {
+		return nil, err
+	}
+	return &ListTypeDef{
+		ElementTypeDef: elementTypeDef,
+	}, nil
+}
+
+func encodePersistedInputTypeDef(cache dagql.PersistedObjectCache, typeDef *InputTypeDef) (*persistedInputTypeDef, error) {
+	if typeDef == nil {
+		return nil, nil
+	}
+	payload := &persistedInputTypeDef{
+		Name:           typeDef.Name,
+		FieldResultIDs: make([]uint64, 0, len(typeDef.Fields)),
+	}
+	for _, field := range typeDef.Fields {
+		fieldID, err := encodePersistedObjectRef(cache, field, "input typedef field")
+		if err != nil {
+			return nil, err
+		}
+		payload.FieldResultIDs = append(payload.FieldResultIDs, fieldID)
+	}
+	return payload, nil
+}
+
+func decodePersistedInputTypeDef(ctx context.Context, dag *dagql.Server, typeDef *persistedInputTypeDef) (*InputTypeDef, error) {
+	if typeDef == nil {
+		return nil, nil
+	}
+	decoded := &InputTypeDef{
+		Name:   typeDef.Name,
+		Fields: make(dagql.ObjectResultArray[*FieldTypeDef], 0, len(typeDef.FieldResultIDs)),
+	}
+	for _, fieldID := range typeDef.FieldResultIDs {
+		field, err := loadPersistedObjectResultByResultID[*FieldTypeDef](ctx, dag, fieldID, "input typedef field")
+		if err != nil {
+			return nil, err
+		}
+		decoded.Fields = append(decoded.Fields, field)
+	}
+	return decoded, nil
+}
+
+func encodePersistedEnumTypeDef(cache dagql.PersistedObjectCache, enum *EnumTypeDef) (*persistedEnumTypeDef, error) {
+	if enum == nil {
+		return nil, nil
+	}
+	payload := &persistedEnumTypeDef{
+		Name:             enum.Name,
+		Description:      enum.Description,
+		SourceModuleName: enum.SourceModuleName,
+		OriginalName:     enum.OriginalName,
+		MemberResultIDs:  make([]uint64, 0, len(enum.Members)),
+	}
+	if enum.SourceMap.Valid && enum.SourceMap.Value.Self() != nil {
+		sourceMapID, err := encodePersistedObjectRef(cache, enum.SourceMap.Value, "enum typedef source map")
+		if err != nil {
+			return nil, err
+		}
+		payload.SourceMapResultID = sourceMapID
+	}
+	for _, member := range enum.Members {
+		memberID, err := encodePersistedObjectRef(cache, member, "enum typedef member")
+		if err != nil {
+			return nil, err
+		}
+		payload.MemberResultIDs = append(payload.MemberResultIDs, memberID)
+	}
+	return payload, nil
+}
+
+//nolint:dupl // symmetric with decodePersistedInterfaceTypeDef; each typedef kind rehydrates its own fields
+func decodePersistedEnumTypeDef(ctx context.Context, dag *dagql.Server, enum *persistedEnumTypeDef) (*EnumTypeDef, error) {
+	if enum == nil {
+		return nil, nil
+	}
+	decoded := &EnumTypeDef{
+		Name:             enum.Name,
+		Description:      enum.Description,
+		SourceModuleName: enum.SourceModuleName,
+		OriginalName:     enum.OriginalName,
+		Members:          make(dagql.ObjectResultArray[*EnumMemberTypeDef], 0, len(enum.MemberResultIDs)),
+	}
+	if enum.SourceMapResultID != 0 {
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, enum.SourceMapResultID, "enum typedef source map")
+		if err != nil {
+			return nil, err
+		}
+		decoded.SourceMap = dagql.NonNull(sourceMap)
+	}
+	for _, memberID := range enum.MemberResultIDs {
+		member, err := loadPersistedObjectResultByResultID[*EnumMemberTypeDef](ctx, dag, memberID, "enum typedef member")
+		if err != nil {
+			return nil, err
+		}
+		decoded.Members = append(decoded.Members, member)
+	}
+	return decoded, nil
+}
+
+func encodePersistedEnumMemberTypeDef(cache dagql.PersistedObjectCache, member *EnumMemberTypeDef) (*persistedEnumMemberTypeDef, error) {
+	if member == nil {
+		return nil, nil
+	}
+	payload := &persistedEnumMemberTypeDef{
+		Name:         member.Name,
+		Value:        member.Value,
+		Description:  member.Description,
+		Deprecated:   member.Deprecated,
+		OriginalName: member.OriginalName,
+	}
+	if member.SourceMap.Valid && member.SourceMap.Value.Self() != nil {
+		sourceMapID, err := encodePersistedObjectRef(cache, member.SourceMap.Value, "enum member source map")
+		if err != nil {
+			return nil, err
+		}
+		payload.SourceMapResultID = sourceMapID
+	}
+	return payload, nil
+}
+
+func decodePersistedEnumMemberTypeDef(ctx context.Context, dag *dagql.Server, member *persistedEnumMemberTypeDef) (*EnumMemberTypeDef, error) {
+	if member == nil {
+		return nil, nil
+	}
+	decoded := &EnumMemberTypeDef{
+		Name:         member.Name,
+		Value:        member.Value,
+		Description:  member.Description,
+		Deprecated:   member.Deprecated,
+		OriginalName: member.OriginalName,
+	}
+	if member.SourceMapResultID != 0 {
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, member.SourceMapResultID, "enum member source map")
+		if err != nil {
+			return nil, err
+		}
+		decoded.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return decoded, nil
 }

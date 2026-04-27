@@ -3285,83 +3285,62 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 		require.NoError(t, c.Close())
 	})
 
-	t.Run("secret by id leak", func(ctx context.Context, t *testctx.T) {
-		// check that modules can't access each other's global secret stores,
-		// even when we know the underlying IDs
+	t.Run("secret by id cross-session isolation", func(ctx context.Context, t *testctx.T) {
+		tmpdir := t.TempDir()
 
-		var logs safeBuffer
-		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+		initCmd := hostDaggerCommand(ctx, t, tmpdir, "init", "--source=.", "--name=test", "--sdk=go")
+		initOutput, err := initCmd.CombinedOutput()
+		require.NoError(t, err, string(initOutput))
 
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-		ctr = ctr.
-			WithWorkdir("/toplevel/leaker").
-			With(daggerExec("init", "--name=leaker", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", `package main
+		err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
 
 import (
 	"context"
-
-	"dagger/leaker/internal/dagger"
 )
 
-type Leaker struct {}
+type Test struct{}
 
-func (l *Leaker) Leak(ctx context.Context, target string) string {
-	secret, _ := dagger.Ref[*dagger.Secret](dag, dagger.ID(target)).Plaintext(ctx)
-	return secret
+func (*Test) MakeSecretID(ctx context.Context) (string, error) {
+	id, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
 }
-`,
-			)
-
-		ctr = ctr.
-			WithWorkdir("/toplevel").
-			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
-			With(daggerExec("install", "./leaker")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-
-	"dagger/toplevel/internal/dagger"
-)
-
-type Toplevel struct {}
-
-func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
-	secretID, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
-	if err != nil {
-		return err
-	}
-
-	// loading secret-by-id in the same module should succeed
-	plaintext, err := dagger.Ref[*dagger.Secret](dag, secretID).Plaintext(ctx)
-	if err != nil {
-		return err
-	}
-	if plaintext != "asdfasdf" {
-		return fmt.Errorf("expected \"asdfasdf\", but got %q", plaintext)
-	}
-
-	// but getting a leaker module to do this should fail
-	plaintext, err = dag.Leaker().Leak(ctx, string(secretID))
-	if err != nil {
-		return err
-	}
-	if plaintext != "" {
-		return fmt.Errorf("expected \"\", but got %q", plaintext)
-	}
-
-	return nil
-}
-`,
-			)
-
-		_, err := ctr.With(daggerQuery(`{attempt(uniq: %q)}`, identity.NewID())).Stdout(ctx)
+`), 0o644)
 		require.NoError(t, err)
-		require.NoError(t, c.Close())
+
+		c1 := connect(ctx, t)
+		require.NoError(t, c1.ModuleSource(tmpdir).AsModule().Serve(ctx))
+
+		res1, err := testutil.QueryWithClient[struct {
+			Test struct {
+				MakeSecretID string
+			}
+		}](c1, t, `{test{makeSecretId}}`, nil)
+		require.NoError(t, err)
+		secretID := res1.Test.MakeSecretID
+		require.NotEmpty(t, secretID)
+
+		sameSession, err := c1.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "asdfasdf", sameSession)
+
+		c2 := connect(ctx, t)
+		require.NoError(t, c2.ModuleSource(tmpdir).AsModule().Serve(ctx))
+
+		_, err = c2.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no bound resource for session")
+
+		require.NoError(t, c1.Close())
+
+		c3 := connect(ctx, t)
+		require.NoError(t, c3.ModuleSource(tmpdir).AsModule().Serve(ctx))
+
+		_, err = c3.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no bound resource for session")
 	})
 
 	t.Run("secrets cache normally", func(ctx context.Context, t *testctx.T) {
@@ -7633,6 +7612,31 @@ export class Test {
 
 `,
 		},
+		{
+			sdk: "dang",
+			source: `
+type Test {
+  @cache(ttl: "40s")
+  pub testTtl: String! {
+    UUID.v4
+  }
+
+  @cache(policy: FunctionCachePolicy.PerSession)
+  pub testCachePerSession: String! {
+    UUID.v4
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  pub testNeverCache: String! {
+    UUID.v4
+  }
+
+  pub testAlwaysCache: String! {
+    UUID.v4
+  }
+}
+`,
+		},
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			t.Run("always cache", func(ctx context.Context, t *testctx.T) {
@@ -7784,11 +7788,11 @@ func (m *Test) TestSetSecret() *dagger.Container {
 
 		out1a, err := modGen1.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`, "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		out1b, err := modGen1.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`, "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out1a, out1b)
 		require.NoError(t, c1.Close())
@@ -7798,11 +7802,11 @@ func (m *Test) TestSetSecret() *dagger.Container {
 
 		out2a, err := modGen2.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`, "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		out2b, err := modGen2.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`, "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out2a, out2b)
 
@@ -8007,6 +8011,44 @@ func (m *Test) Fn(
 	})
 }
 
+func (ModuleSuite) TestFunctionCacheControlReturnedContainer(ctx context.Context, t *testctx.T) {
+	const modSDK = "go"
+	const modSrc = `package main
+
+import (
+	"crypto/rand"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) TestAlwaysCacheContainer() *dagger.Container {
+	return dag.Container().
+		From("` + alpineImage + `").
+		WithExec([]string{"echo", rand.Text()})
+}
+`
+
+	c1 := connect(ctx, t)
+	modGen1 := modInit(t, c1, modSDK, modSrc)
+
+	out1, err := modGen1.
+		WithEnvVariable("CACHE_BUST", rand.Text()).
+		With(daggerCall("test-always-cache-container", "stdout")).Stdout(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c1.Close())
+
+	c2 := connect(ctx, t)
+	modGen2 := modInit(t, c2, modSDK, modSrc)
+
+	out2, err := modGen2.
+		WithEnvVariable("CACHE_BUST", rand.Text()).
+		With(daggerCall("test-always-cache-container", "stdout")).Stdout(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, out1, out2, "outputs should be equal since the function result is always cached")
+}
+
 func (ModuleSuite) TestNestedClientCreatedByModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -8090,6 +8132,12 @@ func daggerNonNestedExec(args ...string) dagger.WithContainerFunc {
 
 func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
 	args = append([]string{"run"}, args...)
+
+	return daggerNonNestedExec(args...)
+}
+
+func daggerNonNestedRunWithWorkspaceModules(args ...string) dagger.WithContainerFunc {
+	args = append([]string{"run", "--load-workspace-modules"}, args...)
 
 	return daggerNonNestedExec(args...)
 }
@@ -8206,7 +8254,7 @@ func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args .
 }
 
 // runs a dagger cli command directly on the host, rather than in an exec
-func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) { //nolint: unparam
+func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
 	t.Helper()
 	cmd := hostDaggerCommand(ctx, t, workdir, args...)
 	output, err := cmd.CombinedOutput()
@@ -8274,6 +8322,10 @@ func sdkSourceAt(dir, sdk, contents string) dagger.WithContainerFunc {
 }
 
 func sdkSourceFile(sdk string) string {
+	if strings.HasPrefix(sdk, "github.com/vito/dang/dagger-sdk") {
+		return "main.dang"
+	}
+
 	switch sdk {
 	case "go":
 		return "main.go"
@@ -8283,6 +8335,8 @@ func sdkSourceFile(sdk string) string {
 		return "src/index.ts"
 	case "java", "./sdk/java":
 		return "src/main/java/io/dagger/modules/test/Test.java"
+	case "dang":
+		return "main.dang"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}

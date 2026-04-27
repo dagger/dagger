@@ -251,6 +251,20 @@ defmodule Dagger.Function do
       client: function.client
     }
   end
+
+  @doc """
+  Returns the function with a flag indicating it returns a service for dagger up.
+  """
+  @spec with_up(t()) :: Dagger.Function.t()
+  def with_up(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("withUp")
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Function do

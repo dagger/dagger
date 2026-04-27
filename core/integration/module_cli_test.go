@@ -1288,10 +1288,9 @@ func (m *OtherObj) FnE() *dagger.Container {
 	t.Run("return core object", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions("fn-a")).Stdout(ctx)
 		require.NoError(t, err)
-		lines := strings.Split(out, "\n")
 		// just verify some of the container funcs are there, too many to be exhaustive
-		require.Contains(t, lines, "file                          Retrieves a file at the given path.")
-		require.Contains(t, lines, "as-tarball                    Package the container state as an OCI image, and return it as a tar archive")
+		require.Regexp(t, `(?m)^file\s+Retrieves a file at the given path\.$`, out)
+		require.Regexp(t, `(?m)^as-tarball\s+Package the container state as an OCI image, and return it as a tar archive$`, out)
 	})
 
 	t.Run("return primitive", func(ctx context.Context, t *testctx.T) {
@@ -1302,10 +1301,9 @@ func (m *OtherObj) FnE() *dagger.Container {
 	t.Run("alt casing", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions("fnA")).Stdout(ctx)
 		require.NoError(t, err)
-		lines := strings.Split(out, "\n")
 		// just verify some of the container funcs are there, too many to be exhaustive
-		require.Contains(t, lines, "file                          Retrieves a file at the given path.")
-		require.Contains(t, lines, "as-tarball                    Package the container state as an OCI image, and return it as a tar archive")
+		require.Regexp(t, `(?m)^file\s+Retrieves a file at the given path\.$`, out)
+		require.Regexp(t, `(?m)^as-tarball\s+Package the container state as an OCI image, and return it as a tar archive$`, out)
 	})
 
 	t.Run("return user interface", func(ctx context.Context, t *testctx.T) {

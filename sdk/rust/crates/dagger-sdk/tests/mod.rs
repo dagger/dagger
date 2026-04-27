@@ -1,5 +1,132 @@
-use dagger_sdk::connect;
+use dagger_sdk::{
+    connect, connect_opts,
+    core::{config, gql_client::GraphQlExtension, graphql_client::GraphQLError},
+    errors::DaggerError,
+    logging::StdLogger,
+};
 use pretty_assertions::assert_eq;
+use std::sync::Arc;
+
+#[tokio::test]
+async fn test_error_parsing() {
+    connect(|client| async move {
+        let alpine = client.container().from("alpine:3.16.2");
+
+        let err = alpine
+            .with_exec(vec!["/bin/sh", "-c", "echo test; exit 1"])
+            .stdout()
+            .await
+            .expect_err("should return an error");
+
+        let DaggerError::Query(GraphQLError::DomainError { fields, .. }) = err else {
+            panic!("should be a query error");
+        };
+
+        let GraphQlExtension::ExecError {
+            cmd,
+            exit_code,
+            stderr,
+            stdout,
+        } = fields
+            .first()
+            .expect("should be an exec error")
+            .extensions
+            .as_ref()
+            .expect("should have an extension")
+        else {
+            panic!("should be an exec error");
+        };
+
+        assert_eq!(
+            cmd,
+            &vec![
+                "/bin/sh".to_string(),
+                "-c".to_string(),
+                "echo test; exit 1".to_string()
+            ]
+        );
+        assert_eq!(exit_code, &1);
+        assert_eq!(stdout, &"test");
+        assert_eq!(stderr, &"");
+
+        Ok(())
+    })
+    .await
+    .expect("should succeed");
+}
+
+#[tokio::test]
+async fn test_execute_timeout() {
+    use std::time::SystemTime;
+
+    let config = config::Config::builder().execute_timeout_ms(600).build();
+    connect_opts(config, |client| async move {
+        let alpine = client.container().from("alpine:3.16.2");
+
+        alpine
+            .with_env_variable(
+                "CACHE_BUSTER",
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    .to_string(),
+            )
+            .with_exec(vec!["sleep", "1"])
+            .stdout()
+            .await?;
+
+        Ok(())
+    })
+    .await
+    .expect_err("should timeout");
+
+    let config = config::Config::builder().execute_timeout_ms(600000).build();
+    connect_opts(config, |client| async move {
+        let alpine = client.container().from("alpine:3.16.2");
+
+        alpine
+            .with_env_variable(
+                "CACHE_BUSTER",
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    .to_string(),
+            )
+            .with_exec(vec!["sleep", "1"])
+            .stdout()
+            .await?;
+
+        Ok(())
+    })
+    .await
+    .expect("should not timeout");
+}
+
+#[tokio::test]
+async fn test_default_config_connects() {
+    let mut cfg = config::Config::default();
+    assert_eq!(
+        cfg.timeout_ms,
+        10 * 1000,
+        "Config::default should keep 10s timeout"
+    );
+    cfg.logger = Some(Arc::new(StdLogger::default()));
+
+    connect_opts(cfg, |client| async move {
+        client
+            .container()
+            .from("alpine:3.16.2")
+            .with_exec(vec!["/bin/true"])
+            .stdout()
+            .await?;
+
+        Ok(())
+    })
+    .await
+    .expect("default config should connect with non-zero timeout");
+}
 
 #[tokio::test]
 async fn test_example_container() {

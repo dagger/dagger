@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.20.3",
+  "engineVersion": "v0.20.6",
   "sdk": {
     "source": "go"
   },
@@ -67,20 +67,36 @@
       "source": "toolchains/go-sdk-dev"
     },
     {
-      "name": "helm",
-      "source": "toolchains/helm-dev"
+      "name": "golang",
+      "source": "github.com/dagger/go@main",
+      "pin": "4985ec6b9752e9deac3d37276c0f8a33ceba30bf",
+      "customizations": [
+        {
+          "argument": "selectModule",
+          "default": "e2e/installers"
+        }
+      ]
     },
     {
-      "name": "installers",
-      "source": "toolchains/installers"
+      "name": "helm",
+      "source": "toolchains/helm-dev"
     },
     {
       "name": "java-sdk",
       "source": "toolchains/java-sdk-dev"
     },
     {
+      "name": "markdown-lint",
+      "source": "modules/markdownlint"
+    },
+    {
       "name": "php-sdk",
       "source": "toolchains/php-sdk-dev"
+    },
+    {
+      "name": "ps-analyzer",
+      "source": "github.com/dagger/PsScriptAnalyzer@main",
+      "pin": "d87a12883dccd495bee98da9d2c20eb44b6f608d"
     },
     {
       "name": "python-sdk",
@@ -118,6 +134,11 @@
           ]
         }
       ]
+    },
+    {
+      "name": "shellcheck",
+      "source": "github.com/dagger/shellcheck@main",
+      "pin": "34bcb268f4483fa31ea9e33b6a86aa7892144323"
     },
     {
       "name": "test-split",

@@ -70,10 +70,14 @@ public final class Connection {
   }
 
   public static Connection get(String workingDir) throws IOException {
+    return get(workingDir, false);
+  }
+
+  public static Connection get(String workingDir, boolean loadWorkspaceModules) throws IOException {
     Optional<Connection> connection = fromEnv();
     return connection.isPresent()
         ? connection.get()
-        : fromCLI(new CLIRunner(workingDir, new CLIDownloader()));
+        : fromCLI(new CLIRunner(workingDir, loadWorkspaceModules, new CLIDownloader()));
   }
 
   private static Connection getConnection(int port, String token, Optional<CLIRunner> runner) {

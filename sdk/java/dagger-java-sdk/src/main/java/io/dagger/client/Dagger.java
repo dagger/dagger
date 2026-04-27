@@ -32,7 +32,18 @@ public class Dagger {
    * @throws IOException
    */
   public static AutoCloseableClient connect() throws IOException {
-    return connect(System.getProperty("user.dir"));
+    return connect(System.getProperty("user.dir"), false);
+  }
+
+  /**
+   * Opens connection with a Dagger engine.
+   *
+   * @param loadWorkspaceModules whether to opt into loading workspace modules
+   * @return The Dagger API entrypoint
+   * @throws IOException
+   */
+  public static AutoCloseableClient connect(boolean loadWorkspaceModules) throws IOException {
+    return connect(System.getProperty("user.dir"), loadWorkspaceModules);
   }
 
   /**
@@ -43,6 +54,19 @@ public class Dagger {
    * @throws IOException
    */
   public static AutoCloseableClient connect(String workingDir) throws IOException {
-    return new AutoCloseableClient(Connection.get(workingDir));
+    return connect(workingDir, false);
+  }
+
+  /**
+   * Opens connection with a Dagger engine.
+   *
+   * @param workingDir the host working directory
+   * @param loadWorkspaceModules whether to opt into loading workspace modules
+   * @return The Dagger API entrypoint
+   * @throws IOException
+   */
+  public static AutoCloseableClient connect(String workingDir, boolean loadWorkspaceModules)
+      throws IOException {
+    return new AutoCloseableClient(Connection.get(workingDir, loadWorkspaceModules));
   }
 }

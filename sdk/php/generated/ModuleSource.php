@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
  */
-class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node
+class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
      * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation

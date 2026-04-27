@@ -69,6 +69,29 @@ defmodule Dagger.Changeset do
   end
 
   @doc """
+  Structured per-path diff statistics (kind and line counts) for this changeset.
+  """
+  @spec diff_stats(t()) :: {:ok, [Dagger.DiffStat.t()]} | {:error, term()}
+  def diff_stats(%__MODULE__{} = changeset) do
+    query_builder =
+      changeset.query_builder |> QB.select("diffStats") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(changeset.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.DiffStat{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("DiffStat"),
+           client: changeset.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Applies the diff represented by this changeset to a path on the host.
   """
   @spec export(t(), String.t()) :: {:ok, String.t()} | {:error, term()}

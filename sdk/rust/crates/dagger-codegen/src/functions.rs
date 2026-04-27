@@ -278,7 +278,7 @@ pub trait InputValuesExt {
     fn has_optionals(&self) -> bool;
 }
 
-impl<'a> InputValuesExt for Vec<&'a InputValue> {
+impl InputValuesExt for Vec<&InputValue> {
     fn has_optionals(&self) -> bool {
         !self
             .iter()

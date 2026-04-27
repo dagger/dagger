@@ -67,6 +67,9 @@ class EnumTypeDef extends Client\AbstractObject implements Client\IdAble, Node
         return (string)$this->queryLeaf($leafQueryBuilder, 'sourceModuleName');
     }
 
+    /**
+     * The members of the enum.
+     */
     public function values(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('values');

@@ -45,8 +45,9 @@ var mcpCmd = &cobra.Command{
 		ctx := cmd.Context()
 		cmd.SetContext(idtui.WithPrintTraceLink(ctx, true))
 		return withEngine(ctx, client.Params{
-			Stdin:  stdin,
-			Stdout: stdout,
+			Stdin:                stdin,
+			Stdout:               stdout,
+			LoadWorkspaceModules: true,
 		}, mcpStart)
 	},
 	Hidden: true,

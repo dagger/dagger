@@ -244,6 +244,149 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, modifiedPaths, "dir/added.txt")
 	})
 
+	t.Run("diffStats basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithNewFile("mod.txt", "one\nold\n").
+			WithNewFile("remove.txt", "gone\n")
+
+		newDir := c.Directory().
+			WithNewFile("mod.txt", "one\nnew\n").
+			WithNewFile("add.txt", "hello\n")
+
+		var diffStats []struct {
+			Path         string `json:"path"`
+			OldPath      string `json:"oldPath"`
+			Kind         string `json:"kind"`
+			AddedLines   int    `json:"addedLines"`
+			RemovedLines int    `json:"removedLines"`
+		}
+		err := c.QueryBuilder().
+			Select("loadChangesetFromID").
+			Arg("id", newDir.Changes(oldDir)).
+			Select("diffStats").
+			Bind(&diffStats).Execute(ctx)
+		require.NoError(t, err)
+
+		// Results are sorted by path.
+		require.Len(t, diffStats, 3)
+		require.Equal(t, "add.txt", diffStats[0].Path)
+		require.Equal(t, "ADDED", diffStats[0].Kind)
+		require.Equal(t, 1, diffStats[0].AddedLines)
+
+		require.Equal(t, "mod.txt", diffStats[1].Path)
+		require.Equal(t, "MODIFIED", diffStats[1].Kind)
+		require.Equal(t, 1, diffStats[1].AddedLines)
+		require.Equal(t, 1, diffStats[1].RemovedLines)
+
+		require.Equal(t, "remove.txt", diffStats[2].Path)
+		require.Equal(t, "REMOVED", diffStats[2].Kind)
+		require.Equal(t, 1, diffStats[2].RemovedLines)
+	})
+
+	t.Run("diffStats rename includes oldPath", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithNewFile("old.txt", "same\ncontent\n")
+
+		newDir := c.Directory().
+			WithNewFile("new.txt", "same\ncontent\n")
+
+		var diffStats []struct {
+			Path         string `json:"path"`
+			OldPath      string `json:"oldPath"`
+			Kind         string `json:"kind"`
+			AddedLines   int    `json:"addedLines"`
+			RemovedLines int    `json:"removedLines"`
+		}
+		err := c.QueryBuilder().
+			Select("loadChangesetFromID").
+			Arg("id", newDir.Changes(oldDir)).
+			Select("diffStats").
+			Bind(&diffStats).Execute(ctx)
+		require.NoError(t, err)
+
+		require.Len(t, diffStats, 1)
+		require.Equal(t, "new.txt", diffStats[0].Path)
+		require.Equal(t, "old.txt", diffStats[0].OldPath)
+		require.Equal(t, "RENAMED", diffStats[0].Kind)
+	})
+
+	t.Run("diffStats includes nested removed paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create a directory tree that will be entirely removed.
+		// This tests whether DiffStats emits entries for every nested
+		// file and subdirectory (current behavior via AllRemoved) or
+		// only the top-level collapsed directory.
+		oldDir := c.Directory().
+			WithNewFile("keep.txt", "stay\n").
+			WithNewFile("dir/file1.txt", "one\ntwo\n").
+			WithNewFile("dir/file2.txt", "three\n").
+			WithNewFile("dir/sub/deep.txt", "deep\n")
+
+		newDir := c.Directory().
+			WithNewFile("keep.txt", "stay\n")
+
+		var diffStats []struct {
+			Path         string `json:"path"`
+			Kind         string `json:"kind"`
+			AddedLines   int    `json:"addedLines"`
+			RemovedLines int    `json:"removedLines"`
+		}
+		err := c.QueryBuilder().
+			Select("loadChangesetFromID").
+			Arg("id", newDir.Changes(oldDir)).
+			Select("diffStats").
+			Bind(&diffStats).Execute(ctx)
+		require.NoError(t, err)
+
+		// Collect returned paths for inspection.
+		paths := make([]string, len(diffStats))
+		for i, s := range diffStats {
+			paths[i] = s.Path
+		}
+
+		// Current behavior: AllRemoved is uncollapsed, so DiffStats
+		// returns entries for the parent dir, the nested subdir, AND
+		// every removed file. This is intentional so that
+		// patchpreview.foldRemovedDirs can fold them at the rendering
+		// layer with summed line counts.
+		require.Contains(t, paths, "dir/")
+		require.Contains(t, paths, "dir/sub/")
+		require.Contains(t, paths, "dir/file1.txt")
+		require.Contains(t, paths, "dir/file2.txt")
+		require.Contains(t, paths, "dir/sub/deep.txt")
+
+		// All entries should be REMOVED.
+		for _, s := range diffStats {
+			if s.Path == "keep.txt" {
+				continue
+			}
+			require.Equal(t, "REMOVED", s.Kind, "path %s should be REMOVED", s.Path)
+		}
+
+		// Verify line counts on the files (dirs have 0 lines).
+		for _, s := range diffStats {
+			switch s.Path {
+			case "dir/file1.txt":
+				require.Equal(t, 2, s.RemovedLines)
+			case "dir/file2.txt":
+				require.Equal(t, 1, s.RemovedLines)
+			case "dir/sub/deep.txt":
+				require.Equal(t, 1, s.RemovedLines)
+			}
+		}
+
+		// By contrast, removedPaths (the public API) collapses nested
+		// entries under the parent directory.
+		removedPaths, err := newDir.Changes(oldDir).RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"dir/"}, removedPaths)
+	})
+
 	t.Run("layer basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1135,6 +1278,59 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		exists2, err := resultDir.Directory("new-empty").Entries(ctx)
 		require.NoError(t, err)
 		require.Empty(t, exists2) // Should be empty
+	})
+
+	t.Run("empty directories in subdirectory target", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		beforeDir := c.Directory().
+			WithNewDirectory("base").
+			Directory("/base")
+
+		afterDir := c.Directory().
+			WithNewDirectory("base").
+			Directory("/base").
+			WithNewDirectory("new-empty")
+
+		changes := afterDir.Changes(beforeDir)
+
+		resultDir := c.Directory().
+			WithNewDirectory("subdir").
+			Directory("/subdir").
+			WithChanges(changes)
+
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "new-empty/")
+
+		parentEntries, err := resultDir.Directory("..").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"subdir/"}, parentEntries)
+	})
+
+	t.Run("file replaced by empty directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		beforeDir := c.Directory().
+			WithNewFile("node", "file")
+
+		afterDir := c.Directory().
+			WithNewDirectory("node")
+
+		changes := afterDir.Changes(beforeDir)
+
+		baseDir := c.Directory().
+			WithNewFile("node", "different base file")
+
+		resultDir := baseDir.WithChanges(changes)
+
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "node/")
+
+		nodeEntries, err := resultDir.Directory("node").Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, nodeEntries)
 	})
 }
 

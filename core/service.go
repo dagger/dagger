@@ -12,33 +12,30 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	bkcontainer "github.com/dagger/dagger/internal/buildkit/frontend/gateway/container"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	bkmounts "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/mounts"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/worker"
+	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -49,20 +46,16 @@ const (
 )
 
 type Service struct {
-	// The span that created the service, which future runs of the service will
-	// link to.
-	Creator trace.SpanContext
-
 	// A custom hostname set by the user.
 	CustomHostname string
 
 	// Container is the container to run as a service.
-	Container                     *Container
+	Container                     dagql.ObjectResult[*Container]
 	Args                          []string
 	ExperimentalPrivilegedNesting bool
 	InsecureRootCapabilities      bool
 	NoInit                        bool
-	ExecMD                        *buildkit.ExecutionMetadata
+	ExecMD                        *engineutil.ExecutionMetadata
 	ExecMeta                      *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
@@ -72,9 +65,6 @@ type Service struct {
 
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
-
-	// Refs to release when shutting down the service.
-	Releasers []bkcache.Ref
 }
 
 func (*Service) Type() *ast.Type {
@@ -93,16 +83,17 @@ func (*Service) TypeDescription() string {
 func (svc *Service) Clone() *Service {
 	cp := *svc
 	cp.Args = slices.Clone(cp.Args)
-	if cp.Container != nil {
-		cp.Container = cp.Container.Clone()
-	}
 	cp.TunnelPorts = slices.Clone(cp.TunnelPorts)
 	cp.HostSockets = slices.Clone(cp.HostSockets)
 	return &cp
 }
 
-func (svc *Service) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (svc *Service) Evaluate(ctx context.Context) error {
+	return nil
+}
+
+func (svc *Service) Sync(ctx context.Context) error {
+	return svc.Evaluate(ctx)
 }
 
 func (svc *Service) WithHostname(hostname string) *Service {
@@ -111,7 +102,7 @@ func (svc *Service) WithHostname(hostname string) *Service {
 	return svc
 }
 
-func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
+func (svc *Service) Hostname(ctx context.Context, dig digest.Digest) (string, error) {
 	if svc.CustomHostname != "" {
 		return svc.CustomHostname, nil
 	}
@@ -127,21 +118,24 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		upstream, err := svcs.Get(ctx, id, true)
+		upstream, err := svcs.Get(ctx, dig, true)
 		if err != nil {
 			return "", err
 		}
 
 		return upstream.Host, nil
-	case svc.Container != nil, // container=>container
+	case svc.Container.Self() != nil, // container=>container
 		len(svc.HostSockets) > 0: // container=>host
-		return network.HostHash(id.Digest()), nil
+		if dig == "" {
+			return "", errors.New("service digest is empty")
+		}
+		return network.HostHash(dig), nil
 	default:
 		return "", errors.New("unknown service type")
 	}
 }
 
-func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
+func (svc *Service) Ports(ctx context.Context, dig digest.Digest) ([]Port, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -153,20 +147,20 @@ func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 		if err != nil {
 			return nil, err
 		}
-		running, err := svcs.Get(ctx, id, svc.TunnelUpstream.Self() != nil)
+		running, err := svcs.Get(ctx, dig, svc.TunnelUpstream.Self() != nil)
 		if err != nil {
 			return nil, err
 		}
 
 		return running.Ports, nil
-	case svc.Container != nil:
-		return svc.Container.Ports, nil
+	case svc.Container.Self() != nil:
+		return svc.Container.Self().Ports, nil
 	default:
 		return nil, errors.New("unknown service type")
 	}
 }
 
-func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme string) (string, error) {
+func (svc *Service) Endpoint(ctx context.Context, dig digest.Digest, port int, scheme string) (string, error) {
 	var host string
 
 	query, err := CurrentQuery(ctx)
@@ -175,25 +169,25 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 	}
 
 	switch {
-	case svc.Container != nil:
-		host, err = svc.Hostname(ctx, id)
+	case svc.Container.Self() != nil:
+		host, err = svc.Hostname(ctx, dig)
 		if err != nil {
 			return "", err
 		}
 
 		if port == 0 {
-			if len(svc.Container.Ports) == 0 {
+			if len(svc.Container.Self().Ports) == 0 {
 				return "", fmt.Errorf("no ports exposed")
 			}
 
-			port = svc.Container.Ports[0].Port
+			port = svc.Container.Self().Ports[0].Port
 		}
 	case svc.TunnelUpstream.Self() != nil:
 		svcs, err := query.Services(ctx)
 		if err != nil {
 			return "", err
 		}
-		tunnel, err := svcs.Get(ctx, id, true)
+		tunnel, err := svcs.Get(ctx, dig, true)
 		if err != nil {
 			return "", err
 		}
@@ -208,19 +202,15 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 			port = tunnel.Ports[0].Port
 		}
 	case len(svc.HostSockets) > 0:
-		host, err = svc.Hostname(ctx, id)
+		host, err = svc.Hostname(ctx, dig)
 		if err != nil {
 			return "", err
 		}
 
 		if port == 0 {
-			socketStore, err := query.Sockets(ctx)
+			portForward, err := svc.HostSockets[0].PortForward(ctx)
 			if err != nil {
-				return "", fmt.Errorf("failed to get socket store: %w", err)
-			}
-			portForward, ok := socketStore.GetSocketPortForward(svc.HostSockets[0].IDDigest)
-			if !ok {
-				return "", fmt.Errorf("socket not found: %s", svc.HostSockets[0].IDDigest)
+				return "", fmt.Errorf("service endpoint: socket port forward: %w", err)
 			}
 			port = portForward.FrontendOrBackendPort()
 		}
@@ -236,7 +226,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 	return endpoint, nil
 }
 
-func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
+func (svc *Service) Stop(ctx context.Context, dig digest.Digest, kill bool) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -245,20 +235,7 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 	if err != nil {
 		return err
 	}
-	_, err = svcs.Start(ctx, id, svc, svc.TunnelUpstream.Self() != nil)
-	return err
-}
-
-func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return err
-	}
-	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream.Self() != nil)
+	return svcs.Stop(ctx, dig, kill, svc.TunnelUpstream.Self() != nil)
 }
 
 type ServiceIO struct {
@@ -295,27 +272,33 @@ func (io *ServiceIO) Close() error {
 
 func (svc *Service) Start(
 	ctx context.Context,
-	id *call.ID,
-	sio *ServiceIO,
-) (running *RunningService, err error) {
+	running *RunningService,
+	dig digest.Digest,
+	opts ServiceStartOpts,
+) error {
 	switch {
-	case svc.Container != nil:
-		return svc.startContainer(ctx, id, sio)
+	case svc.Container.Self() != nil:
+		return svc.startContainer(ctx, running, dig, opts)
 	case svc.TunnelUpstream.Self() != nil:
-		return svc.startTunnel(ctx)
+		return svc.startTunnel(ctx, running, opts)
 	case len(svc.HostSockets) > 0:
-		return svc.startReverseTunnel(ctx, id)
+		return svc.startReverseTunnel(ctx, running, dig, opts)
 	default:
-		return nil, fmt.Errorf("unknown service type")
+		return fmt.Errorf("unknown service type")
 	}
 }
 
 //nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
-	id *call.ID,
-	sio *ServiceIO,
-) (running *RunningService, rerr error) {
+	running *RunningService,
+	dig digest.Digest,
+	opts ServiceStartOpts,
+) (rerr error) {
+	if running == nil {
+		return fmt.Errorf("running service is nil")
+	}
+
 	var cleanup cleanups.Cleanups
 	defer func() {
 		if rerr != nil {
@@ -323,21 +306,42 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	dig := id.Digest()
+	slog := slog.With("service", dig.String())
 
-	slog := slog.With("service", dig.String(), "id", id.DisplaySelf())
-
-	host, err := svc.Hostname(ctx, id)
+	host, err := svc.Hostname(ctx, dig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	ctr := svc.Container
+	cacheCtr, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	srv := dagql.CurrentDagqlServer(ctx)
+	if srv == nil {
+		return fmt.Errorf("failed to get dagql server")
+	}
+	attachedAny, err := cacheCtr.AttachResult(ctx, clientMetadata.SessionID, srv, svc.Container)
+	if err != nil {
+		return fmt.Errorf("attach service container: %w", err)
+	}
+	attached, ok := attachedAny.(dagql.ObjectResult[*Container])
+	if !ok {
+		return fmt.Errorf("attach service container: expected %T, got %T", svc.Container, attachedAny)
+	}
+	svc.Container = attached
+	if err := cacheCtr.Evaluate(ctx, svc.Container); err != nil {
+		return err
+	}
+	ctr := svc.Container.Self()
+	if ctr == nil {
+		return fmt.Errorf("service container is nil")
+	}
 
 	execMD := svc.ExecMD
 	if execMD == nil {
@@ -346,37 +350,41 @@ func (svc *Service) startContainer(
 			NoInit:                        svc.NoInit,
 		}, nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
+	} else {
+		cloned := *execMD
+		execMD = &cloned
 	}
-
-	// Services support having refs re-mounted at runtime, so when the service
-	// stops, we need to release them all.
-	cleanup.Add("release late-bound refs", func() error {
-		var errs error
-		for _, ref := range svc.Releasers {
-			errs = errors.Join(errs, ref.Release(context.WithoutCancel(ctx)))
-		}
-		return errs
-	})
+	if opts.LogTargetCallDigest != "" {
+		execMD.LogTargetCallDigest = opts.LogTargetCallDigest
+	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	detachDeps, _, err := svcs.StartBindings(ctx, ctr.Services)
 	if err != nil {
-		return nil, fmt.Errorf("start dependent services: %w", err)
+		return fmt.Errorf("start dependent services: %w", err)
 	}
 	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
-		domain = network.ModuleDomain(mod.ResultID, clientMetadata.SessionID)
+		implementationScopedMod, err := ImplementationScopedModule(ctx, mod)
+		if err != nil {
+			return fmt.Errorf("failed to get implementation-scoped module: %w", err)
+		}
+		modDigest, err := implementationScopedMod.ContentPreferredDigest(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get implementation-scoped module digest: %w", err)
+		}
+		domain = network.ModuleDomain(modDigest, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
 			// it, to support services returned by modules and re-configured with
@@ -390,89 +398,36 @@ func (svc *Service) startContainer(
 
 	fullHost := host + "." + domain
 
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get engine client: %w", err)
 	}
-	cache := query.BuildkitCache()
-	session := query.BuildkitSession()
-
-	pbmounts, states, _, refs, _, err := getAllContainerMounts(ctx, ctr)
-	if err != nil {
-		return nil, fmt.Errorf("could not get mounts: %w", err)
-	}
-
-	inputs := make([]bkcache.ImmutableRef, len(states))
-	eg, egctx := errgroup.WithContext(ctx)
-	for _, pbmount := range pbmounts {
-		if pbmount.Input == pb.Empty {
-			continue
-		}
-
-		if ref := refs[pbmount.Input]; ref != nil {
-			inputs[pbmount.Input] = ref
-			continue
-		}
-
-		st := states[pbmount.Input]
-		def, err := st.Marshal(egctx)
-		if err != nil {
-			return nil, err
-		}
-		if def == nil {
-			continue
-		}
-
-		eg.Go(func() error {
-			res, err := bk.Solve(egctx, bkgw.SolveRequest{
-				Evaluate:   true,
-				Definition: def.ToPB(),
-			})
-			if err != nil {
-				return err
-			}
-			ref, err := res.Ref.Result(egctx)
-			if err != nil {
-				return err
-			}
-			if ref != nil {
-				inputs[pbmount.Input] = ref.Sys().(*worker.WorkerRef).ImmutableRef
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	workerRefs := make([]*worker.WorkerRef, 0, len(inputs))
-	for _, ref := range inputs {
-		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
-	}
+	cache := query.SnapshotManager()
 
 	svcID := identity.NewID()
 
-	name := fmt.Sprintf("container %s", svcID)
-	mm := bkmounts.NewMountManager(name, cache, session)
-
-	bkSessionGroup := bksession.NewGroup(bk.ID())
-	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, "", pbmounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
-		return cache.New(ctx, ref, bkSessionGroup)
-	}, runtime.GOOS)
+	releaseLockedCaches, err := lockMountedCaches(ctx, ctr.Mounts)
 	if err != nil {
-		return nil, fmt.Errorf("prepare mounts: %w", err)
+		return fmt.Errorf("lock mounted caches: %w", err)
+	}
+	cleanup.Add("release locked cache volume access", func() error {
+		releaseLockedCaches()
+		return nil
+	})
+
+	p, err := prepareMounts(ctx, ctr, nil, nil, nil, cache, "", runtime.GOOS, func(_ string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+		return cache.New(ctx, ref)
+	})
+	if err != nil {
+		return fmt.Errorf("prepare mounts: %w", err)
 	}
 
-	for _, active := range slices.Backward(p.Actives) { // call in LIFO order
-		cleanup.Add("release active ref", func() error {
-			return active.Ref.Release(context.WithoutCancel(ctx))
-		})
-	}
-	for _, o := range p.OutputRefs {
-		cleanup.Add("release output ref", func() error {
-			return o.Ref.Release(context.WithoutCancel(ctx))
-		})
-	}
+	cleanup.Add("release active refs", func() error {
+		return p.releaseActives(context.WithoutCancel(ctx))
+	})
+	cleanup.Add("release output refs", func() error {
+		return p.releaseOutputRefs(context.WithoutCancel(ctx))
+	})
 
 	meta := svc.ExecMeta
 	if meta == nil {
@@ -483,13 +438,18 @@ func (svc *Service) startContainer(
 			NoInit:                        svc.NoInit,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		meta.Hostname = fullHost
 	}
-	if sio != nil && sio.Interactive {
+	if opts.IO != nil && opts.IO.Interactive {
 		meta.Tty = true
 		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
+	}
+
+	attrs := []attribute.KeyValue{}
+	if opts.LogTargetCallDigest != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.UIResumeOutputAttr, opts.LogTargetCallDigest.String()))
 	}
 
 	ctx, span := Tracer(ctx).Start(
@@ -497,8 +457,7 @@ func (svc *Service) startContainer(
 		ctx,
 		// Match naming scheme of normal exec span.
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
-		// This span continues the original withExec, by linking to it.
-		telemetry.Resume(trace.ContextWithSpanContext(ctx, svc.Creator)),
+		trace.WithAttributes(attrs...),
 	)
 	defer func() {
 		if rerr != nil {
@@ -520,38 +479,37 @@ func (svc *Service) startContainer(
 	defer errBufWC.Close()
 
 	var stdinReader io.ReadCloser
-	if sio != nil && sio.Stdin != nil {
-		stdinReader = sio.Stdin
+	if opts.IO != nil && opts.IO.Stdin != nil {
+		stdinReader = opts.IO.Stdin
 	}
 	stdoutWriters := multiWriteCloser{outBufWC}
-	if sio != nil && sio.Stdout != nil {
-		stdoutWriters = append(stdoutWriters, sio.Stdout)
+	if opts.IO != nil && opts.IO.Stdout != nil {
+		stdoutWriters = append(stdoutWriters, opts.IO.Stdout)
 	}
 	stderrWriters := multiWriteCloser{errBufWC}
-	if sio != nil && sio.Stderr != nil {
-		stderrWriters = append(stderrWriters, sio.Stderr)
+	if opts.IO != nil && opts.IO.Stderr != nil {
+		stderrWriters = append(stderrWriters, opts.IO.Stderr)
 	}
 
 	started := make(chan struct{})
 
 	signal := make(chan syscall.Signal)
 	var resize <-chan executor.WinSize
-	if sio != nil {
-		resize = convertResizeChannel(ctx, sio.ResizeCh)
+	if opts.IO != nil {
+		resize = convertResizeChannel(ctx, opts.IO.ResizeCh)
 	}
 
-	secretEnv, err := loadSecretEnv(ctx, bksession.NewGroup(bk.ID()), bk.SessionManager, ctr.secretEnvs())
+	secretEnv, err := ctr.secretEnvValues(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
-	worker := bk.Worker.ExecWorker(svc.Creator, *execMD)
-	exec := worker.Executor()
+	worker := bk.Worker.ExecWorker(span.SpanContext(), *execMD)
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {
-		_, err := exec.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
+		_, err := worker.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
 			Meta:   *meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriters,
@@ -563,23 +521,23 @@ func (svc *Service) startContainer(
 	}()
 	select {
 	case <-ctx.Done():
-		return nil, context.Cause(ctx)
+		return context.Cause(ctx)
 	case <-started:
 	}
 
 	checked := make(chan error, 1)
 
 	if ctr.Config.Healthcheck != nil {
-		dockerHealthcheck, err := newDockerHealthcheck(exec, svcID, ctr, svc.Creator)
+		dockerHealthcheck, err := newDockerHealthcheck(worker, svcID, ctr, span.SpanContext())
 		if err != nil {
-			return nil, fmt.Errorf("failed to setup docker healthcheck: %w", err)
+			return fmt.Errorf("failed to setup docker healthcheck: %w", err)
 		}
 		go func() {
 			checked <- dockerHealthcheck.Check(ctx)
 		}()
 	} else {
 		go func() {
-			checked <- newPortHealth(bk, buildkit.NewDirectNS(svcID), fullHost, ctr.Ports).Check(ctx)
+			checked <- newPortHealth(bk, engineutil.NewDirectNS(svcID), fullHost, ctr.Ports).Check(ctx)
 		}()
 	}
 
@@ -588,7 +546,7 @@ func (svc *Service) startContainer(
 	var exitErr error
 	go func() {
 		defer func() {
-			sio.Close()
+			opts.IO.Close()
 			close(exited)
 		}()
 
@@ -619,7 +577,7 @@ func (svc *Service) startContainer(
 			slog.Info("service exited in signal")
 		case signal <- sig:
 			// close stdio, else we hang waiting on i/o piping goroutines
-			sio.Close()
+			opts.IO.Close()
 		}
 		return nil
 	}
@@ -672,7 +630,7 @@ func (svc *Service) startContainer(
 			stderrWriter = sio.Stderr
 			resizeCh = convertResizeChannel(ctx, sio.ResizeCh)
 		}
-		err = exec.Exec(ctx, svcID, executor.ProcessInfo{
+		err = worker.Exec(ctx, svcID, executor.ProcessInfo{
 			Meta:   meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
@@ -685,33 +643,32 @@ func (svc *Service) startContainer(
 	select {
 	case err := <-checked:
 		if err != nil {
-			return nil, fmt.Errorf("health check errored: %w", err)
+			return fmt.Errorf("health check errored: %w", err)
 		}
 
-		return &RunningService{
-			Host:        fullHost,
-			Ports:       ctr.Ports,
-			Stop:        stopSvc,
-			Wait:        waitSvc,
-			Exec:        execSvc,
-			ContainerID: svcID,
-		}, nil
+		running.Host = fullHost
+		running.Ports = ctr.Ports
+		running.Stop = stopSvc
+		running.Wait = waitSvc
+		running.Exec = execSvc
+		running.ContainerID = svcID
+		return nil
 	case <-exited:
 		if exitErr != nil {
 			var gwErr *gwpb.ExitError
 			if errors.As(exitErr, &gwErr) {
 				// Create ExecError with available service information
-				return nil, &buildkit.ExecError{
-					Err:      telemetry.TrackOrigin(gwErr, svc.Creator),
+				return &ExecError{
+					Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
 					Cmd:      meta.Args,
 					ExitCode: int(gwErr.ExitCode),
 					Stdout:   stdoutBuf.String(),
 					Stderr:   stderrBuf.String(),
 				}
 			}
-			return nil, exitErr
+			return exitErr
 		}
-		return nil, fmt.Errorf("service exited before healthcheck")
+		return fmt.Errorf("service exited before healthcheck")
 	}
 }
 
@@ -785,7 +742,10 @@ func (mwc multiWriteCloser) Close() error {
 	return errs
 }
 
-func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, rerr error) {
+func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ ServiceStartOpts) (rerr error) {
+	if running == nil {
+		return fmt.Errorf("running service is nil")
+	}
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 	defer func() {
 		if rerr != nil {
@@ -795,34 +755,34 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
+		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 
-	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self(), svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
+	upstream, err := svcs.StartResult(svcCtx, svc.TunnelUpstream, svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
 	if err != nil {
-		return nil, fmt.Errorf("start upstream: %w", err)
+		return fmt.Errorf("start upstream: %w", err)
 	}
+	const bindHost = "0.0.0.0"
+	const dialHost = "127.0.0.1"
+	stopErr := errors.New("service stop called")
+	upstreamExitedErr := errors.New("upstream exited")
 
 	closers := make([]func() error, len(svc.TunnelPorts))
 	ports := make([]Port, len(svc.TunnelPorts))
-
-	// TODO: make these configurable?
-	const bindHost = "0.0.0.0"
-	const dialHost = "127.0.0.1"
 
 	for i, forward := range svc.TunnelPorts {
 		var frontend int
@@ -838,17 +798,17 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 			fmt.Sprintf("%s:%d", upstream.Host, forward.Backend),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("host to container: %w", err)
+			return fmt.Errorf("host to container: %w", err)
 		}
 
 		_, portStr, err := net.SplitHostPort(res.GetAddr())
 		if err != nil {
-			return nil, fmt.Errorf("split host port: %w", err)
+			return fmt.Errorf("split host port: %w", err)
 		}
 
 		frontend, err = strconv.Atoi(portStr)
 		if err != nil {
-			return nil, fmt.Errorf("parse port: %w", err)
+			return fmt.Errorf("parse port: %w", err)
 		}
 
 		desc := fmt.Sprintf("tunnel %s:%d -> %s:%d", bindHost, frontend, upstream.Host, forward.Backend)
@@ -862,60 +822,89 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 		closers[i] = closeListener
 	}
 
-	return &RunningService{
-		Host:  dialHost,
-		Ports: ports,
-		Stop: func(_ context.Context, _ bool) error {
-			stop(errors.New("service stop called"))
+	var shutdownOnce sync.Once
+	var shutdownErr error
+	shutdown := func(cause error) error {
+		shutdownOnce.Do(func() {
+			stop(cause)
 			svcs.Detach(svcCtx, upstream)
 			var errs []error
 			for _, closeListener := range closers {
 				errs = append(errs, closeListener())
 			}
-			return errors.Join(errs...)
-		},
-	}, nil
+			shutdownErr = errors.Join(errs...)
+		})
+		return shutdownErr
+	}
+
+	go func() {
+		if upstream.Wait == nil {
+			return
+		}
+		err := upstream.Wait(context.Background())
+		if err != nil {
+			_ = shutdown(fmt.Errorf("%w: %w", upstreamExitedErr, err))
+			return
+		}
+		_ = shutdown(upstreamExitedErr)
+	}()
+
+	running.Host = dialHost
+	running.Ports = ports
+	running.Stop = func(_ context.Context, _ bool) error {
+		return shutdown(stopErr)
+	}
+	running.Wait = func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-svcCtx.Done():
+			if errors.Is(context.Cause(svcCtx), stopErr) {
+				return nil
+			}
+			return context.Cause(svcCtx)
+		}
+	}
+	return nil
 }
 
-func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (running *RunningService, rerr error) {
-	host, err := svc.Hostname(ctx, id)
+func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningService, dig digest.Digest, _ ServiceStartOpts) (rerr error) {
+	if running == nil {
+		return fmt.Errorf("running service is nil")
+	}
+	host, err := svc.Hostname(ctx, dig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	fullHost := host + "." + network.SessionDomain(clientMetadata.SessionID)
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	sockStore, err := query.Sockets(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get socket store: %w", err)
+		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 
 	// we don't need a full container, just a CNI provisioned network namespace to listen in
 	netNS, err := bk.NewNetworkNamespace(ctx, fullHost)
 	if err != nil {
-		return nil, fmt.Errorf("new network namespace: %w", err)
+		return fmt.Errorf("new network namespace: %w", err)
 	}
 
 	checkPorts := []Port{}
 	descs := make([]string, 0, len(svc.HostSockets))
 	for _, sock := range svc.HostSockets {
-		port, ok := sockStore.GetSocketPortForward(sock.IDDigest)
-		if !ok {
-			return nil, fmt.Errorf("socket not found: %s", sock.IDDigest)
+		port, err := sock.PortForward(ctx)
+		if err != nil {
+			return fmt.Errorf("service reverse tunnel: socket port forward: %w", err)
 		}
 		desc := fmt.Sprintf("tunnel %s %d -> %d", port.Protocol, port.FrontendOrBackendPort(), port.Backend)
 		descs = append(descs, desc)
@@ -926,9 +915,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		})
 	}
 
-	ctx, span := Tracer(ctx).Start(ctx, strings.Join(descs, ", "), trace.WithLinks(
-		trace.Link{SpanContext: svc.Creator},
-	))
+	ctx, span := Tracer(ctx).Start(ctx, strings.Join(descs, ", "))
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -938,14 +925,15 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}()
 
 	tunnel := &c2hTunnel{
-		bk:        bk,
-		ns:        netNS,
-		socks:     svc.HostSockets,
-		sockStore: sockStore,
+		bk:    bk,
+		ns:    netNS,
+		socks: svc.HostSockets,
 	}
 
 	// NB: decouple from the incoming ctx cancel and add our own
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
+	stopErr := errors.New("service stop called")
+	proxyExitedErr := errors.New("proxy exited")
 
 	exited := make(chan struct{}, 1)
 	var exitErr error
@@ -965,33 +953,52 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 			netNS.Release(svcCtx)
 			err = fmt.Errorf("health check errored: %w", err)
 			stop(err)
-			return nil, err
+			return err
 		}
 
-		return &RunningService{
-			Host:  fullHost,
-			Ports: checkPorts,
-			Stop: func(context.Context, bool) (rerr error) {
-				defer telemetry.EndWithCause(span, &rerr)
-				stop(errors.New("service stop called"))
+		var shutdownOnce sync.Once
+		var shutdownErr error
+		shutdown := func(cause error, ignoreExitErr bool) error {
+			shutdownOnce.Do(func() {
+				stop(cause)
 				waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
 				defer waitCancel()
 				netNS.Release(waitCtx)
 				select {
 				case <-waitCtx.Done():
-					return fmt.Errorf("timeout waiting for tunnel to stop: %w", waitCtx.Err())
+					shutdownErr = fmt.Errorf("timeout waiting for tunnel to stop: %w", waitCtx.Err())
 				case <-exited:
-					return nil
+					if !ignoreExitErr && exitErr != nil {
+						shutdownErr = exitErr
+					}
 				}
-			},
-		}, nil
+				telemetryErr := shutdownErr
+				telemetry.EndWithCause(span, &telemetryErr)
+			})
+			return shutdownErr
+		}
+
+		running.Host = fullHost
+		running.Ports = checkPorts
+		running.Stop = func(context.Context, bool) (rerr error) {
+			return shutdown(stopErr, true)
+		}
+		running.Wait = func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			case <-exited:
+				return shutdown(proxyExitedErr, false)
+			}
+		}
+		return nil
 	case <-exited:
 		netNS.Release(svcCtx)
 		stop(errors.New("proxy exited"))
 		if exitErr != nil {
-			return nil, fmt.Errorf("proxy exited: %w", exitErr)
+			return fmt.Errorf("proxy exited: %w", exitErr)
 		}
-		return nil, fmt.Errorf("proxy exited before healthcheck")
+		return fmt.Errorf("proxy exited before healthcheck")
 	}
 }
 
@@ -1007,40 +1014,62 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 // before the new mutable copy is remounted.
 func (svc *Service) runAndSnapshotChanges(
 	ctx context.Context,
-	containerID string,
+	running *RunningService,
 	target string,
-	source *Directory,
+	source dagql.ObjectResult[*Directory],
 	f func() error,
 ) (res dagql.ObjectResult[*Directory], hasChanges bool, rerr error) {
+	if running == nil {
+		return res, false, fmt.Errorf("running service is nil")
+	}
+	running.workspaceMu.Lock()
+	defer running.workspaceMu.Unlock()
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return res, false, err
+	}
+	if err := cache.Evaluate(ctx, source); err != nil {
+		return res, false, fmt.Errorf("failed to evaluate source directory: %w", err)
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return res, false, err
 	}
 
-	ref, err := getRefOrEvaluate(ctx, source)
+	ref, err := source.Self().Snapshot.GetOrEval(ctx, source.Result)
 	if err != nil {
 		return res, false, fmt.Errorf("failed to get ref for source directory: %w", err)
 	}
-
-	bk, err := query.Buildkit(ctx)
+	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
 	if err != nil {
-		return res, false, fmt.Errorf("failed to get buildkit client: %w", err)
+		return res, false, fmt.Errorf("failed to get path for source directory: %w", err)
 	}
 
-	mutableRef, err := query.BuildkitCache().New(ctx, ref, nil,
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return res, false, fmt.Errorf("failed to get engine client: %w", err)
+	}
+
+	mutableRef, err := query.SnapshotManager().New(ctx, ref,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("mcp remount"))
 	if err != nil {
 		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
 	}
-	defer mutableRef.Release(ctx)
+	defer func() {
+		if mutableRef != nil {
+			_ = mutableRef.Release(ctx)
+		}
+	}()
 
-	err = MountRef(ctx, mutableRef, nil, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
+	err = MountRef(ctx, mutableRef, func(root string, _ *mount.Mount) (rerr error) {
+		resolvedDir, err := containerdfs.RootPath(root, sourceDirPath)
 		if err != nil {
 			return err
 		}
-		if err := mountIntoContainer(ctx, containerID, resolvedDir, target); err != nil {
+		if err := mountIntoContainer(ctx, running.ContainerID, resolvedDir, target); err != nil {
 			return fmt.Errorf("remount container: %w", err)
 		}
 		return f()
@@ -1049,7 +1078,7 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, err
 	}
 
-	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.ID())
+	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
 	if err != nil {
 		return res, false, fmt.Errorf("failed to check for changes: %w", err)
 	}
@@ -1063,17 +1092,14 @@ func (svc *Service) runAndSnapshotChanges(
 	if err != nil {
 		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
 	}
-
-	// release unconditionally here, since we Clone it using the __immutableRef
-	// API call below
-	defer immutableRef.Release(ctx)
+	mutableRef = nil
 
 	// Create a new mutable ref to leave the service with, to prevent further
 	// changes from mutating the now-immutable ref
 	//
 	// NOTE: there's technically a race here, for sure, but we can least prevent
 	// mutation outside of the bounds of this func
-	abandonedRef, err := query.BuildkitCache().New(ctx, immutableRef, nil,
+	abandonedRef, err := query.SnapshotManager().New(ctx, immutableRef,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("mcp remount"))
 	if err != nil {
@@ -1081,52 +1107,50 @@ func (svc *Service) runAndSnapshotChanges(
 	}
 
 	defer func() {
-		if rerr != nil {
+		if rerr != nil && abandonedRef != nil {
 			// Only release this on error, otherwise leave it to be released when the
 			// service cleans up.
-			abandonedRef.Release(ctx)
+			_ = abandonedRef.Release(ctx)
 		}
 	}()
 
 	// Mount the mutable ref of their changes over the target path.
-	err = MountRef(ctx, abandonedRef, nil, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
+	err = MountRef(ctx, abandonedRef, func(root string, _ *mount.Mount) (rerr error) {
+		resolvedDir, err := containerdfs.RootPath(root, sourceDirPath)
 		if err != nil {
 			return err
 		}
-		return mountIntoContainer(ctx, containerID, resolvedDir, target)
+		return mountIntoContainer(ctx, running.ContainerID, resolvedDir, target)
 	})
 	if err != nil {
 		return res, false, fmt.Errorf("failed to remount mutable copy: %w", err)
 	}
 
-	// Keep track of the mutable ref so we can release it when the service stops.
-	svc.Releasers = append(svc.Releasers, abandonedRef)
+	running.TrackRef(abandonedRef)
+	abandonedRef = nil
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
+		_ = immutableRef.Release(ctx)
 		return res, false, fmt.Errorf("get dagql server: %w", err)
 	}
 
-	var snapshot dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &snapshot, dagql.Selector{
-		Field: "__immutableRef",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "ref",
-				Value: dagql.String(immutableRef.ID()),
-			},
-		},
-	}); err != nil {
+	snapshot := &Directory{
+		Platform: source.Self().Platform,
+		Services: slices.Clone(source.Self().Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	snapshot.Dir.setValue(sourceDirPath)
+	snapshot.Snapshot.setValue(immutableRef)
+
+	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
+	if err != nil {
+		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
 		return res, false, err
 	}
 
-	// ensure we actually run the __immutableRef DagOp that does a Clone()
-	if _, err := snapshot.Self().Evaluate(ctx); err != nil {
-		return res, false, fmt.Errorf("failed to evaluate snapshot: %w", err)
-	}
-
-	return snapshot, true, nil
+	return inst, true, nil
 }
 
 func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath string) error {
@@ -1135,7 +1159,7 @@ func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath
 		return fmt.Errorf("open tree %s: %w", sourcePath, err)
 	}
 	defer unix.Close(fdMnt)
-	return buildkit.GetGlobalNamespaceWorkerPool().RunInNamespaces(ctx, containerID, []specs.LinuxNamespace{
+	return engineutil.GetGlobalNamespaceWorkerPool().RunInNamespaces(ctx, containerID, []specs.LinuxNamespace{
 		{Type: specs.MountNamespace},
 	}, func() error {
 		// Create target directory if it doesn't exist

@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A content-addressed service providing TCP connectivity.
  */
-class Service extends Client\AbstractObject implements Client\IdAble, Node
+class Service extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
      * Retrieves an endpoint that clients can use to reach this container.

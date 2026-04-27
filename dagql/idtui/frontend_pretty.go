@@ -1023,6 +1023,9 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
+			if fe.logs.flushResolvedLogsForSpan(id) {
+				fe.updateSpanTreesForLogs(id)
+			}
 			if sr, ok := fe.spanTrees[id]; ok {
 				sr.Update()
 			}
@@ -1033,6 +1036,33 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 		fe.Update()
 	})
 	return nil
+}
+
+func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
+	if !spanID.IsValid() {
+		return
+	}
+	if sr, ok := fe.spanTrees[spanID]; ok {
+		sr.Update()
+	}
+	if _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
+		for id := spanID; ; {
+			span := fe.db.Spans.Map[id]
+			if span == nil || span.Boundary || span.Encapsulate || span.Internal {
+				break
+			}
+			if span.RollUpLogs {
+				if sr, ok := fe.spanTrees[id]; ok {
+					sr.Update()
+				}
+				break
+			}
+			if !span.ParentID.IsValid() {
+				break
+			}
+			id = span.ParentID
+		}
+	}
 }
 
 func (fe *frontendPretty) Shutdown(ctx context.Context) error {
@@ -1056,31 +1086,8 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 	copy(logsCopy, logs)
 	fe.dispatch(func() {
 		for _, log := range logsCopy {
-			if log.SpanID().IsValid() {
-				spanID := dagui.SpanID{SpanID: log.SpanID()}
-				if sr, ok := fe.spanTrees[spanID]; ok {
-					sr.Update()
-				}
-				// Also mark roll-up parent spans dirty
-				if _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
-					for id := spanID; ; {
-						span := fe.db.Spans.Map[id]
-						if span == nil || span.Boundary || span.Encapsulate || span.Internal {
-							break
-						}
-						if span.RollUpLogs {
-							if sr, ok := fe.spanTrees[id]; ok {
-								sr.Update()
-							}
-							break
-						}
-						if !span.ParentID.IsValid() {
-							break
-						}
-						id = span.ParentID
-					}
-				}
-			}
+			spanID := fe.db.LogTargetSpanID(log)
+			fe.updateSpanTreesForLogs(spanID)
 		}
 		fe.db.LogExporter().Export(context.Background(), logsCopy)
 		fe.logs.Export(context.Background(), logsCopy)
@@ -1263,7 +1270,7 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 
 // Render implements tuist.Component. It produces the full TUI output as lines.
 func (fe *frontendPretty) Render(ctx tuist.Context) {
-	if fe.backgrounded || fe.quitting {
+	if !fe.finalRender && (fe.backgrounded || fe.quitting) {
 		return
 	}
 
@@ -2685,15 +2692,14 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 	enc.SetIndent("", "  ")
 	enc.Encode(span.Snapshot())
 	vt.WriteMarkdown([]byte("```json\n" + strings.TrimSpace(buf.String()) + "\n```"))
-	if len(span.EffectIDs) > 0 {
-		vt.WriteMarkdown([]byte("\n\n## Installed effects\n\n"))
-		for _, id := range span.EffectIDs {
-			vt.WriteMarkdown([]byte("- " + id + "\n"))
-			if spans := fe.db.EffectSpans[id]; spans != nil {
-				for _, effect := range spans.Order {
-					vt.WriteMarkdown([]byte("  - " + effect.Name + "\n"))
-				}
-			}
+	var continuations []*dagui.Span
+	for continuation := range span.EffectSpans {
+		continuations = append(continuations, continuation)
+	}
+	if len(continuations) > 0 {
+		vt.WriteMarkdown([]byte("\n\n## Causal continuations\n\n"))
+		for _, effect := range continuations {
+			vt.WriteMarkdown([]byte("- " + effect.Name + "\n"))
 		}
 	}
 	if len(span.RevealedSpans.Order) > 0 {
@@ -3332,14 +3338,15 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			}
 		}
 
-		if eof && log.SpanID().IsValid() {
-			l.SawEOF[dagui.SpanID{SpanID: log.SpanID()}] = true
+		spanID := l.DB.LogTargetSpanID(log)
+		if !spanID.IsValid() {
+			continue
+		}
+		if eof && spanID.IsValid() {
+			l.SawEOF[spanID] = true
 			continue
 		}
 
-		targetID := log.SpanID()
-
-		spanID := dagui.SpanID{SpanID: targetID}
 		pw, rolledUp := l.findRollUpSpan(spanID)
 		if rolledUp && !verbose && !global {
 			var context string
@@ -3347,7 +3354,7 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if ok {
 				context = l.extractSpanContext(span)
 			} else {
-				context = targetID.String()
+				context = spanID.String()
 			}
 			pw.Prefix = l.Output.String("["+context+"]").Foreground(termenv.ANSICyan).String() + " "
 			fmt.Fprint(pw, log.Body().AsString())
@@ -3361,6 +3368,15 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 	}
 	return nil
+}
+
+func (l *prettyLogs) flushResolvedLogsForSpan(spanID dagui.SpanID) bool {
+	logs := l.DB.DrainResolvedLogs(spanID)
+	if len(logs) == 0 {
+		return false
+	}
+	_ = l.Export(context.Background(), logs)
+	return true
 }
 
 // extractSpanContext extracts a meaningful context label from a span

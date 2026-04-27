@@ -14,7 +14,7 @@ type PartialFailure struct{}
 func (m *PartialFailure) Healthy() *dagger.Service {
 	return dag.Container().
 		From("nginx:alpine").
-		WithExposedPort(8080).
+		WithExposedPort(80).
 		AsService()
 }
 

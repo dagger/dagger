@@ -34,7 +34,7 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic = string(anthropic.ModelClaudeSonnet4_5)
+	modelDefaultAnthropic = anthropic.ModelClaudeSonnet4_5
 	modelDefaultGoogle    = "gemini-2.5-flash"
 	modelDefaultOpenAI    = "gpt-4.1"
 	modelDefaultMeta      = "llama-3.2"
@@ -582,7 +582,15 @@ func (llm *LLM) WithPrompt(
 
 // WithPromptFile is like WithPrompt but reads the prompt from a file
 func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
-	contents, err := file.Contents(ctx, nil, nil)
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fileRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, file)
+	if err != nil {
+		return nil, err
+	}
+	contents, err := file.Contents(ctx, fileRes, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -663,18 +671,22 @@ func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 	return reply, nil
 }
 
-func (llm *LLM) messagesWithSystemPrompt() []*ModelMessage {
+func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*ModelMessage, error) {
 	var systemPrompt string
 	if !llm.disableDefaultSystemPrompt {
-		systemPrompt = llm.mcp.DefaultSystemPrompt()
+		var err error
+		systemPrompt, err = llm.mcp.DefaultSystemPrompt(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if systemPrompt != "" {
 		return append([]*ModelMessage{{
 			Role:    "system",
 			Content: systemPrompt,
-		}}, llm.messages...)
+		}}, llm.messages...), nil
 	}
-	return llm.messages
+	return llm.messages, nil
 }
 
 type ModelFinishedError struct {
@@ -719,7 +731,7 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
 		return err
 	}
@@ -776,7 +788,7 @@ func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -820,7 +832,10 @@ func (llm *LLM) loop(ctx context.Context) error {
 			return err
 		}
 
-		messagesToSend := llm.messagesWithSystemPrompt()
+		messagesToSend, err := llm.messagesWithSystemPrompt(ctx)
+		if err != nil {
+			return err
+		}
 
 		var newMessages []*ModelMessage
 		for _, msg := range slices.Backward(messagesToSend) {
@@ -964,7 +979,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		return fmt.Errorf("failed to figure out module while deciding if llm is allowed: %w", err)
 	}
 
-	src := module.Source.Value.Self()
+	src := module.Self().ContextSource.Value.Self()
 	if src.Kind != ModuleSourceKindGit {
 		return nil
 	}
@@ -981,7 +996,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		}
 	}
 
-	bk, err := query.Buildkit(ctx)
+	bk, err := query.Engine(ctx)
 	if err != nil {
 		return fmt.Errorf("llm sync failed fetching bk client for llm allow prompting: %w", err)
 	}

@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A comparison between two directories representing changes that can be applied.
  */
-class Changeset extends Client\AbstractObject implements Client\IdAble, Node
+class Changeset extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
      * Files and directories that were added in the newer directory.
@@ -47,6 +47,15 @@ class Changeset extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('before');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Structured per-path diff statistics (kind and line counts) for this changeset.
+     */
+    public function diffStats(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('diffStats');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'diffStats');
     }
 
     /**

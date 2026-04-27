@@ -86,7 +86,7 @@
 
     
     <p>        class
-    <strong>Changeset</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+    <strong>Changeset</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Exportable.html"><abbr title="Dagger\Exportable">Exportable</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>, <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
 </p>
 
         
@@ -183,6 +183,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_diffStats">diffStats</a>()
+        
+                                            <p><p>Structured per-path diff statistics (kind and line counts) for this changeset.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     string
                 </div>
                 <div class="col-md-8">
@@ -243,7 +253,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_sync">sync</a>()
@@ -495,8 +505,40 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_export">
+                    <h3 id="method_diffStats">
         <div class="location">at line 55</div>
+        <code>                    array
+    <strong>diffStats</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Structured per-path diff statistics (kind and line counts) for this changeset.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_export">
+        <div class="location">at line 64</div>
         <code>                    string
     <strong>export</strong>(string $path)
         </code>
@@ -538,7 +580,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 65</div>
+        <div class="location">at line 74</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -570,7 +612,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_isEmpty">
-        <div class="location">at line 74</div>
+        <div class="location">at line 83</div>
         <code>                    bool
     <strong>isEmpty</strong>()
         </code>
@@ -602,7 +644,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_layer">
-        <div class="location">at line 83</div>
+        <div class="location">at line 92</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>layer</strong>()
         </code>
@@ -634,7 +676,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_modifiedPaths">
-        <div class="location">at line 92</div>
+        <div class="location">at line 101</div>
         <code>                    array
     <strong>modifiedPaths</strong>()
         </code>
@@ -666,7 +708,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_removedPaths">
-        <div class="location">at line 101</div>
+        <div class="location">at line 110</div>
         <code>                    array
     <strong>removedPaths</strong>()
         </code>
@@ -698,8 +740,8 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 110</div>
-        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+        <div class="location">at line 119</div>
+        <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
     <strong>sync</strong>()
         </code>
     </h3>
@@ -716,7 +758,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
+            <td><a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -730,7 +772,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withChangeset">
-        <div class="location">at line 122</div>
+        <div class="location">at line 131</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>withChangeset</strong>(<a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a> $changes, <abbr title="Dagger\Dagger\ChangesetMergeConflict">ChangesetMergeConflict</abbr>|null $onConflict = null)
         </code>
@@ -777,7 +819,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withChangesets">
-        <div class="location">at line 139</div>
+        <div class="location">at line 148</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>withChangesets</strong>(array $changes, <abbr title="Dagger\Dagger\ChangesetsMergeConflict">ChangesetsMergeConflict</abbr>|null $onConflict = null)
         </code>

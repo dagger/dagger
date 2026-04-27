@@ -146,7 +146,7 @@
                 <div class="col-md-8">
                     <a href="#method_changes">changes</a>(<abbr title="Dagger\Dagger\ChangesetsMergeConflict">ChangesetsMergeConflict</abbr>|null $onConflict = null)
         
-                                            <p><p>The combined changes from the generators execution</p></p>                </div>
+                                            <p><p>The combined changes from the last run of the generators</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -166,7 +166,7 @@
                 <div class="col-md-8">
                     <a href="#method_isEmpty">isEmpty</a>()
         
-                                            <p><p>Whether the generated changeset is empty or not</p></p>                </div>
+                                            <p><p>Whether the generated changeset from the last run is empty or not</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -296,7 +296,7 @@
             
 
         <div class="method-description">
-                            <p><p>The combined changes from the generators execution</p></p>                <p><p>If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.</p>
+                            <p><p>The combined changes from the last run of the generators</p></p>                <p><p>If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.</p>
 <p>Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.</p></p>        
         </div>
         <div class="tags">
@@ -371,7 +371,7 @@
             
 
         <div class="method-description">
-                            <p><p>Whether the generated changeset is empty or not</p></p>                        
+                            <p><p>Whether the generated changeset from the last run is empty or not</p></p>                        
         </div>
         <div class="tags">
             

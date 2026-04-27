@@ -11,7 +11,7 @@ Expected stderr:
 
 ✔ parsing command line arguments X.Xs
 
-✔ typescript: Typescript! X.Xs
+$ typescript: Typescript! X.Xs CACHED
 ✘ .failLogNative: Void X.Xs ERROR
 ┃ im doing a lot of work
 ┃ and then failing

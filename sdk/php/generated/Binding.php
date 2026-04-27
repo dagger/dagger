@@ -74,6 +74,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type DiffStat
+     */
+    public function asDiffStat(): DiffStat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asDiffStat');
+        return new \Dagger\DiffStat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Directory
      */
     public function asDirectory(): Directory
@@ -143,6 +152,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGitRepository');
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type HTTPState
+     */
+    public function asHTTPState(): HTTPState
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asHTTPState');
+        return new \Dagger\HTTPState($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

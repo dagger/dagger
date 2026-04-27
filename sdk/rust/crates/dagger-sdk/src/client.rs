@@ -18,7 +18,9 @@ where
     F: FnOnce(DaggerConn) -> Fut + 'static,
     Fut: futures::Future<Output = eyre::Result<()>> + 'static,
 {
-    let cfg = Config::new(None, None, None, None, Some(Arc::new(StdLogger::default())));
+    let cfg = Config::builder()
+        .logger(Arc::new(StdLogger::default()))
+        .build();
 
     connect_opts(cfg, dagger).await
 }
@@ -38,7 +40,7 @@ where
     let client = Query {
         proc: proc.clone(),
         selection: query(),
-        graphql_client: Arc::new(DefaultGraphQLClient::new(&conn)),
+        graphql_client: Arc::new(DefaultGraphQLClient::new(&conn, &cfg)),
     };
 
     dagger(client).await.map_err(ConnectError::DaggerContext)?;

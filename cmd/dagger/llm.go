@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -362,20 +363,17 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 
 	dirDiff := s.afterFS.Changes(s.beforeFS)
 
-	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
+	entries, err := idtui.PreviewPatch(s.plumbingCtx, s.dag, dirDiff)
 	if err != nil {
 		return err
 	}
 
-	if preview != nil {
+	if len(entries) > 0 {
 		s.frontend.SetSidebarContent(idtui.SidebarSection{
 			Title: "Changes",
 			ContentFunc: func(width int) string {
 				var buf strings.Builder
-				out := idtui.NewOutput(&buf)
-				if err := preview.Summarize(out, width); err != nil {
-					return "ERROR: " + err.Error()
-				}
+				patchpreview.Summarize(idtui.NewOutput(&buf), entries, width)
 				return buf.String()
 			},
 			KeyMap: []key.Binding{
@@ -800,24 +798,21 @@ func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
 	dirDiff := withChanges.Changes(currentFS)
 
 	// Add an LLM prompt as a cue to the model so it knows what files changed.
-	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
+	entries, err := idtui.PreviewPatch(s.plumbingCtx, s.dag, dirDiff)
 	if err != nil {
 		return err
 	}
 
-	if preview != nil {
-		var buf strings.Builder
-		out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
-		if err := preview.Summarize(out, 80); err != nil {
-			slog.Warn("failed to summarize uploaded changes", "error", err)
-		} else {
-			newLLM = newLLM.WithPrompt(
-				fmt.Sprintf("I have made the following changes:\n\n```\n%s\n```", buf.String()),
-			)
-		}
+	if len(entries) > 0 {
+		const summaryWidth = 80
+
+		newLLM = newLLM.WithPrompt(
+			fmt.Sprintf("I have made the following changes:\n\n```\n%s\n```",
+				patchpreview.SummarizeString(entries, summaryWidth)),
+		)
 
 		// Show colorized summary to user.
-		_ = preview.Summarize(idtui.NewOutput(stdio.Stdout), 80)
+		patchpreview.Summarize(idtui.NewOutput(stdio.Stdout), entries, summaryWidth)
 	}
 
 	s.updateLLMAndAgentVar(newLLM)

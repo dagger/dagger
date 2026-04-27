@@ -7,11 +7,11 @@
     <parent>
         <groupId>io.dagger</groupId>
         <artifactId>dagger-sdk-parent</artifactId>
-        <version>0.20.3</version>
+        <version>0.20.6</version>
     </parent>
 
     <artifactId>dagger-java-sdk</artifactId>
-    <version>0.20.3</version>
+    <version>0.20.6</version>
     <description>Java SDK for Dagger.io</description>
 
     <dependencyManagement>
@@ -19,7 +19,7 @@
             <dependency>
                 <groupId>io.opentelemetry</groupId>
                 <artifactId>opentelemetry-bom</artifactId>
-                <version>1.60.1</version>
+                <version>1.61.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

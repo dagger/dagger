@@ -9,6 +9,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -39,12 +40,7 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	CauseSpans   map[string]SpanSet
-	EffectSpans  map[string]SpanSet
 	CreatorSpans map[string]SpanSet
-
-	CompletedEffects map[string]bool
-	FailedEffects    map[string]bool
 
 	// Map of call digest -> metric name -> data points
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
@@ -61,6 +57,15 @@ type DB struct {
 	// UpdatedSnapshots so that we can know whether we need to send them when we
 	// finally see them
 	seenSpans map[SpanID]struct{}
+
+	pendingResumeOutputs map[resumeOutputKey]SpanSet
+	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
+	resolvedLogsBySpan   map[SpanID][]sdklog.Record
+}
+
+type resumeOutputKey struct {
+	TraceID TraceID
+	Output  string
 }
 
 func NewDB() *DB {
@@ -77,15 +82,14 @@ func NewDB() *DB {
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
 
-		CauseSpans:   make(map[string]SpanSet),
-		EffectSpans:  make(map[string]SpanSet),
 		CreatorSpans: make(map[string]SpanSet),
-
-		CompletedEffects: make(map[string]bool),
-		FailedEffects:    make(map[string]bool),
 
 		updatedSpans: NewSpanSet(),
 		seenSpans:    make(map[SpanID]struct{}),
+
+		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
+		pendingLogsByOutput:  make(map[resumeOutputKey][]sdklog.Record),
+		resolvedLogsBySpan:   make(map[SpanID][]sdklog.Record),
 	}
 }
 
@@ -247,7 +251,11 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// eof; ignore
 			continue
 		}
-		spanID := SpanID{log.SpanID()}
+		spanID, pendingKey := db.routeLog(log)
+		if pendingKey != nil {
+			db.pendingLogsByOutput[*pendingKey] = append(db.pendingLogsByOutput[*pendingKey], log)
+			continue
+		}
 		if spanID == db.PrimarySpan {
 			// buffer raw logs so we can replay them later
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
@@ -390,6 +398,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	// create or update the span itself
 	spanData := db.findOrAllocSpan(spanID)
 	spanData.Received = true
+	spanData.TraceID = TraceID{span.SpanContext().TraceID()}
 	spanData.ParentID.SpanID = span.Parent().SpanID()
 	spanData.Name = span.Name()
 	spanData.StartTime = span.StartTime()
@@ -713,38 +722,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		span.PropagateStatusToParentsAndLinks()
 	}
 
-	if span.EffectID != "" {
-		if db.EffectSpans[span.EffectID] == nil {
-			db.EffectSpans[span.EffectID] = NewSpanSet()
-		}
-		db.EffectSpans[span.EffectID].Add(span)
-		if span.IsFailed() {
-			db.FailedEffects[span.EffectID] = true
-		}
-		causes := db.CauseSpans[span.EffectID]
-		if causes == nil {
-			causes = NewSpanSet()
-			db.CauseSpans[span.EffectID] = causes
-		}
-		span.causesViaAttrs = causes
-	}
-
-	for _, id := range span.EffectIDs {
-		effects := db.EffectSpans[id]
-		if effects == nil {
-			effects = NewSpanSet()
-			db.EffectSpans[id] = effects
-		}
-		if span.effectsViaAttrs == nil {
-			span.effectsViaAttrs = make(map[string]SpanSet)
-		}
-		span.effectsViaAttrs[id] = effects
-	}
-
-	for _, dig := range span.EffectsCompleted {
-		db.CompletedEffects[dig] = true
-	}
-
 	if span.CallDigest != "" && span.Output != "" {
 		// parent -> child
 		if db.Outputs[span.CallDigest] == nil {
@@ -763,14 +740,12 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.CreatorSpans[span.Output] = NewSpanSet()
 		}
 		db.CreatorSpans[span.Output].Add(span)
+
+		db.resolvePendingResumeOutputs(span.Output, span.TraceID)
+		db.resolvePendingLogs(span.Output, span.TraceID)
 	}
 
-	for _, id := range span.EffectIDs {
-		if db.CauseSpans[id] == nil {
-			db.CauseSpans[id] = NewSpanSet()
-		}
-		db.CauseSpans[id].Add(span)
-	}
+	db.maybeResumeOutput(span)
 
 	// finally, install the span if we don't already have it
 	//
@@ -781,6 +756,137 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// FIXME: refactor? can we keep some sort of flat map of spans an append
 	// children to them instead of having the single big ordered list?
 	db.Spans.Add(span)
+}
+
+func (db *DB) linkResumedOutput(span *Span, creator *Span) {
+	changed := creator.ChildSpans.Add(span)
+	creator.effectsViaLinks.Add(span)
+	span.causesViaLinks.Add(creator)
+	if changed {
+		db.update(creator)
+	}
+}
+
+func (db *DB) creatorSpanForDigestInTrace(dig string, traceID trace.TraceID) *Span {
+	creators, ok := db.CreatorSpans[dig]
+	if !ok {
+		return nil
+	}
+
+	var best *Span
+	for _, creator := range creators.Order {
+		if creator.TraceID.TraceID != traceID {
+			continue
+		}
+		if best == nil || creator.StartTime.After(best.StartTime) {
+			best = creator
+		}
+	}
+
+	return best
+}
+
+func (db *DB) maybeResumeOutput(span *Span) {
+	if span.ResumeOutput == "" {
+		return
+	}
+
+	creator := db.creatorSpanForDigestInTrace(span.ResumeOutput, span.TraceID.TraceID)
+	if creator == nil {
+		key := resumeOutputKey{
+			TraceID: span.TraceID,
+			Output:  span.ResumeOutput,
+		}
+		if db.pendingResumeOutputs[key] == nil {
+			db.pendingResumeOutputs[key] = NewSpanSet()
+		}
+		db.pendingResumeOutputs[key].Add(span)
+		return
+	}
+
+	db.linkResumedOutput(span, creator)
+}
+
+func (db *DB) resolvePendingResumeOutputs(output string, traceID TraceID) {
+	key := resumeOutputKey{
+		TraceID: traceID,
+		Output:  output,
+	}
+	pending, ok := db.pendingResumeOutputs[key]
+	if !ok {
+		return
+	}
+	creator := db.creatorSpanForDigestInTrace(output, traceID.TraceID)
+	if creator == nil {
+		return
+	}
+	delete(db.pendingResumeOutputs, key)
+	for _, span := range pending.Order {
+		db.linkResumedOutput(span, creator)
+		span.PropagateStatusToParentsAndLinks()
+		db.update(span)
+	}
+}
+
+func (db *DB) resolvePendingLogs(output string, traceID TraceID) {
+	key := resumeOutputKey{
+		TraceID: traceID,
+		Output:  output,
+	}
+	pending, ok := db.pendingLogsByOutput[key]
+	if !ok {
+		return
+	}
+	creator := db.creatorSpanForDigestInTrace(output, traceID.TraceID)
+	if creator == nil {
+		return
+	}
+	delete(db.pendingLogsByOutput, key)
+	for _, record := range pending {
+		if creator.ID == db.PrimarySpan {
+			db.PrimaryLogs[creator.ID] = append(db.PrimaryLogs[creator.ID], record)
+		}
+		db.initSpan(creator.ID).HasLogs = true
+		db.resolvedLogsBySpan[creator.ID] = append(db.resolvedLogsBySpan[creator.ID], record)
+	}
+}
+
+func (db *DB) DrainResolvedLogs(spanID SpanID) []sdklog.Record {
+	logs := db.resolvedLogsBySpan[spanID]
+	delete(db.resolvedLogsBySpan, spanID)
+	return logs
+}
+
+func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
+	fallback := SpanID{SpanID: record.SpanID()}
+
+	var targetDig string
+	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		if kv.Key == telemetry.DagDigestAttr {
+			targetDig = kv.Value.AsString()
+			return false
+		}
+		return true
+	})
+
+	if targetDig == "" {
+		return fallback, nil
+	}
+
+	if creator := db.creatorSpanForDigestInTrace(targetDig, record.TraceID()); creator != nil {
+		return creator.ID, nil
+	}
+
+	key := resumeOutputKey{
+		TraceID: TraceID{TraceID: record.TraceID()},
+		Output:  targetDig,
+	}
+	return SpanID{}, &key
+}
+
+func (db *DB) LogTargetSpanID(record sdklog.Record) SpanID {
+	spanID, _ := db.routeLog(record)
+	return spanID
 }
 
 func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
@@ -797,7 +903,7 @@ func (db *DB) MostInterestingSpan(dig string) *Span {
 	sort.Slice(vs, func(i, j int) bool {
 		return vs[i].StartTime.Before(vs[j].StartTime)
 	})
-	for _, span := range db.Intervals[dig] {
+	for _, span := range vs {
 		// a running vertex is always most interesting, and these are already in
 		// order
 		if span.IsRunningOrEffectsRunning() {

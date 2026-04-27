@@ -199,7 +199,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 
 	// Prepare parameters for the streaming call.
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(c.endpoint.Model),
+		Model:     c.endpoint.Model,
 		MaxTokens: int64(8192),
 		Messages:  messages,
 		Tools:     toolsConfig,
