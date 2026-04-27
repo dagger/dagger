@@ -158,6 +158,7 @@ module.exports = {
             "extending/modules/arguments",
             "extending/modules/return-types",
             "extending/modules/chaining",
+            "extending/modules/persisting-artifacts",
             "extending/modules/secrets",
             "extending/modules/services",
             "extending/modules/cache-volumes",
