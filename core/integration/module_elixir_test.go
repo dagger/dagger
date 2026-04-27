@@ -311,6 +311,46 @@ func (ElixirSuite) TestReqAdapter(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "hello-from-req-adapter\n", out)
 }
 
+func (ElixirSuite) TestCheck(ctx context.Context, t *testctx.T) {
+	t.Run("list checks", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "hello-with-checks").
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "passing-check")
+		require.Contains(t, out, "failing-check")
+		require.Contains(t, out, "passing-container")
+		require.Contains(t, out, "failing-container")
+	})
+
+	t.Run("run passing checks", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "hello-with-checks").
+			With(daggerExec("--progress=report", "check", "passing*")).
+			CombinedOutput(ctx)
+
+		require.NoError(t, err)
+		require.Regexp(t, `passing-check.*OK`, out)
+		require.Regexp(t, `passing-container.*OK`, out)
+	})
+
+	t.Run("run failing checks", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "hello-with-checks").
+			With(daggerExecFail("--progress=report", "check", "failing*")).
+			CombinedOutput(ctx)
+
+		require.NoError(t, err)
+		require.Regexp(t, `failing-check.*ERROR`, out)
+		require.Regexp(t, `failing-container.*ERROR`, out)
+	})
+}
+
 func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/elixir", moduleName))
