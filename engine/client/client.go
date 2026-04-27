@@ -129,8 +129,15 @@ type Params struct {
 
 	SkipWorkspaceModules bool
 
+	// LockMode controls lockfile behavior for lookup resolution.
+	// Valid values: "disabled", "strict", "auto", "update".
+	LockMode string
+
 	// Workspace explicitly declares workspace binding for this client.
 	Workspace *string
+
+	// WorkspaceEnv explicitly selects the workspace environment overlay for this client.
+	WorkspaceEnv *string
 
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
@@ -1432,6 +1439,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudAuth:                 c.CloudAuth,
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,
+		LockMode:                  c.LockMode,
 	}
 
 	if c.Module != "" {
@@ -1440,8 +1448,14 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	if c.Module == "" && c.LoadWorkspaceModules {
 		md.LoadWorkspaceModules = true
 	}
+	if c.LockMode != "" {
+		md.LockMode = c.LockMode
+	}
 	if c.Workspace != nil {
 		md.Workspace = c.Workspace
+	}
+	if c.WorkspaceEnv != nil {
+		md.WorkspaceEnv = c.WorkspaceEnv
 	}
 
 	return md

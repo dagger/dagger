@@ -1,0 +1,62 @@
+---
+title: "Scaling"
+slug: /adopting/scaling
+description: "Run Dagger on scaled-out infrastructure"
+---
+
+# Scaling
+
+Dagger is local-first: every workflow runs the same whether invoked from a laptop, a CI runner, or a scaled-out cluster. Scaling is a deployment choice, not a rewrite.
+
+This page covers scaled-out execution — running Dagger on infrastructure that's provisioned, scheduled, and shared across a team or organization. It's the territory of platform teams.
+
+## Why scale out
+
+Local execution (laptop or CI runner) is enough for individual developers and small teams. You hit its limits when:
+
+- **Cache is siloed.** Every laptop and every CI runner keeps its own cache. Shared cache across the team or org requires shared infrastructure.
+- **Concurrency is capped.** A single machine has fixed compute. Running many pipelines in parallel — or one pipeline with heavy fan-out — needs elastic capacity.
+- **Cost is opaque.** CI runners bill per minute. As usage grows, a dedicated pool becomes cheaper and more predictable.
+- **Operational requirements.** Compliance, network isolation, custom hardware, or regulated environments require infrastructure you control.
+
+## Cloud Engines
+
+[Cloud Engines](https://dagger.cloud) (tech preview) is managed scaled-out execution. Dagger runs your workflows on an elastic engine pool with [shared cache](/core-concepts/caching) across your organization — nothing to configure:
+
+```shell
+dagger check --cloud
+```
+
+The same `dagger check` command; the difference is where the engine runs. No infrastructure to provision, scale, or operate.
+
+:::note
+Cloud Engines is in tech preview. Contact the Dagger team to get access.
+:::
+
+## Self-hosted engines
+
+If you operate your own infrastructure, you can run the Dagger engine on Kubernetes or a custom runner and point clients at it:
+
+```shell
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=kube-pod://dagger-engine?namespace=dagger
+dagger check
+```
+
+Self-hosted engines give you full control over provisioning, scheduling, and cache placement — with the operational cost that implies. See [Custom runners](/reference/configuration/custom-runner) for the connection interface.
+
+Platform-specific deployment guides:
+
+- [Kubernetes](./kubernetes.mdx) — Helm chart, DaemonSet, and auto-scaling patterns.
+- [OpenShift](./openshift.mdx) — Helm chart with tainted nodes and tolerations.
+
+## Choosing an approach
+
+| | Cloud Engines | Self-hosted |
+|---|---|---|
+| Provisioning | Managed | Your team |
+| Scaling | Automatic | Your team |
+| Cache | Shared, managed | Shared, your storage |
+| Cost model | Subscription | Your infrastructure |
+| Best for | Most teams | Regulated / custom infra |
+
+Both support the same workflows. You can switch without changing a line of module code.

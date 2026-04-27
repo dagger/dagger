@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Unix socket mounting and socket ownership behavior.
+// Intent: Keep socket behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	_ "embed"

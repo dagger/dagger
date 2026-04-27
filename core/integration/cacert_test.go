@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Container system CA certificate propagation and trust behavior.
+// Intent: Keep TLS trust behavior stable independently of module or workspace concerns.
+
 import (
 	"context"
 	"fmt"

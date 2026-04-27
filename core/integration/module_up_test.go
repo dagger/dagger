@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: mostly aligned; command intent is explicit, though the file still uses host-side interactive setup.
+// Scope: The dagger up development server and interactive module UI behavior.
+// Intent: Keep module development UX covered with exact host-side command helpers instead of legacy command rewriting.
+
 import (
 	"context"
 	"fmt"
@@ -147,7 +151,7 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 // In theory we can use daggerUpAndGetEndpointFromLogs to get port,
 // but we want to test this with a pre-configured traffic port.
 func daggerUpAndGetEndpoint(ctx context.Context, t *testctx.T, modDir string, daggerArgs []string, trafficPort string) string {
-	cmd := hostDaggerCommand(ctx, t, modDir, daggerArgs...)
+	cmd := hostDaggerCommandRaw(ctx, t, modDir, daggerArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -163,7 +167,7 @@ var tunnelPortRegex = regexp.MustCompile(`tunnel started port=(\d+)`)
 // Starts container and return the random port used for the tunnel
 func daggerUpAndGetEndpointFromLogs(ctx context.Context, t *testctx.T, modDir string, daggerArgs []string, trafficPort string) string {
 	var logs safeBuffer
-	cmd := hostDaggerCommand(ctx, t, modDir, daggerArgs...)
+	cmd := hostDaggerCommandRaw(ctx, t, modDir, daggerArgs...)
 	cmd.Env = append(cmd.Env, "NO_COLOR=true", "DAGGER_PROGRESS=logs")
 	cmd.Stdin = nil
 	cmd.Stdout = &logs
@@ -174,7 +178,6 @@ func daggerUpAndGetEndpointFromLogs(ctx context.Context, t *testctx.T, modDir st
 
 	var port string
 	require.Eventually(t, func() bool {
-		tunnelPortRegex.MatchString(logs.String())
 		matches := tunnelPortRegex.FindStringSubmatch(logs.String())
 		if len(matches) == 0 {
 			return false
@@ -222,11 +225,11 @@ func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) st
 	err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, mainGoTmpl, defaultPort), 0o644)
 	require.NoError(t, err)
 
-	_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	_, err = hostDaggerModuleExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 	require.NoError(t, err)
 
 	// cache the module load itself so there's less to wait for below
-	_, err = hostDaggerExec(ctx, t, modDir, "functions")
+	_, err = hostDaggerExecRaw(ctx, t, modDir, "functions")
 	require.NoError(t, err)
 
 	return modDir

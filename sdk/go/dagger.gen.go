@@ -338,6 +338,15 @@ type Void string
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 type WorkspaceID string
 
+// The `WorkspaceMigrationID` scalar type represents an identifier for an object of type WorkspaceMigration.
+type WorkspaceMigrationID string
+
+// The `WorkspaceMigrationStepID` scalar type represents an identifier for an object of type WorkspaceMigrationStep.
+type WorkspaceMigrationStepID string
+
+// The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
+type WorkspaceModuleID string
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -861,6 +870,33 @@ func (r *Binding) AsWorkspace() *Workspace {
 	q := r.query.Select("asWorkspace")
 
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type WorkspaceMigration
+func (r *Binding) AsWorkspaceMigration() *WorkspaceMigration {
+	q := r.query.Select("asWorkspaceMigration")
+
+	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type WorkspaceMigrationStep
+func (r *Binding) AsWorkspaceMigrationStep() *WorkspaceMigrationStep {
+	q := r.query.Select("asWorkspaceMigrationStep")
+
+	return &WorkspaceMigrationStep{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type WorkspaceModule
+func (r *Binding) AsWorkspaceModule() *WorkspaceModule {
+	q := r.query.Select("asWorkspaceModule")
+
+	return &WorkspaceModule{
 		query: q,
 	}
 }
@@ -6573,6 +6609,78 @@ func (r *Env) WithWorkspaceInput(name string, value *Workspace, description stri
 	}
 }
 
+// Create or update a binding of type WorkspaceMigration in the environment
+func (r *Env) WithWorkspaceMigrationInput(name string, value *WorkspaceMigration, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceMigrationInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceMigration output to be assigned in the environment
+func (r *Env) WithWorkspaceMigrationOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceMigrationOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type WorkspaceMigrationStep in the environment
+func (r *Env) WithWorkspaceMigrationStepInput(name string, value *WorkspaceMigrationStep, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceMigrationStepInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceMigrationStep output to be assigned in the environment
+func (r *Env) WithWorkspaceMigrationStepOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceMigrationStepOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type WorkspaceModule in the environment
+func (r *Env) WithWorkspaceModuleInput(name string, value *WorkspaceModule, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceModuleInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceModule output to be assigned in the environment
+func (r *Env) WithWorkspaceModuleOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceModuleOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Declare a desired Workspace output to be assigned in the environment
 func (r *Env) WithWorkspaceOutput(name string, description string) *Env {
 	q := r.query.Select("withWorkspaceOutput")
@@ -11128,6 +11236,8 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 }
 
 // The blueprint referenced by the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
 func (r *ModuleSource) Blueprint() *ModuleSource {
 	q := r.query.Select("blueprint")
 
@@ -11523,6 +11633,8 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 }
 
 // The toolchains referenced by the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
 func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	q := r.query.Select("toolchains")
 
@@ -13256,6 +13368,36 @@ func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	q = q.Arg("id", id)
 
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Load a WorkspaceMigration from its ID.
+func (r *Query) LoadWorkspaceMigrationFromID(id WorkspaceMigrationID) *WorkspaceMigration {
+	q := r.query.Select("loadWorkspaceMigrationFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
+// Load a WorkspaceMigrationStep from its ID.
+func (r *Query) LoadWorkspaceMigrationStepFromID(id WorkspaceMigrationStepID) *WorkspaceMigrationStep {
+	q := r.query.Select("loadWorkspaceMigrationStepFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceMigrationStep{
+		query: q,
+	}
+}
+
+// Load a WorkspaceModule from its ID.
+func (r *Query) LoadWorkspaceModuleFromID(id WorkspaceModuleID) *WorkspaceModule {
+	q := r.query.Select("loadWorkspaceModuleFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceModule{
 		query: q,
 	}
 }
@@ -15212,10 +15354,17 @@ type Workspace struct {
 	address     *string
 	clientId    *string
 	configPath  *string
+	configRead  *string
+	configWrite *string
+	envCreate   *string
+	envRemove   *string
 	findUp      *string
 	hasConfig   *bool
 	id          *WorkspaceID
+	init        *string
 	initialized *bool
+	install     *string
+	moduleInit  *string
 	path        *string
 }
 
@@ -15285,6 +15434,52 @@ func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceConfigReadOpts contains options for Workspace.ConfigRead
+type WorkspaceConfigReadOpts struct {
+	// Dotted key path (e.g. modules.greeter.source). Empty for full config.
+	Key string
+}
+
+// Read a configuration value from config.toml.
+//
+// If key is empty, returns the full config.
+//
+// If key points to a scalar, returns the value.
+//
+// If key points to a table, returns flattened dotted-key output.
+func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadOpts) (string, error) {
+	if r.configRead != nil {
+		return *r.configRead, nil
+	}
+	q := r.query.Select("configRead")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `key` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Write a configuration value to config.toml.
+func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (string, error) {
+	if r.configWrite != nil {
+		return *r.configWrite, nil
+	}
+	q := r.query.Select("configWrite")
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // WorkspaceDirectoryOpts contains options for Workspace.Directory
 type WorkspaceDirectoryOpts struct {
 	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -15319,6 +15514,44 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	return &Directory{
 		query: q,
 	}
+}
+
+// Create a named workspace environment if it does not already exist.
+func (r *Workspace) EnvCreate(ctx context.Context, name string) (string, error) {
+	if r.envCreate != nil {
+		return *r.envCreate, nil
+	}
+	q := r.query.Select("envCreate")
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// List named environments defined in the workspace configuration.
+func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
+	q := r.query.Select("envList")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Remove a named workspace environment.
+func (r *Workspace) EnvRemove(ctx context.Context, name string) (string, error) {
+	if r.envRemove != nil {
+		return *r.envRemove, nil
+	}
+	q := r.query.Select("envRemove")
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Returns a File from the workspace.
@@ -15441,6 +15674,19 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Initialize a new workspace, creating .dagger/config.toml.
+func (r *Workspace) Init(ctx context.Context) (string, error) {
+	if r.init != nil {
+		return *r.init, nil
+	}
+	q := r.query.Select("init")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Whether .dagger/config.toml exists.
 func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
 	if r.initialized != nil {
@@ -15454,6 +15700,137 @@ func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceInstallOpts contains options for Workspace.Install
+type WorkspaceInstallOpts struct {
+	// Override name for the installed module entry.
+	Name string
+}
+
+// Install a module into the workspace, writing config.toml to the host.
+func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceInstallOpts) (string, error) {
+	if r.install != nil {
+		return *r.install, nil
+	}
+	q := r.query.Select("install")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+	}
+	q = q.Arg("ref", ref)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceMigrateOpts contains options for Workspace.Migrate
+type WorkspaceMigrateOpts struct {
+	Force bool
+}
+
+// Plan the explicit migration needed for the current workspace.
+//
+// The returned plan has an empty changeset and no steps when no migration is needed.
+func (r *Workspace) Migrate(opts ...WorkspaceMigrateOpts) *WorkspaceMigration {
+	q := r.query.Select("migrate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `force` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Force) {
+			q = q.Arg("force", opts[i].Force)
+		}
+	}
+
+	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
+// WorkspaceModuleInitOpts contains options for Workspace.ModuleInit
+type WorkspaceModuleInitOpts struct {
+	// SDK to use for the new module.
+	SDK string
+	// Source subpath within the new module.
+	Source string
+	// Additional include patterns for the module.
+	Include []string
+	// Blueprint module reference to apply to the new module.
+	Blueprint string
+	// Enable the self-calls experimental feature for the new module.
+	SelfCalls bool
+}
+
+// Create a new module owned by the workspace and auto-install it in config.toml.
+func (r *Workspace) ModuleInit(ctx context.Context, name string, opts ...WorkspaceModuleInitOpts) (string, error) {
+	if r.moduleInit != nil {
+		return *r.moduleInit, nil
+	}
+	q := r.query.Select("moduleInit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SDK) {
+			q = q.Arg("sdk", opts[i].SDK)
+		}
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `blueprint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Blueprint) {
+			q = q.Arg("blueprint", opts[i].Blueprint)
+		}
+		// `selfCalls` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SelfCalls) {
+			q = q.Arg("selfCalls", opts[i].SelfCalls)
+		}
+	}
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// List modules defined in the workspace configuration.
+func (r *Workspace) ModuleList(ctx context.Context) ([]WorkspaceModule, error) {
+	q := r.query.Select("moduleList")
+
+	q = q.Select("id")
+
+	type moduleList struct {
+		Id WorkspaceModuleID
+	}
+
+	convert := func(fields []moduleList) []WorkspaceModule {
+		out := []WorkspaceModule{}
+
+		for i := range fields {
+			val := WorkspaceModule{id: &fields[i].Id}
+			val.query = q.Root().Select("loadWorkspaceModuleFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []moduleList
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Workspace directory path relative to the workspace boundary.
 func (r *Workspace) Path(ctx context.Context) (string, error) {
 	if r.path != nil {
@@ -15465,6 +15842,31 @@ func (r *Workspace) Path(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// WorkspaceRefreshModulesOpts contains options for Workspace.RefreshModules
+type WorkspaceRefreshModulesOpts struct {
+	// Workspace module names to refresh.
+	ModuleNames []string
+}
+
+// Refresh lock entries for selected workspace-config modules.
+//
+// This layers selective workspace refresh on top of the lockfile base.
+//
+// Experimental: Experimental selective workspace lock refresh API.
+func (r *Workspace) RefreshModules(opts ...WorkspaceRefreshModulesOpts) *Changeset {
+	q := r.query.Select("refreshModules")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `moduleNames` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleNames) {
+			q = q.Arg("moduleNames", opts[i].ModuleNames)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // WorkspaceServicesOpts contains options for Workspace.Services
@@ -15486,6 +15888,309 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	return &UpGroup{
 		query: q,
 	}
+}
+
+// Refresh workspace-managed state and return the resulting changeset.
+//
+// Currently this refreshes existing lockfile entries only.
+//
+// Experimental: Experimental workspace update API currently refreshes existing lockfile entries only.
+func (r *Workspace) Update() *Changeset {
+	q := r.query.Select("update")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// A planned workspace migration.
+type WorkspaceMigration struct {
+	query *querybuilder.Selection
+
+	id *WorkspaceMigrationID
+}
+
+func (r *WorkspaceMigration) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigration {
+	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
+// Filesystem changes for the full migration plan.
+func (r *WorkspaceMigration) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// A unique identifier for this WorkspaceMigration.
+func (r *WorkspaceMigration) ID(ctx context.Context) (WorkspaceMigrationID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceMigrationID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceMigration) XXX_GraphQLType() string {
+	return "WorkspaceMigration"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceMigration) XXX_GraphQLIDType() string {
+	return "WorkspaceMigrationID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceMigration) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceMigration) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Logical migration steps, each identified by a stable code.
+func (r *WorkspaceMigration) Steps(ctx context.Context) ([]WorkspaceMigrationStep, error) {
+	q := r.query.Select("steps")
+
+	q = q.Select("id")
+
+	type steps struct {
+		Id WorkspaceMigrationStepID
+	}
+
+	convert := func(fields []steps) []WorkspaceMigrationStep {
+		out := []WorkspaceMigrationStep{}
+
+		for i := range fields {
+			val := WorkspaceMigrationStep{id: &fields[i].Id}
+			val.query = q.Root().Select("loadWorkspaceMigrationStepFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []steps
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A single logical part of a workspace migration.
+type WorkspaceMigrationStep struct {
+	query *querybuilder.Selection
+
+	code        *string
+	description *string
+	id          *WorkspaceMigrationStepID
+}
+
+func (r *WorkspaceMigrationStep) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigrationStep {
+	return &WorkspaceMigrationStep{
+		query: q,
+	}
+}
+
+// Filesystem changes for this step.
+func (r *WorkspaceMigrationStep) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Stable code identifying this logical migration step.
+func (r *WorkspaceMigrationStep) Code(ctx context.Context) (string, error) {
+	if r.code != nil {
+		return *r.code, nil
+	}
+	q := r.query.Select("code")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Generic summary of this step's purpose and impact.
+func (r *WorkspaceMigrationStep) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceMigrationStep.
+func (r *WorkspaceMigrationStep) ID(ctx context.Context) (WorkspaceMigrationStepID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceMigrationStepID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceMigrationStep) XXX_GraphQLType() string {
+	return "WorkspaceMigrationStep"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceMigrationStep) XXX_GraphQLIDType() string {
+	return "WorkspaceMigrationStepID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceMigrationStep) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceMigrationStep) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Non-fatal warnings raised while planning this step.
+func (r *WorkspaceMigrationStep) Warnings(ctx context.Context) ([]string, error) {
+	q := r.query.Select("warnings")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A module entry in the workspace configuration.
+type WorkspaceModule struct {
+	query *querybuilder.Selection
+
+	entrypoint *bool
+	id         *WorkspaceModuleID
+	name       *string
+	source     *string
+}
+
+func (r *WorkspaceModule) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModule {
+	return &WorkspaceModule{
+		query: q,
+	}
+}
+
+// Whether the module is the workspace entrypoint (functions aliased to Query root).
+func (r *WorkspaceModule) Entrypoint(ctx context.Context) (bool, error) {
+	if r.entrypoint != nil {
+		return *r.entrypoint, nil
+	}
+	q := r.query.Select("entrypoint")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceModule.
+func (r *WorkspaceModule) ID(ctx context.Context) (WorkspaceModuleID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceModuleID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceModule) XXX_GraphQLType() string {
+	return "WorkspaceModule"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceModule) XXX_GraphQLIDType() string {
+	return "WorkspaceModuleID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceModule) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceModule) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The module name.
+func (r *WorkspaceModule) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module source path.
+func (r *WorkspaceModule) Source(ctx context.Context) (string, error) {
+	if r.source != nil {
+		return *r.source, nil
+	}
+	q := r.query.Select("source")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Sharing mode of the cache volume.

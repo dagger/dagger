@@ -65,6 +65,39 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Read a configuration value from config.toml.
+
+  If key is empty, returns the full config.
+
+  If key points to a scalar, returns the value.
+
+  If key points to a table, returns flattened dotted-key output.
+  """
+  @spec config_read(t(), [{:key, String.t() | nil}]) :: {:ok, String.t()} | {:error, term()}
+  def config_read(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("configRead")
+      |> QB.maybe_put_arg("key", optional_args[:key])
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  Write a configuration value to config.toml.
+  """
+  @spec config_write(t(), String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def config_write(%__MODULE__{} = workspace, key, value) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("configWrite")
+      |> QB.put_arg("key", key)
+      |> QB.put_arg("value", value)
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   Returns a Directory from the workspace.
 
   Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
@@ -87,6 +120,39 @@ defmodule Dagger.Workspace do
       query_builder: query_builder,
       client: workspace.client
     }
+  end
+
+  @doc """
+  Create a named workspace environment if it does not already exist.
+  """
+  @spec env_create(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def env_create(%__MODULE__{} = workspace, name) do
+    query_builder =
+      workspace.query_builder |> QB.select("envCreate") |> QB.put_arg("name", name)
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  List named environments defined in the workspace configuration.
+  """
+  @spec env_list(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def env_list(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("envList")
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  Remove a named workspace environment.
+  """
+  @spec env_remove(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def env_remove(%__MODULE__{} = workspace, name) do
+    query_builder =
+      workspace.query_builder |> QB.select("envRemove") |> QB.put_arg("name", name)
+
+    Client.execute(workspace.client, query_builder)
   end
 
   @doc """
@@ -165,6 +231,17 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Initialize a new workspace, creating .dagger/config.toml.
+  """
+  @spec init(t()) :: {:ok, String.t()} | {:error, term()}
+  def init(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("init")
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   Whether .dagger/config.toml exists.
   """
   @spec initialized(t()) :: {:ok, boolean()} | {:error, term()}
@@ -173,6 +250,85 @@ defmodule Dagger.Workspace do
       workspace.query_builder |> QB.select("initialized")
 
     Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  Install a module into the workspace, writing config.toml to the host.
+  """
+  @spec install(t(), String.t(), [{:name, String.t() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
+  def install(%__MODULE__{} = workspace, ref, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("install")
+      |> QB.put_arg("ref", ref)
+      |> QB.maybe_put_arg("name", optional_args[:name])
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  Plan the explicit migration needed for the current workspace.
+
+  The returned plan has an empty changeset and no steps when no migration is needed.
+  """
+  @spec migrate(t(), [{:force, boolean() | nil}]) :: Dagger.WorkspaceMigration.t()
+  def migrate(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("migrate")
+      |> QB.maybe_put_arg("force", optional_args[:force])
+
+    %Dagger.WorkspaceMigration{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Create a new module owned by the workspace and auto-install it in config.toml.
+  """
+  @spec module_init(t(), String.t(), [
+          {:sdk, String.t() | nil},
+          {:source, String.t() | nil},
+          {:include, [String.t()]},
+          {:blueprint, String.t() | nil},
+          {:self_calls, boolean() | nil}
+        ]) :: {:ok, String.t()} | {:error, term()}
+  def module_init(%__MODULE__{} = workspace, name, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("moduleInit")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("sdk", optional_args[:sdk])
+      |> QB.maybe_put_arg("source", optional_args[:source])
+      |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("blueprint", optional_args[:blueprint])
+      |> QB.maybe_put_arg("selfCalls", optional_args[:self_calls])
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  List modules defined in the workspace configuration.
+  """
+  @spec module_list(t()) :: {:ok, [Dagger.WorkspaceModule.t()]} | {:error, term()}
+  def module_list(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("moduleList") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.WorkspaceModule{
+           query_builder:
+             QB.query()
+             |> QB.select("loadWorkspaceModuleFromID")
+             |> QB.put_arg("id", id),
+           client: workspace.client
+         }
+       end}
+    end
   end
 
   @doc """
@@ -187,6 +343,28 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Refresh lock entries for selected workspace-config modules.
+
+  This layers selective workspace refresh on top of the lockfile base.
+
+  > #### Experimental {: .warning}
+  >
+  > "Experimental selective workspace lock refresh API."
+  """
+  @spec refresh_modules(t(), [{:module_names, [String.t()]}]) :: Dagger.Changeset.t()
+  def refresh_modules(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("refreshModules")
+      |> QB.maybe_put_arg("moduleNames", optional_args[:module_names])
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return all services from modules loaded in the workspace.
   """
   @spec services(t(), [{:include, [String.t()]}]) :: Dagger.UpGroup.t()
@@ -197,6 +375,26 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("include", optional_args[:include])
 
     %Dagger.UpGroup{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Refresh workspace-managed state and return the resulting changeset.
+
+  Currently this refreshes existing lockfile entries only.
+
+  > #### Experimental {: .warning}
+  >
+  > "Experimental workspace update API currently refreshes existing lockfile entries only."
+  """
+  @spec update(t()) :: Dagger.Changeset.t()
+  def update(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("update")
+
+    %Dagger.Changeset{
       query_builder: query_builder,
       client: workspace.client
     }

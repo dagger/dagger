@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
@@ -70,6 +71,9 @@ func (sdk *moduleTypes) ModuleTypes(
 			return inst, fmt.Errorf("compute module types exec call digest: %w", err)
 		}
 		execMD.CallDigest = callDigest
+	}
+	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		execMD.LockMode = clientMetadata.LockMode
 	}
 	execMD.EncodedModuleID, err = currentModuleID.Encode()
 	if err != nil {

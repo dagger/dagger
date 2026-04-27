@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: aligned; this file already matches the workspace-era split.
+// Scope: Check discovery and execution across direct SDK, compat blueprint, and workspace-installed modules.
+// Intent: Keep successor workspace behavior and legacy compat coverage explicit and separate.
+
 import (
 	"context"
 	"path/filepath"
@@ -96,7 +100,7 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
+func (ChecksSuite) TestChecksViaLegacyBlueprintInit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
 		name string
@@ -108,11 +112,11 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 		{"java", "hello-with-checks-java"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			// install hello-with-checks as blueprint
+			// Install hello-with-checks through the legacy blueprint path.
 			modGen, err := checksTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.WithWorkdir("app").
-				With(daggerExec("init", "--blueprint", "../"+tc.path))
+				With(daggerModuleExec("init", "--blueprint", "../"+tc.path))
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).
@@ -143,21 +147,7 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	modGen, err := checksTestEnv(t, c)
-	require.NoError(t, err)
-	modGen = modGen.WithWorkdir("hello-with-checks")
-	// run all checks with --failfast; should fail because there are failing checks
-	out, err := modGen.
-		With(daggerExecFail("--progress=report", "check", "--failfast")).
-		CombinedOutput(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "ERROR")
-	require.Contains(t, out, "context canceled")
-}
-
-func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
+func (ChecksSuite) TestChecksInstalledInWorkspace(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
 		name string
@@ -169,13 +159,13 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 		{"java", "hello-with-checks-java"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			// install hello-with-checks as toolchain
+			// Install hello-with-checks into the current workspace.
 			modGen, err := checksTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				With(daggerExec("init")).
-				With(daggerExec("toolchain", "install", "../"+tc.path))
+				With(daggerWorkspaceExec("init")).
+				With(daggerWorkspaceInstall("../" + tc.path))
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).

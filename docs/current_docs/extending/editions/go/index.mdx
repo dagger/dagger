@@ -1,0 +1,371 @@
+---
+title: "Developing Modules — Go"
+slug: /extending/editions/go
+sidebar_label: "Go Edition"
+description: "Learn to develop Dagger modules using Go"
+---
+
+# Developing Modules — Go Edition
+
+See the [Base Edition](/extending/editions/dang) for the complete guide — the patterns are the same across all SDKs.
+
+## Recipes
+
+### Builds
+
+#### Perform a multi-stage build
+
+The following Dagger Function performs a multi-stage build.
+
+```go file=./snippets/builds/multi-stage-build/main.go
+```
+
+#### Perform a matrix build
+
+The following Dagger Function performs a matrix build.
+
+```go file=./snippets/builds/matrix-build/main.go
+```
+
+#### Build multi-arch image
+
+The following Dagger Function builds a single image for different CPU architectures using native emulation.
+
+```go file=./snippets/builds/multi-arch/main.go
+```
+
+#### Build multi-arch image with cross-compilation
+
+The following Dagger Function builds a single image for different CPU architectures using cross-compilation.
+
+```go file=./snippets/builds/multi-arch-cc/main.go
+```
+
+#### Build image from Dockerfile
+
+The following Dagger Function builds an image from a Dockerfile.
+
+```go file=./snippets/builds/dockerfile/main.go
+```
+
+#### Build image from Dockerfile using different build context
+
+The following function builds an image from a Dockerfile with a build context that is different than the current working directory.
+
+```go file=./snippets/builds/dockerfile-context/main.go
+```
+
+#### Cache application dependencies
+
+The following Dagger Function uses a cache volume for application dependencies. This enables Dagger to reuse the contents of the cache across Dagger Function runs and reduce execution time.
+
+```go file=./snippets/cache-dependencies/main.go
+```
+
+#### Execute functions concurrently
+
+The following Dagger Function demonstrates how to use native-language concurrency features (errgroups in Go) to execute other Dagger Functions concurrently. If any of the concurrently-running functions fails, the remaining ones will be immediately cancelled.
+
+```go file=./snippets/execute-concurrently/main.go
+```
+
+#### Persist service state across runs
+
+The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
+
+```go file=./snippets/services/persist-service-state/main.go
+```
+
+#### Add OCI annotations to image
+
+The following Dagger Function adds OpenContainer Initiative (OCI) annotations to an image.
+
+```go file=./snippets/builds/oci-annotations/main.go
+```
+
+#### Add OCI labels to image
+
+The following Dagger Function adds OpenContainer Initiative (OCI) labels to an image.
+
+```go file=./snippets/builds/oci-labels/main.go
+```
+
+#### Invalidate cache
+
+The following function demonstrates how to invalidate the Dagger layer cache and force execution of subsequent workflow steps, by introducing a volatile time variable at a specific point in the Dagger workflow.
+
+```go file=./snippets/builds/cache/main.go
+```
+
+### Container Images
+
+#### Publish a container image to a private registry
+
+The following Dagger Function publishes a just-in-time container image to a private registry.
+
+```go file=./snippets/publish-image/main.go
+```
+
+#### Publish a container image to a private registry with multiple tags
+
+The following Dagger Function tags a just-in-time container image multiple times and publishes it to a private registry.
+
+```go file=./snippets/tag-publish-image/main.go
+```
+
+#### Export a container image to the host
+
+The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball.
+
+```go file=./snippets/export-container/main.go
+```
+
+#### Set environment variables in a container
+
+The following Dagger Function demonstrates how to set a single environment variable in a container.
+
+```go file=./snippets/set-env-var/main.go
+```
+
+### Filesystems
+
+#### Clone a remote Git repository into a container
+
+The following Dagger Function accepts a Git repository URL and a Git reference. It copies the repository at the specified reference to the `/src` path in a container and returns the modified container.
+
+```go file=./snippets/clone-git-repository/main.go
+```
+
+#### Clone a remote Git repository via SSH
+
+The following Dagger Function clones a Git repository using SSH authentication.
+
+```go file=./snippets/clone-git-repository-ssh/main.go
+```
+
+#### Mount or copy a directory or remote repository to a container
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It mounts the specified directory to the `/src` path in a container and returns the modified container.
+
+```go file=./snippets/mount-dir/main.go
+```
+
+#### Copy a directory to a container
+
+The following Dagger Function copies a directory to the `/src` path in a container instead of mounting it.
+
+```go file=./snippets/copy-dir/main.go
+```
+
+#### Modify a copied directory or remote repository in a container
+
+The following Dagger Function accepts a `Directory` argument, copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
+
+```go file=./snippets/copy-modify-dir/main.go
+```
+
+#### Copy a subset of a directory using pre-defined filters
+
+The following Dagger Function accepts a `Directory` argument, copies it to the `/src` path in a container using pre-defined filter patterns to exclude specified sub-directories and files, and returns the modified container.
+
+```go file=./snippets/copy-filter-dir-pre/main.go
+```
+
+#### Copy a subset of a directory using filters specified at run-time
+
+The following Dagger Function accepts a `Directory` argument, copies it to the `/src` path in a container using a filter pattern specified at call-time to exclude specified sub-directories and files, and returns the modified container.
+
+```go file=./snippets/copy-filter-dir-post/main.go
+```
+
+#### Mount or copy a local or remote file to a container
+
+The following Dagger Function accepts a `File` argument and mounts the specified file to a container in the `/src/` directory and returns the modified container.
+
+```go file=./snippets/mount-file/main.go
+```
+
+#### Copy a file to a container
+
+The following Dagger Function copies a file to the `/src/` directory in a container instead of mounting it.
+
+```go file=./snippets/copy-file/main.go
+```
+
+#### Copy a file to the Dagger module runtime container for custom processing
+
+The following Dagger Function accepts a `File` argument and copies the specified file to the Dagger module runtime container. This makes it possible to add one or more files to the runtime container and manipulate them using custom logic.
+
+```go file=./snippets/copy-file-runtime/main.go
+```
+
+#### Export a directory or file to the host
+
+The following Dagger Functions return a just-in-time directory and file. These outputs can be exported to the host with `dagger call ... export ...`.
+
+```go file=./snippets/export-file-dir/main.go
+```
+
+#### Request a file over HTTP/HTTPS and save it in a container
+
+The following Dagger Function fetches a file over HTTP/HTTPS and saves it in a container.
+
+```go file=./snippets/read-file-http/main.go
+```
+
+#### Set a module-wide default path
+
+The following Dagger module uses a constructor to set a module-wide `Directory` argument and point it to a default path on the host. This eliminates the need to pass a common `Directory` argument individually to each Dagger Function in the module.
+
+```go file=./snippets/set-common-default-path/main.go
+```
+
+### Services
+
+#### Bind and use services in Dagger Functions
+
+The following Dagger Function creates and returns an HTTP service. This service is bound and used from a different Dagger Function, via a service binding using an alias.
+
+```go file=./snippets/services/bind-services/main.go
+```
+
+#### Expose services in Dagger Functions to the host
+
+The following Dagger Function creates and returns an HTTP service. This service can be used from the host.
+
+```go file=./snippets/services/expose-dagger-services-to-host/main.go
+```
+
+#### Expose host services to Dagger Functions
+
+The following Dagger Function accepts a `Service` running on the host, binds it using an alias, and creates a client to access it via the service binding.
+
+```go file=./snippets/services/expose-host-services-to-dagger/main.go
+```
+
+#### Use service endpoints
+
+The following Dagger Function starts a service manually, then retrieves its endpoint and sends a request.
+
+```go file=./snippets/services/use-endpoint/main.go
+```
+
+#### Create a transient service for unit tests
+
+The following Dagger Function creates a service and binds it to an application container for unit testing. In this example, the application being tested is Drupal, and a database service is created on-the-fly by the Dagger Function.
+
+```go file=./snippets/services/test-against-db-service/main.go
+```
+
+#### Start and stop services
+
+The following Dagger Function demonstrates how to control a service's lifecycle by explicitly starting and stopping a service. This example uses a Redis service.
+
+```go file=./snippets/services/start-stop-services/main.go
+```
+
+#### Create interdependent services
+
+The following Dagger Function runs two services that depend on each other. The services are set up with custom hostnames, allowing each service to communicate with the other by hostname.
+
+```go file=./snippets/services/create-interdependent-services/main.go
+```
+
+### Secrets
+
+#### Use secret variables
+
+The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API.
+
+```go file=./snippets/secret-variable/main.go
+```
+
+#### Mount files as secrets
+
+The following Dagger Function accepts a GitHub hosts configuration file as a `Secret`, and mounts the file as a `Secret` to a container to authorize a request to GitHub.
+
+```go file=./snippets/secret-file/main.go
+```
+
+#### Use secret in Dockerfile build
+
+The following Dagger Function demonstrates how to inject a secret into a Dockerfile build. The secret is automatically mounted in the build container at `/run/secrets/SECRET-ID`.
+
+```go file=./snippets/secret-dockerfile/main.go
+```
+
+### Errors & Debugging
+
+#### Terminate gracefully
+
+The following Dagger Function demonstrates how to handle errors in a workflow.
+
+```go file=./snippets/handle-errors/main.go
+```
+
+#### Continue using a container after command execution fails
+
+The following Dagger Function demonstrates how to continue using a container after a command executed within it fails. A common use case for this is to export a report that a test suite tool generates.
+
+```go file=./snippets/continue-after-errors/main.go
+```
+
+#### Debug workflows with the interactive terminal
+
+The following Dagger Function opens an interactive terminal session at different stages in a Dagger workflow to debug a container build.
+
+```go file=./snippets/terminal-container/main.go
+```
+
+#### Inspect directories and files
+
+The following Dagger Function clones Dagger's GitHub repository and opens an interactive terminal session to inspect it. Under the hood, this creates a new container and starts a shell, mounting the repository directory inside.
+
+```go file=./snippets/terminal-directory-1/main.go
+```
+
+#### Create custom spans
+
+The following Dagger Function demonstrates how to instrument custom OpenTelemetry spans. This allows you to define logical boundaries within complex workflows, measure execution time, and track nested operations with greater granularity.
+
+```go file=./snippets/custom-spans/main.go
+```
+
+## IDE setup
+
+To get your IDE to recognize a Dagger Go module, configure your `go.work` file to include the path to your module.
+
+When you generate a Dagger module for the first time, Dagger will create a `go.mod` file just for the module. If the module exists in a sub-directory of an outer Go project (such as `dagger/`, the default), this might confuse the IDE.
+
+If there is already a `go.mod` in the parent directory that you would like to use instead, delete the newly-generated `go.mod` and `go.sum` and Dagger will use the parent one instead. This is not advisable if your Dagger module has certain dependencies that are not relevant to your core product, since most consumers will prefer a narrower set of dependencies.
+
+To keep the generated `go.mod` file and edit your Dagger module in the same IDE session as your project code, one option is to set up a [Go workspace](https://go.dev/doc/tutorial/workspaces):
+
+```shell
+# in the root of your repository
+go work init
+go work use ./
+go work use ./path/to/mod
+```
+
+After restarting the IDE, you should be able to use IDE features such as go-to-definition, even when editing `dagger/main.go` from the project root.
+
+In most cases, `go.work` should not be committed to the repository, so it is advisable to add it to the project's `.gitignore` file:
+
+```shell
+echo go.work >> .gitignore
+echo go.work.sum >> .gitignore
+```
+
+:::tip
+You can also choose to omit the local Go files generated by `dagger develop` from your version control system, as they aren't required to run the module.
+:::
+
+### Source maps
+
+When working with multiple inter-dependent Dagger modules, it can be challenging to navigate between Dagger Functions defined in different modules. Source-maps offer a solution to this problem, by allowing developers to directly click through or navigate to type declarations in their IDE.
+
+The Go SDK automatically attaches source-maps to the module code. These are a record of the filename, the line number, and the column number that a type declaration corresponds to in the source code. The SDK analyzes the source code, and outputs these (as line comments of the form `./path/to/filename:line`) when creating the type definitions during module initialization.
+
+Most popular IDEs support source-maps, either natively or with an external plugin, such as the [Open file plugin](https://marketplace.visualstudio.com/items?itemName=Fr43nk.seito-openfile) for Visual Studio Code.
+

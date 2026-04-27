@@ -233,14 +233,13 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		uiFnName := fn.mod.Self().Name()
-		if fn.metadata.Name != "" {
-			uiFnName += "." + fn.metadata.Name
-		}
-		console(ctx, "user default: %s(%s=%q)", uiFnName, argName, argDefault.UserInput)
 		currentArgRes, ok := updatedMetadata.LookupArg(argName)
 		if !ok {
-			return fmt.Errorf("find function arg %q on %s", argName, uiFnName)
+			fnName := fn.mod.Self().Name()
+			if fn.metadata.Name != "" {
+				fnName += "." + fn.metadata.Name
+			}
+			return fmt.Errorf("find function arg %q on %s", argName, fnName)
 		}
 		updatedArgRes := currentArgRes
 		argTypeDef := currentArgRes.Self().TypeDef.Self()
@@ -287,14 +286,6 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 	}
 	fn.metadata = updatedMetadata
 	return nil
-}
-
-// Print text directly on the user's console
-func console(ctx context.Context, msg string, args ...any) {
-	if !strings.HasSuffix(msg, "\n") {
-		msg += "\n"
-	}
-	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
 }
 
 // A user-defined default value that is a primitive type (not an object)
@@ -818,6 +809,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Call:              curCall,
 		ExecID:            identity.NewID(),
 		Internal:          true,
+		LockMode:          clientMetadata.LockMode,
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
 	if curCall != nil {

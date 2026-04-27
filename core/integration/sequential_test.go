@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Sequential execution and isolation behavior.
+// Intent: Keep sequencing and isolation guarantees stable independently of workspace cleanup.
+
 import (
 	"context"
 	"testing"

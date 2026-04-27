@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: GPU device access through container execution.
+// Intent: Keep GPU integration behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"fmt"

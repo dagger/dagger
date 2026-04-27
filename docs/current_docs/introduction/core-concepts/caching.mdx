@@ -1,0 +1,37 @@
+---
+title: "Caching"
+slug: /core-concepts/caching
+description: "Understand and configure Dagger's caching behavior"
+---
+
+# Caching
+
+Dagger caches aggressively by default. Most workflows get significant speedups without any configuration.
+
+## How it works
+
+Dagger caches at three levels:
+
+**Layer caching.** Every container operation (install packages, copy files, run commands) is cached by its inputs. Change one file and only the affected steps re-run. This works the same as Docker layer caching but is managed automatically.
+
+**Volume caching.** Package manager caches (`node_modules`, `.m2`, `pip` cache) persist across runs via cache volumes. Modules that use these tools typically configure volumes automatically.
+
+**Function call caching.** When a module function is called with the same inputs, Dagger can skip execution entirely and return the cached result.
+
+## What you need to know
+
+**Caching is content-addressed.** The cache key is derived from the full chain of inputs — base image, files, commands, arguments. If anything in the chain changes, downstream steps re-run.
+
+**File changes invalidate downstream steps.** If you mount your entire source directory and a single file changes, every step after the mount re-runs. Well-designed modules use tight file filters to minimize this.
+
+**Cache volumes persist across sessions.** They survive engine restarts and are shared across all workflows running on the same engine. This is why `npm install` is fast on the second run even after restarting Dagger.
+
+**CI and local caches are separate by default.** Your laptop and your CI runners maintain independent caches. Use Dagger Cloud for shared caching across environments.
+
+## Troubleshooting
+
+If a step re-runs when you expect it to be cached:
+
+1. Check if any input files changed (even timestamps)
+2. Check if environment variables differ between runs
+3. Use `-vv` to see detailed cache hit/miss information in the TUI
