@@ -30,7 +30,23 @@ const (
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
 	goSDKLibVersion = "7058e9313c720d82c6a07fefb6ce3fab60c7ec4e" // v0.20.6
+
+	// goSDKOfflineEnv, when set to any non-empty value on the engine
+	// container, omits --lib-version from codegen calls. That makes the Go
+	// codegen fall back to the embedded querybuilder so module init/develop
+	// works without network access to dagger.io / proxy.golang.org / sum.golang.org.
+	goSDKOfflineEnv = "DAGGER_GO_SDK_OFFLINE"
 )
+
+// goSDKLibVersionArgs returns the --lib-version arg pair for codegen, unless
+// the offline env var is set, in which case it returns nil so codegen treats
+// LibVersion as empty and uses the embedded querybuilder.
+func goSDKLibVersionArgs() dagql.ArrayInput[dagql.String] {
+	if os.Getenv(goSDKOfflineEnv) != "" {
+		return nil
+	}
+	return dagql.ArrayInput[dagql.String]{"--lib-version", dagql.String(goSDKLibVersion)}
+}
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
 
@@ -374,15 +390,14 @@ func (sdk *goSDK) ModuleTypes(
 			Args: []dagql.NamedInput{
 				{
 					Name: "args",
-					Value: dagql.ArrayInput[dagql.String]{
+					Value: append(dagql.ArrayInput[dagql.String]{
 						"codegen",
 						"generate-typedefs",
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
 						"--introspection-json-path", goSDKIntrospectionJSONPath,
-						"--lib-version", dagql.String(goSDKLibVersion),
 						"--output", GoSDKModuleIDPath,
-					},
+					}, goSDKLibVersionArgs()...),
 				},
 				{
 					Name:  "experimentalPrivilegedNesting",
@@ -601,8 +616,8 @@ func (sdk *goSDK) baseWithCodegen(
 		"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
-		"--lib-version", dagql.String(goSDKLibVersion),
 	}
+	codegenArgs = append(codegenArgs, goSDKLibVersionArgs()...)
 	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")
 	}

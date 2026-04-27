@@ -54,6 +54,16 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
 
+	// When no LibVersion was passed (offline mode, gated by DAGGER_GO_SDK_OFFLINE
+	// on the engine), use the embedded querybuilder so codegen doesn't fetch
+	// dagger.io/dagger.
+	if moduleConfig.LibVersion == "" {
+		layers = append(layers,
+			&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
+		)
+		pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")
+	}
+
 	genSt.Overlay = layerfs.New(layers...)
 
 	if outDir != "." {
@@ -248,7 +258,7 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 	// Check if the module go.mod replaces the dagger.io/dagger library with a custom path.
 	// If so, we keep it as is.
 	// Otherwise, we install the given dagger.io/dagger package version.
-	if !isDaggerPkgCustomReplaced(mod.Replace) {
+	if g.Config.ModuleConfig.LibVersion != "" && !isDaggerPkgCustomReplaced(mod.Replace) {
 		genSt.PostCommands = append(genSt.PostCommands,
 			exec.Command("go", "get", "-u", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
 	}
