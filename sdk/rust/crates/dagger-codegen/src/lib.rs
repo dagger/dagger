@@ -83,6 +83,18 @@ mod tests {
             "type": {"kind": "NON_NULL", "name": null,
               "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
             "isDeprecated": false, "deprecationReason": null
+          },
+          {
+            "name": "lookup", "description": "Lookup by path.",
+            "args": [{
+              "name": "path", "description": null,
+              "type": {"kind": "NON_NULL", "name": null,
+                "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+              "defaultValue": null
+            }],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null
           }
         ],
         "inputFields": null, "interfaces": null, "enumValues": null,
@@ -99,6 +111,18 @@ mod tests {
             "name": "id", "description": null, "args": [],
             "type": {"kind": "NON_NULL", "name": null,
               "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null
+          },
+          {
+            "name": "lookup", "description": "Lookup by path.",
+            "args": [{
+              "name": "path", "description": null,
+              "type": {"kind": "NON_NULL", "name": null,
+                "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+              "defaultValue": null
+            }],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
             "isDeprecated": false, "deprecationReason": null
           },
           {
@@ -120,6 +144,18 @@ mod tests {
             "name": "id", "description": null, "args": [],
             "type": {"kind": "NON_NULL", "name": null,
               "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null
+          },
+          {
+            "name": "lookup", "description": "Lookup by path.",
+            "args": [{
+              "name": "path", "description": null,
+              "type": {"kind": "NON_NULL", "name": null,
+                "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+              "defaultValue": null
+            }],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
             "isDeprecated": false, "deprecationReason": null
           }
         ],
@@ -196,6 +232,23 @@ mod tests {
         assert!(
             code.contains("impl Node for Directory"),
             "expected 'impl Node for Directory'"
+        );
+    }
+
+    #[test]
+    fn interface_trait_impl_required_string_args_are_converted() {
+        let code = generate_from_json(interface_schema());
+        assert!(
+            code.contains(r#"query = query.arg("path", path.into());"#),
+            "trait impl should convert impl Into<String> before serializing it, got:\n{}",
+            code.lines()
+                .filter(|l| l.contains("path") || l.contains("lookup"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert!(
+            !code.contains(r#"query = query.arg("path", path);"#),
+            "trait impl must not pass impl Into<String> directly to Selection::arg"
         );
     }
 

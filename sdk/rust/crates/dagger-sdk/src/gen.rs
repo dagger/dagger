@@ -101,6 +101,71 @@ pub struct PortForward {
     pub frontend: isize,
     pub protocol: NetworkProtocol,
 }
+/// An object that can be exported to the host.
+/// Calling export writes the object to a path on the host filesystem and returns the path that was written.
+pub trait Exportable {
+    fn export(
+        &self,
+        path: impl Into<String>,
+    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send;
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
+}
+#[derive(Clone)]
+pub struct ExportableClient {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for ExportableClient {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl ExportableClient {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("export");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Loadable for ExportableClient {
+    fn graphql_type() -> &'static str {
+        "Exportable"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Exportable for ExportableClient {
+    fn export(
+        &self,
+        path: impl Into<String>,
+    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+        let mut query = self.selection.select("export");
+        query = query.arg("path", path.into());
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 /// An object with a globally unique ID.
 pub trait Node {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
@@ -143,6 +208,63 @@ impl Loadable for NodeClient {
 impl Node for NodeClient {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+/// An object that can be force-evaluated.
+/// Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
+pub trait Syncer {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
+}
+#[derive(Clone)]
+pub struct SyncerClient {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for SyncerClient {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl SyncerClient {
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn sync(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("sync");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Loadable for SyncerClient {
+    fn graphql_type() -> &'static str {
+        "Syncer"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Syncer for SyncerClient {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
@@ -440,6 +562,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type DiffStat
+    pub fn as_diff_stat(&self) -> DiffStat {
+        let query = self.selection.select("asDiffStat");
+        DiffStat {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type Directory
     pub fn as_directory(&self) -> Directory {
         let query = self.selection.select("asDirectory");
@@ -507,6 +638,15 @@ impl Binding {
     pub fn as_git_repository(&self) -> GitRepository {
         let query = self.selection.select("asGitRepository");
         GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type HTTPState
+    pub fn as_http_state(&self) -> HttpState {
+        let query = self.selection.select("asHTTPState");
+        HttpState {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -784,6 +924,15 @@ impl Changeset {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Structured per-path diff statistics (kind and line counts) for this changeset.
+    pub fn diff_stats(&self) -> Vec<DiffStat> {
+        let query = self.selection.select("diffStats");
+        vec![DiffStat {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
     /// Applies the diff represented by this changeset to a path on the host.
     ///
     /// # Arguments
@@ -930,9 +1079,37 @@ impl Changeset {
         }
     }
 }
+impl Exportable for Changeset {
+    fn export(
+        &self,
+        path: impl Into<String>,
+    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+        let mut query = self.selection.select("export");
+        query = query.arg("path", path.into());
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 impl Node for Changeset {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+impl Syncer for Changeset {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
@@ -1127,6 +1304,49 @@ impl CheckGroup {
     }
 }
 impl Node for CheckGroup {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct ClientFilesyncMirror {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for ClientFilesyncMirror {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ClientFilesyncMirror {
+    fn graphql_type() -> &'static str {
+        "ClientFilesyncMirror"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl ClientFilesyncMirror {
+    /// A unique identifier for this ClientFilesyncMirror.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ClientFilesyncMirror {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -1376,6 +1596,8 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    #[builder(setter(into, strip_option), default)]
+    pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDockerHealthcheckOpts<'a> {
@@ -1513,6 +1735,9 @@ pub struct ContainerWithMountedDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Mount the directory read-only.
+    #[builder(setter(into, strip_option), default)]
+    pub read_only: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedFileOpts<'a> {
@@ -2458,6 +2683,9 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -3013,6 +3241,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(read_only) = opts.read_only {
+            query = query.arg("readOnly", read_only);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -3863,9 +4094,37 @@ impl Container {
         query.execute(self.graphql_client.clone()).await
     }
 }
+impl Exportable for Container {
+    fn export(
+        &self,
+        path: impl Into<String>,
+    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+        let mut query = self.selection.select("export");
+        query = query.arg("path", path.into());
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 impl Node for Container {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+impl Syncer for Container {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
@@ -4050,6 +4309,74 @@ impl Node for CurrentModule {
     }
 }
 #[derive(Clone)]
+pub struct DiffStat {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for DiffStat {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for DiffStat {
+    fn graphql_type() -> &'static str {
+        "DiffStat"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl DiffStat {
+    /// Number of added lines for this path.
+    pub async fn added_lines(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("addedLines");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this DiffStat.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Type of change.
+    pub async fn kind(&self) -> Result<DiffStatKind, DaggerError> {
+        let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Previous path of the file, set only for renames.
+    pub async fn old_path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("oldPath");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Path of the changed file or directory.
+    pub async fn path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Number of removed lines for this path.
+    pub async fn removed_lines(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("removedLines");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for DiffStat {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct Directory {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -4196,15 +4523,18 @@ pub struct DirectoryWithDirectoryOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
     /// A user:group to set for the copied directory and its contents.
-    /// The user and group must be an ID (1000:1000), not a name (foo:bar).
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Permission given to the copied directory and contents (e.g., 0755).
+    #[builder(setter(into, strip_option), default)]
+    pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithFileOpts<'a> {
     /// A user:group to set for the copied directory and its contents.
-    /// The user and group must be an ID (1000:1000), not a name (foo:bar).
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
@@ -4349,7 +4679,7 @@ impl Directory {
     /// * `path` - Path of the directory to change ownership of (e.g., "/").
     /// * `owner` - A user:group to set for the mounted directory and its contents.
     ///
-    /// The user and group must be an ID (1000:1000), not a name (foo:bar).
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     ///
     /// If the group is omitted, it defaults to the same as the user.
     pub fn chown(&self, path: impl Into<String>, owner: impl Into<String>) -> Directory {
@@ -4849,6 +5179,9 @@ impl Directory {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -5163,9 +5496,37 @@ impl Directory {
         }
     }
 }
+impl Exportable for Directory {
+    fn export(
+        &self,
+        path: impl Into<String>,
+    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+        let mut query = self.selection.select("export");
+        query = query.arg("path", path.into());
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 impl Node for Directory {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+impl Syncer for Directory {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
@@ -5210,7 +5571,7 @@ impl Engine {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The local (on-disk) cache for the Dagger engine
+    /// The local engine cache state tracked by dagql
     pub fn local_cache(&self) -> EngineCache {
         let query = self.selection.select("localCache");
         EngineCache {
@@ -5586,6 +5947,7 @@ impl EnumTypeDef {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The members of the enum.
     pub fn values(&self) -> Vec<EnumValueTypeDef> {
         let query = self.selection.select("values");
         vec![EnumValueTypeDef {
@@ -6184,6 +6546,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type DiffStat in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The DiffStat value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_diff_stat_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withDiffStatInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired DiffStat output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_diff_stat_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withDiffStatOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type Directory in the environment
     ///
     /// # Arguments
@@ -6560,6 +6971,55 @@ impl Env {
         description: impl Into<String>,
     ) -> Env {
         let mut query = self.selection.select("withGitRepositoryOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type HTTPState in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The HTTPState value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_http_state_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withHTTPStateInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired HTTPState output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_http_state_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withHTTPStateOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
@@ -7891,7 +8351,7 @@ impl File {
     ///
     /// * `owner` - A user:group to set for the file.
     ///
-    /// The user and group must be an ID (1000:1000), not a name (foo:bar).
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     ///
     /// If the group is omitted, it defaults to the same as the user.
     pub fn chown(&self, owner: impl Into<String>) -> File {
@@ -8165,9 +8625,37 @@ impl File {
         }
     }
 }
+impl Exportable for File {
+    fn export(
+        &self,
+        path: impl Into<String>,
+    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+        let mut query = self.selection.select("export");
+        query = query.arg("path", path.into());
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 impl Node for File {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+impl Syncer for File {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
@@ -8856,7 +9344,7 @@ impl Loadable for Generator {
     }
 }
 impl Generator {
-    /// The generated changeset
+    /// The generated changeset from the last run
     pub fn changes(&self) -> Changeset {
         let query = self.selection.select("changes");
         Changeset {
@@ -8880,7 +9368,7 @@ impl Generator {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Wether changeset from the generator execution is empty or not
+    /// Whether changeset from the last generator run is empty or not
     pub async fn is_empty(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("isEmpty");
         query.execute(self.graphql_client.clone()).await
@@ -8957,7 +9445,7 @@ impl Loadable for GeneratorGroup {
     }
 }
 impl GeneratorGroup {
-    /// The combined changes from the generators execution
+    /// The combined changes from the last run of the generators
     /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
     /// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
     ///
@@ -8972,7 +9460,7 @@ impl GeneratorGroup {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The combined changes from the generators execution
+    /// The combined changes from the last run of the generators
     /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
     /// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
     ///
@@ -8995,7 +9483,7 @@ impl GeneratorGroup {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Whether the generated changeset is empty or not
+    /// Whether the generated changeset from the last run is empty or not
     pub async fn is_empty(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("isEmpty");
         query.execute(self.graphql_client.clone()).await
@@ -9331,6 +9819,49 @@ impl GitRepository {
     }
 }
 impl Node for GitRepository {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct HttpState {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for HttpState {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for HttpState {
+    fn graphql_type() -> &'static str {
+        "HTTPState"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl HttpState {
+    /// A unique identifier for this HTTPState.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for HttpState {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -10378,6 +10909,18 @@ impl Node for Llm {
         async move { query.execute(graphql_client).await }
     }
 }
+impl Syncer for Llm {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct LlmTokenUsage {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -10931,6 +11474,18 @@ impl Module {
 impl Node for Module {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+impl Syncer for Module {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
@@ -11560,6 +12115,18 @@ impl Node for ModuleSource {
         async move { query.execute(graphql_client).await }
     }
 }
+impl Syncer for ModuleSource {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct ObjectTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -11590,7 +12157,7 @@ impl Loadable for ObjectTypeDef {
     }
 }
 impl ObjectTypeDef {
-    /// The function used to construct new instances of this object, if any
+    /// The function used to construct new instances of this object, if any.
     pub fn constructor(&self) -> Function {
         let query = self.selection.select("constructor");
         Function {
@@ -11729,6 +12296,20 @@ pub struct Query {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryCacheVolumeOpts<'a> {
+    /// A user:group to set for the cache volume root.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
+    /// Sharing mode of the cache volume.
+    #[builder(setter(into, strip_option), default)]
+    pub sharing: Option<CacheSharingMode>,
+    /// Identifier of the directory to use as the cache volume's root.
+    #[builder(setter(into, strip_option), default)]
+    pub source: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryContainerOpts {
     /// Platform to initialize the container with. Defaults to the native platform of the current engine
     #[builder(setter(into, strip_option), default)]
@@ -11740,6 +12321,9 @@ pub struct QueryCurrentTypeDefsOpts {
     /// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
     #[builder(setter(into, strip_option), default)]
     pub hide_core: Option<bool>,
+    /// Return the full referenced typedef closure instead of only top-level served typedefs.
+    #[builder(setter(into, strip_option), default)]
+    pub return_all_types: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryEnvOpts {
@@ -11791,6 +12375,9 @@ pub struct QueryHttpOpts<'a> {
     /// Secret used to populate the Authorization HTTP header
     #[builder(setter(into, strip_option), default)]
     pub auth_header: Option<Id>,
+    /// Expected digest of the downloaded content (e.g., "sha256:...").
+    #[builder(setter(into, strip_option), default)]
+    pub checksum: Option<&'a str>,
     /// A service which must be started before the URL is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<Id>,
@@ -11872,9 +12459,38 @@ impl Query {
     /// # Arguments
     ///
     /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn cache_volume(&self, key: impl Into<String>) -> CacheVolume {
         let mut query = self.selection.select("cacheVolume");
         query = query.arg("key", key.into());
+        CacheVolume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Constructs a cache volume for a given cache key.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn cache_volume_opts<'a>(
+        &self,
+        key: impl Into<String>,
+        opts: QueryCacheVolumeOpts<'a>,
+    ) -> CacheVolume {
+        let mut query = self.selection.select("cacheVolume");
+        query = query.arg("key", key.into());
+        if let Some(source) = opts.source {
+            query = query.arg("source", source);
+        }
+        if let Some(sharing) = opts.sharing {
+            query = query.arg("sharing", sharing);
+        }
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
+        }
         CacheVolume {
             proc: self.proc.clone(),
             selection: query,
@@ -11980,6 +12596,9 @@ impl Query {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn current_type_defs_opts(&self, opts: QueryCurrentTypeDefsOpts) -> Vec<TypeDef> {
         let mut query = self.selection.select("currentTypeDefs");
+        if let Some(return_all_types) = opts.return_all_types {
+            query = query.arg("returnAllTypes", return_all_types);
+        }
         if let Some(hide_core) = opts.hide_core {
             query = query.arg("hideCore", hide_core);
         }
@@ -12274,6 +12893,9 @@ impl Query {
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
+        if let Some(checksum) = opts.checksum {
+            query = query.arg("checksum", checksum);
+        }
         if let Some(auth_header) = opts.auth_header {
             query = query.arg("authHeader", auth_header);
         }
@@ -12487,6 +13109,49 @@ impl Query {
     }
 }
 impl Node for Query {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct RemoteGitMirror {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for RemoteGitMirror {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for RemoteGitMirror {
+    fn graphql_type() -> &'static str {
+        "RemoteGitMirror"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl RemoteGitMirror {
+    /// A unique identifier for this RemoteGitMirror.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for RemoteGitMirror {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -13043,6 +13708,18 @@ impl Node for Service {
         async move { query.execute(graphql_client).await }
     }
 }
+impl Syncer for Service {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct Socket {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -13275,6 +13952,18 @@ impl Node for Terminal {
         async move { query.execute(graphql_client).await }
     }
 }
+impl Syncer for Terminal {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
 #[derive(Clone)]
 pub struct TypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -13436,6 +14125,11 @@ impl TypeDef {
     /// The kind of type this is (e.g. primitive, list, object).
     pub async fn kind(&self) -> Result<TypeDefKind, DaggerError> {
         let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The canonical non-optional name of the type.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
     /// Whether this type can be set to null. Defaults to false.
@@ -14282,6 +14976,17 @@ pub enum ChangesetsMergeConflict {
     Fail,
     #[serde(rename = "FAIL_EARLY")]
     FailEarly,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum DiffStatKind {
+    #[serde(rename = "ADDED")]
+    Added,
+    #[serde(rename = "MODIFIED")]
+    Modified,
+    #[serde(rename = "REMOVED")]
+    Removed,
+    #[serde(rename = "RENAMED")]
+    Renamed,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ExistsType {

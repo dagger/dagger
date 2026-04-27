@@ -113,7 +113,10 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
     }
 }
 
-fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+pub(crate) fn render_required_args(
+    _funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<rust::Tokens> {
     if let Some(args) = field.args.as_ref() {
         let args = args
             .iter()

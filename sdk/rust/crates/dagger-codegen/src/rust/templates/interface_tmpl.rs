@@ -3,7 +3,9 @@ use genco::prelude::rust;
 use genco::quote;
 
 use crate::functions::{CommonFunctions, TypeRefExt};
-use crate::rust::functions::{format_name, format_struct_comment, format_struct_name};
+use crate::rust::functions::{
+    format_name, format_struct_comment, format_struct_name, render_required_args,
+};
 use crate::utility::OptionExt;
 
 use super::object_tmpl::{render_loadable_impl, render_object_without_loadable};
@@ -145,8 +147,7 @@ fn render_trait_method_args(
     }
 }
 
-/// Generate `impl Foo for FooClient { ... }` that delegates to the
-/// struct's inherent methods.
+/// Generate `impl Foo for FooClient { ... }`.
 fn render_trait_impl_for_client(funcs: &CommonFunctions, t: &FullType) -> rust::Tokens {
     let iface_name = t.name.pipe(|s| format_name(s)).unwrap_or_default();
     let client_name = format!("{}Client", &iface_name);
@@ -164,7 +165,7 @@ fn render_trait_impl_for_client(funcs: &CommonFunctions, t: &FullType) -> rust::
     }
 }
 
-/// Generate forwarding methods for `impl Foo for FooClient`.
+/// Generate methods for `impl Foo for FooClient`.
 fn render_trait_impl_methods(funcs: &CommonFunctions, fields: &[FullTypeFields]) -> rust::Tokens {
     let methods: Vec<rust::Tokens> = fields
         .iter()
@@ -176,7 +177,7 @@ fn render_trait_impl_methods(funcs: &CommonFunctions, fields: &[FullTypeFields])
     }
 }
 
-/// Generate a single forwarding method.
+/// Generate a single trait implementation method.
 fn render_trait_impl_method(
     funcs: &CommonFunctions,
     field: &FullTypeFields,
@@ -194,9 +195,8 @@ fn render_trait_impl_method(
     if is_object {
         Some(quote! {
             fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> $(&output_type) {
-                // Delegate to inherent method on the struct
-                let query = self.selection.select($(genco::tokens::quoted(name)));
-                $(render_required_arg_setters(funcs, field))
+                let mut query = self.selection.select($(genco::tokens::quoted(name)));
+                $(render_required_args(funcs, field))
                 $(&output_type) {
                     proc: self.proc.clone(),
                     selection: query,
@@ -207,8 +207,8 @@ fn render_trait_impl_method(
     } else {
         Some(quote! {
             fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<$output_type, $dagger_error>> + Send {
-                let query = self.selection.select($(genco::tokens::quoted(name)));
-                $(render_required_arg_setters(funcs, field))
+                let mut query = self.selection.select($(genco::tokens::quoted(name)));
+                $(render_required_args(funcs, field))
                 let graphql_client = self.graphql_client.clone();
                 async move {
                     query.execute(graphql_client).await
@@ -261,52 +261,8 @@ fn render_trait_impl_arg_parts(
     }
 }
 
-/// Render query.arg(...) calls for required args in trait impl methods.
-fn render_required_arg_setters(
-    _funcs: &CommonFunctions,
-    field: &FullTypeFields,
-) -> Option<rust::Tokens> {
-    let args = field.args.as_ref()?;
-    let setters: Vec<rust::Tokens> = args
-        .iter()
-        .filter_map(|a| {
-            let a = a.as_ref()?;
-            if a.input_value.type_.is_optional() {
-                return None;
-            }
-            let n = format_struct_name(&a.input_value.name);
-            let name = &a.input_value.name;
-
-            if a.input_value.type_.is_id() {
-                Some(quote! {
-                    let query = query.arg_lazy(
-                        $(genco::tokens::quoted(name)),
-                        Box::new(move || {
-                            let $(&n) = $(&n).clone();
-                            Box::pin(async move { $(&n).into_id().await.unwrap().quote() })
-                        }),
-                    );
-                })
-            } else {
-                Some(quote! {
-                    let query = query.arg($(genco::tokens::quoted(name)), $(&n));
-                })
-            }
-        })
-        .collect();
-
-    if setters.is_empty() {
-        None
-    } else {
-        Some(quote! {
-            $(for s in setters join ($['\r']) => $s)
-        })
-    }
-}
-
 /// Generate `impl InterfaceName for ObjectName { ... }` for an object
-/// that declares an interface. This generates forwarding methods that
-/// delegate to the object struct's inherent methods.
+/// that declares an interface.
 pub fn render_interface_impl_for_object(
     funcs: &CommonFunctions,
     object_type: &FullType,
@@ -331,8 +287,7 @@ pub fn render_interface_impl_for_object(
     }
 }
 
-/// Generate forwarding methods for `impl Interface for Object`.
-/// These forward to the object's inherent methods which already exist.
+/// Generate methods for `impl Interface for Object`.
 fn render_trait_impl_methods_for_object(
     funcs: &CommonFunctions,
     fields: &[FullTypeFields],
