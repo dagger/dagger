@@ -25,7 +25,7 @@ New core concepts: **Workspaces, Modules, Functions, Checks.**
 
 ## Docs Structure
 
-```
+```text
 Overview
 
 Installation
@@ -128,7 +128,7 @@ Three-stage user journey: project-specific module → team-shared → general-pu
 
 **Editions are self-contained.** The sidebar shows one guide per language. Users pick their language and get a complete, self-contained guide. Each edition is its own source file with its own snippet tree — not a derived artifact.
 
-```
+```text
 Developing Modules
 ├── Base Edition (Dang)     ← fully fleshed out; the reference implementation
 ├── Go Edition              ← "not yet available" placeholder + recipes + IDE setup
@@ -149,6 +149,7 @@ Developing Modules
 **Replacement plan:** Dang is the reference edition. Go/TS/Python editions are currently placeholders with recipes + IDE setup, and will be fleshed out directly — each with its own prose and snippets, referencing the Dang edition for shared concepts where that saves work. If duplication becomes painful, we revisit — but duplication is cheap and divergence is honest.
 
 **Why not multi-language tabs in a single guide:**
+
 - **Better end product.** An edition is a complete document in your language, not a tabbed patchwork.
 - **Composable.** Adding a new SDK means writing one new edition, not touching every example.
 - **Community-friendly.** Third-party SDKs can add their own editions without touching core docs.
@@ -206,12 +207,14 @@ Content:
 ### Error 1: `-m` on legacy workspace (hard error)
 
 Current:
-```
+
+```text
 This module must be migrated to a workspace. Run 'dagger -W <ref>'
 ```
 
 Proposed (dynamic, based on which fields are present):
-```
+
+```text
 This module's dagger.json uses <fields>, which have moved to workspaces.
 Try: dagger -W <ref>
 What changed: https://docs.dagger.io/reference/upgrade-to-workspaces
@@ -220,12 +223,14 @@ What changed: https://docs.dagger.io/reference/upgrade-to-workspaces
 ### Error 2: Compat warning (soft, non-blocking)
 
 Current:
-```
+
+```text
 No workspace config found, inferring from dagger.json. Run 'dagger migrate' soon.
 ```
 
 Proposed:
-```
+
+```text
 No workspace config found, inferring from dagger.json.
 Run 'dagger migrate' when ready. More info: https://docs.dagger.io/reference/upgrade-to-workspaces
 ```
@@ -254,7 +259,7 @@ Remaining redirects for all the above are captured in `docs/netlify.toml`.
 
 Three skills for `dagger/skills/` repo, following the SKILL.md open standard:
 
-```
+```text
 dagger/skills/
 ├── setup-ci/SKILL.md      — Detect stack, install modules, configure workspace, verify
 ├── use-dagger/SKILL.md    — Run checks, generate, ship, debug failures
@@ -262,6 +267,7 @@ dagger/skills/
 ```
 
 Design principles:
+
 - **Task-oriented, not reference-oriented.** Vercel evals show skills work best for procedural workflows. Reference knowledge goes in AGENTS.md.
 - **Under 500 lines / 5,000 tokens each.** Detailed material in `references/` subdirectories.
 - **Use-case framing for discoverability.** "Set up CI for your project" maximizes marketplace discovery — skill discovery as the new SEO.
@@ -284,6 +290,7 @@ Everything else ships after merge.
 ## Follow-up Work (Post-Merge)
 
 **Done (shipped during this restructure pass):**
+
 - Adopting Dagger pages — Secrets, Observability, Triggers, Scaling, Engine Configuration.
 - Features section migration / deletion.
 - Dang edition fleshed out (custom types, enums, interfaces, caching, documentation).
@@ -294,6 +301,7 @@ Everything else ships after merge.
 - Orphan cleanup: glossary, troubleshooting, best-practices, ide-setup, use-cases, faq, examples, custom-applications, pre-workspace API pages, container runtimes.
 
 **Still pending:**
+
 - **Workspace Configuration reference page** (`.dagger/config.toml` schema) — intentionally deferred. Tracked in `docs/TODO.md`.
 - **Artifacts core concept page** — deferred to the upcoming artifacts branch. The page existed but was thin and was killed rather than shipped half-baked. The Dang edition still teaches artifacts as a design frame, and the artifacts branch will reintroduce the dedicated concept page.
 - **Flesh out Go / TypeScript / Python editions** — currently placeholders with IDE setup + recipes. Need full prose covering the Dang edition's section structure, with language-idiomatic snippets.

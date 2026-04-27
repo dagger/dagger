@@ -389,8 +389,8 @@ been reviewed before implementation so type shapes and file boundaries stay alig
 
 ```go
 type Server interface {
-	CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error)
-	SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error
+    CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error)
+    SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error
 }
 ```
 
@@ -402,9 +402,9 @@ These are the only live-path hooks schema consumers should need.
 
 ```go
 type workspaceLookupLock struct {
-	ctx   context.Context
-	query *core.Query
-	lock  *workspace.Lock
+    ctx   context.Context
+    query *core.Query
+    lock  *workspace.Lock
 }
 
 func loadWorkspaceLookupLock(ctx context.Context, query *core.Query) (*workspaceLookupLock, error)
@@ -436,7 +436,7 @@ After live resolution:
 
 ```go
 if resolution.ShouldWrite {
-	err = lookupLock.SetLookup(lockCoreNamespace, lockContainerFromOperation, inputs, result)
+    err = lookupLock.SetLookup(lockCoreNamespace, lockContainerFromOperation, inputs, result)
 }
 ```
 
@@ -482,22 +482,22 @@ These helpers are the shared mutation substrate used by both:
 
 ```go
 type daggerSession struct {
-	lockFiles  map[workspaceLockKey]*workspaceLockState
-	lockFileMu sync.RWMutex
+    lockFiles  map[workspaceLockKey]*workspaceLockState
+    lockFileMu sync.RWMutex
 }
 
 type workspaceLockKey struct {
-	ownerClientID string
-	lockPath      string
+    ownerClientID string
+    lockPath      string
 }
 
 type workspaceLockState struct {
-	ws       *core.Workspace
-	lockPath string
-	lock     *workspace.Lock
-	delta    *workspace.Lock
-	loaded   bool
-	dirty    bool
+    ws       *core.Workspace
+    lockPath string
+    lock     *workspace.Lock
+    delta    *workspace.Lock
+    loaded   bool
+    dirty    bool
 }
 ```
 
@@ -540,10 +540,10 @@ defer srv.locker.Unlock(export.lockPath)
 
 latest, _, err := readWorkspaceLockState(workspaceCtx, bk, export.ws)
 if err == nil {
-	err = latest.Merge(export.delta)
+    err = latest.Merge(export.delta)
 }
 if err == nil {
-	err = exportWorkspaceLockToHost(workspaceCtx, bk, export.ws, latest)
+    err = exportWorkspaceLockToHost(workspaceCtx, bk, export.ws, latest)
 }
 ```
 
