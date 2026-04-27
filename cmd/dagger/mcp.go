@@ -62,12 +62,23 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return errors.New("currently MCP only works with stdio")
 	}
 
-	modDef, err := initializeWorkspace(ctx, engineClient.Dagger())
+	modDef, err := initializeWorkspace(ctx, engineClient.Dagger(), loadTypeDefsOpts{HideCore: true})
 	if err != nil {
 		return err
 	}
 
-	if modDef == nil && !envPrivileged {
+	hasWorkspaceModule := false
+	if modDef != nil && modDef.MainObject != nil {
+		if fp := modDef.MainObject.AsFunctionProvider(); fp != nil {
+			for _, fn := range fp.GetFunctions() {
+				if fn.SourceModuleName != "" || fn.Name == "with" {
+					hasWorkspaceModule = true
+					break
+				}
+			}
+		}
+	}
+	if !hasWorkspaceModule && !envPrivileged {
 		return fmt.Errorf("no module found and --env-privileged not specified")
 	}
 
