@@ -127,6 +127,7 @@ const config: Config = {
     "docusaurus-plugin-image-zoom",
     // Thanks to @jharrell and Prisma team. Apache-2.0 content
     llmsTxtPlugin,
+    "docusaurus-plugin-copy-page-button",
     [
       "posthog-docusaurus",
       {
