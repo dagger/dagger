@@ -563,13 +563,17 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		return nil, fmt.Errorf("current call is nil")
 	}
 
+	// cacheKeyDigest, err := curCall.RecipeDigest(ctx)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("tree cache key: %w", err)
+	//} 
 	inputs := []string{
 		ref.Name,
 		ref.SHA,
 		ref.repo.URL.Remote(),
-		fmt.Sprintf("discard git: %t", discardGitDir),
+		fmt.Sprintf("discard git: %b", discardGitDir),
 		fmt.Sprintf("depth: %d", depth),
-		fmt.Sprintf("tags: %t", includeTags),
+		fmt.Sprintf("tags: %b", includeTags),
 	}
 	cacheKey := hashutil.HashStrings(inputs...).String()
 	cache := query.SnapshotManager()
