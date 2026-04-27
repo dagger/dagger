@@ -23,7 +23,7 @@ func (r *Release) Bump(
 			return err
 		}).
 		WithJob("bump helm chart version", func(ctx context.Context) error {
-			chartYaml, err := dag.HelmDev().SetVersion(engineVersion).Sync(ctx)
+			chartYaml, err := r.helmSetVersion(ctx, engineVersion)
 			if err != nil {
 				return err
 			}

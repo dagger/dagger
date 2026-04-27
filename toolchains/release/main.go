@@ -316,12 +316,10 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "helm/chart/",
 			link: "https://github.com/dagger/dagger/pkgs/container/dagger-helm",
 			release: func(ctx context.Context) error {
-				return dag.HelmDev().Publish(ctx, tag, dagger.HelmDevPublishOpts{
-					GithubToken: githubToken,
-				})
+				return r.helmPublish(ctx, tag, githubToken, false)
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.HelmDev().ReleaseDryRun(ctx)
+				return r.helmReleaseDryRun(ctx)
 			},
 		},
 	}

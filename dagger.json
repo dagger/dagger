@@ -73,13 +73,9 @@
       "customizations": [
         {
           "argument": "selectModule",
-          "default": "e2e/installers"
+          "default": "e2e/*"
         }
       ]
-    },
-    {
-      "name": "helm",
-      "source": "toolchains/helm-dev"
     },
     {
       "name": "java-sdk",
