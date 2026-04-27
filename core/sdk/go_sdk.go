@@ -953,11 +953,14 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 			Field: "_sshAuthSocket",
 		},
 	); err != nil {
-		return nil, nil, fmt.Errorf("failed to select internal socket: %w", err)
+		// SSH_AUTH_SOCK is set but the socket is unavailable (stale, broken, etc.).
+		// Continue without SSH agent forwarding; if something downstream actually
+		// needs SSH (e.g. private git deps), it will fail with a clear auth error.
+		return nil, nil, nil
 	}
 
 	if sockInst.Self() == nil {
-		return nil, nil, fmt.Errorf("sockInst.Self is NIL")
+		return nil, nil, nil
 	}
 	sockInstID, err := sockInst.ID()
 	if err != nil {
