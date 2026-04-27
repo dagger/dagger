@@ -15488,6 +15488,19 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	}
 }
 
+// Refresh workspace-managed state and return the resulting changeset.
+//
+// Currently this refreshes existing lockfile entries only.
+//
+// Experimental: Experimental workspace update API currently refreshes existing lockfile entries only.
+func (r *Workspace) Update() *Changeset {
+	q := r.query.Select("update")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // Sharing mode of the cache volume.
 type CacheSharingMode string
 

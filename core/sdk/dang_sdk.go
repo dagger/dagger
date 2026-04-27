@@ -100,6 +100,7 @@ func (r *DangRuntime) Call(
 
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.SessionID = clientMetadata.SessionID
+	execMD.LockMode = clientMetadata.LockMode
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
 
 	if execMD.ExecID == "" {
