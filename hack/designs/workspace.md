@@ -86,6 +86,7 @@ dagger install github.com/dagger/go-toolchain --name=go
 ```
 
 This updates `.dagger/config.toml`. If no workspace exists yet:
+
 - If in a git repository, creates `.dagger/config.toml` at the repo root
 - Otherwise, creates in the current directory
 
@@ -204,6 +205,7 @@ When the engine receives a remote workspace ref:
 4. **Load modules**: Local sources (e.g. `source = "modules/ci"`) are resolved as paths within the cloned repo. Remote sources (e.g. `source = "github.com/other/module@v1.0"`) are loaded as-is.
 
 **Limitations:**
+
 - **Read-only**: Mutating commands (`install`, `module init`) are not supported.
 - **No local host access**: The workspace context is the cloned git tree, not the local machine. Modules cannot access the local filesystem.
 - **Config value resolution**: `config.*` entries that reference environment variables (`${VAR}`) or secrets (`env://KEY`) resolve against the *local* environment where Dagger runs, not the remote repo's environment.
@@ -243,6 +245,7 @@ dagger call -m github.com/foo/bar build
 ```
 
 When `-m` is used:
+
 - Workspace modules from `config.toml` are skipped
 - The CWD module is suppressed
 - The specified module is loaded with its functions promoted to the Query root
@@ -290,6 +293,7 @@ At most one module can be the active entrypoint. After deduplication, entrypoint
 3. Ambient workspace modules
 
 Cross-tier conflicts are resolved by precedence. Same-tier conflicts are errors. In particular:
+
 - More than one distinct ambient workspace entrypoint is an invalid workspace configuration.
 - More than one distinct extra-module entrypoint is an invalid request.
 
@@ -311,13 +315,14 @@ When the engine encounters a legacy `dagger.json` with no `.dagger/config.toml`,
 
 The engine detects ambient workspace context in this order:
 
-```
+```text
 find-up .dagger/config.toml   → normal workspace
 else find-up eligible legacy dagger.json   → CompatWorkspace
 else   → no workspace
 ```
 
 A legacy `dagger.json` is eligible for compat if any of these are true:
+
 - `source != "."`
 - `toolchains` is non-empty
 - `blueprint` is set
@@ -327,6 +332,7 @@ If a legacy `dagger.json` is found but is not eligible, it does not create ambie
 Legacy fields (`blueprint`, `toolchains`) are interpreted **only** while building the compat workspace. The compat main module is stripped before generic module loading; other generic module loads do not honor those fields. Direct module load fails, and workspace module sources that still point at a legacy workspace fail with an explicit migration error.
 
 Inside the compat workspace:
+
 - If a legacy `blueprint` exists, the blueprint module is the compat entrypoint.
 - Otherwise, the projected main module is the compat entrypoint.
 
@@ -336,7 +342,7 @@ If there is also a distinct CWD module (see [CWD Module](#cwd-module)), the CWD 
 
 This guarantee must hold:
 
-```
+```text
 compat mode  ==  migrate in memory, then load
 ```
 
@@ -365,6 +371,7 @@ type WorkspaceMigrationStep {
 ```
 
 The engine guarantees:
+
 - `changes` and all `steps` are based on the same pre-migration state
 - `changes` is equivalent to merging the step changesets in order
 - `steps = []` and an empty `changes` means "no migration needed"
@@ -376,7 +383,7 @@ Returning one plan is intentional. Future migration expansion happens inside `st
 
 `dagger migrate` is a thin wrapper over `Workspace.migrate()`:
 
-```
+```console
 $ dagger migrate
 Migrated to workspace format
 WARNING: 2 migration gaps need manual review; see .dagger/migration-report.md
@@ -397,11 +404,14 @@ The migration handles three cases, which can co-occur in a single project:
 Steps:
 
 1. **Move module source** to `.dagger/modules/<name>/`:
-   ```
+
+   ```text
    .dagger/*                        →  .dagger/modules/<name>/
    dagger.json (project root)       →  .dagger/modules/<name>/dagger.json
    ```
+
    Special case: when `source = ".dagger"`, the old source directory is also the new workspace root. In this case migration must not leave the legacy `.dagger/` tree intact, and it also cannot delete `.dagger/` wholesale because the migrated module now lives under `.dagger/modules/<name>/`. Instead it prunes `.dagger/` down to the workspace-owned outputs created by migration:
+
    - `.dagger/config.toml`
    - `.dagger/lock` if written
    - `.dagger/migration-report.md` if written
@@ -440,6 +450,7 @@ For each toolchain:
 **dagger/dagger.io** — workspace ancestor pattern (no sdk, no source, toolchains only):
 
 Before:
+
 ```json
 {"name": "dagger.io", "engineVersion": "v0.19.8",
  "toolchains": [
@@ -449,6 +460,7 @@ Before:
 ```
 
 After `dagger migrate` — `.dagger/config.toml`:
+
 ```toml
 [modules.api]
 source = "../api"
@@ -462,6 +474,7 @@ The `dagger.json` is removed (it had no sdk, no source — it was purely config)
 **dagger/dagger** — both triggers (source != ".", has toolchains):
 
 Before:
+
 ```json
 {"name": "dagger-dev", "sdk": {"source": "go"}, "source": ".dagger",
  "toolchains": [
@@ -473,6 +486,7 @@ Before:
 ```
 
 After `dagger migrate` — `.dagger/config.toml`:
+
 ```toml
 [modules.dagger-dev]
 source = "modules/dagger-dev"
@@ -492,6 +506,7 @@ source = "../toolchains/security"
 ```
 
 After `dagger migrate` — `.dagger/migration-report.md`:
+
 ```md
 # Migration Report
 
@@ -505,6 +520,7 @@ After `dagger migrate` — `.dagger/migration-report.md`:
 ```
 
 After `dagger migrate` — `.dagger/modules/dagger-dev/dagger.json`:
+
 ```json
 {
   "name": "dagger-dev",
@@ -534,17 +550,20 @@ dagger module init --sdk=go ci
 ```
 
 This:
+
 1. Creates `.dagger/modules/ci/` with module source files
 2. Auto-registers in `.dagger/config.toml`:
+
    ```toml
    [modules.ci]
    source = "modules/ci"
    ```
+
 3. Module is immediately callable: `dagger call ci <function>`
 
 **Directory structure:**
 
-```
+```text
 repo/
 ├── .dagger/
 │   ├── config.toml
@@ -656,12 +675,14 @@ A team with a workspace at `apps/frontend/` expects the first to find *their* Go
 | Traversal | `../backend` | **error** | — |
 
 Edge cases degrade cleanly:
+
 - No git root → absolute = relative (scope collapses to workspace directory)
 - Workspace at git root → absolute = relative (same scope, no surprise)
 
 **Convention for module developers:** default to relative paths. A well-behaved module respects the user's workspace scope. Use absolute paths only when you deliberately need repo-wide reach (CI modules, cross-project dependency scanners, etc.).
 
 Metadata:
+
 - `ws.path` — the workspace directory path relative to the workspace boundary
 - `ws.address` — the canonical Dagger address of the workspace
 
