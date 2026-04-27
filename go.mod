@@ -58,9 +58,8 @@ require (
 	github.com/containernetworking/plugins v1.9.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creack/pty v1.1.24
-	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
+	github.com/dagger/otel-go v1.41.1-0.20260409001409-0fcfffbd7443
 	github.com/dagger/testctx v0.1.2
-	github.com/dagger/testctx/oteltest v0.1.2
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0

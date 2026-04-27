@@ -9,8 +9,8 @@ replace (
 )
 
 require (
-	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
-	go.opentelemetry.io/otel/sdk v1.42.0
+	github.com/dagger/otel-go v1.43.1-0.20260427142032-2ff3f61a35cd
+	go.opentelemetry.io/otel/sdk v1.43.0
 )
 
 require (
@@ -26,7 +26,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.41.0 // indirect
 	go.opentelemetry.io/otel/log v0.17.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.17.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.42.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/text v0.35.0 // indirect

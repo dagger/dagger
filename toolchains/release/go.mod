@@ -6,7 +6,7 @@ replace github.com/dagger/dagger => ../..
 
 require (
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
+	github.com/dagger/otel-go v1.41.1-0.20260409001409-0fcfffbd7443
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	go.opentelemetry.io/otel/sdk v1.42.0
 	golang.org/x/mod v0.34.0
