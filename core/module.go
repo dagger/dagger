@@ -1751,7 +1751,29 @@ func (mod *Module) namespaceSourceMap(
 	sourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]],
 ) (dagql.Nullable[dagql.ObjectResult[*SourceMap]], error) {
 	if !sourceMap.Valid || sourceMap.Value.Self() == nil {
-		return sourceMap, nil
+		// Even if the SDK didn't provide a source map, record the module
+		// name so downstream consumers (CLI, shell, codegen dependency
+		// filtering) can identify which module a type/function belongs to.
+		// Route through dag.Select rather than NewObjectResultForCurrentCall
+		// so the result is attached and callers can read its ID when calling
+		// __withSourceMap.
+		dag, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return dagql.Nullable[dagql.ObjectResult[*SourceMap]]{}, fmt.Errorf("current dagql server: %w", err)
+		}
+		var synthesized dagql.ObjectResult[*SourceMap]
+		if err := dag.Select(ctx, dag.Root(), &synthesized, dagql.Selector{
+			Field: "sourceMap",
+			Args: []dagql.NamedInput{
+				{Name: "module", Value: dagql.Opt(dagql.String(mod.Name()))},
+				{Name: "filename", Value: dagql.String("")},
+				{Name: "line", Value: dagql.Int(0)},
+				{Name: "column", Value: dagql.Int(0)},
+			},
+		}); err != nil {
+			return dagql.Nullable[dagql.ObjectResult[*SourceMap]]{}, fmt.Errorf("synthesize source map for module %q: %w", mod.Name(), err)
+		}
+		return dagql.NonNull(synthesized), nil
 	}
 	filename := filepath.Join(modPath, sourceMap.Value.Self().Filename)
 	url := sourceMap.Value.Self().URL
