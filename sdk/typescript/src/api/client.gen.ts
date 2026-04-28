@@ -13367,7 +13367,7 @@ export class _SyncerClient extends BaseClient {
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return new Syncer(ctx.copy().selectNode(response, "Syncer"))
+    return new _SyncerClient(ctx.copy().selectNode(response, "Syncer"))
   }
 }
 

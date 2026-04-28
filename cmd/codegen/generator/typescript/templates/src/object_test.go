@@ -136,6 +136,60 @@ func TestInterfaceMethodOptionalArgDeprecated(t *testing.T) {
 	require.Equal(t, want, b.String())
 }
 
+func TestInterfaceConvertIDMethodConstructsClient(t *testing.T) {
+	tmpl := templateHelper(t)
+
+	var syncerJSON = `
+    {
+      "kind": "INTERFACE",
+      "name": "Syncer",
+      "description": "",
+      "fields": [
+        {
+          "args": [],
+          "deprecationReason": null,
+          "description": "",
+          "isDeprecated": false,
+          "name": "sync",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID"
+            }
+          },
+          "directives": [
+            {
+              "name": "expectedType",
+              "args": [
+                {
+                  "name": "name",
+                  "value": "\"Syncer\""
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "inputFields": null,
+      "interfaces": [],
+      "enumValues": null,
+      "possibleTypes": null
+    }
+`
+
+	object := objectInit(t, syncerJSON)
+
+	var b bytes.Buffer
+	err := tmpl.ExecuteTemplate(&b, "interface", object)
+	require.NoError(t, err)
+
+	got := b.String()
+	require.Contains(t, got, "sync = async (): Promise<Syncer> => {")
+	require.Contains(t, got, `return new _SyncerClient(ctx.copy().selectNode(response, "Syncer"))`)
+	require.NotContains(t, got, `return new Syncer(`)
+}
+
 func objectInit(t *testing.T, jsonString string) *introspection.Type {
 	t.Helper()
 	var object introspection.Type
