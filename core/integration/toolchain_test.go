@@ -561,8 +561,8 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 	c := connect(ctx, t)
 
 	const (
-		toolchainOldRef = "github.com/dagger/pytest@43bbd8a3daa3db19202eec22a93971e3c54d7670"
-		toolchainNewRef = "github.com/dagger/pytest@a6ae8e2911f9f0a7621b05bf25593bc51652f7d6"
+		toolchainOldRef = "github.com/dagger/pytest@d4de5238116484bf709971d277291878b9c96ab7"
+		toolchainNewRef = "github.com/dagger/pytest@7ad89dbaf2cdd6e09c4ff2be42ff554a63c81397"
 	)
 
 	// Test installing multiple versions of the same toolchain using different commits
