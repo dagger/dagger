@@ -377,6 +377,10 @@ type pendingModule struct {
 	DefaultsFromDotEnv bool
 	ArgCustomizations  []*modules.ModuleConfigArgument
 
+	// How legacy workspace-only dagger.json fields should be handled before
+	// generic module loading.
+	legacyFieldPolicy legacyWorkspaceFieldPolicy
+
 	// For legacy blueprints, the caller module's own .env should still behave
 	// like the "inner" env file even though the code now loads from the
 	// blueprint source tree.
