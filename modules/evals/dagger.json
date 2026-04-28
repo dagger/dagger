@@ -13,5 +13,8 @@
       "name": "facts-workspace",
       "source": "facts-workspace"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }
