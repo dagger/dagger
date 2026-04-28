@@ -74,5 +74,8 @@
       "name": "version",
       "source": "../../version"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }
