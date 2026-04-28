@@ -315,6 +315,8 @@ func (r *Release) Publish( //nolint:gocyclo
 			path: "helm/dagger/",
 			tag:  "helm/chart/",
 			link: "https://github.com/dagger/dagger/pkgs/container/dagger-helm",
+			// Helm publishing was inlined from helm-dev so release owns the
+			// package/push step without reintroducing that module dependency.
 			release: func(ctx context.Context) error {
 				return r.helmPublish(ctx, tag, githubToken, false)
 			},

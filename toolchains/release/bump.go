@@ -23,6 +23,8 @@ func (r *Release) Bump(
 			return err
 		}).
 		WithJob("bump helm chart version", func(ctx context.Context) error {
+			// Release mutates Chart.yaml directly because helm-dev is only a
+			// chart-checking toolchain now, not a release dependency.
 			chartYaml, err := r.helmSetVersion(ctx, engineVersion)
 			if err != nil {
 				return err

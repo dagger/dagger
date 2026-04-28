@@ -10,6 +10,9 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// Helm chart versioning and publication live in release now. The former
+// helm-dev module only covers chart checks, so release owns the artifact path
+// directly instead of depending on a separate toolchain for these steps.
 func (r *Release) helmChartSource() *dagger.Directory {
 	return dag.CurrentWorkspace().
 		Directory("/", dagger.WorkspaceDirectoryOpts{Include: []string{"helm/dagger"}}).
