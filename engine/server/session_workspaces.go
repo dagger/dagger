@@ -381,6 +381,9 @@ type pendingModule struct {
 	// +defaultPath inputs from this source ref instead.
 	DefaultPathContextSourceRef string
 	DefaultPathContextSourcePin string
+	// How legacy workspace-only dagger.json fields should be handled before
+	// generic module loading.
+	legacyFieldPolicy legacyWorkspaceFieldPolicy
 
 	// For legacy blueprints, the caller module's own .env should still behave
 	// like the "inner" env file even though the code now loads from the
