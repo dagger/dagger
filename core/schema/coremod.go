@@ -69,7 +69,12 @@ func (base *CoreSchemaBase) Fork(ctx context.Context, root *core.Query, view cal
 	if err != nil {
 		return nil, err
 	}
-	return state.server.Fork(ctx, root)
+	forked, err := state.server.Fork(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	core.InstallCoreSchemaLoaders(forked)
+	return forked, nil
 }
 
 func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*coreSchemaViewState, error) {

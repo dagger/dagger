@@ -72,6 +72,12 @@ type Server struct {
 	// dependencies installed, rather than being limited to the
 	// current server's schema.
 	nodeLoader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)
+
+	// resultServerForCall, if set, returns a server capable of reconstructing
+	// cached or persisted results produced by a call. This lets the Dagger core
+	// layer rebuild module-aware schemas for cache hits whose object type belongs
+	// to a dependency module that is not installed in the current server.
+	resultServerForCall func(ctx context.Context, resultCall *ResultCall) (*Server, error)
 }
 
 func (s *Server) Canonical() *Server {
@@ -90,6 +96,13 @@ func (s *Server) SetCanonical(canonical *Server) {
 // that has all necessary module dependencies installed.
 func (s *Server) SetNodeLoader(loader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)) {
 	s.nodeLoader = loader
+}
+
+// SetResultServerForCall sets a custom schema resolver for cached result
+// reconstruction. The returned server must be able to resolve object types
+// referenced by the result call.
+func (s *Server) SetResultServerForCall(loader func(ctx context.Context, resultCall *ResultCall) (*Server, error)) {
+	s.resultServerForCall = loader
 }
 
 type InstallHook interface {
@@ -177,10 +190,14 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 			if err != nil {
 				return nil, fmt.Errorf("expected valid ID: %w", err)
 			}
-			if srv.nodeLoader != nil {
-				return srv.nodeLoader(ctx, id)
+			loaderSrv := CurrentDagqlServer(ctx)
+			if loaderSrv == nil {
+				loaderSrv = srv
 			}
-			return srv.Load(ctx, id)
+			if loaderSrv.nodeLoader != nil {
+				return loaderSrv.nodeLoader(ctx, id)
+			}
+			return loaderSrv.Load(ctx, id)
 		},
 	)
 
@@ -211,6 +228,7 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	out.View = s.View
 	out.canonical = s.canonical
 	out.nodeLoader = s.nodeLoader
+	out.resultServerForCall = s.resultServerForCall
 
 	s.installLock.RLock()
 	defer s.installLock.RUnlock()

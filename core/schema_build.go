@@ -15,6 +15,59 @@ type modInstall struct {
 	opts InstallOpts
 }
 
+// InstallCoreSchemaLoaders configures DagQL loaders that need Dagger's module
+// dependency model. Core schema forks are also used directly by client sessions,
+// so this is installed outside buildSchema as well as inside module-aware schema
+// builders.
+func InstallCoreSchemaLoaders(dag *dagql.Server) {
+	serverForResultCall := func(ctx context.Context, resultCall *dagql.ResultCall) (*dagql.Server, error) {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return dag, nil
+		}
+		deps, err := query.ModDepsForCall(ctx, resultCall)
+		if err != nil {
+			return nil, err
+		}
+		resultServer, err := deps.Schema(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return resultServer, nil
+	}
+
+	// Set up cache-result and node(id:) loaders to resolve cached objects through
+	// a server that has all module dependencies required by the result call. Without
+	// this, reconstructing a cached dependency-module object would be limited to the
+	// current server's schema, which may only contain core types.
+	dag.SetResultServerForCall(serverForResultCall)
+	dag.SetNodeLoader(func(ctx context.Context, id *call.ID) (dagql.AnyObjectResult, error) {
+		if id == nil || id.EngineResultID() == 0 {
+			return dag.Load(ctx, id)
+		}
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("node: current client metadata: %w", err)
+		}
+		if clientMetadata.SessionID == "" {
+			return nil, fmt.Errorf("node: empty session ID")
+		}
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("node: engine cache: %w", err)
+		}
+		resultCall, err := cache.ResultCallByResultID(ctx, clientMetadata.SessionID, id.EngineResultID())
+		if err != nil {
+			return nil, fmt.Errorf("node: load result call: %w", err)
+		}
+		idServer, err := serverForResultCall(ctx, resultCall)
+		if err != nil {
+			return nil, fmt.Errorf("node: resolve deps: %w", err)
+		}
+		return idServer.Load(ctx, id)
+	})
+}
+
 func buildSchema(
 	ctx context.Context,
 	root *Query,
@@ -54,44 +107,7 @@ func buildSchema(
 		dagintro.Install[*Query](dag)
 	}
 
-	// Set up the node(id:) loader to resolve IDs through a server that has all
-	// the module dependencies the ID requires. Without this, node(id:) would try
-	// to replay the ID's call chain on the current server, which may not have the
-	// necessary modules installed.
-	dag.SetNodeLoader(func(ctx context.Context, id *call.ID) (dagql.AnyObjectResult, error) {
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			// No query in context — fall back to the local server.
-			return dag.Load(ctx, id)
-		}
-		if id == nil || id.EngineResultID() == 0 {
-			return dag.Load(ctx, id)
-		}
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("node: current client metadata: %w", err)
-		}
-		if clientMetadata.SessionID == "" {
-			return nil, fmt.Errorf("node: empty session ID")
-		}
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("node: engine cache: %w", err)
-		}
-		call, err := cache.ResultCallByResultID(ctx, clientMetadata.SessionID, id.EngineResultID())
-		if err != nil {
-			return nil, fmt.Errorf("node: load result call: %w", err)
-		}
-		deps, err := query.ModDepsForCall(ctx, call)
-		if err != nil {
-			return nil, fmt.Errorf("node: resolve deps: %w", err)
-		}
-		idServer, err := deps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("node: build server: %w", err)
-		}
-		return idServer.Load(ctx, id)
-	})
+	InstallCoreSchemaLoaders(dag)
 
 	objects, ifaces, err := installModules(ctx, dag, mods, coreMod)
 	if err != nil {

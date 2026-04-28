@@ -35,6 +35,7 @@ func newModuleSDK(
 		return nil, fmt.Errorf("create sdk module server: %w", err)
 	}
 	dag.Around(core.AroundFunc)
+	core.InstallCoreSchemaLoaders(dag)
 
 	if err := core.NewUserMod(sdkModMeta).Install(ctx, dag); err != nil {
 		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self().Name(), err)

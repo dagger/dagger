@@ -192,6 +192,45 @@ func TestBasic(t *testing.T) {
 	assert.Equal(t, 8, res.Point.ShiftLeft.Neighbors[3].Y)
 }
 
+func TestForkedNodeUsesCurrentServerLoader(t *testing.T) {
+	cache := newCache(t)
+	ctx := dagql.ContextWithCache(testContext(), cache)
+	base := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](base)
+	fork, err := base.Fork(ctx, Query{})
+	require.NoError(t, err)
+
+	var called atomic.Bool
+	fork.SetNodeLoader(func(ctx context.Context, id *call.ID) (dagql.AnyObjectResult, error) {
+		called.Store(true)
+		return fork.Load(ctx, id)
+	})
+
+	gql := newTestClientWithCache(fork, cache)
+	var created struct {
+		Point struct {
+			ID string
+		}
+	}
+	req(t, gql, `query { point(x: 1, y: 2) { id } }`, &created)
+
+	var loaded struct {
+		Loaded points.Point
+	}
+	req(t, gql, `query {
+		loaded: node(id: "`+created.Point.ID+`") {
+			... on Point {
+				x
+				y
+			}
+		}
+	}`, &loaded)
+
+	assert.Assert(t, called.Load())
+	assert.Equal(t, 1, loaded.Loaded.X)
+	assert.Equal(t, 2, loaded.Loaded.Y)
+}
+
 func TestSelectArray(t *testing.T) {
 	ctx := testContext()
 	cache := newCache(t)
