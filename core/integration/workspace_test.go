@@ -8,11 +8,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
