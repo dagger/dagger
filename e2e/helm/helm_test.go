@@ -48,20 +48,6 @@ var daggerCLISourceIncludes = []string{
 	"util/**",
 }
 
-func TestLint(t *testing.T) {
-	ctx := t.Context()
-	client := connect(t)
-
-	_, err := helmContainer(client).
-		WithExec([]string{"helm", "lint"}).
-		WithExec([]string{"helm", "lint", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
-		WithExec([]string{"helm", "template", ".", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
-		Sync(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestCustomProbes(t *testing.T) {
 	ctx := t.Context()
 	client := connect(t)

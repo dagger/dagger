@@ -78,6 +78,10 @@
       ]
     },
     {
+      "name": "helm",
+      "source": "toolchains/helm-dev"
+    },
+    {
       "name": "java-sdk",
       "source": "toolchains/java-sdk-dev"
     },
