@@ -261,6 +261,12 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 	if g.Config.ModuleConfig.LibVersion != "" && !isDaggerPkgCustomReplaced(mod.Replace) {
 		genSt.PostCommands = append(genSt.PostCommands,
 			exec.Command("go", "get", "-u", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
+	} else if g.Config.ModuleConfig.LibVersion == "" && !isDaggerPkgCustomReplaced(mod.Replace) {
+		// Offline mode: the generated code imports <usermod>/internal/querybuilder
+		// (overlaid from the embedded SDK) and does not import dagger.io/dagger
+		// directly. Drop any pre-existing require so go mod tidy doesn't try to
+		// resolve it from the proxy.
+		_ = mod.DropRequire(daggerImportPath)
 	}
 
 	genSt.PostCommands = append(genSt.PostCommands,
