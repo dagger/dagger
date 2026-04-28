@@ -14,5 +14,8 @@
       "name": "go",
       "source": "../../toolchains/go"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

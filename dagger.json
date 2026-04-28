@@ -152,5 +152,8 @@
     "go.sum",
     "util/patchpreview"
   ],
-  "source": ".dagger"
+  "source": ".dagger",
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

@@ -37,8 +37,8 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.6
-	github.com/99designs/gqlgen v0.17.89 // indirect
+	dagger.io/dagger v0.20.6-0.20260415192040-7058e9313c72
+	github.com/99designs/gqlgen v0.17.90 // indirect
 	github.com/Khan/genqlient v0.8.1
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -47,7 +47,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.32
+	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
