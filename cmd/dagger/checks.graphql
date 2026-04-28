@@ -21,11 +21,13 @@ query CheckGroupRunStatuses($checkGroup: ID!) {
   }
 }
 
-query CheckGroupRunStatusesFailFast($checkGroup: CheckGroupID!) {
-  checkGroup: loadCheckGroupFromID(id: $checkGroup) {
-    run(failFast: true) {
-      list {
-        passed
+query CheckGroupRunStatusesFailFast($checkGroup: ID!) {
+  checkGroup: node(id: $checkGroup) {
+    ... on CheckGroup {
+      run(failFast: true) {
+        list {
+          passed
+        }
       }
     }
   }

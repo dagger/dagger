@@ -1026,23 +1026,66 @@ func resolveArgTypeDef(ctx context.Context, dag *dagql.Server, arg introspection
 		return argType, ok, err
 	}
 
-	// Handle unified ID scalar: when an arg is typed as the bare "ID" scalar,
-	// resolve the actual object/interface type from @expectedType.
-	if argType.Self().Kind == core.TypeDefKindScalar && argType.Self().AsScalar.Valid && argType.Self().AsScalar.Value.Self().Name == "ID" {
-		if expectedName := arg.Directives.ExpectedType(); expectedName != "" {
-			inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-				Field: "withObject",
-				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(expectedName)}},
-			})
-			if err != nil {
-				return dagql.ObjectResult[*core.TypeDef]{}, false, err
-			}
-			inst, err = maybeOptional(ctx, dag, inst, !argType.Self().Optional)
-			return inst, true, err
+	if expectedName := arg.Directives.ExpectedType(); expectedName != "" {
+		resolved, changed, err := resolveIDScalar(ctx, dag, argType, expectedName)
+		if err != nil || changed {
+			return resolved, changed, err
 		}
 	}
 
 	return argType, true, nil
+}
+
+func resolveIDScalar(ctx context.Context, dag *dagql.Server, typeDef dagql.ObjectResult[*core.TypeDef], expectedName string) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+	self := typeDef.Self()
+	switch self.Kind {
+	case core.TypeDefKindScalar:
+		if !self.AsScalar.Valid {
+			return typeDef, false, nil
+		}
+		scalar := self.AsScalar.Value.Self()
+		if scalar.OriginalName != "ID" && scalar.Name != "ID" {
+			return typeDef, false, nil
+		}
+
+		field := "withObject"
+		if _, ok := dag.InterfaceType(expectedName); ok {
+			field = "withInterface"
+		}
+		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: field,
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(expectedName)}},
+		})
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(ctx, dag, inst, !self.Optional)
+		return inst, true, err
+
+	case core.TypeDefKindList:
+		if !self.AsList.Valid {
+			return typeDef, false, nil
+		}
+		elem, changed, err := resolveIDScalar(ctx, dag, self.AsList.Value.Self().ElementTypeDef, expectedName)
+		if err != nil || !changed {
+			return typeDef, changed, err
+		}
+		elemID, err := core.ResultIDInput(elem)
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "withListOf",
+			Args:  []dagql.NamedInput{{Name: "elementType", Value: elemID}},
+		})
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(ctx, dag, inst, !self.Optional)
+		return inst, true, err
+	}
+
+	return typeDef, false, nil
 }
 
 func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspectionType *introspection.TypeRef, nonNull, isInput bool) (dagql.ObjectResult[*core.TypeDef], bool, error) {

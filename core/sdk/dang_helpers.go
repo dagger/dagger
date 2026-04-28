@@ -21,6 +21,7 @@ import (
 	"github.com/vito/dang/pkg/hm"
 	"github.com/vito/dang/pkg/introspection"
 	"github.com/vito/dang/pkg/ioctx"
+	"github.com/vito/dang/pkg/querybuilder"
 	"go.opentelemetry.io/otel/propagation"
 )
 
@@ -850,18 +851,37 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 				return dang.ScalarValue{Val: v, ScalarType: modType}, nil
 			}
 
-			sel := &dang.FunCall{
-				Fun: &dang.Select{
-					Field: &dang.Symbol{Name: fmt.Sprintf("load%sFromID", modType.Named)},
-				},
-				Args: dang.Record{
-					dang.Keyed[dang.Node]{
-						Key:   "id",
-						Value: &dang.String{Value: v},
-					},
+			nodeVal, found := env.Get("node")
+			if !found {
+				return nil, fmt.Errorf("node field not found in environment")
+			}
+			nodeFn, ok := nodeVal.(dang.GraphQLFunction)
+			if !ok {
+				return nil, fmt.Errorf("node field is %T, not dang.GraphQLFunction", nodeVal)
+			}
+
+			field := *nodeFn.Field
+			field.TypeRef = &introspection.TypeRef{
+				Kind: introspection.TypeKindNonNull,
+				OfType: &introspection.TypeRef{
+					Kind: introspection.TypeKindObject,
+					Name: modType.Named,
 				},
 			}
-			return sel.Eval(ctx, env)
+			if schemaType := nodeFn.Schema.Types.Get(modType.Named); schemaType != nil {
+				field.TypeRef.OfType.Kind = schemaType.Kind
+			}
+
+			return dang.GraphQLValue{
+				Name:       "node",
+				TypeName:   modType.Named,
+				Field:      &field,
+				ValType:    hm.NonNullType{Type: modType},
+				Client:     nodeFn.Client,
+				Schema:     nodeFn.Schema,
+				TypeEnv:    nodeFn.TypeEnv,
+				QueryChain: querybuilder.Query().Select("node").Arg("id", v).InlineFragment(modType.Named),
+			}, nil
 		}
 		return dang.StringValue{Val: v}, nil
 	case int:

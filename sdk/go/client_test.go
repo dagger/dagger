@@ -76,7 +76,7 @@ func TestGit(t *testing.T) {
 	readmeID, err := readmeFile.ID(ctx)
 	require.NoError(t, err)
 
-	otherReadme, err := c.LoadFileFromID(readmeID).Contents(ctx)
+	otherReadme, err := Ref[*File](c, readmeID).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, readme, otherReadme)
 }
@@ -108,8 +108,7 @@ func TestContainer(t *testing.T) {
 	// Ensure we can grab the container ID back and re-run the same query
 	id, err := alpine.ID(ctx)
 	require.NoError(t, err)
-	contents, err = c.
-		LoadContainerFromID(id).
+	contents, err = Ref[*Container](c, id).
 		File("/etc/alpine-release").
 		Contents(ctx)
 	require.NoError(t, err)
