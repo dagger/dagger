@@ -3898,6 +3898,96 @@ func TestInterfaces(t *testing.T) {
 		assert.Equal(t, 1, res.Point.X)
 	})
 
+	t.Run("concurrent implementation registration and fragment parsing", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+		points.Install[Query](srv)
+
+		spatial := dagql.NewInterface("Spatial", "Something with spatial coordinates.")
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "y",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(spatial)
+
+		pointType, ok := srv.ObjectType("Point")
+		assert.Assert(t, ok)
+		pointClass := pointType.(dagql.Class[*points.Point])
+		pointClass.Implements(spatial)
+
+		gql := newTestClient(srv)
+		query := `query {
+			point(x: 1, y: 2) {
+				... on Spatial {
+					x
+					y
+				}
+			}
+		}`
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		errs := make(chan error, 1)
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for ctx.Err() == nil {
+					var res struct {
+						Point struct {
+							X int
+							Y int
+						}
+					}
+					if err := gql.Post(query, &res); err != nil {
+						select {
+						case errs <- err:
+							cancel()
+						default:
+						}
+						return
+					}
+					if res.Point.X != 1 || res.Point.Y != 2 {
+						select {
+						case errs <- fmt.Errorf("unexpected point: %+v", res.Point):
+							cancel()
+						default:
+						}
+						return
+					}
+				}
+			}()
+		}
+
+		for range 500 {
+			select {
+			case err := <-errs:
+				cancel()
+				wg.Wait()
+				t.Fatal(err)
+			default:
+			}
+			pointClass.Implements(spatial)
+		}
+
+		cancel()
+		wg.Wait()
+		select {
+		case err := <-errs:
+			t.Fatal(err)
+		default:
+		}
+	})
+
 	t.Run("duplicate InstallInterface returns existing", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		iface1 := dagql.NewInterface("Foo", "First.")

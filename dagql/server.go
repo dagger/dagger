@@ -556,7 +556,7 @@ func (s *Server) AutoImplementInterfaces(class ObjectType) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	for _, iface := range s.autoInterfaces {
-		if _, already := iface.Implementors()[class.TypeName()]; already {
+		if iface.HasImplementor(class.TypeName()) {
 			continue
 		}
 		if iface.Satisfies(class, "") {
@@ -571,7 +571,7 @@ func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	if len(directives) > 0 {
-		iface.directives = append(iface.directives, directives...)
+		iface.addDirectives(directives...)
 	}
 	return s.installInterfaceLocked(iface)
 }
@@ -621,8 +621,8 @@ func (s *Server) AddAutoInterface(iface *Interface) {
 
 // InterfaceType returns the Interface with the given name, if it exists.
 func (s *Server) InterfaceType(name string) (*Interface, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
 	t, ok := s.interfaces[name]
 	return t, ok
 }
@@ -1637,7 +1637,7 @@ func (s *Server) isObjectType(typeName string) bool {
 	}
 	// Interface types also need to be treated as "object-like" for selection purposes,
 	// since their values are concrete objects that support field selection.
-	if _, ok := s.interfaces[typeName]; ok {
+	if _, ok := s.InterfaceType(typeName); ok {
 		return true
 	}
 	return false
@@ -2010,18 +2010,14 @@ func (s *Server) typeConditionMatches(condition string, objectTypeName string) b
 		return true
 	}
 	// Check if condition names an interface that this object implements.
-	if iface, ok := s.interfaces[condition]; ok {
-		if _, implements := iface.Implementors()[objectTypeName]; implements {
-			return true
-		}
+	if iface, ok := s.InterfaceType(condition); ok && iface.HasImplementor(objectTypeName) {
+		return true
 	}
 	// Check if objectTypeName is an interface and condition is one of its
 	// implementors. This handles inline fragments like `... on Point` when
 	// the current selection context is an interface like `Node`.
-	if iface, ok := s.interfaces[objectTypeName]; ok {
-		if _, implements := iface.Implementors()[condition]; implements {
-			return true
-		}
+	if iface, ok := s.InterfaceType(objectTypeName); ok && iface.HasImplementor(condition) {
+		return true
 	}
 	return false
 }
@@ -2034,10 +2030,15 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 		ParseField(ctx context.Context, view call.View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
 	}
 
+	s.installLock.RLock()
+	class := s.objects[self.Name()]
+	iface := s.interfaces[self.Name()]
+	s.installLock.RUnlock()
+
 	var parser fieldParser
-	if class := s.objects[self.Name()]; class != nil {
+	if class != nil {
 		parser = class
-	} else if iface, ok := s.interfaces[self.Name()]; ok {
+	} else if iface != nil {
 		parser = iface
 	} else {
 		return nil, fmt.Errorf("parseASTSelections: not an Object or Interface type: %q", self.Name())

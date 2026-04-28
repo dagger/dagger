@@ -22,7 +22,13 @@ type Interface struct {
 	description string
 	fields      map[string][]*InterfaceFieldSpec
 	fieldsL     *sync.Mutex
-	directives  []*ast.Directive
+
+	// relationsL protects the schema relationships that can change after an
+	// interface has been installed. Query parsing reads implementors to decide
+	// whether fragment type conditions apply, while module schema construction can
+	// register implementations concurrently for dependency-aware schemas.
+	relationsL *sync.RWMutex
+	directives []*ast.Directive
 
 	// implementors tracks which object types implement this interface.
 	// Keys are type names.
@@ -47,6 +53,7 @@ func NewInterface(name, description string) *Interface {
 		description:  description,
 		fields:       make(map[string][]*InterfaceFieldSpec),
 		fieldsL:      new(sync.Mutex),
+		relationsL:   new(sync.RWMutex),
 		implementors: make(map[string]struct{}),
 		interfaces:   make(map[string]*Interface),
 	}
@@ -176,14 +183,15 @@ func (iface *Interface) Definition(view call.View) *ast.Definition {
 	}
 
 	// Declare which other interfaces this interface implements.
+	iface.relationsL.RLock()
 	for ifaceName := range iface.interfaces {
 		def.Interfaces = append(def.Interfaces, ifaceName)
 	}
-	sort.Strings(def.Interfaces)
-
 	if len(iface.directives) > 0 {
 		def.Directives = append(def.Directives, iface.directives...)
 	}
+	iface.relationsL.RUnlock()
+	sort.Strings(def.Interfaces)
 
 	return def
 }
@@ -343,26 +351,58 @@ func typeCompatible(ifaceType, objType *ast.Type, checker ImplementsChecker) boo
 	return false
 }
 
+func (iface *Interface) addDirectives(directives ...*ast.Directive) {
+	iface.relationsL.Lock()
+	defer iface.relationsL.Unlock()
+	iface.directives = append(iface.directives, directives...)
+}
+
 // addImplementor records that an object type implements this interface.
 func (iface *Interface) addImplementor(typeName string) {
+	iface.relationsL.Lock()
+	defer iface.relationsL.Unlock()
 	iface.implementors[typeName] = struct{}{}
+}
+
+// HasImplementor returns true if the named object or interface type implements
+// this interface.
+func (iface *Interface) HasImplementor(typeName string) bool {
+	iface.relationsL.RLock()
+	defer iface.relationsL.RUnlock()
+	_, ok := iface.implementors[typeName]
+	return ok
 }
 
 // ImplementInterface declares that this interface implements another interface.
 // This is the interface-to-interface equivalent of Class.Implements.
 func (iface *Interface) ImplementInterface(other *Interface) {
+	iface.relationsL.Lock()
 	iface.interfaces[other.TypeName()] = other
+	iface.relationsL.Unlock()
+
 	// Also register this interface as an implementor of the other interface,
 	// so possibleTypes includes it.
 	other.addImplementor(iface.name)
 }
 
-// Implementors returns the set of type names that implement this interface.
+// Implementors returns a snapshot of the type names that implement this interface.
 func (iface *Interface) Implementors() map[string]struct{} {
-	return iface.implementors
+	iface.relationsL.RLock()
+	defer iface.relationsL.RUnlock()
+	implementors := make(map[string]struct{}, len(iface.implementors))
+	for typeName := range iface.implementors {
+		implementors[typeName] = struct{}{}
+	}
+	return implementors
 }
 
-// Interfaces returns the map of interfaces that this interface implements.
+// Interfaces returns a snapshot of the interfaces that this interface implements.
 func (iface *Interface) Interfaces() map[string]*Interface {
-	return iface.interfaces
+	iface.relationsL.RLock()
+	defer iface.relationsL.RUnlock()
+	interfaces := make(map[string]*Interface, len(iface.interfaces))
+	for name, implemented := range iface.interfaces {
+		interfaces[name] = implemented
+	}
+	return interfaces
 }
