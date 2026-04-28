@@ -73,18 +73,7 @@
       "customizations": [
         {
           "argument": "selectModule",
-          "default": "e2e/installers"
-        }
-      ]
-    },
-    {
-      "name": "helm",
-      "source": "github.com/dagger/go@main",
-      "pin": "4985ec6b9752e9deac3d37276c0f8a33ceba30bf",
-      "customizations": [
-        {
-          "argument": "selectModule",
-          "default": "e2e/helm"
+          "default": "e2e/*"
         }
       ]
     },
