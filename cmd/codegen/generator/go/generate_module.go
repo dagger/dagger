@@ -70,6 +70,12 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		return nil, fmt.Errorf("glob go files: %w", err)
 	}
 	fmt.Printf("ACB GenerateModule called with outDir=%s, initial go files=%v\n", outDir, initialGoFiles)
+	if stat, err := os.Stat(filepath.Join(g.Config.OutputDir, outDir, "src/dagger.gen.go")); err == nil {
+		fmt.Printf("ACB got dagger.gen.go stat with size %d\n", stat.Size())
+	}
+	if stat, err := os.Stat("/src/dagger.gen.go"); err == nil {
+		fmt.Printf("ACB got2 dagger.gen.go stat with size %d\n", stat.Size())
+	}
 
 	genFile := filepath.Join(g.Config.OutputDir, outDir, ClientGenFile)
 	if _, err := os.Stat(genFile); err != nil {
@@ -106,6 +112,8 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	// respect existing package name
 	pkgInfo.PackageName = pkg.Name
+
+	fmt.Printf("ACB about to call generateCode\n")
 
 	if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, pkg, fset, 1); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)
