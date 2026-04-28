@@ -63,6 +63,130 @@ func (ToolchainSuite) TestToolchainConstructor(ctx context.Context, t *testctx.T
 	})
 }
 
+func (ToolchainSuite) TestToolchainSemanticIsolation(ctx context.Context, t *testctx.T) {
+	t.Run("constructor customizations do not poison later plain installs", func(ctx context.Context, t *testctx.T) {
+		c1 := connect(ctx, t)
+		customized := toolchainTestEnv(t, c1).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello-with-constructor",
+      "customizations": [
+        {
+          "argument": "config",
+          "defaultPath": "./custom-config.txt"
+        }
+      ]
+    }
+  ]
+}
+				`).
+			WithNewFile("custom-config.txt", "this is custom configuration")
+
+		out, err := customized.
+			With(daggerExec("call", "hello", "field-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "this is custom configuration")
+
+		c2 := connect(ctx, t)
+		plain := toolchainTestEnv(t, c2).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			With(daggerExec("toolchain", "install", "../hello-with-constructor")).
+			WithNewFile("app-config.txt", "this is the app configuration")
+
+		out, err = plain.
+			With(daggerExec("call", "hello", "field-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "this is the app configuration")
+	})
+
+	t.Run("constructor customization default changes invalidate omitted arg cache", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		selected := func(out string) string {
+			lines := strings.Split(strings.TrimSpace(out), "\n")
+			if len(lines) == 0 {
+				return ""
+			}
+			return strings.TrimSpace(lines[len(lines)-1])
+		}
+		daggerJSON := func(defaultValue string) string {
+			return fmt.Sprintf(`
+{
+  "name": "default-cache-repro",
+  "engineVersion": "v0.20.6",
+  "toolchains": [
+    {
+      "name": "probe",
+      "source": "tool",
+      "customizations": [
+        {
+          "argument": "value",
+          "default": %q
+        }
+      ]
+    }
+  ]
+}
+			`, defaultValue)
+		}
+
+		base := goGitBase(t, c).
+			WithWorkdir("/work/tool").
+			With(daggerExec("init", "--sdk=go", "--name=probe")).
+			WithNewFile("main.go", `package main
+
+type Probe struct {
+	Value string
+}
+
+func New(
+	// +optional
+	value string,
+) *Probe {
+	return &Probe{Value: value}
+}
+
+func (m *Probe) Selected() string {
+	return m.Value
+}
+`)
+
+		alpha := base.
+			WithWorkdir("/work").
+			WithNewFile("dagger.json", daggerJSON("alpha"))
+
+		out, err := alpha.
+			With(daggerExec("-s", "-m", ".", "call", "probe", "selected")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "alpha", selected(out))
+
+		beta := alpha.WithNewFile("dagger.json", daggerJSON("beta"))
+
+		out, err = beta.
+			With(daggerExec("-s", "-m", ".", "call", "probe", "selected")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "beta", selected(out))
+
+		out, err = beta.
+			With(daggerExec("-s", "-m", ".", "call", "probe", "--value", "beta", "selected")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "beta", selected(out))
+	})
+}
+
 func (ToolchainSuite) TestMultipleToolchains(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("install multiple toolchains", func(ctx context.Context, t *testctx.T) {

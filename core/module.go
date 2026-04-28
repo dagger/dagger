@@ -694,11 +694,15 @@ func (mod *Module) CacheConfigForCall(
 	if resp.CacheKey.ID == nil {
 		resp.CacheKey.ID = curIDNoMod
 	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+	dgstInputs := []string{
 		curIDNoMod.Digest().String(),
 		mod.Source.Value.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name
-	))
+	}
+	if mod.AsModuleVariantDigest != "" {
+		dgstInputs = append(dgstInputs, mod.AsModuleVariantDigest)
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(dgstInputs...))
 	return resp, nil
 }
 
