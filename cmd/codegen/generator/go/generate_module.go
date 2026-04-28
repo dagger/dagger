@@ -76,6 +76,9 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	if stat, err := os.Stat("/src/dagger.gen.go"); err == nil {
 		fmt.Printf("ACB got2 dagger.gen.go stat with size %d\n", stat.Size())
 	}
+	if stat, err := os.Stat("/src/internal/dagger/dagger.gen.go"); err == nil {
+		fmt.Printf("ACB got2 /src/internal/dagger/dagger.gen.go stat with size %d\n", stat.Size())
+	}
 
 	genFile := filepath.Join(g.Config.OutputDir, outDir, ClientGenFile)
 	if _, err := os.Stat(genFile); err != nil {

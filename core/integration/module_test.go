@@ -7975,7 +7975,7 @@ func (m *Test) Fn(
     //+defaultPath="config/config.local.js"
     configFile *dagger.File,
 ) (*dagger.Directory, error) {
-    return m.Depppfail.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
+    return m.Deppp.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
 }
 `), 0644)
 		require.NoError(t, err)
