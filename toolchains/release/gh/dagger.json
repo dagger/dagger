@@ -15,5 +15,8 @@
       "name": "apko",
       "source": "../apko"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

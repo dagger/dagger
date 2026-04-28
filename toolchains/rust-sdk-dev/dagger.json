@@ -9,5 +9,8 @@
       "name": "dagger-engine",
       "source": "../engine-dev"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

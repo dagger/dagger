@@ -498,11 +498,7 @@ func (p *Go) Modules(
 	return mods, nil
 }
 
-func (p *Go) TidyModule(ctx context.Context, module string) (*dagger.Changeset, error) {
-	p, err := p.GenerateDaggerRuntime(ctx, module)
-	if err != nil {
-		return nil, err
-	}
+func (p *Go) TidyModule(module string) (*dagger.Changeset, error) {
 	tidyModDir := p.Env(defaultPlatform).
 		WithWorkdir(module).
 		WithExec([]string{"go", "mod", "tidy"}).
@@ -530,7 +526,7 @@ func (p *Go) Tidy(
 	for i, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
 			var err error
-			tidyModules[i], err = p.TidyModule(ctx, mod)
+			tidyModules[i], err = p.TidyModule(mod)
 			return err
 		})
 	}
@@ -538,6 +534,24 @@ func (p *Go) Tidy(
 		return nil, err
 	}
 	return dag.Changeset().WithChangesets(tidyModules), nil
+}
+
+// Generate Dagger runtime files for Go SDK modules in the configured source.
+// +generate
+func (p *Go) GenerateDaggerRuntimes(ctx context.Context) (*dagger.Changeset, error) {
+	before := p.Source
+
+	modules, err := p.Modules(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, module := range modules {
+		p, err = p.GenerateDaggerRuntime(ctx, module)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return p.Source.Changes(before), nil
 }
 
 // Check if 'go mod tidy' is up-to-date
@@ -564,7 +578,7 @@ func (p *Go) CheckTidy(
 		WithRollupSpans(true)
 	for _, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
-			diffTidy, err := p.TidyModule(ctx, mod)
+			diffTidy, err := p.TidyModule(mod)
 			if err != nil {
 				return err
 			}
@@ -645,12 +659,8 @@ func (p *Go) LintModule(ctx context.Context, module string) error {
 	lintImageTag := "v2.11.4-alpine"
 	lintImageDigest := "sha256:72bcd68512b4e27540dd3a778a1b7afd45759d8145cfb3c089f1d7af53e718e9"
 	lintImage := lintImageRepo + ":" + lintImageTag + "@" + lintImageDigest
-	p, err := p.GenerateDaggerRuntime(ctx, module)
-	if err != nil {
-		return err
-	}
 	return parallel.Run(ctx, "lint", func(ctx context.Context) error {
-		_, err = dag.Container().
+		_, err := dag.Container().
 			From(lintImage).
 			WithMountedCache("/go/pkg/mod", p.ModuleCache).
 			WithMountedCache("/root/.cache/go-build", p.BuildCache).
@@ -676,7 +686,7 @@ func (p *Go) LintModule(ctx context.Context, module string) error {
 func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, error) {
 	var isInside bool
 	var daggerModPath string
-	parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
+	if err := parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
 		// 1. Are we in a dagger module?
 		daggerJSONPath, err := p.Source.FindUp(ctx, "dagger.json", start)
 		if err != nil {
@@ -714,7 +724,9 @@ func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, erro
 		}
 		isInside = !strings.HasPrefix(rel, "..")
 		return nil
-	})
+	}); err != nil {
+		return nil, err
+	}
 	if isInside {
 		if err := parallel.Run(ctx, "generate dagger runtime: "+daggerModPath, func(ctx context.Context) error {
 			// 4. Match! Load the module and generate its files
