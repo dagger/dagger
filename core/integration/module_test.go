@@ -7955,7 +7955,7 @@ type Test struct {
     //+private
     Ref *dagger.GitRef
     //+private
-    Dep *dagger.Dep
+    Deppp *dagger.Dep
 }
 
 func New(
@@ -7966,7 +7966,7 @@ func New(
 ) *Test {
     return &Test{
         Ref: ref,
-        Dep: dag.Dep(source),
+        Deppp: dag.Dep(source),
     }
 }
 
@@ -7975,7 +7975,7 @@ func (m *Test) Fn(
     //+defaultPath="config/config.local.js"
     configFile *dagger.File,
 ) (*dagger.Directory, error) {
-    return m.Dep.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
+    return m.Deppp.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
 }
 `), 0644)
 		require.NoError(t, err)
@@ -7986,7 +7986,7 @@ func (m *Test) Fn(
 		gitOutput, err = gitCmd.CombinedOutput()
 		require.NoError(t, err, string(gitOutput))
 
-		gitCmd = exec.Command("git", "commit", "-m", "make HEAD exist")
+		gitCmd = exec.Command("git", "commit", "--no-gpg-sign", "-m", "make HEAD exist")
 		gitCmd.Dir = modDir
 		gitOutput, err = gitCmd.CombinedOutput()
 		require.NoError(t, err, string(gitOutput))

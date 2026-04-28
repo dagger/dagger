@@ -138,6 +138,7 @@ func (e LoadedEngine) Start(
 		"-v", name + ":" + distconsts.EngineDefaultStateDir,
 		"--name", name,
 		"--privileged",
+		"--mount", "type=bind,source=/home/alex/dagger/pull-through-cache-setup/dagger-engine-config/engine.toml,target=/etc/dagger/engine.toml",
 	}...)
 	args = append(args, e.Image)
 	args = append(args, "--extra-debug", "--debugaddr=0.0.0.0:6060")
