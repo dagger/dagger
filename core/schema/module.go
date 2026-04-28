@@ -2990,7 +2990,11 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source implementation digest for module: %w", err)
 	}
-	scopedDigest := hashutil.HashStrings("Module._implementationScoped", sourceDigest.String())
+	scopedDigestInputs := []string{"Module._implementationScoped", sourceDigest.String()}
+	if parentMod.Self().AsModuleVariantDigest != "" {
+		scopedDigestInputs = append(scopedDigestInputs, parentMod.Self().AsModuleVariantDigest)
+	}
+	scopedDigest := hashutil.HashStrings(scopedDigestInputs...)
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
