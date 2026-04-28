@@ -6,7 +6,7 @@ require (
 	chainguard.dev/apko v0.30.34
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/otel-go v1.41.0
-	github.com/vektah/gqlparser/v2 v2.5.32
+	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/sdk v1.41.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.89 // indirect
+	github.com/99designs/gqlgen v0.17.90 // indirect
 	github.com/googleapis/gax-go/v2 v2.16.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 // indirect
@@ -36,7 +36,7 @@ require (
 	cloud.google.com/go/auth v0.18.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	dagger.io/dagger v0.20.6
+	dagger.io/dagger v0.20.6-0.20260415192040-7058e9313c72
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -71,11 +71,11 @@ require (
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.41.0 // indirect
 	go.step.sm/crypto v0.75.0 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/api v0.257.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171 // indirect

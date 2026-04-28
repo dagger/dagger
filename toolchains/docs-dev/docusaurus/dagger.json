@@ -4,5 +4,8 @@
   "sdk": {
     "source": "go"
   },
-  "source": "dagger"
+  "source": "dagger",
+  "codegen": {
+    "automaticGitignore": false
+  }
 }
